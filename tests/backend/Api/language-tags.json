@@ -1,0 +1,25 @@
+{
+  "about": "One table for the display-language rule on both sides. 'syntax': a raw value and the tag it is as a language tag (ASCII spaces trimmed; a language, then optional script, region and variants; canonical case), or '' when it is not one. 'write': a raw value and what JE may store, seed or write into Jellyfin's shared language key: the tag when it resolves to a locale bundle JE ships (exactly, else its base language), else '' (Auto). Neither side asks the browser (Intl) or the server (CultureInfo) whether it knows a language: both compute it from js/language-policy.json, generated from js/locales (stage 1 fix round 3, RBS1-R3-2). Read by tests/backend/Api/ApiDisplayLanguageTests.cs (server save, first-read seed, reset) and tests/frontend/core/core-translations.test.mjs and tests/frontend/bootstrap/bootstrap.test.mjs (client).",
+  "syntax": [
+    ["en", "en"], ["EN", "en"], [" en-GB ", "en-GB"], ["en-AU", "en-AU"], ["en-au", "en-AU"], ["pt-br", "pt-BR"],
+    ["zh-Hant", "zh-Hant"], ["zh-hant", "zh-Hant"], ["ZH-HANT-tw", "zh-Hant-TW"], ["es-419", "es-419"], ["sr-Latn-RS", "sr-Latn-RS"], ["de-CH-1901", "de-CH-1901"],
+    ["sl-rozaj", "sl-rozaj"], ["gsw", "gsw"], ["pr", "pr"], ["qaa", "qaa"], ["en-12", ""], ["en-US-US", ""],
+    ["en-AU-AU", ""], ["zh-Hant-Hant", ""], ["en-1", ""], ["de-1901-1901", ""], ["en-123456789", ""], ["en-US-1", ""],
+    ["abcd", ""], ["e", ""], ["english", ""], ["en-", ""], ["-en", ""], ["en--US", ""],
+    ["en_US", ""], ["en_US!", ""], ["../en", ""], ["en-u-ca-gregory", ""], ["x-pirate", ""], ["i-klingon", ""],
+    ["en-US-x-twain", ""], ["undefined", ""], ["null", ""], ["NaN", ""], ["true", ""], ["false", ""],
+    ["", ""], ["  ", ""], ["\ten-GB\n", "en-GB"], ["haw-AU", "haw-AU"], ["kok-GB", "kok-GB"], ["zh-Latn-CN-pinyin", "zh-Latn-CN-pinyin"],
+    ["\ufeffen", ""], ["\u00a0en", ""], ["en\u00a0", ""], ["en\u2003", ""]
+  ],
+  "write": [
+    ["en-AU", "en-AU"], ["en-au", "en-AU"], ["pt-BR", "pt-BR"], ["pt-br", "pt-BR"], ["es-419", "es-419"], ["de-CH-1901", "de-CH-1901"],
+    ["fr", "fr"], ["gsw", "gsw"], ["pr", "pr"], ["en-12", ""], ["en-US-US", ""], ["en-AU-AU", ""],
+    ["pt-BR-BR", ""], ["zh-Hant-Hant", ""], ["fr-1", ""], ["de-1901-1901", ""], ["en-u-ca-gregory", ""], ["en-US-x-twain", ""],
+    ["undefined", ""], ["en_US!", ""], ["zz-ZZ", ""], ["qaa", ""], ["", ""], ["haw-AU", ""],
+    ["kok-GB", ""], ["haw", ""], ["kok", ""], ["ja", ""], ["ja-JP", ""], ["zh-Hant", ""],
+    ["zh-hant", ""], ["zh-TW", ""], ["zh-Hant-HK", ""], ["zh-Hans-CN", ""], ["sr-Latn-RS", ""], ["sr-Cyrl", ""],
+    ["xx", ""], ["en-GB", "en-GB"], ["en-gb", "en-GB"], ["zh-HK", "zh-HK"], ["zh-cn", "zh-CN"], ["EN-us", "en-US"],
+    ["pt-PT", "pt-PT"], ["de-AT", "de-AT"], ["fr-CA", "fr-CA"], ["gsw-CH", "gsw-CH"], ["de-Latn-CH", "de-Latn-CH"], ["pt-latn-br", "pt-Latn-BR"],
+    ["en-Latn-GB", "en-Latn-GB"], ["\ufefffr", ""], ["\u00a0fr", ""]
+  ]
+}

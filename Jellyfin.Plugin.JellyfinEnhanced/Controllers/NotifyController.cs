@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // whose title they can no longer see (library access or parental limits changed since): kept, but without
                     // what names the title.
                     var hidden = untold
-                        || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters));
+                        || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters, _service.Ledger, r.EventKey));
                     hidden |= hiddenPolicy.IsHidden(r.Key, r.ItemId, null, "requests");
                     var titleKey = TitleKey.Parse(r.Key)?.Title;
                     hidden |= spoiler?.Guarded(titleKey?.ToString()) == true || titleKey != null &&

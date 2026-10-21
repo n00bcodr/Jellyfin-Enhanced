@@ -16,27 +16,71 @@
         return code;
     }
 
+    // The display-language rule, the same data as the server's (Helpers/LanguageTags.cs): what JE stores, seeds or writes
+    // into Jellyfin's shared language key is a language tag that resolves to a locale bundle JE ships, exactly or by its
+    // base language. The server writes the policy in on the next line when it serves this file: the tag syntax
+    // (js/language-policy.json) and the locale bundles this build ships (its embedded js/locales). Carried here because
+    // translations load before the public configuration. Unserved (null), JE has no rule: JE.languageCode and
+    // JE.supportedLanguageCode stay undefined, and nothing writes or removes a language.
+    const LANGUAGE_POLICY = null; // je:language-policy
+    const LANGUAGE_TAG = LANGUAGE_POLICY ? new RegExp(LANGUAGE_POLICY.tag) : null;
+    const SHIPPED_LANGUAGES = new Map((LANGUAGE_POLICY ? LANGUAGE_POLICY.shipped : []).map(code => [code.toLowerCase(), code]));
+
+    /** The value without the policy's space characters at either end (ASCII only, as on the server). */
+    function trimSpace(value) {
+        let start = 0, end = value.length;
+        while (start < end && LANGUAGE_POLICY.space.includes(value[start])) start++;
+        while (end > start && LANGUAGE_POLICY.space.includes(value[end - 1])) end--;
+        return value.slice(start, end);
+    }
+
     /**
-     * A language tag JE may use, normalized (`en-au` → `en-AU`), or '' for anything else: a literal "undefined" or
-     * "null" (a value stringified by mistake), an empty or malformed value, or one Intl refuses.
+     * A complete language tag in canonical case (`en-au` → `en-AU`, `zh-hant-tw` → `zh-Hant-TW`), or '' for anything
+     * else: a literal "undefined" or "null" (a value stringified by mistake), an empty or malformed value (`en-12`,
+     * `en-US-US`). The policy's syntax rule only: whether JE ships the language isn't checked (reading stays lenient).
      * @param {*} raw A stored or configured value.
      * @returns {string} The tag, or ''.
      */
     function languageCode(raw) {
-        if (typeof raw !== 'string') return '';
-        const code = raw.trim();
-        if (!code || /^(undefined|null|nan|true|false)$/i.test(code)) return '';
-        if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
-        const normalized = normalizeLangCode(code);
-        try {
-            if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
-        } catch (e) {
-            return '';
-        }
-        return normalized;
+        if (!LANGUAGE_POLICY || typeof raw !== 'string') return '';
+        const code = trimSpace(raw);
+        if (LANGUAGE_POLICY.reserved.includes(code.toLowerCase())) return '';
+        const match = LANGUAGE_TAG.exec(code);
+        if (!match || match[0].length !== code.length) return '';
+        const { language, script, region, variants } = match.groups;
+        const list = (variants || '').split('-').filter(Boolean).map(v => v.toLowerCase());
+        if (new Set(list).size !== list.length) return '';
+        return [language.toLowerCase(), script ? script[0].toUpperCase() + script.slice(1).toLowerCase() : '',
+            region ? region.toUpperCase() : '', ...list].filter(Boolean).join('-');
     }
 
-    JE.languageCode = languageCode;
+    /**
+     * The shipped locale bundle a value resolves to (the tag's own, else its base language's), as the build names it
+     * (`pt-br` → `pt-BR`, `de-Latn-CH` → `de`), or '' when JE ships none for it.
+     * @param {*} raw A stored, configured or chosen value.
+     * @returns {string} The bundle's code, or ''.
+     */
+    function languageBundle(raw) {
+        const lower = languageCode(raw).toLowerCase();
+        return lower ? SHIPPED_LANGUAGES.get(lower) || SHIPPED_LANGUAGES.get(lower.split('-')[0]) || '' : '';
+    }
+
+    /**
+     * The language tag JE may WRITE (Jellyfin's shared `${userId}-language` key, its own displayLanguage): a tag
+     * {@link languageCode} accepts whose bundle JE ships (exactly, or its base language), else '' (Auto). Never what the
+     * browser happens to know (the server stores the same: a save answers what it stored).
+     * @param {*} raw A stored, configured or chosen value.
+     * @returns {string} The tag, or ''.
+     */
+    function supportedLanguageCode(raw) {
+        return languageBundle(raw) ? languageCode(raw) : '';
+    }
+
+    if (LANGUAGE_POLICY) {
+        JE.languageCode = languageCode;
+        JE.languageBundle = languageBundle;
+        JE.supportedLanguageCode = supportedLanguageCode;
+    }
 
     function buildLanguageChain(primaryLang) {
         const normalizedLang = normalizeLangCode(primaryLang);

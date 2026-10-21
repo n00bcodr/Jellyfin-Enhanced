@@ -1548,4 +1548,33 @@ public class IntegrationNotifyHardeningTests
         rig.Service.RecentlyAdded.Prune();
         Assert.False(rig.Service.RecentlyAdded.IsRecent(movie.Id));
     }
+
+    // Integration rebuild, stage 1 fix round 2 (RBS1-BEH-R2-1, D53): Jellyfin can read a new file's dimensions after the
+    // ten minutes its updates count as part of the arrival. That update is when a 4K request's edition becomes known, so
+    // it is looked at then (not up to ten minutes later at the sweep); an old item's update still isn't an arrival.
+    [Fact]
+    public async Task AFreshMoviesProbeAfterTheRecentlyAddedWindowIsLookedAtWhenItArrives()
+    {
+        using var rig = await Started(r => r.Request(40, 389, r.Emma, is4k: true));
+        rig.Service.RebuildInterest();
+        await rig.Service.TickAsync(default, force: true);
+        var movie = new Movie { Id = Guid.NewGuid(), DateCreated = rig.Arr.Now.UtcDateTime };
+        movie.SetProviderId(MetadataProvider.Tmdb, "389");
+        rig.Service.ItemAdded(movie);
+        await rig.Service.TickAsync(default, force: true);
+        Assert.False(rig.Service.HasDirty("movie:tmdb:389"));
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(12);
+        rig.Service.RecentlyAdded.Prune();
+        Assert.False(rig.Service.RecentlyAdded.IsRecent(movie.Id));
+        rig.Service.ItemUpdated(movie);                                   // the probe: 2160p
+        Assert.True(rig.Service.HasDirty("movie:tmdb:389"));
+
+        // Control: an item that arrived days ago is not arriving now.
+        await rig.Service.TickAsync(default, force: true);
+        Assert.False(rig.Service.HasDirty("movie:tmdb:389"));
+        var old = new Movie { Id = Guid.NewGuid(), DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-10) };
+        old.SetProviderId(MetadataProvider.Tmdb, "389");
+        rig.Service.ItemUpdated(old);
+        Assert.False(rig.Service.HasDirty("movie:tmdb:389"));
+    }
 }

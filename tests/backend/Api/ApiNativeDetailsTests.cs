@@ -769,6 +769,23 @@ public class ApiNativeDetailsTests
     }
 
     [Fact]
+    public async Task AGrantDecoratedByJesOwnResponseFiltersStillLoads()
+    {
+        // A synthetic card served outside the facade (a Home Screen Sections row) passes JE's response filters, which
+        // add Spoiler Guard's "-jeu" marker, a poster-tag "-jet" token and a cache-bust "sb-" prefix to every image tag.
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var movie = Id(SyntheticId.Movie(693134));
+        var tag = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result).ImageTags[ImageType.Primary];
+        Dictionary<string, object?> Args(string t) => new() { ["itemId"] = movie, ["imageType"] = ImageType.Primary, ["tag"] = t, ["maxWidth"] = 300 };
+        foreach (var decorated in new[] { tag + "-jeu0123456789ab", "sb-0123abcd-" + tag + "-jeu0123456789ab", tag + "-jet" + new string('a', 23) + "-jeu0123456789ab" })
+            Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, Args(decorated))).Result);
+        // The decoration never vouches for a grant: a tampered grant inside it is still refused.
+        var tampered = tag[..^1] + (tag[^1] == '0' ? '1' : '0');
+        Assert.Equal(404, Status((await Call(rig, "Image", "GetItemImage", null, Args(tampered + "-jeu0123456789ab"))).Result));
+    }
+
+    [Fact]
     public async Task NoLibraryRowsNoUserDataNoEvents()
     {
         using var rig = new Rig();

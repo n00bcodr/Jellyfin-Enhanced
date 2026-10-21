@@ -2,6 +2,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JE.Tests;
 
@@ -16,6 +18,8 @@ internal sealed class FakeStampLibrary : IStampLibrary
     public Dictionary<(Guid User, Guid Item), (bool Played, DateTime? LastPlayed)> Data { get; } = new();
 
     public int FourKCalls { get; private set; }
+
+    public Exception? FourKFailure { get; set; }
 
     public int CanOpenCalls { get; private set; }
 
@@ -82,6 +86,7 @@ internal sealed class FakeStampLibrary : IStampLibrary
 
     public IReadOnlyList<StampItem> FourKVideos()
     {
+        if (FourKFailure != null) throw FourKFailure;
         Check();
         FourKCalls++;
         return Items.Values.Where(i => i.IsVideo && i.FourK && !i.Virtual).ToList();
@@ -113,6 +118,8 @@ internal sealed class FakeStampLibrary : IStampLibrary
 /// <summary>Interests by title key.</summary>
 internal sealed class FakeStampInterests : IStampInterests
 {
+    public Action? AfterRead { get; set; }
+
     public List<(TitleKey Key, StampInterest Interest)> All { get; } = new();
 
     public void Add(TitleKey key, StampInterest interest) => All.Add((key, interest));
@@ -120,7 +127,9 @@ internal sealed class FakeStampInterests : IStampInterests
     public IReadOnlyList<StampInterest> For(IReadOnlyList<TitleKey> keys)
     {
         var wanted = keys.Select(k => k.ToString()).ToHashSet(StringComparer.Ordinal);
-        return All.Where(x => wanted.Contains(x.Key.ToString())).Select(x => x.Interest).ToList();
+        var result = All.Where(x => wanted.Contains(x.Key.ToString())).Select(x => x.Interest).ToList();
+        AfterRead?.Invoke();
+        return result;
     }
 }
 
@@ -158,10 +167,14 @@ internal sealed class StampWorld : IDisposable
     public AcquisitionStampResolver Resolver { get; }
     public AcquisitionStampFeeder Feeder { get; }
 
-    public StampWorld(string? dbPath = null)
+    public ArrChangeFeed Feed { get; } = new();
+
+    public StampWorld(string? dbPath = null, bool live = false)
     {
         Db = new AcquireDatabase(dbPath ?? Path.Combine(Core.Root, "acquire.db"));
-        Store = new AcquisitionStampStore(Db, Clock);
+        Store = live
+            ? ActivatorUtilities.CreateInstance<AcquisitionStampStore>(new ServiceCollection().AddSingleton(Db).AddSingleton(Feed).BuildServiceProvider())
+            : new AcquisitionStampStore(Db, Clock);
         Resolver = new AcquisitionStampResolver(Library, Store, () => Config, Clock);
         Feeder = new AcquisitionStampFeeder(Library, Interests, Upgrades, Store, Resolver, null, () => Config, Clock);
     }

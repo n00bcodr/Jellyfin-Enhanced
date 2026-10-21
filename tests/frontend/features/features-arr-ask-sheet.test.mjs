@@ -1860,6 +1860,110 @@ test('Seerr with partial requests off: one "Get the whole series" on the series 
   await pending;
 });
 
+// ------------------------------------------------------------------ one season at a time (upstream's Seerr option)
+
+test('one season at a time: no "Everything" for several seasons, and picking a season unticks the others', async t => {
+  const h = setup(t, { me: { ...MEMBER, singleSeason: true } });
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
+  await settle();
+  assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['latest', 'next', 'pick', 'episodes', 'future']);
+  click(h, card(h, 'pick'));
+  const panel = h.document.querySelector('.je-sheet-pick');
+  assert.equal(panel.querySelector('.je-sheet-one-season').textContent, 'Only one season can be asked for at a time.');
+  const boxes = [...panel.querySelectorAll('input[type=checkbox]')];
+  for (const i of [1, 2]) {
+    boxes[i].checked = true;
+    boxes[i].dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  }
+  assert.deepEqual(boxes.map(b => b.checked), [false, false, true]);
+  click(h, primary(h));
+  await pending;
+  assert.deepEqual({ scope: h.posts[0].body.input.scope, seasons: [...h.posts[0].body.input.seasons] }, { scope: 'seasons', seasons: [3] });
+  // With one season left to ask for, "Everything" is that one season and stays.
+  h.Sheet.open({ ...SERIES, seasons: [{ season: 1, episodes: 12, have: 12 }, { season: 2, episodes: 12, have: 0 }], latestSeason: 2 }, { operation: h.JE.NATIVE });
+  await settle();
+  assert.equal(card(h, 'everything').querySelector('.je-sheet-card-label').textContent, en.arr_sheet_card_everything_one);
+  h.Sheet.close();
+});
+
+test('one season at a time on the series page: missing episodes and the Seerr-mode season button ask for the first season only', async t => {
+  const TWO_PARTIAL = {
+    ...SERIES_STATUS,
+    seasons: [
+      SERIES_STATUS.seasons[0],
+      { season: 2, itemId: 's2', stage: 'partial', summary: { aired: 10, ready: 8, missing: 0, longMissing: 0 } },
+      SERIES_STATUS.seasons[2]
+    ]
+  };
+  const SEASON2 = { items: [{ key: 'tv:tvdb:371980:s2', kind: 'season', episodes: [{ episode: 9, stage: 'notHere', reason: { code: 'not_in_arr' } }, { episode: 10, stage: 'notHere', reason: { code: 'not_in_arr' } }] }] };
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: { ...MEMBER, singleSeason: true }, status: (path) => path.includes('/item/s2') ? SEASON2 : path.includes('/item/s3') ? SEASON3 : null });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, TWO_PARTIAL, { contact: 'Dad' });
+  await settle();
+  let box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  const missing = [...box.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('Get missing episodes'));
+  assert.equal(missing.querySelector('.je-ask-action-text').textContent, 'Get missing episodes · Season 2');
+  click(h, missing);
+  await settle(20);
+  assert.ok(!h.statusCalls.some(p => p.includes('/acquire/status/item/s3')), 'only the first season is read');
+  assert.deepEqual(h.posts.at(-1).body.input.episodes.map(e => `${e.season}x${e.episode}`), ['2x9', '2x10']);
+
+  // Seerr mode: the button names (and asks for) the first season only.
+  h.state.me = { ...SEERR_MEMBER, singleSeason: true };
+  await h.JE.arrAsk.me(true);
+  h.JE.internals.arrAskActions.attachDetails(page, { ...TWO_PARTIAL, key: 'tv:tvdb:371981' }, { contact: 'Dad' });
+  await settle();
+  box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  const season = [...box.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('Get Season'));
+  assert.equal(season.querySelector('.je-ask-action-text').textContent, 'Get Season 2');
+  click(h, season);
+  await settle(20);
+  assert.deepEqual({ scope: h.posts.at(-1).body.input.scope, seasons: [...h.posts.at(-1).body.input.seasons] }, { scope: 'seasons', seasons: [2] });
+});
+
+
+// Review sync: a successful ask belongs to the selected seasons, never the next action.
+for (const backend of ['je', 'seerr']) test(`one-season ${backend}: the second partial season remains actionable after the first succeeds`, async t => {
+  const first = { ...SERIES_STATUS, seasons: [
+    { season: 2, itemId: 's2', stage: 'partial', summary: { aired: 10, ready: 8, missing: 0 } },
+    { season: 3, itemId: 's3', stage: 'partial', summary: { aired: 10, ready: 2, missing: 0 } }
+  ] };
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: { ...(backend === 'je' ? MEMBER : SEERR_MEMBER), singleSeason: true },
+    status: path => ({ items: [{ episodes: Array.from({ length: path.includes('/item/s2') ? 2 : 8 }, (_, i) => ({ episode: i + 1, stage: 'notHere', reason: { code: 'not_in_arr' } })) }] }) });
+  const page = h.document.getElementById('itemDetailPage');
+  const attach = async status => { h.JE.internals.arrAskActions.attachDetails(page, status, { contact: 'Dad' }); await settle(20); };
+  const missing = () => [...page.querySelectorAll('.je-ask-action')].find(b => /Get missing|Get Season/.test(b.textContent));
+  await attach(first);
+  click(h, missing()); await settle(25);
+  assert.equal(h.posts.length, 1);
+  assert.equal(page.querySelector('.je-arr-chip').textContent, 'Asked!');
+  const second = backend === 'je' ? { ...first, seasons: [{ ...first.seasons[0], stage: 'ready', summary: { aired: 10, ready: 10 } }, first.seasons[1]] }
+    : { ...first, askedSeasons: [2] };
+  await attach(second);
+  assert.ok(missing(), 'Season 3 has its own button after Season 2 was asked for');
+  click(h, missing()); await settle(25);
+  assert.equal(h.posts.length, 2);
+  const input = h.posts.at(-1).body.input;
+  same(backend === 'je' ? [...new Set(input.episodes.map(e => e.season))] : input.seasons, [3]);
+});
+
+test('one-season missing-episode cost equals the submitted scope, not every partial season', async t => {
+  const status = { ...SERIES_STATUS, seasons: [
+    { season: 2, itemId: 's2', stage: 'partial', summary: { aired: 10, ready: 8, missing: 0 } },
+    { season: 3, itemId: 's3', stage: 'partial', summary: { aired: 10, ready: 2, missing: 0 } }
+  ] };
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: { ...MEMBER, singleSeason: true },
+    status: () => ({ items: [{ episodes: [9, 10].map(episode => ({ episode, stage: 'notHere', reason: { code: 'not_in_arr' } })) }] }) });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, status, {}); await settle(20);
+  const displayed = page.querySelector('.je-ask-action-cost').textContent;
+  click(h, [...page.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('Get missing'))); await settle(25);
+  const submitted = h.posts.at(-1).body.input;
+  assert.equal(submitted.episodes.length, 2);
+  const expected = h.JE.internals.arrAskSheet.costLine(submitted, h.state.me, h.state.quota).text;
+  assert.equal(displayed, expected);
+});
+
 // ------------------------------------------------------------------ household rules (phase 4b)
 
 test('phase 4b: the sheet names the shared allowance after its note, and a wait for the household rules says so', async t => {

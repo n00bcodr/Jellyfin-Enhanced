@@ -755,7 +755,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// be judged while a Sonarr couldn't be read, or a copy's list couldn't be read and only its season counts were
         /// there): fine to show, not enough to close a request on.
         /// </summary>
-        internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null, bool Guessed = false);
+        internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null, bool Guessed = false, bool Only4k = false);
 
         /// <summary>
         /// The part of a title a request asked for: series seasons (none: the whole title, or the
@@ -795,7 +795,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// tells the caller to prepare it again. <paramref name="responseGate"/> wraps the cache lookup and the build
         /// (a caller's own final gate).
         /// </remarks>
-        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null)
+        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
             var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
@@ -804,8 +804,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             StatusBody Respond()
             {
-                RequestScope? ScopeOf(TitleKey t) => scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null;
-                var cacheKey = CacheKey(now, route, what + "|" + presentationRevision + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
+                IEnumerable<RequestScope?> ScopesOf(TitleKey t)
+                {
+                    if (editions == null) return new[] { scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null };
+                    var asked = editions.Where(e => e.Key.Key.Equals(t)).OrderBy(e => e.Key.FourK).Select(e => (RequestScope?)e.Value).ToList();
+                    // A title composed beside the requested editions without a request of its own (home rows' followed
+                    // titles) is composed whole.
+                    return asked.Count > 0 ? asked : new RequestScope?[] { null };
+                }
+                var cacheKey = CacheKey(now, route, what + "|" + presentationRevision + "|" + string.Join(",", titles.SelectMany(t => ScopesOf(t).Select(scope => t + (scope != null ? "@" + scope : string.Empty)))), gather.Revision);
                 StatusBody Present(byte[] raw, bool insert)
                 {
                     var final = presentation?.Invoke();
@@ -818,8 +825,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var result = new List<KeyedStatus>();
                 foreach (var title in titles)
                 {
-                    if (Compose(now, gather, title, detail: false, ScopeOf(title)) is not { } composed) continue;
-                    result.Add(ScopeOf(title) is { } asked ? Scoped(now, gather, composed, asked) : composed);
+                    // One gathered title, independently composed requested editions; scope and cache identity keep both.
+                    foreach (var asked in ScopesOf(title))
+                    {
+                        if (Compose(now, gather, title, detail: false, asked) is not { } composed) continue;
+                        result.Add(asked != null ? Scoped(now, gather, composed, asked) with { Only4k = asked.Only4k } : composed);
+                    }
                 }
                 return Present(build(result), true);
             }

@@ -1,639 +1,453 @@
 # Frequently Asked Questions
 
-## General Questions
+Use these answers to find the right settings or troubleshooting guide. For installation failures, start with [Troubleshooting installation](../installation/troubleshooting.md).
 
-<!-- todo: make these collapsible  -->
+## General Questions
 
 ### What is Jellyfin Enhanced?
 
-Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and customizations for Jellyfin. It adds keyboard shortcuts, visual enhancements, Seerr integration, custom pause screens, quality tags, and much more — all in one convenient package.
+Jellyfin Enhanced (JE) adds personal controls, playback enhancements, media tags, pages, and optional service integrations to Jellyfin. Start with [Quick start](../getting-started/index.md), then use [Settings Overview](../getting-started/settings-overview.md) to find the administrator and personal controls.
 
 ### Can I customize the keyboard shortcuts?
 
-Yes! Open the Jellyfin Enhanced panel by clicking the menu item in the sidebar (Jellyfin 12: user profile menu instead) or pressing `?`, then go to the **Shortcuts** tab. Click on any key to set a custom shortcut. Changes save automatically.
+Yes. You can change shortcut combinations for your account, and changes save automatically.
+
+1. Open your **Enhanced Panel** with ++question++ while you are not typing in an input or text area.
+2. Select **Shortcuts**.
+3. Click a binding and press your new combination.
+
+While the binding is listening, ++backspace++ restores the administrator binding and ++delete++ disables that action for you.
+
+Administrators control shortcut availability under **Keyboard**:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Disable Keyboard Shortcuts** | Off | Stops ordinary JE shortcuts and hides **Shortcuts** in the personal panel. |
+
+You can still open the panel with ++question++, and you cannot change that key. See [Enhanced settings](../enhanced/enhanced-settings.md) for the controls and [Settings Overview](../getting-started/settings-overview.md) for alternative panel entry points.
+
+??? note "Details"
+
+    Changes save to your account's server-side `shortcuts.json`. Modifier-only keys are ignored. Duplicate combinations are rejected; player actions also reject keys reserved by Jellyfin's player. A rejected binding flashes red and shakes. Percentage jumping is read-only.
 
 ### Does this work on mobile apps?
 
-Yes, the plugin works on the official Jellyfin Android and iOS apps, as well as desktop and web UIs. All features are available as long as the app uses Jellyfin's embedded web UI.
+To use JE's web controls, your app must load the web interface served by your Jellyfin server. Playback enhancements also need a browser player that JE can control. Check [Compatibility](../getting-started/compatibility.md) for your app and playback mode.
 
 ### Does this work on Android TV or other TV platforms?
 
-No, the plugin does not work on Android TV or other native TV apps. It only functions on clients that use Jellyfin's embedded web UI, such as the official web, desktop, and mobile apps.
-
-Two things do reach native apps because they happen on the server: automatic season and movie requests, and the experimental [Native Poster Tags](../enhanced/enhanced-features.md#native-poster-tags-experimental), which draw your tags into the poster images native apps download.
+Native apps do not receive JE's web controls, but enabled server features can still affect them. Examples include Spoiler Guard, hiding content from supported lists and Home rows, automatic requests, experimental Native Poster Tags, and data synchronized into Jellyfin. Each has its own switches and limits on the screens and clients it supports. See [Compatibility](../getting-started/compatibility.md).
 
 ### Is this plugin affiliated with Seerr?
 
-No, this plugin is not affiliated with Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. **Please report plugin issues to this repository, not to the Seerr team**.
+JE is an independent project that integrates with Seerr. Report JE integration problems through [JE's bug-report process](report-issues.md). If the same problem occurs directly in Seerr, investigate that service separately.
 
 ### How do I change the plugin's language?
 
-The plugin automatically uses the language set in your Jellyfin user profile. If your language isn't available, it defaults to English. See the [Contributing Translations](contributing-translations.md) section to help add your language!
+You can choose a JE language independently of Jellyfin's language.
+
+1. In your personal **Settings**, open **Language Settings** → **Display Language**.
+2. Select a language. JE saves your preference and reloads the page.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Display Language** (per user) | **Auto** | Follows Jellyfin's language unless your administrator sets a starting language or you choose your own. |
+| **Default UI Language** (admin, **Display**) | **System Default** | Sets the starting JE language for new users; they can change it in their personal settings. |
+
+??? info "How it works"
+
+    With **Auto** in your personal settings, JE follows Jellyfin's language and uses English if that translation is unavailable. JE saves a language only when it includes that translation, or a regional variant of one it includes (for example `en-AU` uses English); anything else is saved as **Auto**, and the menu shows what was saved. If JE's translations script didn't load, the menu shows your saved language but can't be changed until you reload the page, and JE saves no language meanwhile. Choosing a JE language also sets this browser's Jellyfin display language (both use the same setting); saving other JE settings never changes a language you chose in Jellyfin's own **Display** settings. **Clear Translation Cache** clears this browser's saved translations and reloads. It normally reloads the translation included with your installed plugin. See [Contributing Translations](contributing-translations.md) for languages, loading order, and release timing.
 
 ### Where is the userscript version?
 
-The userscript has been discontinued as the plugin functionality has grown significantly. The last version is available [here](https://github.com/n00bcodr/Jellyfin-Enhanced/raw/05dd5b54802f149e45c76102dabf6235aaf7a5fb/jf_enhanced.user.js) if you only need basic keyboard shortcuts.
+The userscript is discontinued. An [archived userscript](https://github.com/n00bcodr/Jellyfin-Enhanced/raw/05dd5b54802f149e45c76102dabf6235aaf7a5fb/jf_enhanced.user.js) remains for the old basic shortcut implementation; it is not a substitute for the current plugin.
 
----
+### Does JE send usage statistics?
+
+Usage reporting is opt-in and off by default.
+
+1. As an administrator, open **Admin** → **Usage Statistics**.
+2. Turn on **Share Anonymous Usage Statistics** if you want to participate.
+3. Use **Preview** to see what you would share before you save.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Share Anonymous Usage Statistics** | Off | Enables optional analytics reporting. |
+| **Feature toggle states (on/off only)** | On | Includes feature-switch states and selected text settings when reporting is enabled. |
+| **Feature usage counts** | On | Includes usage counts when reporting is enabled. |
+| **Data file sizes (bytes only, never contents)** | On | Includes only the total size of the custom branding directory, without file names or contents, when reporting is enabled. |
+| **Reporting interval (days)** | 15 | Sets the interval, clamped to 7–30 days. |
+
+??? info "How it works"
+
+    Reports always include an anonymous installation ID, plugin and Jellyfin versions, and the Jellyfin build target, even with all three categories off. Turning reporting on schedules a report right away. Turning it off asks the analytics service to exclude your registered installation from public statistics.
+
+Optional analytics is separate from requests needed for enabled integrations, assets, or hosted documentation. See [Community Analytics](../advanced/community-analytics.md) for the full privacy and reporting details.
 
 ## Installation & Setup
 
 ### Plugin Compatibility
 
-| Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
-|--------|----------------|----------------|-------|
-| Jellyfin Enhanced | ✅ | ✅ (frozen at 10.11.1.0) | One manifest for all lines |
+See [Compatibility](../getting-started/compatibility.md) for Jellyfin versions, clients, layouts, companion plugins, and integration requirements. Use the shared manifest in the [Installation Guide](../installation/installation.md) to get the matching server build.
 
 ### Plugin not appearing after installation?
 
-**See [this page in Installation Troubleshooting](../installation/troubleshooting.md/#plugin-not-appearing-after-installation)**
+Check whether the server plugin is loaded before diagnosing the panel. Follow [Plugin Not Appearing After Installation](../installation/troubleshooting.md#plugin-not-appearing-after-installation).
 
 ### Scripts not loading after installation
 
-**See [this page in Installation Troubleshooting](../installation/troubleshooting.md/#scripts-not-loading)**
+Check whether the page includes JE's script and whether the scripts load. Follow [Scripts Not Loading](../installation/troubleshooting.md#scripts-not-loading).
+
+??? note "Details"
+
+    Normal injection is not repaired simply by running the startup task.
 
 ### Update not working properly?
 
-**See this page in [Installation Troubleshooting](../installation/troubleshooting.md/#update-not-working)**
+Compare the running version and build target, then check client and proxy caching. Follow [Update Not Working](../installation/troubleshooting.md#update-not-working).
 
+### I see "permission denied" errors in logs!
 
-### I see "permission denied" errors in logs!!
+Find the path and operation in the full error, then use [Permission Issues](../installation/troubleshooting.md#permission-issues).
 
-**See this page in [Installation Troubleshooting, regarding permission issuses](../installation/troubleshooting.md#permission-issues)**
+??? note "Details"
 
-
----
+    Normal injection needs no writable web directory. User data, branding, caches, logs, and old-tag cleanup have different storage requirements.
 
 ## Features & Functionality
 
 ### Auto-skip intros not working?
 
-Auto-skip seeks using the media segments Jellyfin stores for an item, so a segment
-provider — usually the [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) —
-has to detect them first. Jellyfin Enhanced does not detect intros itself.
+Check that the item has Intro or Outro segments, then enable the matching auto-skip control.
 
-**Requirements:**
+!!! note "Required"
 
-1. Install Intro Skipper plugin
+    JE reads Jellyfin's stored Intro and Outro media segments; it does not detect them. A segment provider such as Intro Skipper must supply usable start and end boundaries.
 
-2. Enable intro detection in Intro Skipper settings
+1. Check that the item has segments before changing JE settings. The details below explain how to check them with a request.
+2. In the Enhanced panel's **Auto-Skip Settings**, enable the relevant control.
 
-3. Run intro detection on your library
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Automatically Skip Intro** | Off | Seeks to the end of a stored Intro segment. |
+| **Automatically Skip Outro** | Off | Seeks to the end of a stored Outro segment. |
 
-4. Enable auto-skip in Jellyfin Enhanced settings
+See [Playback controls](../enhanced/enhanced-features.md#playback-controls) for the workflow and [Enhanced settings](../enhanced/enhanced-settings.md) for administrator defaults.
 
-5. Intro segments must be detected for your media
+??? note "Details"
 
-**Check Detection:**
+    An authenticated request to Jellyfin's `/MediaSegments/{itemId}` can confirm the item's segments; a signed-out request may return 401. Do not share API keys in reports. JE does not need a visible native skip button or English button text.
 
-- [x] Play a video with a known intro
-
-- [x] Check the item's segments with an API key from **Dashboard → API Keys**:
-  `http://<your-server>/MediaSegments/<item-id>?api_key=<your-key>` — an entry with
-  `"Type": "Intro"` means detection worked (the endpoint needs a key; a plain
-  browser request returns 401)
-
-- [x] If the list is empty, run intro detection again
-
-!!! tip
-
-    You do **not** need Jellyfin's own "Skip Intro" button for this. Auto-skip no
-    longer clicks that button, so it works with the segment action set to **None**
-    in Playback settings, and on non-English clients where the button is translated.
-
+    Direct play/stream and HLS support the intended local seek. Progressive transcodes can stall or fail to seek ahead, and this local seek does not synchronize a SyncPlay group. Seeking backward into a skipped segment suppresses immediate re-skipping.
 
 ### Seerr integration not connecting?
 
-<!-- todo -->
-<!-- ![Seerr Settings](../images/jellyseerr.png) -->
+Test the connection from Jellyfin first, then check account import and permissions separately.
 
-**Check Configuration:**
+1. In administrator **Seerr**, configure **Enable Seerr integration**, **Seerr URL(s) (One per line)**, and **Seerr API Key**.
+2. Select **Test** beside the key.
+3. For a linked account, use **Permission Audit** → **Run Audit** to check permissions needed by enabled features.
 
-1. Verify Seerr URL is correct and accessible
+!!! note "Required"
 
-2. Verify API key is correct (from Seerr Settings → General)
+    Jellyfin's server must be able to reach Seerr. In a container, `localhost` means that container.
 
-3. Click "Test Connection" in plugin settings
+Use [Seerr settings](../seerr/seerr-settings.md) for setup, defaults, sign-in/import instructions, and connection diagnosis; use [Permission Audit](../seerr/permission-audit.md) for authorization checks.
 
-4. Check icon status on search page:
+These screenshots show external account management. They do not show JE feature permissions:
 
-   - 🟢 Active = Working
-   - 🔴 No Access = User not imported
-   - ⚫ Offline = Cannot connect
+![An example Seerr list of imported Jellyfin accounts](../images/users-with-access.png)
+*An imported account still needs the permissions required by the enabled features.*
 
-**Enable Jellyfin Sign-In:**
-
-1. In Seerr, go to Settings → Users
-
-2. Enable "Enable Jellyfin Sign-In"
-
-3. Import your Jellyfin users
-
-<!-- todo -->
-<!-- ![Jellyfin Sign-In](../images/jellyfin-signin.png) -->
-
-**Import Users:**
-
-Option A (automatic, recommended):
-
-1. In Jellyfin, go to Dashboard -> Plugins -> Jellyfin Enhanced -> Seerr Settings
-
-2. Enable "Auto import Jellyfin users to Seerr"
-
-3. Optional: click "Import Users Now" to run bulk import immediately
-
-Option B (manual in Seerr):
-
-1. In Seerr, go to Users page
-
-2. Click "Import Jellyfin Users"
-
-3. Select users to import
-
-4. Save changes
-
-**User Access:**
-
-- Users WITH access: ![Users with access](../images/users-with-access.png)
-
-- Users WITHOUT access: ![Users without access](../images/users-no-access.png)
-<!-- todo -->
-
-**Check Logs:**
-
-1. Browser console (F12) for client errors
-
-2. Jellyfin server logs for proxy errors
-
-3. Seerr logs for API errors
+![An example Seerr dialog for selecting Jellyfin accounts to import](../images/users-no-access.png)
+*Manual import is an alternative when automatic import is not enabled; this dialog does not demonstrate access denial.*
 
 ### Tags not showing on posters?
 
-**Enable Feature:**
-
-1. Open Enhanced panel (press `?`)
-
-2. Go to Settings tab
-
-3. Enable desired tags:
-
-   - Quality Tags
-   - Genre Tags
-   - Language Tags
-   - Rating Tags
-   - Age Rating Tags
-
-4. Adjust position if needed
-
-**Clear Cache:**
-
-1. Hard refresh browser (Ctrl+F5)
-
-2. Clear all browser cache
-
-3. Restart browser
-
-**Check Metadata:**
-
-- Quality tags require media file metadata
-
-- Genre tags require genre information
-
-- Language tags require audio track data
-
-- Rating tags require TMDB/RT ratings
-
-- Age rating tags require a parental rating on the item (or its series)
-
-**Check Console:**
-
-1. Press F12 → Console
-
-2. Look for tag-related errors
-
-3. Report issues on GitHub
+Open **UI Settings** in the Enhanced panel, enable the tag groups you want, and check the item's metadata; your saved choices override administrator defaults. See [Tags & Badges](../enhanced/tags.md) for setup, scopes, and native posters, and the [score sources and fallback rules](../enhanced/tags.md#rating-tags) for season/episode differences between server-cache, batch, and player paths. For stale data, use [targeted cache troubleshooting](../installation/troubleshooting.md#stale-caches-or-missing-assets).
 
 ### Bookmarks not syncing across devices?
 
-<!-- use a custom title -->
-!!! info "How it works"
+Sign in with the same Jellyfin account and reload the other device. JE saves bookmarks, main Enhanced preferences, and shortcut overrides on the server for that account.
 
-    Same user should be able to access bookmarks, from any device
-    
-    **Bookmarks are stored server-side, but settings are per-browser.**
+1. Reload the page to pick up changes to bookmarks and other saved data. Reopen the personal panel to reload your main settings.
+2. If a bookmark still does not save or appear, check its failed request and the server log for storage errors.
 
-    **Stored on Jellyfin server:**
+See [Smart Bookmarks](../enhanced/enhanced-features.md#smart-bookmarks) for bookmarks and [Settings Overview](../getting-started/settings-overview.md) for user-data storage and backups.
 
-    - [Bookmark **data** `bookmark.json`](../advanced/api.md#bookmarks-api)
+??? info "How it works"
 
-    - Spoiler Guard **per-user list and override prefs** `spoilerblur.json`
+    Reopening the personal panel reloads your main settings from `settings.json`. Browser storage also holds caches and local UI state.
 
-    **Stored in browsers' `localStorage`:**
+### Why did changing an administrator default not change my settings?
 
-    - [Users' **settings**](../enhanced/enhanced-features.md#smart-bookmarks)
+Saved personal preferences take precedence over administrator defaults. Ordinary administrator saves do not continually replace your choices.
 
-    - Each browser has independent settings
+To deliberately replace existing preferences:
 
-**Troubleshooting:**
+1. Save the desired administrator defaults.
+2. Use administrator **Overview** → **Quick Actions** → **Overwrite everyone's personal settings**.
 
-- Verify same user account
+!!! warning
 
-- Check bookmark file exists on server
+    This action replaces personal choices. Back up first and have users reload their clients afterward. See [Settings Overview](../getting-started/settings-overview.md) for its scope and recovery instructions.
 
-- Look in `{JELLYFIN_DATA_DIR}/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/{userId}/bookmark.json`
+??? note "Details"
 
-- Check browser console for errors
+    The action also saves the current form. It replaces `settings.json` for known user directories, resets Hidden Content settings while keeping hidden items, and resets existing Spoiler Guard preference overrides while keeping their lists. It does not reset `shortcuts.json`.
+
+### What should I back up, and does uninstalling erase my data?
+
+Back up the plugin XML configuration and JE's data, including personal data, shared records, and uploaded branding. Uninstalling JE leaves your saved user data in place.
+
+Follow [Settings Overview](../getting-started/settings-overview.md) for storage, backup, and restoration instructions.
+
+??? note "Details"
+
+    Back up the plugin XML configuration and JE's data, including personal `settings.json`, `shortcuts.json`, `bookmark.json`, `elsewhere.json`, `hidden-content.json`, and `spoilerblur.json`. User directories live beneath `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/<lowercase-user-id-without-hyphens>/`.
+
+    Keep shared records, uploaded branding, and `native-poster-tags.key` too. You can find `custom_branding` inside a folder beside the plugin XML configuration file, with the same name minus `.xml`. JE can download `cdn-cache` again. Keep `native-poster-tags.key` so your restored server can still use existing personalized poster links; losing it can leave clients showing original artwork until they refresh metadata.
+
+    Uninstalling JE attempts to remove any old script added to the web files and leaves your saved user data in place. Deleting a Jellyfin account can also leave its personal settings, reviews, and activity records behind.
 
 ### Pause screen not appearing?
 
+Turn on your personal pause screen and stop interacting with the player for the configured delay.
 
-**Enable Feature:**
+1. Open personal **Settings** → **Playback Settings** and make sure **Custom Pause Screen** is on.
+2. Pause a video in a browser player JE can control.
+3. Stop interacting for the configured delay. Fullscreen and theater mode are optional.
 
-1. Open Enhanced panel
+Personal controls:
 
-2. Go to Settings tab
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Custom Pause Screen** | On | Shows the overlay during paused browser playback. |
+| **Delay before showing (seconds):** | 5 | Sets how long you must stop interacting before the overlay appears. |
 
-3. Enable "Custom Pause Screen"
+??? note "Details"
 
-4. Adjust settings as desired
+    Moving the mouse, touching the screen, or pressing a key postpones the overlay. If you dismiss it, it stays hidden until you resume and pause again.
 
-**Check Playback:**
-
-- [x] Must be in fullscreen or theater mode
-
-- [ ] Pause video (press Space)
-
-- [ ] Screen should appear after brief delay
-
-**Customize Elements:**
-
-<!-- * EXAMPLE OF A LINK! -->
-See [Pause Screen CSS](../advanced/css-customization.md#pause-screen) for hiding/styling elements.
+See [Playback controls](../enhanced/enhanced-features.md#playback-controls) and [CSS Customization](../advanced/css-customization.md) for use and styling.
 
 ### Reviews, Elsewhere, or Seerr icons not working?
 
-This is usually due to TMDB API access issues.
+Identify what failed before treating it as a TMDB problem:
 
-**TMDB API Blocked:**
-
-- TMDB API may be blocked in your region
-
-- Check Seerr troubleshooting: [TMDB Access](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx)
-
-- Use VPN or proxy if needed
-
-- Contact your ISP about API access
-
-**Check Connection:**
-
-1. Open browser console ++f12++
-
-2. Look for TMDB-related errors
-
-3. Check network tab for failed requests
-
-4. Verify Seerr can access TMDB
+- TMDB-backed reviews or availability: check the configured JE TMDB key, provider IDs, the relevant proxy request, and server connectivity. See [Elsewhere settings](../elsewhere/elsewhere-settings.md).
+- Seerr search or requests: check service connectivity, account linking, and permissions through [Seerr settings](../seerr/seerr-settings.md).
+- Stored poster ratings: check Jellyfin rating metadata using [Media tags](../enhanced/tags.md).
+- Static icons: check local CDN asset requests using [installation troubleshooting](../installation/troubleshooting.md#cdn-connectivity-and-limits).
+- Local user-written reviews: check the JE review request and server log; these are separate from fetching external TMDB reviews. See [User Reviews](../elsewhere/elsewhere-features.md#user-reviews).
 
 ### Is "Remove from Continue Watching / Next Up" destructive?
 
-**No.** It is non-destructive — your playback position and watched state are always preserved. It only hides the item from the **Continue Watching** (and **Next Up**) row.
+It preserves playback progress and watched state.
 
-**How It Works:**
+1. Enable your personal **Add Remove from Continue Watching & Next Up Buttons** preference.
+2. For lasting row filtering, your administrator must enable **Enable "Remove from Continue Watching"** or **Enable Hidden Content**.
+3. Enable your personal **Enable Content Hiding** and the filter for the affected row.
 
-- Adds a **Remove** option to an item's "⋯" menu (and to the long-press / multi-select menu on touch devices) for Continue Watching and Next Up items
-- Hides the item from that row only — your progress is **not** reset and the item is **not** marked played
-- The hidden state is stored server-side per-user, so it applies across all your devices
-- It is enforced server-side, so the row stays tidy on every client — including home screens built by the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin
+Administrator settings:
 
-**Can it be undone?**
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable "Remove from Continue Watching"** | Off | Turns on server row filtering and sets the starting value of the personal removal-button preference. |
+| **Enable Hidden Content** | Off | Enables the broader Hidden Content feature and its management page; row removal works without this switch. |
 
-Yes:
+Personal settings start with administrator defaults; you can change them for your account:
 
-- Removed items appear in the **Hidden Content** management page, where each has an "Add back" button
-- Simply **resuming** a hidden item unhides it automatically
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds the removal controls to item menus, even with both server switches off. |
+| **Enable Content Hiding** | On | Enables your hidden-item filters. |
+| **Filter Continue Watching** | On | Hides removed items from this row. |
+| **Filter Next Up** | On | Hides removed items from this row. |
 
-**Use Cases:**
+On the **Hidden Content** management page, Continue Watching-only entries use **Add back to Continue Watching**; other scopes use **Unhide**.
 
-- Tidy up the Continue Watching / Next Up rows without losing your place
-- Hide a show you're not ready to continue, then resume it later to bring it back
+See [Content management](../enhanced/enhanced-features.md#content-management) and [Enhanced settings](../enhanced/enhanced-settings.md) for scopes, prerequisites, and restoration.
 
----
+??? info "How it works"
+
+    Starting playback clears a matching Continue Watching-only hide. A combined home-sections hide becomes Next Up-only; Next Up-only and global hides remain.
 
 ## Customization
 
 ### How do I customize tag appearance?
 
-Use Custom CSS in Jellyfin settings:
-
-1. Go to **Dashboard** → **General** → **Custom CSS**
-2. Add your custom styles
-3. Click **Save**
-4. Refresh browser (Ctrl+F5)
-
-**Examples:**
-
-```css title="Hide Quality Tag"
-.quality-overlay-label[data-quality="H264"] {
-    display: none !important;
-}
-```
-
-```css title="Change Tag Color"
-.quality-overlay-label[data-quality="4K"] {
-    background-color: purple !important;
-}
-```
-
-```css title="Adjust Tag Size"
-.quality-overlay-label {
-    font-size: 0.9rem !important;
-    padding: 4px 8px !important;
-}
-```
-
-See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS documentation.
+Use the built-in tag settings first. For selectors and CSS examples, see [Media tags](../enhanced/tags.md) and [CSS Customization](../advanced/css-customization.md).
 
 ### How do I upload custom branding?
 
-**Requirements:**
+Upload images to replace Jellyfin's branding assets.
 
-- [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed
-- Admin access to Jellyfin
+1. As an administrator, open **Jellyfin Enhanced** → **Extras** → **Custom Image Assets**.
+2. Select or drop an image into a slot.
+3. Check its preview, reported dimensions, and upload status.
+4. Refresh the web client.
 
-**Steps:**
+| Asset slot | Recommended dimensions |
+| --- | --- |
+| **Icon Transparent** | 536×536 pixels |
+| **Favicon** | 256×256 pixels |
+| **Banner Dark** | 1302×378 pixels |
+| **Banner Light** | 1302×378 pixels |
+| **Apple Touch Icon** | 180×180 pixels |
 
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+!!! note "Upload requirements"
 
-2. Navigate to **Other Settings** tab
+    Use an image file no larger than 10 MiB in a format suitable for the slot. You need administrator access, and Jellyfin must be able to write to the branding folder.
 
-3. Find **Custom Branding** section
+!!! warning
 
-4. Upload your images:
+    Uploads and deletions persist immediately. They do not wait for a configuration save.
 
-   - Icon Transparent (header logo)
-   - Banner Light (dark theme splash)
-   - Banner Dark (light theme splash)
-   - Favicon (browser icon)
+The separate URL-based override has these administrator settings:
 
-5. Click `Save`
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable Splash Screen Override** | Off | Shows the configured logo on a temporary black loading overlay until Jellyfin is ready or the 20-second timeout expires. |
+| **Splash Screen Image URL** | `/web/assets/img/banner-light.png` | Selects the splash image when the override is enabled. |
 
-6. Force refresh ++ctrl+f5++
+See [Other settings](../other/other-settings.md) for formats and limits.
 
-**Image Requirements:**
+??? info "How it works"
 
-- [x] PNG or SVG format recommended
-
-- [x] Transparent backgrounds for logos
-
-- [x] Appropriate dimensions for each type
-
-- [x] Files stored in plugin config folder
+    Slots initially have no uploaded file. JE saves each image in its original format without converting it. JE's image replacements are enabled by default (`DisableBrandingMiddleware=false`); File Transformation is not required.
 
 ### Why aren't my subtitles using the Jellyfin Enhanced styling?
 
-Jellyfin Enhanced can only style subtitles that Jellyfin draws as text.
+JE can style text subtitles drawn by Jellyfin's web player. For **Position**, select **Custom** in Jellyfin's subtitle settings so Jellyfin draws the captions instead of your browser.
 
-- **ASS/SSA, PGS and VobSub subtitles** are drawn as images or by Jellyfin's own renderer, so their look comes from the subtitle track and cannot be changed. Choose a text-based track (for example SRT) instead.
-- **Position** only works when Jellyfin's **Subtitle styling** (User Preferences → Subtitles) is set to **Custom**. Chrome uses the browser's native captions in **Auto** mode, which cannot be repositioned.
-- **Burned-in subtitles** (drawn into the video during a transcode) cannot be changed.
+!!! note
 
-See [Customizable Subtitles](../enhanced/enhanced-features.md#customizable-subtitles) for the full list.
+    These controls cannot style subtitles burned into the video, image-based tracks, or subtitles drawn by a different player.
+
+See [Playback controls](../enhanced/enhanced-features.md#playback-controls) for supported playback modes and [Compatibility](../getting-started/compatibility.md) for client limits.
 
 ### How do I turn off subtitle styling and use Jellyfin's own?
 
-Enable **Disable Custom Subtitle Styles** in the Enhanced panel → Settings and reload the page. Your Jellyfin **User Preferences** → **Subtitles** settings then apply unchanged. To do it for every user, enable **Disable Custom Subtitle Styles by default** in the plugin settings, save, then use **Overwrite everyone's personal settings** in Quick Actions. The default alone only applies to users who have no saved settings yet.
+Enable **Disable Custom Styles** to use Jellyfin's own subtitle styles.
+
+1. Open personal **Settings** → **Subtitle Settings**.
+2. Turn on **Disable Custom Styles** and reload.
+
+Personal setting:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Disable Custom Styles** | Off | Stops JE's subtitle styling so Jellyfin's own styles apply. |
+
+Administrators set the starting preference under **Playback**:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Disable Custom Subtitle Styles by default** | Off | Starts users without saved preferences with JE's subtitle styling disabled. |
+
+Saved personal choices take precedence over the administrator default. See [Enhanced settings](../enhanced/enhanced-settings.md) for the full subtitle controls, or [Settings Overview](../getting-started/settings-overview.md) if you intend to overwrite preferences for everyone.
 
 ### Can I change tag positions?
 
-Yes, via Enhanced panel settings:
-
-1. Open Enhanced panel (press ++question-mark++)
-
-2. Go to Settings tab
-
-3. Find tag position options
-
-4. Select position (top-left, top-right, bottom-left, bottom-right)
-
-5. Changes apply immediately
-
-**Advanced Positioning:**
-
-```css title="Change tag positions"
-.quality-overlay-container {
-    top: 10px !important;
-    right: 10px !important;
-}
-```
-
----
+Yes. Open personal **Settings** and choose the position for the relevant tag type. See [Media tags](../enhanced/tags.md) for controls and [CSS Customization](../advanced/css-customization.md) for advanced styling.
 
 ## Troubleshooting
 
 ### How do I gather logs for bug reports?
 
-**Browser Console Logs:**
+Reproduce the problem once and note the time. This helps you match browser and server log entries.
 
-1. Press ++f12++ to open developer tools
+1. Open developer tools with ++f12++ and select **Console**. Filter for `Jellyfin Enhanced` and copy the relevant error, stack trace, and nearby messages that explain it.
+2. In **Network**, filter for `JellyfinEnhanced` and reproduce the failure. Record the request path, method, status code, and useful response body.
+3. Open Jellyfin's server logs from its administration tools or configured log directory. Include the relevant error and nearby lines rather than an unrelated full log. The details below explain which JE logs to look for.
 
-2. Go to Console tab
+!!! warning
 
-3. Filter by `🪼Jellyfin Enhanced`
+    Before sharing logs, screenshots, or network exports, redact API keys, access tokens, cookies, passwords, private URLs, usernames, and other personal information.
 
-4. Look for errors (red text)
+Collect evidence promptly. Then follow [Report issues](report-issues.md) for the environment details to include.
 
-5. Copy error messages
+??? note "Details"
 
-6. Include in bug report
+    Look for the `Jellyfin.Plugin.JellyfinEnhanced` logger category and the dedicated `JellyfinEnhanced_yyyy-mm-dd.log` file. JE's dedicated logs are in Jellyfin's configured log directory; its messages also appear in Jellyfin's main log.
 
-**Network Logs:**
+    When JE starts, it removes dedicated log files created more than three days ago. It checks the file's creation time, not the date in its name, and only performs this cleanup when starting.
 
-1. Press ++f12++ → `Network` tab
-
-2. Filter by `JellyfinEnhanced`
-
-3. Look for failed requests (red)
-
-4. Check status codes
-
-5. Include in bug report
-
-**Server Logs:**
-
-1. Go to **Dashboard** → **Logs**
-
-2. Look for `JellyfinEnhanced` entries
-
-3. Check log files: `JellyfinEnhanced_yyyy-mm-dd.log`
-
-4. Copy relevant errors
-
-5. Include in bug report
-
-**What to Include:**
-
-- Plugin version
-
-- Jellyfin version
-
-- Browser and version
-
-- Operating system
-
-- Steps to reproduce
-
-- Console errors
-
-- Server log errors
-
-- Screenshots if applicable
+    A proxy login page returned instead of JSON or a script is useful evidence. Leave **Dev Mode** off unless you need to check which individual script fails to load. See [Scripts Not Loading](../installation/troubleshooting.md#scripts-not-loading) for that diagnostic option.
 
 ### Common error messages and solutions
 
-| Error | Solution |
-|-------|----------|
-| `Access to the path '/jellyfin/jellyfin-web/index.html' is denied.` | Install [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) or follow [Docker workaround](../installation/troubleshooting.md#docker) |
-| `Access to the path 'C:\Program Files\Jellyfin\Server\jellyfin-web\index.html' is denied.` | Grant "NETWORK SERVICE" Read/Write permissions to Jellyfin folder |
-| Plugin installed but scripts don't load | Run "Jellyfin Enhanced Startup" scheduled task, verify trigger exists |
-| Reviews/Elsewhere/Seerr icons not working | TMDB API may be blocked in your region, see [Seerr troubleshooting](https://docs.seerr.dev/troubleshooting#tmdb-failed-to-retrievefetch-xxx) |
-| Seerr search not working | Enable "Jellyfin Sign-In" in Seerr. Then either enable plugin auto import and run "Import Users Now", or import users manually in Seerr. Also verify user is not in blocked users list. |
-| Tags not appearing | Enable in settings, clear cache, verify metadata exists |
-| Bookmarks not saving | Check server logs, verify user data folder permissions |
-| Admin config page tabs not switching | May be caused by Cloudflare Rocket Loader — try disabling it for your Jellyfin domain. See [troubleshooting](../installation/troubleshooting.md#admin-config-page-tabs-not-switching) |
-| Calendar/Requests custom tab shows blank screen | Disable Cloudflare Rocket Loader for your Jellyfin domain. See [arr troubleshooting](../arr/troubleshooting-support.md#calendar-not-loading) |
+| Error or symptom | Next step |
+| --- | --- |
+| `BUILD/HOST MISMATCH` | [Install the matching build](../installation/troubleshooting.md#wrong-plugin-build). |
+| `index.html` access denied | [Check whether JE was removing an old script or writing a new one](../installation/troubleshooting.md#permission-issues). |
+| Plugin loaded but panel missing | [Inspect HTML and client requests](../installation/troubleshooting.md#scripts-not-loading). |
+| Bookmarks/settings fail to save | [Check the failing storage operation](../installation/troubleshooting.md#permission-issues). |
+| Seerr search/account/permission failure | [Check Seerr setup](../seerr/seerr-settings.md) and [Permission Audit](../seerr/permission-audit.md). |
+| Calendar or Requests is blank | [Use *arr troubleshooting](../arr/troubleshooting-support.md), including source and proxy checks. |
+| Administrator tabs do nothing | [Compare local and proxy access](../installation/troubleshooting.md#admin-config-page-tabs-not-switching). |
+| Tags or translation text are stale | [Target the affected cache](../installation/troubleshooting.md#stale-caches-or-missing-assets). |
 
 ### Native Home tabs and the Custom Tabs plugin
 
-Jellyfin Enhanced's native Home tabs (Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity) work alongside your own [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) tabs:
+JE can show **Bookmarks**, **Hidden Content**, **Requests**, **Calendar**, **Recommendations**, **Activity**, and **Catch Up** as native Home tabs without a companion plugin.
 
-- They always come after the Custom Tabs tabs, in the order and at the URLs Jellyfin expects, on both the Modern and Legacy layouts. Adding or removing a Custom Tab moves them along without a page reload.
-- Their links look like `#/home?tab=4&jeTab=bookmarks`. The `jeTab` part keeps a saved link pointing at the right page even after the number changes.
-- A page can use the native tab or Custom Tabs, not both; the settings page turns the other one off. If you also added a Custom Tabs entry for the same page by hand, you will see it twice. Remove that entry in the Custom Tabs settings.
-- A disabled Custom Tabs or Plugin Pages plugin counts as not installed once Jellyfin has restarted. Until then it is still running and still shows its pages.
+1. Choose either a native Home tab or Custom Tabs for each JE page using [JE Pages & Tabs](../getting-started/pages-and-tabs.md).
+2. If you let JE add a Custom Tabs entry, remove any duplicate you added yourself.
+3. If you choose Plugin Pages, restart Jellyfin when using an older version or when updating its entries fails.
+
+Check [Compatibility](../getting-started/compatibility.md) for layout and companion requirements. If detection fails, follow [Plugin detection issue](../installation/troubleshooting.md#plugin-detection-issue).
+
+??? info "How it works"
+
+    Native JE tabs can coexist with external Custom Tabs; JE tabs follow those tabs. Generated links include a current numeric index and stable identity, such as `#/home?tab=4&jeTab=bookmarks` or `jeTab=catchup`.
+
+    With a compatible Plugin Pages 3.0+ version, JE tries to update its entries when you save. Restart Jellyfin if you use an older version or that update fails. **Add the Custom Tabs entry for me** works when JE supports your Custom Tabs configuration.
+
+### What is Catch Up?
+
+**Catch Up** is a page for marking titles watched, dismissing them, or adding them to your watchlist.
+
+1. As an administrator, enable it under **Pages** → **Catch Up** and choose its placement.
+2. Open it from the chosen location. For Plugin Pages, use its registered entry.
+
+Catch Up can record activity. You need administrator access to view its activity feed and summary. See [Enhanced features](../enhanced/enhanced-features.md) for the workflow, [Enhanced settings](../enhanced/enhanced-settings.md) for settings and logging limits, and [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for navigation.
+
+??? note "Details"
+
+    A native link uses `jeTab=catchup`.
 
 ### Plugin conflicts?
 
-**Known Conflicts:**
+Test with a clean browser profile, then check custom CSS, browser extensions, and companion plugins one at a time.
 
-- None currently documented
+??? note "Details"
 
-**Potential Issues:**
+    The **Enable Splash Screen Override** help warns that it might cause strange behavior with Media Bar. This is a conditional warning, not a guarantee that the plugins always conflict.
 
-- Multiple JavaScript injection plugins
-
-- Custom CSS overriding plugin styles
-
-- Browser extensions blocking scripts
-
-
-**Troubleshooting:**
-
-1. Disable other plugins temporarily
-
-2. Test with clean browser profile
-
-3. Check for CSS conflicts
-
-4. Disable browser extensions
-
-5. Report conflicts on GitHub
+For nonworking administrator tabs, compare local/proxied access through [installation troubleshooting](../installation/troubleshooting.md#admin-config-page-tabs-not-switching). Include the theme and relevant companion versions in a [bug report](report-issues.md).
 
 ### Performance issues?
 
-**Optimization Tips:**
+Find where the delay happens before changing unrelated settings.
 
-1. Disable unused features in settings
+1. Check whether the browser takes a long time to display the page, a request waits for a response, or a server task takes too long.
+2. Compare with a clean profile and temporarily disable the affected feature to narrow it down.
+3. Check request timing and server logs.
 
-2. Reduce number of visible tags
-
-3. Clear browser cache regularly
-
-4. Use modern browser version
-
-5. Check server resources
-
-**Heavy Features:**
-
-- Seerr discovery pages (many API calls)
-
-- People tags (age calculations)
-
-- Multiple tag types enabled
-
-- Large bookmark collections
-
-**Improve Performance:**
-
-- Enable only needed features
-
-- Use tag filters to reduce display
-
-- Clear old bookmarks
-
-- Limit Seerr results
-
----
-
-
-## [How can I contribute translations?](../faq-support/contributing-translations.md)
-
-## [How can I request features?](../faq-support/feature-requests.md)
-
-## [How can I report bugs?](../faq-support/report-issues.md)
-
-
----
+For tags, check cache mode and exclusions in [Media tags](../enhanced/tags.md). For service pages, use [Seerr settings](../seerr/seerr-settings.md) or [*arr troubleshooting](../arr/troubleshooting-support.md). Routine browser-cache clearing is not a performance fix.
 
 ## Support & Community
 
 ### Where can I get help?
 
-**Official Channels:**
-
-- [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues) - Bug reports and feature requests
-- [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions) - General questions and discussion
-- [Discord Community](https://discord.gg/EYNFf7y4CG) - Real-time chat and support
-
-**Before Asking:**
-
-1. Read this FAQ
-2. Check [Installation Guide](../installation/installation.md)
-3. Review [Enhanced Features Guide](../enhanced/enhanced-features.md)
-4. Search existing issues
-5. Check browser console for errors
-
-**When Asking for Help:**
-
-- Describe the problem clearly
-- Include plugin and Jellyfin versions
-- Provide browser and OS info
-- Share relevant logs
-- Include screenshots if helpful
-- Be patient and respectful
-
+Use [Support & Community](support.md) for questions, [Report issues](report-issues.md) for reproducible bugs, [Feature Requests](feature-requests.md) for proposals, and [Contributing Translations](contributing-translations.md) for language work.
 
 ## Related Projects
 
-### Other projects by n00bcodr
-
-- [Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) - Streaming provider lookup (standalone)
-- [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) - Additional tweaks plugin
-- [Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) - Custom script injection
-- [Jellyfish](https://github.com/n00bcodr/Jellyfish/) - Custom Jellyfin theme
-
-### Recommended plugins
-
-- [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) - Safe file modifications
-- [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) - Custom navigation tabs
-- [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) - Helps Plugins create custom pages for settings and info
-- [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) - Watchlist and more
-
----
+See [Related Projects](../other-projects/other-projects.md) for other projects and [Compatibility](../getting-started/compatibility.md) for companion plugins.
 
 ## Still Have Questions?
 
-If your question isn't answered here:
-
-1. Search [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-2. Ask in [Discord Community](https://discord.gg/EYNFf7y4CG)
-3. Create a [GitHub Issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/new)
+Search the [support channels](support.md) and existing issues first. When asking for help, include the versions, client, reproduction steps, and relevant redacted logs described in [Report issues](report-issues.md).

@@ -318,8 +318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A user's inbox, newest first (<paramref name="beforeId"/> pages back); without
         /// <paramref name="adminKinds"/>, administrators' kinds are left out (a user who is no longer one).
         /// </summary>
-        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true)
-            => InboxRows(userId, beforeId, limit, adminKinds).Select(r => (r.Id, r.Kind, r.Key, r.ItemId, r.Payload, r.At, r.Read)).ToList();
+        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string EventKey)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true)
+            => InboxRows(userId, beforeId, limit, adminKinds).Select(r => (r.Id, r.Kind, r.Key, r.ItemId, r.Payload, r.At, r.Read, r.EventKey ?? string.Empty)).ToList();
 
         /// <summary><see cref="Inbox"/> with each notification's event key (what an outcome alert's policy input is read back from).</summary>
         public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string? EventKey)> InboxRows(Guid userId, long? beforeId, int limit, bool adminKinds = true) => _db.Read(c =>

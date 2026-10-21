@@ -75,6 +75,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         string AuthorizationStamp(Guid userId, MutationInput input);
         /// <summary>Reads current facts without network I/O.</summary>
         RequestPolicyFacts Evaluate(Guid userId, MutationInput input);
+        /// <summary>Evaluates visibility at a stored request's persisted target, retaining current capability checks.</summary>
+        RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey) => Evaluate(userId, RequestDestination.Of(input, targetKey));
         /// <summary>
         /// The Sonarr/Radarr instance and connection a Jellyfin Enhanced-mode request like <paramref name="input"/>
         /// goes to, whatever handles requests right now (a move from Seerr records its links on that target before
@@ -240,13 +242,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct)
             => _backend.PrepareAsync(userId, movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } }, ct);
         /// <inheritdoc />
-        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input)
+        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input) => EvaluateCore(userId, input, null);
+        /// <inheritdoc />
+        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey)
+            => EvaluateCore(userId, RequestDestination.Of(input, targetKey), targetKey);
+        private RequestPolicyFacts EvaluateCore(Guid userId, MutationInput input, string? targetKey)
         {
             RequestPolicyFacts? facts = null;
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var before = AuthorizationStamp(userId, input);
-                facts = EvaluateOnce(userId, input);
+                facts = EvaluateOnce(userId, input, targetKey);
                 if (before == AuthorizationStamp(userId, input)) return facts;
             }
             return facts! with { Refusal = "authorization_changed", CanCreate = false, CanApprove = false, Can4k = false, Visible = false };
@@ -269,7 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? !episodes.Any(e => input.Episodes.Any(ask => ask.Season == e.Season && ask.Episode >= e.Episode && ask.Episode <= Math.Max(e.Episode, e.EpisodeEnd ?? e.Episode)))
                 : !episodes.Any(e => seasons.Contains(e.Season));
         }
-        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input)
+        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input, string? targetKey)
         {
             var config = Configuration;
             var viewer = _view.Viewer(userId);
@@ -287,15 +293,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (viewer != null)
             {
                 var copies = _view.Copies(key, viewer, _aliases.Of(key));
+                var source = targetKey == null ? binding.Source : RequestDestination.SeerrSource(targetKey);
+                var target = Landing(input, key, instance, source);
+                // Administrators may handle an unknown destination. Resolved libraries and parental visibility
+                // remain mandatory, including for an administrator with restricted access.
+                var destinationVisible = !target.Resolved && viewer.IsAdmin
+                    || viewer.Handle is User account && ArrInstanceLibraries.CanOpen(account, target, _libraries.Libraries());
                 if (copies.Count > 0)
                 {
-                    var target = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
-                    visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
+                    visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && destinationVisible;
                 }
                 else
                 {
-                    var libraries = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
-                    visible = viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, libraries, _libraries.Libraries());
+                    visible = destinationVisible;
                     if (viewer.HasParentalLimit)
                     {
                         var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
@@ -343,6 +353,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 unknown);
         }
         /// <summary>
+        /// The Jellyfin libraries a request like <paramref name="input"/> lands in, which decide who may see it (review
+        /// round 5, security-r5-1): where it ACTUALLY goes, never only where the title usually is.
+        /// <list type="bullet">
+        /// <item>An administrator's Seerr choice: the root folder chosen on the Seerr server chosen, resolved through the
+        /// unique usable instance linked to that Seerr server (imported from Seerr; same kind). Unknown or ambiguous
+        /// links need access to every library (administrators always qualify). Seerr adds a title it doesn't have yet there, so the title's own folder doesn't count.</item>
+        /// <item>An arr folder named (administrators): that folder on the instance.</item>
+        /// <item>Otherwise the title's own folder on the instance (the default root for a title it doesn't have).</item>
+        /// </list>
+        /// A folder that resolves to no library needs every library (see <see cref="ArrInstanceLibraries.CanOpen(User, ArrLibraryTarget, IReadOnlyList{JfLibraryRoot})"/>).
+        /// </summary>
+        /// <param name="input">The request.</param>
+        /// <param name="key">Its title key.</param>
+        /// <param name="instance">The instance its kind and edition go to.</param>
+        /// <param name="source">The persisted Seerr source for stored requests; current source for a new ask.</param>
+        private ArrLibraryTarget Landing(MutationInput input, TitleKey key, ArrConnection? instance, string? source)
+        {
+            if (input.HasSeerrOptions && input.SeerrRootFolder is { } seerrFolder)
+            {
+                var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
+                var linked = _store.Registry.All().Where(i => i.Kind == kind && input.SeerrServerId is int server && i.SeerrServerId == server).ToList();
+                // A root path is local to its server. Neither the default instance nor an arbitrary matching link proves
+                // where this server's folder lands; an unresolved target makes CanOpen require every library.
+                return linked.Count != 1 || !linked[0].Usable || !_backend.RepresentsSeerrServer(source, input, linked[0].Url, _store.Registry.ResolveApiKey(linked[0]))
+                    ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance)
+                    : _libraries.Resolve(linked[0], seerrFolder);
+            }
+            if (instance == null) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance);
+            return input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
+        }
+        /// <summary>
         /// What the household's fixed conditions say about this request for a person of <paramref name="role"/> (memory
         /// only), or null when they don't apply (rules off, Seerr handling, an unruled role, no condition set).
         /// </summary>
@@ -354,6 +395,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 facts, RequestSizeHint.Estimate(input, size), config.ArrHouseholdStreamingCountry, HouseholdRules.Services(config.ArrHouseholdStreamingServices),
                 (cert, country) => _ruleFacts?.Score(cert, country));
         }
+        /// <summary>
+        /// The administrator's "Only allow requesting one season at a time" applies to an ask: in Jellyfin Enhanced mode
+        /// always, in Seerr mode only while Seerr takes partial requests (with whole series only it has no effect, as
+        /// with Seerr's own season picker).
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <param name="facts">The asker's policy facts.</param>
+        internal static bool SingleSeasonOnly(PluginConfiguration config, RequestPolicyFacts facts)
+            => config.JellyseerrSingleSeasonRequestOnly && (facts.Backend == "je" || (facts.Backend == "seerr" && !facts.SeerrWholeSeries));
         /// <summary>
         /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode
         /// measures the drive holding the folder the download would be imported into: the title's own folder when the

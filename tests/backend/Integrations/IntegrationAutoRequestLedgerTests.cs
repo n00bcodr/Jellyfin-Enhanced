@@ -639,7 +639,7 @@ public class IntegrationAutoRequestLedgerTests
 
     private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
-    // The repository: from this source file (build output elsewhere has it neither as an ancestor nor as the working directory).
+    // The repository: above the build output, the working directory, or (build output elsewhere) this source file.
     internal static string Root([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         // From this source file: an output folder outside the repository (--artifacts-path) has it neither as

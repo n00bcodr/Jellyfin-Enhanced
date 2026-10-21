@@ -207,7 +207,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         private SeerrMigrationPlan PlanFor(SeerrMigrationRead read)
-            => Plan(read, user => _view.Viewer(user) != null, key => _aliases?.Canonical(key) ?? key, _ledger.ImportedRequestIds(_ledger.FindOriginSource(read.AddressFingerprint)));
+            => Plan(read, user => _view.Viewer(user) != null, key => RequestTitleIdentity.Held(_ledger, _aliases, key), _ledger.ImportedRequestIds(_ledger.FindOriginSource(read.AddressFingerprint)));
 
         private static SeerrMigrationReply Describe(SeerrMigrationRead read, SeerrMigrationPlan? plan, string backend, string reason, string message) => new()
         {
@@ -268,7 +268,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (read.Requesting.State != "disabled" && !confirmRequestsDisabled)
                     return Describe(read, PlanFor(read), config.ArrRequestBackend, "seerr_requests_unknown", "Seerr's permissions could not be checked. Confirm that requesting is off in Seerr.") with { Outcome = "denied", HttpStatus = 409 };
                 var sourceId = _ledger.OriginSource(read.AddressFingerprint);
-                var plan = Plan(read, user => _view.Viewer(user) != null, key => _aliases?.Canonical(key) ?? key, _ledger.ImportedRequestIds(sourceId));
+                var plan = Plan(read, user => _view.Viewer(user) != null, key => RequestTitleIdentity.Held(_ledger, _aliases, key), _ledger.ImportedRequestIds(sourceId));
                 var targets = new Dictionary<(bool, string), string>();
                 string Target(MutationInput input)
                 {
@@ -293,6 +293,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // removes its wants and leaves request handling as it is.
                 var previous = live.ArrRequestBackend;
                 var now = _now();
+                // Each title's other ids first (Seerr's requests carry them), so an import meets the title's requests in JE
+                // whichever id either was asked by (one identity: RequestTitleIdentity).
+                foreach (var key in plan.Items.Select(i => i.Input.Key).Distinct(StringComparer.Ordinal)) RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, now);
                 var result = _ledger.ImportSeerr(sourceId, read.Digest, plan.Items, plan.Skipped, actor, previous, Target, now, RollbackWindow);
                 var switched = false;
                 try

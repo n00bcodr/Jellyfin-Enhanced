@@ -52,13 +52,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
 
+            var isStale = hostCompatibility.IsStale;
             if (hostCompatibility.IsMismatch)
             {
                 // Logged here, the earliest point at which a plugin service can be
                 // resolved (the service itself needs only the app host), so the line
                 // lands before any scheduled task runs. StartupService repeats it so
                 // the verdict also shows up in the startup-task log on every boot.
-                _logger.Error($"BUILD/HOST MISMATCH: {hostCompatibility.MismatchMessage} Install {hostCompatibility.ExpectedAssetName} from {Services.HostCompatibilityService.ManifestUrl}");
+                _logger.Error($"BUILD/HOST MISMATCH: {hostCompatibility.GetCompatibilityMessage(isStale, includeInstallAdvice: true)}");
+            }
+            else if (isStale)
+            {
+                _logger.Warning($"STALE PLUGIN BUILD: {hostCompatibility.GetCompatibilityMessage(isStale)}");
             }
 
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
@@ -373,6 +378,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // it, registration could write to an already-replaced object and
             // SaveConfiguration would persist empty credentials while the
             // backend row exists.
+            // The administrator's default display language passes the display-language gate on every save and restore (it
+            // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
+            // ships no bundle for is stored as Auto.
+            if (configuration is PluginConfiguration gated)
+            {
+                gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
+            }
+
             lock (AnalyticsCredentialLock)
             {
                 if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)

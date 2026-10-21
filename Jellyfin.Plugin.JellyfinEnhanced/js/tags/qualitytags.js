@@ -1046,10 +1046,11 @@
      * first pass is not judged under "no preference" and redone when the
      * value arrives. The request never rejects, so a failure still renders.
      * @param {Function} render
+     * @returns {*} Renderer result or promise, so the settings effect boundary can isolate failures.
      */
     function withJellyfinAudioPreference(render) {
-        if (!usesJellyfinAudioPreference()) { render(); return; }
-        primeJellyfinAudioPreference().then(render);
+        if (!usesJellyfinAudioPreference()) return render();
+        return primeJellyfinAudioPreference().then(render);
     }
 
     /**
@@ -1057,7 +1058,7 @@
      */
     JE.initializeQualityTags = function() {
         watchPlaybackPreferencesPage();
-        withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
+        return withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
     };
 
     /**
@@ -1066,7 +1067,7 @@
      */
     JE.reinitializeQualityTags = function() {
         watchPlaybackPreferencesPage();
-        withJellyfinAudioPreference(() => JE.core.tagRenderer.reinitialize('quality', spec));
+        return withJellyfinAudioPreference(() => JE.core.tagRenderer.reinitialize('quality', spec));
     };
 
 })(window.JellyfinEnhanced);

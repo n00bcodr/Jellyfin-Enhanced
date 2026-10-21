@@ -175,11 +175,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await GetAsync("/api/v1/movie/" + id, maxAge, cancellationToken).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
                 return movie == null ? null : FromMovie(movie.Root, movie.FetchedAtUtc);
             }
 
-            var tv = await GetAsync("/api/v1/tv/" + id, maxAge, cancellationToken).ConfigureAwait(false);
+            var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
             if (tv == null)
             {
                 return null;
@@ -188,7 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CacheEntry? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                season = await GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), maxAge, cancellationToken).ConfigureAwait(false);
+                season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
             return FromTv(placeholder, tv.Root, season?.Root, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
@@ -590,7 +590,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (!_inflight.TryGetValue(key, out shared!))
                 {
                     var fetch = new SharedFetch();
-                    fetch.Task = Task.Run(() => RunAsync(fetch), CancellationToken.None);
+                    // Shared by every caller: never part of (or stopped by) the continuation of the one that started it.
+                    using (ListContinuation.Detach())
+                    {
+                        fetch.Task = Task.Run(() => RunAsync(fetch), CancellationToken.None);
+                    }
                     _inflight[key] = shared = fetch;
                 }
 
@@ -600,7 +604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var completed = false;
             try
             {
-                var entry = await shared.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var entry = await ListContinuation.Await(() => shared.Task.WaitAsync(cancellationToken)).ConfigureAwait(false);
                 completed = true;
                 return entry == null || entry.NotFound ? null : entry;
             }
@@ -739,7 +743,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The poster path or null.</returns>
         public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken) =>
-            (await ReadTmdbPosterAsync(placeholder, cancellationToken).ConfigureAwait(false)).Poster;
+            (await ListContinuation.Await(() => ReadTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false)).Poster;
 
         /// <summary>
         /// <see cref="FetchTmdbPosterAsync"/> that also says whether TMDB answered: Answered is true when TMDB read the
@@ -762,13 +766,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await TmdbPosterAsync("movie/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => TmdbPosterAsync("movie/" + id, apiKey, cancellationToken)).ConfigureAwait(false);
                 return (movie.Poster, movie.Answered);
             }
 
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                var season = await TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), apiKey, cancellationToken).ConfigureAwait(false);
+                var season = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), apiKey, cancellationToken)).ConfigureAwait(false);
                 if (season.Poster != null)
                 {
                     return (season.Poster, true);
@@ -780,7 +784,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            var show = await TmdbPosterAsync("tv/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+            var show = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id, apiKey, cancellationToken)).ConfigureAwait(false);
             return (show.Poster, show.Answered);
         }
 
@@ -793,20 +797,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return (cached.Poster, true, false);
             }
 
-            await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
+            using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cts.CancelAfter(Timeout);
                 var client = _httpClientFactory.CreateClient();
                 var url = "https://api.themoviedb.org/3/" + apiPath + "?api_key=" + Uri.EscapeDataString(apiKey);
-                using var response = await client.GetAsync(url, cts.Token).ConfigureAwait(false);
+                using var response = await ListContinuation.Await(() => client.GetAsync(url, cts.Token)).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     return (null, false, response.StatusCode == System.Net.HttpStatusCode.NotFound);
                 }
 
-                var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                var body = await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(body);
                 var poster = document.RootElement.ValueKind == JsonValueKind.Object ? Str(document.RootElement, "poster_path") : null;
                 poster = poster != null && PosterRegex.IsMatch(poster) ? poster : null;
@@ -826,10 +831,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 _logger.Debug($"[Lists] TMDB poster {apiPath} failed: {ex.Message}");
                 return (null, false, false);
-            }
-            finally
-            {
-                _concurrency.Release();
             }
         }
 

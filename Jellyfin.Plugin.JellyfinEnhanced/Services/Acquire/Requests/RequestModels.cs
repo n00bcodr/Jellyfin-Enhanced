@@ -345,6 +345,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// controls offer the whole series. Single episodes are never sent to Seerr: they are asked for as their seasons.
         /// </summary>
         [JsonPropertyName("seerrWholeSeries")] public bool SeerrWholeSeries { get; init; }
+        /// <summary>
+        /// The administrator's "Only allow requesting one season at a time" (Seerr tab) applies: an ask covers one season
+        /// (or episodes of one season). In Seerr mode only while Seerr takes partial requests, as Seerr's own season picker.
+        /// </summary>
+        [JsonPropertyName("singleSeason")] public bool SingleSeason { get; init; }
         /// <summary>Episodes a Member gets free per window before each five count as one request.</summary>
         [JsonPropertyName("freeEpisodes")] public int FreeEpisodes { get; init; } = 5;
         /// <summary>Asking for a new movie is paused for storage (null: it isn't); see <see cref="RequestBlock"/>.</summary>

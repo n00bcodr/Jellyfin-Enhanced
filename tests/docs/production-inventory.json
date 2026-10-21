@@ -79,6 +79,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
       "category": "Controllers"
     },
@@ -263,6 +267,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageReader.cs",
       "category": "Helpers"
     },
@@ -324,6 +332,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/AwardsData.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/DoesTheDogDieData.cs",
       "category": "Model"
     },
     {
@@ -459,6 +471,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AcquireResponseGate.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrAdminHubService.cs",
       "category": "Services"
     },
@@ -555,11 +571,39 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ContentArrivalHistory.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EditionAvailability.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EpisodeRange.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/CollectionCoverage.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/FollowDates.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeArrivals.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeFlags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HssSectionsAdapter.cs",
       "category": "Services"
     },
     {
@@ -591,7 +635,15 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListContinuation.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListDatabase.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListEditionAvailability.cs",
       "category": "Services"
     },
     {
@@ -823,6 +875,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerTitles.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestModels.cs",
       "category": "Services"
     },
@@ -852,6 +908,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestTitleIdentity.cs",
       "category": "Services"
     },
     {
@@ -1140,6 +1200,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
     {
@@ -1644,6 +1708,22 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-hss.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-rows.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-styles.js",
       "category": "js"
     },
     {
@@ -2371,6 +2451,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/language-policy.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ar.json",
       "category": "js"
     },
@@ -2500,6 +2584,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/locales/zh-HK.json",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/others/doesthedogdie.js",
       "category": "js"
     },
     {
@@ -2638,6 +2726,25 @@
       "method": "Search",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireDiscoverController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/home",
+      "method": "GetHome",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/home/ops",
+      "method": "GetOps",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse"
+      ]
     },
     {
       "verb": "GET",
@@ -4086,6 +4193,45 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/ddd/{mediaType}/{tmdbId}",
+      "method": "GetDoesTheDogDie",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ddd/topics",
+      "method": "GetDoesTheDogDieTopics",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json",
+      "method": "GetUserSettingsDdd",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json",
+      "method": "SaveUserSettingsDdd",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/mdblist-ratings/account-status",
       "method": "GetMdblistAccountStatus",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -4162,6 +4308,17 @@
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/consent",
+      "method": "SetUserSettingsConsent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
       ]
     },
     {
@@ -5723,6 +5880,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "DoesTheDogDieEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "DoesTheDogDieApiKey",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": "\"\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "MdblistApiKey",
       "type": "string",
       "initializer": "string.Empty",
@@ -6380,6 +6553,14 @@
     {
       "class": "PluginConfiguration",
       "name": "JellyseerrShowAdvanced",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrSingleSeasonRequestOnly",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
@@ -7083,6 +7264,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4ListPlaylistUiEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListCollectionUiEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase4AcquisitionBadgesEnabled",
       "type": "bool",
       "initializer": null,
@@ -7115,7 +7312,7 @@
     },
     {
       "class": "PluginConfiguration",
-      "name": "ArrPhase4ListPlaylistUiEnabled",
+      "name": "ArrPhase4HomeRowsEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
@@ -7123,7 +7320,23 @@
     },
     {
       "class": "PluginConfiguration",
-      "name": "ArrPhase4ListCollectionUiEnabled",
+      "name": "ArrPhase4HssSectionsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4HomeOpsStripEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4CollectionGapsEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
@@ -7947,6 +8160,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ActivityFeedOwnOnlyForNonAdmins",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ActivityFeedShowActiveStreams",
       "type": "bool",
       "initializer": "true",
@@ -8683,6 +8904,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SpoilerBlurTrickplay",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "SpoilerAdvancedMode",
       "type": "bool",
       "initializer": "false",
@@ -8866,7 +9095,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoPauseEnabled",
       "type": "bool",
       "initializer": null,
@@ -8874,7 +9103,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoResumeEnabled",
       "type": "bool",
       "initializer": null,
@@ -8882,7 +9111,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoPipEnabled",
       "type": "bool",
       "initializer": null,
@@ -8890,7 +9119,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "LongPress2xEnabled",
       "type": "bool",
       "initializer": null,
@@ -8898,7 +9127,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PauseScreenEnabled",
       "type": "bool",
       "initializer": null,
@@ -8906,7 +9135,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PauseScreenDelaySeconds",
       "type": "int",
       "initializer": "5",
@@ -8914,7 +9143,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoSkipIntro",
       "type": "bool",
       "initializer": null,
@@ -8922,7 +9151,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoSkipOutro",
       "type": "bool",
       "initializer": null,
@@ -8930,7 +9159,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DisableCustomSubtitleStyles",
       "type": "bool",
       "initializer": null,
@@ -8938,7 +9167,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SelectedStylePresetIndex",
       "type": "int",
       "initializer": null,
@@ -8946,7 +9175,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SelectedFontSizePresetIndex",
       "type": "int",
       "initializer": null,
@@ -8954,7 +9183,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SelectedFontFamilyPresetIndex",
       "type": "int",
       "initializer": null,
@@ -8962,7 +9191,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SelectedTextEffectPresetIndex",
       "type": "int",
       "initializer": null,
@@ -8970,7 +9199,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "CustomSubtitleTextColor",
       "type": "string",
       "initializer": "\"#FFFFFFFF\"",
@@ -8978,7 +9207,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "CustomSubtitleBgColor",
       "type": "string",
       "initializer": "\"#00000000\"",
@@ -8986,7 +9215,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "UsingCustomColors",
       "type": "bool",
       "initializer": null,
@@ -8994,7 +9223,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SubtitleVerticalPosition",
       "type": "int",
       "initializer": "85",
@@ -9002,7 +9231,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SubtitleHorizontalPosition",
       "type": "int",
       "initializer": "50",
@@ -9010,7 +9239,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomButtonEnabled",
       "type": "bool",
       "initializer": null,
@@ -9018,7 +9247,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomUnwatchedOnly",
       "type": "bool",
       "initializer": null,
@@ -9026,7 +9255,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomIncludeMovies",
       "type": "bool",
       "initializer": null,
@@ -9034,7 +9263,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomIncludeShows",
       "type": "bool",
       "initializer": null,
@@ -9042,7 +9271,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomScopeCurrentContainer",
       "type": "bool",
       "initializer": null,
@@ -9050,7 +9279,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RandomSourceId",
       "type": "string",
       "initializer": "\"\"",
@@ -9058,7 +9287,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowWatchProgress",
       "type": "bool",
       "initializer": null,
@@ -9066,7 +9295,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "WatchProgressMode",
       "type": "string",
       "initializer": "\"percentage\"",
@@ -9074,7 +9303,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "WatchProgressTimeFormat",
       "type": "string",
       "initializer": "\"hours\"",
@@ -9082,7 +9311,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowFileSizes",
       "type": "bool",
       "initializer": null,
@@ -9090,7 +9319,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowAudioLanguages",
       "type": "bool",
       "initializer": null,
@@ -9098,7 +9327,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "UseNativePosterTags",
       "type": "bool?",
       "initializer": null,
@@ -9106,7 +9335,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoSeasonRequests",
       "type": "bool?",
       "initializer": null,
@@ -9114,7 +9343,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AutoMovieRequests",
       "type": "bool?",
       "initializer": null,
@@ -9122,7 +9351,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ListPlaceholders",
       "type": "bool?",
       "initializer": null,
@@ -9130,7 +9359,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ListStatus",
       "type": "bool?",
       "initializer": null,
@@ -9138,7 +9367,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ListSwapIn",
       "type": "bool?",
       "initializer": null,
@@ -9146,23 +9375,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
-      "name": "AcquisitionBadges",
-      "type": "bool?",
-      "initializer": null,
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
-    },
-    {
-      "class": "UserSettings",
-      "name": "NativeAcquisitionStamps",
-      "type": "bool?",
-      "initializer": null,
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
-    },
-    {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ListPlaylistUi",
       "type": "bool?",
       "initializer": null,
@@ -9170,7 +9383,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ListCollectionUi",
       "type": "bool?",
       "initializer": null,
@@ -9178,7 +9391,55 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AcquisitionBadges",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "NativeAcquisitionStamps",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "HomeRowRequests",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "HomeRowSoon",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "HomeRowArrived",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "HomeOpsStrip",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9186,7 +9447,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowResolutionTag",
       "type": "bool",
       "initializer": "true",
@@ -9194,7 +9455,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowSourceTag",
       "type": "bool",
       "initializer": "true",
@@ -9202,7 +9463,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowDynamicRangeTag",
       "type": "bool",
       "initializer": "true",
@@ -9210,7 +9471,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowSpecialFormatTag",
       "type": "bool",
       "initializer": "true",
@@ -9218,7 +9479,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowVideoCodecTag",
       "type": "bool",
       "initializer": "true",
@@ -9226,7 +9487,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowAudioInfoTag",
       "type": "bool",
       "initializer": "true",
@@ -9234,7 +9495,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ResolutionTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9242,7 +9503,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SourceTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9250,7 +9511,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DynamicRangeTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9258,7 +9519,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SpecialFormatTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9266,7 +9527,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "VideoCodecTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9274,7 +9535,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AudioInfoTagOrder",
       "type": "int?",
       "initializer": null,
@@ -9282,7 +9543,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "GenreTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9290,7 +9551,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "LanguageTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9298,7 +9559,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9306,7 +9567,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9314,7 +9575,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PeopleTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9322,7 +9583,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "TagsHideOnHover",
       "type": "bool",
       "initializer": null,
@@ -9330,7 +9591,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsPosition",
       "type": "string",
       "initializer": "\"top-left\"",
@@ -9338,7 +9599,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsPreferredAudioLanguage",
       "type": "string",
       "initializer": "string.Empty",
@@ -9346,7 +9607,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "GenreTagsPosition",
       "type": "string",
       "initializer": "\"top-right\"",
@@ -9354,7 +9615,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "LanguageTagsPosition",
       "type": "string",
       "initializer": "\"bottom-left\"",
@@ -9362,7 +9623,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -9370,7 +9631,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnMovies",
       "type": "bool",
       "initializer": "true",
@@ -9378,7 +9639,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnSeries",
       "type": "bool",
       "initializer": "true",
@@ -9386,7 +9647,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnSeasons",
       "type": "bool",
       "initializer": "true",
@@ -9394,7 +9655,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnEpisodes",
       "type": "bool",
       "initializer": "true",
@@ -9402,7 +9663,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnContinueWatching",
       "type": "bool",
       "initializer": "true",
@@ -9410,7 +9671,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RatingTagsOnNextUp",
       "type": "bool",
       "initializer": "true",
@@ -9418,7 +9679,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -9426,7 +9687,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -9434,7 +9695,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "RemoveContinueWatchingEnabled",
       "type": "bool",
       "initializer": null,
@@ -9442,7 +9703,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "LastOpenedTab",
       "type": "string",
       "initializer": "string.Empty",
@@ -9450,7 +9711,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ReviewsExpandedByDefault",
       "type": "bool",
       "initializer": null,
@@ -9458,7 +9719,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DisplayLanguage",
       "type": "string",
       "initializer": "string.Empty",
@@ -9466,7 +9727,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "CalendarDisplayMode",
       "type": "string",
       "initializer": "\"list\"",
@@ -9474,7 +9735,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
-      "class": "UserSettings",
+      "class": "JellyfinEnhancedUserSettings",
       "name": "CalendarDefaultViewMode",
       "type": "string",
       "initializer": "\"agenda\"",
@@ -9667,6 +9928,14 @@
     },
     {
       "class": "SpoilerBlurUserPrefs",
+      "name": "HideTrickplay",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "SpoilerBlurUserPrefs",
       "name": "UseAdvancedCategories",
       "type": "bool?",
       "initializer": null,
@@ -9830,6 +10099,14 @@
       "name": "SeasonProviders",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "DddSettings",
+      "name": "Triggers",
+      "type": "List<int>",
+      "initializer": "new List<int>()",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -10320,6 +10597,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
     {
+      "literal": "ddd-triggers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+    },
+    {
       "literal": "elsewhere.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -10341,6 +10622,10 @@
     },
     {
       "literal": "user-settings/{userId}/bookmark.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+    },
+    {
+      "literal": "user-settings/{userId}/ddd-triggers.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
     {
@@ -10368,6 +10653,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "language-policy.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs"
+    },
+    {
       "literal": "config.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
@@ -10378,6 +10667,10 @@
     {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationConsents.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeFlags.cs"
     },
     {
       "literal": "*.json",
@@ -10452,6 +10745,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
     },
     {
+      "literal": "s folder>/settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
       "literal": "tag-cache.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
     },
@@ -10470,6 +10767,10 @@
     {
       "literal": "component-scripts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs"
+    },
+    {
+      "literal": "ddd-cache.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs"
     },
     {
       "literal": "hidden-content.json",
@@ -10600,14 +10901,6 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
     },
     {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
-    },
-    {
       "literal": "shortcuts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js"
     },
@@ -10618,6 +10911,10 @@
     {
       "literal": "/JellyfinEnhanced/locales/en.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js"
+    },
+    {
+      "literal": "ddd-triggers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/others/doesthedogdie.js"
     },
     {
       "literal": "bookmark.json",
@@ -10820,10 +11117,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 638,
-    "routes": 292,
-    "configuration_properties": 627,
-    "storage_references": 91,
+    "files": 660,
+    "routes": 299,
+    "configuration_properties": 642,
+    "storage_references": 96,
     "scheduled_tasks": 15,
     "locales": 33
   }

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createInstrumenter } from 'istanbul-lib-instrument';
 import coverage from 'istanbul-lib-coverage';
 import { repositoryRoot } from './discovery.mjs';
+import { served } from './served-scripts.mjs';
 
 export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 const collected = coverage.createCoverageMap({});
@@ -62,7 +63,8 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   /** Evaluates and instruments a module as it runs in the production bundle. */
   function load(path) {
     const file = resolve(jsRoot, path);
-    let source = readFileSync(file, 'utf8');
+    // As the server serves it (the translations script carries the language policy it writes in).
+    let source = served(path, readFileSync(file, 'utf8'));
     if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;

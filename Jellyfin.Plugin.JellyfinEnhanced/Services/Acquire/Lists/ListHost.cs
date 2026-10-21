@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations;
+using Microsoft.EntityFrameworkCore;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using MediaBrowser.Controller.Collections;
@@ -35,10 +37,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="CreatedAt">When Jellyfin created the list (UTC); null when unknown.</param>
     public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares, string? SortName = null, DateTime? CreatedAt = null);
 
+    /// <summary>A stored playlist order and its durable save stamp, observed together without using the cached playlist.</summary>
+    /// <param name="Stamp">Repository UTC save stamp.</param>
+    /// <param name="Order">Resolved occurrence tokens in stored order.</param>
+    public sealed record ListPlaylistSave(DateTime Stamp, IReadOnlyList<string> Order);
+
     /// <summary>The facts JE needs about a library item.</summary>
     /// <param name="Id">Item id.</param>
     /// <param name="Kind">Jellyfin item kind.</param>
     public sealed record LibraryItemInfo(Guid Id, BaseItemKind Kind);
+
+    /// <summary>A physical video source and the library item that plays that exact file (never its HD representative).</summary>
+    /// <param name="ItemId">Backing playable item id.</param>
+    /// <param name="SourceId">Jellyfin media-source id.</param>
+    /// <param name="Width">Source video width.</param>
+    /// <param name="Height">Source video height.</param>
+    /// <param name="Playable">A real source with video and a playable backing item.</param>
+    public sealed record ListMediaSource(Guid ItemId, string SourceId, int? Width, int? Height, bool Playable);
 
     /// <summary>A real (non-virtual) library episode and its coordinates.</summary>
     /// <param name="Id">Episode item id.</param>
@@ -87,6 +102,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The list, or null when the id is not a playlist/collection.</returns>
         ListInfo? GetList(Guid listId);
 
+        /// <summary>Reads a list's durable name directly from the repository, without changing the shared item cache.</summary>
+        /// <param name="listId">Id.</param>
+        /// <returns>The saved name, or null when the list is missing.</returns>
+        string? GetStoredName(Guid listId);
+
+        /// <summary>Reads the saved list's DateLastSaved directly from the repository, never the shared item cache.</summary>
+        /// <param name="listId">List id.</param>
+        /// <returns>The durable UTC save stamp, or null when missing or unavailable.</returns>
+        DateTime? GetStoredSaveStamp(Guid listId);
+
+        /// <summary>Reads the stored playlist order bracketed by equal repository stamps; unavailable or changing evidence returns null.</summary>
+        /// <param name="listId">Playlist id.</param>
+        /// <returns>The stored order and stamp, or null. The host provides no atomic save-and-observe operation.</returns>
+        ListPlaylistSave? GetStoredPlaylistSave(Guid listId);
+
         /// <summary>The raw <c>LinkedChildren</c> slots of a list, freshly read, in order.</summary>
         /// <param name="listId">Id.</param>
         /// <returns>The slots.</returns>
@@ -113,12 +143,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         bool CanAccessItem(Guid itemId, User user);
 
         /// <summary>
-        /// Whether a library item is a 4K copy (its video is at least 3200 pixels wide or 2000 high). A list entry in the
-        /// 4K edition only takes 4K copies; a standard entry prefers other copies.
+        /// Whether a library item has a playable 4K source (at least 3200 pixels wide or 2000 high), including alternates.
+        /// Availability for a viewer and a scope goes through <see cref="ListEditionAvailability"/> instead.
         /// </summary>
         /// <param name="itemId">Item.</param>
         /// <returns>Whether it is a 4K copy.</returns>
         bool IsFourK(Guid itemId);
+
+        /// <summary>Physical video sources, including alternate versions, with their exact playable backing item ids.</summary>
+        /// <param name="itemId">Movie or episode (may be a presentation representative).</param>
+        /// <returns>Sources; no source is inferred from a folder, arr ownership or a virtual item.</returns>
+        IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId);
 
         /// <summary>Basic facts of a library item.</summary>
         /// <param name="itemId">Item.</param>
@@ -175,7 +210,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Gives a list JE created its chosen name (it was created under the one carrying its marker); the list keeps its
-        /// folder. As the grant's user (a playlist's owner).
+        /// folder. As the grant's user (a playlist's owner). Saves only while its durable operation marker remains;
+        /// failure handling leaves the shared cache untouched. Only the durable operation marker permits naming.
         /// </summary>
         /// <param name="write">The gate's grant (<see cref="ListWriteKind.FinishCreate"/>).</param>
         /// <param name="name">The chosen name.</param>
@@ -271,18 +307,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly IPlaylistManager _playlistManager;
         private readonly ICollectionManager _collectionManager;
         private readonly IFileSystem _fileSystem;
+        private readonly IDbContextFactory<JellyfinDbContext>? _database;
 
         /// <summary>Creates the host.</summary>
         /// <param name="libraryManager">Library manager.</param>
         /// <param name="playlistManager">Playlist manager.</param>
         /// <param name="collectionManager">Collection manager.</param>
         /// <param name="fileSystem">File system (Jellyfin's file-name rules for collection folders).</param>
-        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem)
+        /// <param name="database">Host database factory for direct durable save-stamp reads; missing proof fails closed.</param>
+        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem, IDbContextFactory<JellyfinDbContext>? database = null)
         {
             _libraryManager = libraryManager;
             _playlistManager = playlistManager;
             _collectionManager = collectionManager;
             _fileSystem = fileSystem;
+            _database = database;
         }
 
         /// <inheritdoc />
@@ -293,7 +332,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 #endif
 
         /// <inheritdoc />
-        public ListInfo? GetList(Guid listId) => ToInfo(_libraryManager.GetItemById(listId));
+        public ListInfo? GetList(Guid listId) => ToInfo(_libraryManager.RetrieveItem(listId));
+
+        /// <inheritdoc />
+        public string? GetStoredName(Guid listId) => _libraryManager.RetrieveItem(listId) is { } item && item is Playlist or BoxSet ? item.Name ?? string.Empty : null;
+
+        /// <inheritdoc />
+        public DateTime? GetStoredSaveStamp(Guid listId)
+        {
+            if (_database == null) return null;
+            try
+            {
+                using var db = _database.CreateDbContext();
+                var stamp = db.BaseItems.AsNoTracking().Where(item => item.Id == listId).Select(item => item.DateLastSaved).FirstOrDefault();
+                return stamp is { } value && value != default ? DateTime.SpecifyKind(value, DateTimeKind.Utc) : null;
+            }
+            catch (Exception)
+            {
+                // Unreadable evidence never authorizes a recovery move or falls back to a cached/serialized item.
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
+        public ListPlaylistSave? GetStoredPlaylistSave(Guid listId)
+        {
+            var stamp = GetStoredSaveStamp(listId);
+            if (!stamp.HasValue) return null;
+            try
+            {
+                // RetrieveItem materializes the saved item (including native links), without registering it in the
+                // shared cache. A save crossing that read invalidates the entire tuple, never just one component.
+                if (_libraryManager.RetrieveItem(listId) is not Playlist stored) return null;
+                var order = ListOrder.BuildRealTokens(RawEntries(stored));
+                return GetStoredSaveStamp(listId) == stamp ? new ListPlaylistSave(stamp.Value, order) : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
 
         /// <inheritdoc />
         public IReadOnlyList<RawEntry> GetRawEntries(Guid listId)
@@ -303,6 +381,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return Array.Empty<RawEntry>();
             }
 
+            return RawEntries(folder);
+        }
+
+        private static IReadOnlyList<RawEntry> RawEntries(Folder folder)
+        {
             var raw = folder.LinkedChildren ?? Array.Empty<LinkedChild>();
             // Same LinkedChild instances as LinkedChildren; unresolved (dangling) links are absent.
             var resolved = new Dictionary<LinkedChild, Guid>(ReferenceEqualityComparer.Instance);
@@ -339,7 +422,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public bool CanAccessItem(Guid itemId, User user) => _libraryManager.GetItemById<BaseItem>(itemId, user) != null;
 
         /// <inheritdoc />
-        public bool IsFourK(Guid itemId) => _libraryManager.GetItemById(itemId) is { } item && (item.Width >= 3200 || item.Height >= 2000);
+        public bool IsFourK(Guid itemId) => GetMediaSources(itemId).Any(s => s.Playable && (s.Width >= 3200 || s.Height >= 2000));
+
+        /// <inheritdoc />
+        public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId)
+        {
+            if (_libraryManager.GetItemById(itemId) is not Video video || video.IsVirtualItem)
+            {
+                return Array.Empty<ListMediaSource>();
+            }
+
+            var result = new List<ListMediaSource>();
+            foreach (var source in video.GetMediaSources(false))
+            {
+                var backing = Guid.TryParse(source.Id, out var id) ? _libraryManager.GetItemById(id) : null;
+                if (backing == null && !string.IsNullOrEmpty(source.Path))
+                {
+                    backing = string.Equals(source.Path, video.Path, StringComparison.Ordinal)
+                        ? video
+                        : _libraryManager.FindByPath(source.Path, null);
+                }
+
+                // A source's dimensions may never be attributed to a different file. Without its backing item lists
+                // cannot select this edition for playback, so it is unavailable until Jellyfin can resolve it.
+                if (backing is not Video actual || actual.IsVirtualItem || string.IsNullOrEmpty(source.Path)
+                    || !string.Equals(actual.Path, source.Path, StringComparison.Ordinal)) continue;
+                var stream = source.MediaStreams?.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+                result.Add(new ListMediaSource(actual.Id, source.Id, stream?.Width, stream?.Height,
+                    stream != null && (source.SupportsDirectPlay || source.SupportsDirectStream || source.SupportsTranscoding)));
+            }
+
+            return result;
+        }
 
         /// <inheritdoc />
         public LibraryItemInfo? GetItem(Guid itemId)
@@ -382,6 +496,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
         {
             write.Spend(write.ListId, ListWriteKind.Insert);
+            HealMetadata(write.ListId);
 #if JF12
             return _playlistManager.AddItemToPlaylistAsync(write.ListId, itemIds.ToArray(), rawPosition, write.ActAs);
 #else
@@ -393,6 +508,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
         {
             write.Spend(write.ListId, ListWriteKind.Move);
+            HealMetadata(write.ListId);
             return _playlistManager.MoveItemAsync(
                 write.ListId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 itemId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
@@ -404,14 +520,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
         {
             write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+            HealMetadata(write.ListId);
             return _collectionManager.AddToCollectionAsync(write.ListId, itemIds.Distinct().ToArray());
+        }
+
+        // Jellyfin's managers save the whole cached item, whereas native playlist edits materialise another instance.
+        // Keep membership on the manager's instance, but heal the metadata we don't own from the repository. There is
+        // deliberately no await between this copy and the manager invocation; Jellyfin has no conditional item save.
+        private void HealMetadata(Guid listId)
+        {
+            var cached = _libraryManager.GetItemById(listId);
+            var stored = _libraryManager.RetrieveItem(listId);
+            if (cached is not (Playlist or BoxSet) || stored == null || cached.GetType() != stored.GetType())
+            {
+                throw new ListAccessLostException(ListOutcome.Error(404, "not_found", "The list no longer exists."), "The durable list no longer exists.");
+            }
+
+            CopyEditableMetadata(stored, cached);
+        }
+
+        private static void CopyEditableMetadata(BaseItem stored, BaseItem cached)
+        {
+            // ItemUpdateController's editable fields and BaseItemMapper's persisted metadata on both targets.
+            // LinkedChildren, path and identity stay with the manager; none of these fields belong to JE membership.
+            cached.Name = stored.Name;
+            cached.ForcedSortName = stored.ForcedSortName;
+            cached.OriginalTitle = stored.OriginalTitle;
+#if JF12
+            cached.OriginalLanguage = stored.OriginalLanguage;
+#endif
+            cached.Overview = stored.Overview;
+            cached.Tagline = stored.Tagline;
+            cached.CommunityRating = stored.CommunityRating;
+            cached.CriticRating = stored.CriticRating;
+            cached.OfficialRating = stored.OfficialRating;
+            cached.CustomRating = stored.CustomRating;
+            cached.IndexNumber = stored.IndexNumber;
+            cached.ParentIndexNumber = stored.ParentIndexNumber;
+            cached.PremiereDate = stored.PremiereDate;
+            cached.EndDate = stored.EndDate;
+            cached.ProductionYear = stored.ProductionYear;
+            cached.DateCreated = stored.DateCreated;
+            cached.PreferredMetadataLanguage = stored.PreferredMetadataLanguage;
+            cached.PreferredMetadataCountryCode = stored.PreferredMetadataCountryCode;
+            cached.IsLocked = stored.IsLocked;
+            cached.LockedFields = stored.LockedFields.ToArray();
+            cached.Genres = stored.Genres.ToArray();
+            cached.Studios = stored.Studios.ToArray();
+            cached.Tags = stored.Tags.ToArray();
+            cached.ProductionLocations = stored.ProductionLocations.ToArray();
+            cached.ProviderIds = new Dictionary<string, string>(stored.ProviderIds, StringComparer.OrdinalIgnoreCase);
+            cached.ImageInfos = stored.ImageInfos.ToArray();
+            if (cached is Playlist playlist && stored is Playlist savedPlaylist)
+            {
+                playlist.OwnerUserId = savedPlaylist.OwnerUserId;
+                playlist.OpenAccess = savedPlaylist.OpenAccess;
+                playlist.Shares = savedPlaylist.Shares.ToArray();
+            }
+
+            if (cached is BoxSet boxSet && stored is BoxSet savedBoxSet)
+            {
+                boxSet.DisplayOrder = savedBoxSet.DisplayOrder;
+            }
         }
 
         /// <inheritdoc />
         public async Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic)
         {
             write.Spend(Guid.Empty, ListWriteKind.Create);
-            var result = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
+            var result = await ListContinuation.Await(() => _playlistManager.CreatePlaylist(new PlaylistCreationRequest
             {
                 Name = name,
                 UserId = write.ActAs,
@@ -420,7 +597,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Public = isPublic,
                 // No shares: Jellyfin hands a deleted owner's playlist to its first share, so none may stand for nobody.
                 Users = Array.Empty<PlaylistUserPermissions>(),
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             return Guid.Parse(result.Id);
         }
 
@@ -435,7 +612,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             };
             // Saved with the collection itself (one write).
             options.ProviderIds[CreateMarkerKey] = marker.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
-            var boxSet = await _collectionManager.CreateCollectionAsync(options).ConfigureAwait(false);
+            var boxSet = await ListContinuation.Await(() => _collectionManager.CreateCollectionAsync(options)).ConfigureAwait(false);
             return boxSet.Id;
         }
 
@@ -443,19 +620,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task FinishCreateAsync(ListWrite write, string name)
         {
             write.Spend(write.ListId, ListWriteKind.FinishCreate);
+            var stored = _libraryManager.RetrieveItem(write.ListId);
+            var cached = _libraryManager.GetItemById(write.ListId);
+            var marker = cached == null ? null : CreateMarkerOf(cached);
+            if (stored == null || marker == null
+                || !string.Equals(stored.Name, ListService.CreateName(name, marker.Value), StringComparison.Ordinal))
+            {
+                return; // A native editor already chose a name; only this operation's durable marker is ours.
+            }
+
+            CopyEditableMetadata(stored, cached!);
             switch (_libraryManager.GetItemById(write.ListId))
             {
-                case Playlist playlist when !string.Equals(playlist.Name, name, StringComparison.Ordinal):
-                    await _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name }).ConfigureAwait(false);
+                case Playlist playlist:
+                    await ListContinuation.Await(() => _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name })).ConfigureAwait(false);
                     break;
-                case BoxSet boxSet when !string.Equals(boxSet.Name, name, StringComparison.Ordinal):
+                case BoxSet boxSet:
                     // BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved with its
                     // metadata (collection.xml), so the name stays through scans and refreshes.
                     boxSet.Name = name;
                     var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
-                    await _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                    await ListContinuation.Await(() => _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None)).ConfigureAwait(false);
                     break;
             }
+        }
+
+        /// <summary>
+        /// The create marker a list item carries (a collection's provider id, a playlist's folder name from
+        /// <see cref="ListService.CreateName"/>), read from the item itself: also from a removed one, which no lookup finds.
+        /// </summary>
+        /// <param name="item">The playlist or collection.</param>
+        /// <returns>The marker, or null.</returns>
+        internal static Guid? CreateMarkerOf(BaseItem item)
+        {
+            if (item.ProviderIds != null && item.ProviderIds.TryGetValue(CreateMarkerKey, out var value) && Guid.TryParseExact(value, "N", out var marker))
+            {
+                return marker;
+            }
+
+            var folder = Path.GetFileName(Trimmed(item.Path ?? string.Empty));
+            var matches = System.Text.RegularExpressions.Regex.Matches(folder, @"\(([0-9a-fA-F]{32})\)");
+            return matches.Count > 0 && Guid.TryParseExact(matches[^1].Groups[1].Value, "N", out marker) ? marker : null;
         }
 
         /// <inheritdoc />
@@ -467,7 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // The folder Jellyfin made from the name the create used (ListService.CreateName), never renamed.
                 return _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.Playlist }, Recursive = true })
                     .OfType<Playlist>()
-                    .Where(p => p.OwnerUserId == ownerId && !string.IsNullOrEmpty(p.Path) && Path.GetFileName(Trimmed(p.Path)).Contains(value, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => (ownerId == Guid.Empty || p.OwnerUserId == ownerId) && !string.IsNullOrEmpty(p.Path) && Path.GetFileName(Trimmed(p.Path)).Contains(value, StringComparison.OrdinalIgnoreCase))
                     .Select(ToInfo)
                     .OfType<ListInfo>()
                     .FirstOrDefault();
@@ -484,7 +689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<string?> CollectionDestinationAsync(string name)
         {
             // CollectionManager.CreateCollectionAsync: "<collections folder>/<valid file name> [boxset]".
-            var folder = await _collectionManager.GetCollectionsFolder(true).ConfigureAwait(false);
+            var folder = await ListContinuation.Await(() => _collectionManager.GetCollectionsFolder(true)).ConfigureAwait(false);
             return string.IsNullOrEmpty(folder?.Path) ? null : Normalised(Path.Combine(folder.Path, _fileSystem.GetValidFilename(name) + " [boxset]"));
         }
 
@@ -503,7 +708,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .Any(i => !string.IsNullOrEmpty(i.Path)
                     && string.Equals(Path.GetDirectoryName(Normalised(i.Path)), root, StringComparison.OrdinalIgnoreCase)
                     && (string.Equals(Path.GetFileName(Normalised(i.Path)), folder, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(_fileSystem.GetValidFilename(i.Name ?? string.Empty) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
+                        || GetStoredName(i.Id) is { } storedName && string.Equals(_fileSystem.GetValidFilename(storedName) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
         }
 
         private static string Trimmed(string path) => path.TrimEnd('/', '\\');
@@ -621,8 +826,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             query.ParentIndexNumber = seasonNumber;
             return _libraryManager.GetItemList(query)
                 .OfType<Episode>()
-                .Where(e => e.ParentIndexNumber.HasValue && e.IndexNumber.HasValue && !e.IsVirtualItem)
-                .Select(e => new LibraryEpisode(e.Id, seriesId, e.ParentIndexNumber!.Value, e.IndexNumber!.Value, e.IndexNumberEnd))
+                .Where(e => e.ParentIndexNumber.HasValue && e.IndexNumber.HasValue && !e.IsVirtualItem && e.SeriesId != Guid.Empty)
+                .Select(e => new LibraryEpisode(e.Id, e.SeriesId, e.ParentIndexNumber!.Value, e.IndexNumber!.Value, e.IndexNumberEnd))
                 .ToList();
         }
 
@@ -641,6 +846,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var query = user == null ? new InternalItemsQuery() : new InternalItemsQuery(user);
             query.IncludeItemTypes = new[] { kind };
             query.Recursive = true;
+            // A presentation representative is not the whole physical show. All sibling folders and their own
+            // episodes must remain candidates; the edition helper deduplicates only after checking every source.
+            query.GroupByPresentationUniqueKey = false;
             return query;
         }
 

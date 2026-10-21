@@ -112,6 +112,17 @@ test('check and restore upload the chosen file with the passphrase; restore adds
     'Restored 9 file(s), the plugin settings and 2 API key(s). Enter these again: ShokoApiKey. The previous data was saved as pre.zip. Restart Jellyfin, then reload this page.');
 });
 
+// Stage 1 fix round 4 (RBS1-R4-1): a person's settings file the server couldn't read to check its display language is not
+// restored; the message names it, so the administrator knows what was left as it was.
+test('a restore that left out unreadable settings files says which', t => {
+  const { je } = setup(t, () => response(200, {}));
+  assert.equal(je.jeBackupRestoreText({ filesRestored: 4, configurationRestored: true, refusedFiles: ['0123456789abcdef0123456789abcdef/settings.json'], safetyBackup: 'pre.zip' }),
+    'Restored 4 file(s), the plugin settings. Not restored, because it can\'t be read: 0123456789abcdef0123456789abcdef/settings.json (that person keeps their current settings).'
+    + ' The previous data was saved as pre.zip. Restart Jellyfin, then reload this page.');
+  assert.equal(je.jeBackupRestoreText({ filesRestored: 1, refusedFiles: ['a/settings.json', 'b/settings.json'] }),
+    'Restored 1 file(s). Not restored, because they can\'t be read: a/settings.json, b/settings.json (those people keep their current settings). Restart Jellyfin, then reload this page.');
+});
+
 test('the passphrase row only shows when credentials are included', t => {
   const { je, $, window } = setup(t, () => response(200, {}));
   je.jeBackupInit();

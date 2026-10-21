@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             nameof(TMDB_API_KEY),
             nameof(MdblistApiKey),
+            nameof(DoesTheDogDieApiKey),
             nameof(JellyseerrApiKey),
             nameof(ShokoApiKey),
             nameof(SonarrApiKey),
@@ -41,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The real MDBList API key.</summary>
         public string GetMdblistApiKey() => GetSecret(nameof(MdblistApiKey));
+
+        /// <summary>The real DoesTheDogDie API key.</summary>
+        public string GetDoesTheDogDieApiKey() => GetSecret(nameof(DoesTheDogDieApiKey));
 
         /// <summary>The real Shoko API key.</summary>
         public string GetShokoApiKey() => GetSecret(nameof(ShokoApiKey));

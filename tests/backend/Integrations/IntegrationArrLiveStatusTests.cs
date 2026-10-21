@@ -9,6 +9,8 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Moq;
+using Microsoft.Extensions.DependencyInjection;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 
 namespace JE.Tests;
 
@@ -538,7 +540,7 @@ public class IntegrationArrLiveStatusTests
     }
 
     [Fact]
-    public async Task UpdatesOfItemsJellyfinJustAddedAnnounceTheirTitleAgainOlderItemsDoNot()
+    public async Task UnchangedOldPrimariesDoNotAnnounceMetadataRefreshes()
     {
         // A new episode gets its numbers (and so its "Ready" on the season page) only when its
         // metadata is read, after ItemAdded: that ItemUpdated must reach the feed too.
@@ -555,7 +557,19 @@ public class IntegrationArrLiveStatusTests
             old.SetProviderId(MetadataProvider.Tmdb, "101");
 
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
-            Assert.Equal(0, tracker.FlushItems());   // an update of an item that was not just added
+            Assert.Equal(0, tracker.FlushItems());   // acquisition badges off: retain the phase-1 arrival window
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
+            Assert.Equal(0, tracker.FlushItems());   // the stamp feeder publishes real acquisition transitions
+            var cursor = rig.Feed.Cursor;
+            for (var round = 0; round < 5; round++)
+            {
+                for (var i = 0; i < 20; i++)
+                    library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
+                Assert.Equal(0, tracker.FlushItems());
+            }
+            Assert.Equal(cursor, rig.Feed.Cursor);
 
             library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = fresh });
             Assert.Equal(1, tracker.FlushItems());
@@ -569,6 +583,44 @@ public class IntegrationArrLiveStatusTests
             await tracker.StopAsync(default);
             tracker.Dispose();
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task VideoRemovalsUseOnePublisherAfterTheStampIndexIsCurrent(bool badges)
+    {
+        using var rig = new Rig();
+        Assert.NotNull((await rig.Store.GetLibraryAsync(rig.RadarrConn, default)).Value);
+        using var w = new StampWorld();
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        config.ArrPhase4Enabled = true;
+        config.ArrPhase4AcquisitionBadgesEnabled = badges;
+        var stamps = new AcquisitionStampStore(w.Db, w.Clock, rig.Feed);
+        using var resolver = new AcquisitionStampResolver(w.Library, stamps, () => config, w.Clock);
+        using var feeder = new AcquisitionStampFeeder(w.Library, w.Interests, w.Upgrades, stamps, resolver, null, () => config, w.Clock);
+        var library = new Mock<ILibraryManager>();
+        using var services = new ServiceCollection().AddSingleton(rig.Store).AddSingleton(rig.Feed)
+            .AddSingleton(rig.Router).AddSingleton(library.Object).AddSingleton(rig.Arr.Plugin.Core.Logger)
+            .AddSingleton(stamps).BuildServiceProvider();
+        using var tracker = ActivatorUtilities.CreateInstance<ArrChangeTracker>(services);
+        await tracker.StartAsync(default);
+        try
+        {
+            var hd = w.AddMovie(StampWorld.Movie(101), w.Now.AddYears(-1));
+            var uhd = w.AddMovie(StampWorld.Movie(101), w.Now.AddYears(-1), fourK: true);
+            await feeder.TickAsync(default);
+            var cursor = rig.Feed.Cursor;
+            var native = new Movie { Id = uhd.Id };
+            native.SetProviderId(MetadataProvider.Tmdb, "101");
+            library.Raise(l => l.ItemRemoved += null, library.Object, new ItemChangeEventArgs { Item = native });
+            w.Library.RaiseRemoved(uhd);
+            Assert.Equal(badges ? 0 : 1, tracker.FlushItems());
+            await feeder.TickAsync(default);
+            Assert.Equal(cursor + 1, rig.Feed.Cursor);
+            Assert.Equal(AcquisitionStamp.None, resolver.Resolve(hd.Id, Guid.NewGuid()));
+        }
+        finally { await tracker.StopAsync(default); }
     }
 
     [Fact]

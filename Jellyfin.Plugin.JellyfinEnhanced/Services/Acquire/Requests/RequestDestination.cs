@@ -64,6 +64,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return target;
         }
 
+        /// <summary>
+        /// Where a request actually goes, as a policy sees it (who may see it there): its own input, an arr folder or a
+        /// Seerr choice included, at the arr instance its target names (Jellyfin Enhanced handling; Seerr picks its own).
+        /// </summary>
+        /// <param name="input">The request's input.</param>
+        /// <param name="target">Its target key.</param>
+        internal static MutationInput Of(MutationInput input, string target)
+        {
+            if (input.InstanceId != null) return input;
+            try
+            {
+                var parts = JsonSerializer.Deserialize<string?[]>(target);
+                if (parts is { Length: 4 } && parts[0] == "je" && !string.IsNullOrEmpty(parts[1])) return input with { InstanceId = parts[1] };
+            }
+            catch (JsonException)
+            {
+                // Not a target key (an unresolved one): the input as it is.
+            }
+            return input;
+        }
+
+        /// <summary>The Seerr source the stored target names, or null for an unknown or other target.</summary>
+        internal static string? SeerrSource(string target)
+        {
+            try
+            {
+                var parts = JsonSerializer.Deserialize<string?[]>(target);
+                return parts is { Length: 4 } && parts[0] == "seerr" && !string.IsNullOrEmpty(parts[3]) ? parts[3] : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
         /// <summary>The same place (<see cref="Place"/>): another connection of the same arr instance or Seerr counts.</summary>
         /// <param name="a">A target key.</param>
         /// <param name="b">Another target key.</param>
@@ -91,6 +126,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => server == input.SeerrServerId && profile == input.SeerrProfileId && root != null && input.SeerrRootFolder != null && BridgePaths.SamePath(root, input.SeerrRootFolder);
 
         /// <summary>
+        /// The same title (Q-4BFIX3-2): the same key. Every key the ledger stores is its title's canonical key and every key
+        /// that comes in is resolved through the ledger's aliases first (<c>RequestLedger.Canonical</c>), so one title asked
+        /// for by any of its ids has one key here. Every "same title" comparison of the ledger and the charges goes through it.
+        /// </summary>
+        /// <param name="a">An input.</param>
+        /// <param name="b">Another input.</param>
+        internal static bool SameTitle(MutationInput a, MutationInput b) => string.Equals(a.Key, b.Key, StringComparison.Ordinal);
+
+        /// <summary>The same title in the same edition (standard or 4K): the edition is part of identity.</summary>
+        /// <param name="a">An input.</param>
+        /// <param name="b">Another input.</param>
+        internal static bool SameEdition(MutationInput a, MutationInput b) => SameTitle(a, b) && string.Equals(a.Variant, b.Variant, StringComparison.Ordinal);
+
+        /// <summary>What groups requests by title and edition (the key and the edition).</summary>
+        /// <param name="input">An input.</param>
+        internal static (string Key, string Variant) Edition(MutationInput input) => (input.Key, input.Variant);
+
+        /// <summary>
         /// True when <paramref name="other"/> may stand for <paramref name="wanted"/> at the same target: the same title and
         /// edition, a compatible arr instance, and (when <paramref name="wanted"/> has Seerr options) the same options.
         /// Whether its scope covers the wanted scope is <see cref="MutationInput.Extra"/>'s question, over the inputs this lets through.
@@ -98,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="wanted">The request that would be stood for.</param>
         /// <param name="other">The request that would stand for it.</param>
         internal static bool Serves(MutationInput wanted, MutationInput other)
-            => other.Key == wanted.Key && other.Variant == wanted.Variant
+            => SameEdition(other, wanted)
                && (wanted.InstanceId == null || other.InstanceId == null || other.InstanceId == wanted.InstanceId)
                && (!wanted.HasSeerrOptions || SameOptions(wanted, other));
 

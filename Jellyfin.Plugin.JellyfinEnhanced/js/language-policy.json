@@ -1,0 +1,12 @@
+{
+  "about": "The display-language rule of the server (Helpers/LanguageTags.cs) and the client (js/enhanced/translations.js, which the server serves with this rule written in): trim the 'space' characters; a 'reserved' word (any case) is no tag; else the 'tag' expression with each variant once, in canonical case (language lower, Script title, REGION upper, variants lower). A tag is accepted when it or its language is a locale bundle this build ships (a file in js/locales, any case; read from the embedded resources at run time); anything else is Auto.",
+  "space": " \t\n\r\f\u000b",
+  "reserved": [
+    "undefined",
+    "null",
+    "nan",
+    "true",
+    "false"
+  ],
+  "tag": "^(?<language>[A-Za-z]{2,3})(?:-(?<script>[A-Za-z]{4}))?(?:-(?<region>[A-Za-z]{2}|[0-9]{3}))?(?<variants>(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$"
+}

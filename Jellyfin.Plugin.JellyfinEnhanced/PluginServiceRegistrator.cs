@@ -175,7 +175,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.RemoveAll<Services.Acquire.Automation.IAutomationTrust>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Requests.HouseholdTrust>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdRulesService>();
-
             // ---- Phase 4c1: lists (inert while off). Store, rights, Jellyfin seam, durable operations / request links /
             // swap-in events (acquire.db schema 5), the list service, list requests through the shared request service,
             // swap-in (library events; consent-gated inserts), lifecycle (deleted lists, restore reconciliation, deleted
@@ -226,8 +225,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 sp.GetRequiredService<Services.Acquire.Lists.ListSwapService>()));
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Lists.ListLifecycle>());
             serviceCollection.AddHostedService<Services.Acquire.Lists.ListSwapMonitor>();
+            // Phase 4d: home rows (Your requests, Coming soon for you, Just arrived for you), the first-arrival dates that
+            // keep upgrades out of Just arrived, and the rows as Home Screen Sections sections when that plugin is installed
+            // (found by reflection; nothing happens without it).
+            serviceCollection.AddSingleton<Services.Acquire.Home.ICollectionCoverage, Services.Acquire.Home.ListCollectionCoverage>();
+            serviceCollection.AddSingleton<Services.Acquire.Home.HomeArrivals>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Home.HomeArrivals>());
+            serviceCollection.AddSingleton<Services.Acquire.Home.IHomePreferences, Services.Acquire.Home.UserSettingsHomePreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Home.HomeProjection>();
+            serviceCollection.AddHostedService<Services.Acquire.Home.HssSectionsAdapter>();
+            serviceCollection.AddHttpContextAccessor();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
+            // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListPagePreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListSummaryService>();
+            // ---- end Phase 4c3a ----
             // ---- Phase 4e: acquisition badges and native poster stamps (inert while off). Facts (acquire.db step 7) fed from
             // library events, the ledger / Seerr requests / follows and the arrs' history in memory; the resolver the
             // poster pipeline and GET acquire/stamps read; deleted users' facts removed.
@@ -259,15 +272,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton(sp => new Services.Acquire.Ready.ReadySessionMessages(sp.GetRequiredService<Services.Acquire.Ready.IReadySessionHost>()));
             serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyNativeChannel>();
             // ---- end Phase 4f ----
-            // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----
-            serviceCollection.AddSingleton<Services.Acquire.Lists.IListPagePreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
-            serviceCollection.AddSingleton<Services.Acquire.Lists.ListSummaryService>();
-            // ---- end Phase 4c3a ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();
             // Marks requests fulfilled when what they asked for is in Jellyfin (Ready; never stale).
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestFulfilment>();
+            // Phase 4b: every title the ledger holds under one identity across its ids (TMDB/TVDB/IMDb), split ones merged.
+            serviceCollection.AddHostedService<Services.Acquire.Requests.RequestTitleIdentity>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();
@@ -307,6 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            serviceCollection.AddSingleton<DoesTheDogDieService>();
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and
             // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
             serviceCollection.AddSingleton<TmdbResponseCache>();

@@ -7,10 +7,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     public static class UserSettingsDefaults
     {
         /// <summary>Builds the configured defaults in memory without creating a directory or settings file.</summary>
-        public static UserSettings Create(PluginConfiguration config)
+        public static JellyfinEnhancedUserSettings Create(PluginConfiguration config)
         {
             ArgumentNullException.ThrowIfNull(config);
-            return new UserSettings
+            return new JellyfinEnhancedUserSettings
             {
                 AutoPauseEnabled = config.AutoPauseEnabled,
                 AutoResumeEnabled = config.AutoResumeEnabled,
@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 RatingTagsEnabled = config.RatingTagsEnabled,
                 AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
                 PeopleTagsEnabled = config.PeopleTagsEnabled,
+                TagsHideOnHover = config.TagsHideOnHover,
                 QualityTagsPosition = config.QualityTagsPosition,
                 GenreTagsPosition = config.GenreTagsPosition,
                 LanguageTagsPosition = config.LanguageTagsPosition,
@@ -68,7 +69,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 ShowRatingInPlayer = config.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = config.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = config.ReviewsExpandedByDefault,
-                DisplayLanguage = config.DefaultLanguage,
+                // Only a supported language tag; anything else is Auto (dashcrash §7).
+                DisplayLanguage = Helpers.LanguageTags.Sanitize(config.DefaultLanguage),
                 CalendarDisplayMode = "list",
                 CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"

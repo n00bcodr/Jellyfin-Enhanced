@@ -175,10 +175,10 @@ public class ListsConsentTests
     }
 
     [Fact]
-    public async Task WithoutConsentAnInterruptedSwapIsSettledByMembershipWithoutAnyMove()
+    public async Task WithoutConsentAnInterruptedSwapKeepsPlacementIntentWithoutAnyMove()
     {
         // As ListsReviewR1b2Tests.AnInterruptedTenElevenSwapIsMovedNextToItsAnchorOnRecovery, but the consent was turned off
-        // between the crash and the recovery: the landed item counts (no second copy) but stays where Jellyfin put it.
+        // between the crash and the recovery: the landed item stays where Jellyfin put it, with its placement plan kept until consent resumes.
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
         var owner = h.NewUser("owner");
@@ -197,7 +197,7 @@ public class ListsConsentTests
         using (await h.Store.LockAsync(access.ListIdN))
         {
             var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
-            doc.Intents.Add(new SwapIntent { PhId = done.Id, ItemIds = { landed.ToString("N") }, Anchor = E(a), Index = 1, OccurrenceCountsBefore = { [landed.ToString("N")] = 0 }, CreatedAt = "x1" });
+            doc.Intents.Add(new SwapIntent { PhId = done.Id, ItemIds = { landed.ToString("N") }, Anchor = E(a), Index = 1, OccurrenceCountsBefore = { [landed.ToString("N")] = 0 }, CreatedAt = "x1", NativeOrder = new() { E(a), E(b), E(landed) }, StoredSaveStamp = h.Host.GetStoredSaveStamp(playlist.Info.Id) });
             doc.Intents.Add(new SwapIntent { PhId = notDone.Id, ItemIds = { pending.ToString("N") }, Anchor = E(a), Index = 2, OccurrenceCountsBefore = { [pending.ToString("N")] = 0 }, CreatedAt = "x2" });
             h.Store.Save(doc);
         }
@@ -210,10 +210,15 @@ public class ListsConsentTests
         Assert.Empty(h.Host.Calls); // no move of the landed item, no insert of the pending one
         Assert.Equal(new[] { a, b, landed }, h.Host.Resolved(playlist.Info.Id));
         var after = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(after.Intents);
-        Assert.DoesNotContain(after.Items, p => p.Id == done.Id); // landed: settled by membership
-        Assert.Contains(after.Items, p => p.Id == notDone.Id);    // rolled back, and not retried without consent
-        Assert.Contains(E(landed), after.Order);
+        Assert.Single(after.Intents); // the landed run has not finished its planned placement
+        Assert.Contains(after.Items, p => p.Id == done.Id);
+        Assert.Contains(after.Items, p => p.Id == notDone.Id); // unlanded intent rolled back, no fresh insert
+        await h.Consent(access);
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+        Assert.DoesNotContain(h.Store.Load(access.ListIdN)!.Items, p => p.Id == done.Id);
+        Assert.Equal(new[] { a, landed, b }, h.Host.Resolved(playlist.Info.Id));
+        Assert.DoesNotContain(h.Host.Calls, c => c.StartsWith("add:", StringComparison.Ordinal));
     }
 
     [Fact]

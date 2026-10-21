@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 
@@ -21,7 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>The viewer can open a 4K copy of this title, season or episode.</summary>
         FourK = 2,
 
-        /// <summary>A better copy replaced the file, and the viewer hasn't played it since.</summary>
+        /// <summary>A better copy replaced the file or arrived alongside it, and the viewer has not played it since.</summary>
         Upgraded = 3,
     }
 
@@ -101,6 +102,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="height">Height in pixels (0 = unknown).</param>
         /// <returns>True for 4K.</returns>
         public static bool IsFourK(int width, int height) => width >= FourKWidth || height >= FourKHeight;
+
+        /// <summary>
+        /// Whether Jellyfin has read a copy's dimensions. A copy it hasn't read yet has no edition: never standard (a
+        /// first 4K file is announced before it is probed), and classified only when the probe arrives.
+        /// </summary>
+        /// <param name="width">Width in pixels (0 = unknown).</param>
+        /// <param name="height">Height in pixels (0 = unknown).</param>
+        /// <returns>True once read.</returns>
+        public static bool Known(int width, int height) => EditionAvailability.DimensionsKnown(width, height);
+    }
+
+    /// <summary>A playable library source, including its own identity and arrival.</summary>
+    /// <param name="Id">Jellyfin media-source id (can change during grouping).</param>
+    /// <param name="Path">Source path.</param>
+    /// <param name="Width">Video width.</param>
+    /// <param name="Height">Video height.</param>
+    /// <param name="Arrived">When Jellyfin added this source (UTC).</param>
+    public sealed record StampSource(string Id, string? Path, int Width, int Height, DateTime Arrived)
+    {
+        /// <summary>The file identity stays the same when Jellyfin renumbers a grouped source.</summary>
+        public string Identity => string.IsNullOrEmpty(Path) ? Id : Path;
     }
 
     /// <summary>One library item as the stamp code needs it (Movie, Episode, Season or Series).</summary>
@@ -145,8 +167,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>File path (movies and episodes).</summary>
         public string? Path { get; init; }
 
+        /// <summary>Playable media sources, each with its own arrival; empty for legacy single-source facts.</summary>
+        public IReadOnlyList<StampSource> Sources { get; init; } = Array.Empty<StampSource>();
+
         /// <summary>True for a 4K copy.</summary>
-        public bool FourK => AcquisitionCopyPolicy.IsFourK(Width, Height);
+        public bool FourK => Sources.Count > 0
+            ? Sources.Any(s => AcquisitionCopyPolicy.IsFourK(s.Width, s.Height))
+            : AcquisitionCopyPolicy.IsFourK(Width, Height);
+
+        /// <summary>
+        /// The edition is known: a 4K source, or every source's dimensions read (<see cref="AcquisitionCopyPolicy.Known"/>).
+        /// Until then the copy is neither standard nor 4K for any edition fact.
+        /// </summary>
+        public bool EditionKnown => FourK || (Sources.Count > 0
+            ? Sources.All(s => AcquisitionCopyPolicy.Known(s.Width, s.Height))
+            : AcquisitionCopyPolicy.Known(Width, Height));
+
+        /// <summary>Identity while judging one source (null for legacy item facts).</summary>
+        public string? SourceId { get; init; }
+
+        /// <summary>One view per source, retaining the card's item id and episode scope.</summary>
+        /// <returns>Source views (or this single-source item).</returns>
+        public IEnumerable<StampItem> SourceItems()
+        {
+            if (Sources.Count == 0) { yield return this; yield break; }
+            foreach (var source in Sources)
+            {
+                yield return this with { SourceId = source.Identity, Path = source.Path, Width = source.Width, Height = source.Height,
+                    DateCreated = source.Arrived, Sources = Array.Empty<StampSource>() };
+            }
+        }
 
         /// <summary>A movie or an episode (what arrives).</summary>
         public bool IsVideo => Kind is "movie" or "episode";

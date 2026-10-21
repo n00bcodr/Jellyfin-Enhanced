@@ -14,7 +14,8 @@ function block(start, end) {
   if (from < 0 || to < 0) throw new Error(`config page block not found: ${start}`);
   return page.slice(from, to);
 }
-const helpers = block('        function createEl(tag, attrs, children) {', '        function createInstanceCard(type, instance, startOpen) {');
+const helpers = block('        // ==================== Asynchronously filled fields', '        // Auto Movie Request - Quality Profile Mode helpers')
+  + block('        function createEl(tag, attrs, children) {', '        function createInstanceCard(type, instance, startOpen) {');
 
 const PREFIX = '•'.repeat(8);
 function setup(t, { libraries = [] } = {}) {
@@ -98,6 +99,7 @@ test('instance registry fields round-trip, keeping links to libraries that are n
   const out = JSON.parse(JSON.stringify(je.jeReadInstanceRegistryFields(card)));
   assert.deepEqual(out, { Role: '4k', IsDefault: true, LinkedLibraryIds: ['bbbb2222', 'gone0000'], LiveUpdates: 'auto', PathMappings: [{ ArrPath: '/movies', JellyfinPath: '/media/movies' }] });
   card.querySelector('[data-library-id="aaaa1111"]').checked = true;
+  card.querySelector('[data-library-id="aaaa1111"]').dispatchEvent(new window.Event('change', { bubbles: true }));
   card.querySelector('.arr-instance-role').value = 'anime';
   card.querySelector('.arr-instance-pathmappings').value = '/tv|/media/tv\nbroken line\n|/x';
   const edited = JSON.parse(JSON.stringify(je.jeReadInstanceRegistryFields(card)));
@@ -221,4 +223,19 @@ test('the arr, Seerr and scan-now buttons send a saved key in a header the brows
   for (const r of requests) assert.equal(r.headers['X-Arr-ApiKey'], '__je_saved_secret__');
   assert.match(requests[0].url, /instanceId=6f1c0c2e/);
   assert.deepEqual(alerts.map(a => a.title), ['Success', 'Success', 'Scan Triggered']);
+});
+
+test('every credential field the page saves goes through the masked-credential helpers', () => {
+  // The legacy arr key mirrors are written from the instance cards; every other credential the page
+  // saves must post jeSecretRead's value (a placeholder keeps the stored key), and be shown with
+  // jeSecretInit, so no key is ever put into a plain input (upstream's DoesTheDogDie key included).
+  const saves = [...page.matchAll(/config\.([A-Za-z_]*(?:ApiKey|API_KEY|Token|Password|Passphrase)) = ([^;]*);/g)]
+    .filter(([, field]) => field !== 'SonarrApiKey' && field !== 'RadarrApiKey');
+  assert.ok(saves.some(([, field]) => field === 'DoesTheDogDieApiKey'));
+  for (const [, field, value] of saves) {
+    assert.match(value, /^jeSecretRead\(document\.querySelector\('#[A-Za-z_]+'\)\)$/, `${field} is saved through jeSecretRead`);
+    const id = value.match(/#([A-Za-z_]+)/)[1];
+    assert.ok(new RegExp(`jeSecretInit\\([^;]*querySelector\\('#${id}'\\)`).test(page), `#${id} is shown through jeSecretInit (or as a peer)`);
+    assert.ok(!new RegExp(`querySelector\\('#${id}'\\)\\.value = `).test(page), `#${id} is never filled with a raw value`);
+  }
 });

@@ -32,7 +32,7 @@ function setup(t) {
 test('the block sits right after the lists block, with real labels for every setting', t => {
     const block = section('<!-- Phase 4e: acquisition badges -->', '<!-- /Phase 4e: acquisition badges -->');
     assert.ok(page.indexOf('<!-- /Phase 4c1: lists -->') < page.indexOf('<!-- Phase 4e: acquisition badges -->'));
-    assert.match(page, /<!-- \/Phase 4c1: lists -->\s*<!-- Phase 4e: acquisition badges -->/);
+    assert.match(page, /<!-- \/Phase 4c1: lists -->\s*(?:<!-- Phase 4c3a: list pages -->[\s\S]*?<!-- \/Phase 4c3a: list pages -->\s*)?<!-- Phase 4e: acquisition badges -->/);
     const h = setup(t);
     for (const id of ['arrPhase4AcquisitionBadgesEnabled', 'arrPhase4NativeStampsEnabled', 'arrAcquisitionNewDays', 'arrAcquisitionUpgradedDays']) {
         assert.ok(block.includes(`id="${id}"`), id);

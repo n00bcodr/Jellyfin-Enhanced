@@ -83,9 +83,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("source")]
         public ListSource? Source { get; set; }
 
-        /// <summary>Pending swap-ins (persisted before Jellyfin is mutated, cleared after verification).</summary>
+        /// <summary>Pending membership placements (persisted before Jellyfin is mutated, cleared after placement settles).</summary>
         [JsonPropertyName("intents")]
         public List<SwapIntent> Intents { get; set; } = new();
+
+        /// <summary>Last 32 abandoned placements, retaining the original plan/actor and landed membership provenance.</summary>
+        [JsonPropertyName("abandonedPlacements")]
+        public List<SwapIntent> AbandonedPlacements { get; set; } = new();
 
         /// <summary>When the document was last written (UTC ISO-8601).</summary>
         [JsonPropertyName("updatedAt")]
@@ -427,13 +431,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
     /// </summary>
     public sealed class SwapIntent
     {
-        /// <summary>The placeholder being swapped in.</summary>
+        /// <summary>The placeholder being swapped in (empty for a deliberate apply).</summary>
         [JsonPropertyName("phId")]
         public string PhId { get; set; } = string.Empty;
+
+        /// <summary>The actor of an interrupted deliberate apply ("N"); null for a consented placeholder swap.</summary>
+        [JsonPropertyName("byUserId")]
+        public string? ByUserId { get; set; }
 
         /// <summary>The real item ids ("N") being inserted.</summary>
         [JsonPropertyName("itemIds")]
         public List<string> ItemIds { get; set; } = new();
+
+        /// <summary>
+        /// Planned coordinates of exact Episode items, verified by the resolver before the insert. These are not fills:
+        /// recovery credits only items whose occurrence count increased. Older intents fall back to native item facts.
+        /// </summary>
+        [JsonPropertyName("episodes")]
+        public List<FilledEpisode> Episodes { get; set; } = new();
 
         /// <summary>The real token the items go after (null = list start).</summary>
         [JsonPropertyName("anchor")]
@@ -449,6 +464,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>Occurrence count per item id before the mutation (to tell done from not-done).</summary>
         [JsonPropertyName("occurrenceCountsBefore")]
         public Dictionary<string, int> OccurrenceCountsBefore { get; set; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The order JE knows its acknowledged native write produced, verified against storage and updated together
+        /// with StoredSaveStamp by the shared save observer. Recovery compares surviving tokens for later reorders.
+        /// Null when proof is missing or unknown; a misplaced entry then cannot safely be moved.
+        /// </summary>
+        [JsonPropertyName("nativeOrder")]
+        public List<string>? NativeOrder { get; set; }
+
+        /// <summary>
+        /// The list's durable DateLastSaved immediately after JE's last native write for this placement. Only the
+        /// unchanged repository stamp permits a recovery move; null (old or interrupted observation) fails closed.
+        /// </summary>
+        [JsonPropertyName("storedSaveStamp")]
+        public DateTime? StoredSaveStamp { get; set; }
+
+        /// <summary>A person's later JE reorder supersedes this plan, including a reorder back to the same native order.</summary>
+        [JsonPropertyName("supersededByReorder")]
+        public bool SupersededByReorder { get; set; }
+
+        /// <summary>Recovery attempts started (persisted before awaiting a move; at most three).</summary>
+        [JsonPropertyName("attempts")]
+        public int Attempts { get; set; }
+
+        /// <summary>Why placement was abandoned; null while pending.</summary>
+        [JsonPropertyName("abandonedReason")]
+        public string? AbandonedReason { get; set; }
+
+        /// <summary>When placement was abandoned (UTC ISO-8601).</summary>
+        [JsonPropertyName("abandonedAt")]
+        public string? AbandonedAt { get; set; }
 
         /// <summary>When the intent was recorded (UTC ISO-8601).</summary>
         [JsonPropertyName("createdAt")]

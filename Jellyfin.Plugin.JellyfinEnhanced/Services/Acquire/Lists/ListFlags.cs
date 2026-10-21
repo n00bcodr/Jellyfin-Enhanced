@@ -99,14 +99,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <inheritdoc />
         public (bool? Placeholders, bool? Status, bool? SwapIn) For(Guid user)
         {
-            var settings = _users.GetUserConfiguration<UserSettings>(user.ToString("N"), "settings.json");
+            var settings = _users.GetUserConfiguration<JellyfinEnhancedUserSettings>(user.ToString("N"), "settings.json");
             return (settings.ListPlaceholders, settings.ListStatus, settings.ListSwapIn);
         }
 
         /// <inheritdoc />
         public (bool? Placeholders, bool? PlaylistUi, bool? CollectionUi) PagesFor(Guid user)
         {
-            var settings = _users.GetUserConfiguration<UserSettings>(user.ToString("N"), "settings.json");
+            var settings = _users.GetUserConfiguration<JellyfinEnhancedUserSettings>(user.ToString("N"), "settings.json");
             return (settings.ListPlaceholders, settings.ListPlaylistUi, settings.ListCollectionUi);
         }
     }

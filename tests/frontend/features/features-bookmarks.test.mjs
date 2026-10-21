@@ -14,7 +14,7 @@ function setup(t, bookmarks = {}, save = async()=>{}) {
     if(routes.items)return routes.items(request);
     throw new Error(`Unexpected request: ${request.url}`);
   };
-  const h=createHarness({JE:{pluginConfig:{BookmarksEnabled:true},userConfig:{bookmark:{bookmarks}},t:key=>key,toast:message=>toasts.push(message),escapeHtml:value=>String(value)},apiClient:{ajax}});
+  const h=createHarness({JE:{pluginConfig:{BookmarksEnabled:true},userConfig:{bookmark:{bookmarks},settings:{}},t:key=>key,toast:message=>toasts.push(message),escapeHtml:value=>String(value)},apiClient:{ajax}});
   t.after(()=>h.close());
   h.document.addEventListener('je-bookmarks-updated',e=>events.push(e.detail.reason));
   h.load('enhanced/config.js');

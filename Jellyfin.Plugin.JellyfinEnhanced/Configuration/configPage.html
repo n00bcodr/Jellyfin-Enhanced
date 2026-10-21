@@ -102,11 +102,22 @@
             <div id="je-host-mismatch-warning" class="je-note-banner" style="display: none;" role="alert">
                 <i class="material-icons je-note-icon">warning_amber</i>
                 <div>
-                    <strong>Wrong plugin build for this Jellyfin version</strong>
+                    <strong id="je-host-mismatch-title">Wrong plugin build for this Jellyfin version</strong>
                     <span id="je-host-mismatch-msg"></span>
-                    <div style="margin-top:8px;">
+                    <div id="je-host-mismatch-install" style="margin-top:8px;">
                         Install <code id="je-host-mismatch-asset"></code> instead, from the plugin repository
                         <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
+                    </div>
+                </div>
+            </div>
+
+            <div id="je-config-read-warning" class="je-note-banner" style="display: none;" role="alert">
+                <i class="material-icons je-note-icon">warning_amber</i>
+                <div>
+                    <strong>Settings not loaded</strong>
+                    <span id="je-config-read-warning-msg"></span>
+                    <div style="margin-top:8px;">
+                        <button id="je-config-read-retry-btn" type="button" class="emby-button raised raised-mini">Retry</button>
                     </div>
                 </div>
             </div>
@@ -549,6 +560,11 @@
                                 <div class="fieldDescription">When on, a protected movie's poster still shows in full, but the scene thumbnails inside the movie's detail page (chapters, screenshots) stay hidden. Useful if you find movie posters are usually marketing art that doesn't give plot away, while the chapter scene-thumbs inside the movie do. Doesn't affect TV shows.</div>
                             </div>
 
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurTrickplay" is="emby-checkbox" type="checkbox"/><span>Hide trickplay seek previews</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurTrickplay" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">Protects the scrubbing thumbnails the player shows while you seek through an unwatched protected episode or movie. Sheets that end before your saved progress are still shown. Turn this off to always show seek previews. Users can also turn it off for themselves in their Spoiler Guard settings.</div>
+                            </div>
+
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on first play of a new show</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">When on, Spoiler Guard turns itself on for a series the moment a user starts Season 1 Episode 1 of a show they've never watched. They don't have to remember to flip the toggle before pressing play. Rewatches and jumping in at later episodes are ignored; only a fresh first-play counts.</div>
@@ -795,6 +811,29 @@
                             <div class="checkboxContainer je-main-feature"><label><input id="showAwards" is="emby-checkbox" type="checkbox"/><span>Show Awards Banner</span></label></div>
                             <div class="je-setting-description" data-desc-for="showAwards">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Shows a wins/nominations banner on item-details pages, sourced from Wikidata by TMDB id. Data is as accurate as what is available in Wikidata.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="ddd-static/favicon.ico" alt="">Content Warnings (DoesTheDogDie)</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="doesTheDogDieEnabled" is="emby-checkbox" type="checkbox"/><span>Show Content Warnings</span></label></div>
+                            <div class="je-setting-description" data-desc-for="doesTheDogDieEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Shows community-voted content warnings (a dog dies, gore, flashing lights and more) on movie and show pages</li>
+                                        <li>Each user picks the triggers they care about with the gear icon on the section</li>
+                                        <li>Requires a free API key from doesthedogdie.com. The free tier is for non-commercial use and allows 5,000 requests a month for the whole server. Results are cached for weeks, so only titles nobody has opened yet cost requests</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="doesTheDogDieApiKey">DoesTheDogDie API Key</label>
+                                <input id="doesTheDogDieApiKey" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="doesTheDogDieApiKey">
+                                <div class="fieldDescription">Your API key from your <a class="sectionTitle" href="https://www.doesthedogdie.com/profile" target="_blank">doesthedogdie.com</a> profile page.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -1423,7 +1462,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsFilterByUserRequests" is="emby-checkbox" type="checkbox"/><span>Filter Downloads by User Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsFilterByUserRequests">
-                                <div class="fieldDescription je-field-desc-xl">Non-admin users only ever see downloads and history of titles they can open in Jellyfin (library access and parental limits apply, down to single episodes). A title not in Jellyfin yet shows when they can open a library its Sonarr/Radarr instance is linked to (any instance without linked libraries counts as open), or, for users with parental limits, only when they asked for it. When enabled, non-admin users additionally see only content they requested in Seerr. Administrators always see the whole queue.</div>
+                                <div class="fieldDescription je-field-desc-xl">Non-admin users only ever see downloads and history of titles they can open in Jellyfin (library access and parental limits apply, down to single episodes). A title not in Jellyfin yet shows when they can open a library its Sonarr/Radarr instance is linked to (any instance without linked libraries counts as open), or, for users with parental limits, only when they asked for it. When enabled, non-admin users additionally see only downloads and requests they made themselves in Seerr, regardless of their Seerr permissions. When disabled, the request list follows each user's Seerr permissions. Administrators always see the whole queue and every request.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/><span>Show Seerr Issues Section</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
@@ -1731,6 +1770,10 @@
                             <div class="checkboxContainer"><label><input id="activityFeedShowWatched" is="emby-checkbox" type="checkbox"/><span>Show recently watched</span></label></div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowFavorited" is="emby-checkbox" type="checkbox"/><span>Show recently favorited</span></label></div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowReviewed" is="emby-checkbox" type="checkbox"/><span>Show recently reviewed</span></label></div>
+                            <div class="checkboxContainer"><label><input id="activityFeedOwnOnlyForNonAdmins" is="emby-checkbox" type="checkbox"/><span>Non-admins only see their own activity</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedOwnOnlyForNonAdmins">
+                                <div class="fieldDescription je-field-desc-xl">When enabled, regular users only see their own watched, favorited and reviewed entries. Administrators still see everyone.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowActiveStreams" is="emby-checkbox" type="checkbox"/><span>Show Active Streams section</span></label></div>
                             <div class="je-setting-description" data-desc-for="activityFeedShowActiveStreams">
                                 <div class="fieldDescription je-field-desc-xl">Adds a live "who's watching now" section to this page, independent of whether the Active Streams header widget (Extras tab) is shown. Still requires that feature's data collection to be enabled there.</div>
@@ -2009,6 +2052,10 @@
                             <div class="checkboxContainer"><label><input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/><span>Show advanced request options</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowAdvanced">
                                 <div class="fieldDescription je-field-desc-xl">Lets users choose the Server, Quality and Path while requesting. Only shown to users with the Advanced Requests (or Manage Requests) permission in Seerr. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
+                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. Requires "Partial requests" to be enabled in Seerr; otherwise Seerr itself requires all seasons. With Requests &amp; downloads (phase 3) on, Jellyfin Enhanced's own request sheet and series buttons follow it too, also when Jellyfin Enhanced handles requests.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowQuotaInfo" is="emby-checkbox" type="checkbox"/><span>Show request quota info</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowQuotaInfo">
@@ -2681,6 +2728,14 @@
                                 <div class="je-setting-description" data-desc-for="arrPhase4ListStatusEnabled"><div class="fieldDescription">Each entry shows where its request stands (the same status as the rest of Requests &amp; downloads). Everyone can hide it for themselves.</div></div>
                             </div>
                             <!-- /Phase 4c1: lists -->
+                            <!-- Phase 4c3a: list pages -->
+                            <div id="arrListPageSettings" class="je-arr-list-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListPlaylistUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on playlist pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListPlaylistUiEnabled"><div class="fieldDescription">Playlist pages show the entries that aren't in the library in list order between the real items, with their request status and a Request button where the person may ask. They never play and can't be picked for playing or selecting. On the Playlists page a playlist with such entries is marked as incomplete instead of with Jellyfin's "played" check. Everyone can hide this for themselves.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListCollectionUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on collection pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListCollectionUiEnabled"><div class="fieldDescription">Collection pages get a "Not in your library" section with the collection's entries that aren't in the library, by release date (dates still to be announced last). Everyone can hide this for themselves.</div></div>
+                            </div>
+                            <!-- /Phase 4c3a: list pages -->
                             <!-- Phase 4e: acquisition badges -->
                             <div id="arrAcquisitionSettings" class="je-arr-acquisition-settings">
                                 <div class="checkboxContainer"><label><input id="arrPhase4AcquisitionBadgesEnabled" is="emby-checkbox" type="checkbox"/><span>Poster badges: New for you, Upgraded, 4K</span></label></div>
@@ -2692,14 +2747,18 @@
                                 <div class="je-setting-description" data-desc-for="arrAcquisitionUpgradedDays"><div class="fieldDescription">A badge also goes as soon as the person watches the title.</div></div>
                             </div>
                             <!-- /Phase 4e: acquisition badges -->
-                            <!-- Phase 4c3a: list pages -->
-                            <div id="arrListPageSettings" class="je-arr-list-settings">
-                                <div class="checkboxContainer"><label><input id="arrPhase4ListPlaylistUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on playlist pages</span></label></div>
-                                <div class="je-setting-description" data-desc-for="arrPhase4ListPlaylistUiEnabled"><div class="fieldDescription">Playlist pages show the entries that aren't in the library in list order between the real items, with their request status and a Request button where the person may ask. They never play and can't be picked for playing or selecting. On the Playlists page a playlist with such entries is marked as incomplete instead of with Jellyfin's "played" check. Everyone can hide this for themselves.</div></div>
-                                <div class="checkboxContainer"><label><input id="arrPhase4ListCollectionUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on collection pages</span></label></div>
-                                <div class="je-setting-description" data-desc-for="arrPhase4ListCollectionUiEnabled"><div class="fieldDescription">Collection pages get a "Not in your library" section with the collection's entries that aren't in the library, by release date (dates still to be announced last). Everyone can hide this for themselves.</div></div>
+                            <!-- Phase 4d: home rows -->
+                            <div id="arrHomeSettings" class="je-arr-home-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4HomeRowsEnabled" is="emby-checkbox" type="checkbox"/><span>Home rows: Your requests, Coming soon for you, Just arrived for you</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HomeRowsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it". Three rows on each person's home screen, built from their own requests and the titles they follow: what they asked for and where it stands, what is dated in the next 30 days, and what arrived in the last 7 days (an upgrade of something already here doesn't count). A row with nothing in it is hidden, and everyone can switch each row off in their own Jellyfin Enhanced settings. Managers see only their own requests here; the requests waiting for their OK stay in the chip bar.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4HssSectionsEnabled" is="emby-checkbox" type="checkbox"/><span>Use Home Screen Sections for the home rows</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HssSectionsEnabled"><div class="fieldDescription">With the Home Screen Sections plugin installed, the rows are registered as its sections ("Your requests", "Coming soon for you", "Just arrived for you"): turn them on and place them in that plugin's settings. On a Home Screen Sections home they then appear only there, never twice. Titles that aren't in the library need "Native pages for titles not in the library" (Jellyfin 12). Without the plugin, or with this off, the rows are added to the home screen as usual.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4HomeOpsStripEnabled" is="emby-checkbox" type="checkbox"/><span>Administrators: a strip of what needs doing above the rows</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HomeOpsStripEnabled"><div class="fieldDescription">Needs phase 2. Administrators see "2 downloading · 1 import blocked · /movies4k 94%" above the rows, only while an import is blocked, something needs attention or a disk is nearly full. It links to the Requests page. Each administrator can hide it.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4CollectionGapsEnabled" is="emby-checkbox" type="checkbox"/><span>Collection gaps: leave out titles the collection's list already holds</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4CollectionGapsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it". On a collection page, "Get the N missing" leaves out titles that are already entries of that collection (lists), so the same title is never offered twice, and the older Seerr "Missing from" row stays away while the block shows. The block itself works without this switch.</div></div>
                             </div>
-                            <!-- /Phase 4c3a: list pages -->
+                            <!-- /Phase 4d: home rows -->
                             <!-- Phase 4f: Ready playlist and native Ready messages -->
                             <div id="arrReadySettings" class="je-arr-ready-settings">
                                 <div class="checkboxContainer"><label><input id="arrPhase4ReadyPlaylistEnabled" is="emby-checkbox" type="checkbox"/><span>Ready playlist: a private "Ready to watch" playlist for each person</span></label></div>
@@ -4685,7 +4744,7 @@
                         break;
                     }
                 } catch (e) {
-                    console.error(`Seerr validation failed for ${url}:`, e);
+                    console.error('Seerr validation failed for ' + url + ':', e);
                     // Jellyfin's ApiClient.ajax rejects with the Response object
                     // (modern fetch), which doesn't expose responseText/responseJSON.
                     // Read the body asynchronously so connectionErrorMessage can
@@ -5198,6 +5257,96 @@
             });
         }
 
+        // ==================== Asynchronously filled fields ====================
+        // Every control on this page whose choices arrive after the configuration (a list read from Jellyfin, Seerr or
+        // an *arr) is a field made with jeAsyncField and filled only through it. A field knows the stored value from the
+        // last configuration read, the state of its latest list load (pending | loaded | failed: each load has a
+        // generation, a later load supersedes an earlier one and a late completion of the earlier one is ignored) and
+        // whether the administrator changed it on this page. A save writes the administrator's value only for a changed
+        // field; every other field keeps what the server holds, byte for byte (buildConfigFromForm starts from a fresh
+        // read). A change made while a list loads is kept when the list arrives. A select shows a value its list lacks as
+        // one temporary option, removed when the value is replaced or the real option arrives.
+
+        /**
+         * Creates an asynchronously filled field.
+         * @param {string} key - The field's name (diagnostics)
+         * @param {Object} spec - { read(field): the administrator's value, or undefined while the control can't express
+         *   one (the stored value stays); field: the configuration field it saves, when the save writes it directly }
+         * @returns {Object} The field
+         */
+        function jeAsyncField(key, spec) {
+            var f = {
+                key: key, state: 'idle', generation: 0, changed: false, stored: undefined, hasStored: false,
+                /** The value of the latest configuration read; the form shows it again, so earlier edits are gone. */
+                setStored: function(raw) { f.stored = raw; f.hasStored = true; f.changed = false; },
+                /** Starts a list load; its completion must pass the returned token to settle(). */
+                begin: function() { f.generation += 1; f.state = 'pending'; return f.generation; },
+                /** Records a load's outcome; false (and nothing recorded) for a load a later one superseded. */
+                settle: function(token, ok) {
+                    if (token !== f.generation) return false;
+                    f.state = ok ? 'loaded' : 'failed';
+                    return true;
+                },
+                markChanged: function() { f.changed = true; },
+                /** The administrator's value, or undefined when the field keeps the stored one. */
+                value: function() { return f.changed ? spec.read(f) : undefined; },
+                /** Writes the administrator's value into the configuration being saved; an unchanged field is left alone. */
+                saveInto: function(config) {
+                    var v = f.value();
+                    if (v !== undefined) config[spec.field] = v;
+                },
+                /** After a successful save the saved value is the stored one. */
+                saved: function(config) {
+                    if (f.changed && spec.field) f.stored = config[spec.field];
+                    f.changed = false;
+                }
+            };
+            return f;
+        }
+
+        /**
+         * Marks a field changed by the administrator: change and input events from inside `el` (the control or a
+         * container of checkboxes) and clicks on `buttons` (select all / none). The page itself never dispatches them.
+         * In a select, picking another option removes the temporary one.
+         * @param {Object} field - From jeAsyncField
+         * @param {Element} el - The control or its container
+         * @param {Element[]} [buttons] - Buttons that change the control
+         */
+        function jeAsyncFieldWatch(field, el, buttons) {
+            if (!el) return;
+            var mark = function() {
+                field.markChanged();
+                if (el.tagName === 'SELECT') {
+                    el.querySelectorAll('option[data-je-placeholder]').forEach(function(o) { if (o.value !== el.value) o.remove(); });
+                }
+            };
+            el.addEventListener('change', mark);
+            el.addEventListener('input', mark);
+            (buttons || []).forEach(function(b) { if (b) b.addEventListener('click', mark); });
+        }
+
+        /**
+         * Selects `value` in a select filled by a field's list. A value the list lacks is shown as the select's single
+         * temporary option (an earlier one is removed first; a value the list holds needs none).
+         * @param {HTMLSelectElement|null} select
+         * @param {*} value - The value to show
+         * @param {string} [label] - The temporary option's text (default: the value)
+         */
+        function jeSelectValue(select, value, label) {
+            if (!select) return;
+            var wanted = value === undefined || value === null ? '' : String(value);
+            var real = Array.from(select.options).some(function(o) { return o.value === wanted && !o.dataset.jePlaceholder; });
+            select.querySelectorAll('option[data-je-placeholder]').forEach(function(o) { if (real || o.value !== wanted) o.remove(); });
+            if (!real && !Array.from(select.options).some(function(o) { return o.value === wanted; })) {
+                var option = document.createElement('option');
+                option.value = wanted;
+                option.textContent = label || wanted;
+                option.dataset.jePlaceholder = '1';
+                select.appendChild(option);
+            }
+            select.value = wanted;
+        }
+
         // Auto Movie Request - Quality Profile Mode helpers
         function clearSelectOptions(selectEl) {
             while (selectEl.options.length > 0) {
@@ -5230,20 +5379,48 @@
             });
         }
 
+        // The custom auto-movie destination: server, then that server's quality profile and root folder. Each is an
+        // asynchronously filled field (see jeAsyncField): until the admin picks another server, profile or folder, a save
+        // keeps the stored ones, whether the lists are loading, failed or loaded.
+        var _jeAutoMovieServerField = jeAsyncField('AutoMovieRequestCustomServerId', { field: 'AutoMovieRequestCustomServerId', read: function() {
+            var v = parseInt(document.querySelector('#autoMovieRequestServer').value, 10);
+            return (!isNaN(v) && v >= 0) ? v : -1;
+        } });
+        var _jeAutoMovieProfileField = jeAsyncField('AutoMovieRequestCustomProfileId', { field: 'AutoMovieRequestCustomProfileId', read: function() {
+            var v = parseInt(document.querySelector('#autoMovieRequestProfile').value, 10);
+            return (!isNaN(v) && v > 0) ? v : 0;
+        } });
+        var _jeAutoMovieRootField = jeAsyncField('AutoMovieRequestCustomRootFolder', { field: 'AutoMovieRequestCustomRootFolder', read: function() {
+            return document.querySelector('#autoMovieRequestRootFolder').value || '';
+        } });
+
+        /** The stored auto-movie destination, as loadConfig read it. */
+        function jeAutoMovieSetStored(config) {
+            _jeAutoMovieServerField.setStored(config.AutoMovieRequestCustomServerId);
+            _jeAutoMovieProfileField.setStored(config.AutoMovieRequestCustomProfileId);
+            _jeAutoMovieRootField.setStored(config.AutoMovieRequestCustomRootFolder);
+        }
+
         var _autoMovieServerListenerAdded = false;
-        function loadAutoMovieRadarrServers(savedConfig) {
+        function loadAutoMovieRadarrServers() {
             var serverSelect = document.querySelector('#autoMovieRequestServer');
             var profileSelect = document.querySelector('#autoMovieRequestProfile');
             var folderSelect = document.querySelector('#autoMovieRequestRootFolder');
             if (!serverSelect) return;
 
+            var field = _jeAutoMovieServerField;
+            // An earlier list's choice made by the admin stays wanted through a reload of the list.
+            var adminServer = field.changed ? serverSelect.value : null;
+            var token = field.begin();
             resetSelectWithMessage(serverSelect, '-1', 'Loading...');
 
+            // je-async-loader: AutoMovieRequestCustomServerId
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/radarr'),
                 dataType: 'json'
             }).then(function(servers) {
+                if (!field.settle(token, true)) return;
                 resetSelectWithMessage(serverSelect, '-1', 'Select Server...');
                 var serverList = Array.isArray(servers) ? servers : [servers];
                 serverList.forEach(function(server) {
@@ -5251,24 +5428,37 @@
                         addSelectOption(serverSelect, server.id, server.name || ('Server ' + server.id));
                     }
                 });
-
-                var savedServerId = savedConfig ? savedConfig.AutoMovieRequestCustomServerId : null;
-                if (savedServerId !== null && savedServerId !== undefined && savedServerId >= 0) {
-                    serverSelect.value = savedServerId;
-                    loadAutoMovieServerDetails(savedServerId, savedConfig);
+                var wanted = adminServer !== null ? adminServer : field.stored;
+                var wantedId = parseInt(wanted, 10);
+                if (!isNaN(wantedId) && wantedId >= 0) {
+                    jeSelectValue(serverSelect, wantedId, 'Server ' + wantedId + ' (not in Seerr now)');
+                    loadAutoMovieServerDetails(wantedId);
+                } else {
+                    serverSelect.value = '-1';
                 }
             }).catch(function(err) {
+                if (!field.settle(token, false)) return;
                 resetSelectWithMessage(serverSelect, '-1', 'Failed to load servers');
                 console.warn('[Auto-Movie-Request] Failed to load Radarr servers:', err);
             });
 
             if (!_autoMovieServerListenerAdded) {
                 _autoMovieServerListenerAdded = true;
+                jeAsyncFieldWatch(_jeAutoMovieServerField, serverSelect);
+                jeAsyncFieldWatch(_jeAutoMovieProfileField, profileSelect);
+                jeAsyncFieldWatch(_jeAutoMovieRootField, folderSelect);
                 serverSelect.addEventListener('change', function() {
+                    // Another server: its own profile and folder are chosen afresh (the stored ones belong to the old one).
+                    _jeAutoMovieProfileField.markChanged();
+                    _jeAutoMovieRootField.markChanged();
                     var serverId = parseInt(serverSelect.value);
                     if (!isNaN(serverId) && serverId >= 0) {
+                        resetSelectWithMessage(profileSelect, '0', 'Loading...');
+                        resetSelectWithMessage(folderSelect, '', 'Loading...');
                         loadAutoMovieServerDetails(serverId);
                     } else {
+                        _jeAutoMovieProfileField.begin();
+                        _jeAutoMovieRootField.begin();
                         resetSelectWithMessage(profileSelect, '0', 'Select a server first...');
                         resetSelectWithMessage(folderSelect, '', 'Select a server first...');
                     }
@@ -5276,36 +5466,46 @@
             }
         }
 
-        function loadAutoMovieServerDetails(serverId, savedConfig) {
+        function loadAutoMovieServerDetails(serverId) {
             var profileSelect = document.querySelector('#autoMovieRequestProfile');
             var folderSelect = document.querySelector('#autoMovieRequestRootFolder');
             if (!profileSelect || !folderSelect) return;
 
+            var profileField = _jeAutoMovieProfileField, rootField = _jeAutoMovieRootField;
+            var adminProfile = profileField.changed ? profileSelect.value : null;
+            var adminRoot = rootField.changed ? folderSelect.value : null;
+            var profileToken = profileField.begin(), rootToken = rootField.begin();
             resetSelectWithMessage(profileSelect, '0', 'Loading...');
             resetSelectWithMessage(folderSelect, '', 'Loading...');
 
+            // je-async-loader: AutoMovieRequestCustomProfileId, AutoMovieRequestCustomRootFolder
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/radarr/' + serverId),
                 dataType: 'json'
             }).then(function(details) {
-                resetSelectWithMessage(profileSelect, '0', 'Select Profile...');
-                (details.profiles || []).forEach(function(profile) {
-                    addSelectOption(profileSelect, profile.id, profile.name || ('Profile ' + profile.id));
-                });
-
-                resetSelectWithMessage(folderSelect, '', 'Select Folder...');
-                (details.rootFolders || []).forEach(function(folder) {
-                    addSelectOption(folderSelect, folder.path, folder.path);
-                });
-
-                var savedProfileId = (savedConfig && savedConfig.AutoMovieRequestCustomProfileId) || 0;
-                if (savedProfileId > 0) profileSelect.value = savedProfileId;
-                var savedRootFolder = (savedConfig && savedConfig.AutoMovieRequestCustomRootFolder) || '';
-                if (savedRootFolder) folderSelect.value = savedRootFolder;
+                details = details || {};
+                if (profileField.settle(profileToken, true)) {
+                    resetSelectWithMessage(profileSelect, '0', 'Select Profile...');
+                    (details.profiles || []).forEach(function(profile) {
+                        addSelectOption(profileSelect, profile.id, profile.name || ('Profile ' + profile.id));
+                    });
+                    var profile = parseInt(adminProfile !== null ? adminProfile : profileField.stored, 10);
+                    if (profile > 0) jeSelectValue(profileSelect, profile, 'Profile ' + profile + ' (not on this server now)');
+                    else profileSelect.value = '0';
+                }
+                if (rootField.settle(rootToken, true)) {
+                    resetSelectWithMessage(folderSelect, '', 'Select Folder...');
+                    (details.rootFolders || []).forEach(function(folder) {
+                        addSelectOption(folderSelect, folder.path, folder.path);
+                    });
+                    var root = adminRoot !== null ? adminRoot : (rootField.stored || '');
+                    if (root) jeSelectValue(folderSelect, root, root + ' (not on this server now)');
+                    else folderSelect.value = '';
+                }
             }).catch(function(err) {
-                resetSelectWithMessage(profileSelect, '0', 'Failed to load');
-                resetSelectWithMessage(folderSelect, '', 'Failed to load');
+                if (profileField.settle(profileToken, false)) resetSelectWithMessage(profileSelect, '0', 'Failed to load');
+                if (rootField.settle(rootToken, false)) resetSelectWithMessage(folderSelect, '', 'Failed to load');
                 console.warn('[Auto-Movie-Request] Failed to load server details:', err);
             });
         }
@@ -5566,6 +5766,7 @@
             jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
             jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
             jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
+            jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || '');
             jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
             jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
             jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
@@ -5591,14 +5792,15 @@
         var _jeLibrariesPromise = null;
 
         /**
-         * The server's libraries (name + id) for the "Linked libraries" checkboxes, fetched once.
-         * @returns {Promise<Array<{Name: string, ItemId: string}>>}
+         * The server's libraries (name + id) for the "Linked libraries" checkboxes, fetched once (again after a failure).
+         * @returns {Promise<Array<{Name: string, ItemId: string}>>} Rejects when the list could not be read
          */
         function jeGetLibraries() {
             if (!_jeLibrariesPromise) {
+                // je-async-loader: arr instance LinkedLibraryIds
                 _jeLibrariesPromise = ApiClient.getVirtualFolders()
-                    .then(function(folders) { return Array.isArray(folders) ? folders : []; })
-                    .catch(function() { _jeLibrariesPromise = null; return []; });
+                    .then(function(folders) { return Array.isArray(folders) ? folders : []; });
+                _jeLibrariesPromise.catch(function() { _jeLibrariesPromise = null; });
             }
             return _jeLibrariesPromise;
         }
@@ -5624,6 +5826,12 @@
             var fields = createEl('div', { className: 'arr-instance-add-fields', style: 'display:none;' });
             wrap.appendChild(status);
             wrap.appendChild(fields);
+            // An asynchronously filled field (see jeAsyncField): the card's choices exist only once this instance's lists
+            // loaded, and until the admin changes one a save keeps the stored add defaults (jeReadInstanceAddDefaults).
+            var field = jeAsyncField('arr instance Defaults', { read: function() { return jeReadInstanceAddDefaultsFromForm(wrap); } });
+            wrap._jeField = field;
+            field.setStored(instance.Defaults);
+            jeAsyncFieldWatch(field, fields);
             wrap.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Used when Jellyfin Enhanced handles requests (Requests & downloads, phase 3) and by "Add to" in the Manage drawer. Only what this ' + label + ' lists can be chosen; requests wait for an administrator while these are missing or no longer valid.' }));
 
             function select(cls, title, choices, value) {
@@ -5657,15 +5865,18 @@
             return wrap;
 
             function load() {
+                var token = field.begin();
+                // je-async-loader: arr instance Defaults
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/manage/add-options?instanceId=' + encodeURIComponent(instance.Id)), dataType: 'json' })
                     .then(function(options) {
                         options = options || {};
-                        var profiles = (options.profiles || []).map(function(p) { return { value: p.id, label: p.name }; });
-                        var folders = (options.rootFolders || []).map(function(f) { return { value: f.path, label: f.path + (f.accessible === false ? ' (not accessible)' : '') }; });
-                        if (!profiles.length && !folders.length) {
-                            status.textContent = label + '\'s profiles and folders couldn\'t be read right now. The saved add defaults are kept.';
+                        if (!profilesOrFoldersIn(options)) {
+                            if (field.settle(token, false)) status.textContent = label + '\'s profiles and folders couldn\'t be read right now. The saved add defaults are kept.';
                             return;
                         }
+                        if (!field.settle(token, true)) return;
+                        var profiles = (options.profiles || []).map(function(p) { return { value: p.id, label: p.name }; });
+                        var folders = (options.rootFolders || []).map(function(f) { return { value: f.path, label: f.path + (f.accessible === false ? ' (not accessible)' : '') }; });
                         fields.appendChild(select('arr-instance-add-profile', 'Quality profile', profiles, stored.QualityProfileId));
                         fields.appendChild(select('arr-instance-add-root', 'Root folder', folders, stored.RootFolderPath));
                         if (type === 'radarr') {
@@ -5694,21 +5905,36 @@
                         wrap.dataset.loaded = '1';
                     })
                     .catch(function() {
+                        if (!field.settle(token, false)) return;
                         status.textContent = 'This instance\'s profiles and folders can be chosen once "Requests & downloads (new)" with download status is on and the instance is saved. The saved add defaults are kept.';
                     });
+            }
+
+            function profilesOrFoldersIn(options) {
+                return (options.profiles || []).length > 0 || (options.rootFolders || []).length > 0;
             }
         }
 
         /**
-         * Reads an instance card's add defaults back into the stored shape: undefined (keep what was
-         * stored) until the choices loaded, null when nothing is set.
+         * Reads an instance card's add defaults for the save: undefined (keep what was stored) unless the admin
+         * changed them (see jeAsyncField), null when nothing is set.
          * @param {HTMLElement} card - The instance card
          * @returns {Object|null|undefined}
          */
         function jeReadInstanceAddDefaults(card) {
             var wrap = card.querySelector('.arr-instance-add');
+            return wrap && wrap._jeField ? wrap._jeField.value() : undefined;
+        }
+
+        /**
+         * The add defaults the card's loaded choices show, in the stored shape (undefined before they loaded).
+         * @param {HTMLElement} wrap - The card's add-defaults block
+         * @returns {Object|null|undefined}
+         */
+        function jeReadInstanceAddDefaultsFromForm(wrap) {
             if (!wrap || wrap.dataset.loaded !== '1') return undefined;
-            var base = (card._jeRow && card._jeRow.Defaults) || {};
+            var card = wrap.closest('.arr-instance-card');
+            var base = (card && card._jeRow && card._jeRow.Defaults) || {};
             var value = function(cls) { var el = wrap.querySelector('.' + cls); return el ? el.value : ''; };
             var profile = parseInt(value('arr-instance-add-profile'), 10);
             var tagBoxes = wrap.querySelectorAll('.arr-instance-add-tag');
@@ -5754,7 +5980,21 @@
             var libsWrap = createEl('div', { className: 'arr-instance-libraries', style: 'display:flex;flex-wrap:wrap;gap:0.25em 1em;margin-top:0.25em;' });
             var linked = (instance.LinkedLibraryIds || []).map(function(x) { return String(x).toLowerCase().replace(/-/g, ''); });
             libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'Loading libraries...' }));
+            // An asynchronously filled field (see jeAsyncField): until the admin ticks or unticks a library in the loaded
+            // list, a save keeps the stored links (jeReadInstanceRegistryFields).
+            var libsField = jeAsyncField('arr instance LinkedLibraryIds', { read: function(field) {
+                if (field.state !== 'loaded') return undefined;
+                var ids = [];
+                libsWrap.querySelectorAll('.arr-instance-library').forEach(function(cb) { if (cb.checked) ids.push(cb.getAttribute('data-library-id')); });
+                try { ids = ids.concat(JSON.parse(libsWrap.dataset.unlisted || '[]')); } catch (e) { /* keep checked ones */ }
+                return ids;
+            } });
+            libsWrap._jeField = libsField;
+            libsField.setStored(instance.LinkedLibraryIds);
+            jeAsyncFieldWatch(libsField, libsWrap);
+            var libsToken = libsField.begin();
             jeGetLibraries().then(function(folders) {
+                if (!libsField.settle(libsToken, true)) return;
                 libsWrap.textContent = '';
                 if (!folders.length) {
                     libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'No libraries found.' }));
@@ -5771,6 +6011,10 @@
                 libsWrap.dataset.unlisted = JSON.stringify(linked.filter(function(l) {
                     return !folders.some(function(f) { return f && String(f.ItemId).toLowerCase().replace(/-/g, '') === l; });
                 }));
+            }).catch(function() {
+                if (!libsField.settle(libsToken, false)) return;
+                libsWrap.textContent = '';
+                libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'Could not load the library list. Saving keeps the linked libraries.' }));
             });
             var libsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.75em;' }, [
                 createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'Linked libraries' }),
@@ -5815,16 +6059,9 @@
             var def = card.querySelector('.arr-instance-default');
             out.IsDefault = def ? def.checked : base.IsDefault === true;
             var libsWrap = card.querySelector('.arr-instance-libraries');
-            var boxes = libsWrap ? libsWrap.querySelectorAll('.arr-instance-library') : [];
-            if (libsWrap && (boxes.length || libsWrap.dataset.unlisted)) {
-                var ids = [];
-                boxes.forEach(function(cb) { if (cb.checked) ids.push(cb.getAttribute('data-library-id')); });
-                try { ids = ids.concat(JSON.parse(libsWrap.dataset.unlisted || '[]')); } catch (e) { /* keep checked ones */ }
-                out.LinkedLibraryIds = ids;
-            } else {
-                // Libraries not loaded yet: keep what was stored.
-                out.LinkedLibraryIds = base.LinkedLibraryIds || [];
-            }
+            // Unless the admin changed the links in the loaded list, the stored ones (see jeAsyncField).
+            var linkedIds = libsWrap && libsWrap._jeField ? libsWrap._jeField.value() : undefined;
+            out.LinkedLibraryIds = linkedIds !== undefined ? linkedIds : (base.LinkedLibraryIds || []);
             var live = card.querySelector('.arr-instance-live');
             out.LiveUpdates = live ? (live.checked ? 'auto' : 'off') : (base.LiveUpdates || 'auto');
             var addDefaults = jeReadInstanceAddDefaults(card);
@@ -6745,14 +6982,19 @@
             document.querySelector('#arrPhase4ListSwapInEnabled').checked = config.ArrPhase4ListSwapInEnabled === true;
             document.querySelector('#arrPhase4ListMaintenanceEnabled').checked = config.ArrPhase4ListMaintenanceEnabled === true;
             document.querySelector('#arrPhase4ListStatusEnabled').checked = config.ArrPhase4ListStatusEnabled === true;
+            // Phase 4c3a: list pages
+            document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked = config.ArrPhase4ListPlaylistUiEnabled === true;
+            document.querySelector('#arrPhase4ListCollectionUiEnabled').checked = config.ArrPhase4ListCollectionUiEnabled === true;
             // Phase 4e: acquisition badges
             document.querySelector('#arrPhase4AcquisitionBadgesEnabled').checked = config.ArrPhase4AcquisitionBadgesEnabled === true;
             document.querySelector('#arrPhase4NativeStampsEnabled').checked = config.ArrPhase4NativeStampsEnabled === true;
             document.querySelector('#arrAcquisitionNewDays').value = num(config.ArrAcquisitionNewDays, 7);
             document.querySelector('#arrAcquisitionUpgradedDays').value = num(config.ArrAcquisitionUpgradedDays, 7);
-            // Phase 4c3a: list pages
-            document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked = config.ArrPhase4ListPlaylistUiEnabled === true;
-            document.querySelector('#arrPhase4ListCollectionUiEnabled').checked = config.ArrPhase4ListCollectionUiEnabled === true;
+            // Phase 4d: home rows
+            document.querySelector('#arrPhase4HomeRowsEnabled').checked = config.ArrPhase4HomeRowsEnabled === true;
+            document.querySelector('#arrPhase4HssSectionsEnabled').checked = config.ArrPhase4HssSectionsEnabled === true;
+            document.querySelector('#arrPhase4HomeOpsStripEnabled').checked = config.ArrPhase4HomeOpsStripEnabled === true;
+            document.querySelector('#arrPhase4CollectionGapsEnabled').checked = config.ArrPhase4CollectionGapsEnabled === true;
             // Phase 4f: Ready playlist and native Ready messages
             document.querySelector('#arrPhase4ReadyPlaylistEnabled').checked = config.ArrPhase4ReadyPlaylistEnabled === true;
             document.querySelector('#arrPhase4ReadyMessagesEnabled').checked = config.ArrPhase4ReadyMessagesEnabled === true;
@@ -6827,15 +7069,20 @@
             config.ArrPhase4ListSwapInEnabled = document.querySelector('#arrPhase4ListSwapInEnabled').checked;
             config.ArrPhase4ListMaintenanceEnabled = document.querySelector('#arrPhase4ListMaintenanceEnabled').checked;
             config.ArrPhase4ListStatusEnabled = document.querySelector('#arrPhase4ListStatusEnabled').checked;
+            // Phase 4c3a: list pages
+            config.ArrPhase4ListPlaylistUiEnabled = document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked;
+            config.ArrPhase4ListCollectionUiEnabled = document.querySelector('#arrPhase4ListCollectionUiEnabled').checked;
             // Phase 4e: acquisition badges
             var days = function(id) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? 7 : Math.min(30, Math.max(1, n)); };
             config.ArrPhase4AcquisitionBadgesEnabled = document.querySelector('#arrPhase4AcquisitionBadgesEnabled').checked;
             config.ArrPhase4NativeStampsEnabled = document.querySelector('#arrPhase4NativeStampsEnabled').checked;
             config.ArrAcquisitionNewDays = days('#arrAcquisitionNewDays');
             config.ArrAcquisitionUpgradedDays = days('#arrAcquisitionUpgradedDays');
-            // Phase 4c3a: list pages
-            config.ArrPhase4ListPlaylistUiEnabled = document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked;
-            config.ArrPhase4ListCollectionUiEnabled = document.querySelector('#arrPhase4ListCollectionUiEnabled').checked;
+            // Phase 4d: home rows
+            config.ArrPhase4HomeRowsEnabled = document.querySelector('#arrPhase4HomeRowsEnabled').checked;
+            config.ArrPhase4HssSectionsEnabled = document.querySelector('#arrPhase4HssSectionsEnabled').checked;
+            config.ArrPhase4HomeOpsStripEnabled = document.querySelector('#arrPhase4HomeOpsStripEnabled').checked;
+            config.ArrPhase4CollectionGapsEnabled = document.querySelector('#arrPhase4CollectionGapsEnabled').checked;
             // Phase 4f: Ready playlist and native Ready messages
             config.ArrPhase4ReadyPlaylistEnabled = document.querySelector('#arrPhase4ReadyPlaylistEnabled').checked;
             config.ArrPhase4ReadyMessagesEnabled = document.querySelector('#arrPhase4ReadyMessagesEnabled').checked;
@@ -7597,58 +7844,73 @@
         // Populates the Default Region dropdown from the same CDN resource js/elsewhere/elsewhere.js
         // uses for its per-item region picker, so admins can only ever pick a code that TMDB's
         // watch/providers response is actually keyed by - no more free-text region typos.
+        // An asynchronously filled field (see jeAsyncField): the fallback list is there at once, the full one follows.
+        var _jeRegionField = jeAsyncField('DEFAULT_REGION', { field: 'DEFAULT_REGION', read: function() {
+            return document.querySelector('#DEFAULT_REGION').value;
+        } });
+        jeAsyncFieldWatch(_jeRegionField, document.querySelector('#DEFAULT_REGION'));
+
         function populateRegionSelect(selectedCode) {
+            var field = _jeRegionField;
+            field.setStored(selectedCode);
             renderRegionOptions(JE_FALLBACK_REGIONS, selectedCode);
+            var token = field.begin();
+            // je-async-loader: DEFAULT_REGION
             fetch(jeCdnUrl('elsewhere-res/regions.txt'))
                 .then(response => response.ok ? response.text() : Promise.reject())
                 .then(text => {
+                    if (!field.settle(token, true)) return;
                     const regionsMap = {};
                     text.trim().split('\n').forEach(line => {
                         if (line.startsWith('#')) return;
                         const [code, name] = line.split('\t');
                         if (code && name) regionsMap[code] = name;
                     });
-                    renderRegionOptions(regionsMap, selectedCode);
+                    // A region the admin picked from the fallback list while the full one loaded stays picked.
+                    renderRegionOptions(regionsMap, field.changed ? document.querySelector('#DEFAULT_REGION').value : field.stored);
                 })
                 .catch(() => {
                     // Already rendered with JE_FALLBACK_REGIONS above.
+                    field.settle(token, false);
                 });
         }
 
-        /**
-         * Selects `value` in the sound-tag audio language dropdown. A code the
-         * culture list does not offer (a hand-edited pt-BR, or the list has not
-         * loaded / failed to load) is parked as a bare option so it stays
-         * selected and a save cannot silently reset it to "no preference".
-         * @param {HTMLSelectElement|null} select
-         * @param {string} value
-         */
-        function applyQualityAudioLanguage(select, value) {
-            if (!select) return;
-            const saved = value || '';
-            if (saved && !Array.from(select.options).some(o => o.value === saved)) {
-                const option = document.createElement('option');
-                option.value = saved;
-                option.textContent = saved;
-                option.dataset.jePlaceholder = '1';
-                select.appendChild(option);
-            }
-            select.value = saved;
-        }
+        // The tag cache's excluded libraries and Spoiler Guard's auto-enable libraries: asynchronously filled fields (see
+        // jeAsyncField). The checkboxes exist only while the latest library list is loaded; until the admin ticks or
+        // unticks one, a save keeps the stored value (loading, failed, or a later reload that failed).
+        var _jeTagCacheLibrariesField = jeAsyncField('TagCacheExcludedLibraryIds', { field: 'TagCacheExcludedLibraryIds', read: function(field) {
+            return field.state === 'loaded' ? collectTagCacheExcludedLibraries() : undefined;
+        } });
+        jeAsyncFieldWatch(_jeTagCacheLibrariesField, document.getElementById('tagCacheExcludedLibraryList'));
+        var _jeSpoilerLibrariesField = jeAsyncField('SpoilerAutoEnableLibraryIds', { field: 'SpoilerAutoEnableLibraryIds', read: function(field) {
+            return field.state === 'loaded' ? collectSpoilerAutoEnableLibraries() : undefined;
+        } });
+        jeAsyncFieldWatch(_jeSpoilerLibrariesField, document.getElementById('spoilerAutoEnableLibraryList'));
 
-        // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
-        // list has been rendered from it yet. Until it has (VirtualFolders
-        // still loading, or failed) a save round-trips the stored value
-        // untouched instead of silently resetting it to "every library".
-        var _tagCacheExcludedRaw = '';
-        var _tagCacheExcludedRendered = false;
+        /**
+         * Shows a library list's loading or failure line in place of its checkboxes.
+         * @param {HTMLElement} host - The list container
+         * @param {string} text - The line
+         */
+        function jeLibraryListMessage(host, text) {
+            host.innerHTML = '';
+            var line = document.createElement('div');
+            line.className = 'fieldDescription';
+            line.textContent = text;
+            host.appendChild(line);
+        }
 
         function renderTagCacheExcludedLibraries(raw) {
             var host = document.getElementById('tagCacheExcludedLibraryList');
             if (!host) return;
-            _tagCacheExcludedRaw = String(raw || '');
-            var selected = _tagCacheExcludedRaw.split(',').map(function (s) { return s.trim().toLowerCase(); });
+            var field = _jeTagCacheLibrariesField;
+            field.setStored(raw);
+            var token = field.begin();
+            jeLibraryListMessage(host, 'Loading libraries...');
+            var selected = String(raw || '').split(',').map(function (s) { return s.trim().replace(/-/g, '').toLowerCase(); });
+            // je-async-loader: TagCacheExcludedLibraryIds
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                if (!field.settle(token, true)) return;
                 host.innerHTML = '';
                 (folders || []).filter(function (f) { return f.ItemId; }).forEach(function (f) {
                     var wrap = document.createElement('div');
@@ -7667,9 +7929,9 @@
                     wrap.appendChild(label);
                     host.appendChild(wrap);
                 });
-                _tagCacheExcludedRendered = true;
             }).catch(function () {
-                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+                if (!field.settle(token, false)) return;
+                jeLibraryListMessage(host, 'Could not load the library list. Saving keeps the current selection.');
             });
         }
 
@@ -7678,7 +7940,6 @@
         });
 
         function collectTagCacheExcludedLibraries() {
-            if (!_tagCacheExcludedRendered) return _tagCacheExcludedRaw;
             var ids = [];
             document.querySelectorAll('#tagCacheExcludedLibraryList input.tagCacheExcludedLibrary').forEach(function (el) {
                 if (el.checked) ids.push(String(el.getAttribute('data-library-id')).replace(/-/g, '').toLowerCase());
@@ -7686,23 +7947,25 @@
             return ids.join(',');
         }
 
-        var _spoilerAutoEnableLibrariesRaw = '';
-        var _spoilerAutoEnableLibrariesRendered = false;
-
         /**
          * Renders the Spoiler Guard auto-enable library allow-list as one
          * checkbox per movie / TV / mixed library, pre-ticking the ids stored
          * in SpoilerAutoEnableLibraryIds (comma-separated). Ids that no longer
-         * resolve to a library are flagged and dropped on the next save.
+         * resolve to a library are flagged and dropped when the admin next
+         * changes the list and saves.
          * @param {string} selectedRaw - Stored comma-separated library ids
          */
         function renderSpoilerAutoEnableLibraries(selectedRaw) {
             var host = document.getElementById('spoilerAutoEnableLibraryList');
             if (!host) return;
-            _spoilerAutoEnableLibrariesRaw = String(selectedRaw || '');
-            _spoilerAutoEnableLibrariesRendered = false;
-            var selected = _spoilerAutoEnableLibrariesRaw.split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+            var field = _jeSpoilerLibrariesField;
+            field.setStored(selectedRaw);
+            var token = field.begin();
+            jeLibraryListMessage(host, 'Loading libraries...');
+            var selected = String(selectedRaw || '').split(',').map(function (s) { return s.trim().replace(/-/g, '').toLowerCase(); }).filter(Boolean);
+            // je-async-loader: SpoilerAutoEnableLibraryIds
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                if (!field.settle(token, true)) return;
                 host.innerHTML = '';
                 var eligible = (folders || []).filter(function (f) {
                     var t = (f.CollectionType || '').toLowerCase();
@@ -7741,25 +8004,24 @@
                     var note = document.createElement('div');
                     note.className = 'fieldDescription';
                     note.textContent = stale.length === 1
-                        ? '1 previously selected library no longer exists and will be dropped when you save.'
-                        : stale.length + ' previously selected libraries no longer exist and will be dropped when you save.';
+                        ? '1 previously selected library no longer exists and will be dropped when you change this list and save.'
+                        : stale.length + ' previously selected libraries no longer exist and will be dropped when you change this list and save.';
                     host.appendChild(note);
                 }
-                _spoilerAutoEnableLibrariesRendered = true;
             }).catch(function () {
-                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+                if (!field.settle(token, false)) return;
+                jeLibraryListMessage(host, 'Could not load the library list. Saving keeps the current selection.');
             });
         }
 
         /**
          * Collects the ticked auto-enable libraries back into the stored
          * comma-separated form (dashless lowercase ids, matching Jellyfin's
-         * VirtualFolders ItemId format). Empty string = every library. If the
-         * list hasn't rendered, returns the stored value unchanged.
+         * VirtualFolders ItemId format). Empty string = every library. Read only
+         * through the field (while the latest list is loaded).
          * @returns {string}
          */
         function collectSpoilerAutoEnableLibraries() {
-            if (!_spoilerAutoEnableLibrariesRendered) return _spoilerAutoEnableLibrariesRaw;
             var ids = [];
             document.querySelectorAll('#spoilerAutoEnableLibraryList input.spoilerAutoEnableLibrary').forEach(function (el) {
                 if (el.checked) ids.push(String(el.getAttribute('data-library-id') || '').replace(/-/g, '').toLowerCase());
@@ -8286,11 +8548,13 @@
                 const savedAction = config.MaintenanceModeAction || 'disable_accounts';
                 document.getElementById('mmAction_accounts').checked = savedAction === 'disable_accounts' || savedAction === 'both';
                 document.getElementById('mmAction_remote').checked   = savedAction === 'disable_remote'   || savedAction === 'both';
-                // Restore user selection radio + checkboxes
+                // Restore user selection radio + checkboxes (an asynchronously filled field, see jeAsyncField)
+                _jeMaintenanceUsersField.setStored(config.MaintenanceModeAffectedUsers);
                 const savedUsers = config.MaintenanceModeAffectedUsers || 'all';
                 if (savedUsers === 'all') {
                     document.querySelector('#mmUsers_all').checked = true;
                     document.getElementById('je-mm-user-list').style.display = 'none';
+                    document.getElementById('je-mm-user-list').dataset.preselect = '';
                 } else {
                     document.querySelector('#mmUsers_select').checked = true;
                     document.getElementById('je-mm-user-list').style.display = '';
@@ -8385,10 +8649,9 @@
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
-                const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
-                // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
-                qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                // The culture list loads asynchronously (an asynchronously filled field, see jeAsyncField).
+                _jeAudioLanguageField.setStored(config.QualityTagsPreferredAudioLanguage);
+                jeSelectValue(document.querySelector('#qualityTagsPreferredAudioLanguage'), config.QualityTagsPreferredAudioLanguage || '');
                 document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 if (arChk) arChk.checked = ageRatingEnabled;
@@ -8406,13 +8669,15 @@
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
                 document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
-                renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds || '');
+                renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds);
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showPlaybackRatingBadge').checked = config.ShowPlaybackRatingBadge === true;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
+                document.querySelector('#doesTheDogDieEnabled').checked = !!config.DoesTheDogDieEnabled;
+                jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), config.DoesTheDogDieApiKey || '');
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
                 jeSecretInit(document.querySelector('#mdblistApiKey'), config.MdblistApiKey || '');
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
@@ -8445,6 +8710,7 @@
                 document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked = !!config.JellyseerrAvailablePosterLinksToJellyfin;
                 document.querySelector('#nativeAbsentDetailsEnabled').checked = config.NativeAbsentDetailsEnabled === true;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
+                document.querySelector('#jellyseerrSingleSeasonRequestOnly').checked = config.JellyseerrSingleSeasonRequestOnly === true;
                 document.querySelector('#jellyseerrShowQuotaInfo').checked = config.JellyseerrShowQuotaInfo !== false;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
@@ -8479,9 +8745,10 @@
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#autoMovieRequestQualityMode').value = config.AutoMovieRequestQualityMode || 'default';
                 document.querySelector('#autoMovieRequestFallbackOn4k').checked = config.AutoMovieRequestFallbackOn4k !== false;
+                jeAutoMovieSetStored(config);
                 if ((config.AutoMovieRequestQualityMode || 'default') === 'custom') {
                     document.querySelector('#autoMovieRequestCustomSettings').style.display = 'block';
-                    loadAutoMovieRadarrServers(config);
+                    loadAutoMovieRadarrServers();
                 }
                 document.querySelector('#addRequestedMediaToWatchlist').checked = config.AddRequestedMediaToWatchlist || false;
                 document.querySelector('#syncJellyseerrWatchlist').checked = config.SyncJellyseerrWatchlist || false;
@@ -8557,7 +8824,10 @@
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#DefaultSubtitleTextEffect').value = config.DefaultSubtitleTextEffect ?? 0;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
-                document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
+                // The language list loads asynchronously (the server's locales, Jellyfin's cultures, GitHub): an asynchronously
+                // filled field (see jeAsyncField), so a save made before or without the list keeps the stored default.
+                _jeDefaultLanguageField.setStored(config.DefaultLanguage);
+                jeSelectValue(document.querySelector('#DefaultLanguage'), config.DefaultLanguage || '');
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
                 document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
                 const metadataIconsChk = document.querySelector('#metadataIconsEnabled');
@@ -8691,6 +8961,7 @@
                 document.querySelector('#activityFeedShowWatched').checked = config.ActivityFeedShowWatched !== false;
                 document.querySelector('#activityFeedShowFavorited').checked = config.ActivityFeedShowFavorited !== false;
                 document.querySelector('#activityFeedShowReviewed').checked = config.ActivityFeedShowReviewed !== false;
+                document.querySelector('#activityFeedOwnOnlyForNonAdmins').checked = config.ActivityFeedOwnOnlyForNonAdmins === true;
                 document.querySelector('#activityFeedShowActiveStreams').checked = config.ActivityFeedShowActiveStreams !== false;
                 document.querySelector('#activityFeedUseNativeTab').checked = config.ActivityFeedUseNativeTab === true;
                 document.querySelector('#activityFeedUsePluginPages').checked = config.ActivityFeedUsePluginPages === true;
@@ -8814,6 +9085,7 @@
                     ['spoilerAutoEnableMovies',     'SpoilerAutoEnableMovies',     true],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
+                    ['spoilerBlurTrickplay',        'SpoilerBlurTrickplay',        true],
                     // Advanced per-category reveals. The master switch is off
                     // for existing installs; the category masks keep the
                     // strictest posture except the next-episode title, which
@@ -8836,7 +9108,7 @@
                 if (__sbCastMode) __sbCastMode.value = config.SpoilerStripCastMode === 'All' ? 'All' : 'GuestStars';
                 var __sbPlaceholder = document.querySelector('#spoilerOverviewPlaceholder');
                 if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler Guard activated';
-                renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds || '');
+                renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds);
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -8864,10 +9136,49 @@
                 updateRequestsRequirementsBanner();
 
                 Dashboard.hideLoadingMsg();
+                // The form now shows the saved settings: whole saves are allowed from here on.
+                _jeConfigReadOk = true;
+                jeConfigReadNotice(false);
                 // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first.
                 setTimeout(jeMarkSaved, 500);
+            }).catch((err) => {
+                Dashboard.hideLoadingMsg();
+                console.warn('[JE] Could not read the plugin configuration:', err);
+                // A later read failing after one succeeded leaves the form as that read filled it.
+                if (!_jeConfigReadOk) jeConfigReadNotice(true);
             });
         }
+
+        // ==================== No whole save without a read ====================
+        // A save writes the whole configuration from this form. Until one read of the configuration has filled the form in
+        // this page session, the form holds its built-in defaults, so a save (or "Apply to all users") would replace every
+        // setting with them: both refuse and say why.
+        var _jeConfigReadOk = false;
+        var JE_CONFIG_READ_REASON = 'Jellyfin Enhanced could not read its saved settings, so this page shows defaults. Saving is turned off so those defaults cannot replace your settings. Retry, or reload the page.';
+
+        /**
+         * Shows or hides the banner that says the settings could not be read.
+         * @param {boolean} show
+         */
+        function jeConfigReadNotice(show) {
+            var banner = document.getElementById('je-config-read-warning');
+            if (!banner) return;
+            document.getElementById('je-config-read-warning-msg').textContent = show ? JE_CONFIG_READ_REASON : '';
+            banner.style.display = show ? '' : 'none';
+        }
+
+        /**
+         * True when a whole save may run; otherwise tells the admin why not.
+         * @returns {boolean}
+         */
+        function jeConfigSaveAllowed() {
+            if (_jeConfigReadOk) return true;
+            jeConfigReadNotice(true);
+            Dashboard.alert({ title: 'Settings not saved', message: JE_CONFIG_READ_REASON });
+            return false;
+        }
+
+        document.getElementById('je-config-read-retry-btn').addEventListener('click', loadConfig);
 
         async function buildConfigFromForm() {
             const config = await ApiClient.getPluginConfiguration(pluginId);
@@ -8911,13 +9222,9 @@
                                          : mmAccounts               ? 'disable_accounts'
                                          : mmRemote                 ? 'disable_remote'
                                          :                            'none';
-            const mmUsersMode = (document.querySelector('input[name="maintenanceModeUsers"]:checked') || {}).value || 'all';
-            if (mmUsersMode === 'all') {
-                config.MaintenanceModeAffectedUsers = 'all';
-            } else {
-                const checked = Array.from(document.querySelectorAll('.je-mm-user-cb:checked')).map(cb => cb.value);
-                config.MaintenanceModeAffectedUsers = JSON.stringify(checked);
-            }
+            // The server reads an empty list as every non-admin user: an unchanged selection, or "specific users" while
+            // the user list is loading or failed, keeps the stored value (and so does the Enable call below).
+            _jeMaintenanceUsersField.saveInto(config);
             config.EnableCustomSplashScreen = document.querySelector('#enableCustomSplashScreen').checked;
             config.SplashScreenImageUrl = document.querySelector('#splashScreenImageUrl').value;
             config.DisableAllShortcuts = document.querySelector('#disableAllShortcuts').checked;
@@ -8925,7 +9232,7 @@
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);
             config.ElsewhereEnabled = document.querySelector('#elsewhereEnabled').checked;
             config.TMDB_API_KEY = jeSecretRead(document.querySelector('#TMDB_API_KEY'));
-            config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
+            _jeRegionField.saveInto(config);
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
             config.ElsewhereSeasonProviders = document.querySelector('#ElsewhereSeasonProviders').checked;
@@ -8988,7 +9295,7 @@
             config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
             config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
-            config.TagCacheExcludedLibraryIds = collectTagCacheExcludedLibraries();
+            _jeTagCacheLibrariesField.saveInto(config);
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
                 : true;
@@ -8997,7 +9304,7 @@
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
-            config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
+            _jeAudioLanguageField.saveInto(config);
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
@@ -9007,6 +9314,8 @@
             config.ShowPlaybackRatingBadge = document.querySelector('#showPlaybackRatingBadge').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
+            config.DoesTheDogDieEnabled = document.querySelector('#doesTheDogDieEnabled').checked;
+            config.DoesTheDogDieApiKey = jeSecretRead(document.querySelector('#doesTheDogDieApiKey'));
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
             config.MdblistApiKey = jeSecretRead(document.querySelector('#mdblistApiKey'));
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
@@ -9038,6 +9347,7 @@
             config.JellyseerrAvailablePosterLinksToJellyfin = document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked;
             config.NativeAbsentDetailsEnabled = document.querySelector('#nativeAbsentDetailsEnabled').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
+            config.JellyseerrSingleSeasonRequestOnly = document.querySelector('#jellyseerrSingleSeasonRequestOnly').checked;
             config.JellyseerrShowQuotaInfo = document.querySelector('#jellyseerrShowQuotaInfo').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;
@@ -9112,11 +9422,9 @@
             config.AutoMovieRequestCheckReleaseDate = document.querySelector('#autoMovieRequestCheckReleaseDate').checked;
             config.AutoMovieRequestQualityMode = document.querySelector('#autoMovieRequestQualityMode').value || 'default';
             config.AutoMovieRequestFallbackOn4k = document.querySelector('#autoMovieRequestFallbackOn4k').checked;
-            var serverVal = parseInt(document.querySelector('#autoMovieRequestServer').value);
-            config.AutoMovieRequestCustomServerId = (!isNaN(serverVal) && serverVal >= 0) ? serverVal : -1;
-            var profileVal = parseInt(document.querySelector('#autoMovieRequestProfile').value);
-            config.AutoMovieRequestCustomProfileId = (!isNaN(profileVal) && profileVal > 0) ? profileVal : 0;
-            config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
+            _jeAutoMovieServerField.saveInto(config);
+            _jeAutoMovieProfileField.saveInto(config);
+            _jeAutoMovieRootField.saveInto(config);
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.SyncJellyfinWatchlistToSeerr = document.querySelector('#syncJellyfinWatchlistToSeerr').checked;
@@ -9202,7 +9510,7 @@
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
             config.DefaultSubtitleTextEffect = parseInt(document.querySelector('#DefaultSubtitleTextEffect').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
-            config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';
+            _jeDefaultLanguageField.saveInto(config);
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
             config.ShowLetterboxdLinkAsText = document.querySelector('#showLetterboxdLinkAsText').checked;
             config.MetadataIconsEnabled = document.querySelector('#metadataIconsEnabled').checked;
@@ -9240,6 +9548,7 @@
             config.ActivityFeedShowWatched = document.querySelector('#activityFeedShowWatched').checked;
             config.ActivityFeedShowFavorited = document.querySelector('#activityFeedShowFavorited').checked;
             config.ActivityFeedShowReviewed = document.querySelector('#activityFeedShowReviewed').checked;
+            config.ActivityFeedOwnOnlyForNonAdmins = document.querySelector('#activityFeedOwnOnlyForNonAdmins').checked;
             config.ActivityFeedShowActiveStreams = document.querySelector('#activityFeedShowActiveStreams').checked;
             config.ActivityFeedUseNativeTab = document.querySelector('#activityFeedUseNativeTab').checked;
             config.ActivityFeedUsePluginPages = document.querySelector('#activityFeedUsePluginPages').checked;
@@ -9349,6 +9658,7 @@
                 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies',
                 'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
+                'spoilerBlurTrickplay',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
                 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage',
@@ -9360,7 +9670,7 @@
                 var pascal = id.charAt(0).toUpperCase() + id.slice(1);
                 config[pascal] = !!el.checked;
             });
-            config.SpoilerAutoEnableLibraryIds = collectSpoilerAutoEnableLibraries();
+            _jeSpoilerLibrariesField.saveInto(config);
             var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
             var __sbModeSave = document.querySelector('#spoilerBlurMode');
@@ -9470,6 +9780,16 @@
             }
         }
 
+        /**
+         * After a successful save, each page-level asynchronously filled field's saved value is its stored one.
+         * @param {Object} config - The configuration just saved
+         */
+        function jeAsyncFieldsSaved(config) {
+            [_jeMaintenanceUsersField, _jeRegionField, _jeTagCacheLibrariesField, _jeSpoilerLibrariesField, _jeAudioLanguageField,
+                _jeDefaultLanguageField, _jeAutoMovieServerField, _jeAutoMovieProfileField, _jeAutoMovieRootField, _jeBlockedUsersField]
+                .forEach(function(field) { field.saved(config); });
+        }
+
         // Re-entrancy guard. `Dashboard.showLoadingMsg()` provides only a visual
         // overlay, not an input block, so two rapid Enter presses or a second
         // click on the save dock can still fire saveConfig in parallel — the
@@ -9482,6 +9802,7 @@
         async function saveConfig(e) {
             e.preventDefault();
             if (_jeSaveInFlight) return false;
+            if (!jeConfigSaveAllowed()) return false;
             _jeSaveInFlight = true;
             enforceTabExclusivity();
             Dashboard.showLoadingMsg();
@@ -9491,6 +9812,7 @@
             try {
                 const config = await buildConfigFromForm();
                 const result = await ApiClient.updatePluginConfiguration(pluginId, config);
+                jeAsyncFieldsSaved(config);
                 // After JE config is persisted, sync any managed Custom Tabs entries.
                 // We surface non-OK results to the admin via Dashboard.alert so a
                 // partial failure doesn't hide behind the green "saved" toast.
@@ -9579,12 +9901,14 @@
 
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
+            if (!jeConfigSaveAllowed()) return;
             if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
                 Dashboard.showLoadingMsg();
                 try {
                     // First, save the current configuration
                     const config = await buildConfigFromForm();
                     await ApiClient.updatePluginConfiguration(pluginId, config);
+                    jeAsyncFieldsSaved(config);
                     jeMarkSaved();
 
                     // Sync managed Custom Tabs entries — same flow as a normal save,
@@ -9617,12 +9941,36 @@
 
         // ── Maintenance mode: user checklist ─────────────────────────────────────
 
+        // Affected users: an asynchronously filled field (see jeAsyncField). "All non-admin users" can be chosen at any
+        // time; "specific users" says which only once the list has loaded, so until then a save keeps the stored value.
+        var _jeMaintenanceUsersField = jeAsyncField('MaintenanceModeAffectedUsers', { field: 'MaintenanceModeAffectedUsers', read: function(field) {
+            const mode = (document.querySelector('input[name="maintenanceModeUsers"]:checked') || {}).value || 'all';
+            if (mode === 'all') return 'all';
+            if (field.state !== 'loaded') return undefined;
+            return JSON.stringify(Array.from(document.querySelectorAll('.je-mm-user-cb:checked')).map(cb => cb.value));
+        } });
+        jeAsyncFieldWatch(_jeMaintenanceUsersField, document.getElementById('mmUsers_all').closest('div'),
+            [document.getElementById('je-mm-select-all'), document.getElementById('je-mm-deselect-all')]);
+
         function loadMaintenanceUsers() {
+            const field = _jeMaintenanceUsersField;
+            const token = field.begin();
+            // No checkboxes from an earlier list while this one loads: they could not be saved.
+            const loadingInner = document.getElementById('je-mm-users-inner');
+            if (loadingInner) {
+                loadingInner.innerHTML = '';
+                const loading = document.createElement('div');
+                loading.style.cssText = 'opacity:0.55;font-size:0.875em;';
+                loading.textContent = 'Loading users…';
+                loadingInner.appendChild(loading);
+            }
+            // je-async-loader: MaintenanceModeAffectedUsers
             ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Users'),
                 dataType: 'json'
             }).then(function(users) {
+                if (!field.settle(token, true)) return;
                 const inner = document.getElementById('je-mm-users-inner');
                 if (!inner) return;
                 inner.innerHTML = '';
@@ -9698,12 +10046,13 @@
 
                 inner.appendChild(grid);
             }).catch(function() {
+                if (!field.settle(token, false)) return;
                 const inner = document.getElementById('je-mm-users-inner');
                 if (!inner) return;
                 inner.innerHTML = '';
                 const msg = document.createElement('div');
                 msg.style.cssText = 'opacity:0.55;font-size:0.875em;';
-                msg.textContent = 'Failed to load users.';
+                msg.textContent = 'Failed to load users. Saving keeps the current selection.';
                 inner.appendChild(msg);
             });
         }
@@ -9851,7 +10200,7 @@
 
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -9872,7 +10221,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -9909,12 +10258,12 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -9993,11 +10342,11 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -10005,13 +10354,39 @@
         setupBrandingUploads();
         setupMaintenanceModeControls();
 
+        // The Default UI Language and the sound-tag audio language: asynchronously filled fields (see jeAsyncField), each
+        // with one list load for the page's life; loadConfig sets the stored value (again on every pageshow).
+        var _jeDefaultLanguageField = jeAsyncField('DefaultLanguage', { field: 'DefaultLanguage', read: function() {
+            return document.querySelector('#DefaultLanguage').value || '';
+        } });
+        jeAsyncFieldWatch(_jeDefaultLanguageField, document.querySelector('#DefaultLanguage'));
+        var _jeAudioLanguageField = jeAsyncField('QualityTagsPreferredAudioLanguage', { field: 'QualityTagsPreferredAudioLanguage', read: function() {
+            return document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
+        } });
+        jeAsyncFieldWatch(_jeAudioLanguageField, document.querySelector('#qualityTagsPreferredAudioLanguage'));
+
+        /**
+         * The value a field's select shows once its list has arrived: the admin's choice if they changed it while the list
+         * loaded, otherwise the stored value (or, before any configuration read, what the select shows now).
+         * @param {Object} field - From jeAsyncField
+         * @param {HTMLSelectElement} select
+         * @returns {string}
+         */
+        function jeListSelectWanted(field, select) {
+            return field.changed || !field.hasStored ? select.value : (field.stored || '');
+        }
+
         // Jellyfin's culture list feeds both the UI language and the sound-tag audio language dropdowns.
+        const _jeLanguageListToken = _jeDefaultLanguageField.begin();
+        const _jeAudioLanguageListToken = _jeAudioLanguageField.begin();
+        // je-async-loader: DefaultLanguage, QualityTagsPreferredAudioLanguage
         const culturesPromise = ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
 
         // Populate language options dynamically
         (async () => {
             const defaultLanguageSelect = document.getElementById('DefaultLanguage');
             if (!defaultLanguageSelect) return;
+            const field = _jeDefaultLanguageField, token = _jeLanguageListToken;
 
             const CUSTOM_DISPLAY_NAMES = {
                 'pr': 'Pirate',
@@ -10024,12 +10399,14 @@
 
             try {
                 const [localeCodes, cultures] = await Promise.all([
+                    // je-async-loader: DefaultLanguage
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
                     culturesPromise
                 ]);
 
                 // Check GitHub for any new locale files added since the last plugin release (1 request)
                 try {
+                    // je-async-loader: DefaultLanguage
                     const ghResp = await fetch('https://api.github.com/repos/n00bcodr/Jellyfin-Enhanced/contents/Jellyfin.Plugin.JellyfinEnhanced/js/locales');
                     if (ghResp.ok) {
                         const files = await ghResp.json();
@@ -10057,20 +10434,25 @@
                     if (!displayName && code.includes('-')) {
                         const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
                         displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
-                            ? `${baseName} (${code.split('-')[1]})`
+                            ? baseName + ' (' + code.split('-')[1] + ')'
                             : baseName;
                     }
                     return { code, displayName: displayName || code };
                 });
 
                 options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                if (!field.settle(token, true)) return;
+                const wanted = jeListSelectWanted(field, defaultLanguageSelect);
                 options.forEach(({ code, displayName }) => {
                     const option = document.createElement('option');
                     option.value = code;
                     option.textContent = displayName;
                     defaultLanguageSelect.appendChild(option);
                 });
+                jeSelectValue(defaultLanguageSelect, wanted);
             } catch (err) {
+                // The stored code stays shown as a temporary option, and a save keeps it.
+                field.settle(token, false);
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
             }
         })();
@@ -10080,10 +10462,11 @@
         (async () => {
             const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
             if (!qualityAudioLangSelect) return;
+            const field = _jeAudioLanguageField, token = _jeAudioLanguageListToken;
             try {
                 const cultures = await culturesPromise;
-                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
-                qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
+                if (!field.settle(token, true)) return;
+                const wanted = jeListSelectWanted(field, qualityAudioLangSelect);
                 const seen = new Set();
                 cultures
                     .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
@@ -10095,9 +10478,10 @@
                         option.textContent = name;
                         qualityAudioLangSelect.appendChild(option);
                     });
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                jeSelectValue(qualityAudioLangSelect, wanted);
             } catch (err) {
-                // loadConfig parks the saved code as a bare option, so a save still keeps it.
+                // The stored code stays shown as a temporary option, and a save keeps it.
+                field.settle(token, false);
                 console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
             }
         })();
@@ -10567,6 +10951,7 @@
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
@@ -10597,12 +10982,17 @@
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ListPlaceholdersEnabled'] },
             { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListAuthoringEnabled', 'arrPhase4ListRequestsEnabled', 'arrPhase4ListSwapInEnabled', 'arrPhase4ListMaintenanceEnabled', 'arrPhase4ListStatusEnabled'] },
             { parent: 'arrPhase4ListRequestsEnabled', label: 'Ask for list entries', children: ['arrPhase4ListRequestAllEnabled'] },
+            // Phase 4c3a: list pages
+            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListPlaylistUiEnabled', 'arrPhase4ListCollectionUiEnabled'] },
             // Phase 4e: acquisition badges
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AcquisitionBadgesEnabled'] },
             { parent: 'arrPhase4AcquisitionBadgesEnabled', label: 'Poster badges: New for you, Upgraded, 4K', children: ['arrPhase4NativeStampsEnabled', 'arrAcquisitionNewDays', 'arrAcquisitionUpgradedDays'] },
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['arrPhase4NativeStampsEnabled'] },
-            // Phase 4c3a: list pages
-            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListPlaylistUiEnabled', 'arrPhase4ListCollectionUiEnabled'] },
+            // Phase 4d: home rows
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4HomeRowsEnabled', 'arrPhase4CollectionGapsEnabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4HomeRowsEnabled', 'arrPhase4CollectionGapsEnabled'] },
+            { parent: 'arrPhase4HomeRowsEnabled', label: 'Home rows', children: ['arrPhase4HssSectionsEnabled', 'arrPhase4HomeOpsStripEnabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrPhase4HomeOpsStripEnabled'] },
             // Phase 4f: Ready playlist and native Ready messages
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4ReadyPlaylistEnabled', 'arrPhase4ReadyMessagesEnabled'] },
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ReadyPlaylistEnabled'] },
@@ -10618,7 +11008,7 @@
             { parent: 'audioLanguageTagSyncEnabled', label: 'Enable Audio Language Tags Sync', children: ['audioLanguageTagPrefix', 'audioLanguageTagShowAsLinks'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
-            { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
+            { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedOwnOnlyForNonAdmins', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
@@ -10626,7 +11016,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerBlurTrickplay', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
             { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];
@@ -10920,7 +11310,7 @@
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
         }
 
-        // Warns when this build targets a different Jellyfin line than the server (GET host-compat).
+        // Warns when this build targets a different Jellyfin line or the file was replaced (GET host-compat).
         function checkHostCompat() {
             ApiClient.ajax({
                 type: 'GET',
@@ -10929,11 +11319,15 @@
             }).then(function(data) {
                 var banner = document.getElementById('je-host-mismatch-warning');
                 if (!banner) return;
-                if (!data || !data.mismatch) {
+                if (!data || (!data.mismatch && !data.stale)) {
                     banner.style.display = 'none';
                     return;
                 }
+                document.getElementById('je-host-mismatch-title').textContent = data.stale
+                    ? 'Plugin restart required'
+                    : 'Wrong plugin build for this Jellyfin version';
                 document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
+                document.getElementById('je-host-mismatch-install').style.display = data.mismatch ? '' : 'none';
                 document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
                 var link = document.getElementById('je-host-mismatch-link');
                 link.textContent = data.manifestUrl || '';
@@ -12447,6 +12841,12 @@
             if (result.missingCredentials && result.missingCredentials.length) {
                 text += ' Enter these again: ' + result.missingCredentials.join(', ') + '.';
             }
+            // A person's settings file the server couldn't read to check its display language is left out.
+            if (result.refusedFiles && result.refusedFiles.length) {
+                var one = result.refusedFiles.length === 1;
+                text += ' Not restored, because ' + (one ? 'it' : 'they') + ' can\'t be read: ' + result.refusedFiles.join(', ')
+                    + (one ? ' (that person keeps their current settings).' : ' (those people keep their current settings).');
+            }
             if (result.safetyBackup) text += ' The previous data was saved as ' + result.safetyBackup + '.';
             return text + ' Restart Jellyfin, then reload this page.';
         }
@@ -12794,10 +13194,14 @@
          * Pre-checks users whose IDs appear in the saved blocklist config.
          * @param {string} blockedIdsString - Comma-separated dashless user IDs to pre-select.
          */
-        // Tracks whether the most recent loadBlockedUsersList successfully rendered
-        // checkboxes. If /Users API fails, syncBlockedUsersToHiddenInput must not
-        // run — otherwise it would wipe the entire blocklist on save.
-        let _blockedUsersLoaded = false;
+        // An asynchronously filled field (see jeAsyncField), saved through jeArrServerOwned (the hidden input): until the
+        // admin ticks or unticks a user in the latest loaded list, the hidden input keeps the loaded value and the save
+        // keeps the server's.
+        const _jeBlockedUsersField = jeAsyncField('JellyseerrImportBlockedUsers', { read: function(field) {
+            if (field.state !== 'loaded') return undefined;
+            return Array.from(document.querySelectorAll('.blockedUserCheckbox:checked')).map(cb => cb.dataset.userid).join(',');
+        } });
+        jeAsyncFieldWatch(_jeBlockedUsersField, document.getElementById('blockedUsersContainer'));
 
         async function loadBlockedUsersList(blockedIdsString) {
             const container = document.getElementById('blockedUsersContainer');
@@ -12805,9 +13209,14 @@
                 (blockedIdsString || '').split(/[,\r\n]+/).map(id => id.trim().replace(/-/g, '').toLowerCase()).filter(Boolean)
             );
 
-            _blockedUsersLoaded = false;
+            const field = _jeBlockedUsersField;
+            field.setStored(blockedIdsString);
+            const token = field.begin();
+            container.textContent = 'Loading users...';
             try {
+                // je-async-loader: JellyseerrImportBlockedUsers
                 const users = await ApiClient.getUsers();
+                if (!field.settle(token, true)) return;
                 container.textContent = '';
                 users.sort((a, b) => a.Name.localeCompare(b.Name));
                 users.forEach(user => {
@@ -12834,7 +13243,6 @@
                     container.appendChild(div);
                 });
                 updateBlockedUsersCount();
-                _blockedUsersLoaded = true;
 
                 // Show scroll hint if content overflows, hide it once user scrolls to bottom
                 const scrollHint = document.getElementById('blockedUsersScrollHint');
@@ -12848,30 +13256,26 @@
                     container.addEventListener('scroll', updateHint);
                 }
             } catch (e) {
-                container.textContent = 'Could not load users.';
+                if (!field.settle(token, false)) return;
+                container.textContent = 'Could not load users. Saving keeps the current blocklist.';
                 console.error('Failed to load users for blocklist:', e);
-                _blockedUsersLoaded = false;
             }
         }
 
         /**
-         * Syncs checked blocked-user checkboxes into the hidden input for config save.
-         * Skipped if loadBlockedUsersList failed — otherwise we'd wipe the whole
-         * blocklist on save.
+         * Copies the admin's blocklist choice into the hidden input the save reads (jeArrServerOwned); an unchanged
+         * blocklist, or one whose user list is loading or failed, leaves the loaded value there.
          */
         function syncBlockedUsersToHiddenInput() {
-            if (!_blockedUsersLoaded) {
-                console.warn('Jellyfin Enhanced: skipping blocklist sync — user list failed to load. Existing config preserved.');
-                return;
-            }
-            const checkboxes = document.querySelectorAll('.blockedUserCheckbox:checked');
-            const ids = Array.from(checkboxes).map(cb => cb.dataset.userid);
-            document.querySelector('#jellyseerrImportBlockedUsers').value = ids.join(',');
+            const value = _jeBlockedUsersField.value();
+            if (value !== undefined) document.querySelector('#jellyseerrImportBlockedUsers').value = value;
         }
 
         document.getElementById('btnImportJellyseerrUsers').addEventListener('click', async () => {
             const btn = document.getElementById('btnImportJellyseerrUsers');
             const resultDiv = document.getElementById('importUsersResult');
+            // The import saves the page first: not before the settings were read (see jeConfigSaveAllowed).
+            if (!jeConfigSaveAllowed()) return;
             btn.disabled = true;
             btn.textContent = 'Saving config...';
             resultDiv.style.display = 'none';
@@ -13476,14 +13880,14 @@
                     if (parts.length >= 2 && parts[0] && parts[1]) {
                         validLinks.push({ name: parts[0], icon: parts[1] });
                     } else {
-                        invalidLines.push(`Line ${index + 1}: "${trimmedLine}"`);
+                        invalidLines.push('Line ' + (index + 1) + ': "' + trimmedLine + '"');
                     }
                 });
 
                 if (invalidLines.length > 0) {
                     Dashboard.alert({
                         title: 'Invalid Format',
-                        message: `The following lines have invalid format:\n\n${invalidLines.join('\n')}\n\nPlease use the format: Configuration Page Name | icon_name`
+                        message: 'The following lines have invalid format:\n\n' + invalidLines.join('\n') + '\n\nPlease use the format: Configuration Page Name | icon_name'
                     });
                     return;
                 }

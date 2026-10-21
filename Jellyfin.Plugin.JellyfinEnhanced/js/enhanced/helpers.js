@@ -320,7 +320,7 @@
      * @returns {HTMLElement|null} The container, or null if no header is ready yet.
      */
     function getHeaderRightContainer() {
-        const legacy = document.querySelector('.headerRight');
+        const legacy = document.querySelector('.headerRight:not([data-je-header-fallback])');
         if (legacy && legacy.offsetParent !== null) {
             attachDrawerAutoClose(legacy);
             return legacy;
@@ -362,7 +362,12 @@
         while (userMenuBox && userMenuBox.parentElement !== toolbar) {
             userMenuBox = userMenuBox.parentElement;
         }
-        const buttonsTray = userMenuBox?.previousElementSibling;
+        let buttonsTray = userMenuBox?.previousElementSibling;
+        // Found mid-render (user menu not mounted yet), our fallback container ends up
+        // between the native tray and the user menu. Look past it once the tray exists.
+        if (buttonsTray?.hasAttribute('data-je-header-fallback') && buttonsTray.previousElementSibling?.matches('.MuiBox-root')) {
+            buttonsTray = buttonsTray.previousElementSibling;
+        }
         // Other plugins (e.g. Moonfin) can put their own button here; never host inside one.
         const isInteractive = buttonsTray?.matches('button, a, [role="button"]');
         if (buttonsTray && !isInteractive) {
@@ -375,6 +380,7 @@
         if (!container) {
             container = document.createElement('div');
             container.className = 'headerRight';
+            container.dataset.jeHeaderFallback = '';
             if (userMenuBox) toolbar.insertBefore(container, userMenuBox);
             else toolbar.appendChild(container);
         } else if (userMenuBox && container.nextElementSibling !== userMenuBox && container.compareDocumentPosition(userMenuBox) & Node.DOCUMENT_POSITION_PRECEDING) {

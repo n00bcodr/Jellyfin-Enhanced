@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
-    public class UserSettings
+    public class JellyfinEnhancedUserSettings
     {
         public bool AutoPauseEnabled { get; set; }
         public bool AutoResumeEnabled { get; set; }
@@ -51,16 +51,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ListStatus { get; set; }
         /// <summary>Requests &amp; downloads lists: automatic swap-in may change lists this person turned it on for (their consent). Null and false: no.</summary>
         public bool? ListSwapIn { get; set; }
-        // Phase 4e (acquisition badges): per-person display preferences.
-        /// <summary>Requests &amp; downloads: Upgraded / New for you / 4K badges on poster cards (web). Null follows the administrator; false hides them for this person.</summary>
-        public bool? AcquisitionBadges { get; set; }
-        /// <summary>Requests &amp; downloads: the same badges drawn into this person's poster images on native apps. Null follows the administrator; false turns them off for this person.</summary>
-        public bool? NativeAcquisitionStamps { get; set; }
         // Phase 4c3a (list pages): per-person display preferences.
         /// <summary>Requests &amp; downloads lists: draw "not in your library" entries on playlist pages and mark incomplete playlists. Null follows the administrator; false hides them for this person.</summary>
         public bool? ListPlaylistUi { get; set; }
         /// <summary>Requests &amp; downloads lists: the "Not in your library" section on collection pages. Null follows the administrator; false hides it for this person.</summary>
         public bool? ListCollectionUi { get; set; }
+        // Phase 4e (acquisition badges): per-person display preferences.
+        /// <summary>Requests &amp; downloads: Upgraded / New for you / 4K badges on poster cards (web). Null follows the administrator; false hides them for this person.</summary>
+        public bool? AcquisitionBadges { get; set; }
+        /// <summary>Requests &amp; downloads: the same badges drawn into this person's poster images on native apps. Null follows the administrator; false turns them off for this person.</summary>
+        public bool? NativeAcquisitionStamps { get; set; }
+        // Phase 4d (home rows): per-person row preferences.
+        /// <summary>Requests &amp; downloads home rows: show "Your requests". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowRequests { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show "Coming soon for you". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowSoon { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show "Just arrived for you". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowArrived { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show the administrator's strip (administrators only). Null follows the administrator; false hides it.</summary>
+        public bool? HomeOpsStrip { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
@@ -175,6 +184,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ReplaceEpisodeTitles { get; set; }
         public bool? HideCast { get; set; }
         public bool? HideReviews { get; set; }
+        // Trickplay seek previews (admin switch: SpoilerBlurTrickplay).
+        // false = show this user the scrubbing thumbnails while seeking
+        // through a protected unwatched episode/movie.
+        public bool? HideTrickplay { get; set; }
         // Advanced per-category reveals (admin default: SpoilerAdvancedMode).
         // Unlike the per-field opt-outs above, `false` here is the STRICTER
         // choice: it opts this user out of the category reveals entirely,
@@ -289,6 +302,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string> Regions { get; set; } = new List<string>();
         public List<string> Services { get; set; } = new List<string>();
         public bool SeasonProviders { get; set; } = true;
+    }
+
+    /// <summary>Per-user DoesTheDogDie trigger picks (topic ids), stored in ddd-triggers.json.</summary>
+    public class DddSettings
+    {
+        public List<int> Triggers { get; set; } = new List<int>();
     }
 
     public class PendingWatchlistItem

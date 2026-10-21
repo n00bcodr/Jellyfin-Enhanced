@@ -93,6 +93,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>Overall time budget for metadata reads inside an interactive request (adds, links).</summary>
         public static readonly TimeSpan InteractiveMetadataBudget = TimeSpan.FromSeconds(6);
 
+        private const int PlacementRecoveryAttempts = 3;
+        private const int PlacementHistoryLimit = 32;
+
         private const int MaxQueuedItems = 50_000;
 
         // Seerr reads one pass runs at a time: below the metadata service's global limit, so interactive reads and other
@@ -200,6 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // the write (a share removed or made read-only during an earlier insert of the same pass stops the rest).
         private bool StillInserting(PassContext context, ListWriteKind kind, IReadOnlyCollection<Guid> items)
         {
+
             if (context.Inserts && (_gate == null || !_gate.SwapAllowed(context.List.Id, context.Doc, context.Owner, kind, items, InsertsAllowed, context.OnBehalfOf)))
             {
                 context.Inserts = false;
@@ -337,7 +341,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 _stopping = new CancellationTokenSource();
                 var token = _stopping.Token;
-                _worker = Task.Run(() => WorkerLoopAsync(token), CancellationToken.None);
+                // The worker never inherits a create's or pass's continuation it happened to be started from.
+                using (ListContinuation.Detach())
+                {
+                    _worker = Task.Run(() => WorkerLoopAsync(token), CancellationToken.None);
+                }
             }
         }
 
@@ -475,6 +483,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>What the pass did.</returns>
         public async Task<SwapPassResult> RunListPassAsync(string listIdN, IReadOnlyCollection<string>? placeholderIds, MetadataMode mode, CancellationToken cancellationToken)
         {
+            if (!ListStore.IsValidListId(listIdN))
+            {
+                return default;
+            }
+
+            // Its own continuation (never one it was started from): after every await, and before every write, the list
+            // must still be the one the pass started on (not removed, also not removed and re-added under its id, and no
+            // restore since). Consent and access are the gate's, at every Jellyfin write (SwapWrite).
+            var id = Guid.ParseExact(listIdN, "N");
+            var removals = _store.RemovalVersion(listIdN);
+            bool Removed() => _store.RemovalVersion(listIdN) != removals || _host.GetList(id) == null;
+            using var execution = new ListContinuation(_store, () => Removed() ? ListContinuation.NotFound() : null);
+            try
+            {
+                return await ListContinuation.Await(() => RunListPassCoreAsync(listIdN, placeholderIds, mode, cancellationToken)).ConfigureAwait(false);
+            }
+            catch (ListAccessLostException) when (execution.Refused)
+            {
+                // Removed: terminal (the lifecycle removes the document). Restored: the restore queues every list again.
+                if (Removed())
+                {
+                    ForgetList(listIdN);
+                }
+
+                _logger.Debug($"[Lists] Swap pass for list {listIdN} stopped: the list was removed or restored meanwhile.");
+                return default;
+            }
+        }
+
+        private async Task<SwapPassResult> RunListPassCoreAsync(string listIdN, IReadOnlyCollection<string>? placeholderIds, MetadataMode mode, CancellationToken cancellationToken)
+        {
             if (!Enabled || !ListStore.IsValidListId(listIdN))
             {
                 return default;
@@ -502,9 +541,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return default;
             }
 
-            var metadata = await FetchMetadataAsync(snapshot.Items.Where(p => placeholderIds == null || placeholderIds.Contains(p.Id)), mode, UtcNow(), cancellationToken).ConfigureAwait(false);
+            var metadata = await ListContinuation.Await(() => FetchMetadataAsync(snapshot.Items.Where(p => placeholderIds == null || placeholderIds.Contains(p.Id)), mode, UtcNow(), cancellationToken)).ConfigureAwait(false);
 
-            using (await _store.LockAsync(listIdN, cancellationToken).ConfigureAwait(false))
+            using (await ListContinuation.Await(() => _store.LockAsync(listIdN, cancellationToken)).ConfigureAwait(false))
             {
                 // The list as Jellyfin has it now: its owner and shares may have changed while metadata was read.
                 list = _host.GetList(list.Id);
@@ -516,7 +555,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 var doc = _store.LoadForUpdate(listIdN, list.Kind);
                 User? owner = list.Kind == ListKinds.Playlist && list.OwnerId != Guid.Empty ? _userManager.GetUserById(list.OwnerId) : null;
-                var outcome = await SwapLockedAsync(list, owner, doc, placeholderIds, metadata, null, mode, cancellationToken).ConfigureAwait(false);
+                var outcome = await ListContinuation.Await(() => SwapLockedAsync(list, owner, doc, placeholderIds, metadata, null, mode, cancellationToken)).ConfigureAwait(false);
                 if (outcome.Dirty)
                 {
                     _store.Save(outcome.Doc);
@@ -565,6 +604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
             // judged again by the gate before every write (each one waits for Jellyfin).
             var current = _host.GetList(list.Id);
+
             var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc), OnBehalfOf = onBehalfOf };
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
@@ -586,7 +626,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            await RecoverIntentsAsync(context).ConfigureAwait(false);
+            await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
+
             if (context.Doc.Reconcile != null)
             {
                 // Restore/import reconciliation: intents are settled by Jellyfin's real membership (above) before
@@ -607,7 +648,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var followUps = new List<string>();
             var forced = new List<string>();
             var candidates = context.Doc.Items
-                .Where(p => context.Inserts && p.Kind != PlaceholderKinds.Custom && (placeholderIds == null || placeholderIds.Contains(p.Id)))
+                .Where(p => context.Inserts && p.Kind != PlaceholderKinds.Custom && (placeholderIds == null || placeholderIds.Contains(p.Id))
+                    && !context.Doc.Intents.Any(i => i.PhId == p.Id))
                 .Select(p => p.Id)
                 .ToList();
             foreach (var placeholderId in candidates)
@@ -642,13 +684,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                     var resolution = _resolver.Resolve(placeholder, list.Kind, new[] { owner }, present: _host.GetRawEntries(list.Id)
                         .Where(e => e.Resolved && e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToHashSet());
-                    ok = await SwapIntoPlaylistAsync(context, placeholderId, resolution).ConfigureAwait(false);
+                    ok = await ListContinuation.Await(() => SwapIntoPlaylistAsync(context, placeholderId, resolution)).ConfigureAwait(false);
                 }
                 else
                 {
                     var resolution = _resolver.Resolve(placeholder, list.Kind, Array.Empty<User>(), present: _host.GetRawEntries(list.Id)
                         .Where(e => e.Resolved && e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToHashSet());
-                    ok = await SwapIntoCollectionAsync(context, placeholderId, resolution).ConfigureAwait(false);
+                    ok = await ListContinuation.Await(() => SwapIntoCollectionAsync(context, placeholderId, resolution)).ConfigureAwait(false);
                 }
 
                 placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == placeholderId);
@@ -725,7 +767,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return true;
                 }
 
-                var landed = await InsertRunAsync(context, placeholderId, new[] { itemId }, index).ConfigureAwait(false);
+                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, new[] { itemId }, index)).ConfigureAwait(false);
                 if (landed == null)
                 {
                     return false;
@@ -773,7 +815,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return true;
                 }
 
-                var landed = await InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index).ConfigureAwait(false);
+                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index, run)).ConfigureAwait(false);
                 if (landed == null)
                 {
                     return false;
@@ -876,9 +918,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>
         /// Inserts real items at an order index under a persisted swap intent (A6), then verifies with occurrence
         /// counts. Returns the items that landed (empty when Jellyfin dropped them all) or null when Jellyfin threw;
-        /// in both cases the intent is cleared and the order re-reconciled in the context's document.
+        /// the intent remains until placement settles or no occurrence landed.
         /// </summary>
-        private async Task<HashSet<Guid>?> InsertRunAsync(PassContext context, string placeholderId, IReadOnlyList<Guid> items, int index)
+        private async Task<HashSet<Guid>?> InsertRunAsync(PassContext context, string placeholderId, IReadOnlyList<Guid> items, int index, IReadOnlyList<ResolvedItem>? episodes = null)
         {
             var listId = context.List.Id;
             var before = OccurrenceCounts(_host.GetRawEntries(listId));
@@ -889,6 +931,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 PhId = placeholderId,
                 ItemIds = items.Select(N).ToList(),
+                Episodes = PlannedEpisodes(episodes ?? Array.Empty<ResolvedItem>(), items),
                 Anchor = anchor,
                 Index = index,
                 OccurrenceCountsBefore = items.Distinct().ToDictionary(N, id => before.TryGetValue(id, out var count) ? count : 0, StringComparer.Ordinal),
@@ -897,12 +940,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             context.Doc.Intents.Add(intent);
             _store.Save(context.Doc);
             context.Doc = _store.LoadForUpdate(context.ListIdN, context.List.Kind);
+            intent = context.Doc.Intents.Single(i => i.CreatedAt == intent.CreatedAt);
             context.Dirty = false;
 
             List<string>? placed = null;
             try
             {
-                placed = await ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+                placed = await ListContinuation.Await(() => ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
             }
             catch (ListAccessLostException lost)
             {
@@ -915,28 +959,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 _logger.Warning($"[Lists] Swapping into list {context.ListIdN} failed (retried on the next pass): {ex.Message}");
             }
 
+
             var raw = _host.GetRawEntries(listId);
             var after = OccurrenceCounts(raw);
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
+            if (placed == null && landed.Count > 0)
+            {
+                _store.Save(context.Doc);
+                try
+                {
+                    placed = await ListContinuation.Await(() => SettleLandedAsync(context, intent, items.Where(landed.Contains).ToList())).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Lists] Placement of list {context.ListIdN} is unfinished: {ex.Message}");
+                    context.Dirty = true;
+                    return null; // Only this entry waits; other placeholders may still be processed.
+                }
+            }
+
+            context.Doc.Order = placed ?? Canonical(context.Doc, raw);
             context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
-            context.Doc.Order = placed
-                ?? (landed.Count > 0 ? await SettleLandedAsync(context, anchor, index, items.Where(landed.Contains).ToList()).ConfigureAwait(false) : Canonical(context.Doc, raw));
             context.Dirty = true;
             return placed == null && landed.Count == 0 ? null : landed;
         }
 
-        /// <summary>
-        /// F8: the canonical order once new items landed without a finished placement (Jellyfin threw, or a crash left
-        /// an intent): their tokens go where the swap planned them (<paramref name="index"/> while it still follows
-        /// <paramref name="anchor"/>, else right after the anchor), so a placeholder keeps following its own fills. On
-        /// Jellyfin 10.11, where the append and the moves are separate calls, entries left elsewhere are moved after the
-        /// anchor once; anything else keeps Jellyfin's order with placeholders reconciled to their anchors.
-        /// </summary>
-        private async Task<List<string>> SettleLandedAsync(PassContext context, string? anchor, int? index, IReadOnlyList<Guid> landed)
+        // Settle only the entries whose occurrence counts increased. Strip their planned tokens before rebuilding
+        // the desired run: an earlier failed apply or recovery may already have reconciled those tokens into Order.
+        // A failed/forbidden move propagates to the caller, which MUST keep the durable intent.
+        private async Task<List<string>> SettleLandedAsync(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
         {
-            var order = context.Doc.Order;
+            // Both the immediate failed-insert path and restart recovery reach this boundary. Never move
+            // using a post-failure order snapshot whose stamp was not captured from a successful JE save.
+            var failure = PlacementOrderFailure(context, intent, landed);
+            if (failure != null)
+            {
+                AbandonPlacement(context, intent, failure);
+                return context.Doc.Order;
+            }
+
+            var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
+            var order = context.Doc.Order.Where(t => !tokens.Contains(t)).ToList();
+            var anchor = intent.Anchor;
             int at;
-            if (index is int planned && planned >= 0 && planned <= order.Count
+            if (intent.Index is int planned && planned >= 0 && planned <= order.Count
                 && string.Equals(ListOrder.RealAnchorBefore(order, planned), anchor, StringComparison.Ordinal))
             {
                 at = planned;
@@ -950,23 +1016,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var (desired, inserted) = ListOrder.InsertRealItems(order, at, landed);
             var desiredReal = desired.Where(ListOrder.IsReal).ToList();
             var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
-            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && context.Owner != null && context.Inserts)
+            if (!ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, anchor))
             {
-                try
+                ListAccess? actor = null;
+                if (intent.ByUserId != null && Guid.TryParseExact(intent.ByUserId, "N", out var actorId)
+                    && _userManager.GetUserById(actorId) is { } user
+                    && !user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsDisabled))
                 {
-                    actual = await ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+                    actor = _access?.Resolve(context.List.Id, user);
                 }
-                catch (ListAccessLostException lost)
+
+                var owner = actor?.Owner ?? context.Owner;
+                if (owner == null || (intent.ByUserId == null ? !context.Inserts : actor == null))
                 {
-                    _logger.Info($"[Lists] Stopped placing new entries of list {context.ListIdN}: {lost.Message}");
-                    context.Inserts = false;
-                    actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                    throw new ListAccessLostException(null, "Placement is waiting for its editor's current permission.");
                 }
-                catch (Exception ex)
+
+                if (intent.ByUserId == null)
                 {
-                    _logger.Warning($"[Lists] Moving new entries of list {context.ListIdN} into place failed; keeping Jellyfin's order: {ex.Message}");
-                    actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
+                        _host, _logger, context.List.Id, owner, anchor, inserted,
+                        (kind, written) => SwapWrite(context, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
                 }
+                else
+                {
+                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
+                        _host, _logger, context.List.Id, owner, anchor, inserted,
+                        (kind, written) => _gate!.Write(actor!, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
+                }
+            }
+
+            if (!ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, anchor))
+            {
+                throw new InvalidOperationException("The landed entries have not reached their saved placement.");
             }
 
             return actual.SequenceEqual(desiredReal, StringComparer.Ordinal)
@@ -1027,6 +1109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     PhId = placeholderId,
                     ItemIds = toAdd.Select(N).ToList(),
+                    Episodes = PlannedEpisodes(resolution.Items, toAdd),
                     OccurrenceCountsBefore = toAdd.ToDictionary(N, _ => 0, StringComparer.Ordinal),
                     CreatedAt = IntentStamp(),
                 };
@@ -1067,7 +1150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     try
                     {
-                        await _host.AddToCollectionAsync(_gate!.SwapWrite(context.List.Id, context.Doc, context.Owner, ListWriteKind.CollectionAdd, toAdd, InsertsAllowed, context.OnBehalfOf), toAdd).ConfigureAwait(false);
+                        await ListContinuation.Await(() => _host.AddToCollectionAsync(_gate!.SwapWrite(context.List.Id, context.Doc, context.Owner, ListWriteKind.CollectionAdd, toAdd, InsertsAllowed, context.OnBehalfOf), toAdd)).ConfigureAwait(false);
                     }
                     catch (ListAccessLostException lost)
                     {
@@ -1082,13 +1165,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                 }
 
+
                 var after = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
                 added = toAdd.Where(after.ContainsKey).ToHashSet();
                 rejected = toAdd.Where(id => !added.Contains(id)).ToHashSet();
                 context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
                 context.Dirty = true;
                 context.Inserted += added.Count;
-                RecordEvent(context, context.Doc.Items.First(p => p.Id == placeholderId), added.ToList(), complete: placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series);
+                RecordEvent(context, context.Doc.Items.First(p => p.Id == placeholderId), added.ToList(), complete: placeholder.Kind == PlaceholderKinds.Movie || (placeholder.Kind == PlaceholderKinds.Series && resolution.Items.All(i => i.Kind == BaseItemKind.Series)));
                 if (failed && added.Count == 0)
                 {
                     return false;
@@ -1114,24 +1198,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             switch (placeholder.Kind)
             {
                 case PlaceholderKinds.Movie:
-                case PlaceholderKinds.Series:
+                case PlaceholderKinds.Series when resolution.Items.All(i => i.Kind == BaseItemKind.Series):
                     if (!resolution.Items.All(i => rejected.Contains(i.ItemId)))
                     {
                         Retire(context, placeholder, resolution.Items.Where(i => added.Contains(i.ItemId)).Select(i => N(i.ItemId)).ToList());
                     }
 
                     break;
+                case PlaceholderKinds.Series:
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
                     foreach (var episode in resolution.Episodes)
                     {
                         // A season's episode is in the collection through the Season item of its show copy.
-                        var listItem = placeholder.Kind == PlaceholderKinds.Season
+                        var listItem = placeholder.Kind == PlaceholderKinds.Season && resolution.Items.Any(i => i.Kind == BaseItemKind.Season)
                             ? resolution.Items.FirstOrDefault(i => i.Coords.Contains(episode.Coords[0]))?.ItemId
                             : episode.ItemId;
                         if (listItem.HasValue && !rejected.Contains(listItem.Value))
                         {
-                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null, placeholder.Kind == PlaceholderKinds.Season ? listItem : null);
+                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null, placeholder.Kind == PlaceholderKinds.Season && resolution.Items.Any(i => i.Kind == BaseItemKind.Season) ? listItem : null);
                         }
                     }
 
@@ -1334,6 +1419,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        // Save the resolver's coordinates before the native write: promotion can leave an alternate unnumbered, so
+        // reading that item's facts after a crash is not enough. Only exact Episode links carry coordinates here.
+        private static List<FilledEpisode> PlannedEpisodes(IReadOnlyList<ResolvedItem> resolved, IReadOnlyList<Guid> itemIds)
+        {
+            var inserting = itemIds.ToHashSet();
+            return resolved.Where(i => i.Kind == BaseItemKind.Episode && inserting.Contains(i.ItemId))
+                .SelectMany(i => i.Coords.Select(c => new FilledEpisode { ItemId = N(i.ItemId), S = c.S, E = c.E }))
+                .ToList();
+        }
+
+        // An actor's identity and CURRENT edit gate decide whether its plan may still be recovered. Never
+        // substitute the owner for a revoked editor, even if a positional insert needs no further native move.
+        private string? PlacementActorFailure(PassContext context, SwapIntent intent)
+        {
+            if (intent.ByUserId == null) return null; // Older consented swaps still use SwapWrite's gate.
+            if (!Guid.TryParseExact(intent.ByUserId, "N", out var id) || _userManager.GetUserById(id) is not { } user)
+                return "actor_deleted";
+            if (user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsDisabled))
+                return "actor_disabled";
+            var actor = _access?.Resolve(context.List.Id, user);
+            return actor == null || _gate?.Edit(actor).Denied != null || !actor.Permissions.CanEdit ? "actor_revoked" : null;
+        }
+
+        private void AbandonPlacement(PassContext context, SwapIntent intent, string reason)
+        {
+            // Retire only the plan. Jellyfin membership, placeholders, fills and source ownership are untouched.
+            context.Doc.Order = Canonical(context.Doc, _host.GetRawEntries(context.List.Id));
+            context.Doc.Intents.Remove(intent);
+            intent.AbandonedReason = reason;
+            intent.AbandonedAt = UtcNow().ToString("o", CultureInfo.InvariantCulture);
+            context.Doc.AbandonedPlacements.Add(intent);
+            if (context.Doc.AbandonedPlacements.Count > PlacementHistoryLimit)
+                context.Doc.AbandonedPlacements.RemoveRange(0, context.Doc.AbandonedPlacements.Count - PlacementHistoryLimit);
+            context.Dirty = true;
+            _logger.Info($"[Lists] placement_abandoned list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} reason={reason} attempts={intent.Attempts}; retained landed membership and provenance.");
+        }
+
+        // A changed relative order, an explicit JE reorder, or a changed durable save stamp supersedes recovery.
+        // Snapshot equality cannot rule out a native reorder away and back. Old plans without a save stamp may
+        // settle in place, but must never move an entry on the strength of order equality alone.
+        private string? PlacementOrderFailure(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
+        {
+            if (intent.SupersededByReorder) return "superseded_by_reorder";
+            var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+            if (intent.NativeOrder != null)
+            {
+                var common = actual.Intersect(intent.NativeOrder, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+                if (!actual.Where(common.Contains).SequenceEqual(intent.NativeOrder.Where(common.Contains), StringComparer.Ordinal))
+                    return "superseded_by_reorder";
+            }
+
+            if (intent.Anchor != null && !actual.Contains(intent.Anchor)) return "anchor_removed";
+            var stamp = _host.GetStoredSaveStamp(context.List.Id);
+            if (intent.StoredSaveStamp.HasValue && stamp.HasValue && stamp != intent.StoredSaveStamp)
+                return "superseded_by_reorder";
+
+            var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
+            return (intent.NativeOrder == null || !stamp.HasValue || !intent.StoredSaveStamp.HasValue)
+                && !ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, intent.Anchor)
+                ? "placement_evidence_missing" : null;
+        }
+
         // A6: intents left by a crash (or a throw) are completed for the items whose occurrence count went up and
         // rolled back (dropped) for the rest; the next pass retries those. Completed playlist items take the spot the
         // intent planned (F8); collection items JE added become sync-owned (F9).
@@ -1347,30 +1494,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var counts = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
             foreach (var intent in context.Doc.Intents.ToList())
             {
-                context.Doc.Intents.Remove(intent);
-                context.Dirty = true;
                 var placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == intent.PhId);
-                if (placeholder == null)
-                {
-                    continue;
-                }
-
                 var landed = intent.ItemIds
                     .Where(idN => Guid.TryParseExact(idN, "N", out var id)
                         && counts.TryGetValue(id, out var count)
-                        && count > (intent.OccurrenceCountsBefore.TryGetValue(idN, out var previous) ? previous : 0))
+                        && count > intent.OccurrenceCountsBefore.GetValueOrDefault(idN))
                     .Select(idN => Guid.ParseExact(idN, "N"))
                     .ToList();
-                if (landed.Count == 0)
+                var actorFailure = PlacementActorFailure(context, intent);
+                var orderFailure = landed.Count > 0 && context.List.Kind == ListKinds.Playlist ? PlacementOrderFailure(context, intent, landed) : null;
+                if (actorFailure != null || orderFailure != null || intent.Attempts >= PlacementRecoveryAttempts)
+                {
+                    AbandonPlacement(context, intent, actorFailure ?? orderFailure ?? "placement_retry_limit");
+                }
+                else if (landed.Count > 0 && context.List.Kind == ListKinds.Playlist)
+                {
+                    intent.Attempts++;
+                    _store.Save(context.Doc); // A crash during the awaited move consumes this attempt too.
+                    context.Dirty = true;
+                    try
+                    {
+                        context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent, landed)).ConfigureAwait(false);
+                        if (context.Doc.Intents.Contains(intent))
+                            _logger.Info($"[Lists] placement_settled list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} attempts={intent.Attempts}; verified saved placement.");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Preserve the observer's complete proof tuple, including invalidation on unknown outcomes.
+                        _logger.Warning($"[Lists] Interrupted placement of list {context.ListIdN} is still pending: {ex.Message}");
+                        var reason = PlacementActorFailure(context, intent);
+                        if (reason != null || intent.Attempts >= PlacementRecoveryAttempts)
+                        {
+                            AbandonPlacement(context, intent, reason ?? "placement_retry_limit");
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                context.Doc.Intents.Remove(intent);
+                context.Dirty = true;
+                if (landed.Count == 0 || placeholder == null)
                 {
                     continue;
                 }
 
                 _logger.Info($"[Lists] Completed an interrupted swap-in of \"{placeholder.Title}\" in list {context.ListIdN}.");
-                RecordEvent(context, placeholder, landed, complete: placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series);
+                var container = placeholder.Kind == PlaceholderKinds.Movie
+                    || (placeholder.Kind == PlaceholderKinds.Series && landed.All(id => _host.GetItem(id)?.Kind == BaseItemKind.Series));
+                RecordEvent(context, placeholder, landed, complete: container);
+                // Recover the verified landed episodes BEFORE resolving the scope again. Jellyfin may have promoted
+                // the first exact alternate to primary after the crash: its durable fill keeps a 4K series on episodes
+                // even when there are no alternates left for the resolver to discover.
+                foreach (var itemId in landed)
+                {
+                    var facts = _host.GetItemFacts(itemId);
+                    if (facts is { Kind: BaseItemKind.Episode, IsVirtual: false })
+                    {
+                        var coords = facts.Season is int season && facts.Episode is int episode
+                            ? PlaceholderProgress.CoordsInScope(placeholder, season, episode, facts.EpisodeEnd)
+                            : (intent.Episodes ?? new List<FilledEpisode>())
+                                .Where(e => string.Equals(e.ItemId, N(itemId), StringComparison.Ordinal))
+                                .Select(e => new EpisodeCoord(e.S, e.E)).Where(c => PlaceholderProgress.InScope(placeholder, c)).Distinct().ToList();
+                        if (coords.Count > 0)
+                        {
+                            Fill(context, placeholder, new ResolvedItem(itemId, BaseItemKind.Episode, coords), itemId);
+                        }
+                    }
+                }
+
                 if (context.List.Kind == ListKinds.Collection)
                 {
-                    if (placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series)
+                    if (container)
                     {
                         // The title is in the collection through the copy JE added, whichever copy the resolver lists
                         // first now (another library copy may have been scanned since): retire it, owning what landed,
@@ -1396,24 +1593,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                context.Doc.Order = await SettleLandedAsync(context, intent.Anchor, intent.Index, landed).ConfigureAwait(false);
                 if (placeholder.Kind == PlaceholderKinds.Movie)
                 {
                     Retire(context, placeholder, landed.Select(N).ToList());
                     continue;
-                }
-
-                foreach (var itemId in landed)
-                {
-                    var facts = _host.GetItemFacts(itemId);
-                    if (facts?.Season is int season && facts.Episode is int episode)
-                    {
-                        var coords = PlaceholderProgress.CoordsInScope(placeholder, season, episode, facts.EpisodeEnd);
-                        if (coords.Count > 0)
-                        {
-                            Fill(context, placeholder, new ResolvedItem(itemId, BaseItemKind.Episode, coords), itemId);
-                        }
-                    }
                 }
             }
         }
@@ -1591,7 +1774,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // couldn't read in its interactive budget, or left empty while no poster source was configured.
                 if ((mode & (MetadataMode.New | MetadataMode.Maintenance)) != 0 && PostersAvailable)
                 {
-                    await FetchTmdbPostersAsync(placeholders, result, cancellationToken).ConfigureAwait(false);
+                    await ListContinuation.Await(() => FetchTmdbPostersAsync(placeholders, result, cancellationToken)).ConfigureAwait(false);
                 }
 
                 return result;
@@ -1634,12 +1817,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var wanted = placeholders.Select(p => (Placeholder: p, MaxAge: MaxAge(p))).Where(w => w.MaxAge.HasValue).ToList();
             var fetched = new ConcurrentDictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
             var options = new ParallelOptions { MaxDegreeOfParallelism = PassMetadataConcurrency, CancellationToken = cancellationToken };
-            await Parallel.ForEachAsync(wanted, options, async (w, token) =>
+            await ListContinuation.Await(() => Parallel.ForEachAsync(wanted, options, async (w, token) =>
             {
                 var p = w.Placeholder;
                 try
                 {
-                    var meta = await _metadata.FetchAsync(p, w.MaxAge!.Value, today, token).ConfigureAwait(false);
+                    var meta = await ListContinuation.Await(() => _metadata.FetchAsync(p, w.MaxAge!.Value, today, token)).ConfigureAwait(false);
                     if (meta != null)
                     {
                         fetched[p.Id] = meta;
@@ -1649,7 +1832,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     _logger.Debug($"[Lists] Metadata for \"{p.Title}\" failed: {ex.Message}");
                 }
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             foreach (var pair in fetched)
             {
                 result[pair.Key] = pair.Value;
@@ -1666,12 +1849,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var wanted = placeholders.Where(p => p.Kind != PlaceholderKinds.Custom && p.TmdbId is > 0 && (p.PosterPath == null || p.PosterUnverified == true)).ToList();
             var fetched = new ConcurrentDictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
             var options = new ParallelOptions { MaxDegreeOfParallelism = PassMetadataConcurrency, CancellationToken = cancellationToken };
-            await Parallel.ForEachAsync(wanted, options, async (p, token) =>
+            await ListContinuation.Await(() => Parallel.ForEachAsync(wanted, options, async (p, token) =>
             {
                 try
                 {
                     // A title TMDB read without a poster also counts: it replaces (clears) an unverified client poster.
-                    var (poster, answered) = await _metadata.ReadTmdbPosterAsync(p, token).ConfigureAwait(false);
+                    var (poster, answered) = await ListContinuation.Await(() => _metadata.ReadTmdbPosterAsync(p, token)).ConfigureAwait(false);
                     if (answered)
                     {
                         fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true };
@@ -1681,7 +1864,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     _logger.Debug($"[Lists] TMDB poster for \"{p.Title}\" failed: {ex.Message}");
                 }
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             foreach (var pair in fetched)
             {
                 result[pair.Key] = pair.Value;
@@ -1716,7 +1899,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static List<string> Canonical(ListDoc doc, IReadOnlyList<RawEntry> raw) =>
             ListOrder.Reconcile(doc.Order, ListOrder.BuildRealTokens(raw), doc.Items.Select(p => p.Id).ToList());
 
-        private static Dictionary<Guid, int> OccurrenceCounts(IReadOnlyList<RawEntry> raw)
+        internal static Dictionary<Guid, int> OccurrenceCounts(IReadOnlyList<RawEntry> raw)
         {
             var counts = new Dictionary<Guid, int>();
             foreach (var entry in raw)
@@ -1758,7 +1941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             try
             {
-                _events.Record(context.ListIdN, placeholder.Id, placeholder.Kind, ListRules.TitleKeyOf(placeholder)?.ToString(), ListRules.EditionOf(placeholder), itemIds.Select(N).ToList(), complete, DateTimeOffset.UtcNow);
+                ListContinuation.Write(() => _events.Record(context.ListIdN, placeholder.Id, placeholder.Kind, ListRules.TitleKeyOf(placeholder)?.ToString(), ListRules.EditionOf(placeholder), itemIds.Select(N).ToList(), complete, DateTimeOffset.UtcNow));
             }
             catch (Exception ex)
             {

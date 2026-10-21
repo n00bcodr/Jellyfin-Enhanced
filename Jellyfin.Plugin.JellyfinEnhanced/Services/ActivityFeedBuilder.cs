@@ -106,7 +106,10 @@ internal sealed class ActivityFeedBuilder(
 
         // OrderBy is stable: equal timestamps retain activity-before-review and
         // store enumeration order, matching the previous merged feed.
-        var ordered = candidates.OrderByDescending(c => c.Row.Timestamp).ToArray();
+        var ownOnly = config.ActivityFeedOwnOnlyForNonAdmins && !viewerIsAdmin;
+        var ordered = candidates
+            .Where(c => !ownOnly || c.AuthorId == viewer.Id)
+            .OrderByDescending(c => c.Row.Timestamp).ToArray();
         var authors = new Dictionary<Guid, JUser?> { [viewer.Id] = viewer };
         var providerItems = new Dictionary<string, Guid>(StringComparer.Ordinal);
         var items = new Dictionary<Guid, BaseItem?>();

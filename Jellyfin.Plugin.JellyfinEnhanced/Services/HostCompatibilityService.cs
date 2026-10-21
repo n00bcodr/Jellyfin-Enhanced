@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using MediaBrowser.Controller;
 
 #if JF10 && JF12
@@ -70,16 +73,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>True when this DLL was built for a different Jellyfin line than the host.</summary>
         public bool IsMismatch => !string.Equals(BuiltFor, HostTarget, StringComparison.Ordinal);
 
+        /// <summary>
+        /// True when the plugin file on disk differs from the module running in memory.
+        /// Rechecked on every access; unreadable or unavailable metadata is treated as not stale.
+        /// </summary>
+        public bool IsStale
+        {
+            get
+            {
+                try
+                {
+                    var assembly = typeof(HostCompatibilityService).Assembly;
+                    return IsAssemblyStale(assembly.Location, assembly.ManifestModule.ModuleVersionId);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
+        internal static bool IsAssemblyStale(string? location, Guid loadedMvid)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(location)) return false;
+
+                // Jellyfin can replace the same path while the old image stays mapped.
+                // Read only metadata, without blocking replacement or loading another assembly.
+                using var stream = File.Open(location, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
+                if (!peReader.HasMetadata) return false;
+                var metadata = peReader.GetMetadataReader();
+                var mvid = metadata.GetModuleDefinition().Mvid;
+                return !mvid.IsNil && metadata.GetGuid(mvid) != loadedMvid;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>Release asset the admin should have installed instead.</summary>
         public string ExpectedAssetName =>
             HostTarget == "jf12"
                 ? "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip"
                 : "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip";
 
-        /// <summary>One-line diagnosis for the log and administrator diagnostics endpoint.</summary>
-        public string? MismatchMessage => !IsMismatch
-            ? null
-            : $"This copy of Jellyfin Enhanced was built for Jellyfin {(BuiltFor == "jf12" ? "12.x" : "10.11.x")} " +
-              $"but the server is Jellyfin {HostVersionString}. Features may fail unpredictably.";
+        /// <summary>
+        /// One-line diagnosis for the log and administrator diagnostics endpoint, using an
+        /// already computed stale state so the condition and the message agree.
+        /// </summary>
+        /// <param name="isStale">Whether the plugin file on disk differs from the running module.</param>
+        /// <param name="includeInstallAdvice">Name the asset and manifest to install (the log); the config page shows its own link.</param>
+        /// <returns>The diagnosis, or null when the build matches the host and is not stale.</returns>
+        public string? GetCompatibilityMessage(bool isStale, bool includeInstallAdvice = false)
+        {
+            if (!IsMismatch && !isStale) return null;
+
+            var diagnosis = IsMismatch
+                ? $"This copy of Jellyfin Enhanced was built for Jellyfin {(BuiltFor == "jf12" ? "12.x" : "10.11.x")} " +
+                  $"but the server is Jellyfin {HostVersionString}. Features may fail unpredictably. "
+                : "";
+
+            // Both builds of a release share one version number, so Jellyfin swaps them in place
+            // (same folder, same file name), and its in-process dashboard restart then keeps
+            // running the image it already has mapped for that path (issue #948).
+            return isStale
+                ? diagnosis + "The plugin file on disk was replaced after Jellyfin loaded it, but Jellyfin is still " +
+                  "running the old copy from memory and a dashboard restart keeps it loaded. Stop and start the " +
+                  "Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>) to load it." +
+                  // A different file is not necessarily the right build, so keep the install advice as a fallback.
+                  (!IsMismatch ? ""
+                      : includeInstallAdvice ? $" If this warning is still logged after that, install {ExpectedAssetName} from {ManifestUrl}."
+                      : " If this warning is still shown after that, the file on disk is the wrong build too.")
+                : diagnosis + (includeInstallAdvice ? $"Install {ExpectedAssetName} from {ManifestUrl}. " : "") +
+                  "Both builds share one version number, so after installing the right one, stop and start " +
+                  "the Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>); " +
+                  "a dashboard restart keeps this build loaded.";
+        }
     }
 }

@@ -482,6 +482,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 AskedAt = asked,
                 AskedByViewer = considered.Any(r => r.RequestedBy == userId),
+                // Match the ledger: only this viewer's outstanding standard-season asks suppress
+                // the next action. A declined/completed request or somebody else's 4K ask cannot.
+                ViewerSeasons = active.Where(r => !r.IsMovie && !r.Is4k && r.RequestedBy == userId && r.Status != SeerrRequestStatus.Completed)
+                    .SelectMany(r => r.Seasons).Distinct().OrderBy(s => s).ToArray(),
                 Pending = active.Count > 0 && active.All(r => r.Status == SeerrRequestStatus.Pending),
                 ApprovedAt = ApprovedOf(approved),
                 ApprovedStandardAt = ApprovedOf(approved.Where(r => !r.Is4k).ToList()),

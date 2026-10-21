@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
@@ -16,7 +15,8 @@ namespace JE.Tests;
 /// (RequestDestination). An approval may re-confirm a request only on its own Seerr with only a fresh stamp,
 /// and work already sent never moves. Table: path × difference (source, server, profile, root folder, stamp only, or none)
 /// × the other request's state (sent, not sent yet, held for an OK). Production policy, ledger, outbox and Seerr backend
-/// over a synthetic Seerr with two Sonarr servers.
+/// over a synthetic Seerr with two Sonarr servers. The source test and its mutations at the end are defence in depth (D41):
+/// the runtime rows are the guarantee.
 /// </summary>
 [Collection("Plugin singleton")]
 public class IntegrationSeerrDestinationTableTests
@@ -537,110 +537,246 @@ public class IntegrationSeerrDestinationTableTests
 
     // ------------------------------------------------------------------ the source: no path compares requests by itself
 
-    // The ledger and charges files: every place where one request stands for another lives here.
-    private static readonly string[] RuleFiles = { "RequestLedger.cs", "RequestLedgerImport.cs", "RequestLedgerArrivals.cs", "FutureSeasonCharges.cs" };
-
-    // What compares or selects requests by where they go or what they ask for: targets, routing, Seerr options, scope.
-    private static readonly Regex[] Raw =
+    // The comparisons and selections on where a request goes or what it asks for that may be made outside the rule, each
+    // with why, and (when it picks from a collection) the local that must have been built through the rule. An entry that
+    // no longer matches fails too. File, member (Type.Member), code (whitespace normalised, contained), why, requires.
+    private static readonly (string File, string Member, string Code, string Why, (string Local, string Rule)? Requires)[] Allowed =
     {
-        new(@"\b\w*[Tt]arget\w*\b(\([^()]*\))?(\[[^\]]*\])?\s*[!=]="),
-        new(@"[!=]=\s*[\w.]*[Tt]arget\w*"),
-        new(@"(Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|ProfileId|RootFolder)\s*[!=]="),
-        new(@"[!=]=\s*[\w.]*(Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|ProfileId|RootFolder)\b"),
-        new(@"\.Overlaps\("),
-        new(@"\.Covers\("),
-        new(@"(Seasons|Episodes|SeasonNumbers)\.(Contains|Intersect|Except|Any)\("),
-        new(@"SelectMany\([^)]*\.(Seasons|Episodes|SeasonNumbers)"),
-        new(@"SamePath\("),
-        new(@"SameSeerrDestination"),
-    };
-
-    // The lines that may do so without the rule, each with why, and (when it selects from a collection) the declaration
-    // that must have built that collection through the rule. An entry that no longer matches fails too.
-    private static readonly (string File, string Line, string Why, string? Requires)[] Allowed =
-    {
-        ("RequestLedger.cs", "var targetsForWant = candidates.Where(j => j.Input.Variant == want.Input.Variant && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId)",
+        ("RequestLedger.cs", "RequestLedger.Withdraw", "RoutingRefusals.Contains(facts.Refusal)",
+            "the policy refusal code alone decides whether stale routing permits withdrawal; no destinations or requests are compared", null),
+        ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "j.Authorization.InstanceId == want.Input.InstanceId",
             "the v2 migration works out which target a legacy request's own jobs went to; coverage after it uses Extra", null),
-        ("RequestLedger.cs", "if (Target(want) == false)", "whether a 4K copy can be taken at all, not a request", null),
-        ("RequestLedger.cs", ".SelectMany(w => w.Input.SeasonNumbers).Concat(input.SeasonNumbers).Distinct().Count() > Math.Clamp(threshold, 1, 200);",
+        ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "== row.Episodes",
+            "the v2 migration matches a legacy reservation to its own request's job by size", null),
+        ("RequestLedger.cs", "RequestLedger.OverSeries", ".SelectMany(w => w.Input.SeasonNumbers)",
             "a Member's series threshold counts every season the person asked for, wherever it went (Members choose no destination)", null),
-        ("RequestLedger.cs", "var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not (\"declined\" or \"cancelled\")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();",
-            "the series-threshold split: the same count", null),
-        ("RequestLedger.cs", "? ownSame.First(w => w.Input.Overlaps(normalized)) : null);",
-            "the dedup representative is chosen only among the person's requests that serve the ask", @"var ownSame = own\.Where\([^;]*RequestDestination\.Serves\("),
-        ("RequestLedger.cs", "!j.Input.Seasons.Intersect(want.Input.Seasons).Any()", "one request's own jobs (its followed new seasons)", null),
-        ("RequestLedger.cs", ".SelectMany(j => j.Input.Seasons).ToHashSet();", "one request's own jobs (its followed new seasons)", null),
-        ("RequestLedger.cs", "!j.Input.Seasons.Any(going.Contains)", "one request's own jobs (its followed new seasons)", null),
-        ("RequestLedger.cs", "want.Input.Seasons.Contains(season) || !policy.Configuration.ArrRequestChargeFutureSeasons", "the season asked about against the request's own scope", null),
-        ("RequestLedger.cs", "want.Status is not (\"sent\" or \"stale\") || want.Input.Seasons.Contains(season)) return false;", "the season asked about against the request's own scope", null),
-        ("RequestLedger.cs", "if (jobs.Any(j => j.Input.Scope == \"seasons\" && j.Input.Seasons.Contains(season))) return false;", "one request's own jobs: a new season once per request", null),
+        ("RequestLedger.cs", "RequestLedger.OverSeries", ".Count() > Math.Clamp(threshold, 1, 200)", "the series threshold: the same count", null),
+        ("RequestLedger.cs", "RequestLedger.EstimateGb", "RequestSizeHint.Estimate(input, facts.Size)", "an estimate from the instance's typical sizes, not another request", null),
+        ("RequestLedger.cs", "RequestLedger.CreateCore", "w.Input.Overlaps(normalized)",
+            "the dedup representative is chosen only among the person's requests that serve the ask", ("ownSame", "Serves")),
+        ("RequestLedger.cs", "RequestLedger.SplitAtThreshold", ".SelectMany(w => w.Input.SeasonNumbers)", "the series-threshold split: the same count as the threshold", null),
+        ("RequestLedger.cs", "RequestLedger.SplitAtThreshold", "asked.Contains(s)", "the series-threshold split: the seasons the person asked for", null),
+        ("RequestLedger.cs", "RequestLedger.SplitAtThreshold", "room >= fresh.Length", "the series-threshold split: the room under the threshold", null),
+        ("RequestLedger.cs", "RequestLedger.SplitAtThreshold", "first.Contains", "the series-threshold split: the part that goes ahead", null),
+        ("RequestLedger.cs", "RequestLedger.SplitAtThreshold", "held.Contains", "the series-threshold split: the part that waits", null),
+        ("RequestLedger.cs", "RequestLedger.HeldFollows", "j.Input.Seasons.Intersect(want.Input.Seasons)", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", "RequestLedger.HeldFollows", ".SelectMany(j => j.Input.Seasons)", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", "RequestLedger.HeldFollows", "going.Contains", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", "RequestLedger.ChargeFutureSeason", "want.Input.Seasons.Contains(season)", "the season asked about against the request's own scope", null),
+        ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "want.Input.Seasons.Contains(season)", "the season asked about against the request's own scope", null),
+        ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "j.Input.Seasons.Contains(season)", "one request's own jobs: a new season once per request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", "s.SeasonNumber > current", "Sonarr's seasons after the request's own current one", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", "n > current", "Seerr's seasons after the request's own current one", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTvdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTmdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
+        ("RequestLedgerTitles.cs", "RequestLedger.Canonical", "key == input.Key", "the identity resolver itself: whether resolving the key changed it", null),
     };
 
-    private static string RequestsFolder([System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "")
+    // Every path where one request stands for, covers, dedups, suppresses, merges with, follows or represents another, and
+    // the calls to the rule it makes (at least these: taking one out fails, adding one doesn't).
+    private static readonly Dictionary<string, (string[] Calls, string Path)> Paths = new()
     {
-        var root = new DirectoryInfo(Path.GetDirectoryName(sourceFile)!);
-        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        // External output folders do not have the repository as an ancestor.
-        root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        Assert.NotNull(root);
-        return Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services", "Acquire", "Requests");
+        ["RequestLedger.ExtendSchemaTwo"] = (new[] { "Extra", "SameEdition", "SameTarget" }, "the v2 target migration's coverage"),
+        ["RequestLedger.OverSeries"] = (new[] { "SameTitle" }, "a Member's seasons of the title"),
+        ["RequestLedger.SplitAtThreshold"] = (new[] { "SameTitle" }, "the series-threshold split: the person's seasons of the title"),
+        ["RequestLedger.FollowWithin"] = (new[] { "Extra", "Extra", "Extra" }, "a merged title: who already covers whom"),
+        ["FutureSeasonCharges.FollowSeerrAsync"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
+        ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
+        ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
+        ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
+        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves" },
+            "own dedup and its representative, implicit approval, decline cooldown, shared coverage, confirmed scope"),
+        ["RequestLedger.Coverage"] = (new[] { "SameTarget", "SameTarget" }, "shared coverage at a target"),
+        ["RequestLedger.Confirmed"] = (new[] { "SameTarget" }, "what went out to a target"),
+        ["RequestLedger.ConfirmedScope"] = (new[] { "Extra" }, "an ask already sent"),
+        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
+        ["RequestLedger.RehomeFollowers"] = (new[] { "Extra", "Extra", "SameTarget", "SameTarget" }, "followers moved with a request's target"),
+        ["RequestLedger.DemoteUncoveredFollowers"] = (new[] { "Extra", "SameTarget" }, "followers left without coverage wait"),
+        ["RequestLedger.ReleasePendingFollowers"] = (new[] { "Extra", "Extra" }, "waiting followers released by coverage"),
+        ["RequestLedger.Withdraw"] = (new[] { "Extra" }, "withdrawal: who sees it where it goes; what went out covers it"),
+        ["RequestLedger.RestorePendingOwners"] = (new[] { "Extra" }, "a decline's followers own what nothing covers"),
+        ["RequestLedger.WithdrawFollowers"] = (new[] { "Extra", "Extra" }, "a cancel's followers withdrawn"),
+        ["RequestLedger.FollowFutureSeason"] = (new[] { "SameTarget" }, "a new season followed on the request's own Seerr"),
+        ["RequestLedger.Complete"] = (new[] { "Extra", "Extra", "Extra", "Extra", "SameTarget" }, "shared dispatch: who a send serves"),
+        ["RequestLedger.LeadsRetryCycle"] = (new[] { "Extra", "Extra", "Serves", "Serves" }, "retry wait cycles include only work at the same title, edition and destination"),
+        ["RequestLedger.Redundancy"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Serves", "Serves" }, "the send-time check: what went out (or is going out) for the title is never sent again"),
+        ["RequestLedger.PurgeUser"] = (new[] { "Extra", "SameTarget" }, "a deleted person's requests kept while others follow them"),
+        ["RequestLedger.ImportSeerr"] = (new[] { "Extra", "SameTarget", "SameTarget" }, "the Seerr import's dedup"),
+        ["FutureSeasonCharges.Explicit"] = (new[] { "SameTarget" }, "the requests that suppress a follow"),
+        ["FutureSeasonCharges.AskedFor"] = (new[] { "Extra" }, "a new season already asked for at the destination"),
+    };
+
+    // Where the title identity itself is worked out: these look titles up by each alias on purpose.
+    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore" };
+
+    // The rule file a listed path is in.
+    private static string FileOf(string member) => member switch
+    {
+        "RequestLedger.ImportSeerr" => "RequestLedgerImport.cs",
+        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" => "RequestLedgerTitles.cs",
+        _ when member.StartsWith("FutureSeasonCharges.", StringComparison.Ordinal) => "FutureSeasonCharges.cs",
+        _ => "RequestLedger.cs",
+    };
+
+    // What the walk says is wrong with a plugin: comparisons outside the rule not allowed here, paths that lost a call to
+    // the rule, Extra or Seerr's record check not through it. (Stale allowances are checked by the source test only.)
+    private static List<string> Problems(DestinationRuleWalk walk, params string[] files) => Problems(walk, null, files);
+
+    // The same for one member of one file (what a mutation there can change).
+    private static List<string> Problems(DestinationRuleWalk walk, string? member, params string[] files)
+    {
+        var problems = new List<string>();
+        foreach (var site in walk.Raw(member, files))
+        {
+            var allowed = Allowed.Where(a => a.File == site.File && a.Member == site.Member && site.Code.Contains(a.Code, StringComparison.Ordinal)).ToList();
+            if (allowed.Count == 0) problems.Add("not through RequestDestination: " + site);
+            foreach (var a in allowed.Where(a => a.Requires is { } r && !walk.BuiltThrough(a.File, a.Member, r.Local, r.Rule)))
+                problems.Add($"selects from {a.Requires!.Value.Local}, not built through RequestDestination.{a.Requires.Value.Rule} ({a.Why}): {site}");
+        }
+        var calls = walk.RuleCalls(member, files);
+        foreach (var (listed, (expected, path)) in Paths)
+        {
+            if ((files.Length > 0 && !files.Contains(FileOf(listed))) || (member != null && listed != member)) continue;
+            var actual = calls.GetValueOrDefault(listed) ?? new List<string>();
+            var missing = expected.ToList();
+            foreach (var call in actual) missing.Remove(call);
+            if (missing.Count > 0) problems.Add($"{listed} ({path}) no longer calls RequestDestination/Extra: missing {string.Join(", ", missing)} (has {string.Join(", ", actual)})");
+        }
+        // Every lookup of a title by key resolves its aliases (RequestLedger.TitleIs), except where the identity itself is
+        // worked out.
+        foreach (var lookup in walk.RawTitleLookups(files).Where(l => (member == null || l.Member == member) && !IdentityMembers.Contains(l.Member)))
+            problems.Add($"looks a title up by a key as given (not RequestLedger.TitleIs): {lookup.File} {lookup.Member}: {lookup.Sql}");
+        if (walk.ExtraProblem() is { } extra) problems.Add("MutationInput.Extra: " + extra);
+        if (!walk.SeerrRecordThroughTheRule()) problems.Add("SeerrBackend.SameOptions doesn't delegate to RequestDestination.SeerrHas");
+        return problems;
     }
 
-    // Code only: no comments, string literals emptied (SQL compares columns in the database, not requests here).
-    private static string Code(string line)
-    {
-        var trimmed = line.TrimStart();
-        if (trimmed.StartsWith("//", StringComparison.Ordinal)) return string.Empty;
-        var code = Regex.Replace(line, "\"(?:[^\"\\\\]|\\\\.)*\"", "\"\"");
-        var comment = code.IndexOf("//", StringComparison.Ordinal);
-        return comment < 0 ? code : code[..comment];
-    }
-
+    /// <summary>
+    /// The source test over the walk (<see cref="DestinationRuleWalk"/>). Defence in depth (D41's principle): it catches the
+    /// cheap, likely ways around the rule, but a static walk over arbitrary C# can't be complete; the guarantee is
+    /// <c>RequestDestination.Serves</c> on every path, proven by the runtime rows of this table and the withdrawal, sight and
+    /// identity tables.
+    /// </summary>
     [Fact]
     public void EveryLedgerAndChargesPathComparesOrSelectsRequestsThroughTheDestinationRule()
     {
-        var folder = RequestsFolder();
-        // Every part of the ledger is scanned (a new partial file is too).
-        Assert.Equal(RuleFiles.Where(f => f.StartsWith("RequestLedger", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
-            Directory.GetFiles(folder, "RequestLedger*.cs").Select(Path.GetFileName).Order(StringComparer.Ordinal));
-        var used = new HashSet<(string, string)>();
-        var bare = new List<string>();
-        foreach (var name in RuleFiles)
-        {
-            var text = File.ReadAllText(Path.Combine(folder, name));
-            var lines = text.Split('\n');
-            for (var i = 0; i < lines.Length; i++)
-            {
-                var code = Code(lines[i]);
-                if (!Raw.Any(r => r.IsMatch(code)) || code.Contains("RequestDestination.", StringComparison.Ordinal)) continue;
-                var allowed = Allowed.Where(a => a.File == name && lines[i].Contains(a.Line, StringComparison.Ordinal)).ToList();
-                if (allowed.Count == 0)
-                {
-                    bare.Add($"{name}:{i + 1}: {lines[i].Trim()}");
-                    continue;
-                }
-                foreach (var a in allowed)
-                {
-                    used.Add((a.File, a.Line));
-                    if (a.Requires != null && !Regex.IsMatch(text, a.Requires)) bare.Add($"{name}:{i + 1}: selects from a collection not built through RequestDestination ({a.Why}): {lines[i].Trim()}");
-                }
-            }
-        }
-        Assert.True(bare.Count == 0, "Requests compared or selected without RequestDestination:\n" + string.Join("\n", bare));
-        var stale = Allowed.Where(a => !used.Contains((a.File, a.Line))).Select(a => a.File + ": " + a.Line).ToList();
-        Assert.True(stale.Count == 0, "Allowed lines no longer found:\n" + string.Join("\n", stale));
-
-        // Coverage itself (MutationInput.Extra) asks the rule which inputs may stand for one, and nothing else does: the
-        // input type has no destination comparison of its own, and Seerr's own record is matched through the rule too.
-        var models = File.ReadAllText(Path.Combine(folder, "RequestModels.cs"));
-        var extra = models[models.IndexOf("internal MutationInput? Extra(", StringComparison.Ordinal)..];
-        extra = extra[..extra.IndexOf("\n        }", StringComparison.Ordinal)];
-        Assert.Contains("covered.Where(c => RequestDestination.Serves(this, c))", extra, StringComparison.Ordinal);
-        Assert.DoesNotMatch(@"Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|SamePath", extra);
+        var walk = DestinationRuleWalk.Plugin;
+        // Symbols are only followed reliably in code that compiles.
+        Assert.Empty(walk.Errors());
+        // Every part of the ledger is read (a new partial file is too).
+        Assert.Equal(DestinationRuleWalk.RuleFiles.Where(f => f.StartsWith("RequestLedger", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+            Directory.GetFiles(Path.Combine(DestinationRuleWalk.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "Services", "Acquire", "Requests"), "RequestLedger*.cs").Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        var problems = Problems(walk);
+        Assert.True(problems.Count == 0, "Requests compared or selected without RequestDestination:\n" + string.Join("\n", problems));
+        var sites = walk.Raw();
+        var stale = Allowed.Where(a => !sites.Any(s => s.File == a.File && s.Member == a.Member && s.Code.Contains(a.Code, StringComparison.Ordinal))).Select(a => a.Member + ": " + a.Code).ToList();
+        Assert.True(stale.Count == 0, "Allowed comparisons no longer found:\n" + string.Join("\n", stale));
+        // Every call to the rule in these files belongs to a path listed here.
+        var unlisted = walk.RuleCalls().Keys.Where(m => !Paths.ContainsKey(m)).ToList();
+        Assert.True(unlisted.Count == 0, "Paths calling RequestDestination that aren't listed: " + string.Join(", ", unlisted));
+        // The input type has no destination comparison of its own.
         Assert.DoesNotContain(typeof(MutationInput).GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic),
             m => m.Name.Contains("Destination", StringComparison.Ordinal) || m.Name.Contains("SameOptions", StringComparison.Ordinal));
-        var seerr = File.ReadAllText(Path.Combine(folder, "SeerrBackend.cs"));
-        Assert.Matches(@"private static bool SameOptions\(JsonElement request, MutationInput input\)\s*=> RequestDestination\.SeerrHas\(", seerr);
+    }
+
+    /// <summary>Each call to the rule in the ledger and charges files, as a mutation: taken out (A) or done by a raw comparison (B).</summary>
+    public static TheoryData<string, int> RuleMutations()
+    {
+        var rows = new TheoryData<string, int>();
+        var sites = DestinationRuleWalk.Plugin.RuleSites();
+        for (var i = 0; i < sites.Count; i++)
+        {
+            rows.Add("A", i);
+            if (sites[i].Raw != null) rows.Add("B", i);
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Mutation checks (security-r4-2): taking the destination filtering out of each protected path, or doing it by a raw
+    /// comparison instead, is reported by the guard, for the path it was taken from. Each mutant still compiles.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuleMutations))]
+    public void TakingTheRuleOutOfAnyPathIsReported(string kind, int index)
+    {
+        var site = DestinationRuleWalk.Plugin.RuleSites()[index];
+        var code = kind == "A" ? site.Without : site.Raw!;
+        var mutant = DestinationRuleWalk.Plugin.Replace(site, code);
+        var label = $"{kind} {site.File}:{site.Line} {site.Member}: {site.Code} → {code}";
+        var errors = mutant.Errors("Services/Acquire/Requests/" + site.File, site.Span.Start);
+        Assert.True(errors.Count == 0, label + " doesn't compile:\n" + string.Join("\n", errors));
+        var problems = Problems(mutant, site.Member, site.File);
+        Assert.True(problems.Any(p => p.Contains(site.Member, StringComparison.Ordinal)), label + " wasn't reported:\n" + string.Join("\n", problems));
+        // A raw comparison is found by itself, not only by the path losing its call.
+        if (kind == "B") Assert.True(problems.Any(p => p.StartsWith("not through RequestDestination: " + site.File, StringComparison.Ordinal) && p.Contains(site.Member, StringComparison.Ordinal)), label + ": the raw comparison wasn't found:\n" + string.Join("\n", problems));
+    }
+
+    /// <summary>Bypasses planted the ways the review found and the ways a helper or a collection operation could hide one.</summary>
+    [Theory]
+    // Review round 4: AskedFor through Array.IndexOf over each request's seasons.
+    [InlineData("an Array.IndexOf over each request's seasons")]
+    // A plugin helper that compares seasons (MutationInput.Overlaps).
+    [InlineData("a plugin helper (Overlaps)")]
+    // A new helper in another file that compares what it is given.
+    [InlineData("a new helper in another file")]
+    // The seasons merged into a set first, then looked up.
+    [InlineData("a set built from the requests' seasons")]
+    // The targets merged into a set first, then looked up.
+    [InlineData("a set built from the requests' targets")]
+    // Requests grouped by target.
+    [InlineData("requests grouped by their target")]
+    // A target compared through a local and string.Equals.
+    [InlineData("a target compared through a local")]
+    // Extra without asking the rule.
+    [InlineData("Extra without RequestDestination.Serves")]
+    // Seerr's record matched by hand.
+    [InlineData("Seerr's record matched by hand")]
+    // Q-4BFIX3-2: the decline cooldown comparing raw keys.
+    [InlineData("the decline cooldown comparing raw keys")]
+    // Q-4BFIX3-2: shared coverage looked up by the key as given.
+    [InlineData("shared coverage looked up by the key as given")]
+    // Q-4BFIX3-2: keep-getting requests grouped by raw key.
+    [InlineData("keep-getting requests grouped by raw key")]
+    // Review round 5 (security-r5-2): two requests held in one array, compared element by element.
+    [InlineData("two requests held in one array")]
+    // The same with the first and last of one list.
+    [InlineData("the first and last of one list")]
+    public void BypassesThroughHelpersAndCollectionOperationsAreReported(string bypass)
+    {
+        var plugin = DestinationRuleWalk.Plugin;
+        const string asked = "=> want.Input.NewSeason(season).Extra(asked) == null;";
+        const string explicitFilter = "RequestDestination.SameTarget(w.TargetKey, want.TargetKey)";
+        DestinationRuleWalk Charges(string from, string to) => plugin.With("Services/Acquire/Requests/FutureSeasonCharges.cs", text => text.Replace(from, to, StringComparison.Ordinal));
+        var mutant = bypass switch
+        {
+            "an Array.IndexOf over each request's seasons" => Charges(asked, "=> asked.Any(i => Array.IndexOf(i.Seasons, season) >= 0);"),
+            "a plugin helper (Overlaps)" => Charges(asked, "=> asked.Any(i => i.Overlaps(want.Input.NewSeason(season)));"),
+            "a new helper in another file" => plugin
+                .With("Services/Acquire/BridgePaths.cs", text => text.Replace("    public static class BridgePaths\n    {", "    public static class BridgePaths\n    {\n        internal static bool HasSeason(Requests.MutationInput input, int season) => System.Array.IndexOf(input.Seasons, season) >= 0;\n", StringComparison.Ordinal))
+                .With("Services/Acquire/Requests/FutureSeasonCharges.cs", text => text.Replace(asked, "=> asked.Any(i => BridgePaths.HasSeason(i, season));", StringComparison.Ordinal)),
+            "a set built from the requests' seasons" => Charges(asked, "=> asked.SelectMany(i => i.Seasons).ToHashSet().Contains(season);"),
+            "a set built from the requests' targets" => Charges(explicitFilter, "others.Select(o => o.TargetKey).ToHashSet().Contains(want.TargetKey)"),
+            "requests grouped by their target" => Charges(explicitFilter, "others.GroupBy(o => o.TargetKey).Count() == 1"),
+            "a target compared through a local" => Charges(explicitFilter, "string.Equals(w.TargetKey, want.TargetKey, StringComparison.Ordinal)"),
+            "Extra without RequestDestination.Serves" => plugin.With("Services/Acquire/Requests/RequestModels.cs", text => text.Replace("covered.Where(c => RequestDestination.Serves(this, c)).ToArray()", "covered.ToArray()", StringComparison.Ordinal)),
+            "the decline cooldown comparing raw keys" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("w.Status == \"declined\" && RequestDestination.SameEdition(w.Input, normalized)", "w.Status == \"declined\" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant", StringComparison.Ordinal)),
+            "shared coverage looked up by the key as given" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("var covered = Wants(c, t, TitleIs + \" AND variant=$v\", (\"$key\", normalized.Key)", "var covered = Wants(c, t, \"title_key=$key AND variant=$v\", (\"$key\", normalized.Key)", StringComparison.Ordinal)),
+            "keep-getting requests grouped by raw key" => Charges("GroupBy(w => RequestDestination.Edition(w.Input))", "GroupBy(w => (w.Input.Key, w.Input.Variant))"),
+            "two requests held in one array" => Charges(asked, "{ var pair = new[] { want.Input.NewSeason(season), asked.FirstOrDefault() }; return pair[0].Extra(asked) == null || pair[1] != null && pair[0].Seasons.Intersect(pair[1].Seasons).Any(); }"),
+            "the first and last of one list" => Charges(asked, "{ var list = asked.Prepend(want.Input.NewSeason(season)).ToList(); return list.First().Extra(asked) == null || list.Count > 1 && list.First().Seasons.Intersect(list.Last().Seasons).Any(); }"),
+            _ => plugin.With("Services/Acquire/Requests/SeerrBackend.cs", text => text.Replace("=> RequestDestination.SeerrHas(", "=> SeerrHasByHand(", StringComparison.Ordinal)
+                .Replace("        // ---------------- transport ----------------", "        private static bool SeerrHasByHand(MutationInput input, int? server, int? profile, string? root) => server == input.SeerrServerId && profile == input.SeerrProfileId && root == input.SeerrRootFolder;\n\n        // ---------------- transport ----------------", StringComparison.Ordinal)),
+        };
+        Assert.Empty(mutant.Errors());
+        var problems = Problems(mutant);
+        Assert.NotEmpty(problems);
+        // The bypass in the charges file is found as a raw comparison there, not only as a path that lost its call.
+        if (bypass is not ("Extra without RequestDestination.Serves" or "Seerr's record matched by hand" or "the decline cooldown comparing raw keys" or "shared coverage looked up by the key as given"))
+            Assert.Contains(problems, p => p.StartsWith("not through RequestDestination: FutureSeasonCharges.cs", StringComparison.Ordinal));
+        if (bypass == "the decline cooldown comparing raw keys") Assert.Contains(problems, p => p.StartsWith("not through RequestDestination: RequestLedger.cs", StringComparison.Ordinal) && p.Contains("CreateCore", StringComparison.Ordinal));
+        if (bypass == "shared coverage looked up by the key as given") Assert.Contains(problems, p => p.StartsWith("looks a title up by a key as given", StringComparison.Ordinal) && p.Contains("CreateCore", StringComparison.Ordinal));
     }
 }

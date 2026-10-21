@@ -8,7 +8,7 @@
         // dom, api, ui). Created here so core modules can attach to it.
         core: {},
         pluginConfig: {},
-        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
+        userConfig: markUnreadDocuments({ settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } }),
         translations: {},
         pluginVersion: 'unknown',
         // Local CDN helper. Every third-party static asset (icons, fonts, flags, theme
@@ -976,6 +976,22 @@
     };
 
     /**
+     * Records on a userConfig object which per-user documents it does NOT hold from a read (non-enumerable, so it never
+     * travels in a document). The settings store (enhanced/config.js) refuses whole-document saves of those until a read
+     * of them succeeds: a default document saved back would replace the person's own settings.
+     * @param {object} userConfig - The userConfig object
+     * @param {string[]} [unread] - Server file names not read (default: all five)
+     * @returns {object} The same object
+     */
+    function markUnreadDocuments(userConfig, unread) {
+        Object.defineProperty(userConfig, 'unreadDocuments', {
+            value: unread || ['settings.json', 'shortcuts.json', 'bookmark.json', 'elsewhere.json', 'hidden-content.json'],
+            enumerable: false, configurable: true, writable: true
+        });
+        return userConfig;
+    }
+
+    /**
      * Assembles a fresh userConfig object from the five per-user documents.
      * A document that is missing or failed to load (null/undefined/non-object)
      * keeps its default; settings, bookmark and hidden-content are converted
@@ -987,9 +1003,11 @@
      */
     function buildUserConfig(documents) {
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        const unread = [];
+        markUnreadDocuments(userConfig, unread);
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
-            if (!value || typeof value !== 'object') continue; // keep the default
+            if (!value || typeof value !== 'object') { unread.push(USER_CONFIG_DOCUMENTS[name]); continue; } // keep the default
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
                 userConfig[name] = toCamelCase(value);
@@ -1073,29 +1091,18 @@
     function seedDisplayLanguage(userId) {
         if (!userId) return;
         const languageKey = `${userId}-language`;
-        // A language tag, normalized (`pt-br` → `pt-BR`), or '' for a literal "undefined"/"null" or a malformed
-        // value (translations.js applies the same rule to what it reads).
-        const languageCode = (raw) => {
-            if (typeof raw !== 'string') return '';
-            const code = raw.trim();
-            if (!code || /^(undefined|null|nan|true|false)$/i.test(code) || !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
-            const parts = code.split('-');
-            const normalized = parts.length === 1 ? parts[0].toLowerCase()
-                : parts.length === 2 ? `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}` : code;
-            try {
-                if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
-            } catch (e) {
-                return '';
-            }
-            return normalized;
-        };
-        // A stringified "undefined" or "null" in the shared key is no one's choice: it goes, so Jellyfin and JE fall
-        // back to the user's or the browser's language (or the administrator's default below).
-        if (/^\s*(undefined|null)\s*$/i.test(localStorage.getItem(languageKey) || '')) localStorage.removeItem(languageKey);
+        // The display-language rule is the translations module's (JE.languageCode / JE.supportedLanguageCode: the policy data
+        // shared with the server). Without that module nothing is written or removed: one rule, one implementation.
+        if (typeof JE.languageCode !== 'function' || typeof JE.supportedLanguageCode !== 'function') return;
+        // A stringified "undefined" or "null", or a malformed value, in the shared key is no one's choice (and can make
+        // Intl throw): it goes, so Jellyfin and JE fall back to the user's or the browser's language (or the
+        // administrator's default below). A valid tag someone chose there is never touched.
+        const stored = localStorage.getItem(languageKey);
+        if (stored !== null && stored.trim() !== '' && !JE.languageCode(stored)) localStorage.removeItem(languageKey);
         // Only seed the admin's default language if the user has no language set yet.
         // This prevents overwriting the user's own language choice on every page load.
         if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = languageCode(JE.currentSettings?.displayLanguage);
+            const desiredLanguage = JE.supportedLanguageCode(JE.currentSettings?.displayLanguage);
             if (desiredLanguage) localStorage.setItem(languageKey, desiredLanguage);
         }
     }
@@ -1118,7 +1125,7 @@
         // Synchronous reset: wipe every boot-time global the moment the
         // identity changes, so nothing can read user A's data under user B.
         JE.session.onUserChange('plugin-globals', () => {
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            JE.userConfig = markUnreadDocuments({ settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } });
             JE.currentSettings = {};
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.
@@ -1377,6 +1384,7 @@
             if (typeof JE.initializeLetterboxdLinksScript === 'function' && JE.pluginConfig?.LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
             if (typeof JE.initializeReviewsScript === 'function' && (JE.pluginConfig?.ShowReviews || JE.pluginConfig?.ShowUserReviews)) JE.initializeReviewsScript();
             if (typeof JE.initializeAwardsScript === 'function' && JE.pluginConfig?.ShowAwards) JE.initializeAwardsScript();
+            if (typeof JE.initializeDoesTheDogDieScript === 'function' && JE.pluginConfig?.DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
             if (typeof JE.initializeMdblistRatingsScript === 'function' && JE.pluginConfig?.MdblistRatingsEnabled && JE.pluginConfig?.MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();

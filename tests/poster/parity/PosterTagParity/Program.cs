@@ -81,21 +81,21 @@ void Prepare()
         var profile = profileNode!.AsObject();
         if (profile["settingsWeb"] is not null) continue;
         var config = LoadConfig(profile["pluginOverrides"] as JsonObject);
-        UserSettings userConfig;
+        JellyfinEnhancedUserSettings userConfig;
         if (profile["settingsText"] is JsonValue textValue)
         {
             userConfig = ReadSettingsText(textValue.GetValue<string>());
         }
         else if (profile["settingsRaw"] is JsonObject raw)
         {
-            // UserConfigurationManager.GetUserConfiguration<UserSettings>.
+            // UserConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>.
             try
             {
-                userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<UserSettings>(raw.ToJsonString(), lenient) ?? new UserSettings();
+                userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(raw.ToJsonString(), lenient) ?? new JellyfinEnhancedUserSettings();
             }
             catch (Exception)
             {
-                userConfig = new UserSettings();
+                userConfig = new JellyfinEnhancedUserSettings();
             }
         }
         else
@@ -103,7 +103,7 @@ void Prepare()
             // GET settings.json with no file: write the controller's defaults, read them back.
             var defaults = ControllerDefaults(config);
             var saved = Newtonsoft.Json.JsonConvert.SerializeObject(JToken.FromObject(defaults), Newtonsoft.Json.Formatting.Indented);
-            userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<UserSettings>(saved, lenient) ?? new UserSettings();
+            userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(saved, lenient) ?? new JellyfinEnhancedUserSettings();
         }
 
         var node = JsonSerializer.SerializeToNode(userConfig)!.AsObject();
@@ -119,22 +119,22 @@ void Prepare()
     Console.WriteLine($"prepared {profiles.Count} profiles, {entries.Count} synthetic entries");
 }
 
-// UserConfigurationManager.GetUserConfiguration<UserSettings> on an existing file, copied verbatim.
-UserSettings ReadSettingsText(string json)
+// UserConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings> on an existing file, copied verbatim.
+JellyfinEnhancedUserSettings ReadSettingsText(string json)
 {
-    if (string.IsNullOrWhiteSpace(json)) return new UserSettings();
+    if (string.IsNullOrWhiteSpace(json)) return new JellyfinEnhancedUserSettings();
     try
     {
-        return Newtonsoft.Json.JsonConvert.DeserializeObject<UserSettings>(json, lenient) ?? new UserSettings();
+        return Newtonsoft.Json.JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(json, lenient) ?? new JellyfinEnhancedUserSettings();
     }
     catch (Exception)
     {
-        return new UserSettings();
+        return new JellyfinEnhancedUserSettings();
     }
 }
 
 // JellyfinEnhancedController.GetUserSettingsSettings default construction, copied verbatim.
-static UserSettings ControllerDefaults(PluginConfiguration defaultConfig) => new()
+static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defaultConfig) => new()
 {
     AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
     AutoResumeEnabled = defaultConfig.AutoResumeEnabled,

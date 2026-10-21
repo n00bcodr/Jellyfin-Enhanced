@@ -413,42 +413,54 @@
          */
         function cleanupOldCaches() {
             if (!spec.cache || !state.localStorageEnabled) return;
-            const CACHE_KEY = spec.cache.key;
-            const TIMESTAMP_KEY = `${CACHE_KEY}Timestamp`;
-            // The current key can itself start with a legacy stem (language
-            // tags: "…languageTagsCache-v2" vs the old "…languageTagsCache"),
-            // so every current-generation key — including the owner sentinel,
-            // whose loss would wipe the cache on every reload — is kept.
-            const currentKeys = [CACHE_KEY, TIMESTAMP_KEY, `${CACHE_KEY}:identity-owner`];
-            // A renderer can accumulate several generations of dead keys
-            // (un-namespaced, then namespaced-v1, …), so accept one stem or a
-            // list of them — replacing the stem would orphan the older one.
-            const legacyStems = Array.isArray(spec.cache.legacyPrefix)
-                ? spec.cache.legacyPrefix
-                : [spec.cache.legacyPrefix];
+            try {
+                const CACHE_KEY = spec.cache.key;
+                const TIMESTAMP_KEY = `${CACHE_KEY}Timestamp`;
+                // The current key can itself start with a legacy stem (language
+                // tags: "…languageTagsCache-v2" vs the old "…languageTagsCache"),
+                // so every current-generation key — including the owner sentinel,
+                // whose loss would wipe the cache on every reload — is kept.
+                const currentKeys = [CACHE_KEY, TIMESTAMP_KEY, `${CACHE_KEY}:identity-owner`];
+                // A renderer can accumulate several generations of dead keys
+                // (un-namespaced, then namespaced-v1, …), so accept one stem or a
+                // list of them — replacing the stem would orphan the older one.
+                const legacyStems = Array.isArray(spec.cache.legacyPrefix)
+                    ? spec.cache.legacyPrefix
+                    : [spec.cache.legacyPrefix];
 
-            const stale = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key &&
-                    legacyStems.some(legacy => key.startsWith(`${legacy}-`) || key === legacy || key === `${legacy}Timestamp`) &&
-                    !currentKeys.includes(key)) {
-                    stale.push(key);
+                const stale = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key &&
+                        legacyStems.some(legacy => key.startsWith(`${legacy}-`) || key === legacy || key === `${legacy}Timestamp`) &&
+                        !currentKeys.includes(key)) {
+                        stale.push(key);
+                    }
                 }
-            }
-            for (const key of stale) {
-                console.log(`${logPrefix} Removing old cache: ${key}`);
-                localStorage.removeItem(key);
-            }
+                for (const key of stale) {
+                    console.log(`${logPrefix} Removing old cache: ${key}`);
+                    localStorage.removeItem(key);
+                }
 
-            const serverClearTimestamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
-            const localCacheTimestamp = parseInt(localStorage.getItem(TIMESTAMP_KEY) || '0', 10);
-            if (serverClearTimestamp > localCacheTimestamp) {
-                console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
-                localStorage.removeItem(CACHE_KEY);
-                localStorage.setItem(TIMESTAMP_KEY, serverClearTimestamp.toString());
-                state.cache = {};
-                if (state.hot) state.hot.clear();
+                const serverClearTimestamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+                const localCacheTimestamp = parseInt(localStorage.getItem(TIMESTAMP_KEY) || '0', 10);
+                if (serverClearTimestamp > localCacheTimestamp) {
+                    console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
+                    state.cache = {};
+                    if (state.hot) state.hot.clear();
+                    localStorage.removeItem(CACHE_KEY);
+                    localStorage.setItem(TIMESTAMP_KEY, serverClearTimestamp.toString());
+                }
+            } catch (error) {
+                // The browser cache is a mirror. Unavailable/quota-limited storage cannot block registration.
+                if (JE.pluginConfig?.ClearLocalStorageTimestamp) {
+                    state.cache = {};
+                    if (state.hot) state.hot.clear();
+                }
+                if (!state.cleanupWarned) {
+                    state.cleanupWarned = true;
+                    console.warn(`${logPrefix} Could not clean browser tag caches; will retry.`, error);
+                }
             }
         }
 

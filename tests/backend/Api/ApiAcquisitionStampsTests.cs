@@ -134,7 +134,7 @@ public class ApiAcquisitionStampsTests
         var body = Body(rig.Controller(rig.Me).GetStamps(ids));
 
         Assert.Equal(JsonValueKind.Object, body.ValueKind);
-        Assert.Equal(new[] { "items" }, body.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(new[] { "items", "subscriptions" }, body.EnumerateObject().Select(p => p.Name));
         var items = body.GetProperty("items").EnumerateArray().ToList();
         Assert.All(items, i =>
         {
@@ -150,6 +150,23 @@ public class ApiAcquisitionStampsTests
         var theirs = Body(rig.Controller(TestCallers.Principal(other, admin: false)).GetStamps(ids)).GetProperty("items").EnumerateArray()
             .Select(i => i.GetProperty("stamp").GetString()).ToList();
         Assert.Equal(new[] { "upgraded", "fourK", "upgraded" }, theirs);
+    }
+
+    [Fact]
+    public void SubscriptionKeysIncludeAccessibleUnstampedItemsButNeverHiddenItemsOrOptedOutPeople()
+    {
+        using var rig = new Rig();
+        var plain = rig.W.AddMovie(StampWorld.Movie(41), T0.AddDays(-30));
+        var hidden = rig.W.AddMovie(StampWorld.Movie(42), T0.AddDays(-30));
+        rig.W.Library.Deny(rig.Person, hidden.Id);
+        var ids = string.Join(",", new[] { plain.Id, hidden.Id, Guid.NewGuid() });
+        var body = Body(rig.Controller(rig.Me).GetStamps(ids));
+        Assert.Empty(body.GetProperty("items").EnumerateArray());
+        var subscription = Assert.Single(body.GetProperty("subscriptions").EnumerateArray());
+        Assert.Equal(plain.Id.ToString("N"), subscription.GetProperty("itemId").GetString());
+        Assert.Equal(new[] { "movie:tmdb:41" }, subscription.GetProperty("keys").EnumerateArray().Select(k => k.GetString()));
+        rig.Prefs.Web[rig.Person] = false;
+        Assert.Empty(Body(rig.Controller(rig.Me).GetStamps(ids)).GetProperty("subscriptions").EnumerateArray());
     }
 
     [Fact]

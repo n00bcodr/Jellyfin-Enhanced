@@ -283,6 +283,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     {
         private readonly IListHost _host;
         private readonly Logger _logger;
+        private readonly ListEditionAvailability _editions;
 
         /// <summary>Creates the resolver.</summary>
         /// <param name="host">Jellyfin seam.</param>
@@ -291,6 +292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             _host = host;
             _logger = logger;
+            _editions = new ListEditionAvailability(host);
         }
 
         /// <summary>Resolves a placeholder's scope against the library (see the class remarks).</summary>
@@ -332,16 +334,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return ScopeResolution.None;
             }
 
-            var primary = users.Count > 0 ? users[0] : null;
-            var movies = memo == null
-                ? _host.FindMovies(scope.TmdbId, scope.ImdbId, primary)
-                : Memoized(memo.Movies, (scope.TmdbId, scope.ImdbId, primary?.Id), () => _host.FindMovies(scope.TmdbId, scope.ImdbId, primary));
-            foreach (var id in InEditionOrder(movies, scope).OrderBy(id => present?.Contains(id) == true ? 0 : 1))
+            // A qualifying copy already in the list wins; otherwise the adapter's edition order decides.
+            var match = _editions.Resolve(scope, users, memo: memo).Sources.OrderBy(s => present?.Contains(s.ItemId) == true ? 0 : 1).FirstOrDefault();
+            if (match != null)
             {
-                if (AccessibleToRest(id, users))
-                {
-                    return new ScopeResolution(new[] { new ResolvedItem(id, BaseItemKind.Movie, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>());
-                }
+                return new ScopeResolution(new[] { new ResolvedItem(match.ItemId, BaseItemKind.Movie, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>());
             }
 
             return ScopeResolution.None;
@@ -355,59 +352,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             var primary = users.Count > 0 ? users[0] : null;
-            var found = memo == null
-                ? _host.FindSeries(scope.TmdbId, scope.TvdbId, scope.ImdbId, primary)
-                : Memoized(memo.Series, (scope.TmdbId, scope.TvdbId, scope.ImdbId, primary?.Id), () => _host.FindSeries(scope.TmdbId, scope.TvdbId, scope.ImdbId, primary));
-            var seriesIds = found.Where(id => AccessibleToRest(id, users)).ToList();
-            if (seriesIds.Count == 0)
+            var available = _editions.Resolve(scope, users, memo: memo);
+            if (available.SeriesIds.Count == 0) return ScopeResolution.None;
+
+            // Equivalent qualifying copies already in the list come first, so they keep their coordinate (and their series)
+            // whichever library copy the adapter lists first. The adapter's edition and access filtering still apply before
+            // this preference; among the rest its order stands.
+            var sources = available.Sources.OrderBy(s => present?.Contains(s.ItemId) == true ? 0 : 1).ToList();
+
+            if (collection && ListRules.EditionOf(scope) == ListRules.FourK
+                && (available.Sources.Any(s => s.ItemId != s.LogicalItemId) || (scope.Kind == PlaceholderKinds.Series && scope.Filled.Count > 0)))
             {
-                return ScopeResolution.None;
+                // Jellyfin's Series/Season links cannot pin a MediaSource. Keep the exact episode items when the 4K
+                // edition is an alternate of an HD primary, so a collection plays the edition it actually asked for. A 4K
+                // series that already filled episodes this way keeps filling them one by one (until its completion
+                // rule holds), also once later 4K episodes arrive as primaries.
+                var exact = OnePerCoordinate(new[] { sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
+                return new ScopeResolution(exact, exact);
             }
 
             if (collection && scope.Kind == PlaceholderKinds.Series)
             {
-                return new ScopeResolution(new[] { new ResolvedItem(seriesIds.OrderBy(id => present?.Contains(id) == true ? 0 : 1).First(), BaseItemKind.Series, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>());
+                // A 4K container needs an actual 4K episode, never just matching series metadata or arr ownership. A copy
+                // of the series already in the list wins.
+                var series = ListRules.EditionOf(scope) == ListRules.FourK
+                    ? sources.OrderBy(s => s.SeriesId is Guid id && present?.Contains(id) == true ? 0 : 1).FirstOrDefault()?.SeriesId
+                    : available.SeriesIds.OrderBy(id => present?.Contains(id) == true ? 0 : 1).First();
+                return series.HasValue
+                    ? new ScopeResolution(new[] { new ResolvedItem(series.Value, BaseItemKind.Series, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>())
+                    : ScopeResolution.None;
             }
 
-            // The present in-scope episodes of each copy of the show (one per library), in season/episode order.
-            var season = scope.Kind == PlaceholderKinds.Series ? (int?)null : scope.SeasonNumber;
-            var copies = new List<(Guid SeriesId, List<ResolvedItem> Episodes)>();
-            foreach (var seriesId in seriesIds)
-            {
-                var own = new List<ResolvedItem>();
-                var ownCovered = new HashSet<EpisodeCoord>();
-                var library = memo == null
-                    ? _host.GetEpisodes(seriesId, season, primary)
-                    : Memoized(memo.Episodes, (seriesId, season, primary?.Id), () => _host.GetEpisodes(seriesId, season, primary));
-                // Prefer existing qualifying copies before ownCovered discards duplicate coordinates in this series.
-                foreach (var episode in library.OrderBy(e => present?.Contains(e.Id) == true ? 0 : 1).ThenBy(e => e.Season).ThenBy(e => e.Episode))
-                {
-                    var coords = PlaceholderProgress.CoordsInScope(scope, episode.Season, episode.Episode, episode.EpisodeEnd)
-                        .Where(c => !ownCovered.Contains(c))
-                        .ToList();
-                    if (coords.Count == 0 || !InEdition(episode.Id, scope) || !AccessibleToRest(episode.Id, users))
-                    {
-                        continue;
-                    }
+            // Source selection (including the edition and every viewer's access) belongs to one adapter. List-specific
+            // representation and coordinate deduplication happen only after that selection.
+            var copies = sources.GroupBy(s => s.SeriesId!.Value)
+                .Select(g => (SeriesId: g.Key, Episodes: OnePerCoordinate(new[] { g.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() })))
+                .ToList();
 
-                    ownCovered.UnionWith(coords);
-                    own.Add(new ResolvedItem(episode.Id, BaseItemKind.Episode, coords));
-                }
-
-                copies.Add((seriesId, own));
-            }
-
-            // One item per coordinate: copies of the show in several libraries never double an episode. A standard entry
-            // takes a non-4K copy of an episode before a 4K one.
-            if (ListRules.EditionOf(scope) == ListRules.Standard)
-            {
-                copies = copies.OrderBy(c => c.Episodes.Count > 0 && c.Episodes.All(e => IsFourK(e.ItemId)) ? 1 : 0).ToList();
-            }
-
-            // Existing qualifying episode copies count as presence, regardless of which library copy won the
-            // ordinary lookup. Edition and access filtering above still apply before this preference.
-            var candidates = copies.SelectMany(c => c.Episodes).OrderBy(e => present?.Contains(e.ItemId) == true ? 0 : 1).ToList();
-            var episodes = OnePerCoordinate(new[] { candidates });
+            var episodes = OnePerCoordinate(new[] { sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
             if (!collection || scope.Kind == PlaceholderKinds.Episodes)
             {
                 return new ScopeResolution(episodes, episodes);
@@ -458,37 +440,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return new ScopeResolution(seasonItems, credited);
         }
 
-        // Edition rule: a 4K entry takes only 4K copies; a standard entry takes any copy, other copies first.
-        private IEnumerable<Guid> InEditionOrder(IReadOnlyList<Guid> ids, Placeholder scope) =>
-            ListRules.EditionOf(scope) == ListRules.FourK ? ids.Where(IsFourK) : ids.OrderBy(id => IsFourK(id) ? 1 : 0);
-
-        private bool InEdition(Guid id, Placeholder scope) => ListRules.EditionOf(scope) != ListRules.FourK || IsFourK(id);
-
-        private bool IsFourK(Guid id)
-        {
-            try
-            {
-                return _host.IsFourK(id);
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug($"[Lists] Edition check of {id:N} failed: {ex.Message}");
-                return false;
-            }
-        }
-
-        private static TValue Memoized<TKey, TValue>(Dictionary<TKey, TValue> cache, TKey key, Func<TValue> load)
-            where TKey : notnull
-        {
-            if (!cache.TryGetValue(key, out var value))
-            {
-                value = load();
-                cache[key] = value;
-            }
-
-            return value;
-        }
-
         // Merges per-copy episode lists in order: a coordinate goes to the first copy that has it; sorted by coordinate.
         private static List<ResolvedItem> OnePerCoordinate(IEnumerable<List<ResolvedItem>> copies)
         {
@@ -510,10 +461,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return result;
         }
 
-        // The query was scoped to users[0]; every other user is checked per item.
+        // Collection representation items need every viewer, just like the selected sources.
         private bool AccessibleToRest(Guid itemId, IReadOnlyList<User> users)
         {
-            for (var i = 1; i < users.Count; i++)
+            for (var i = 0; i < users.Count; i++)
             {
                 if (!_host.CanAccessItem(itemId, users[i]))
                 {

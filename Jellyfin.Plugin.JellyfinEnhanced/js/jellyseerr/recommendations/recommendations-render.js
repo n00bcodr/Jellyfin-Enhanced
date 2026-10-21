@@ -11,7 +11,6 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: Recommendations:';
   const state = P.state;
-  const fetchLogoPath = P.fetchLogoPath;
   const fetchAllRows = P.fetchAllRows;
   const fetchGenreSlider = P.fetchGenreSlider;
   const escapeHtml = JE.escapeHtml;
@@ -201,12 +200,11 @@
 
   /**
    * Builds a horizontal row of studio/network tiles that link into the
-   * category page for that studio or network. Renders the real TMDB logo
-   * when available (matching Seerr's own Studios/Networks rows), falling
-   * back to a plain text tile if the logo can't be resolved (e.g. TMDB not
-   * configured).
+   * category page for that studio or network. Renders the entry's TMDB logo
+   * (matching Seerr's own Studios/Networks rows), falling back to a plain
+   * text tile if the image fails to load.
    * @param {string} title
-   * @param {Array<{name: string, id: number}>} items
+   * @param {Array<{name: string, id: number, logo?: string}>} items
    * @param {'studio'|'network'} kind
    * @returns {HTMLElement}
    */
@@ -237,7 +235,7 @@
           <div class="cardScalable">
             <div class="cardPadder cardPadder-overflowBackdrop"></div>
             <div class="cardImageContainer cardContent je-tile-image">
-              <span class="je-tile-fallback-text">${item.name}</span>
+              <span class="je-tile-fallback-text">${escapeHtml(item.name)}</span>
             </div>
             <div class="cardOverlayContainer" data-action="link"></div>
           </div>
@@ -258,19 +256,19 @@
         showCategoryPage(`${kind}-${item.id}`);
       });
 
-      itemsContainer.appendChild(tile);
-
-      fetchLogoPath(kind, item.id).then(logoPath => {
-        if (!logoPath || !tile.isConnected) return;
-        imageContainer.textContent = '';
+      if (item.logo) {
+        const fallbackText = imageContainer.querySelector('.je-tile-fallback-text');
         const img = document.createElement('img');
-        img.src = `https://image.tmdb.org/t/p/w300${logoPath}`;
+        img.src = `https://image.tmdb.org/t/p/w300${item.logo}`;
         img.alt = item.name;
         img.className = 'je-tile-logo';
+        img.loading = 'lazy';
         img.style.cssText = 'width: auto; height: auto; max-width: 90%; max-height: 90%; object-fit: contain;';
-        img.onerror = () => { imageContainer.textContent = item.name; };
-        imageContainer.appendChild(img);
-      });
+        img.onerror = () => { imageContainer.replaceChildren(fallbackText); };
+        imageContainer.replaceChildren(img);
+      }
+
+      itemsContainer.appendChild(tile);
     });
 
     scrollerContainer.appendChild(itemsContainer);

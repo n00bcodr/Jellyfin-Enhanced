@@ -14,10 +14,12 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var id = Guid.Parse(User);
-        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new UserSettings { DisplayLanguage = "日本語", AutoPauseEnabled = true });
+        // A Unicode value round-trips (in a field without a rule: the display language passes the language gate, stage 1
+        // fix round 3, so it would be stored as Auto).
+        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new JellyfinEnhancedUserSettings { LastOpenedTab = "日本語", AutoPauseEnabled = true });
         var reopened = new UserConfigurationManager(f.Paths.Object, f.Logger);
-        Assert.Equal("日本語", reopened.GetUserConfiguration<UserSettings>(User, "settings.json").DisplayLanguage);
-        Assert.False(reopened.GetUserConfiguration<UserSettings>(Guid.NewGuid().ToString("N"), "settings.json").AutoPauseEnabled);
+        Assert.Equal("日本語", reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").LastOpenedTab);
+        Assert.False(reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(Guid.NewGuid().ToString("N"), "settings.json").AutoPauseEnabled);
         Assert.Same(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(id.ToString("D").ToUpperInvariant(), "settings.json"));
         Assert.NotSame(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(User, "other.json"));
     }
@@ -28,14 +30,14 @@ public class CorePersistenceTests
         using var f = new CoreFixture();
         var gone = Guid.Parse(User);
         var other = Guid.NewGuid();
-        f.Manager.SaveUserConfiguration(User, "settings.json", new UserSettings { DisplayLanguage = "de" });
-        f.Manager.SaveUserConfiguration(User, "hidden-content.json", new UserSettings());
-        f.Manager.SaveUserConfiguration(other.ToString("N"), "settings.json", new UserSettings { DisplayLanguage = "fr" });
+        f.Manager.SaveUserConfiguration(User, "settings.json", new JellyfinEnhancedUserSettings { DisplayLanguage = "de" });
+        f.Manager.SaveUserConfiguration(User, "hidden-content.json", new JellyfinEnhancedUserSettings());
+        f.Manager.SaveUserConfiguration(other.ToString("N"), "settings.json", new JellyfinEnhancedUserSettings { DisplayLanguage = "fr" });
         var user = new Jellyfin.Database.Implementations.Entities.User("gone", "default", "default") { Id = gone };
         await new Jellyfin.Plugin.JellyfinEnhanced.EventHandlers.UserDeletedSettingsRemover(f.Manager).OnEvent(new Jellyfin.Data.Events.Users.UserDeletedEventArgs(user));
         Assert.DoesNotContain(User, f.Manager.GetAllUserIds());
         Assert.Contains(other.ToString("N"), f.Manager.GetAllUserIds());
-        Assert.Equal("fr", f.Manager.GetUserConfiguration<UserSettings>(other.ToString("N"), "settings.json").DisplayLanguage);
+        Assert.Equal("fr", f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(other.ToString("N"), "settings.json").DisplayLanguage);
         // Nothing left to remove (already gone) or a user that never saved anything: no error.
         Assert.False(f.Manager.DeleteUserData(gone));
         Assert.False(f.Manager.DeleteUserData(Guid.Empty));
@@ -47,12 +49,12 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var path = f.Write(User, content);
-        Assert.Equal(5, f.Manager.GetUserConfiguration<UserSettings>(User, "settings.json").PauseScreenDelaySeconds);
+        Assert.Equal(5, f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").PauseScreenDelaySeconds);
         Assert.Equal(content, File.ReadAllText(path));
-        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json"));
+        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json"));
         Assert.False(File.Exists(path));
         Assert.Equal(content, File.ReadAllText(Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!, "*.corrupt-*"))));
-        Assert.Equal(5, f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json").PauseScreenDelaySeconds);
+        Assert.Equal(5, f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json").PauseScreenDelaySeconds);
     }
 
     [Fact]
@@ -60,11 +62,11 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var path = f.Write(User, "broken");
-        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json", false));
+        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json", false));
         Assert.Equal("broken", File.ReadAllText(path));
         f.Write(User, "{\"AutoPauseEnabled\":null,\"DisplayLanguage\":\"fr\"}");
-        Assert.Equal("fr", f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json").DisplayLanguage);
-        Assert.False(f.Manager.GetUserConfiguration<UserSettings>(User, "settings.json").AutoPauseEnabled);
+        Assert.Equal("fr", f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json").DisplayLanguage);
+        Assert.False(f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").AutoPauseEnabled);
     }
 
     [Theory]

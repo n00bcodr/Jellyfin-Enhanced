@@ -81,6 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HideReviewsFromDisabledUsers = true;
             MirrorReviewRatingsToJellyfin = false;
             ShowAwards = false;
+            DoesTheDogDieEnabled = false;
+            DoesTheDogDieApiKey = "";
             MdblistApiKey = "";
             MdblistRatingsEnabled = false;
             MdblistRatingsShowOnItemDetails = true;
@@ -179,6 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrEnable4KRequests = false;
             JellyseerrEnable4KTvRequests = false;
             JellyseerrShowAdvanced = false;
+            JellyseerrSingleSeasonRequestOnly = false;
             JellyseerrShowQuotaInfo = true;
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
@@ -315,6 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ActivityFeedShowWatched = true;
             ActivityFeedShowFavorited = true;
             ActivityFeedShowReviewed = true;
+            ActivityFeedOwnOnlyForNonAdmins = false;
             ActivityFeedShowActiveStreams = true;
             ActivityFeedUsePluginPages = false;
             ActivityFeedUseCustomTabs = false;
@@ -429,6 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
+            SpoilerBlurTrickplay = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
 
             // Advanced per-category reveals. Off by default so existing
@@ -563,6 +568,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// are touched (season/episode reviews have no reliable TMDB-keyed item).</summary>
         public bool MirrorReviewRatingsToJellyfin { get; set; }
         public bool ShowAwards { get; set; }
+        /// <summary>Shows a content-warnings section (DoesTheDogDie votes) on item-details pages.</summary>
+        public bool DoesTheDogDieEnabled { get; set; }
+        /// <summary>DoesTheDogDie API key. Server-side only, never sent to clients.</summary>
+        public string DoesTheDogDieApiKey { get; set; } = string.Empty;
         /// <summary>MDBList API key (mdblist.com). Never exposed to clients;
         /// see GetPublicConfig()'s MdblistEnabled boolean. Used server-side
         /// only, by MdblistService.</summary>
@@ -742,6 +751,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrEnable4KTvRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
+        public bool JellyseerrSingleSeasonRequestOnly { get; set; }
         public bool JellyseerrShowQuotaInfo { get; set; }
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
@@ -973,7 +983,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Server-owned group quota pools (JSON array, in precedence order). Edited on the Household tab.</summary>
         public string ArrGroupQuotaPools { get; set; } = string.Empty;
-
         // ---- Phase 4c1: lists (playlist and collection entries for titles not in the library) ----
 
         /// <summary>
@@ -1004,6 +1013,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Lists: show where each entry's request stands (the shared request status). Off by default.</summary>
         public bool ArrPhase4ListStatusEnabled { get; set; }
 
+        // ---- Phase 4c3a: list pages (drawing the lists) ----
+
+        /// <summary>
+        /// Lists: draw the entries that aren't in the library on playlist pages, in list order between the real rows, and
+        /// mark playlists that have them as incomplete on the Playlists page instead of Jellyfin's "played" check (which
+        /// Jellyfin gives a playlist with nothing playable in it). Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>.
+        /// Everyone can hide it for themselves. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListPlaylistUiEnabled { get; set; }
+
+        /// <summary>
+        /// Lists: a "Not in your library" section on collection pages with the collection's entries that aren't in the
+        /// library, by release date. Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>. Everyone can hide it for
+        /// themselves. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListCollectionUiEnabled { get; set; }
         // ---- Phase 4e: acquisition badges (web) and per-viewer native poster stamps ----
 
         /// <summary>
@@ -1025,23 +1050,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Acquisition badges: days an "Upgraded" badge lasts unless watched first (1–30, default 7).</summary>
         public int ArrAcquisitionUpgradedDays { get; set; } = 7;
-
-        // ---- Phase 4c3a: list pages (drawing the lists) ----
-
-        /// <summary>
-        /// Lists: draw the entries that aren't in the library on playlist pages, in list order between the real rows, and
-        /// mark playlists that have them as incomplete on the Playlists page instead of Jellyfin's "played" check (which
-        /// Jellyfin gives a playlist with nothing playable in it). Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>.
-        /// Everyone can hide it for themselves. Off by default.
-        /// </summary>
-        public bool ArrPhase4ListPlaylistUiEnabled { get; set; }
+        // ---- Phase 4d: home rows, Home Screen Sections, collection gaps ----
 
         /// <summary>
-        /// Lists: a "Not in your library" section on collection pages with the collection's entries that aren't in the
-        /// library, by release date. Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>. Everyone can hide it for
-        /// themselves. Off by default.
+        /// Home rows: "Your requests", "Coming soon for you" (requests and follows dated in the next 30 days) and "Just
+        /// arrived for you" (arrived in the last 7 days, upgrades left out) on the home screen. Each row hides when empty
+        /// and each person can switch each row off. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/>.
+        /// Off by default.
         /// </summary>
-        public bool ArrPhase4ListCollectionUiEnabled { get; set; }
+        public bool ArrPhase4HomeRowsEnabled { get; set; }
+
+        /// <summary>
+        /// Home rows as Home Screen Sections: with that plugin installed, the rows are registered as its sections (placed
+        /// and switched on in its settings) instead of being added to the home screen, never both. Titles not in the
+        /// library need the native pages for them (<see cref="NativeAbsentDetailsEnabled"/>). Needs
+        /// <see cref="ArrPhase4HomeRowsEnabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4HssSectionsEnabled { get; set; }
+
+        /// <summary>
+        /// Home rows: an administrator's strip above them ("2 downloading · 1 import blocked · /movies4k 94%") that shows
+        /// only when something needs doing. Needs <see cref="ArrPhase4HomeRowsEnabled"/> and <see cref="ArrPhase2Enabled"/>.
+        /// Off by default.
+        /// </summary>
+        public bool ArrPhase4HomeOpsStripEnabled { get; set; }
+
+        /// <summary>
+        /// Collection gaps, phase 4 additions: titles a collection's list already holds as entries are left out of
+        /// "Get the N missing", and the older Seerr "Missing from" row stays away while the gaps block shows. The
+        /// gaps block itself keeps its phase 3 switch. Needs <see cref="ArrPhase4Enabled"/> and
+        /// <see cref="ArrPhase3Enabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4CollectionGapsEnabled { get; set; }
 
         // ---- Phase 4f: the private Ready playlist and native Ready messages ----
 
@@ -1337,6 +1377,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ActivityFeedShowFavorited { get; set; } = true;
         public bool ActivityFeedShowReviewed { get; set; } = true;
         /// <summary>
+        /// When true, non-admins only see their own entries in the Activity Feed.
+        /// Admins always see everyone.
+        /// </summary>
+        public bool ActivityFeedOwnOnlyForNonAdmins { get; set; }
+        /// <summary>
         /// Shows the Active Streams section on the Activity Feed page. This is
         /// separate from ActiveStreamsEnabled (the header widget toggle) so an
         /// admin can run the section here without the persistent header icon,
@@ -1555,6 +1600,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually curated marketing art, while chapter scene-thumbs (and
         // synopsis/cast) are the real spoiler vector. Off = hide posters too.
         public bool SpoilerKeepMoviePosters { get; set; } = true;
+        // True (default): trickplay seek-preview tile sheets of a listed, unwatched
+        // episode/movie are protected (sheets that end before the saved resume
+        // point still pass through). Off = seek previews always pass through
+        // (served no-store). Users can also opt out per-user via
+        // SpoilerBlurUserPrefs.HideTrickplay; the admin switch caps it.
+        public bool SpoilerBlurTrickplay { get; set; } = true;
         // Advanced per-category reveals. When on, the user's NEXT unwatched
         // regular episode and the rest of its season get their own strip masks
         // below instead of the uniform full strip; every other unwatched

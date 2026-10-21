@@ -99,18 +99,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// seasons the alert itself carries. Null when the ledger can't be read now (wait, never "visible" or "hidden").
         /// </summary>
         internal Requests.MutationInput? OutcomeInput(TitleKey key, string? eventKey, IReadOnlyDictionary<string, string> payload)
+            => OutcomeRequest(key, eventKey, payload)?.Input;
+
+        /// <summary>
+        /// <see cref="OutcomeInput"/> with the stored request's persisted target: a ledger request is judged where it actually
+        /// goes (the arr instance its target names when it has no routing of its own, and the Seerr source it was made for),
+        /// as every other check of a stored request is (<see cref="Requests.IRequestPolicy.Evaluate(Guid, Requests.MutationInput, string)"/>),
+        /// never where a new request would go now. No target for a Seerr request or a removed one (the alert's own facts).
+        /// </summary>
+        internal (Requests.MutationInput Input, string? Target)? OutcomeRequest(TitleKey key, string? eventKey, IReadOnlyDictionary<string, string> payload)
         {
             var prefix = eventKey == null ? null : eventKey.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal) ? ApprovedEventPrefix
                 : eventKey.StartsWith(DeclinedEventPrefix, StringComparison.Ordinal) ? DeclinedEventPrefix : null;
             if (_ledger != null && prefix != null)
             {
                 if (!_ledger.Database.Available) return null;
-                if (_ledger.Find(eventKey![prefix.Length..]) is { } want) return want.Input;
+                if (_ledger.Find(eventKey![prefix.Length..]) is { } want) return (Requests.RequestDestination.Of(want.Input, want.TargetKey), want.TargetKey);
             }
             var seasons = payload.TryGetValue("seasons", out var list)
                 ? list.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray()
                 : Array.Empty<int>();
-            return NotificationService.AskInput(key.Title, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k");
+            return (NotificationService.AskInput(key.Title, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k"), null);
         }
 
         // Before a send of an outcome alert: the rating facts its policy input needs are loaded (bounded by the policy; a failed
@@ -699,7 +708,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (NotifyKind.IsAdminKind(alert.Kind))
             {
                 if (!_users.Admins().Contains(alert.User)) return new AlertVerdict("The recipient is no longer an administrator.");
-                if (alert.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, alert.User, alert.TitleKey, payload))
+                if (alert.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, alert.User, alert.TitleKey, payload, _ledger, alert.EventKey))
                     return new AlertVerdict("The recipient can no longer see this title.");
                 return !outbound || prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
             }
@@ -846,9 +855,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     else if (_owner._policy is { } policy)
                     {
                         // Not in the library: what the request policy lets them see of a title nobody has yet, for the request as
-                        // it is (its edition decides the instance, and so the libraries, it would land in).
-                        if (_owner.OutcomeInput(key, eventKey, payload) is not { } input) return new AlertVerdict("The request can't be read now.", true);
-                        var facts = policy.Evaluate(_user, input);
+                        // it is (its edition and its stored target decide the instance, and so the libraries, it lands in).
+                        if (_owner.OutcomeRequest(key, eventKey, payload) is not { } request) return new AlertVerdict("The request can't be read now.", true);
+                        var facts = request.Target is { } target ? policy.Evaluate(_user, request.Input, target) : policy.Evaluate(_user, request.Input);
                         if (!facts.Visible)
                         {
                             return facts.VisibilityUnknown

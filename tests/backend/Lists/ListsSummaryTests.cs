@@ -354,7 +354,7 @@ public class ListsSummaryTests
         var fresh = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration();
         Assert.False(fresh.ArrPhase4ListPlaylistUiEnabled);
         Assert.False(fresh.ArrPhase4ListCollectionUiEnabled);
-        var settings = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSettings();
+        var settings = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.JellyfinEnhancedUserSettings();
         Assert.Null(settings.ListPlaylistUi);
         Assert.Null(settings.ListCollectionUi);
     }

@@ -724,8 +724,9 @@ public class IntegrationHouseholdRulesTests
         var a = await r.Ask(r.Member, 1);
         var b = await r.Ask(r.Member, 2);
         Pools(r, new { id = "fam", name = "Family", limit = 1, roles = new[] { "Member" }, users = Array.Empty<string>() });
-        var jobs = r.Rig.Ledger.Due(r.Now).ToList();
-        Assert.All(jobs, j => Assert.Equal("group_quota", r.Rig.Ledger.ApprovalNeededAtSend(j, r.Policy.Evaluate(r.Member.UserId, j.Input), r.Policy, r.Now)));
+        var jobs = new[] { a, b }.Select(o => r.Rig.Ledger.ForWant(o.RequestId!).Single()).ToList();
+        // In charge order (both in the same millisecond): the first is still within the lowered limit, the second waits.
+        Assert.Equal(new[] { null, "group_quota" }, jobs.Select(j => r.Rig.Ledger.ApprovalNeededAtSend(j, r.Policy.Evaluate(r.Member.UserId, j.Input), r.Policy, r.Now)));
         r.Config.ArrPhase4GroupQuotasEnabled = false;
         Assert.All(jobs, j => Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(j, r.Policy.Evaluate(r.Member.UserId, j.Input), r.Policy, r.Now)));
         Assert.Null(r.Policy.Evaluate(r.Member.UserId, new MutationInput { Key = "movie:tmdb:9" }).Pool);
@@ -770,6 +771,49 @@ public class IntegrationHouseholdRulesTests
         // Once the first three age out of the window, the fifth fits again.
         r.Now = r.Now.AddDays(r.Config.ArrRequestQuotaWindowDays).AddSeconds(-90);
         Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(fifthJob, r.Policy.Evaluate(r.Trusted.UserId, fifthJob.Input), r.Policy, r.Now));
+    }
+
+    /// <summary>
+    /// Review round 4 (4b-B12): charges made in the same millisecond keep the order they were made in (a sequence given
+    /// when each becomes charged), for the personal allowance and for a group pool alike. Three asks at one moment within
+    /// a limit of 3, the limit then lowered to 2: the first two still go and only the third waits. A third ask over a
+    /// limit of 2 approved in the same moment: all three go (the approval's charge comes after the first two).
+    /// </summary>
+    [Theory]
+    [InlineData("allowance", "lowered")]
+    [InlineData("allowance", "approved")]
+    [InlineData("pool", "lowered")]
+    [InlineData("pool", "approved")]
+    public async Task ChargesMadeInTheSameMillisecondKeepTheOrderTheyWereMadeIn(string limit, string timing)
+    {
+        using var r = new Rules();
+        r.Config.ArrPhase4HouseholdRulesEnabled = limit == "pool";
+        void Limit(int n)
+        {
+            if (limit == "pool") Pools(r, new { id = "fam", name = "Family", limit = n, roles = new[] { "Member" }, users = Array.Empty<string>() });
+            else r.Config.ArrRequestQuotaLimit = n;
+        }
+        Limit(timing == "lowered" ? 3 : 2);
+        // Every ask, approval and charge below happens in the same millisecond.
+        var asks = new List<RequestOutcome>();
+        for (var movie = 1; movie <= 3; movie++) asks.Add(await r.Ask(r.Member, movie));
+        var held = limit == "pool" ? "group_quota" : "over_quota";
+        if (timing == "lowered")
+        {
+            Assert.All(asks, a => Assert.Equal("queued", r.Want(a).Status));
+            Limit(2);
+        }
+        else
+        {
+            Assert.Equal(("queued", "queued", "pending", held), (r.Want(asks[0]).Status, r.Want(asks[1]).Status, r.Want(asks[2]).Status, r.Want(asks[2]).Reason));
+            Assert.Equal(200, (await r.Service.ApproveAsync(asks[2].RequestId!, r.Admin.UserId, null, default)).HttpStatus);
+        }
+        var expected = timing == "lowered" ? new string?[] { null, null, limit == "pool" ? "group_quota" : "authorization_changed" } : new string?[] { null, null, null };
+        var answers = asks.Select(a => r.Rig.Ledger.ForWant(a.RequestId!).Single())
+            .Select(job => r.Rig.Ledger.ApprovalNeededAtSend(job, r.Policy.Evaluate(r.Member.UserId, job.Input), r.Policy, r.Now)).ToArray();
+        Assert.Equal(expected, answers);
+        await r.Runner().TickAsync(default);
+        Assert.Equal(timing == "lowered" ? 2 : 3, r.Rig.Backend.Sends);
     }
 
     // ------------------------------------------------------------------ batch preview (S03 seam)
@@ -972,6 +1016,57 @@ public class IntegrationHouseholdRulesTests
     }
 
     // ------------------------------------------------------------------ schema 4
+
+    /// <summary>
+    /// A database that ran an earlier schema-4 build gets the charge order once (review round 4): its charges numbered by
+    /// when they were charged, then by when they were written; held reservations unnumbered until charged; a copy first.
+    /// </summary>
+    [Fact]
+    public void ASchemaFourDatabaseWithoutTheChargeOrderGetsItOnceNumberedInTheOrderChargesWereMade()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "je-4b-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "acquire.db");
+            using (var db = new AcquireDatabase(path)) Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
+            using (var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
+            {
+                c.Open();
+                using var cmd = c.CreateCommand();
+                // As an earlier schema-4 build left it: no charge order; four reservations, two charged in the same millisecond.
+                cmd.CommandText = @"DROP INDEX reservations_order; ALTER TABLE reservations DROP COLUMN charge_seq;
+INSERT INTO acquisitions VALUES('a','movie:tmdb:1','standard','active',1);
+INSERT INTO wants(id,acquisition_id,user_id,client_request_id,fingerprint,title_key,variant,mutation_input,status,reason,cost,parental_signature,created_at,updated_at)
+  VALUES('w','a','u','c','f','movie:tmdb:1','standard','{}','queued','queued_outage',1,'null',1,1);
+INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope) VALUES
+  ('late','w','u',1,0,'charged',2000,'approval:1'),('first','w','u',1,0,'charged',1000,'initial'),('second','w','u',1,0,'charged',1000,'approval:2'),('held','w','u',1,0,'held',500,'approval:3');";
+                cmd.ExecuteNonQuery();
+            }
+            using (var db = new AcquireDatabase(path))
+            {
+                Assert.True(db.Available);
+                var order = db.Read(c =>
+                {
+                    using var cmd = c.CreateCommand();
+                    cmd.CommandText = "SELECT id||':'||COALESCE(charge_seq,'-') FROM reservations ORDER BY id";
+                    using var r = cmd.ExecuteReader();
+                    var list = new List<string>();
+                    while (r.Read()) list.Add(r.GetString(0));
+                    return list;
+                });
+                Assert.Equal(new[] { "first:1", "held:-", "late:3", "second:2" }, order);
+            }
+            Assert.Single(Directory.GetFiles(root, $"acquire.db.pre-v{AcquireDatabase.Migrations.Count}.*"));
+            using (var again = new AcquireDatabase(path)) Assert.True(again.Available);
+            Assert.Single(Directory.GetFiles(root, $"acquire.db.pre-v{AcquireDatabase.Migrations.Count}.*"));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
 
     [Fact]
     public void ASchemaThreeDatabaseGetsTheRuleAndPoolColumnsOnce()

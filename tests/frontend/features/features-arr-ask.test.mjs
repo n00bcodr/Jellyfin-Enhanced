@@ -1147,6 +1147,17 @@ test('Seerr mode: a button that did not say "Season" (drawn before the capabilit
   assert.equal(two.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
 });
 
+test('one season at a time: a server refusal of several seasons reads in plain words, and the capability is read', t => {
+  const h = setup(t);
+  const refused = h.JE.arrAsk.interpret(409, { outcome: 'blocked', reason: 'single_season_only' });
+  assert.equal(refused.state, 'blocked', 'not "busy": asking again would be refused the same way');
+  assert.equal(h.JE.arrAsk.describe(refused, MEMBER_ME, null).text, 'Only one season can be asked for at a time.');
+  assert.equal(h.JE.arrAsk.singleSeasonOnly({ ...MEMBER_ME, singleSeason: true }), true);
+  assert.equal(h.JE.arrAsk.singleSeasonOnly(MEMBER_ME), false);
+  // Seerr taking the whole series only wins: the option has no effect there.
+  assert.equal(h.JE.arrAsk.singleSeasonOnly({ ...SEERR_MEMBER, singleSeason: true, seerrWholeSeries: true }), false);
+});
+
 test('Seerr mode: a server refusal of single episodes reads in plain words', t => {
   const h = setup(t);
   const refused = h.JE.arrAsk.interpret(409, { outcome: 'blocked', reason: 'seerr_whole_season_only' });

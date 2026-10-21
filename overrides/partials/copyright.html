@@ -1,0 +1,18 @@
+{#- Copied from mkdocs-material 9.6.12 partials/copyright.html (re-copy if Material is upgraded).
+    Adds the keyboard hint, like the Enhanced panel's "Press ? or Esc" footer. -#}
+<div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  {% if config.copyright %}
+    <div class="md-copyright__highlight">
+      {{ config.copyright }}
+    </div>
+  {% endif %}
+  {% if not config.extra.generator == false %}
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  {% endif %}
+</div>

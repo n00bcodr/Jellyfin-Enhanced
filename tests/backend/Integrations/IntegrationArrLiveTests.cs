@@ -873,9 +873,48 @@ public class IntegrationArrLiveTests
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
             Assert.Equal(1, tracker.FlushItems());
             Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
-            // Past the window its updates are no longer its arrival.
+            // Past the arrival window, metadata alone does not publish; the stamp feeder owns upgrades.
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
             now = now.AddMinutes(11);
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
+            Assert.Equal(0, tracker.FlushItems());
+        }
+        finally
+        {
+            await tracker.StopAsync(default);
+            tracker.Dispose();
+        }
+    }
+
+    // Integration rebuild, stage 1 fix round 2 (D53): Jellyfin can read a new file's dimensions after the ten minutes its
+    // updates count as part of the arrival; that is when a 4K request's copy becomes known. With acquisition badges off no
+    // stamp feeder publishes it, so the update of a movie or episode that is still a fresh arrival (3 days) is published;
+    // an old item's metadata refresh still isn't, and with badges on the feeder stays the owner.
+    [Fact]
+    public async Task AFreshVideosLateProbeIsPublishedWhenNoStampFeederOwnsIt()
+    {
+        using var rig = new Rig();
+        await rig.LoadAsync(rig.RadarrConn, ArrSnapshotKind.Library);
+        var library = new Mock<ILibraryManager>();
+        var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+        var tracker = new ArrChangeTracker(rig.Store, rig.Feed, rig.Router, library.Object, null, () => rig.Arr.Plugin.Plugin.Configuration, () => now, Timeout.InfiniteTimeSpan);
+        await tracker.StartAsync(default);
+        try
+        {
+            var fresh = new Movie { Id = Guid.NewGuid(), DateCreated = now.UtcDateTime };
+            fresh.SetProviderId(MetadataProvider.Tmdb, "101");
+            library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = fresh });
+            tracker.FlushItems();
+            now = now.AddMinutes(12);
+            var before = rig.Feed.Revision("movie:tmdb:101");
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = fresh });   // the probe
+            Assert.Equal(1, tracker.FlushItems());
+            Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
+
+            var old = new Movie { Id = Guid.NewGuid(), DateCreated = now.UtcDateTime.AddDays(-10) };
+            old.SetProviderId(MetadataProvider.Tmdb, "101");
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
             Assert.Equal(0, tracker.FlushItems());
         }
         finally

@@ -20,6 +20,24 @@ internal sealed class FakeListHost : IListHost
         public List<RawEntry> Raw { get; } = new();
         /// <summary>Where Jellyfin keeps the list (its item id is derived from it).</summary>
         public string Path { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The name Jellyfin has saved (database and metadata), as opposed to its cached item's <see cref="Info"/> name;
+        /// null for a list the test made directly.
+        /// </summary>
+        public string? SavedName { get; set; }
+        public DateTime? StoredSaveStamp { get; set; } = DateTime.UtcNow;
+        public ListInfo? SavedInfo { get; private set; }
+        public IReadOnlyList<RawEntry> SavedRaw { get; private set; } = Array.Empty<RawEntry>();
+
+        // Native managers save the entire item, including its cached name, on entry writes.
+        public void Persist()
+        {
+            StoredSaveStamp = StoredSaveStamp?.AddTicks(1);
+            SavedInfo = Info;
+            SavedName = Info.Name;
+            SavedRaw = Raw.ToArray();
+        }
     }
 
     /// <summary>Jellyfin's managed collections folder (CollectionManager.GetCollectionsFolderPath).</summary>
@@ -33,11 +51,18 @@ internal sealed class FakeListHost : IListHost
     public sealed record FakeEpisode(Guid Id, Guid SeriesId, int Season, int Episode, int? EpisodeEnd, bool Virtual, int? OwnTmdb);
 
     public bool SupportsPositionalInsert { get; set; } = true;
+    public DateTime? GetStoredSaveStamp(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.StoredSaveStamp : null;
+
+    public ListPlaylistSave? GetStoredPlaylistSave(Guid listId) => Lists.TryGetValue(listId, out var list) && list.StoredSaveStamp.HasValue
+        ? new ListPlaylistSave(list.StoredSaveStamp.Value, ListOrder.BuildRealTokens(list.SavedRaw)) : null;
+
+    public Task NativeMoveAsync(Guid listId, Guid itemId, int index, Guid userId) => MoveCore(listId, itemId, index, userId);
     /// <summary>Items that are 4K copies (<see cref="IsFourK"/>); everything else is a standard copy.</summary>
     public HashSet<Guid> FourK { get; } = new();
     public Dictionary<string, Guid> MoviesByImdb { get; } = new();
     public Dictionary<Guid, FakeSeries> Series { get; } = new();
     public List<FakeEpisode> Episodes { get; } = new();
+    public HashSet<Guid> EpisodeCoordinatesMissing { get; } = new();
     /// <summary>Season items: (series, season) → (id, virtual).</summary>
     public Dictionary<(Guid Series, int Season), (Guid Id, bool Virtual)> Seasons { get; } = new();
     /// <summary>Throws from AddToPlaylistAsync / AddToCollectionAsync when set (after optionally mutating).</summary>
@@ -188,6 +213,14 @@ internal sealed class FakeListHost : IListHost
 
     public ListInfo? GetList(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.Info : null;
 
+    public Action<Guid>? OnStoredNameRead { get; set; }
+
+    public string? GetStoredName(Guid listId)
+    {
+        OnStoredNameRead?.Invoke(listId);
+        return Lists.TryGetValue(listId, out var list) ? list.SavedName ?? list.Info.Name : null;
+    }
+
     /// <summary>Runs at the start of every <see cref="GetRawEntries"/> call (to change a list between two reads).</summary>
     public Action<Guid>? OnRawRead { get; set; }
 
@@ -206,14 +239,26 @@ internal sealed class FakeListHost : IListHost
 
     public bool IsFourK(Guid itemId) => FourK.Contains(itemId);
 
+    public Dictionary<Guid, IReadOnlyList<ListMediaSource>> MediaSources { get; } = new();
+
+    public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId) => MediaSources.TryGetValue(itemId, out var sources) ? sources : Items.ContainsKey(itemId)
+        ? new[] { new ListMediaSource(itemId, itemId.ToString("N"), FourK.Contains(itemId) ? 3840 : 1920, FourK.Contains(itemId) ? 2160 : 1080, !Episodes.Any(e => e.Id == itemId && e.Virtual)) }
+        : Array.Empty<ListMediaSource>();
+
     public LibraryItemInfo? GetItem(Guid itemId) => Items.TryGetValue(itemId, out var kind) ? new LibraryItemInfo(itemId, kind) : null;
 
     public Guid? FindMovieByTmdb(int tmdbId, IReadOnlyList<User> users) =>
         MoviesByTmdb.TryGetValue(tmdbId, out var id) && users.All(u => CanAccessItem(id, u)) ? id : null;
 
+    private void HealName(Guid id)
+    {
+        if (Lists.TryGetValue(id, out var list)) list.Info = list.Info with { Name = GetStoredName(id)! };
+    }
+
     public async Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
     {
         write.Spend(write.ListId, ListWriteKind.Insert);
+        HealName(write.ListId);
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"add:{string.Join(',', itemIds.Select(Short))}@{rawPosition?.ToString() ?? "end"}");
@@ -248,6 +293,7 @@ internal sealed class FakeListHost : IListHost
             // 10.11: drops items already in the playlist and repeats within the batch, then appends.
             var existing = raw.Where(r => r.ItemId.HasValue).Select(r => r.ItemId!.Value).ToHashSet();
             raw.AddRange(add.Where(id => !existing.Contains(id)).Distinct().Select(id => new RawEntry(id, true)));
+            Lists[playlistId].Persist();
             AfterAdd?.Invoke(playlistId);
             return;
         }
@@ -262,6 +308,7 @@ internal sealed class FakeListHost : IListHost
             raw.InsertRange(Math.Max(rawPosition.Value, 0), entries);
         }
 
+        Lists[playlistId].Persist();
         AfterAdd?.Invoke(playlistId);
         if (FailAdds != null)
         {
@@ -272,6 +319,7 @@ internal sealed class FakeListHost : IListHost
     public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
     {
         write.Spend(write.ListId, ListWriteKind.Move);
+        HealName(write.ListId);
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"move:{Short(itemId)}->{newIndex}");
@@ -325,12 +373,14 @@ internal sealed class FakeListHost : IListHost
             raw.Insert(index, moved);
         }
 
+        Lists[playlistId].Persist();
         return Task.CompletedTask;
     }
 
     public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
     {
         write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+        HealName(write.ListId);
         var collectionId = write.ListId;
         Calls.Add($"collection:{string.Join(',', itemIds.Select(Short))}");
         OnWrite?.Invoke("collection", collectionId, Guid.Empty, itemIds);
@@ -353,6 +403,7 @@ internal sealed class FakeListHost : IListHost
         }
 
         Lists[collectionId].Raw.AddRange(itemIds.Where(id => !CollectionDrops.Contains(id)).Select(id => new RawEntry(id, true)));
+        Lists[collectionId].Persist();
         AfterCollectionAdd?.Invoke(collectionId);
         return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
@@ -395,8 +446,17 @@ internal sealed class FakeListHost : IListHost
     /// <summary>Throws from the next N FinishCreateAsync calls (before renaming).</summary>
     public int FailFinishes { get; set; }
 
+    /// <summary>
+    /// Throws from the next N FinishCreateAsync calls AFTER the cached item got the new name but before it was saved, as
+    /// Jellyfin's own rename does (it changes the cached item, then saves): the list shows the name, nothing kept it.
+    /// </summary>
+    public int FailFinishesAfterRename { get; set; }
+
+    public Func<ListWrite, string, Task>? FinishCreateOverride { get; set; }
+
     public Task FinishCreateAsync(ListWrite write, string name)
     {
+        if (FinishCreateOverride != null) return FinishCreateOverride(write, name);
         write.Spend(write.ListId, ListWriteKind.FinishCreate);
         Calls.Add($"finish:{name}");
         OnWrite?.Invoke("finish", write.ListId, write.ActAs, Array.Empty<Guid>());
@@ -411,6 +471,13 @@ internal sealed class FakeListHost : IListHost
         if (Lists.TryGetValue(write.ListId, out var list))
         {
             list.Info = list.Info with { Name = name };
+            if (FailFinishesAfterRename > 0)
+            {
+                FailFinishesAfterRename--;
+                throw new IOException("Jellyfin could not save the list");
+            }
+
+            list.SavedName = name;
         }
 
         OnAwait?.Invoke("finish:after");
@@ -418,7 +485,7 @@ internal sealed class FakeListHost : IListHost
     }
 
     public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId) => kind == ListKinds.Playlist
-        ? Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && l.Info.OwnerId == ownerId && l.Path.Contains(marker.ToString("N"), StringComparison.OrdinalIgnoreCase)).Select(l => l.Info).FirstOrDefault()
+        ? Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && (ownerId == Guid.Empty || l.Info.OwnerId == ownerId) && l.Path.Contains(marker.ToString("N"), StringComparison.OrdinalIgnoreCase)).Select(l => l.Info).FirstOrDefault()
         : Lists.Values.Where(l => l.Info.Kind == ListKinds.Collection && CollectionProviderIds.TryGetValue(l.Info.Id, out var ids)
             && ids.TryGetValue(JellyfinListHost.CreateMarkerKey, out var value) && value == marker.ToString("N")).Select(l => l.Info).FirstOrDefault();
 
@@ -437,7 +504,7 @@ internal sealed class FakeListHost : IListHost
         return Lists.Values.Any(l => l.Info.Kind == ListKinds.Collection && l.Path.LastIndexOf('/') is var cut and > 0
             && string.Equals(l.Path[..cut], root, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(l.Path[(cut + 1)..], folder, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ValidFilename(l.Info.Name) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
+                || string.Equals(ValidFilename(GetStoredName(l.Info.Id)!) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>A playlist someone made in Jellyfin itself (no JE marker).</summary>
@@ -489,7 +556,7 @@ internal sealed class FakeListHost : IListHost
 
     private Guid MakePlaylist(string name, Guid ownerId, bool isPublic, IReadOnlyList<ListShare> shares)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow), Path = PlaylistPath(name) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow), Path = PlaylistPath(name), SavedName = name };
         Lists[list.Info.Id] = list;
         return list.Info.Id;
     }
@@ -501,7 +568,7 @@ internal sealed class FakeListHost : IListHost
         var path = (folder ?? CollectionsRoot) + "/" + ValidFilename(name) + " [boxset]";
         var existing = Lists.Values.FirstOrDefault(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Path, path, StringComparison.Ordinal));
         var id = existing?.Info.Id ?? Guid.NewGuid();
-        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow), Path = path };
+        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow), Path = path, SavedName = name };
         Lists[id] = list;
         CollectionProviderIds[id] = new Dictionary<string, string>(providerIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         return id;
@@ -538,9 +605,11 @@ internal sealed class FakeListHost : IListHost
                 var series = Series[itemId];
                 return new LibraryItemFacts(itemId, kind, Ids(series.Tmdb, series.Tvdb, series.Imdb), null, null, null, null, null, false);
             case BaseItemKind.Episode:
-                var episode = Episodes.First(e => e.Id == itemId);
+                // Alternate items remain individually readable although Jellyfin's episode query lists only primaries.
+                var episode = Episodes.FirstOrDefault(e => e.Id == itemId)
+                    ?? Episodes.First(e => MediaSources.TryGetValue(e.Id, out var sources) && sources.Any(s => s.ItemId == itemId));
                 var parent = Series[episode.SeriesId];
-                return new LibraryItemFacts(itemId, kind, Ids(episode.OwnTmdb), parent.Id, Ids(parent.Tmdb, parent.Tvdb, parent.Imdb), episode.Season, episode.Episode, episode.EpisodeEnd, episode.Virtual);
+                return new LibraryItemFacts(itemId, kind, Ids(episode.OwnTmdb), parent.Id, Ids(parent.Tmdb, parent.Tvdb, parent.Imdb), EpisodeCoordinatesMissing.Contains(itemId) ? null : episode.Season, EpisodeCoordinatesMissing.Contains(itemId) ? null : episode.Episode, episode.EpisodeEnd, episode.Virtual);
             case BaseItemKind.Season:
                 var season = Seasons.First(p => p.Value.Id == itemId);
                 var owner = Series[season.Key.Series];
@@ -584,7 +653,7 @@ internal sealed class FakeListHost : IListHost
     {
         LibraryQueries++;
         return Episodes
-            .Where(e => e.SeriesId == seriesId && !e.Virtual && (seasonNumber == null || e.Season == seasonNumber))
+            .Where(e => e.SeriesId == seriesId && !e.Virtual && !EpisodeCoordinatesMissing.Contains(e.Id) && (seasonNumber == null || e.Season == seasonNumber))
             .Where(e => user == null || CanAccessItem(e.Id, user))
             .Select(e => new LibraryEpisode(e.Id, seriesId, e.Season, e.Episode, e.EpisodeEnd))
             .ToList();

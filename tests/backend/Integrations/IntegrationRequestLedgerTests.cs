@@ -1024,4 +1024,6 @@ public class IntegrationRequestLedgerTests
         var files = Directory.EnumerateFiles(Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced"), "*.cs", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/"));
         Assert.DoesNotContain(files, f => Regex.IsMatch(File.ReadAllText(f), @"\basync\s+void\b"));
     }
+
+    private static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string file = "") => file;
 }

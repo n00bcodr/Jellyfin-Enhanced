@@ -16,9 +16,9 @@
     const FLUSH_MS = 300;
     const TTL_MS = 60000;
 
-    /** @type {Map<string, {status: Object|null, stamp: string|null, at: number}>} item id -> last answer */
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[], at: number}>} item id -> last answer */
     const cache = new Map();
-    /** @type {Map<string, {status: Object|null, stamp: string|null}>} what was shown before an entry was dropped for a re-read */
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[]}>} what was shown before an entry was dropped for a re-read */
     const stale = new Map();
     /** Stops listening to Jellyfin's UserDataChanged messages (phase 4e), or null. */
     let stopUserData = null;
@@ -26,6 +26,7 @@
     const idsByKey = new Map();
     const queued = new Set();
     const inFlight = new Set();
+    const revisions = new Map();
     let seen = new WeakSet();
     let io = null;
     let flushTimer = null;
@@ -173,11 +174,13 @@
         const withStamps = stampsOn();
         if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
-        queued.clear();
+        ids.forEach(id => queued.delete(id));
+        const current = JE.arrStatus.responseGuard();
         for (let i = 0; i < ids.length; i += BATCH) {
+            if (!current()) return;
             const batch = ids.slice(i, i + BATCH);
+            const versions = new Map(batch.map(id => [id, revisions.get(id) || 0]));
             batch.forEach(id => inFlight.add(id));
-            const epoch = JE.session ? JE.session.getEpoch() : 0;
             let data = null;
             let stampData = null;
             try {
@@ -187,17 +190,19 @@
                     withStamps ? JE.arrStatus.fetchStamps(batch) : null
                 ]);
             } finally {
-                batch.forEach(id => inFlight.delete(id));
+                if (current()) batch.forEach(id => inFlight.delete(id));
+                // Invalidations queued during this read must survive and run once it releases the ids.
+                if (current() && queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
             }
-            if (JE.session && !JE.session.isCurrent(epoch)) return;
+            if (!current()) return;
+            const valid = batch.filter(id => current() && (revisions.get(id) || 0) === versions.get(id));
+            if (!valid.length) continue;
             const now = Date.now();
             const answered = new Map();
             for (const status of data?.items || []) {
                 if (!status.itemId) continue;
                 const id = status.itemId.toLowerCase();
                 answered.set(id, status);
-                if (status.key) follow(status.key, id);
-                if (status.liveKey) follow(status.liveKey, id);
             }
             const stamps = new Map();
             for (const item of stampData?.items || []) {
@@ -209,22 +214,29 @@
             if (!data && !stampData && (statusFailed || stampsFailed)) {
                 // Failed (a re-fetch after a change, or a first look): ask again for the cards
                 // still shown after a pause, so a badge doesn't stay at what it showed before.
-                retryLater(batch);
+                retryLater(valid);
                 continue;
             }
             if (data) noteSince(data.since);
-            for (const id of batch) {
+            if (stampData) noteSince(stampData.since);
+            const subscriptions = new Map((stampData?.subscriptions || []).map(item => [item.itemId, item.keys]));
+            for (const id of valid) {
+                const status = answered.get(id);
+                if (status?.key) follow(status.key, id);
+                if (status?.liveKey) follow(status.liveKey, id);
+                for (const key of subscriptions.get(id) || []) follow(key, id);
                 // The half that failed keeps what the card showed; the retry below reads it again.
                 const before = cache.get(id) || stale.get(id);
                 stale.delete(id);
                 cache.set(id, {
                     status: data ? answered.get(id) || null : statusFailed ? before?.status || null : null,
                     stamp: stampData ? stamps.get(id) || null : stampsFailed ? before?.stamp || null : null,
+                    keys: subscriptions.get(id) || before?.keys || [],
                     at: now
                 });
             }
-            paintAll(new Set(batch));
-            if (statusFailed || stampsFailed) retryLater(batch);
+            paintAll(new Set(valid));
+            if (statusFailed || stampsFailed) retryLater(valid);
             else failures = 0;
         }
         prune();
@@ -263,6 +275,7 @@
             if (!present.has(id) || now - entry.at >= TTL_MS) cache.delete(id);
         }
         for (const id of stale.keys()) if (!present.has(id)) stale.delete(id);
+        for (const id of revisions.keys()) if (!present.has(id) && !inFlight.has(id) && !queued.has(id)) revisions.delete(id);
         resubscribe();
     }
 
@@ -291,7 +304,7 @@
         if (entry && Date.now() - entry.at < TTL_MS) {
             paint(card, entry.status, entry.stamp);
             // Painted from the cache: follow the title again (a prune may have dropped it), once per burst.
-            const followed = [entry.status?.key, entry.status?.liveKey].filter(Boolean).map(key => follow(key, id)).some(Boolean);
+            const followed = [entry.status?.key, entry.status?.liveKey, ...(entry.keys || [])].filter(Boolean).map(key => follow(key, id)).some(Boolean);
             if (followed && !resubscribeTimer) {
                 resubscribeTimer = setTimeout(() => {
                     resubscribeTimer = null;
@@ -309,6 +322,7 @@
      * @returns {void}
      */
     function scan() {
+        if (!statusBadgesOn() && !stampsOn()) return;
         if (!io) return;
         document.querySelectorAll('.card[data-id][data-type]').forEach(card => {
             if (seen.has(card)) return;
@@ -405,8 +419,9 @@
      * @returns {void}
      */
     function forget(id) {
+        revisions.set(id, (revisions.get(id) || 0) + 1);
         const entry = cache.get(id);
-        if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null });
+        if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null, keys: entry.keys });
         cache.delete(id);
     }
 
@@ -414,8 +429,8 @@
      * Jellyfin says the person's own watch state of these items changed (UserDataChanged): their
      * answers are dropped and the cards on the page asked for again, so a title just watched loses
      * its New/Upgraded badge without a reload. A watched episode can also end the stamp of its
-     * season or series: on a "played" change, stamped Season/Series cards on the page are asked
-     * for again too.
+     * season or series: played marks and partial playback refresh Season/Series cards too,
+     * including a parent whose first answer is still in flight.
      * @param {Object} data The message's Data ({UserId, UserDataList: [{ItemId, Played, ...}]}).
      * @returns {void}
      */
@@ -424,13 +439,13 @@
         const list = Array.isArray(data?.UserDataList) ? data.UserDataList : [];
         if (!list.length) return;
         const changed = new Set(list.map(u => (typeof u?.ItemId === 'string' ? u.ItemId.replace(/-/g, '').toLowerCase() : '')).filter(Boolean));
-        const played = list.some(u => u?.Played === true);
+        const playback = list.some(u => u?.Played === true || !!u?.LastPlayedDate);
         let any = false;
         document.querySelectorAll('.card[data-id]').forEach(card => {
             const id = cardId(card);
             if (!id) return;
             const type = card.getAttribute('data-type');
-            const parent = played && (type === 'Series' || type === 'Season') && !!cache.get(id)?.stamp;
+            const parent = playback && (type === 'Series' || type === 'Season');
             if (!changed.has(id) && !parent) return;
             forget(id);
             queued.add(id);
@@ -476,6 +491,11 @@
      * @returns {void}
      */
     function clearAll() {
+        JE.arrStatus.invalidateResponses();
+        inFlight.clear();
+        revisions.clear();
+        for (const timer of [flushTimer, retryTimer, resubscribeTimer]) if (timer) clearTimeout(timer);
+        flushTimer = retryTimer = resubscribeTimer = null;
         cache.clear();
         stale.clear();
         idsByKey.clear();

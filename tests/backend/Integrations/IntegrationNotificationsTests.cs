@@ -206,7 +206,7 @@ public class IntegrationNotificationsTests
             return id;
         }
 
-        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read)> Inbox(StatusViewer user) => NotifyStore.Inbox(user.UserId, null, 50);
+        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string EventKey)> Inbox(StatusViewer user) => NotifyStore.Inbox(user.UserId, null, 50);
 
         public async Task Step(params string[] keys)
         {

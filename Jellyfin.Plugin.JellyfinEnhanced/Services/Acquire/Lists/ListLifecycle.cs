@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="host">Jellyfin seam.</param>
         /// <param name="logger">JE logger.</param>
         /// <param name="links">List request links (removed with their list).</param>
-        /// <param name="operations">Durable list operations (removed with their list).</param>
+        /// <param name="operations">Durable list operations (creates retain their identity after list deletion).</param>
         /// <param name="events">Swap-in events (removed with their list).</param>
         /// <param name="swap">Swap service (reconciliation after a restore).</param>
         public ListLifecycle(ILibraryManager libraryManager, ListStore store, IListHost host, Logger logger, ListLinks? links = null, ListOperations? operations = null, ListEventStore? events = null, ListSwapService? swap = null)
@@ -105,10 +105,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>Deletes the document of a removed list (off the scan thread).</summary>
         /// <param name="listId">The removed item's id.</param>
+        /// <param name="marker">The removed item's create marker, when it had one.</param>
         /// <returns>True when a document was deleted.</returns>
-        internal async Task<bool> DeleteForRemovedListAsync(Guid listId)
+        internal async Task<bool> DeleteForRemovedListAsync(Guid listId, Guid? marker = null)
         {
+            // A deletion is never part of a create or swap that happened to see it.
+            using var independent = ListContinuation.Detach();
             var listIdN = listId.ToString("N", CultureInfo.InvariantCulture);
+            MarkRemoved(listIdN, marker);
             using (await _store.LockAsync(listIdN).ConfigureAwait(false))
             {
                 var deleted = _store.Delete(listIdN);
@@ -146,6 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     if (IsMissing(listIdN) && _store.Delete(listIdN))
                     {
+                        MarkRemoved(listIdN, null);
                         removed++;
                         ForgetListRows(listIdN);
                     }
@@ -174,6 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>Lists marked.</returns>
         internal async Task<int> ReconcileAfterRestoreAsync()
         {
+            using var independent = ListContinuation.Detach();
             _store.InvalidateAll();
             var marked = 0;
             foreach (var listIdN in _store.EnumerateListIds())
@@ -233,6 +239,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             });
         }
 
+        // A deletion is marked at once, before the list's document lock is waited for (a create may hold it while Jellyfin
+        // works): under the lifecycle lock, so no create or swap continuation writes or answers for the list after it.
+        private void MarkRemoved(string listIdN, Guid? marker)
+        {
+            lock (ListContinuation.Lifecycle)
+            {
+                _store.Removed(listIdN);
+                _operations?.DeleteCreate(listIdN, marker, DateTimeOffset.UtcNow);
+            }
+        }
+
         // Database rows of a removed list: its request links (the requests stay), operations and pending events.
         private void ForgetListRows(string listIdN)
         {
@@ -269,12 +286,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return;
             }
 
+            using var independent = ListContinuation.Detach();
             var id = e.Item.Id;
+            // The removed item still carries its create marker (folder name or provider id), also when no operation
+            // recorded its id: marked before Jellyfin can re-add a folder under the same id.
+            var marker = JellyfinListHost.CreateMarkerOf(e.Item);
+            try
+            {
+                MarkRemoved(id.ToString("N", CultureInfo.InvariantCulture), marker);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[Lists] Marking a deleted list failed (its cleanup tries again): {ex.Message}");
+            }
+
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await DeleteForRemovedListAsync(id).ConfigureAwait(false);
+                    await DeleteForRemovedListAsync(id, marker).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {

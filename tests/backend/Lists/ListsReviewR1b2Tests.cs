@@ -28,12 +28,15 @@ public class ListsReviewR1b2Tests
 
         public List<RawEntry>? Raw { get; set; }
 
+        public DateTime? StoredSaveStamp { get; set; }
+
         public void Capture(ListsHarness h, FakeListHost.FakeList list, string listIdN)
         {
             if (Doc == null)
             {
                 Doc = h.Store.LoadForUpdate(listIdN, list.Info.Kind);
                 Raw = list.Raw.ToList();
+                StoredSaveStamp = h.Host.GetStoredSaveStamp(list.Info.Id);
             }
         }
 
@@ -42,6 +45,7 @@ public class ListsReviewR1b2Tests
             Assert.NotNull(Doc);
             list.Raw.Clear();
             list.Raw.AddRange(Raw!);
+            list.StoredSaveStamp = StoredSaveStamp;
             using (await h.Store.LockAsync(listIdN))
             {
                 h.Store.Save(Doc!);
@@ -61,9 +65,12 @@ public class ListsReviewR1b2Tests
         }
     }
 
-    // F8: 10.11 appends, then moves; a crash in between left the movie at the end. Recovery finishes the move.
-    [Fact]
-    public async Task AnInterruptedTenElevenSwapIsMovedNextToItsAnchorOnRecovery()
+    // F8: 10.11 appends, then moves. Recorded unchanged proof permits recovery; a crash before observing the
+    // native save has no proof and must visibly retire without a move.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnInterruptedTenElevenSwapIsMovedNextToItsAnchorOnRecovery(bool recordSaveEvidence)
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -77,23 +84,54 @@ public class ListsReviewR1b2Tests
         await Add(h, access, new PositionDto { AfterToken = E(a) }, movie);
 
         var arrived = h.Host.AddItem(tmdb: 801);
-        var crash = new CrashPoint();
-        h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN);
-        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        h.Host.AfterAdd = null;
-        await crash.RestoreAsync(h, playlist, access.ListIdN);
+        if (recordSaveEvidence)
+        {
+            // Stop only after the actual shared observer captured the acknowledged append tuple. Hide the item
+            // before immediate settlement can move it; that gate refusal starts no native save and preserves proof.
+            h.Store.Awaited = site =>
+            {
+                if (!site.StartsWith("ObserveSaveAsync:", StringComparison.Ordinal)) return;
+                h.Host.Hide(arrived, owner);
+                throw new IOException("crash after acknowledged append observation");
+            };
+            try { await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None); }
+            finally { h.Store.Awaited = null; }
+            var intent = Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
+            Assert.Equal(h.Host.GetStoredSaveStamp(playlist.Info.Id), intent.StoredSaveStamp);
+            Assert.Equal(new[] { E(a), E(b), E(arrived) }, intent.NativeOrder);
+            h.Host.HiddenFrom.Clear(); h.Store.InvalidateAll();
+        }
+        else
+        {
+            // Capture the document BEFORE the save observer runs: it has no proof and cannot authorize recovery.
+            var crash = new CrashPoint();
+            h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN);
+            await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+            h.Host.AfterAdd = null;
+            await crash.RestoreAsync(h, playlist, access.ListIdN);
+        }
         Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Single(crash.Doc!.Intents);
 
         h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None); // intents only
 
-        Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Equal(new[] { $"move:{FakeListHost.Short(arrived)}->1" }, h.Host.Calls);
         var doc = h.Store.Load(access.ListIdN)!;
+        if (recordSaveEvidence)
+        {
+            Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
+            Assert.Equal(new[] { $"move:{FakeListHost.Short(arrived)}->1" }, h.Host.Calls);
+            Assert.Empty(doc.AbandonedPlacements);
+            Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
+        }
+        else
+        {
+            Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
+            Assert.Empty(h.Host.Calls);
+            Assert.Equal("placement_evidence_missing", Assert.Single(doc.AbandonedPlacements).AbandonedReason);
+            Assert.Equal(new[] { E(a), E(b), E(arrived) }, doc.Order);
+        }
         Assert.Empty(doc.Intents);
         Assert.Empty(doc.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
     }
 
     // F8: recovery puts the landed episode at the planned spot — after the placeholders before it, before its own
@@ -159,9 +197,9 @@ public class ListsReviewR1b2Tests
         Assert.Single(doc.Items.Single().Filled);
     }
 
-    // F8: a 10.11 move that throws once is retried, so the movie doesn't stay at the end.
+    // F8: an unknown failed native move clears proof; recovery keeps landed membership and retires visibly.
     [Fact]
-    public async Task AFailedTenElevenMoveIsRetriedOnceBeforeFallingBackToJellyfinsOrder()
+    public async Task AnUnknownFailedTenElevenMoveRetiresWithoutAnotherInsert()
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -178,26 +216,15 @@ public class ListsReviewR1b2Tests
         h.Host.FailMoves = 1;
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
 
-        Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
         var doc = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(doc.Intents);
-        Assert.Empty(doc.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
-
-        // When the retry fails too, Jellyfin's order stands (no loop).
-        var c = h.Host.AddItem();
-        playlist.Raw.Add(new RawEntry(c, true));
-        var second = Movie(806);
-        await Add(h, access, new PositionDto { AfterToken = E(a) }, second);
-        var arrived2 = h.Host.AddItem(tmdb: 806);
-        h.Host.FailMoves = 2;
+        Assert.Empty(doc.Intents); Assert.Empty(doc.Items);
+        Assert.Equal("placement_evidence_missing", Assert.Single(doc.AbandonedPlacements).AbandonedReason);
+        Assert.Equal(new[] { E(a), E(b), E(arrived) }, doc.Order);
         h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Equal(2, h.Host.Calls.Count(call => call.StartsWith("move:", StringComparison.Ordinal)));
-        Assert.Equal(new[] { a, arrived, b, c, arrived2 }, h.Host.Resolved(playlist.Info.Id));
-        var after = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(after.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b), E(c), E(arrived2) }, after.Order);
+        Assert.Empty(h.Host.Calls);
+        Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
     }
 
     // F9: a crash right after Jellyfin's collection write: the persisted intent still makes the item sync-owned.

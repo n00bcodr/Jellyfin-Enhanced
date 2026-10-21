@@ -112,14 +112,14 @@ public class IntegrationAutomationSeqlockTests
         var consents = new HeldConsents(new UserSettingsConsents(core.Manager));
         var guard = new AutomationSendGuard(s.E.R.Policy, s.E.Budgets, s.E.Store, s.E.Eligibility, () => s.E.R.Now, consents);
         var person = s.E.R.Admin.ToString("N");
-        core.Manager.SaveUserSettings(person, new UserSettings { AutoMovieRequests = true }, byThePerson: true);
+        core.Manager.SetPersonalConsent(person, nameof(JellyfinEnhancedUserSettings.AutoMovieRequests), true);
         using var check = new Barrier();
         using var saver = new Barrier();
         consents.Reading = check.Hold;
         var post = s.Post(guard.Gate);
         Assert.True(check.Reached.Wait(TimeSpan.FromSeconds(10)), "the check read the consent");
         core.Manager.Moved = (_, file) => { if (file == UserConfigurationManager.SettingsFileName) saver.Hold(); };
-        var saving = Task.Run(() => core.Manager.SaveUserSettings(person, new UserSettings { AutoMovieRequests = false }, byThePerson: true));
+        var saving = Task.Run(() => core.Manager.SetPersonalConsent(person, nameof(JellyfinEnhancedUserSettings.AutoMovieRequests), false));
         Assert.True(saver.Reached.Wait(TimeSpan.FromSeconds(10)), "the opt-out is in place");
         Assert.False(new UserSettingsConsents(core.Manager).Preference(s.E.R.Admin, AutomationRecipes.AutoMovie));
         check.Release.Set();

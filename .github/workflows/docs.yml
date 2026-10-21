@@ -7,8 +7,10 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'overrides/**'
       - '.github/workflows/docs.yml'
       - 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'
+      - 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs'
       - 'scripts/generate_config_flag_groups.py'
   workflow_dispatch:
 
@@ -25,7 +27,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -46,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists
+          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists mkdocs-glightbox==0.5.2
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d

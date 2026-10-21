@@ -164,6 +164,7 @@ public class ApiArrRouteMatrixTests
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationBudgets(N.Db, () => N.Config, () => N.Arr.Now),
                     N.Store, new IntegrationRequestHouseholdTests.FakeDirectory(), () => N.Config, () => N.Arr.Now), N.View),
                 new AcquireSeerrOptionsController(_seerrOptions, new ServicesForRequests(N).Service.Policy, N.View),
+                new AcquireHomeController(HomeRowsTests.Projection(Hub, new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotifyStore(N.Db), N.Db, () => N.Config), N.Hub),
             };
             foreach (var controller in all)
             {

@@ -281,8 +281,10 @@
             if (!status || (status.active && status.userFound)) return;
             if (status.reason === 'disabled') return;
             // Jellyfin Enhanced handles requests (Requests & downloads, JE mode): asking for a title and seeing its
-            // details need no Seerr account, so "sign in to Seerr to enable requests" would be wrong.
-            if (ACCOUNT_REFUSALS.has(status.reason) && JE.internals?.arrAskSeerr?.jeMode?.() === true) return;
+            // details need no Seerr account, so "sign in to Seerr to enable requests" would be wrong. Seerr can still supply
+            // metadata while JE handles requests without a Seerr account.
+            if (ACCOUNT_REFUSALS.has(status.reason) && (JE.internals?.arrAskSeerr?.jeMode?.() === true
+                || (status.reason === 'unlinked' && JE.pluginConfig?.ArrRequestsJeMode === true))) return;
             // Don't double-surface within a single session.
             if (window.__JE_userStatusBannerShown === status.reason) return;
             window.__JE_userStatusBannerShown = status.reason;

@@ -22,6 +22,7 @@ public class CoreSecretsTests
     private const string SeerrKey = "SEERR-0123456789abcdef0123456789abcdef";
     private const string TmdbKey = "TMDB-0123456789abcdef0123456789abcdef";
     private const string MdbKey = "MDB-0123456789abcdef";
+    private const string DddKey = "DDD-0123456789abcdef0123456789abcdef";
     private const string ShokoKey = "SHOKO-0123456789abcdef";
     private const string AnalyticsSecret = "ANALYTICS-0123456789abcdef0123456789";
     private const string SonarrKey1 = "SONARR1-0123456789abcdef0123456789abcd";
@@ -36,6 +37,7 @@ public class CoreSecretsTests
         <PluginConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
           <TMDB_API_KEY>{{TmdbKey}}</TMDB_API_KEY>
           <MdblistApiKey>{{MdbKey}}</MdblistApiKey>
+          <DoesTheDogDieApiKey>{{DddKey}}</DoesTheDogDieApiKey>
           <JellyseerrEnabled>true</JellyseerrEnabled>
           <JellyseerrUrls>http://seerr.lan:5055</JellyseerrUrls>
           <JellyseerrApiKey>{{SeerrKey}}</JellyseerrApiKey>
@@ -69,7 +71,7 @@ public class CoreSecretsTests
         </PluginConfiguration>
         """;
 
-    private static readonly string[] AllKeys = [SeerrKey, TmdbKey, MdbKey, ShokoKey, AnalyticsSecret, SonarrKey1, SonarrKey2, RadarrKey1, RadarrKey2];
+    private static readonly string[] AllKeys = [SeerrKey, TmdbKey, MdbKey, DddKey, ShokoKey, AnalyticsSecret, SonarrKey1, SonarrKey2, RadarrKey1, RadarrKey2];
 
     private static PluginConfiguration FromXml(string xml)
     {
@@ -276,6 +278,9 @@ public class CoreSecretsTests
         Assert.Equal(SeerrKey, config.GetJellyseerrApiKey());
         Assert.Equal(TmdbKey, config.GetTmdbApiKey());
         Assert.Equal(MdbKey, config.GetMdblistApiKey());
+        // Upstream's DoesTheDogDie key (84676eef) is a credential like the others.
+        Assert.Equal(SecretValue.Mask(DddKey), config.DoesTheDogDieApiKey);
+        Assert.Equal(DddKey, config.GetDoesTheDogDieApiKey());
         Assert.Equal(ShokoKey, config.GetShokoApiKey());
         Assert.True(config.IsShokoConfigured());
         Assert.Equal(AnalyticsSecret, config.GetAnalyticsInstallSecret());
@@ -418,7 +423,7 @@ public class CoreSecretsTests
 
         var restored = SecretsMigration.Rollback(config, fixture.Plugin.Secrets);
 
-        Assert.Equal(9, restored);
+        Assert.Equal(10, restored);   // the nine of before, and upstream's DoesTheDogDie key
         foreach (var field in PluginConfiguration.StoredSecretFields)
             Assert.Equal(original.ReadField(field), config.ReadField(field));
         var rows = ArrRegistryMigration.Parse(config.RadarrInstances)!;

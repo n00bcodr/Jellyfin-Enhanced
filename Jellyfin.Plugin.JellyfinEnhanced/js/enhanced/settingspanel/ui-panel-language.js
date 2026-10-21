@@ -14,41 +14,88 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireLanguageControls = function(ctx) {
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
         const { resetAutoCloseTimer } = ctx;
 
         // --- Language Settings ---
         const displayLanguageSelect = document.getElementById('displayLanguageSelect');
         if (displayLanguageSelect) {
-            // Get current user ID for localStorage key
-            const userId = ApiClient.getCurrentUserId();
-            const languageKey = `${userId}-language`;
+            const CUSTOM_DISPLAY_NAMES = {
+                'pr': 'Pirate',
+                'en-GB': 'English (United Kingdom)',
+                'en-US': 'English (United States)',
+                'zh-CN': 'Chinese (Simplified)',
+                'zh-HK': 'Chinese (Hong Kong)',
+                'pt-BR': 'Portuguese (Brazil)'
+            };
+            // Jellyfin's cultures by two-letter code, and the locale codes listed (filled by the enumeration below).
+            const cultureMap = {};
+            const localeSet = new Set();
+            const labelFor = code => {
+                let displayName = CUSTOM_DISPLAY_NAMES[code] || cultureMap[code.toLowerCase()]?.DisplayName;
+                if (!displayName && code.includes('-')) {
+                    const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
+                    // Append region qualifier when the base code also exists to avoid duplicate labels
+                    displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
+                        ? `${baseName} (${code.split('-')[1]})`
+                        : baseName;
+                }
+                return displayName || code;
+            };
 
-            // Get saved language from localStorage as well
-            const localStorageLang = localStorage.getItem(languageKey);
-            const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
+            // Without the display-language policy (translations.js didn't load, or came without it) JE has no rule to write
+            // a language by: the select still shows the stored language but can't be changed, a note says why, and the
+            // panel saves nothing for it (unrelated saves carry the stored value as the server handed it out).
+            const policyAvailable = () => typeof JE.supportedLanguageCode === 'function';
+            if (!policyAvailable()) {
+                displayLanguageSelect.disabled = true;
+                displayLanguageSelect.style.cursor = 'not-allowed';
+                displayLanguageSelect.style.opacity = '0.6';
+                const key = 'panel_settings_language_unavailable';
+                const translated = typeof JE.t === 'function' ? JE.t(key) : '';
+                const note = document.createElement('div');
+                note.id = 'displayLanguageUnavailableNote';
+                note.setAttribute('role', 'note');
+                note.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.75); margin-top:8px;';
+                // Without translations.js, JE.t has no strings and answers the key: the English text instead.
+                note.textContent = translated && translated !== key ? translated : "The language list couldn't be loaded, so the display language can't be changed right now. Reload the page to try again.";
+                displayLanguageSelect.insertAdjacentElement('afterend', note);
+            }
 
-            console.log('🪼 Jellyfin Enhanced: Current language setting:', {
-                fromSettings: JE.currentSettings.displayLanguage,
-                fromLocalStorage: localStorageLang,
-                willUse: savedLanguage
-            });
+            // The stored display language, exactly: the server's canonical tag (en-AU, de-Latn-CH), never truncated to a
+            // base language. A tag without an option of its own gets one, labelled by the bundle the policy resolves it to
+            // ("English (en-AU)"). Runs once the languages are listed and on every update of the settings store (a save of
+            // another setting, a read), so the select never ends up showing nothing or another language. Without the
+            // policy the value the server handed out (it gates every read) is shown as it is, labelled by its base language.
+            const renderStoredLanguage = () => {
+                const select = document.getElementById('displayLanguageSelect');
+                if (!select) return;
+                const raw = JE.currentSettings?.displayLanguage;
+                const stored = policyAvailable() ? JE.supportedLanguageCode(raw) : (typeof raw === 'string' ? raw : '');
+                if (stored && ![...select.options].some(option => option.value === stored)) {
+                    const bundle = policyAvailable() ? JE.languageBundle?.(stored) || '' : stored.split('-')[0];
+                    const option = document.createElement('option');
+                    option.value = stored;
+                    option.dataset.jeStoredLanguage = 'true';
+                    option.textContent = bundle && bundle !== stored ? `${labelFor(bundle)} (${stored})` : labelFor(stored);
+                    option.style.background = 'rgba(30,30,30,1)';
+                    option.style.color = '#fff';
+                    const after = [...select.options].find(o => o.value && o.textContent.localeCompare(option.textContent) > 0);
+                    select.insertBefore(option, after || null);
+                }
+                select.value = stored;
+            };
 
             // Populate language options from server-side locale enumeration
             (async () => {
-                const CUSTOM_DISPLAY_NAMES = {
-                    'pr': 'Pirate',
-                    'en-GB': 'English (United Kingdom)',
-                    'en-US': 'English (United States)',
-                    'zh-CN': 'Chinese (Simplified)',
-                    'zh-HK': 'Chinese (Hong Kong)',
-                    'pt-BR': 'Portuguese (Brazil)'
-                };
-
                 try {
                     const [localeCodes, cultures] = await Promise.all([
                         ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
                         ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
                     ]);
+
+                    if (!scope.isCurrent()) return;
 
                     // Check GitHub for any new locale files added since the last plugin release (1 request)
                     try {
@@ -59,7 +106,10 @@
                             files.forEach(f => {
                                 if (f.name.endsWith('.json') && f.name !== 'en.json') {
                                     const code = f.name.replace('.json', '');
-                                    if (!serverSet.has(code.toLowerCase())) {
+                                    // Only a language the shared policy accepts (a shipped bundle, exactly or by base
+                                    // language): anything else would be saved as Auto.
+                                    const accepted = typeof JE.supportedLanguageCode === 'function' && JE.supportedLanguageCode(code) !== '';
+                                    if (accepted && !serverSet.has(code.toLowerCase())) {
                                         localeCodes.push(code);
                                     }
                                 }
@@ -67,27 +117,23 @@
                         }
                     } catch (_) { /* GitHub unavailable, server list is sufficient */ }
 
-                    const cultureMap = {};
+                    if (!scope.isCurrent()) return;
                     cultures.forEach(c => {
                         cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
                     });
+                    localeCodes.forEach(code => localeSet.add(code.toLowerCase()));
 
-                    const localeSet = new Set(localeCodes.map(c => c.toLowerCase()));
-                    const options = localeCodes.map(code => {
-                        let displayName = CUSTOM_DISPLAY_NAMES[code]
-                            || cultureMap[code.toLowerCase()]?.DisplayName;
-                        if (!displayName && code.includes('-')) {
-                            const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
-                            // Append region qualifier when the base code also exists to avoid duplicate labels
-                            displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
-                                ? `${baseName} (${code.split('-')[1]})`
-                                : baseName;
-                        }
-                        return { code, displayName: displayName || code };
-                    });
+                    const options = localeCodes.map(code => ({
+                        // Each option's value in the canonical case the server stores (a select shows a stored tag exactly).
+                        code: (typeof JE.languageCode === 'function' && JE.languageCode(code)) || code,
+                        displayName: labelFor(code)
+                    }));
 
                     options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                    // An option added for the stored tag before the list arrived is added again, labelled from the list.
+                    displayLanguageSelect.querySelectorAll('option[data-je-stored-language]').forEach(option => option.remove());
                     options.forEach(({ code, displayName }) => {
+                        if ([...displayLanguageSelect.options].some(option => option.value === code)) return;
                         const option = document.createElement('option');
                         option.value = code;
                         option.textContent = displayName;
@@ -99,70 +145,37 @@
                     console.warn('🪼 Jellyfin Enhanced: Failed to load language options:', err);
                 }
 
-                // Normalize saved language code with region support (e.g., zh-HK) when available
-                let normalizedLanguage = '';
-                if (savedLanguage) {
-                    // Normalize the saved language to match dropdown format (e.g., en-GB, zh-HK)
-                    const normalizedSaved = savedLanguage.includes('-')
-                        ? `${savedLanguage.split('-')[0].toLowerCase()}-${savedLanguage.split('-')[1].toUpperCase()}`
-                        : savedLanguage.toLowerCase();
-
-                    const hasExactOption = Array.from(displayLanguageSelect.options)
-                        .some(option => option.value.toLowerCase() === normalizedSaved.toLowerCase());
-                    normalizedLanguage = hasExactOption ? normalizedSaved : normalizedSaved.split('-')[0];
-                }
-
-                // Set the saved language after options are added
-                if (normalizedLanguage) {
-                    displayLanguageSelect.value = normalizedLanguage;
-                }
-                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
+                if (!scope.isCurrent()) return;
+                renderStoredLanguage();
             })();
+            JE.internals.observeSettingsDocument('panel-language', renderStoredLanguage);
 
             // Save language on change
-            displayLanguageSelect.addEventListener('change', async (e) => {
+            listen(displayLanguageSelect, 'change', async (e) => {
+                // No policy, no write: a change that reaches the select anyway (it is disabled) is undone and saves nothing.
+                if (!policyAvailable()) {
+                    renderStoredLanguage();
+                    return;
+                }
                 const newLang = e.target.value;
 
-                const normalizeLangCode = (code) => {
-                    if (!code) return code;
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-
-                // Use the language code as-is, no special mapping. Anything that isn't a language tag (a stringified
-                // "undefined" or "null") is saved as Auto, never written to the shared language key.
-                const fullCultureCode = typeof JE.languageCode === 'function' ? JE.languageCode(newLang) : normalizeLangCode(newLang);
-
-                // All dropdown options come from /JellyfinEnhanced/locales, so they are guaranteed valid
-                const translationExists = true;
-
-                // Save to settings.json (use base language code)
-                JE.currentSettings.displayLanguage = fullCultureCode ? newLang : '';
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
-
-                // Save to localStorage (use the same code)
-                if (fullCultureCode) {
-                    localStorage.setItem(languageKey, fullCultureCode);
-                } else {
-                    // Set empty value instead of removing key
-                    localStorage.setItem(languageKey, '');
+                // The store mirrors the persisted document (what the server stored) and schedules its session-owned reload.
+                // Only a tag of a shipped bundle is saved, in canonical case; anything else ("undefined", "null", a malformed
+                // value, a language JE ships no bundle for) is Auto (''), never written to the shared language key.
+                const languageTag = JE.supportedLanguageCode(newLang);
+                try {
+                    await JE.updateSettings({ displayLanguage: languageTag }, { throwOnError: true });
+                } catch (err) {
+                    if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: language settings save failed', err);
+                    return;
                 }
-
-                if (newLang && !translationExists) {
-                    JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
-                } else {
-                    JE.toast(JE.t('toast_language_changed'));
-                }
-                setTimeout(() => window.location.reload(), 1500);
             });
         }
 
         // Clear translation cache button
         const clearTranslationCacheButton = document.getElementById('clearTranslationCacheButton');
         if (clearTranslationCacheButton) {
-            clearTranslationCacheButton.addEventListener('click', () => {
+            listen(clearTranslationCacheButton, 'click', () => {
                 const cacheKeys = [];
                 const CACHE_PREFIX = 'JE_translation_';
                 const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';
@@ -177,7 +190,7 @@
                 cacheKeys.forEach(key => localStorage.removeItem(key));
 
                 JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
-                setTimeout(() => window.location.reload(), 2000);
+                JE.internals.scheduleReloadWhenIdle(scope.session, 2000);
                 resetAutoCloseTimer();
             });
         }

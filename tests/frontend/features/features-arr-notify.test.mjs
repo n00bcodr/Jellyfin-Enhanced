@@ -7,6 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = ['arr/status/status-core.js', 'arr/notify/notify-core.js', 'arr/notify/notify-follow.js', 'arr/notify/notify-bell.js', 'arr/notify/notify-panel.js', 'arr/notify/notify-styles.js'];
@@ -27,7 +28,7 @@ const prefsBody = (over = {}) => ({
   admin: false
 });
 
-function setup(t, { config = {}, routes = {}, hash = '#/home' } = {}) {
+function setup(t, { config = {}, routes = {}, hash = '#/home', clock } = {}) {
   const calls = [];
   const subscriptions = [];
   const navigation = [];
@@ -40,6 +41,8 @@ function setup(t, { config = {}, routes = {}, hash = '#/home' } = {}) {
   const h = createHarness({
     html: '<div class="skinHeader"><div class="headerRight"><div id="tray"></div></div></div><div id="itemDetailPage"><div class="mainDetailButtons"></div><div class="detailPagePrimaryContent"><div class="detailSection"></div></div></div>',
     url: `http://jellyfin.test/web/index.html${hash}`,
+    // A manual clock for the page's timers when the test passes one (helpers/fake-clock.mjs).
+    globals: clock ? clock.globals : {},
     apiClient: { getCurrentUserId: () => USER },
     JE: {
       pluginConfig: { ArrStatusEnabled: true, ArrNotificationsEnabled: true, ...config },
@@ -365,8 +368,13 @@ test('nothing is drawn or fetched while notifications are off', async t => {
   assert.equal(h.calls.length, 0);
 });
 
+// Stage 1 fix round 3: this test and the two below run the page's timers on a manual clock. On real timers they timed out
+// under host load (~40): the link's 800 ms delay (and the harness's own set-up) against a 2 s wall-clock budget here, the
+// bell's 500 ms and the start-up read's 600 ms timers against 10 s below. Their budgets are now page time, so the outcome
+// depends only on what the page does and when its timers are due.
 test('the e-mail unsubscribe link opens the settings at Requests & alerts', async t => {
-  const h = setup(t, { hash: '#/home?je=alerts' });
+  const clock = fakeClock();
+  const h = setup(t, { hash: '#/home?je=alerts', clock });
   let opened = 0;
   let picked = null;
   // The real panel reloads the user's settings as it opens and restores the last section (here another one).
@@ -378,7 +386,10 @@ test('the e-mail unsubscribe link opens the settings at Requests & alerts', asyn
   };
   h.JE.currentSettings = {};
   h.JE.initializeArrNotify();
-  await until(() => picked === 'requests-alerts', 2000);
+  await clock.until(() => picked === 'requests-alerts', 2000);
+  assert.equal(opened, 1);
+  // It opens once: later page time (the start-up read, the bell) doesn't open it again.
+  await clock.advance(10000);
   assert.equal(opened, 1);
 });
 
@@ -429,17 +440,19 @@ test('answers for a user who signed out meanwhile are dropped (prefs, follows, o
 });
 
 test('a toast on screen goes away when playback starts', async t => {
-  const h = setup(t);
+  const clock = fakeClock();
+  const h = setup(t, { clock });
   h.JE.initializeArrNotify();
-  await until(() => h.subscriptions.length === 1);
+  await clock.until(() => h.subscriptions.length === 1);
   h.state.inbox = { unread: 1, more: false, items: [item(7, 'ready', { title: 'Dune: Part Two' }, { itemId: 'd'.repeat(32) })] };
   h.subscriptions[0].cb([`ntf:u:${USER}`]);
-  await until(() => h.document.querySelector('.je-notify-toast'));
-  // The user opens the item and presses Play within the toast's 8 seconds.
+  await clock.until(() => h.document.querySelector('.je-notify-toast'));
+  // The user opens the item and presses Play within the toast's 8 seconds: it goes with the navigation, long before its
+  // own 8 seconds are up.
   h.window.location.hash = '#/video';
   const hooks = h.navigation.length;
   h.navigation.forEach(fn => fn());
-  await until(() => h.document.querySelector('.je-notify-toast') === null, 1500);
+  await clock.until(() => h.document.querySelector('.je-notify-toast') === null, 1500);
   // Starting again (another user) doesn't add a second navigation hook.
   h.switchUser();
   h.JE.arrNotify.start();
@@ -466,43 +479,47 @@ test('the follow state follows the user\'s own requests and the "follow what I r
 });
 
 test('keyboard and TV focus stays on the control after each settings change and in the inbox', async t => {
-  const h = setup(t);
+  // "Show older" reads its own page, so an inbox refresh that lands meanwhile still returns the first one.
+  const clock = fakeClock();
+  const h = setup(t, { clock, routes: { '/acquire/notify/inbox?limit=20&before=': (path, options, state) => JSON.parse(JSON.stringify(state.older)) } });
   h.document.body.insertAdjacentHTML('beforeend', `<div id="jellyfin-enhanced-panel">${h.N.buildSettingsHtml()}</div>`);
   const help = h.document.getElementById('jellyfin-enhanced-panel');
   h.N.wireSettings({ help });
   const host = help.querySelector('.je-arr-alerts');
-  await until(() => host.querySelector('.je-arr-alerts-group'));
+  await clock.until(() => host.querySelector('.je-arr-alerts-group'));
   const box = () => [...host.querySelectorAll('.je-arr-alerts-check')].find(b => b.textContent.startsWith('Pop-ups')).querySelector('input');
   const before = box();
   before.focus();
   before.checked = false;
   before.dispatchEvent(new h.window.Event('change'));
-  await until(() => box() !== before);
+  await clock.until(() => box() !== before);
   assert.equal(h.document.activeElement, box());
   assert.equal(box().checked, false);
   // A button that changes its label keeps focus too.
   const make = [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Make up a new topic');
   make.focus();
   make.click();
-  await until(() => !make.isConnected);
+  await clock.until(() => !make.isConnected);
   assert.equal(h.document.activeElement.dataset.jeFocus, 'phone-generate');
 
   // The inbox: Mark all read (then disabled) and Show older keep focus inside the panel.
   h.state.inbox = { unread: 2, more: true, items: [item(5, 'ready', { title: 'A' }), item(4, 'ready', { title: 'B' })] };
   h.JE.initializeArrNotify();
-  await until(() => h.document.getElementById('je-notify-bell'));
+  await clock.until(() => h.document.getElementById('je-notify-bell'));
+  // Wait for the delayed startup read before replacing the mock's newest page with an older page.
+  await clock.until(() => h.subscriptions.some(subscription => subscription.active));
   await h.JE.arrNotify.refresh();
   h.document.getElementById('je-notify-bell').click();
   const panel = h.document.querySelector('.je-notify-panel');
   panel.querySelector('.je-notify-markall').focus();
   panel.querySelector('.je-notify-markall').click();
-  await until(() => panel.querySelector('.je-notify-markall').disabled);
+  await clock.until(() => panel.querySelector('.je-notify-markall').disabled);
   assert.ok(panel.contains(h.document.activeElement) && h.document.activeElement !== h.document.body);
   assert.equal(h.document.activeElement, panel.querySelector('.je-notify-body'));
-  h.state.inbox = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
+  h.state.older = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
   panel.querySelector('.je-notify-more').focus();
   panel.querySelector('.je-notify-more').click();
-  await until(() => panel.querySelectorAll('.je-notify-item').length === 3);
+  await clock.until(() => panel.querySelectorAll('.je-notify-item').length === 3);
   assert.equal(h.document.activeElement.closest('.je-notify-item')?.dataset.id, '2');
   // Focus outside the panel: Tab brings it back in.
   h.document.activeElement.blur();

@@ -8,6 +8,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <summary>
     /// Extension points of <see cref="ListService.ApplyAsync"/> that run INSIDE its locked write, so a linked
     /// source's provenance (F1) and a sync's precondition/removals (F2–F3) are atomic with the entries they describe.
+    /// Precondition, Exclude, Regroup and Place only prepare the private working document: they must not write to
+    /// Jellyfin or storage. An accepted apply may prepare again once after recovering an interrupted placement.
     /// </summary>
     public sealed class ApplyHooks
     {

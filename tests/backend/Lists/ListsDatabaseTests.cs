@@ -173,7 +173,7 @@ public class ListsDatabaseTests
     }
 
     [Fact]
-    public void PurgeDropsFinishedOperationsAfterThirtyDaysOpenOnesAfterSixtyAndEveryOperationOfARemovedList()
+    public void PurgeDropsExpiredAndRemovedListOperationsButKeepsCreateIdentity()
     {
         using var db = new Db();
         var ops = new ListOperations(db.Database);
@@ -195,10 +195,10 @@ public class ListsDatabaseTests
         Assert.False(ops.Begin(user, kept, "old-finished", "add", "f", T0.AddDays(35)).Replayed);
         Assert.True(ops.Begin(user, kept, "old-open", "add", "f", T0.AddDays(35)).Replayed);
 
-        // A removed list: its operations go (by scope and by the list a create made), whatever their age.
-        Assert.Equal(2, ops.Purge(T0.AddDays(36), new[] { removed }));
+        // A removed list: ordinary list operations go, but a create must keep answering for the list it originally made.
+        Assert.Equal(1, ops.Purge(T0.AddDays(36), new[] { removed }));
         Assert.False(ops.Begin(user, removed, "of-removed", "add", "f", T0.AddDays(36)).Replayed);
-        Assert.False(ops.Begin(user, "create-playlist", "created", "create", "f", T0.AddDays(36)).Replayed);
+        Assert.True(ops.Begin(user, "create-playlist", "created", "create", "f", T0.AddDays(36)).Replayed);
 
         // Day 61: the open one from day 0 goes too; the recent one stays.
         Assert.True(ops.Purge(T0.AddDays(61)) >= 1);

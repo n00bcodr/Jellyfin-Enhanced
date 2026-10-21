@@ -571,12 +571,14 @@ public class ApiArrRequestsHubTests
         Assert.Equal("ready", (await lists.StatusesAsync(rig.Sam.UserId, new[] { key }, default))[key.ToString()].GetProperty("stage").GetString());
     }
 
-    [Fact]
-    public async Task AFourKListEntryReadsSeerrsAvailabilityLikeTheRequestsPageWithNoFourKInstance()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AFourKListEntryReadsSeerrsAvailabilityLikeTheRequestsPageWithNoFourKInstance(bool fourKSource)
     {
         // No 4K Radarr in Jellyfin Enhanced; Sam's 4K Sintel request is OK'd and Seerr says the 4K copy is available,
-        // matched to a Jellyfin item Sam can open that plays a 4K version (D44: a real 4K source, not the library's name).
-        // The Requests page shows it ready: the 4K list entry must say the same.
+        // matched to a Jellyfin item Sam can open. A 4K copy is one with a 4K source (D44, the edition core): with its
+        // 2160p file the Requests page shows it ready, without one it doesn't. The 4K list entry must say the same.
         var fourKItem = Guid.NewGuid();
         using var rig = await Ready(r =>
         {
@@ -586,18 +588,30 @@ public class ApiArrRequestsHubTests
             request["media"]!["jellyfinMediaId4k"] = fourKItem.ToString("N");
             r.Seerr.Requests.Add(request);
             r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourKItem, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = Asked.AddHours(7) });
-            r.View.AddSource(fourKItem, 3840, 2160, created: Asked.AddHours(7));
+            if (fourKSource) r.View.AddSource(fourKItem, 3840, 2160, created: Asked.AddHours(7));
         });
-        var row = Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:45745");
-        Assert.NotNull(row);
+        var page = Root(await Hub(rig, rig.Sam));
+        var row = Find(page, "ready", "movie:tmdb:45745");
         var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
         var key = TitleKey.Parse("movie:tmdb:45745")!;
         var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
 
         var part = (await lists.PartStatusesAsync(rig.Sam.UserId, new[] { fourK }, default))[fourK.Id];
 
-        Assert.Equal(row!.Value.GetProperty("status").GetProperty("stage").GetString(), part.GetProperty("stage").GetString());
-        Assert.Equal("ready", part.GetProperty("stage").GetString());
+        if (fourKSource)
+        {
+            Assert.NotNull(row);
+            Assert.Equal(row!.Value.GetProperty("status").GetProperty("stage").GetString(), part.GetProperty("stage").GetString());
+            Assert.Equal("ready", part.GetProperty("stage").GetString());
+        }
+        else
+        {
+            Assert.Null(row);
+            var mine = Find(page, "mine", "movie:tmdb:45745");
+            Assert.NotNull(mine);
+            Assert.Equal(mine!.Value.GetProperty("status").GetProperty("stage").GetString(), part.GetProperty("stage").GetString());
+            Assert.NotEqual("ready", part.GetProperty("stage").GetString());
+        }
     }
 
     [Fact]
@@ -644,18 +658,14 @@ public class ApiArrRequestsHubTests
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.
         using var rig = await Ready(r => r.Seerr.Requests.Add(FakeSeerr.Request(22, "movie", 45745, 1, r.Emma.UserId, Asked.AddHours(6), is4k: true)));
         var emma = Root(await Hub(rig, rig.Emma));
-        // One row, for the edition still waited for: the 4K one, labelled 4K, never Ready with the standard copy's Play.
-        Assert.Null(Find(emma, "ready", "movie:tmdb:45745"));
+        // Each edition keeps its row: standard Ready and 4K waiting, without the standard copy's Play.
+        Assert.NotNull(Find(emma, "ready", "movie:tmdb:45745"));
         var entry = Find(emma, "mine", "movie:tmdb:45745");
         Assert.NotNull(entry);
         Assert.Equal(("needsOk", "asked", true), (entry!.Value.GetProperty("group").GetString(), entry.Value.GetProperty("status").GetProperty("stage").GetString(), entry.Value.GetProperty("is4k").GetBoolean()));
         Assert.False(entry.Value.TryGetProperty("itemId", out _));
         Assert.Single(emma.GetProperty("mine").EnumerateArray(), e => e.GetProperty("key").GetString() == "movie:tmdb:45745");
-        // With both editions still waited for, the standard one leads; with both done, the one that changed last.
-        static SeerrRequestRecord R(int id, bool is4k, int status, int media, int hours = 0) => new() { Id = id, IsMovie = true, TmdbId = 45745, Is4k = is4k, Status = status, MediaStatus = media, CreatedAt = Asked, UpdatedAt = Asked.AddHours(hours) };
-        Assert.Equal(new[] { 1 }, RequestsHubService.EditionOf(new[] { R(1, false, 2, 3), R(2, true, 1, 1) }).Select(r => r.Id));
-        Assert.Equal(new[] { 2 }, RequestsHubService.EditionOf(new[] { R(1, false, SeerrRequestStatus.Completed, 5), R(2, true, 2, 3) }).Select(r => r.Id));
-        Assert.Equal(new[] { 2 }, RequestsHubService.EditionOf(new[] { R(1, false, SeerrRequestStatus.Completed, 5, 1), R(2, true, SeerrRequestStatus.Completed, 5, 2) }).Select(r => r.Id));
+
     }
 
     [Fact]

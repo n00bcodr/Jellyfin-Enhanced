@@ -66,3 +66,17 @@ test('corrupt same-owner tag cache recovers without preventing renderer registra
  const h=setup(t,{TagCacheServerMode:false});h.window.localStorage.setItem('test-v2:identity-owner','s:a');h.window.localStorage.setItem('test-v2','{broken');
  const ctx=h.register();assert.equal(ctx.getPersistent('anything'),undefined);assert.ok(h.renderers.get('test'));
 });
+for (const fault of ['accessor', 'enumeration', 'remove', 'timestamp quota']) test(`tag cleanup ${fault} keeps registration and clears invalidated hot data`, t => {
+ const h=setup(t,{TagCacheServerMode:false}),store=h.window.localStorage,prototype=Object.getPrototypeOf(store);
+ const ctx=h.register();ctx.setPersistent('old',{timestamp:Date.now()});ctx.hot.set('old',1);
+ store.setItem('oldtest-v1','{}');h.JE.pluginConfig.ClearLocalStorageTimestamp=1000;
+ const descriptor=Object.getOwnPropertyDescriptor(h.window,'localStorage'),key=prototype.key,remove=prototype.removeItem,set=prototype.setItem;
+ if(fault==='accessor')Object.defineProperty(h.window,'localStorage',{configurable:true,get(){throw Error('storage disabled');}});
+ if(fault==='enumeration')prototype.key=()=>{throw Error('storage enumeration disabled');};
+ if(fault==='remove')prototype.removeItem=()=>{throw Error('storage remove disabled');};
+ if(fault==='timestamp quota')prototype.setItem=function(k,v){if(k.endsWith('Timestamp'))throw new h.window.DOMException('full','QuotaExceededError');return set.call(this,k,v);};
+ assert.doesNotThrow(()=>h.register());assert.ok(h.renderers.get('test'));
+ assert.equal(ctx.getPersistent('old'),undefined);assert.equal(ctx.hot.size,0,'invalidate memory before a failed mirror write');
+ Object.defineProperty(h.window,'localStorage',descriptor);prototype.key=key;prototype.removeItem=remove;prototype.setItem=set;
+ h.register();assert.equal(store.getItem('test-v2Timestamp'),'1000','next registration retries the mirror');
+});

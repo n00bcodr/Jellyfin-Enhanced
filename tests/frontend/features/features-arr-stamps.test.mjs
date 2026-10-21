@@ -216,7 +216,7 @@ test('stampsEnabled follows the admin switch, the person\'s preference and a ref
 test('fetchStamps: one low-priority read of the stamps route, synthetic ids left out', async t => {
   const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => ({ items: [{ itemId: id(1), stamp: 'new' }] }) });
   h.JE.titleDetails = { isSynthetic: x => x.startsWith('je') };
-  same(await h.S.fetchStamps([id(1), 'je-synthetic', id(2)]), { items: [{ itemId: id(1), stamp: 'new' }] });
+  same(await h.S.fetchStamps([id(1), 'je-synthetic', id(2)]), { items: [{ itemId: id(1), stamp: 'new' }], since: null });
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].path, `/acquire/stamps?ids=${id(1)},${id(2)}`);
   assert.equal(h.calls[0].options.priority, 'low');
@@ -247,7 +247,7 @@ test('with the acquisition switch off the cards read statuses only, exactly as b
     const card = h.document.querySelectorAll('.card')[0];
     assert.equal(card.querySelector('.je-arr-badge').outerHTML.includes('je-arr-badge-stamp'), false);
     assert.equal(h.document.querySelectorAll('.je-arr-badge').length, 1);
-    same(h.cards.cache.get(id(0)), { status: { itemId: id(0), ...statuses[id(0)] }, stamp: null, at: h.cards.cache.get(id(0)).at });
+    same(h.cards.cache.get(id(0)), { status: { itemId: id(0), ...statuses[id(0)] }, stamp: null, keys: [], at: h.cards.cache.get(id(0)).at });
   }
   const none = setup(t, { html: cardsHtml(['Movie']), config: { ArrStatusPosterBadges: false } });
   await none.show();
@@ -459,6 +459,323 @@ test('hiding the badges in the settings panel takes effect on the cards without 
 });
 
 /** deepEqual across the jsdom realm (its arrays are not this realm's). */
-function same(actual, expected, message) {
+function same(actual, expected, message = '') {
   assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+}
+
+for (const action of ['hide', 'user switch', 'reset']) {
+  test(`a deferred stamps response cannot cache or paint after ${action}`, async t => {
+    const held = deferred();
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      responses: () => held.promise
+    });
+    const shown = h.show();
+    await nextTurn();
+    if (action === 'hide') h.JE.currentSettings.acquisitionBadges = false;
+    if (action === 'user switch') h.userChange.forEach(fn => fn());
+    else h.cards.reset();
+    held.resolve({ items: [{ itemId: id(0), stamp: 'new' }] });
+    await shown;
+    assert.equal(h.cards.cache.size, 0, 'obsolete generation must not be cached');
+    assert.equal(h.document.querySelector('.je-arr-badge'), null, 'obsolete generation must not paint');
+  });
+}
+
+test('a watch invalidation during a held stamps read survives another flush and refetches on completion', async t => {
+  const held = deferred();
+  let reads = 0;
+  const h = setup(t, {
+    html: cardsHtml(['Movie']),
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    responses: () => ++reads === 1 ? held.promise : { items: [] }
+  });
+  const shown = h.show();
+  await nextTurn();
+  h.cards.onUserData({ UserDataList: [{ ItemId: id(0), Played: true }] });
+  await h.cards.flush();
+  held.resolve({ items: [{ itemId: id(0), stamp: 'new' }] });
+  await shown;
+  assert.equal(h.document.querySelector('.je-arr-badge'), null, 'invalidated answer cannot paint while the refetch waits');
+  await new Promise(resolve => h.window.setTimeout(resolve, 400));
+  assert.equal(reads, 2, 'queued invalidation is automatically fetched after completion');
+  assert.equal(h.cards.cache.get(id(0))?.stamp ?? null, null);
+});
+
+test('partial playback refreshes season and series cards including a parent whose first stamps read is held', async t => {
+  for (const heldFirst of [false, true]) {
+    const held = deferred();
+    let reads = 0;
+    const h = setup(t, {
+      html: cardsHtml(['Season', 'Series', 'Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      responses: path => ++reads === 1
+        ? held.promise
+        : stampAnswer(path, { [id(2)]: 'new' })
+    });
+    const shown = h.show();
+    await nextTurn();
+    if (!heldFirst) {
+      held.resolve({ items: [0, 1, 2].map(i => ({ itemId: id(i), stamp: 'new' })) });
+      await shown;
+    }
+    h.cards.onUserData({ UserDataList: [{ ItemId: id(99), Played: false, LastPlayedDate: '2026-10-18T01:00:00Z' }] });
+    if (heldFirst) {
+      held.resolve({ items: [0, 1, 2].map(i => ({ itemId: id(i), stamp: 'new' })) });
+      await shown;
+    }
+    await h.cards.flush();
+    same(idsOf(h.stampCalls().at(-1).path).sort(), [id(0), id(1)]);
+    const cards = h.document.querySelectorAll('.card');
+    assert.equal(cards[0].querySelector('.je-arr-badge'), null);
+    assert.equal(cards[1].querySelector('.je-arr-badge'), null);
+    assert.ok(cards[2].querySelector('.je-arr-badge'), 'unrelated movie stays painted');
+  }
+});
+
+
+// Review round 2: transport effects obey the same session/surface boundary as paints.
+for (const route of ['stamps', 'status']) {
+  for (const change of ['user', 'reset']) test(`late ${route} 403 after ${change} cannot disable the current surface`, async t => {
+    const held = deferred();
+    let reads = 0;
+    const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => ++reads === 1 ? held.promise : { items: [] } });
+    const read = () => route === 'stamps' ? h.S.fetchStamps([id(1)]) : h.S.fetchBatch([id(1)], []);
+    const pending = read();
+    await nextTurn();
+    if (change === 'user') h.userChange.forEach(fn => fn());
+    else h.cards.reset();
+    held.resolve(Object.assign(new Error('HTTP 403'), { status: 403 }));
+    assert.equal(await pending, null);
+    assert.equal(route === 'stamps' ? h.S.stampsEnabled() : h.S.enabled(), true);
+    assert.ok(await read(), 'the current surface still fetches');
+    assert.equal(reads, 2);
+  });
+}
+
+test('an obsolete successful transport response is discarded before returning to consumers', async t => {
+  const held = deferred();
+  const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => held.promise });
+  const pending = h.S.fetchStamps([id(1)]);
+  await nextTurn();
+  h.userChange.forEach(fn => fn());
+  held.resolve({ items: [{ itemId: id(1), stamp: 'new' }] });
+  assert.equal(await pending, null);
+});
+
+test('acquisition-only cards follow title keys and the pre-read feed cursor, including unstamped cards', async t => {
+  let upgraded = false;
+  const subscriptions = [];
+  const h = setup(t, {
+    html: cardsHtml(['Movie', 'Movie']),
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    responses: path => ({
+      ...stampAnswer(path, upgraded ? { [id(0)]: 'upgraded', [id(1)]: 'new' } : { [id(0)]: 'new' }),
+      subscriptions: [0, 1].map(i => ({ itemId: id(i), keys: [`movie:tmdb:${i + 1}`] }))
+    })
+  });
+  h.JE.arr = {
+    live: { position: () => ({ epoch: 'feed', cursor: 7 }) },
+    onStatusChange: (keys, callback, options) => { subscriptions.push({ keys, callback, options }); return () => {}; }
+  };
+  await h.show();
+  assert.equal(h.statusCalls().length, 0);
+  assert.equal(subscriptions.length, 1, 'stamps-only cards have their own subscription');
+  same(subscriptions[0].keys, ['movie:tmdb:1', 'movie:tmdb:2']);
+  same(subscriptions[0].options, { since: { epoch: 'feed', cursor: 7 } });
+  upgraded = true;
+  subscriptions[0].callback(['movie:tmdb:1', 'movie:tmdb:2']);
+  await h.cards.flush();
+  assert.ok(h.document.querySelector(`[data-id="${id(0)}"] .je-arr-tone-upgraded`));
+  assert.ok(h.document.querySelector(`[data-id="${id(1)}"] .je-arr-tone-new`));
+});
+
+
+test('switching people while the feed primes cancels the old read before transport', async t => {
+  const held = deferred();
+  const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true } });
+  h.JE.arr = { live: { position: () => null, prime: () => held.promise } };
+  const stamps = h.S.fetchStamps([id(1)]);
+  const status = h.S.fetchBatch([id(1)], []);
+  await nextTurn();
+  h.userChange.forEach(fn => fn());
+  held.resolve({ epoch: 'old', cursor: 8 });
+  assert.equal(await stamps, null);
+  assert.equal(await status, null);
+  assert.equal(h.calls.length, 0);
+});
+
+test('a reset starts an independent HTTP read even while the core API holds the previous generation', async t => {
+  const held = [deferred(), deferred()];
+  let reads = 0;
+  const h = setup(t, { html: cardsHtml(['Movie']), config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false } });
+  h.window.fetch = async () => {
+    const answer = await held[reads++].promise;
+    return new Response(JSON.stringify({ items: [{ itemId: id(0), stamp: answer }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  h.load('core/api-client.js');
+  const old = h.show();
+  await nextTurn();
+  h.cards.reset();
+  const fresh = h.show();
+  await nextTurn();
+  const started = reads;
+  held[0].resolve('new');
+  held[1].resolve('upgraded');
+  await Promise.all([old, fresh]);
+  assert.equal(started, 2, 'the new surface must not join the old HTTP response');
+  assert.equal(h.cards.cache.get(id(0)).stamp, 'upgraded');
+});
+
+// Review round 3: use the actual panel listener and card surface across delayed failures.
+for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : 'Show'} restores rendering, observer and watch listener`, async t => {
+  const saved = deferred();
+  const listeners = new Set();
+  const h = setup(t, {
+    html: cardsHtml(['Movie']) + '<select id="acquisitionBadgesSelect"><option value="">Show</option><option value="off">Hide</option></select>',
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    settings: { acquisitionBadges: hiding ? null : false },
+    apiClient: { subscribe: (_name, fn) => { listeners.add(fn); return () => listeners.delete(fn); } },
+    responses: path => stampAnswer(path, { [id(0)]: 'new' })
+  });
+  h.JE.userConfig = { settings: { ...h.JE.currentSettings } };
+  const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+  Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+    icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+    fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+    decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none' });
+  h.JE.pluginConfig.Shortcuts = [];
+  h.JE.userConfig.shortcuts = { Shortcuts: [] };
+  h.load('enhanced/settingspanel/ui-panel-template.js');
+  h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+  h.load('enhanced/config.js');
+  h.window.ApiClient.ajax = () => saved.promise;
+  h.JE.toast = () => assert.fail('a failed save must not claim success');
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+  await h.show();
+  const select = h.document.getElementById('acquisitionBadgesSelect');
+  select.value = hiding ? 'off' : '';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await nextTurn();
+  await h.show();
+  await h.cards.flush(); // give the optimistic surface time to detach/observe before the failure
+  saved.reject(new Error('blocked save'));
+  await new Promise(resolve => h.window.setTimeout(resolve, 20));
+  for (const io of h.observers) io.fn([...io.observed].map(target => ({ isIntersecting: true, target })));
+  await h.cards.flush();
+  assert.equal(h.JE.currentSettings.acquisitionBadges, hiding ? null : false);
+  assert.equal(!!h.document.querySelector('.je-arr-tone-new'), hiding);
+  assert.equal(listeners.size, hiding ? 1 : 0, 'watch listener follows restored preference');
+  h.document.body.insertAdjacentHTML('beforeend', cardsHtml(['Movie', 'Movie']));
+  h.cards.scan();
+  assert.equal(h.observers.some(io => io.observed.size > 0), hiding, 'observer follows restored preference');
+});
+
+// Review round 4: the real save queue must roll back to persisted, not optimistic, state.
+for (const initial of [null, false]) for (const outcomes of [[false, false], [false, true], [true, false]]) {
+  test(`queued badge toggles from ${initial} with save outcomes ${outcomes}`, async t => {
+    const saves = [deferred(), deferred()];
+    const posted = [];
+    let persisted = initial;
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      settings: { acquisitionBadges: initial },
+      responses: path => stampAnswer(path, { [id(0)]: 'new' }),
+      apiClient: { ajax: async request => {
+        const n = posted.length;
+        posted.push(JSON.parse(request.data).acquisitionBadges);
+        await saves[n].promise;
+        persisted = posted[n];
+      } }
+    });
+    h.JE.userConfig = { settings: { ...h.JE.currentSettings }, shortcuts: { Shortcuts: [] } };
+    const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+    Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+      fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+      decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
+    h.JE.pluginConfig.Shortcuts = [];
+    h.load('enhanced/config.js');
+    h.load('enhanced/settingspanel/ui-panel-template.js');
+    h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+    h.load('enhanced/settingspanel/ui-panel-settings.js');
+    h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+    await h.show();
+    const select = h.document.getElementById('acquisitionBadgesSelect');
+    const change = value => { select.value = value === false ? 'off' : ''; select.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+    change(initial === false ? null : false);
+    change(initial);
+    await nextTurn();
+    assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
+    for (let n = 0; n < 2; n++) {
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      await nextTurn();
+    }
+    await h.show();
+    assert.equal(posted.length, 2);
+    assert.equal(h.JE.currentSettings.acquisitionBadges, persisted);
+    assert.equal(h.JE.userConfig.settings.acquisitionBadges, persisted);
+    assert.equal(select.value, persisted === false ? 'off' : '');
+    assert.equal(!!h.document.querySelector('.je-arr-tone-new'), persisted !== false);
+  });
+}
+
+// Review round 5: both controls save whole documents through the same queue.
+for (const initial of [null, false]) for (const nativeFirst of [false, true]) for (const outcomes of [[false, false], [false, true], [true, false], [true, true]]) {
+  test(`mixed badge toggles from ${initial}, native first ${nativeFirst}, outcomes ${outcomes}`, async t => {
+    const saves = [deferred(), deferred()];
+    const posted = [];
+    let persisted = { acquisitionBadges: initial, nativeAcquisitionStamps: initial };
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrNativeStampsEnabled: true, ArrStatusPosterBadges: false },
+      settings: { acquisitionBadges: initial, nativeAcquisitionStamps: initial },
+      responses: path => stampAnswer(path, { [id(0)]: 'new' }),
+      apiClient: { ajax: async request => {
+        const n = posted.length;
+        posted.push(JSON.parse(request.data));
+        await saves[n].promise;
+        persisted = posted[n];
+      } }
+    });
+    h.JE.userConfig = { settings: { ...h.JE.currentSettings }, shortcuts: { Shortcuts: [] } };
+    const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+    Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+      fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+      decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
+    h.JE.pluginConfig.Shortcuts = [];
+    h.load('enhanced/config.js');
+    h.load('enhanced/settingspanel/ui-panel-template.js');
+    h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+    h.load('enhanced/settingspanel/ui-panel-settings.js');
+    h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+    await h.show();
+    const keys = nativeFirst ? ['nativeAcquisitionStamps', 'acquisitionBadges'] : ['acquisitionBadges', 'nativeAcquisitionStamps'];
+    for (const key of keys) {
+      const select = h.document.getElementById(key + 'Select');
+      select.value = initial === false ? '' : 'off';
+      select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    }
+    await nextTurn();
+    assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
+    for (let n = 0; n < 2; n++) {
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      await nextTurn();
+      if (n === 0) for (const key of keys) {
+        assert.equal(h.JE.currentSettings[key], initial === false ? null : false, 'the pending document retains both choices');
+      }
+    }
+    await h.show();
+    assert.equal(posted.length, 2);
+    for (const key of keys) {
+      assert.equal(h.JE.currentSettings[key], persisted[key], key + ' current settings match the last successful document');
+      assert.equal(h.JE.userConfig.settings[key], persisted[key], key + ' user settings match the last successful document');
+      assert.equal(h.document.getElementById(key + 'Select').value, persisted[key] === false ? 'off' : '');
+    }
+    assert.equal(!!h.document.querySelector('.je-arr-tone-new'), persisted.acquisitionBadges !== false);
+  });
 }

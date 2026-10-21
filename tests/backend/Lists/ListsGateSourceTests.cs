@@ -1,3 +1,6 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Reflection;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
@@ -27,12 +30,12 @@ public class ListsGateSourceTests
         // The round-3 review's three.
         ["grant_made_with_a_target_typed_new"] = (Service, new[] { ("await _host.AddToCollectionAsync(_gate.Write(access, ListWriteKind.CollectionAdd, items), items)", "ListWrite grant = new(access.List.Id, access.User.Id, ListWriteKind.CollectionAdd); await _host.AddToCollectionAsync(grant, items)") }, "a ListWrite made outside the gate"),
         ["grant_through_an_ungated_delegate_named_write"] = (Service, new[] { ("await _host.AddToCollectionAsync(_gate.Write(access, ListWriteKind.CollectionAdd, items), items)", "var early = _gate.Write(access, ListWriteKind.CollectionAdd, items); await Task.Yield(); Func<ListWrite> write = () => early; await _host.AddToCollectionAsync(write(), items)") }, "isn't made by the gate right there"),
-        ["view_made_with_a_target_typed_new"] = (Service, new[] { ("result.View = view;\n            return ListOutcome.Ok(new CreateListResultDto", "result.View = new();\n            return ListOutcome.Ok(new CreateListResultDto") }, "a ListViewDto made outside ListService.BuildView"),
+        ["view_made_with_a_target_typed_new"] = (Service, new[] { ("result.View = view;\n            return ListOutcome.Ok(result);", "result.View = new();\n            return ListOutcome.Ok(result);") }, "a ListViewDto made outside ListService.BuildView"),
         // The three together as the review planted them (the old regex tests passed all seven with them): a local named
         // write that makes its grant with new().
         ["grant_from_a_local_write_delegate_made_with_new"] = (Service, new[]
         {
-            ("var markedName = CreateName(name, marker);", "var markedName = CreateName(name, marker);\n                Func<ListWrite> write = () => new(Guid.Empty, user.Id, ListWriteKind.Create);"),
+            ("var markedName = CreateName(name, state.Marker);", "var markedName = CreateName(name, state.Marker);\n                Func<ListWrite> write = () => new(Guid.Empty, user.Id, ListWriteKind.Create);"),
             ("_host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), markedName, isPublic)", "_host.CreatePlaylistAsync(write(), markedName, isPublic)"),
         }, "a ListWrite made outside the gate"),
         // A delegate parameter handed a grant made earlier (ListPlaylistPlacement's write).
@@ -126,6 +129,9 @@ public class ListsGateSourceTests
         var (file, changes, reported) = Bypasses[bypass];
         var planted = ListGateWalk.Plugin.With(file, source =>
         {
+            // The runtime boundary is tested independently at every await. Remove only its transparent task wrapper
+            // from this mutation copy so the older semantic-gate bypass cases remain independent of wrapper syntax.
+            source = new UnwrapContinuations().Visit(CSharpSyntaxTree.ParseText(source).GetRoot())!.ToFullString();
             foreach (var (text, replacement) in changes)
             {
                 var at = source.IndexOf(text, StringComparison.Ordinal);
@@ -138,6 +144,17 @@ public class ListsGateSourceTests
         Clean(planted.Errors(file));
         var problems = planted.Problems();
         Assert.True(problems.Any(p => p.Contains(reported, StringComparison.Ordinal)), $"{bypass}: \"{reported}\" not reported; the walk said:\n" + string.Join("\n", problems));
+    }
+
+    private sealed class UnwrapContinuations : CSharpSyntaxRewriter
+    {
+        public override SyntaxNode? VisitInvocationExpression(InvocationExpressionSyntax node)
+        {
+            var rewritten = (InvocationExpressionSyntax)base.VisitInvocationExpression(node)!;
+            return rewritten.Expression.ToString() == "ListContinuation.Await"
+                && rewritten.ArgumentList.Arguments.FirstOrDefault()?.Expression is ParenthesizedLambdaExpressionSyntax { Body: ExpressionSyntax body }
+                ? body.WithTriviaFrom(rewritten) : rewritten;
+        }
     }
 
     private static Type Required(string name) =>

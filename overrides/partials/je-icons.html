@@ -1,0 +1,59 @@
+{#-
+  Icons shown beside the top tabs, the sidebar / phone-drawer rows and the
+  section bar above each page title.
+
+  - Areas (top-level nav sections) are keyed by their nav title in mkdocs.yml.
+  - Pages are keyed by their file path under docs/, so renaming a nav label
+    keeps the icon. Pages without an entry fall back by file name
+    (*-features.md, *-settings.md, troubleshooting*); anything else has no icon.
+  If you rename an area in the mkdocs.yml nav, rename its key here too.
+-#}
+{% set areas = {
+  "Getting Started": "material/rocket-launch-outline",
+  "Enhanced": "material/jellyfish-outline",
+  "Spoiler Guard": "material/shield-lock-outline",
+  "Seerr": "material/movie-search-outline",
+  "*arr": "material/calendar-month-outline",
+  "Elsewhere": "material/earth",
+  "Other": "material/creation-outline",
+  "Advanced": "material/code-braces",
+  "Help": "material/lifebuoy",
+} %}
+{% set pages = {
+  "index.md": "material/home-outline",
+  "getting-started/index.md": "material/lightning-bolt-outline",
+  "installation/installation.md": "material/download-outline",
+  "getting-started/compatibility.md": "material/devices",
+  "getting-started/settings-overview.md": "material/tune-variant",
+  "getting-started/pages-and-tabs.md": "material/view-dashboard-outline",
+  "enhanced/tags.md": "material/tag-multiple-outline",
+  "seerr/permission-audit.md": "material/shield-account-outline",
+  "advanced/css-customization.md": "material/palette-outline",
+  "advanced/api.md": "material/api",
+  "advanced/community-analytics.md": "material/chart-bar",
+  "advanced/project-structure.md": "material/file-tree-outline",
+  "faq-support/faq.md": "material/help-circle-outline",
+  "faq-support/report-issues.md": "material/bug-outline",
+  "faq-support/feature-requests.md": "material/lightbulb-on-outline",
+  "faq-support/contributing-translations.md": "material/translate",
+  "faq-support/support.md": "material/forum-outline",
+  "other-projects/other-projects.md": "material/puzzle-outline",
+  "about.md": "material/information-outline",
+} %}
+{#- Returns the icon name for a nav section or page, or an empty string -#}
+{% macro icon_for(item) -%}
+  {%- if item.is_section -%}
+    {{- areas.get(item.title, "") -}}
+  {%- elif item.file -%}
+    {%- set src = item.file.src_uri -%}
+    {%- if src in pages -%}
+      {{- pages[src] -}}
+    {%- elif src.endswith("-features.md") -%}
+      material/star-four-points-outline
+    {%- elif src.endswith("-settings.md") -%}
+      material/tune
+    {%- elif "troubleshooting" in src -%}
+      material/wrench-outline
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}

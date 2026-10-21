@@ -27,6 +27,11 @@
     // Titles whose state an accepted write established while the full state is unavailable.
     const confirmed = new Map();
 
+    /** Tell current detail-page consumers to discard topic content after a policy change. */
+    function notifyPolicyChanged() {
+        window.dispatchEvent(new Event('je:spoiler-changed'));
+    }
+
     function request(path, options) {
         return JE.core.api.plugin(path, options);
     }
@@ -137,6 +142,7 @@
                 settleFailed();
             } finally {
                 if (action.current()) {
+                    notifyPolicyChanged();
                     window.dispatchEvent(new CustomEvent('je-spoiler-policy-changed', { detail: { userId: ApiClient.getCurrentUserId() } }));
                     refreshControls();
                     internal.refreshSpoilerableImages?.();

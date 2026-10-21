@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -19,9 +20,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// it works out which titles changed (<see cref="ArrChangeDetector"/>) and bumps their keys.
     /// New history events whose files changed also get their library entry re-read. Jellyfin's own
     /// library adds and removes bump the titles the arrs know about (that is when a title becomes
-    /// "Ready"); so do updates of items added in the last few minutes, because a new episode only
+    /// "Ready"); so do recent updates. With acquisition badges on, the stamp feeder owns physical-video
+    /// removals and old-primary source transitions, publishing after its resolver is current. A new episode only
     /// gets its season and episode numbers (and so becomes "Ready" on its season page) when its
-    /// metadata is read, after it was added. They are gathered off the scanner thread and handled
+    /// metadata is read, after it was added. Changes are gathered off the scanner thread and handled
     /// once a second. Does nothing while phase 1 is off.
     /// </summary>
     public sealed class ArrChangeTracker : IHostedService, IDisposable
@@ -35,20 +37,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 
         private readonly ArrStateStore _store;
         private readonly ArrChangeFeed _feed;
+        private readonly AcquisitionStampStore? _stamps;
         private readonly ArrLiveRouter _router;
         private readonly ILibraryManager? _libraryManager;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly ConcurrentQueue<ItemChange> _items = new();
         private readonly Timer _itemTimer;
+        private readonly Func<DateTimeOffset> _now;
         private readonly RecentArrivals _recentlyAdded;
         private readonly TimeSpan _itemFlushDelay;
         private int _itemFlushArmed;
         private bool _started;
 
         /// <summary>Creates the tracker (DI).</summary>
-        public ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager libraryManager, Logger logger)
-            : this(store, feed, router, libraryManager, logger, () => JellyfinEnhanced.Instance?.Configuration)
+        public ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager libraryManager, Logger logger, AcquisitionStampStore? stamps = null)
+            : this(store, feed, router, libraryManager, logger, () => JellyfinEnhanced.Instance?.Configuration, stamps: stamps)
         {
         }
 
@@ -57,12 +61,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// <see cref="Timeout.InfiniteTimeSpan"/> queued library changes are recorded only by
         /// <see cref="FlushItems"/> calls (the timer never does it on its own).
         /// </summary>
-        internal ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager? libraryManager, Logger? logger, Func<PluginConfiguration?> config, Func<DateTimeOffset>? now = null, TimeSpan? itemFlushDelay = null)
+        internal ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager? libraryManager, Logger? logger, Func<PluginConfiguration?> config, Func<DateTimeOffset>? now = null, TimeSpan? itemFlushDelay = null, AcquisitionStampStore? stamps = null)
         {
-            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, now);
+            _now = now ?? (() => DateTimeOffset.UtcNow);
+            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, _now);
             _itemFlushDelay = itemFlushDelay ?? ItemFlushDelay;
             _store = store;
             _feed = feed;
+            _stamps = stamps;
             _router = router;
             _libraryManager = libraryManager;
             _logger = logger;
@@ -239,15 +245,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             Enqueue(e?.Item);
         }
 
-        // Only items added a moment ago: their first metadata read fills in what the status needs
-        // (episode numbers, provider ids). Updates of older items are not arrivals.
+        // Metadata completes recent arrivals. For old items, the source-aware stamp feeder publishes
+        // committed acquisition transitions; a metadata refresh alone must not invalidate every title.
+        // A movie or episode that is still a fresh arrival can be read (its dimensions, so a 4K copy's edition)
+        // after the window: without acquisition badges no feeder publishes that, so its update does.
         private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
         {
-            if (e?.Item is not { } item || !_recentlyAdded.IsRecent(item.Id)) return;
+            if (e?.Item is not { } item) return;
+            if (!_recentlyAdded.IsRecent(item.Id) && !(RecentArrivals.FreshVideo(item, _now()) && !FeederOwnsLateUpdates)) return;
             Enqueue(item);
         }
 
-        private void OnItemRemoved(object? sender, ItemChangeEventArgs e) => Enqueue(e?.Item);
+        private bool FeederOwnsLateUpdates => AcquisitionStampFlags.Badges(_config()) && _stamps?.Available == true;
+
+        private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
+        {
+            // The feeder coalesces physical-video removals with the rebuilt index and committed fact removal.
+            // Keep ordinary live updates when badges/their store are unavailable, and for non-video containers.
+            var key = e?.Item switch
+            {
+                Movie { IsVirtualItem: false } movie => "movie:tmdb:" + movie.GetProviderId(MetadataProvider.Tmdb),
+                Episode { IsVirtualItem: false, IsMissingEpisode: false } episode => "tv:tvdb:" + episode.Series?.GetProviderId(MetadataProvider.Tvdb),
+                _ => null,
+            };
+            if (ArrTitleKey.IsValid(key) && AcquisitionStampFlags.Badges(_config()) && _stamps?.Available == true) return;
+            Enqueue(e?.Item);
+        }
 
         private void Enqueue(BaseItem? item)
         {

@@ -871,17 +871,15 @@ public class ListsSwapTests
         var movie = Movie(97);
         await Add(h, access, null, movie);
         await h.Swap.DrainAsync(None);
-        // Waits go by a deadline, not a loop count: on a loaded machine (the whole suite in parallel) the worker can take
-        // longer than a fixed number of short polls to pick the arrival up, and the settle window must outlast that.
-        h.Swap.SettleDelay = TimeSpan.FromSeconds(3);
+        // Hold the worker in its cancellable settle delay while the pending view is observed.
+        h.Swap.SettleDelay = TimeSpan.FromMinutes(1);
         h.Swap.Start();
         try
         {
             var arrived = h.Host.AddItem(tmdb: 97);
             h.Swap.NotifyItemChanged(arrived);
             Guid? pending = null;
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-            while (pending == null && DateTime.UtcNow < deadline)
+            for (var i = 0; i < 500 && pending == null; i++)
             {
                 pending = h.Swap.GetPendingMatch(access.ListIdN, movie.Id);
                 if (pending == null) await Task.Delay(10);
@@ -890,11 +888,8 @@ public class ListsSwapTests
             Assert.Equal(arrived, pending);
             var view = await h.Service.GetViewAsync(access, None);
             Assert.Equal(arrived.ToString("N"), view.Placeholders.Single().InLibraryItemId);
-            deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-            while (h.Host.Resolved(playlist.Info.Id).Count == 0 && DateTime.UtcNow < deadline)
-            {
-                await Task.Delay(50);
-            }
+            await h.Swap.StopAsync(None);
+            await h.Swap.DrainAsync(None);
 
             Assert.Equal(new[] { arrived }, h.Host.Resolved(playlist.Info.Id));
             Assert.Null(h.Swap.GetPendingMatch(access.ListIdN, movie.Id));
@@ -1258,7 +1253,8 @@ public class ListsSwapTests
         var third = h.Host.AddPlaylist(owner);
         var thirdResult = await Add(h, h.AccessFor(third, owner), null, Season(140, 1));
         Assert.Empty(thirdResult.Added);
-        Assert.Null(h.Store.Load(h.AccessFor(third, owner).ListIdN));
+        Assert.Empty(h.Store.Load(h.AccessFor(third, owner).ListIdN)!.Items);
+        Assert.Empty(h.Store.Load(h.AccessFor(third, owner).ListIdN)!.Intents);
     }
 
     [Fact]

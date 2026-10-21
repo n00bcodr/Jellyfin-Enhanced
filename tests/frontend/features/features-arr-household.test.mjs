@@ -561,3 +561,44 @@ test('a removed request: Kids ask Dad again; while new titles of its kind are pa
   await wait(100);
   assert.equal(watcher.page().querySelector('.je-hub-again, .je-ask-paused-note'), null);
 });
+
+for (const cancel4k of [false, true]) {
+  test(`My requests keeps both editions and cancelling ${cancel4k ? '4K' : 'standard'} never cancels the other`, async t => {
+    const standard = own(41);
+    const uhd = own(42, { key: standard.key, variant: '4k', title: standard.title });
+    const cancels = [];
+    const h = setupHub(t, {
+      hub: { seerr: { configured: true, loaded: true }, mine: [seerrEntry(41)], ready: [], soon: [] },
+      routes: (method, path) => {
+        if (path === '/acquire/requests/mine') return mine([standard, uhd]);
+        const m = /^\/acquire\/requests\/([a-z0-9]+)\/cancel$/.exec(path);
+        if (m) { cancels.push(m[1]); return { status: 200, body: { reason: 'cancelled' } }; }
+        return null;
+      }
+    });
+    h.JE.initializeArrStatus();
+    await until(() => h.page().querySelectorAll('.je-hub-cancel').length > 0);
+    const rows = [...h.page().querySelectorAll('.je-hub-row')];
+    assert.equal(rows.length, 2);
+    assert.equal(new Set(rows.map(r => r.dataset.jeFocus)).size, 2, 'focus identity keeps the edition');
+    const row = rows.find(r => [...r.querySelectorAll('.je-hub-chip')].some(c => c.textContent === translate('arr_hub_4k')) === cancel4k);
+    assert.ok(row, 'the edition is labelled');
+    row.querySelector('.je-hub-cancel').click();
+    await until(() => h.toasts.length > 0);
+    assert.deepEqual(cancels, [cancel4k ? uhd.id : standard.id]);
+  });
+}
+
+test('a Ready standard edition never suppresses an outstanding 4K ledger row', async t => {
+  const h = setupHub(t, {
+    hub: { seerr: { configured: true, loaded: true }, mine: [], ready: [seerrEntry(41, 'ready')], soon: [] },
+    routes: (method, path) => path === '/acquire/requests/mine' ? mine([own(42, { key: 'movie:tmdb:41', variant: '4k', itemId: 'generic-hd-copy' })]) : null
+  });
+  h.JE.initializeArrStatus();
+  await until(() => h.calls('GET', '/acquire/requests/mine').length > 0);
+  await wait(30);
+  const rows = [...h.page().querySelectorAll('.je-hub-row')];
+  assert.equal(rows.length, 1);
+  assert.ok(rows[0].querySelector('.je-hub-cancel'));
+  assert.equal(rows[0].querySelector('.je-hub-btn-primary'), null, 'generic title metadata cannot give a 4K row the HD Play link');
+});

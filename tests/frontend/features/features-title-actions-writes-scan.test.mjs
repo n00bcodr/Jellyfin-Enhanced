@@ -106,7 +106,7 @@ export const SITES = {
   'awards/awards.js': 3, 'core/api-client.js': 2, 'core/navigation.js': 1, 'elsewhere/elsewhere.js': 6,
   'elsewhere/reviews.js': 12, 'enhanced/bookmarks/bookmarks-library-items.js': 3,
   'enhanced/bookmarks/bookmarks-library-replacements.js': 2, 'enhanced/bookmarks/bookmarks.js': 3,
-  'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 7, 'enhanced/config.js': 1,
+  'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 7, 'enhanced/config.js': 2,
   'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 3,
   'enhanced/hiddencontent/hidden-content-buttons.js': 4, 'enhanced/hiddencontent/hidden-content-data.js': 2,
   'enhanced/hiddencontent/hidden-content-filter.js': 2, 'enhanced/hiddencontent/hidden-content-page-admin.js': 1,
@@ -116,7 +116,7 @@ export const SITES = {
   'enhanced/player/auto-skip.js': 2, 'enhanced/player/osd-rating.js': 2, 'enhanced/player/pausescreen.js': 3,
   'enhanced/player/playback-rating-badge.js': 2, 'enhanced/player/playback.js': 4,
   'enhanced/settingspanel/ui-panel-language.js': 3, 'enhanced/settingspanel/ui-panel-settings.js': 4,
-  'enhanced/settingspanel/ui-panel.js': 1, 'enhanced/settingspanel/ui-release-notes.js': 1,
+  'enhanced/settingspanel/ui-release-notes.js': 1,
   'enhanced/spoilerguard/state.js': 3, 'enhanced/spoilerguard/watched-refresh.js': 4, 'enhanced/translations.js': 8,
   'extras/active-streams.js': 2, 'extras/activity-page.js': 2, 'extras/plugin-icons.js': 1, 'jellyseerr/api.js': 33,
   'jellyseerr/discovery/collection-discovery.js': 1, 'jellyseerr/discovery/discovery-filter-utils.js': 1,
@@ -133,6 +133,8 @@ export const SITES = {
   'arr/admin/admin-automation.js': 2, 'arr/adminusers/admin-users-api.js': 1, 'arr/adminusers/admin-users.js': 3,
   'arr/lists/list-api.js': 1, 'arr/lists/list-grid.js': 1, 'arr/lists/list-pages.js': 1, 'arr/lists/list-render.js': 1,
   'arr/ready/ready-settings.js': 1,
+  // Integration rebuild (4d home rows, the Does the Dog Die panel): reads only.
+  'arr/home/home-rows.js': 1, 'others/doesthedogdie.js': 4,
 };
 
 /**
@@ -190,6 +192,8 @@ export const OWNER_SITES = {
   'jellyseerr/ui/ui-results.js': 1, 'jellyseerr/ui/ui-season-modal.js': 5,
   // Play edge only: a list placeholder's request sheet and its More Info fallback, both a native entry point (JE.NATIVE).
   'arr/lists/list-pages.js': 1, 'arr/lists/list-request.js': 1,
+  // Integration rebuild: a collection gap's and a home row card's More Info fallback, both native entry points.
+  'arr/ask/ask-collection.js': 1, 'arr/home/home-render.js': 1,
 };
 
 const CONFIG = { excludedModules: EXCLUDED_MODULES, excludedSites: EXCLUDED_SITES, forwarders: FORWARDERS };

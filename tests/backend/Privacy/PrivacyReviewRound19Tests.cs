@@ -588,7 +588,7 @@ public class PrivacyReviewRound19Tests
                 StreamData = new() { ItemName = Sentinels.Token("seasonEntry.StreamData.ItemName (the first episode's)"), ItemPath = Sentinels.Token("seasonEntry.StreamData.ItemPath"),
                     Streams = [new() { Type = "Audio", Language = Sentinels.Token("seasonEntry.StreamData.Streams[0].Language"), Codec = "aac", DisplayTitle = Sentinels.Token("seasonEntry.StreamData.Streams[0].DisplayTitle") }] },
             };
-            File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new { SchemaVersion = 7, Version = 9, LastModified = 200, Items = entries }));
+            File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new { SchemaVersion = 8, Version = 9, LastModified = 200, Items = entries }));
             var localization = PrivacyTestHost.Localization();
             Cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService(Library.Object, Fixture.Core.Paths.Object, localization, Fixture.Core.Logger);
             Cache.LoadFromDisk();

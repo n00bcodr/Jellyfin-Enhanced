@@ -890,8 +890,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// and the seasons (or season) and edition the notification names. Checked again when the inbox is read and
         /// before a phone or e-mail alert held for quiet hours (or retried) goes out. True without a policy (tests) or a title.
         /// </summary>
-        internal static bool MaySeeAsk(IRequestPolicy? policy, Guid user, string? titleKey, IReadOnlyDictionary<string, string> payload)
+        internal static bool MaySeeAsk(IRequestPolicy? policy, Guid user, string? titleKey, IReadOnlyDictionary<string, string> payload, RequestLedger? ledger = null, string? eventKey = null)
         {
+            const string prefix = "approval|je|";
+            if (policy != null && eventKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
+                return ledger?.Database.Available == true && ledger.Find(eventKey[prefix.Length..]) is { } want
+                    && policy.Evaluate(user, want.Input, want.TargetKey).Visible;
             if (policy == null || TitleKey.Parse(titleKey) is not { } key) return true;
             var seasons = (payload.TryGetValue("seasons", out var list) || payload.TryGetValue("season", out list))
                 ? list.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray()
@@ -949,6 +953,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>The request policy the administrators' ask notifications are checked against (null in tests without one).</summary>
         internal IRequestPolicy? Policy => _policy;
+
+        /// <summary>The ledger used to recheck a persisted request behind an approval notice.</summary>
+        internal RequestLedger? Ledger => _ledger;
 
         /// <summary>The part of a series a request names, as notifications show it after the title ("S1", "S1–S3", "S1E4"); null for a movie or several episodes.</summary>
         internal static string? ScopeLabel(MutationInput input)
@@ -2444,11 +2451,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// Jellyfin updated an item (tests call it): only items added a moment ago count, their first
-        /// metadata read fills in provider ids and numbers.
+        /// metadata read fills in provider ids and numbers. A movie or episode that is still a fresh arrival
+        /// (<see cref="RecentArrivals.FreshVideo"/>) counts too: Jellyfin can read a file's dimensions after that moment,
+        /// and the probe is when its edition (a 4K request's copy) becomes known, so it is looked at then, not at the next
+        /// sweep (the live change feed only carries it while acquisition badges are on).
         /// </summary>
         internal void ItemUpdated(BaseItem? item)
         {
-            if (item == null || !_recentlyAdded.IsRecent(item.Id)) return;
+            if (item == null || !(_recentlyAdded.IsRecent(item.Id) || RecentArrivals.FreshVideo(item, _now()))) return;
             OnItem(item);
         }
 

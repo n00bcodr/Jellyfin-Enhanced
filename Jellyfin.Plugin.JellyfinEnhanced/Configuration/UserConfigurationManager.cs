@@ -20,6 +20,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
+        // One presence warning per person, file and error kind per hour: an unreadable folder is checked on every request.
+        private static readonly TimeSpan PresenceWarnInterval = TimeSpan.FromHours(1);
+        private static readonly ConcurrentDictionary<string, DateTime> _presenceWarnedAt = new();
         // The versions of each person's settings.json (normalized id) and of every person's at once (a restore, a quarantine,
         // the start-up migration): see SettingsVersion. Per-user files the automatic-write check doesn't read are put in
         // place inside a bracket nobody samples.
@@ -59,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return _userFileLocks.GetOrAdd(key, _ => new object());
         }
 
-        /// <summary>A person's own settings (<see cref="UserSettings"/>).</summary>
+        /// <summary>A person's own settings (<see cref="JellyfinEnhancedUserSettings"/>).</summary>
         public const string SettingsFileName = "settings.json";
 
         /// <summary>
@@ -94,36 +97,206 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Tests: runs as <see cref="SaveUserConfiguration"/> has put the file in place (readers see it), before it returns.</summary>
         internal Action<string, string>? Moved { get; set; }
 
-        /// <summary>
-        /// The fields of a person's settings that are their own consents (Phase 4: what JE may request or do on their
-        /// behalf). Only the person sets or clears them: every other writer (an administrator's save of their settings, the
-        /// reset of everyone's) keeps them as stored. Copies them from <paramref name="stored"/> (null: no file yet).
-        /// </summary>
-        public static void KeepPersonalConsents(UserSettings settings, UserSettings? stored)
-        {
-            // Phase 4a: requests on the person's behalf.
-            settings.AutoSeasonRequests = stored?.AutoSeasonRequests;
-            settings.AutoMovieRequests = stored?.AutoMovieRequests;
+        /// <summary>One of a person's own consents in their settings.json (what JE may request or do on their behalf).</summary>
+        /// <param name="Field">The settings field (and the consent operation's field name).</param>
+        /// <param name="Get">Reads it.</param>
+        /// <param name="Set">Writes it.</param>
+        /// <param name="FollowsAdministrator">Null is a choice ("follow the administrator"), not only "never chosen".</param>
+        public sealed record PersonalConsent(string Field, Func<JellyfinEnhancedUserSettings, bool?> Get, Action<JellyfinEnhancedUserSettings, bool?> Set, bool FollowsAdministrator);
 
-            // Phase 4c1: list swap-in.
-            settings.ListSwapIn = stored?.ListSwapIn;
+        /// <summary>
+        /// Every personal consent (Phase 4). Only the person's own consent operation (<see cref="SetPersonalConsent"/>) sets
+        /// or clears one: every whole-document save (the person's own, an administrator's) and every reset keeps them as
+        /// stored (<see cref="KeepPersonalConsents"/>).
+        /// </summary>
+        public static readonly IReadOnlyList<PersonalConsent> PersonalConsents = new[]
+        {
+            // Phase 4a: requests on the person's behalf (null follows the administrator's recipe setting).
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.AutoSeasonRequests), s => s.AutoSeasonRequests, (s, v) => s.AutoSeasonRequests = v, true),
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.AutoMovieRequests), s => s.AutoMovieRequests, (s, v) => s.AutoMovieRequests = v, true),
+            // Phase 4c1: list swap-in (null and false: no).
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.ListSwapIn), s => s.ListSwapIn, (s, v) => s.ListSwapIn = v, false),
+        };
+
+        /// <summary>
+        /// Copies every personal consent (<see cref="PersonalConsents"/>) from <paramref name="stored"/> (null: no file yet)
+        /// into <paramref name="settings"/>: a whole document never carries consent intent.
+        /// </summary>
+        public static void KeepPersonalConsents(JellyfinEnhancedUserSettings settings, JellyfinEnhancedUserSettings? stored)
+        {
+            foreach (var consent in PersonalConsents)
+            {
+                consent.Set(settings, stored == null ? null : consent.Get(stored));
+            }
+        }
+
+        /// <summary>The consents as the settings routes answer them (field name → stored value).</summary>
+        public static Dictionary<string, bool?> ConsentsOf(JellyfinEnhancedUserSettings settings)
+            => PersonalConsents.ToDictionary(c => c.Field, c => c.Get(settings), StringComparer.Ordinal);
+
+        /// <summary>
+        /// The display-language gate (stage 1 fix round 3): every writer that puts a person's settings.json in place stores its
+        /// <c>DisplayLanguage</c> as <see cref="LanguageTags.Sanitize"/> leaves it, whatever else it writes. Typed writers
+        /// (a save, the first-read seed, a reset, the consent operation), document writers (an administrator's display change)
+        /// and any read-modify-write pass it in <see cref="SaveUserConfiguration"/>; a JE backup restore and the start-up
+        /// folder migration, which put files in place themselves, pass it through <see cref="GateSettingsFile"/>. Changes the
+        /// document in place (the property in any case; a JSON null stays, it reads as Auto) and returns whether it did.
+        /// </summary>
+        public static bool GateSettingsDocument(JObject document)
+        {
+            var changed = false;
+            foreach (var property in document.Properties()
+                .Where(p => string.Equals(p.Name, nameof(JellyfinEnhancedUserSettings.DisplayLanguage), StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                if (property.Value.Type == JTokenType.Null) continue;
+                var stored = property.Value.Type == JTokenType.String ? (string?)property.Value : null;
+                var gated = LanguageTags.Sanitize(stored);
+                if (stored == gated) continue;
+                property.Value = gated;
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        /// <summary>What <see cref="GateSettingsBytes"/> did with a settings.json document.</summary>
+        public enum SettingsGateOutcome
+        {
+            /// <summary>Its display language passes (or it has none, or it is a JSON null): the same bytes.</summary>
+            Unchanged,
+
+            /// <summary>Only the value of its own DisplayLanguage key(s) was replaced; every other byte is the same.</summary>
+            Edited,
+
+            /// <summary>
+            /// The gate can't read it (not UTF-8, not one JSON object, syntax the reader refuses, deeper than it reads): it must
+            /// not be put in place as it is.
+            /// </summary>
+            Unreadable,
+        }
+
+        private static readonly byte[] Utf8Bom = { 0xEF, 0xBB, 0xBF };
+
+        /// <summary>
+        /// The display-language gate for a settings.json document JE puts in place without writing it itself (a JE backup
+        /// restore, the start-up folder migration). Lossless: the document is never re-serialized; the value of each of its
+        /// own DisplayLanguage keys (the top level only, any case or escaped spelling, duplicates each) is replaced at its token
+        /// offsets by <see cref="LanguageTags.Sanitize"/>'s answer, so every other byte stays (numbers of any size or precision,
+        /// a byte-order mark, comments, escapes, whitespace). A JSON null stays (it reads as Auto); any other non-string value is
+        /// replaced by Auto. Fails closed: a document it can't read is <see cref="SettingsGateOutcome.Unreadable"/>, and the
+        /// caller must not put it in place as it is.
+        /// </summary>
+        /// <param name="bytes">The document.</param>
+        /// <param name="gated">The document to put in place: <paramref name="bytes"/> unless edited; unusable when unreadable.</param>
+        /// <returns>What the gate did.</returns>
+        public static SettingsGateOutcome GateSettingsBytes(byte[] bytes, out byte[] gated)
+        {
+            gated = bytes;
+            // Invalid UTF-8 anywhere (UTF-16 included) would be read with replacement characters: not the document as written.
+            if (!System.Text.Unicode.Utf8.IsValid(bytes)) return SettingsGateOutcome.Unreadable;
+            var offset = bytes.AsSpan().StartsWith(Utf8Bom) ? Utf8Bom.Length : 0;
+            var edits = new List<(int Start, int End, string Value)>();
+            try
+            {
+                var reader = new System.Text.Json.Utf8JsonReader(bytes.AsSpan(offset), new System.Text.Json.JsonReaderOptions
+                {
+                    // What JE's own reader (Newtonsoft) also accepts, and nothing it would read differently.
+                    CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                });
+                if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.StartObject) return SettingsGateOutcome.Unreadable;
+                while (reader.Read() && reader.TokenType == System.Text.Json.JsonTokenType.PropertyName)
+                {
+                    var name = reader.GetString();
+                    reader.Read();
+                    var start = (int)reader.TokenStartIndex;
+                    string? value = null;
+                    var type = reader.TokenType;
+                    if (type == System.Text.Json.JsonTokenType.String) value = reader.GetString();
+                    else if (type is System.Text.Json.JsonTokenType.StartObject or System.Text.Json.JsonTokenType.StartArray) reader.Skip();
+                    var end = (int)reader.BytesConsumed;
+                    if (!string.Equals(name, nameof(JellyfinEnhancedUserSettings.DisplayLanguage), StringComparison.OrdinalIgnoreCase)
+                        || type == System.Text.Json.JsonTokenType.Null) continue;
+                    var sanitized = LanguageTags.Sanitize(value);
+                    if (type == System.Text.Json.JsonTokenType.String && string.Equals(value, sanitized, StringComparison.Ordinal)) continue;
+                    edits.Add((offset + start, offset + end, sanitized));
+                }
+
+                // The object's end, then nothing but whitespace or comments (a second value throws).
+                if (reader.TokenType != System.Text.Json.JsonTokenType.EndObject || reader.CurrentDepth != 0 || reader.Read())
+                {
+                    return SettingsGateOutcome.Unreadable;
+                }
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                return SettingsGateOutcome.Unreadable;
+            }
+
+            if (edits.Count == 0) return SettingsGateOutcome.Unchanged;
+            var output = new MemoryStream(bytes.Length);
+            var position = 0;
+            foreach (var (start, end, value) in edits)
+            {
+                output.Write(bytes, position, start - position);
+                // A sanitized tag is ASCII letters, digits and hyphens: nothing to escape.
+                output.Write(System.Text.Encoding.UTF8.GetBytes("\"" + value + "\""));
+                position = end;
+            }
+
+            output.Write(bytes, position, bytes.Length - position);
+            gated = output.ToArray();
+            return SettingsGateOutcome.Edited;
+        }
+
+        /// <summary>
+        /// Puts a settings.json file that was placed without <see cref="SaveUserConfiguration"/> (the start-up folder migration)
+        /// through the gate, rewriting it atomically only when it changes. The caller holds the bracket it was placed in.
+        /// </summary>
+        private void GateSettingsFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var outcome = GateSettingsBytes(File.ReadAllBytes(path), out var gated);
+                if (outcome == SettingsGateOutcome.Unreadable)
+                {
+                    // Not new data: the person's own file, now under the canonical folder. It is kept as it was: every reader
+                    // hands out its language gated, and a writer either refuses a file it can't read or rewrites it through the
+                    // document gate.
+                    _logger.Warning($"Could not read '{path}' to check its display language; kept as it was.");
+                    return;
+                }
+
+                if (outcome == SettingsGateOutcome.Unchanged) return;
+                var temp = path + ".tmp." + Guid.NewGuid().ToString("N");
+                File.WriteAllBytes(temp, gated);
+                File.Move(temp, path, overwrite: true);
+                _logger.Info($"Stored the display language of '{path}' as the shared language policy accepts it.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning($"Could not check the display language of '{path}': {ex.Message}");
+            }
         }
 
         /// <summary>
         /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
-        /// the stored settings are read, the person's consents are kept from them unless the save is the person's own
-        /// (<see cref="KeepPersonalConsents"/>), and the file is written when anything differs.
+        /// the stored settings are read (strictly: a corrupt file is never overwritten), every personal consent is kept from
+        /// them whoever saves (<see cref="KeepPersonalConsents"/>), the display language is a supported tag or Auto
+        /// (<see cref="LanguageTags.Sanitize"/>), and the file is written when anything differs.
         /// </summary>
         /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
-        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, UserSettings settings, bool byThePerson)
+        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings)
         {
             lock (UserSettingsLock(userId))
             {
-                var existing = GetUserConfiguration<UserSettings>(userId, SettingsFileName);
-                if (!byThePerson)
-                {
-                    KeepPersonalConsents(settings, existing);
-                }
+                var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
+                KeepPersonalConsents(settings, existing);
+                // A display language JE stores is a tag of a shipped bundle, else Auto: never "undefined", "null", a malformed
+                // value or a language without a bundle the client would mirror into Jellyfin's shared language key (dashcrash
+                // §7). The same gate as SaveUserConfiguration's, applied here too so the comparison and the answer see it.
+                settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
 
                 var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                 var newJson = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -148,9 +321,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Sets one explicitly named personal consent (<see cref="PersonalConsents"/>) under the same lock as whole-document
+        /// saves and resets. Unknown fields, and null for a consent where null is no choice, are rejected inside the lock; no
+        /// other settings are taken from the caller. The controller must authorize the person themselves before calling this.
+        /// </summary>
+        public JellyfinEnhancedUserSettings SetPersonalConsent(string userId, string field, bool? value)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var consent = PersonalConsents.FirstOrDefault(c => string.Equals(c.Field, field, StringComparison.Ordinal))
+                    ?? throw new ArgumentException("Unknown personal consent field.", nameof(field));
+                if (value == null && !consent.FollowsAdministrator)
+                {
+                    throw new ArgumentException("This consent needs a yes or no.", nameof(value));
+                }
+
+                var settings = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
+                consent.Set(settings, value);
+                // The stored document passes the display-language gate (SaveUserConfiguration); the answer says what it stored.
+                settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
+                SaveUserConfiguration(userId, SettingsFileName, settings);
+                return settings;
+            }
+        }
+
         /// <summary>Writes a person's first settings.json (<paramref name="defaults"/>) when they have none yet, under <see cref="UserSettingsLock"/>.</summary>
         /// <returns>Whether it was written (false: they have settings already).</returns>
-        public bool SeedUserSettings(string userId, UserSettings defaults)
+        public bool SeedUserSettings(string userId, JellyfinEnhancedUserSettings defaults)
         {
             lock (UserSettingsLock(userId))
             {
@@ -168,12 +366,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Resets a person's settings.json to <paramref name="defaults"/> (not changed: each person gets a copy), under
         /// <see cref="UserSettingsLock"/>, keeping their consents (<see cref="KeepPersonalConsents"/>).
         /// </summary>
-        public void ResetUserSettings(string userId, UserSettings defaults)
+        public void ResetUserSettings(string userId, JellyfinEnhancedUserSettings defaults)
         {
             lock (UserSettingsLock(userId))
             {
-                var stored = UserConfigurationExists(userId, SettingsFileName) ? GetUserConfiguration<UserSettings>(userId, SettingsFileName) : null;
-                var reset = JToken.FromObject(defaults).ToObject<UserSettings>() ?? new UserSettings();
+                var stored = UserConfigurationExists(userId, SettingsFileName) ? GetUserConfiguration<JellyfinEnhancedUserSettings>(userId, SettingsFileName) : null;
+                var reset = JToken.FromObject(defaults).ToObject<JellyfinEnhancedUserSettings>() ?? new JellyfinEnhancedUserSettings();
                 KeepPersonalConsents(reset, stored);
                 SaveUserConfiguration(userId, SettingsFileName, reset);
             }
@@ -220,6 +418,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 throw new ArgumentException($"Invalid user-config filename: '{fileName}'", nameof(fileName));
             }
             return Path.Combine(GetUserConfigDir(userId), fileName);
+        }
+
+        /// <summary>
+        /// Whether a person's file is there: true, false only when its absence is confirmed, and null when the file or
+        /// its folder can't be inspected (access denied, I/O error). File.Exists answers false for all three, which a
+        /// privacy check must not read as "no settings".
+        /// </summary>
+        public bool? UserConfigurationPresence(string userId, string fileName)
+        {
+            try
+            {
+                using var stream = new FileStream(ResolveUserFile(userId, fileName), FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                return true;
+            }
+            catch (FileNotFoundException)
+            {
+                return false;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                var now = DateTime.UtcNow;
+                var key = $"{userId}|{fileName}|{ex.GetType().Name}";
+                if (_presenceWarnedAt.AddOrUpdate(key, now, (_, last) => (now - last) >= PresenceWarnInterval ? now : last) == now)
+                {
+                    _logger.Warning($"Can't inspect '{fileName}' of user '{userId}': {ex.Message}");
+                }
+                return null;
+            }
         }
 
         public bool UserConfigurationExists(string userId, string fileName)
@@ -379,6 +610,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     token = JToken.FromObject(config);
                 }
 
+                if (string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase) && token is JObject settingsDocument)
+                {
+                    GateSettingsDocument(settingsDocument);
+                }
+
                 var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
 
                 File.WriteAllText(tempPath, jsonToSave);
@@ -511,6 +747,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private static readonly Regex GuidShapeRe    = new Regex("^[0-9a-fA-F-]{32,36}$", RegexOptions.Compiled);
 
         /// <summary>
+        /// A folder name that is a person's: the canonical id (32 lower-case hex digits) or another spelling of it that the
+        /// start-up migration puts in place under the canonical name (upper case, hyphens).
+        /// </summary>
+        public static bool IsPersonFolderName(string name)
+            => GuidShapeRe.IsMatch(name) && CanonicalGuidRe.IsMatch(name.Replace("-", string.Empty).ToLowerInvariant());
+
+        /// <summary>
         /// Scans <c>_configBaseDir</c> for case-variant or hyphenated user
         /// folders and merges each into its canonical lowercase 32-hex
         /// sibling. Idempotent; conflict files are kept (newer wins, older
@@ -529,6 +772,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (!Directory.Exists(_configBaseDir)) return;
 
             var allDirs = Directory.GetDirectories(_configBaseDir);
+            // Folders whose settings.json this migration put in place: they pass the display-language gate afterwards.
+            var placed = new HashSet<string>(StringComparer.Ordinal);
             var migrated = 0;
             var renamed  = 0;
             var failed   = 0;
@@ -553,6 +798,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 try
                 {
+                    placed.Add(dstDir);
                     if (!Directory.Exists(dstDir))
                     {
                         Directory.Move(srcDir, dstDir);
@@ -634,6 +880,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     failed++;
                     _logger.Error($"Failed to migrate user dir '{srcName}': {ex}");
                 }
+            }
+
+            foreach (var dir in placed)
+            {
+                GateSettingsFile(Path.Combine(dir, SettingsFileName));
             }
 
             if (renamed + migrated + failed > 0)

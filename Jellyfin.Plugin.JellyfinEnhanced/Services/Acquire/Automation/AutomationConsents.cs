@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <inheritdoc />
         public bool? Preference(Guid user, string recipe)
         {
-            var settings = _users.GetUserConfiguration<UserSettings>(user.ToString("N"), "settings.json");
+            var settings = _users.GetUserConfiguration<JellyfinEnhancedUserSettings>(user.ToString("N"), "settings.json");
             return recipe switch
             {
                 AutomationRecipes.AutoSeason => settings.AutoSeasonRequests,

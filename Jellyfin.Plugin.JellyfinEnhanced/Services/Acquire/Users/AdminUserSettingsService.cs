@@ -13,6 +13,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
@@ -37,7 +38,9 @@ public sealed class AdminUserSettingsService
     private readonly SeerrBackend? _seerr;
     private readonly Ready.ReadyPlaylistService? _ready;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private static readonly string[] DisplayFields = { "listPlaceholders", "listStatus", "acquisitionBadges", "nativeAcquisitionStamps", "useNativePosterTags" };
+    private static readonly string[] DisplayFields = { "listPlaceholders", "listStatus", "acquisitionBadges", "nativeAcquisitionStamps", "useNativePosterTags",
+        // Q-REBUILD1-3 (b), D43: 4c3's list-page and 4d's home-row preferences (append-only; same tri-state rule).
+        "listPlaylistUi", "listCollectionUi", "homeRowRequests", "homeRowSoon", "homeRowArrived" };
 
     /// <summary>Creates the administrator adapter (DI); no user data is loaded or seeded.</summary>
     public AdminUserSettingsService(RequestService requests, IUserManager users, UserConfigurationManager files, ArrAuditLog audit, ListStore lists, SeerrBackend seerr, Ready.ReadyPlaylistService ready)
@@ -152,10 +155,12 @@ public sealed class AdminUserSettingsService
                 ["listPlaceholders"]=ListFlags.Lists(c), ["listStatus"]=ListFlags.Status(c),
                 ["acquisitionBadges"]=AcquisitionStampFlags.Badges(c), ["nativeAcquisitionStamps"]=AcquisitionStampFlags.NativeStamps(c),
                 ["useNativePosterTags"]=c.NativePosterTagsEnabled,
+                ["listPlaylistUi"]=ListFlags.PlaylistUi(c), ["listCollectionUi"]=ListFlags.CollectionUi(c),
+                ["homeRowRequests"]=HomeFlags.Rows(c), ["homeRowSoon"]=HomeFlags.Rows(c), ["homeRowArrived"]=HomeFlags.Rows(c),
             };
             var storedDisplay=DisplayFields.ToDictionary(k=>k,k=>doc==null?(bool?)null:Preference(doc,k));
             var effectiveDisplay=fileAvailable?gates.ToDictionary(p=>p.Key,p=>p.Value&&storedDisplay[p.Key]!=false):null;
-            if(effectiveDisplay!=null) effectiveDisplay["nativeAcquisitionStamps"]=Services.PosterTags.PosterTagSettings.FromUserSettings(new UserSettings {UseNativePosterTags=storedDisplay["useNativePosterTags"],NativeAcquisitionStamps=storedDisplay["nativeAcquisitionStamps"]},c).AcquisitionStampsEnabled;
+            if(effectiveDisplay!=null) effectiveDisplay["nativeAcquisitionStamps"]=Services.PosterTags.PosterTagSettings.FromUserSettings(new JellyfinEnhancedUserSettings {UseNativePosterTags=storedDisplay["useNativePosterTags"],NativeAcquisitionStamps=storedDisplay["nativeAcquisitionStamps"]},c).AcquisitionStampsEnabled;
             var storedPolicy=entry==null?null:new {
                 role=Value(entry,"role")?.Value<string>(),quotaLimit=(int?)Value(entry,"quotaLimit"),quotaGb=(double?)Value(entry,"quotaGb"),
                 fourKInstances=Value(entry,"fourKInstances") is JArray a?a.Values<string>().ToArray():null,

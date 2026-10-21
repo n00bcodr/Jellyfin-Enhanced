@@ -118,7 +118,7 @@
     }
 
     /**
-     * My requests with the ledger's requests added: one entry per title key. An entry the page
+     * My requests with the ledger's requests added: one entry per title and edition. An entry the page
      * already has keeps its row (and gains Cancel for the ledger's unsent requests); a title only the
      * ledger knows gets a row of its own. Starts a read when there is nothing current.
      * @param {Object} view The page's visible data.
@@ -139,34 +139,40 @@
             });
         }
         if (!Array.isArray(state.items) || !state.items.length) return view;
+        // Ledger rows use variant; composed rows use is4k. Both identify the same title edition.
+        /** The row identity used by both ledger and composed entries. */
+        const editionKey = item => `${item.key}|${item.variant === '4k' || item.is4k === true ? '4k' : 'standard'}`;
         const byKey = new Map();
         for (const item of state.items) {
             if (!(item.group in ORDER)) continue;
-            if (!byKey.has(item.key)) byKey.set(item.key, []);
-            byKey.get(item.key).push(item);
+            const key = editionKey(item);
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key).push(item);
         }
         const mine = [];
         const seen = new Set();
         for (const entry of view.mine || []) {
-            const own = byKey.get(entry.key);
-            seen.add(entry.key);
+            const own = byKey.get(editionKey(entry));
+            seen.add(editionKey(entry));
             mine.push(own ? { ...entry, ledger: ledgerOf(own) } : entry);
         }
         // A title the page already lists as Ready is that title's row (its requests' parts arrived; the ledger may
         // not have marked them fulfilled yet): no second row with the request's own state.
-        for (const entry of view.ready || []) if (entry?.key) seen.add(entry.key);
+        for (const entry of view.ready || []) if (entry?.key) seen.add(editionKey(entry));
         for (const [key, own] of byKey) {
             if (seen.has(key)) continue;
             // The most open state of the title's requests leads (waiting before on the way before said no).
             const lead = [...own].sort((a, b) => ORDER[a.group] - ORDER[b.group])[0];
             const seasons = [...new Set(own.flatMap(i => i.seasons || []))].sort((a, b) => a - b);
             mine.push({
-                key,
+                key: lead.key,
                 kind: lead.kind,
                 title: lead.title || '',
                 year: lead.year,
                 poster: lead.poster,
-                itemId: lead.itemId,
+                // Metadata names a generic copy of the title, not a verified 4K copy. A composed edition row
+                // supplies its own Play target; a ledger-only 4K ask must never inherit the HD target.
+                itemId: lead.variant === '4k' ? null : lead.itemId,
                 is4k: own.every(i => i.variant === '4k'),
                 seasons: lead.kind === 'tv' && seasons.length ? seasons : null,
                 askedAt: own.map(i => i.createdAt).sort()[0],
@@ -210,7 +216,7 @@
         const ids = entry?.ledger?.cancel;
         if (!Array.isArray(ids) || !ids.length || !on()) return;
         const busy = ids.some(id => state.busy.has(id));
-        const cancel = X.button('je-hub-btn je-hub-cancel', X.tr(busy ? 'arr_mine_cancelling' : 'arr_mine_cancel'), 'cancel', `cancel:${entry.key || ''}`);
+        const cancel = X.button('je-hub-btn je-hub-cancel', X.tr(busy ? 'arr_mine_cancelling' : 'arr_mine_cancel'), 'cancel', `cancel:${entry.key || ''}:${entry.is4k ? '4k' : 'standard'}`);
         cancel.setAttribute('aria-label', X.tr('arr_mine_cancel_label', { title: X.titleText(entry) }));
         X.busy(cancel, busy);
         cancel.addEventListener('click', (e) => {

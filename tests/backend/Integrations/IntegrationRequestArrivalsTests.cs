@@ -135,14 +135,15 @@ public class IntegrationRequestArrivalsTests
         }
 
         /// <summary>The viewer's Requests page: every entry of My requests and Ready by title key.</summary>
-        public async Task<Dictionary<string, JsonElement>> Page(StatusViewer viewer)
+        public async Task<Dictionary<string, JsonElement>> Page(StatusViewer viewer, bool? fourK = null)
         {
             var body = await Hub.ForViewerAsync(viewer, default);
             using var doc = JsonDocument.Parse(body!.Json);
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (var list in new[] { "mine", "ready" })
             {
-                foreach (var entry in doc.RootElement.GetProperty(list).EnumerateArray()) result[entry.GetProperty("key").GetString()!] = entry.Clone();
+                foreach (var entry in doc.RootElement.GetProperty(list).EnumerateArray())
+                    if (fourK == null || entry.GetProperty("is4k").GetBoolean() == fourK) result[entry.GetProperty("key").GetString()!] = entry.Clone();
             }
             return result;
         }
@@ -710,7 +711,7 @@ public class IntegrationRequestArrivalsTests
         var fourK = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
         await lab.Outbox.TickAsync(default);
         Assert.Equal("sent", lab.Ledger.Find(fourK)!.Status);
-        var row = (await lab.Page(lab.Emma))[Matrix];
+        var row = (await lab.Page(lab.Emma, fourK: true))[Matrix];
         Assert.Equal("onTheWay", row.GetProperty("group").GetString());
         Assert.NotEqual(StatusStage.Ready, row.GetProperty("status").GetProperty("stage").GetString());
         Assert.True(row.GetProperty("is4k").GetBoolean());
@@ -724,11 +725,11 @@ public class IntegrationRequestArrivalsTests
         // A 4K copy is one with a 4K source (D44): its 2160p file.
         lab.View.AddSource(uhd, 3840, 2160, created: lab.Arr.Now.UtcDateTime);
         lab.View.Rev++;
-        row = (await lab.Page(lab.Emma))[Matrix];
+        row = (await lab.Page(lab.Emma, fourK: true))[Matrix];
         Assert.Equal(("ready", uhd.ToString("N")), (row.GetProperty("group").GetString(), row.GetProperty("itemId").GetString()));
         Assert.Equal(1, await lab.Fulfilment.CheckAsync(new[] { Matrix }, default));
         Assert.Equal(("fulfilled", "fulfilled"), (lab.Ledger.Find(standard)!.Status, lab.Ledger.Find(fourK)!.Status));
-        row = (await lab.Page(lab.Emma))[Matrix];
+        row = (await lab.Page(lab.Emma, fourK: true))[Matrix];
         Assert.Equal(("ready", uhd.ToString("N")), (row.GetProperty("group").GetString(), row.GetProperty("itemId").GetString()));
     }
 
@@ -759,6 +760,34 @@ public class IntegrationRequestArrivalsTests
         Assert.Equal("fulfilled", lab.Ledger.Find(fourK)!.Status);
         var row4k = (await lab.Page(lab.Emma))[Matrix];
         Assert.Equal(("ready", item.ToString("N")), (row4k.GetProperty("group").GetString(), row4k.GetProperty("itemId").GetString()));
+    }
+
+    /// <summary>The hub keeps each edition, including a Ready standard copy beside an outstanding 4K ask.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HubKeepsBothEditionsAndComposesEachRequestedScope(bool standardReady)
+    {
+        using var lab = new Lab(fourK: true);
+        lab.Policy.Adjust = (_, _, person) => person with { Can4k = true };
+        await lab.Warm();
+        await lab.Ask(lab.Emma, new MutationInput { Key = Matrix });
+        await lab.Ask(lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
+        if (standardReady)
+        {
+            lab.View.AddCopy(TitleKey.Parse(Matrix)!, new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/movies/The Matrix", LibraryName = "Movies", DateCreated = lab.Arr.Now.UtcDateTime });
+            lab.View.Rev++;
+        }
+        using var doc = JsonDocument.Parse((await lab.Hub.ForViewerAsync(lab.Emma, default))!.Json);
+        var rows = doc.RootElement.GetProperty("mine").EnumerateArray().Concat(doc.RootElement.GetProperty("ready").EnumerateArray()).ToList();
+        Assert.Equal(2, rows.Count);
+        var standard = Assert.Single(rows, r => !r.GetProperty("is4k").GetBoolean());
+        var uhd = Assert.Single(rows, r => r.GetProperty("is4k").GetBoolean());
+        Assert.Equal(Matrix, standard.GetProperty("key").GetString());
+        Assert.Equal(Matrix, uhd.GetProperty("key").GetString());
+        Assert.Equal(standardReady ? "ready" : "onTheWay", standard.GetProperty("group").GetString());
+        Assert.Equal("onTheWay", uhd.GetProperty("group").GetString());
+        Assert.NotEqual(StatusStage.Ready, uhd.GetProperty("status").GetProperty("stage").GetString());
     }
 
     /// <summary>Adds a 4K Radarr (role 4k) holding Dune in its own folder (no file yet), before anything is read.</summary>

@@ -34,7 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="titleKey">Only this title, or every title.</param>
         /// <param name="after">The last request of the previous page, or null to start from the first.</param>
         public IReadOnlyList<RequestWant> Unfulfilled(int limit, string? titleKey = null, RequestWant? after = null) => !_db.Available ? Array.Empty<RequestWant>() : _db.Read(c =>
-            (IReadOnlyList<RequestWant>)Wants(c, null, "id IN (SELECT id FROM wants WHERE status IN ('pending','sent','stale') AND json_extract(mutation_input,'$.Scope')<>'future' AND ($key IS NULL OR title_key=$key) AND ($after IS NULL OR updated_at>$at OR (updated_at=$at AND id>$after)) ORDER BY updated_at,id LIMIT $n)",
+            (IReadOnlyList<RequestWant>)Wants(c, null, "id IN (SELECT id FROM wants WHERE status IN ('pending','sent','stale') AND json_extract(mutation_input,'$.Scope')<>'future' AND ($key IS NULL OR " + TitleIs + ") AND ($after IS NULL OR updated_at>$at OR (updated_at=$at AND id>$after)) ORDER BY updated_at,id LIMIT $n)",
                 ("$key", titleKey), ("$n", Math.Clamp(limit, 1, 10000)), ("$after", after?.Id), ("$at", after == null ? 0L : Ms(after.UpdatedAt)))
                 // Wants() orders by created_at; callers want the least recently changed first.
                 .OrderBy(w => w.UpdatedAt).ThenBy(w => w.Id, StringComparer.Ordinal).ToList());

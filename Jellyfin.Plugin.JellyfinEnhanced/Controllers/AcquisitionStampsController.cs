@@ -48,8 +48,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// The caller's acquisition stamps for up to 100 Jellyfin item ids: <c>{"items":[{"itemId","stamp"}]}</c> with stamp
-        /// <c>upgraded</c>, <c>new</c> or <c>fourK</c>; items without one, or that the caller can't open, are absent. A
-        /// person who turned badges off gets an empty list. 403 <c>feature_disabled</c> while the switch is off.
+        /// <c>upgraded</c>, <c>new</c> or <c>fourK</c>; items without one, or that the caller can't open, are absent.
+        /// <c>subscriptions</c> names accessible items and their title keys, including items without a stamp, for live
+        /// invalidation independent of status pills. A person who turned badges off gets both lists empty.
+        /// 403 <c>feature_disabled</c> while the switch is off.
         /// </summary>
         /// <param name="ids">Comma-separated item ids.</param>
         /// <returns>The stamps.</returns>
@@ -71,23 +73,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (list.Count > MaxIds) return BadRequest(new { code = "too_many", maxIds = MaxIds });
 
             var items = new List<StampAnswer>();
+            var subscriptions = new List<StampSubscription>();
             if (AcquisitionStampFlags.Display(true, _preferences.WebBadges(viewer.UserId)))
             {
                 foreach (var id in list)
                 {
                     if (!_library.CanOpen(viewer.UserId, id)) continue;
+                    // Follow every accessible title, even while it has no stamp. Status pills need not be on.
+                    if (_library.Item(id) is { } item)
+                    {
+                        var keys = item.Keys.Select(key => key.Title.ToString()).Distinct(StringComparer.Ordinal).ToArray();
+                        if (keys.Length > 0) subscriptions.Add(new StampSubscription(id.ToString("N", CultureInfo.InvariantCulture), keys));
+                    }
+
                     if (AcquisitionStampFlags.WireName(_resolver.Resolve(id, viewer.UserId)) is not { } stamp) continue;
                     items.Add(new StampAnswer(id.ToString("N", CultureInfo.InvariantCulture), stamp));
                 }
             }
 
-            var json = JsonSerializer.SerializeToUtf8Bytes(new { items });
+            var json = JsonSerializer.SerializeToUtf8Bytes(new { items, subscriptions });
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(json), 0, 12).ToLowerInvariant() + "\"";
             Response.Headers["Cache-Control"] = "private, no-cache";
             Response.Headers["ETag"] = etag;
             if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag)) return StatusCode(304);
             return File(json, "application/json; charset=utf-8");
         }
+
+        private sealed record StampSubscription(
+            [property: System.Text.Json.Serialization.JsonPropertyName("itemId")] string ItemId,
+            [property: System.Text.Json.Serialization.JsonPropertyName("keys")] IReadOnlyList<string> Keys);
 
         private sealed record StampAnswer(
             [property: System.Text.Json.Serialization.JsonPropertyName("itemId")] string ItemId,

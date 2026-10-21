@@ -268,8 +268,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Path without the extension, an ItemPath equal to a source Path, and the
         // VideoRangeType of audio streams. Every client reads them with an empty
         // fallback, and the served payload shrinks by roughly a fifth.
+        // v8 includes Series members in a BoxSet's language union (it was movies only), so
+        // collection entries built before it are stale.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 7;
+        private const int CurrentCacheSchemaVersion = 8;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3127,7 +3129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Union of audio languages across a BoxSet's linked movie members.
+        /// Union of audio languages across a BoxSet's linked movie and series members.
         /// LinkedChildren is a manual join (not a parent pointer), so this is
         /// resolved live rather than tracked incrementally per member; membership
         /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
@@ -3142,10 +3144,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var languages = new HashSet<string>();
                 foreach (var member in folder.GetLinkedChildren())
                 {
-                    if (member.GetBaseItemKind() != BaseItemKind.Movie) continue;
+                    var memberKind = member.GetBaseItemKind();
+                    if (memberKind == BaseItemKind.Movie)
+                    {
+                        var (_, _, memberLanguages) = ExtractMediaData(member);
+                        foreach (var lang in memberLanguages) languages.Add(lang);
+                    }
+                    else if (memberKind == BaseItemKind.Series)
+                    {
+                        // Series entries are built after BoxSets in a full build, so
+                        // fall back to scanning the episodes when it isn't cached yet.
+                        if (_cache.TryGetValue(member.Id.ToString("N").ToLowerInvariant(), out var seriesEntry)
+                            && seriesEntry.AudioLanguages != null)
+                        {
+                            foreach (var lang in seriesEntry.AudioLanguages) languages.Add(lang);
+                            continue;
+                        }
 
-                    var (_, _, memberLanguages) = ExtractMediaData(member);
-                    foreach (var lang in memberLanguages) languages.Add(lang);
+                        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+                        {
+                            ParentId = member.Id,
+                            IncludeItemTypes = new[] { BaseItemKind.Episode },
+                            IsVirtualItem = false,
+                            Recursive = true
+                        });
+                        foreach (var episode in episodes)
+                        {
+                            foreach (var lang in ExtractAudioLanguages(episode) ?? Array.Empty<string>()) languages.Add(lang);
+                        }
+                    }
                 }
 
                 return languages.ToArray();

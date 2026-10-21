@@ -42,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>True while the list waits for reconciliation (after a restore or an import); nothing new is inserted meanwhile.</summary>
         [JsonPropertyName("reconciling")] public bool Reconciling { get; set; }
 
+        /// <summary>Owner/admin placement receipts, filtered to their visible landed entries; no actor or source identity.</summary>
+        [JsonPropertyName("placements")] public List<PlacementStatusDto> Placements { get; set; } = new();
+
         /// <summary>The placeholders the caller may see.</summary>
         [JsonPropertyName("placeholders")] public List<PlaceholderDto> Placeholders { get; set; } = new();
 
@@ -50,6 +53,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
 
         /// <summary>Linked source summary (never internal sync state); null when none.</summary>
         [JsonPropertyName("source")] public ListSourceDto? Source { get; set; }
+    }
+
+    /// <summary>A pending or abandoned placement visible to a list's current owner or a human administrator.</summary>
+    public sealed class PlacementStatusDto
+    {
+        /// <summary>pending or abandoned.</summary>
+        [JsonPropertyName("state")] public string State { get; set; } = string.Empty;
+        /// <summary>actor_revoked, actor_deleted, actor_disabled or placement_retry_limit; null while pending.</summary>
+        [JsonPropertyName("reason")] public string? Reason { get; set; }
+        /// <summary>Recovery attempts started.</summary>
+        [JsonPropertyName("attempts")] public int Attempts { get; set; }
+        /// <summary>When abandoned, if applicable (UTC ISO-8601).</summary>
+        [JsonPropertyName("at")] public string? At { get; set; }
+        /// <summary>Visible landed real-entry tokens only.</summary>
+        [JsonPropertyName("tokens")] public List<string> Tokens { get; set; } = new();
     }
 
     /// <summary>A placeholder as returned to clients.</summary>

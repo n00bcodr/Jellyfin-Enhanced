@@ -10,35 +10,28 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    // An outgoing panel must not remain an editable view after its identity store is cleared.
+    // Use the existing close handler so media, drag and keyboard listeners are cleaned up too.
+    JE.session?.onUserChange?.('settings-panel', () => {
+        document.getElementById('closeSettingsPanel')?.click();
+    });
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = async () => {
-        // Refresh user settings when panel opens to ensure correct user's settings are displayed
+        // The shared document store fences this read against newer saves and identity changes.
+        const epoch = JE.session?.getEpoch?.();
         const currentUserId = ApiClient.getCurrentUserId();
         if (currentUserId) {
             try {
-                // Fetch fresh settings for the current user
-                const settingsResponse = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
-                    dataType: 'json'
-                });
-
-                // Update the userConfig with fresh data
-                if (settingsResponse) {
-                    JE.userConfig = JE.userConfig || {};
-                    JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
-
-                    // Reload current settings
-                    if (typeof JE.loadSettings === 'function') {
-                        JE.currentSettings = JE.loadSettings();
-                    }
-                }
+                if (!await JE.readUserSettings('settings.json')) return;
             } catch (e) {
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
+        if (currentUserId !== ApiClient.getCurrentUserId()
+            || (epoch !== undefined && !JE.session.isCurrent(epoch))) return;
 
         // Re-initialize shortcuts to ensure they're populated before building the panel
         if (typeof JE.initializeShortcuts === 'function') {
@@ -48,7 +41,7 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            existing.querySelector('#closeSettingsPanel')?.click();
             return;
         }
         // Get theme-appropriate styles
@@ -186,6 +179,7 @@
         // (ui-panel-template.js and the ui-panel-*.js wiring files).
         const ctx = {
             help,
+            panelCleanups: panelMediaCleanups,
             pluginShortcuts,
             resetAutoCloseTimer,
             panelBgColor,
@@ -201,6 +195,9 @@
             releaseNotesTextColor,
             logoUrl
         };
+
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
 
         help.innerHTML = internal.buildPanelHtml(ctx);
 
@@ -246,7 +243,7 @@
                 }
             };
             const handlePhoneMediaChange = () => syncLayerFocus(false);
-            phoneMedia.addEventListener('change', handlePhoneMediaChange);
+            listen(phoneMedia, 'change', handlePhoneMediaChange);
 
             const activate = (pane, persist) => {
                 panes.forEach(p => p.classList.toggle('active', p === pane));
@@ -254,8 +251,7 @@
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
-                    JE.currentSettings.lastOpenedTab = pane.dataset.pane;
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
+                    if (scope.isCurrent()) JE.updateSettings({ lastOpenedTab: pane.dataset.pane });
                 }
                 resetAutoCloseTimer();
             };
@@ -276,7 +272,7 @@
                 } else {
                     button.textContent = label;
                 }
-                button.addEventListener('click', () => activate(pane, true));
+                listen(button, 'click', () => activate(pane, true));
                 navHost.appendChild(button);
                 items.push(button);
             });
@@ -284,7 +280,7 @@
             // Mobile back button returns to the section list.
             const backButton = help.querySelector('#jePanelBack');
             if (backButton) {
-                backButton.addEventListener('click', () => {
+                listen(backButton, 'click', () => {
                     body.classList.remove('je-pane-open');
                     syncLayerFocus(true);
                     resetAutoCloseTimer();
@@ -294,7 +290,7 @@
             // Search filters the section list by each pane's full text.
             const search = help.querySelector('#jePanelSearch');
             if (search) {
-                search.addEventListener('input', () => {
+                listen(search, 'input', () => {
                     const query = search.value.trim().toLowerCase();
                     items.forEach((button) => {
                         const pane = panes.find(p => p.dataset.pane === button.dataset.tab);
@@ -349,13 +345,23 @@
             }
         };
 
+        scope.onCleanup(() => {
+            isDragging = false;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            help.remove();
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            runPanelCleanups();
+            if (!JE.pluginConfig.DisableAllShortcuts) document.addEventListener('keydown', JE.keyListener, true);
+        });
+
         const createToast = (featureKey, isEnabled) => {
             const feature = JE.t(featureKey);
             const status = JE.t(isEnabled ? 'status_enabled' : 'status_disabled');
             return JE.t('toast_feature_status', { feature, status });
         };
-        document.addEventListener('keydown', closeHelp);
-        document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
+        listen(document, 'keydown', closeHelp);
+        listen(document.getElementById('closeSettingsPanel'), 'click', closeHelp);
 
         if (!JE.pluginConfig.DisableAllShortcuts) {
             document.removeEventListener('keydown', JE.keyListener, true);

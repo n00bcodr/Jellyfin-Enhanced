@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerTagDataStripper _spoilerTagDataStripper;
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
         private readonly Services.MdblistService _mdblistService;
+        private readonly Services.DoesTheDogDieService _doesTheDogDieService;
         private readonly Services.WhatsNewService _whatsNewService;
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
@@ -211,6 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerTagDataStripper spoilerTagDataStripper,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.MdblistService mdblistService,
+            Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
@@ -252,6 +254,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerTagDataStripper = spoilerTagDataStripper;
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
+            _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
@@ -2044,6 +2047,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
+            var isStale = _hostCompatibility.IsStale;
             return new JsonResult(new
             {
                 builtFor = Services.HostCompatibilityService.BuiltFor,
@@ -2051,9 +2055,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 hostVersion = _hostCompatibility.HostVersionString,
                 pluginVersion = JellyfinEnhanced.Instance?.Version.ToString(),
                 mismatch = _hostCompatibility.IsMismatch,
+                stale = isStale,
                 expectedAsset = _hostCompatibility.ExpectedAssetName,
                 manifestUrl = Services.HostCompatibilityService.ManifestUrl,
-                message = _hostCompatibility.MismatchMessage
+                message = _hostCompatibility.GetCompatibilityMessage(isStale)
             });
         }
 
@@ -3960,6 +3965,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
+                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey()),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
                 config.MdblistRatingsShowOnItemDetails,
@@ -3997,7 +4003,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleFont,
                 config.DefaultSubtitleTextEffect,
                 config.DisableCustomSubtitleStyles,
-                config.DefaultLanguage,
+                // As the display-language gate stores it (a value saved before the gate existed is handed out as Auto). The
+                // client gets the same policy inside the translations script it is served, so no language list is sent.
+                DefaultLanguage = LanguageTags.Sanitize(config.DefaultLanguage),
                 // Overlay positions
                 config.QualityTagsPosition,
                 config.GenreTagsPosition,
@@ -4032,6 +4040,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnable4KTvRequests,
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
+                config.JellyseerrSingleSeasonRequestOnly,
                 config.JellyseerrShowQuotaInfo,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
@@ -4099,12 +4108,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrListRequestAllEnabled = Services.Acquire.Lists.ListFlags.RequestAll(config),
                 ArrListSwapInEnabled = Services.Acquire.Lists.ListFlags.SwapIn(config),
                 ArrListStatusEnabled = Services.Acquire.Lists.ListFlags.Status(config),
-                // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
-                ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
-                ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
                 // Phase 4c3a: list pages (each person may still hide them).
                 ArrListPlaylistUiEnabled = Services.Acquire.Lists.ListFlags.PlaylistUi(config),
                 ArrListCollectionUiEnabled = Services.Acquire.Lists.ListFlags.CollectionUi(config),
+                // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
+                ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
+                ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
+                // Phase 4d: effective home-row and collection-gap switches (parents included; per-person row preferences are in user settings).
+                ArrHomeRowsEnabled = Services.Acquire.Home.HomeFlags.Rows(config),
+                ArrHomeHssSections = Services.Acquire.Home.HomeFlags.HssSections(config) && Services.Acquire.Home.HssSectionsAdapter.Present,
+                ArrHomeOpsStripEnabled = Services.Acquire.Home.HomeFlags.OpsStrip(config),
+                ArrCollectionGapsPhase4 = Services.Acquire.Home.HomeFlags.CollectionGaps(config),
                 // Phase 4f: the Ready playlist and native Ready messages in effect (parents included; each person opts in).
                 ArrReadyPlaylistEnabled = Services.Acquire.Ready.ReadyFlags.Playlist(config),
                 ArrReadyMessagesEnabled = Services.Acquire.Ready.ReadyFlags.Messages(config),
@@ -4223,6 +4237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerReplaceTitle,
                 config.SpoilerStripCast,
                 config.SpoilerStripReviews,
+                // Gates the per-user "Seek previews" opt-out row.
+                config.SpoilerBlurTrickplay,
                 // Advanced category reveals: clients only need the master flag
                 // (to gate the per-user opt-out row in the settings panel);
                 // the six per-category strip toggles are server-only strip
@@ -4957,6 +4973,139 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        private bool DoesTheDogDieActive(out PluginConfiguration? config)
+        {
+            config = JellyfinEnhanced.Instance?.Configuration;
+            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey());
+        }
+
+        // Read current state for EVERY projection, including a hit in the shared upstream cache.
+        // A reveal revision is viewer/title/policy-bound and deliberately never persisted as consent.
+        private (bool Guarded, string Revision, bool Readable) DoesTheDogDiePolicy(Guid viewer, string mediaType, string tmdbId)
+        {
+            var config = JellyfinEnhanced.Instance!.Configuration;
+            // A settings file confirmed absent means nothing is guarded for this viewer. One that can't be inspected or
+            // read is unknown (guarded, no reveal): the tag strip's null covers both, and File.Exists can't tell them apart.
+            var presence = config.SpoilerBlurEnabled
+                ? _userConfigurationManager.UserConfigurationPresence(viewer.ToString("N"), Services.SpoilerBlurImageFilter.SpoilerBlurFileName)
+                : false;
+            var state = presence == false ? new UserSpoilerBlur() : presence == true ? LoadSpoilerStateForTagStrip(viewer) : null;
+            var guarded = config.SpoilerBlurEnabled && (state == null || state.PendingTmdb.ContainsKey($"{mediaType}:{tmdbId}"));
+            if (config.SpoilerBlurEnabled && state != null && !guarded)
+            {
+                var ids = _itemRepository.GetItemIdsByProviders(new Dictionary<string, string> { ["Tmdb"] = tmdbId },
+                    new[] { mediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series });
+                guarded = ids.Any(id => mediaType == "movie" ? _spoilerResolver.IsMovieInSpoilerScope(state, id)
+                    : state.Series.ContainsKey(id.ToString("N")));
+            }
+            var fingerprint = viewer.ToString("N") + "|" + mediaType + "|" + tmdbId + "|" + config.SpoilerBlurEnabled
+                + "|" + guarded + "|" + JsonSerializer.Serialize(state);
+            return (guarded, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint))), state != null);
+        }
+
+        /// <summary>DoesTheDogDie warnings, hidden for a guarded title until this viewer explicitly reveals them.</summary>
+        [HttpGet("ddd/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken,
+            [FromQuery] bool reveal = false, [FromQuery] string? policyRevision = null)
+        {
+            Response.Headers["Cache-Control"] = "private, no-store";
+            if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
+            if (mediaType != "movie" && mediaType != "tv") return BadRequest("mediaType must be 'movie' or 'tv'.");
+            if (!int.TryParse(tmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var numericId) || numericId <= 0)
+                return BadRequest("tmdbId must be a positive integer.");
+            tmdbId = numericId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var viewer = ArrCaller.PersonId(User);
+            if (viewer == null || _userManager.GetUserById(viewer.Value) is not { } user || user.HasPermission(PermissionKind.IsDisabled)) return Forbid();
+
+            try
+            {
+                bool CanShow((bool Guarded, string Revision, bool Readable) p) => p.Readable && (!p.Guarded || (reveal && policyRevision == p.Revision));
+                var before = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
+                var result = CanShow(before)
+                    ? await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false)
+                    : new Model.DddCacheEntry();
+                // Protection may have changed while the external lookup was in flight. A request refused at the start
+                // answers with that refusal (an unreadable settings file is quarantined by the read, so the second
+                // look would see defaults and report a guard this request never applied).
+                var policy = CanShow(before) ? DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId) : before;
+                var show = CanShow(before) && CanShow(policy);
+                return Ok(new {
+                    policy.Guarded, PolicyRevision = policy.Revision,
+                    Found = show && result.Found, Confirmed = show && result.Confirmed,
+                    ItemId = show ? result.ItemId : 0, Name = show ? result.Name : string.Empty,
+                    Topics = show ? result.Topics : new List<Model.DddTopicStat>(),
+                    FetchedAtUnixMs = show ? result.FetchedAtUnixMs : 0
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch DoesTheDogDie data for {mediaType}:{tmdbId}. Error: {ex.Message}");
+                return StatusCode(500, "Failed to fetch DoesTheDogDie data.");
+            }
+        }
+
+        /// <summary>All DoesTheDogDie topics, for the trigger picker.</summary>
+        [HttpGet("ddd/topics")]
+        [Authorize]
+        public async Task<IActionResult> GetDoesTheDogDieTopics(CancellationToken cancellationToken)
+        {
+            if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
+
+            try
+            {
+                var catalog = await _doesTheDogDieService.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
+                if (catalog == null) return StatusCode(502, "DoesTheDogDie topics are unavailable.");
+                SetExternalDataCacheHeaders();
+                return Ok(catalog);
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch DoesTheDogDie topics. Error: {ex.Message}");
+                return StatusCode(500, "Failed to fetch DoesTheDogDie topics.");
+            }
+        }
+
+        [HttpGet("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsDdd(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+
+            return Ok(_userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+        }
+
+        [HttpPost("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SaveUserSettingsDdd(string userId, [FromBody] DddSettings userConfiguration)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "ddd-triggers.json", userConfiguration);
+                return Ok(new { success = true, file = "ddd-triggers.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user DoesTheDogDie settings for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user DoesTheDogDie settings." });
+            }
+        }
+
         /// <summary>
         /// Live MDBList account/quota status (plan, daily limit, remaining
         /// requests, reset time) from MDBList's own GET /user endpoint, for
@@ -4997,14 +5146,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [ResponseCache(Duration = 86400)]
         public ActionResult GetAvailableLocales()
         {
-            var prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
-            var suffix = ".json";
-            var locales = Assembly.GetExecutingAssembly()
-                .GetManifestResourceNames()
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.EndsWith(suffix, StringComparison.Ordinal))
-                .Select(n => n.Substring(prefix.Length, n.Length - prefix.Length - suffix.Length))
+            var locales = LanguageTags.Bundled
                 .Where(code => code != "en") // Exclude base English (en-GB and en-US are the usable variants)
-                .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             return Ok(locales);
@@ -5123,7 +5266,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private ActionResult GetScriptResource(string resourcePath)
         {
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
+            // The translations script carries the display-language policy, written in as it is served (from the locale files
+            // this build embeds): see LanguageTags.TranslationsScript.
+            var stream = string.Equals(resourcePath, "js/enhanced/translations.js", StringComparison.Ordinal)
+                ? new MemoryStream(Encoding.UTF8.GetBytes(LanguageTags.TranslationsScript()))
+                : Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
             // Pick a content type that matches the requested file. Defaults to JS for the
@@ -5362,7 +5509,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            // Handed out as the display-language gate stores it: a file written before the gate existed (or restored by an
+            // older version) never gives the client a language to mirror into Jellyfin's shared key. The file isn't rewritten.
+            userConfig.DisplayLanguage = LanguageTags.Sanitize(userConfig.DisplayLanguage);
 
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
             // rare admin-viewing-another-user's-settings case allowed by
@@ -5412,7 +5562,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
+        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] JellyfinEnhancedUserSettings userConfiguration)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null)
@@ -5422,22 +5572,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
-                // replaces the whole file) keeps them as stored. Read, kept, compared and saved under the person's settings
-                // lock, so an overlapping save of the person's own can't be undone.
-                var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
-                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
+                // Phase 4: the person's consents are their own and change only through the consent operation below. This
+                // save replaces the whole file (the person's own or an administrator's) and keeps every consent as stored.
+                // Read, kept, compared and saved under the person's settings lock.
+                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration);
                 if (saved && changes.Count > 0)
                 {
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
-                return Ok(new { success = true, file = "settings.json" });
+                // The display language as stored (the gate's answer), which the client mirrors instead of what it sent.
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(userConfiguration), displayLanguage = userConfiguration.DisplayLanguage });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>An explicit personal consent change. A whole-document save never changes these fields.</summary>
+        public sealed class PersonalConsentChange
+        {
+            private bool? _value;
+
+            /// <summary>The exact consent field name (<see cref="UserConfigurationManager.PersonalConsents"/>).</summary>
+            public string? Field { get; set; }
+
+            /// <summary>
+            /// The intended consent. A missing value is not a choice; null is one only for a consent that can follow the
+            /// administrator (the automatic requests).
+            /// </summary>
+            public bool? Value
+            {
+                get => _value;
+                set { _value = value; Chosen = true; }
+            }
+
+            /// <summary>The body named a value (null included).</summary>
+            [System.Text.Json.Serialization.JsonIgnore]
+            [Newtonsoft.Json.JsonIgnore]
+            public bool Chosen { get; private set; }
+        }
+
+        /// <summary>Sets one consent for the authenticated person themselves, never on behalf of another user.</summary>
+        [HttpPatch("user-settings/{userId}/consent")]
+        [Authorize]
+        [BodyLimit]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult SetUserSettingsConsent(string userId, [FromBody] PersonalConsentChange change)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId) return Forbid();
+            if (change?.Field == null || !change.Chosen)
+                return BadRequest(new { code = "invalid_consent", message = "A consent field and value are required." });
+            try
+            {
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value);
+                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage });
+            }
+            catch (ArgumentException)
+            {
+                return BadRequest(new { code = "invalid_consent", message = "Unknown personal consent field, or no choice for it." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save personal consent for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save personal consent." });
             }
         }
 
@@ -6525,6 +6727,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
                         HideCast = body.HideCast,
                         HideReviews = body.HideReviews,
+                        HideTrickplay = body.HideTrickplay,
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
@@ -10764,10 +10967,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Check if user has permission to view all requests
                 // Jellyfin admins can always view all requests regardless of Seerr permissions
-                hasRequestViewPermission = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                // When the admin enabled DownloadsFilterByUserRequests, non-admins only ever see their own requests
+                hasRequestViewPermission = IsAdminUser() || (!config.DownloadsFilterByUserRequests && JellyseerrPermissionHelper.HasAnyPermission(
                     jellyseerrUser.Permissions,
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
-                );
+                ));
 
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
