@@ -52,7 +52,9 @@ function setup(t, { config = {}, routes = {}, hash = '#/home' } = {}) {
             calls.push({ path, method: options.method || 'GET', body: options.body });
             const route = Object.keys(routes).find(r => path.startsWith(r));
             if (route) return routes[route](path, options, state);
-            if (path.startsWith('/acquire/notify/inbox')) return JSON.parse(JSON.stringify(state.inbox));
+            // An older page (`before=`) answers from `olderInbox` when a test sets one, so a first-page refresh still in flight
+            // answers the first page.
+            if (path.startsWith('/acquire/notify/inbox')) return JSON.parse(JSON.stringify(path.includes('before=') && state.olderInbox ? state.olderInbox : state.inbox));
             if (path === '/acquire/follows' && !options.method) return state.follows;
             if (path === '/acquire/follows') {
               const list = new Set(state.follows.follows.map(f => f.key));
@@ -499,7 +501,7 @@ test('keyboard and TV focus stays on the control after each settings change and 
   await until(() => panel.querySelector('.je-notify-markall').disabled);
   assert.ok(panel.contains(h.document.activeElement) && h.document.activeElement !== h.document.body);
   assert.equal(h.document.activeElement, panel.querySelector('.je-notify-body'));
-  h.state.inbox = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
+  h.state.olderInbox = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
   panel.querySelector('.je-notify-more').focus();
   h.click(panel.querySelector('.je-notify-more'));
   await until(() => panel.querySelectorAll('.je-notify-item').length === 3);
