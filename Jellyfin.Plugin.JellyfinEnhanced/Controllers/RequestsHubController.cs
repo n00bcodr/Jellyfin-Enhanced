@@ -155,15 +155,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (expect != null)
             {
                 // The request's own routing fields (instance, key, episodes) must name the press; anything else runs nothing.
-                if (Services.Acquire.Requests.PressChecks.AdminCommand(expect, request.InstanceId, key, request.Episodes) is not { } named
-                    || Services.Acquire.Requests.PressChecks.RequestFingerprint(expect, Services.Acquire.Requests.PressChecks.Admin, named.Season, null) is not { } fingerprint)
-                {
-                    var refused = _manage.RefusePress(viewer, userName, request.InstanceId, key, Services.Acquire.Requests.PressChecks.Changed);
-                    return StatusCode(409, new { code = refused.Refusal, status = refused.Outcome.Status, message = refused.Outcome.Message, auditId = refused.Outcome.AuditId });
-                }
+                var fingerprint = Services.Acquire.Requests.PressChecks.RequestFingerprint(expect, Services.Acquire.Requests.PressChecks.Admin, key, null);
+                if (fingerprint == null) return StatusCode(409, new { code = Services.Acquire.Requests.PressChecks.Changed });
+                var identity = Services.Acquire.Requests.PressChecks.IncomingIdentity(Services.Acquire.Requests.PressChecks.Admin, key, expect, request.InstanceId, request.Episodes);
                 var pages = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.IAbsentTitlePages)) as Services.Acquire.IAbsentTitlePages;
-                result = await _manage.SearchCommandAsync(viewer, userName, named.Instance, named.Season, request.IdempotencyKey, fingerprint,
-                    token => _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, named.Season, token, pages), cancellationToken).ConfigureAwait(false);
+                result = await _manage.SearchCommandAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, fingerprint,
+                    token => Services.Acquire.Requests.PressChecks.AdminCommand(expect, request.InstanceId, key, request.Episodes) is { } named
+                        ? _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, named.Season, token, pages)
+                        : System.Threading.Tasks.Task.FromResult(Services.Acquire.Requests.PressProof.Changed),
+                    cancellationToken, incomingIdentity: identity).ConfigureAwait(false);
             }
             else
             {

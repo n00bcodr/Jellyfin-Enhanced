@@ -293,7 +293,7 @@ public class IntegrationRequestReviewRound2Tests
         {
             c.Open(); using var cmd = c.CreateCommand(); cmd.CommandText = "ALTER TABLE wants DROP COLUMN target_key; ALTER TABLE reservations DROP COLUMN job_id;"; cmd.ExecuteNonQuery();
         }
-        using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+        using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
         Assert.Equal(live.Id, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT job_id FROM reservations WHERE want_id=$w AND scope='initial'"; cmd.Parameters.AddWithValue("$w", want.RequestId!); return cmd.ExecuteScalar()?.ToString(); }));
         var ledger = new RequestLedger(db); ledger.PurgeUser(r.Admin);
         Assert.Equal(0, ledger.Quota(r.Policy.Evaluate(r.Kid, Movie()), r.Now).UsedGb);
@@ -312,7 +312,7 @@ public class IntegrationRequestReviewRound2Tests
         }
         for (var pass = 0; pass < 2; pass++)
         {
-            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             var ledger = new RequestLedger(db); Assert.NotEmpty(ledger.Find(id)!.TargetKey);
             Assert.Equal(2 + pass, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT COUNT(*) FROM reservations WHERE want_id=$w AND job_id IS NOT NULL"; cmd.Parameters.AddWithValue("$w", id); return Convert.ToInt32(cmd.ExecuteScalar()); }));
             if (pass == 0)
@@ -322,6 +322,6 @@ public class IntegrationRequestReviewRound2Tests
             }
             Assert.Equal(20, ledger.Quota(r.Policy.Evaluate(user, Seasons(1, 2)), r.Now).UsedGb);
         }
-        Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*"));
+        Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v" + AcquireDatabase.Migrations.Count + ".*"));
     }
 }

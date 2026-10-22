@@ -131,7 +131,7 @@ public class IntegrationRequestReviewRound3Tests
         }
         for (var pass = 0; pass < 2; pass++)
         {
-            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             var ledger = new RequestLedger(db); var stored = ledger.Find(want.RequestId!)!;
             Assert.NotEmpty(stored.TargetKey);
             if (fixture == "ambiguous_live")
@@ -149,7 +149,7 @@ public class IntegrationRequestReviewRound3Tests
                 Assert.Empty(ledger.ForWant(follower.RequestId!));
             }
         }
-        Assert.Single(Directory.GetFiles(r.Root, "v2.db.pre-v2.*"));
+        Assert.Single(Directory.GetFiles(r.Root, "v2.db.pre-v" + AcquireDatabase.Migrations.Count + ".*"));
     }
 
     [Theory]

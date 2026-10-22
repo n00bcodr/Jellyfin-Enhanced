@@ -291,7 +291,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private IActionResult Outcome(ArrActionOutcome outcome, BridgeScanResult? scan = null)
-            => Json(new
+            => outcome.Conflict
+                ? StatusCode(409, new { code = Services.Acquire.Requests.PressChecks.Conflict, status = outcome.Status, message = outcome.Message, auditId = outcome.AuditId })
+                : Json(new
             {
                 status = outcome.Status,
                 message = outcome.Message,

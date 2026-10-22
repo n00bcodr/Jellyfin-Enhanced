@@ -1120,6 +1120,11 @@ profiles, folders or tags.
       and for people with parental limits a missing movie is only listed when its rating is known and allowed.
 
 Every ask carries a client request id: a double tap or a retry after a lost answer is the same request.
+The same person's key belongs to one operation across asks, adds, Search, queue actions and webhook setup, including while it is being prepared.
+Ownership and recorded answers survive a restart. An interrupted action stays unresolved and is never automatically sent again;
+completed direct actions keep their existing ten-minute replay window, and request receipts remain durable.
+Following, unfollowing and background arrival checks are ordered together, so an older observation cannot replace newer evidence.
+Seerr approval and decline notices, their channel deliveries and the consumed request states are saved together.
 
 ### Titles that aren't in the library (native details)
 

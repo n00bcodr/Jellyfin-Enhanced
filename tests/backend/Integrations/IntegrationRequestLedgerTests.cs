@@ -542,9 +542,9 @@ public class IntegrationRequestLedgerTests
         {
             c.Open(); using var command = c.CreateCommand(); command.CommandText = AcquireDatabase.Migrations[0] + " PRAGMA user_version=1;"; command.ExecuteNonQuery();
         }
-        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(2, old.Version); }
+        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(AcquireDatabase.Migrations.Count, old.Version); }
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
-        using var reopened = new AcquireDatabase(path); Assert.Equal(2, reopened.Version);
+        using var reopened = new AcquireDatabase(path); Assert.Equal(AcquireDatabase.Migrations.Count, reopened.Version);
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
     }
 

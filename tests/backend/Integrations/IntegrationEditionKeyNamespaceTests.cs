@@ -21,8 +21,6 @@ public class IntegrationEditionKeyNamespaceTests
     /// <summary>The production wiring: each side refuses a key the other holds.</summary>
     private static void Wire(P.PressRig p)
     {
-        p.Requests.KeyTakenElsewhere = p.Manage.Runner.Holds;
-        p.Manage.Runner.KeyTakenElsewhere = p.Ledger.HasClientKey;
     }
 
     private static async Task<JsonObject> FourKSearch(P.PressRig p, string key)

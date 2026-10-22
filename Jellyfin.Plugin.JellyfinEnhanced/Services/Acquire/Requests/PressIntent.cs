@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -288,6 +289,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// the page, mode, episodes, copy, edition, destination, instance, whole-series policy and seasons, in a fixed form.
         /// </summary>
         public static string Canonical(PressIntent intent)
+            => JsonSerializer.Serialize(new
+            {
+                item = Guid.TryParseExact(intent.Item, "N", out var page) ? page.ToString("N") : intent.Item,
+                mode = intent.Mode, episodes = (intent.Episodes ?? Array.Empty<int>()).Distinct().OrderBy(n => n).ToArray(),
+                copy = intent.Copy, variant = intent.Variant, dest = intent.Dest?.ToLowerInvariant(), instance = intent.Instance?.ToLowerInvariant(),
+                whole = intent.Whole, seasons = intent.Seasons?.Distinct().OrderBy(n => n).ToArray(),
+            });
+
+        // Schema-2 request receipts used this text. It is only a migration comparison, never a new request identity.
+        private static string LegacyCanonical(PressIntent intent)
             => string.Join("\n", "intent",
                 Guid.TryParseExact(intent.Item, "N", out var page) ? page.ToString("N") : (intent.Item ?? "-"),
                 intent.Mode ?? "-",
@@ -307,6 +318,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public static string RequestIdentity(string? operation, PressIntent? intent, MutationInput normalized)
             => operation == null && intent == null ? normalized.Fingerprint
                 : MutationInput.Hash(string.Join("\n", "request", operation ?? "ask", normalized.Canonical, intent == null ? "-" : Canonical(intent)));
+
+        /// <summary>Complete incoming Search identity, separate from the checked command's execution fingerprint.</summary>
+        public static string IncomingIdentity(string route, TitleKey key, PressIntent? intent, string? instance = null, int[]? episodes = null)
+            => MutationInput.Hash(JsonSerializer.Serialize(new
+            { route, key = key.ToString(), instance = instance?.ToLowerInvariant(), episodes = episodes?.Distinct().OrderBy(n => n).ToArray(), expect = intent == null ? null : Canonical(intent) }));
+
+        internal static string LegacyRequestIdentity(string? operation, PressIntent? intent, MutationInput normalized)
+            => operation == null && intent == null ? normalized.Fingerprint
+                : MutationInput.Hash(string.Join("\n", "request", operation ?? "ask", normalized.Canonical, intent == null ? "-" : LegacyCanonical(intent)));
 
         /// <summary>The episode numbers of a season a search key names (one episode), or the intent's for a season key.</summary>
         public static IReadOnlyList<int> Numbers(TitleKey key, PressIntent? intent)

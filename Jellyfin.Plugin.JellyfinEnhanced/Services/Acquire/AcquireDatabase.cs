@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -38,9 +39,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private readonly string _path;
         private readonly string _connectionString;
-        private readonly SemaphoreSlim _writer = new(1, 1);
-        private readonly ReaderWriterLockSlim _swap = new(LockRecursionPolicy.SupportsRecursion);
-        private long _generation;
+        private sealed class FileGate
+        {
+            internal readonly SemaphoreSlim Writer = new(1, 1);
+            internal readonly ReaderWriterLockSlim Swap = new(LockRecursionPolicy.SupportsRecursion);
+            internal long Generation;
+            internal EvidenceOrder Ordering { get; }
+            internal FileGate() { Ordering = new EvidenceOrder(() => Interlocked.Read(ref Generation)); }
+        }
+        private static readonly ConcurrentDictionary<string, FileGate> FileGates = new(StringComparer.Ordinal);
+        private readonly FileGate _fileGate;
+        private readonly SemaphoreSlim _writer;
+        private readonly ReaderWriterLockSlim _swap;
+        internal EvidenceOrder EvidenceOrder => _fileGate.Ordering;
+        private RetryOwners? _retryOwners;
+        internal RetryOwners RetryOwners => _retryOwners ??= new RetryOwners(this);
         private readonly Logger? _logger;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -177,6 +190,28 @@ CREATE TABLE request_notices (
 CREATE TABLE request_deleted_users (user_hash TEXT PRIMARY KEY);
 " + Phase3dTables + @"
 ",
+            // 3: one durable public retry namespace. Children and outbox jobs stay linked to their request receipt.
+            @"
+CREATE TABLE retry_owners (
+    user_id TEXT NOT NULL, retry_key TEXT NOT NULL, revision TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL, identity TEXT NOT NULL, state TEXT NOT NULL,
+    command TEXT, binding TEXT, action_receipt TEXT, result TEXT, result_type TEXT,
+    deadline INTEGER, parent_revision TEXT REFERENCES retry_owners(revision) ON DELETE CASCADE, created_at INTEGER NOT NULL,
+    PRIMARY KEY(user_id,retry_key));
+INSERT INTO retry_owners(user_id,retry_key,revision,kind,identity,state,created_at)
+SELECT user_id,trim(client_request_id),lower(hex(randomblob(16))),'legacy_request',
+       CASE WHEN COUNT(DISTINCT fingerprint)=1 THEN MIN(fingerprint) ELSE 'ambiguous_legacy_identity' END,'completed',0
+FROM request_inputs GROUP BY user_id,trim(client_request_id);
+CREATE TABLE retry_wants (
+    owner_revision TEXT NOT NULL REFERENCES retry_owners(revision) ON DELETE CASCADE,
+    want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    PRIMARY KEY(owner_revision,want_id));
+INSERT OR IGNORE INTO retry_wants SELECT o.revision,i.want_id FROM retry_owners o JOIN request_inputs i
+ON o.user_id=i.user_id AND o.retry_key=trim(i.client_request_id);
+CREATE TABLE request_search_slots (
+    slot TEXT PRIMARY KEY, owner_revision TEXT REFERENCES retry_owners(revision) ON DELETE SET NULL,
+    claimed_at INTEGER NOT NULL);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
@@ -205,7 +240,10 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// <summary>A database at an explicit path (tests).</summary>
         internal AcquireDatabase(string path, Logger? logger = null)
         {
-            _path = path;
+            _path = Path.GetFullPath(path);
+            _fileGate = FileGates.GetOrAdd(_path, _ => new FileGate());
+            _writer = _fileGate.Writer;
+            _swap = _fileGate.Swap;
             _logger = logger;
             _connectionString = new SqliteConnectionStringBuilder
             {
@@ -263,7 +301,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// Moves on each time the database is replaced by a restore: row ids read under one
         /// generation mean nothing under the next.
         /// </summary>
-        public long Generation => Interlocked.Read(ref _generation);
+        public long Generation => Interlocked.Read(ref _fileGate.Generation);
 
         /// <summary>Runs a read (any number at once). Throws <see cref="InvalidOperationException"/> when unavailable.</summary>
         public T Read<T>(Func<SqliteConnection, T> read)
@@ -372,7 +410,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                             using var live = Open();
                             source.BackupDatabase(live);
                         }
-                        Interlocked.Increment(ref _generation);
+                        Interlocked.Increment(ref _fileGate.Generation);
                         lock (_initLock)
                         {
                             _initialized = false;
@@ -503,7 +541,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
                     if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
-                        if (existed && version == 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && version >= 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
@@ -525,7 +563,7 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                     {
                         columns.CommandText = addTarget ? "SELECT COUNT(*) FROM wants" : "SELECT COUNT(*) FROM wants WHERE target_key='' AND status IN ('pending','queued','sent','stale')";
                         var repairsRows = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
-                        if (existed && version == 2 && !extensionBackedUp && (addTarget || addJob || repairsRows)) BackupBeforeMigration(connection, version);
+                        if (existed && version >= 2 && !extensionBackedUp && (addTarget || addJob || repairsRows)) BackupBeforeMigration(connection, version);
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;

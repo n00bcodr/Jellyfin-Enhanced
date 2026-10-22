@@ -559,7 +559,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Message = message,
                 Details = new Dictionary<string, string> { ["key"] = key.ToString() },
             });
-            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited };
+            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited, Conflict = reason == PressChecks.Conflict };
         }
 
         /// <summary>
@@ -756,16 +756,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The outcome and whether the search grabbed one of its episodes.</returns>
         /// <param name="owned">The caller already owns the person's key (<see cref="ArrActionRunner.SingleFlightAsync{T}"/>).</param>
-        internal async Task<ManageSearchResult> SearchCommandAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, string fingerprint, Func<CancellationToken, Task<PressProof>> check, CancellationToken cancellationToken, bool owned = false)
+        internal async Task<ManageSearchResult> SearchCommandAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, string fingerprint, Func<CancellationToken, Task<PressProof>> check, CancellationToken cancellationToken, bool owned = false, string? incomingIdentity = null)
         {
+            var identity = incomingIdentity ?? fingerprint;
             // One owner of the person's key before anything is checked (D53, edition round 22).
             if (!owned)
             {
-                return await _runner.SingleFlightAsync(viewer.UserId, idempotencyKey, fingerprint,
-                    ct => SearchCommandAsync(viewer, userName, instanceId, key, idempotencyKey, fingerprint, check, ct, owned: true),
+                return await _runner.SingleFlightAsync(viewer.UserId, idempotencyKey, identity,
+                    ct => SearchCommandAsync(viewer, userName, instanceId, key, idempotencyKey, fingerprint, check, ct, owned: true, incomingIdentity: identity),
                     () => Conflict(viewer, userName, instanceId, key), cancellationToken).ConfigureAwait(false);
             }
-            if (await _runner.ReplayPressAsync(viewer.UserId, idempotencyKey, fingerprint, cancellationToken).ConfigureAwait(false) is { } replayed)
+            if (await _runner.ReplayPressAsync(viewer.UserId, idempotencyKey, identity, cancellationToken).ConfigureAwait(false) is { } replayed)
             {
                 return replayed.Conflict
                     ? new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, PressChecks.Conflict, PressChecks.Message(PressChecks.Conflict)), Refusal = PressChecks.Conflict }
@@ -787,7 +788,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var seriesId = command.SeriesId!.Value;
             var target = "episode-of:" + seriesId.ToString(CultureInfo.InvariantCulture) + ":" + string.Join(",", ids.Select(x => x.ToString(CultureInfo.InvariantCulture)));
             return await RunSearchAsync(viewer, userName, instance!, command.Connection!, command.Title.Title.WithSeason(command.Season), seriesId, new { name = "EpisodeSearch", episodeIds = ids }, "episode.search", target, ids, command.Season,
-                idempotencyKey, fingerprint, cancellationToken).ConfigureAwait(false);
+                idempotencyKey, identity, cancellationToken).ConfigureAwait(false);
         }
 
         // Runs one Search command through the audited runner and reads back how it ended (and whether it grabbed something),
@@ -811,6 +812,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Details = new Dictionary<string, string> { ["key"] = key.ToString() },
                 Timeout = TimeSpan.FromSeconds(30),
                 Fingerprint = fingerprint,
+                Binding = ArrClientFactory.Tag(bound),
                 Execute = async ct =>
                 {
                     var client = _clients.Bound(bound);

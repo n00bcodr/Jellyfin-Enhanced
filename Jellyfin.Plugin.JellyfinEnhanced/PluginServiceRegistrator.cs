@@ -58,14 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Arr.ArrClientFactory>();
             serviceCollection.AddSingleton<Services.Arr.ArrAuditLog>();
             serviceCollection.AddSingleton<Services.Arr.ArrConfirmationTokens>();
-            // One key namespace per person (edition round 22): an audited action refuses a key a recorded request holds.
-            serviceCollection.AddSingleton(sp =>
-            {
-                var runner = new Services.Arr.ArrActionRunner(sp.GetRequiredService<Services.Arr.ArrAuditLog>(), sp.GetRequiredService<Services.Arr.ArrConfirmationTokens>());
-                var ledger = sp.GetRequiredService<Services.Acquire.Requests.RequestLedger>();
-                runner.KeyTakenElsewhere = ledger.HasClientKey;
-                return runner;
-            });
+            serviceCollection.AddSingleton<Services.Arr.ArrActionRunner>();
             // In-memory arr snapshots (library index, queue, history, calendar, system) behind the
             // Downloads/Calendar/link routes, and the loop that keeps the ones in use fresh.
             serviceCollection.AddSingleton<Services.Arr.ArrStateStore>();
@@ -131,16 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPlaces, Services.Acquire.Requests.RequestPlaces>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestHubProjection>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdService>();
-            // ... and a request refuses a key an audited action holds.
-            serviceCollection.AddSingleton(sp =>
-            {
-                var requests = new Services.Acquire.Requests.RequestService(
-                    sp.GetRequiredService<Services.Acquire.Requests.RequestLedger>(), sp.GetRequiredService<Services.Acquire.Requests.IRequestPolicy>(),
-                    sp.GetRequiredService<Services.Acquire.IArrJellyfinView>(), sp.GetRequiredService<Services.Arr.Live.ArrChangeFeed>(),
-                    sp.GetRequiredService<Services.Acquire.TitleAliases>(), sp.GetRequiredService<Services.Acquire.Requests.RequestOutboxSignal>());
-                requests.KeyTakenElsewhere = sp.GetRequiredService<Services.Arr.ArrActionRunner>().Holds;
-                return requests;
-            });
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();
             // Search again for what requests already sent, once it has been missing for a long while (family Search).
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestSearchService>();
             // Phase 3c: season request rows (episode metadata + the caller's request states).

@@ -1930,4 +1930,26 @@ public class IntegrationRequestBackendsTests
         Assert.Equal((409, "direct_add_unavailable"), (off.HttpStatus, off.Reason));
         Assert.Null(rig.Ledger.ForTitle("movie:tmdb:962").FirstOrDefault());
     }
+    [Fact]
+    public async Task AnAddOwnsItsPublicRetryBeforeReadingOverrideDefaults()
+    {
+        using var lab = new Lab(); var (r, _) = Ledger(lab); using var rig = r;
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lab.Sonarr.Before = async (path, ct) => { if (path == "/api/v3/qualityprofile") { reached.TrySetResult(); await release.Task.WaitAsync(ct); } };
+        var first = AddService(lab, rig).AddAsync(rig.Admin, new ManageAddRequest { InstanceId = lab.Instance("Sonarr").Id, Key = "tv:tvdb:75565", Seasons = new[] { 1 }, ProfileId = 4, IdempotencyKey = "add-before-defaults" }, default);
+        var sent = 0;
+        try
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var other = await new ArrActionRunner(rig.Audit, new ArrConfirmationTokens()).RunAsync(new ArrActionRequest { UserId = rig.Admin, IdempotencyKey = "add-before-defaults", Action = "movie.search", InstanceId = "r1", Target = "another", Execute = _ => { sent++; return Task.FromResult<ArrError?>(null); } });
+            Assert.True(other.Conflict); Assert.Equal(0, sent);
+        }
+        finally { release.TrySetResult(); }
+        Assert.True((await first.WaitAsync(TimeSpan.FromSeconds(10))).HttpStatus is 200 or 201);
+        Assert.Single(rig.Ledger.ForTitle("tv:tvdb:75565"));
+        var changed = await AddService(lab, rig).AddAsync(rig.Admin, new ManageAddRequest { InstanceId = lab.Instance("Sonarr").Id, Key = "tv:tvdb:75565", Seasons = new[] { 1 }, ProfileId = 5, IdempotencyKey = "add-before-defaults" }, default);
+        Assert.Equal(409, changed.HttpStatus); Assert.Equal("idempotency_conflict", changed.Reason);
+    }
+
 }

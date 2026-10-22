@@ -29,11 +29,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Wakes the outbox when an outcome queues work (absent in tests that drive the outbox themselves).</summary>
         internal RequestOutboxSignal? Signal { get; set; }
 
-        /// <summary>
-        /// Whether the person's key is held by an audited arr action (D53, edition round 22: one key namespace per person): such a
-        /// key is a conflict here, never a second request.
-        /// </summary>
-        internal Func<Guid, string, bool>? KeyTakenElsewhere { get; set; }
         internal RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, Func<DateTimeOffset> now, TitleAliases? aliases = null)
         { _ledger = ledger; _policy = policy; View = view; _feed = feed; _now = now; _aliases = aliases; }
         /// <summary>Human caller resolver.</summary>
@@ -72,19 +67,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return RequestOutcome.Refused("admin_required");
-            // A season page's press is a press of exactly that page (D53, edition round 21): it can be told apart from any other
-            // press (its fingerprint), and it never routes (a quality profile or a root folder could land it outside its copy).
-            if (press != null && (body.Expect is not { } expect || PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, input) == null || input.ProfileId != null || input.RootFolder != null))
-                return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
             // The request as it was made, complete (D53, edition round 22): every field of its input (routing included), of its
             // press and its operation. A retry of an ask already recorded under the person's key (its answer was lost) gets that
             // receipt before anything about it is worked out again (round 20: replay before revalidation), only when it is this
             // same request; anything else under the key is a conflict, never the first receipt. The caller's own checks (a person
             // who may ask, the feature, the database) were made above and by the route.
-            body = body with { Identity = PressChecks.RequestIdentity(body.Operation, body.Expect, input) };
-            if (KeyTakenElsewhere?.Invoke(user, body.ClientRequestId) == true)
-                return RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) };
+            body = body with { Identity = body.Identity ?? PressChecks.RequestIdentity(body.Operation, body.Expect, body.Input.Normalize()!) };
+            if (RetryOwners.Key(body.ClientRequestId) is not { } retryKey) return RequestOutcome.Refused("invalid_input", 400);
+            body = body with { ClientRequestId = retryKey };
+            var result = await _ledger.Database.RetryOwners.ExecuteAsync(user, retryKey, body.Operation ?? "ask", body.Identity!,
+                token => CreateOwnedAsync(user, body, input, token, origin, press),
+                () => RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) },
+                RetryOwners.UnresolvedRequest, ct, _now(), releaseUnsent: outcome => outcome.HttpStatus >= 400, legacyIdentity: PressChecks.LegacyRequestIdentity(body.Operation, body.Expect, input)).ConfigureAwait(false);
+            // Current ledger status (for example a later cancellation) is part of the same receipt, with no
+            // external revalidation and no new mutation or approval on replay.
+            return result.HttpStatus == 200 && _ledger.Replay(user, body with { Input = input }) is { } current && current.Reason != result.Reason
+                ? result with { Reason = current.Reason } : result;
+        }
+
+        private async Task<RequestOutcome> CreateOwnedAsync(Guid user, CreateRequest body, MutationInput input, CancellationToken ct,
+            RequestOrigin? origin, Func<MutationInput, CancellationToken, Task<PressProof>>? press)
+        {
             if (_ledger.Replay(user, body with { Input = input }) is { } recorded) return recorded;
+            // A season page's press is a press of exactly that page (D53, edition round 21): it can be told apart from any other
+            // press (its fingerprint), and it never routes (a quality profile or a root folder could land it outside its copy).
+            if (press != null && (body.Expect is not { } expect || PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, input) == null || input.ProfileId != null || input.RootFolder != null))
+                return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
+
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
@@ -111,6 +120,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 input = command!;
                 target = proof.Command!.Instance;
                 bound = proof.Command.StillBound;
+                var resolved = proof.Command;
+                body = body with
+                {
+                    Command = JsonSerializer.Serialize(new { resolved.Route, resolved.Page, Title = resolved.Title.ToString(), resolved.Season, resolved.Episodes, resolved.Seasons, resolved.Copy, resolved.Edition, resolved.Instance, resolved.Declared, resolved.SeriesId, resolved.EpisodeIds }),
+                    Binding = resolved.Connection is { } connection ? Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrClientFactory.Tag(connection) : null,
+                };
             }
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, target, bound);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });

@@ -233,11 +233,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public async Task<RequestOutcome> AddAsync(Guid admin, ManageAddRequest? body, CancellationToken ct)
         {
+            if (!_requests.Policy.IsAdmin(admin)) return RequestOutcome.Refused("admin_required");
             if (!DirectOn(_config())) return RequestOutcome.Refused("direct_add_unavailable", 409, "unavailable") with { Message = "Adding from Jellyfin Enhanced isn't on." };
             if (body == null || string.IsNullOrWhiteSpace(body.InstanceId) || TitleKey.Parse(body.Key) is not { } parsed || parsed.Season.HasValue)
                 return RequestOutcome.Refused("invalid_input", 400);
             if (string.IsNullOrWhiteSpace(body.IdempotencyKey) || body.IdempotencyKey.Length > 64 || body.IdempotencyKey.Any(char.IsControl))
                 return RequestOutcome.Refused("idempotency_key_required", 400);
+            var identity = MutationInput.Hash(JsonSerializer.Serialize(new { operation = "add", title = parsed.ToString(), instance = body.InstanceId.ToLowerInvariant(), body.ProfileId, body.RootFolder, seasons = body.Seasons?.Distinct().OrderBy(n => n).ToArray() }));
+            return await _requests.Ledger.Database.RetryOwners.ExecuteAsync(admin, body.IdempotencyKey, "add", identity,
+                token => AddOwnedAsync(admin, body, parsed, identity, token),
+                () => RequestOutcome.Refused(PressChecks.Conflict, 409), RetryOwners.UnresolvedRequest, ct, DateTimeOffset.UtcNow,
+                releaseUnsent: result => result.HttpStatus >= 400).ConfigureAwait(false);
+        }
+
+        private async Task<RequestOutcome> AddOwnedAsync(Guid admin, ManageAddRequest body, TitleKey parsed, string identity, CancellationToken ct)
+        {
             var instance = _clients.Registry.Get(body.InstanceId);
             if (instance == null) return RequestOutcome.Refused("not_found", 404);
             if (!instance.Usable) return RequestOutcome.Refused("instance_changed", 409);
@@ -267,7 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
             // The administrator's key, in the same namespace as their asks (D53, edition round 22): an add is told apart by its
             // operation in the request's identity, never by a key prefix of its own.
-            return await _requests.CreateAsync(admin, new CreateRequest(body.IdempotencyKey.Trim(), input) { Operation = "add" }, ct).ConfigureAwait(false);
+            return await _requests.CreateAsync(admin, new CreateRequest(body.IdempotencyKey!.Trim(), input) { Operation = "add", Identity = identity }, ct).ConfigureAwait(false);
         }
 
         // Tag ids and labels: from the library snapshot in memory (display labels; the add's own send checks its tag ids again),

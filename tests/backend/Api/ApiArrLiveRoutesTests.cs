@@ -810,4 +810,36 @@ public class ApiArrLiveRoutesTests
         Assert.True(rig.Arr.CallCount("radarr-twin.invalid") == 0, $"read back or tested on the replacement: {done}");
         Assert.Equal("Succeeded", done.GetProperty("status").ToString());
     }
+    [Fact]
+    public async Task AWebhookWaitingForItsInstanceGateAlreadyOwnsItsPublicRetry()
+    {
+        using var r = new Rig();
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        r.Radarr.Before = async (path, ct) => { if (path == "/api/v3/notification/schema") { reached.TrySetResult(); await release.Task.WaitAsync(ct); } };
+        var first = r.Provisioner.ProvisionAsync(r.Instance, "http://jellyfin.lan", r.UserId, null, "first-hook", default);
+        await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var waiting = r.Provisioner.ProvisionAsync(r.Instance, "http://jellyfin.lan", r.UserId, null, "waiting-hook", default);
+        var sent = 0;
+        try
+        {
+            var other = await new ArrActionRunner(r.Audit, new ArrConfirmationTokens()).RunAsync(new ArrActionRequest { UserId = r.UserId, IdempotencyKey = "waiting-hook", Action = "movie.search", InstanceId = r.Instance.Id, Target = "another", Execute = _ => { sent++; return Task.FromResult<ArrError?>(null); } });
+            Assert.True(other.Conflict); Assert.Equal(0, sent);
+        }
+        finally { release.TrySetResult(); }
+        await Task.WhenAll(first, waiting).WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task ChangedWebhookUrlOrActionReturnsConflictThroughTheRoute()
+    {
+        using var r = new Rig();
+        var controller = r.Controller();
+        Assert.Equal(200, Status(await controller.ProvisionWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, JellyfinUrl = "http://jellyfin.lan", IdempotencyKey = "hook-options" }, default)));
+        var changed = await controller.ProvisionWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, JellyfinUrl = "http://other-jellyfin.lan", IdempotencyKey = "hook-options" }, default);
+        Assert.Equal(409, Status(changed)); Assert.Equal("idempotency_conflict", Body(changed).GetProperty("code").GetString());
+        Assert.Equal(409, Status(await controller.RemoveWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, IdempotencyKey = "hook-options" }, default)));
+        Assert.Single(r.Radarr.Notifications);
+    }
+
 }

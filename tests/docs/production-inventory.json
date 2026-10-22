@@ -455,6 +455,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EvidenceOrder.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinBridge.cs",
       "category": "Services"
     },
@@ -628,6 +632,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ResponseGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RetryOwners.cs",
       "category": "Services"
     },
     {
@@ -9749,7 +9757,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 537,
+    "files": 539,
     "routes": 258,
     "configuration_properties": 586,
     "storage_references": 86,

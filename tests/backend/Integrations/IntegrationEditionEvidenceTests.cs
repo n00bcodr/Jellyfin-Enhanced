@@ -26,7 +26,7 @@ public class IntegrationEditionEvidenceTests
     private static JfSource Probed(JfSource s, int? w, int? h) => new() { SourceId = s.SourceId, ItemId = s.ItemId, BackingItemId = s.BackingItemId, Path = s.Path, DateCreated = s.DateCreated, Width = w, Height = h };
 
     /// <summary>An old HD copy (movie, or a 4K-requested series' S02E01) the interest has seen; returns the item whose source changes.</summary>
-    private static async Task<(N.Rig Rig, TitleKey Title, Guid Item, JfSource Before)> OldHd(bool movie)
+    internal static async Task<(N.Rig Rig, TitleKey Title, Guid Item, JfSource Before)> OldHd(bool movie)
     {
         var r = await N.Started(x =>
         {

@@ -225,7 +225,7 @@ public class IntegrationRequestReviewRound1Tests
         }
         for (var pass = 0; pass < 2; pass++)
         {
-            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             Assert.Equal(2, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT episode_count FROM reservations WHERE id='r'"; return Convert.ToInt32(cmd.ExecuteScalar()); }));
         }
         Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*"));

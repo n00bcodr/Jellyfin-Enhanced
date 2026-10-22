@@ -115,6 +115,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// remembers the client id by it; the same id with anything else is a conflict.
         /// </summary>
         [JsonIgnore] internal string? Identity { get; init; }
+        /// <summary>The resolved command, separate from the incoming identity; server-only.</summary>
+        [JsonIgnore] internal string? Command { get; init; }
+        /// <summary>The opaque connection proved by the page check; server-only.</summary>
+        [JsonIgnore] internal string? Binding { get; init; }
     }
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);

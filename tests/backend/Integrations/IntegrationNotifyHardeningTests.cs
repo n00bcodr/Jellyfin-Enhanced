@@ -571,16 +571,20 @@ public class IntegrationNotifyHardeningTests
         rig.Phones(rig.Emma, rig.Sam);
         var emma = rig.Emma.UserId;
         Assert.Contains(RowsOf(rig, emma), x => x.Key == "watch" && x.Value > 0);
-        // The round checks Emma (still there), then she is deleted before it writes her Ready.
+        // The round checks Emma, then deletion immediately suppresses later writes while its
+        // database purge waits behind the ordered observation. No callback synchronously re-enters the gate.
+        Task<int>? purge = null;
         rig.View.OnViewer = id =>
         {
             if (id != emma || rig.Users.Gone.Contains(emma)) return;
             rig.Users.Gone.Add(emma);
-            Assert.True(NotifyUserPurge.Purge(rig.NotifyStore, emma, null) > 0);
+            rig.NotifyStore.NoteDeleted(emma);
+            purge = Task.Run(() => NotifyUserPurge.Purge(rig.NotifyStore, emma, null));
         };
         rig.Arrive(Dune);
         await rig.Step(Dune);
         rig.View.OnViewer = null;
+        Assert.NotNull(purge); await purge!.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Contains(emma, rig.Users.Gone);
         Assert.All(RowsOf(rig, emma), x => Assert.True(x.Value == 0, x.Key + " has " + x.Value + " rows of the deleted user"));
         Assert.Empty(Deliveries(rig, rig.Emma));

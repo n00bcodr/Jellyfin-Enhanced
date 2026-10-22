@@ -407,8 +407,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     default: return PressProof.Changed;
                 }
             }
+            if (seerr && route == PressChecks.Ask)
+            {
+                // Ordinary Seerr asks concern the title's seasons. Their final page check uses current Jellyfin
+                // availability and visibility, plus Seerr's own policy; no JE holder, queue or connection is evidence.
+                return await GatedAsync(viewer, v => Task.FromResult(_view.Resolve(itemId, v)), (now, item) =>
+                {
+                    var title = absent?.Title.Title ?? item?.Key?.Title;
+                    var season = absent?.Season ?? item?.Season;
+                    if (title == null || season == null || (absent == null && item?.Kind != "season")) return PressProof.Changed;
+                    using var budget = CopyLookupBound.Track();
+                    var copies = CopiesOf(title, now);
+                    var open = copies.Seen.Where(c => c.Visible).ToList();
+                    var have = Editions.Episodes(now, open, Edition.Standard, season, readDimensions: Editions.NeedsDimensions(Edition.Standard)).Coverage();
+                    var context = Context(now);
+                    var folder = item?.SeriesId is Guid series ? context.FolderOf!(series) : null;
+                    var hidden = folder == null ? null : StatusComposer.SplitHidden(folder.EpisodesOf(season, includeVirtual: true), folder.Seasons).Hidden;
+                    var numbers = (intent.Episodes ?? Array.Empty<int>()).Distinct().ToArray();
+                    if (numbers.Any(n => n < 1 || have.Contains((season.Value, n)) || hidden?.Hides(season.Value, n) == true
+                        || absent?.HiddenEpisodes.Contains(n) == true || absent?.HiddenSeasons.Contains(season.Value) == true
+                        || absent?.HiddenSeriesEpisodes.Contains((season.Value, n)) == true)) return PressProof.Changed;
+                    if (budget.Reached || !copies.IsComplete) return new PressProof(PressChecks.Unverified);
+                    var status = new TitleStatus
+                    {
+                        Key = title.WithSeason(season.Value).ToString(), Kind = "season",
+                        Episodes = numbers.Select(n => new EpisodeStatus { Key = title.WithEpisode(season.Value, n).ToString(), Season = season.Value, Episode = n, Stage = StatusStage.NotHere,
+                            Reason = new StatusReason { Code = StatusReasonCode.Looking } }).ToArray(),
+                    };
+                    return Compare(now, status, title.WithSeason(season.Value), season.Value, new Gathered());
+                }, _ => PressProof.Changed, again: absent == null).ConfigureAwait(false);
+            }
             PressProof Compare(StatusViewer now, TitleStatus? status, TitleKey seasonKey, int season, Gathered gather)
             {
+                if ((_config()?.ArrRequestBackend != "je") != seerr) return PressProof.Changed;
                 if (gather.Unverified) return new PressProof(PressChecks.Unverified);
                 if (status == null) return PressProof.Changed;
                 // The press is for this season of this title (whichever id each side used).
@@ -1313,7 +1344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var copies = read ?? CopiesOf(key, viewer);
             var unproven = !copies.IsComplete && copies.Seen.Count == 0;
-            return new CopyAccess(copies.IsProvenAbsent, copies.SeenOpenable != null, (copies.IsProvenAbsent || unproven) && AskedBy(key, viewer), unproven);
+            return new CopyAccess(copies.IsProvenAbsent, copies.SeenOpenable != null, copies.IsProvenAbsent && _libraries.MaySeeAbsent(viewer, key) && AskedBy(key, viewer), unproven);
         }
 
         private bool MayUseCopy(StatusViewer viewer, CopyAccess access, ArrConnection instance, string? path)
@@ -1633,10 +1664,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             // A press (D53, edition round 22): an instance none of whose copies the viewer may use is no evidence of theirs; it is
             // left out before anything is read (its outage can neither refuse their press nor reveal it holds the title).
-            var asked = fresh != null && distinct.Any(t => AskedBy(t, viewer));
+            bool EligibleTitle(ArrConnection instance, TitleKey title)
+            {
+                if (MayServe(viewer, instance)) return true;
+                var copies = CopiesOf(title, viewer);
+                return copies.IsProvenAbsent && AskedBy(title, viewer) && _libraries.MaySeeAbsent(viewer, title)
+                    && _libraries.CanSeeAbsent(viewer, instance, null, asked: true);
+            }
             foreach (var kind in kinds)
             {
-                var instances = _store.Instances(kind).Where(i => fresh == null || asked || MayServe(viewer, i)).ToList();
+                var instances = _store.Instances(kind).Where(i => fresh == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && EligibleTitle(i, t))).ToList();
                 var reads = await Task.WhenAll(instances.Select(async i =>
                 {
                     // A press's check discovers who holds the title now: an instance it depends on is read from the arr now (its
@@ -1691,7 +1728,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     // even if the feed and the snapshot's timestamp have not changed.
                     revision.Append("missedExpired:").Append(string.Join(",", missedState.Expired.Select(r => r.Id))).Append(';');
 
-                    foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr)))
+                    foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr) && (fresh == null || EligibleTitle(instance, t))))
                     {
                         var facts = result.Facts[title];
                         if (library.Value == null)

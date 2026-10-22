@@ -1562,7 +1562,7 @@ public class IntegrationNotificationsTests
     }
 
     [Fact]
-    public async Task EpisodesMergedIntoABatchWhileItIsBeingSentAreNotLost()
+    public async Task AQueuedEpisodeLookAfterAFlushKeepsEveryArrivalOnce()
     {
         using var rig = await Started();
         var series = Guid.NewGuid();
@@ -1571,23 +1571,30 @@ public class IntegrationNotificationsTests
         rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
         await rig.Step(Severance);
         Assert.NotNull(rig.NotifyStore.Batch(rig.Emma.UserId, Severance));
-        // While the closing batch is checked against the library, a look from a request route (Emma
-        // follows from the series page) finds episode 2 and merges it into the batch.
+        // A request-route look queues while the closing batch is checked. Observation through commit
+        // is ordered, so its later arrival gets the next batch without losing either episode.
         rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
         var armed = true;
+        Task? queued = null;
         rig.View.OnEpisodes = () =>
         {
             if (!armed) return;
             armed = false;
-            rig.Service.EvaluateAsync(new[] { Severance }, rig.Emma.UserId, default).GetAwaiter().GetResult();
+            queued = rig.Service.EvaluateAsync(new[] { Severance }, rig.Emma.UserId, default);
+            Assert.False(queued.IsCompleted);
         };
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         rig.Service.FlushBatches(rig.Arr.Now);
         rig.View.OnEpisodes = null;
         Assert.False(armed);
+        await queued!.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.NotNull(rig.NotifyStore.Batch(rig.Emma.UserId, Severance));
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         rig.Service.FlushBatches(rig.Arr.Now);
-        var n = Assert.Single(rig.Inbox(rig.Emma));
-        Assert.Equal(("episodes", "many", "2"), (n.Kind, Params(n.Payload)["mode"], Params(n.Payload)["count"]));
+        var notices = rig.Inbox(rig.Emma).Where(n => n.Kind == "episodes").ToArray();
+        Assert.Equal(2, notices.Length);
+        Assert.Equal(new[] { "1", "2" }, notices.Select(n => Params(n.Payload)["episode"]).Order());
+        Assert.All(notices, n => Assert.Equal("1", Params(n.Payload)["count"]));
         Assert.Null(rig.NotifyStore.Batch(rig.Emma.UserId, Severance));
     }
 

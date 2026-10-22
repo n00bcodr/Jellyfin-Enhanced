@@ -1631,6 +1631,8 @@ A season page's presses carry `expect`, what the control was drawn to do: `{"ite
 
 `acquire/requests/collection/{itemId}` answers `{outcome, reason, certainty, message, collection: {have, total, missing: [{key, title, year, poster, released, request, blocked?}]}}`, where `request` is the person's own request state (`waiting`, `asked`, `declined`) or `household` when someone else asked, and `blocked` (released movies nobody asked for only) says why the person can't ask for it now, as in the title check (`{"reason": "low_disk"}`; where and how much is free for administrators only). A collection the person can't open, or one TMDB can't describe, answers 404.
 
+Retry ownership is persisted before asynchronous preparation or quota/search-slot claims. Incoming identity (including `expect.mode`, `expect` presence, routing and exact scope) is distinct from the resolved command and its opaque connection binding. A restart replays a recorded outcome, or reports an interrupted operation as unresolved without resending it. Active and unresolved ownership never expires; completed direct actions retain the ten-minute replay window, while request receipts remain durable. A safely rolled-back, unsent operation can release only its own reservation. Ordinary title-wide Seerr asks validate Jellyfin availability and Seerr policy without JE discovery, queues or destination proofs.
+
 #### Moving requests from Seerr
 
 Administrators move Seerr's requests into Jellyfin Enhanced with a check, a move, and a rollback within 14 days.

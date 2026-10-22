@@ -173,16 +173,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         public async Task<ArrActionOutcome> ProvisionAsync(ArrConnection instance, string jellyfinUrl, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)
         {
             var hookUrl = HookUrl(jellyfinUrl, instance.Id);
-            var gate = Gate(instance.Id);
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            var identity = ArrActionRunner.Identity("webhook.provision", instance.Id, "notification:webhook", hookUrl);
+            return await _runner.SingleFlightAsync(userId, idempotencyKey, identity, async token =>
             {
-                return await ProvisionLockedAsync(instance, hookUrl, userId, userName, idempotencyKey, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                gate.Release();
-            }
+                var gate = Gate(instance.Id);
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try { return await ProvisionLockedAsync(instance, hookUrl, userId, userName, idempotencyKey, token).ConfigureAwait(false); }
+                finally { gate.Release(); }
+            }, () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = "This repeats another action." }, cancellationToken).ConfigureAwait(false);
         }
 
         // One set-up or removal at a time per instance: a removal forgetting the secret must never
@@ -282,16 +280,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// </summary>
         public async Task<ArrActionOutcome> RemoveAsync(ArrConnection instance, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)
         {
-            var gate = Gate(instance.Id);
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            var identity = ArrActionRunner.Identity("webhook.remove", instance.Id, "notification:webhook");
+            return await _runner.SingleFlightAsync(userId, idempotencyKey, identity, async token =>
             {
-                return await RemoveLockedAsync(instance, userId, userName, idempotencyKey, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                gate.Release();
-            }
+                var gate = Gate(instance.Id);
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try { return await RemoveLockedAsync(instance, userId, userName, idempotencyKey, token).ConfigureAwait(false); }
+                finally { gate.Release(); }
+            }, () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = "This repeats another action." }, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task<ArrActionOutcome> RemoveLockedAsync(ArrConnection instance, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)

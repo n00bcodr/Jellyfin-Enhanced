@@ -981,6 +981,35 @@ public class ApiArrAdminHubTests
         Assert.Equal(1, moved);
         Assert.True(twin.Writes.Count == 0 && rig.Sonarr.Writes.Count == 0, $"{done}; replacement writes {twin.Writes.Count}");
     }
+    [Fact]
+    public async Task AQueueActionOwnsItsRetryBeforeLookingUpTheDownload()
+    {
+        using var r = new Rig();
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        r.Sonarr.Before = async (path, ct) => { if (path == "/api/v3/queue") { reached.TrySetResult(); await release.Task.WaitAsync(ct); } };
+        var first = r.Queue.RunAsync(r.AdminUser, null, new QueueActionInput { InstanceId = r.Instance("SonarrZ").Id, DownloadId = "pack", Action = QueueAction.Search, IdempotencyKey = "before-lookup" }, default);
+        var sent = 0;
+        try
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var other = await r.Runner.RunAsync(new ArrActionRequest { UserId = r.AdminUser.UserId, IdempotencyKey = "before-lookup", Action = "movie.search", InstanceId = r.Instance("SonarrZ").Id, Target = "another", Execute = _ => { sent++; return Task.FromResult<ArrError?>(null); } });
+            Assert.True(other.Conflict); Assert.Equal(0, sent);
+        }
+        finally { release.TrySetResult(); }
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task ChangedQueueOptionsReturnAnIdempotencyConflictThroughTheRoute()
+    {
+        using var r = new Rig(); await r.Warm();
+        Assert.Equal(200, (await Act(r, r.AdminUser, "SonarrZ", "pack", "search", key: "queue-options")).Status);
+        var changed = await Act(r, r.AdminUser, "SonarrZ", "pack", "search", blocklist: true, key: "queue-options");
+        Assert.Equal(409, changed.Status); Assert.Equal("idempotency_conflict", Json(changed).GetProperty("code").GetString());
+        Assert.Single(r.Sonarr.Writes, write => write.Path == "/api/v3/command");
+    }
+
 }
 
 /// <summary>Shared helper: adds a path mapping to every instance row of a JSON list.</summary>
@@ -992,4 +1021,5 @@ internal static class IntegrationArrBridgeTestsAccess
         foreach (var row in rows) row!["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = arr, ["JellyfinPath"] = jf });
         return rows.ToJsonString();
     }
+
 }

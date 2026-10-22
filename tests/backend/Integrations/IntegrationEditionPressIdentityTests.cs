@@ -54,7 +54,7 @@ public class IntegrationEditionPressIdentityTests
         return twin;
     }
 
-    private static async Task<(JsonElement? Copy, string Instance, JsonObject Body)> FourKSearch(P.PressRig p, string key, int episode = 2)
+    internal static async Task<(JsonElement? Copy, string Instance, JsonObject Body)> FourKSearch(P.PressRig p, string key, int episode = 2)
     {
         var page = await p.Page(p.Rig.Admin, p.FourKPage);
         var copy = P.CopyOf(page);
@@ -266,7 +266,7 @@ public class IntegrationEditionPressIdentityTests
     /// E3-E53 of Firefly: requested (sent through the outbox) three days ago, monitored, aired long ago, missing from the
     /// standard copy and playing in 4K, so a standard household Search of the season page names all 51.
     /// </summary>
-    private static async Task<(PressIntent Expect, ConcurrentDictionary<string, DateTimeOffset> Slots)> FiftyOneMissing(P.PressRig p)
+    internal static async Task<(PressIntent Expect, ConcurrentDictionary<string, DateTimeOffset> Slots)> FiftyOneMissing(P.PressRig p)
     {
         var numbers = Enumerable.Range(3, 51).ToArray();
         p.Policy.People[p.Rig.Member.UserId] = p.Policy.People[p.Rig.Member.UserId] with { Limit = 1000 };

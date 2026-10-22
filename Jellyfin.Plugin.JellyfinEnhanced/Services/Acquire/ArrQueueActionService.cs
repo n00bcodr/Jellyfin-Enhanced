@@ -165,6 +165,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Runs a queue action once per idempotency key (audited; Tier 3 needs its token).</summary>
         public async Task<ArrActionOutcome> RunAsync(StatusViewer viewer, string? userName, QueueActionInput input, CancellationToken cancellationToken)
         {
+            return await _runner.SingleFlightAsync(viewer.UserId, input.IdempotencyKey, Identity(input),
+                token => RunOwnedAsync(viewer, userName, input, token),
+                () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = Requests.PressChecks.Message(Requests.PressChecks.Conflict) }, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<ArrActionOutcome> RunOwnedAsync(StatusViewer viewer, string? userName, QueueActionInput input, CancellationToken cancellationToken)
+        {
             // A retry of a click that already ran (its answer was lost) gets that outcome back, before
             // the queue is looked at: after a removal the download is no longer there to find.
             var replay = await _runner.ReplayPressAsync(viewer.UserId, input.IdempotencyKey, Identity(input), cancellationToken).ConfigureAwait(false);
@@ -231,7 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Error = reason,
                 Message = message,
             });
-            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited };
+            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited, Conflict = reason == Requests.PressChecks.Conflict };
         }
 
         private ArrActionRequest RemoveRequest(StatusViewer viewer, string? userName, ArrConnection instance, ArrClient bound, QueueGroup group, QueueActionInput input, Dictionary<string, string> details)
