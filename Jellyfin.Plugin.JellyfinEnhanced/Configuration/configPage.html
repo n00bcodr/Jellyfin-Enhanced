@@ -2717,15 +2717,21 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Reviews Panel</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="reviewsExpandedByDefault" is="emby-checkbox" type="checkbox"/><span>Expand reviews by default</span></label></div>
+                            <div class="je-setting-description" data-desc-for="reviewsExpandedByDefault">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">TMDB Reviews</legend>
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature"><label><input id="showReviews" is="emby-checkbox" type="checkbox"/><span>Show TMDB Reviews</span></label></div>
                             <div class="je-setting-description" data-desc-for="showReviews">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Requires TMDB API Key to be set</div>
-                            </div>
-                            <div class="checkboxContainer"><label><input id="reviewsExpandedByDefault" is="emby-checkbox" type="checkbox"/><span>Expand reviews by default</span></label></div>
-                            <div class="je-setting-description" data-desc-for="reviewsExpandedByDefault">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, the reviews section opens expanded by default for all users (unless they override in their session).</div>
                             </div>
                         </div>
                     </fieldset>
@@ -2736,16 +2742,6 @@
                             <div class="checkboxContainer je-main-feature"><label><input id="showAnilistReviews" is="emby-checkbox" type="checkbox"/><span>Show AniList Reviews</span></label></div>
                             <div class="je-setting-description" data-desc-for="showAnilistReviews">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Shows the top AniList user reviews for anime in the reviews section.<br>Will only work if AniList is a metadata provider, since items are matched by their AniList ID.<br>No API key needed.<br>Spoiler sections of reviews are hidden.</div>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend class="sectionTitle">Release Dates</legend>
-                        <div class="configSection">
-                            <div class="checkboxContainer je-main-feature"><label><input id="showReleaseDate" is="emby-checkbox" type="checkbox"/><span>Show Release/Air Date</span></label></div>
-                            <div class="je-setting-description" data-desc-for="showReleaseDate">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">Requires TMDB API Key to be set. Shows a chip on Movie, Series, Season and Episode detail pages with the cinema/digital/physical release date or next/last air date, sourced from TMDB. Uses the Default Region set under Elsewhere above to pick which country's dates to prefer.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -2780,6 +2776,16 @@
                             <div class="checkboxContainer"><label><input id="showUserRatingDash" is="emby-checkbox" type="checkbox"/><span>Show "—" on posters for unrated items</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingDash">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="je-msym-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Release Dates</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="showReleaseDate" is="emby-checkbox" type="checkbox"/><span>Show Release/Air Date</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showReleaseDate">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Requires TMDB API Key to be set. Shows a chip on Movie, Series, Season and Episode detail pages with the cinema/digital/physical release date or next/last air date, sourced from TMDB. Uses the Default Region set under Elsewhere above to pick which country's dates to prefer.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -8682,10 +8688,10 @@
 
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
-            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
-            { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'showReviews', anyOf: ['showReviews', 'showUserReviews', 'showAnilistReviews'], label: 'Show TMDB Reviews" / "Enable User Written Reviews" / "Show AniList Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
@@ -8730,7 +8736,10 @@
         function updateParentDep(dep) {
             var parent = document.getElementById(dep.parent);
             if (!parent) return;
-            var isEnabled = parent.checked;
+            var isEnabled = (dep.anyOf || [dep.parent]).some(function(id) {
+                var el = document.getElementById(id);
+                return !!(el && el.checked);
+            });
             var tag = 'parent-' + dep.parent;
             var hintClass = 'parent-hint-' + dep.parent;
 
@@ -9999,7 +10008,9 @@
 
         // Parent checkbox change listeners
         var parentIds = {};
-        PARENT_DEPS.forEach(function(dep) { parentIds[dep.parent] = true; });
+        PARENT_DEPS.forEach(function(dep) {
+            (dep.anyOf || [dep.parent]).forEach(function(id) { parentIds[id] = true; });
+        });
         Object.keys(parentIds).forEach(function(id) {
             var el = document.getElementById(id);
             if (el) el.addEventListener('change', updateAllDependencies);
