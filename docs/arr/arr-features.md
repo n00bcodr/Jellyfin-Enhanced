@@ -934,7 +934,9 @@ ask fetch the episodes that are missing, one tap each.
       for what you can do now and a short message says so (with a keyboard or a TV remote the focus stays by the
       episode you pressed, on the row next to it when that episode's row went, until you move it yourself or activate
       something, a screen reader's activation included); if it can't be checked right now (Sonarr doesn't answer), nothing
-      is sent and the message says that. Only the Sonarrs a press depends on are checked like that (the one it lands on, the
+      is sent and the message says that. After a request is recorded, keyboard and TV focus stays on its outcome or
+      available request button as the page updates. Moving to another control or opening another dialog leaves focus there.
+      Only the Sonarrs a press depends on are checked like that (the one it lands on, the
       ones of the same edition or with no edition role, such as anime, and the one holding the copy it acts for), and what
       they hold is read again too (a series moved to another folder, or a Sonarr that took the title since): a 4K button
       still works while the standard Sonarr is down, and the other way round, and a Sonarr whose copies are all in libraries

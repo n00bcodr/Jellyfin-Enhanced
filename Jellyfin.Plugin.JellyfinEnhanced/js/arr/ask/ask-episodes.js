@@ -309,25 +309,22 @@
     }
 
     /**
-     * After a press that was not carried out (refused, or couldn't be checked) the page is read and drawn again, the person is
-     * told why, and the focus moves to the control that took the pressed one's place, else the nearest stable place (its row's
-     * title or chip, the banner), never to nothing (keyboard and TV users stay in place).
-     * @param {string} text What to say.
+     * Remembers the focused press's semantic origin before any awaited preparation or redraw. The episode dialog belongs to
+     * its opening row; it may close or lose that row while the request is pending. Replies never acquire focus ownership.
      * @param {HTMLElement|null} button The control pressed.
-     * @param {string|null} [key] The season's key to read again.
      * @returns {void}
      */
-    function refused(text, button, key) {
+    function rememberFocus(button) {
         // A control inside the episode dialog acts for the row that opened it (D53, edition round 21): the dialog gives the
         // focus back to that row when it closes, so the row is where the person still is, and its place is what recovers.
         const origin = button ? origins.get(button) || null : null;
         const active = document.activeElement;
-        const hadFocus = !!button && (active === button || !active || active === document.body || (!!origin && (active === origin.el || origin.el.contains(active))));
+        const hadFocus = !!button && (active === button || (!!origin && (active === origin.el || origin.el.contains(active))));
         const from = origin && document.contains(origin.el) ? origin.el : button;
         const place = from?.closest?.('.listItem, .je-arr-banner') || null;
-        // Kept until the page has been drawn again from the season's status read after this (D53, edition round 20: tied to the
-        // pending redraw, never to a timer: that read may take any time), and dropped with the season. Its neighbours are
-        // remembered too: the row itself may be gone after the redraw (the episode arrived).
+        const page = origin?.page || from?.closest?.('#itemDetailPage') || null;
+        // The press owns a semantic place before its first await. Busy controls, optimistic outcomes and later server reads
+        // may all replace it. One owner survives those redraws, until deliberate input or the page/session ends it.
         pendingFocus = hadFocus ? {
             focusKey: button.dataset?.jeFocus || null,
             originKey: origin?.focusKey || null,
@@ -335,24 +332,29 @@
             // The opener's row may already be gone (a live redraw while the dialog was open): its neighbours as they were then.
             neighbours: place ? neighboursOf(place) : origin?.neighbours || [],
             episode: button.dataset?.jeAskEpisode || origin?.episode || null,
-            drawn: season,
             itemId: season?.itemId || null,
+            page,
+            href: location.href,
+            epoch: JE.arrAsk.epoch(),
+            dialog: button.closest?.('[role="dialog"]') || null,
             // Where the focus is now (the pressed control, or the row the dialog gave it back to); null: nowhere.
-            placed: active && active !== document.body ? active : null,
+            placed: origin?.el?.isConnected ? origin.el : active && active !== document.body ? active : null,
             moved: false,
             input: false
         } : null;
+    }
+
+    /** Announces a refused press and refreshes its evidence; focus belongs to the original checked press, never its reply. */
+    function refused(text, key) {
         const seasonKey = key || season?.statusRef?.key;
-        const reading = seasonKey ? JE.arrStatus.refresh([seasonKey]) > 0 : false;
+        if (seasonKey) JE.arrStatus.refresh([seasonKey]);
         JE.internals?.arrStatusEpisodes?.apply?.();
         announce(text);
         JE.arrAsk.toast(text);
         focusStable();
-        // Nothing will draw the season again (no status read follows): the focus placed now is the last word.
-        if (!reading) pendingFocus = null;
     }
 
-    /** Where the focus goes after a press that wasn't carried out (see {@link refused}), until the redraw after it. */
+    /** One checked press's semantic focus origin, shared by busy, success, uncertainty, refusal and later redraws. */
     let pendingFocus = null;
 
     /** What opened the episode dialog a control sits in (its row, that row's episode, focus key and neighbours): the control's origin. */
@@ -370,7 +372,7 @@
     }
 
     /**
-     * Moves the focus, after a refused press, to the control that took the pressed one's place (the same focus key), else its
+     * Moves the focus to the control that took the pressed one's place (the same focus key), else its
      * row's title or chip, else the row next to where it was, else the banner; only while nothing else has the focus or the
      * element it was put on went with a redraw, and until the person moves the focus themselves (or the season changes).
      * @returns {void}
@@ -379,7 +381,9 @@
         const want = pendingFocus;
         if (!want) return;
         // Another season is shown: the focus went with its page.
-        if (!season || (want.itemId && season.itemId !== want.itemId)) {
+        if (!season || (want.itemId && season.itemId !== want.itemId) || want.epoch !== JE.arrAsk.epoch()
+            || want.href !== location.href || !JE.arrAsk.enabled() || !JE.arrStatus.enabled()
+            || !want.page?.isConnected || want.page.classList.contains('hide')) {
             pendingFocus = null;
             return;
         }
@@ -393,9 +397,14 @@
         // host moved it on its own; that was no move of the person's, so it is placed again (D53, edition round 21: the recovery
         // lasts through the redraws, never a timer, and ends at the person's own move or with the season).
         const active = document.activeElement;
+        const modal = active?.closest?.('[role="dialog"], dialog');
+        if (modal) {
+            if (modal !== want.dialog) pendingFocus = null;
+            return;
+        }
         const vanished = !!want.placed && !document.contains(want.placed);
-        if (active && active !== document.body && document.contains(active) && !vanished) return;
-        const page = document.querySelector('#itemDetailPage:not(.hide)') || document;
+        if (active && active !== document.body && active !== want.placed && document.contains(active) && !vanished) return;
+        const page = want.page;
         const byKey = key => (key ? page.querySelector(`[data-je-focus="${key}"]:not([disabled])`) : null);
         const rowOf = n => page.querySelector(`.listItem[data-je-ask-episode="${n}"]`);
         const replacement = byKey(want.focusKey) || byKey(want.originKey);
@@ -404,11 +413,15 @@
         const neighbour = row ? null : (want.neighbours || []).map(n => n.episode
             ? rowOf(n.episode)
             : [...page.querySelectorAll('[data-id]')].find(e => e.dataset.id === n.id)).find(Boolean) || null;
+        const inRow = r => r && (r.querySelector('.je-ask-get:not([disabled])') || r.querySelector('.je-ask-searched, .je-arr-chip') || r.querySelector('.je-ask-row-title') || r);
         const stable = replacement
-            || (row && !row.classList.contains('je-arr-banner') ? row.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || row : null)
-            || (neighbour ? neighbour.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || neighbour : null)
-            || page.querySelector('.je-arr-banner .je-ask-get:not([disabled]), .je-arr-banner .je-arr-chip, .je-arr-banner-title, .je-arr-banner');
+            || (row && !row.classList.contains('je-arr-banner') ? inRow(row) : null)
+            || inRow(neighbour)
+            || page.querySelector('.je-arr-banner .je-ask-get:not([disabled])')
+            || page.querySelector('.je-ask-banner-action .je-ask-searched, .je-ask-banner-action .je-arr-chip')
+            || page.querySelector('.je-arr-banner-title, .je-arr-banner');
         if (!stable) return;
+        if (stable === active) return;
         if (stable.tagName !== 'BUTTON' && !stable.hasAttribute('tabindex')) stable.tabIndex = -1;
         want.placed = stable;
         want.input = false;
@@ -458,7 +471,7 @@
         if (JE.arrAsk.epoch() !== started || !season || season.itemId !== target.itemId) return null;
         const fresh = (answer?.items || []).find(s => normalize(s?.itemId) === target.itemId) || null;
         if (!caps || !fresh) {
-            refused(tr('arr_ask_check_failed'), button, target.statusRef?.key);
+            refused(tr('arr_ask_check_failed'), target.statusRef?.key);
             return null;
         }
         season.caps = caps;
@@ -469,7 +482,7 @@
         const was = drawn ? JSON.parse(drawn) : null;
         const is = intent ? JSON.parse(intent) : null;
         const roundedNow = !!is && is.mode === 'get' && !was?.seasons && !was?.whole && (is.seasons || is.whole);
-        refused(roundedNow ? JE.arrAsk.describe({ ok: false, state: 'blocked', reason: 'seerr_whole_season_only' }, caps, null).text : tr('arr_ask_changed'), button, fresh.key);
+        refused(roundedNow ? JE.arrAsk.describe({ ok: false, state: 'blocked', reason: 'seerr_whole_season_only' }, caps, null).text : tr('arr_ask_changed'), fresh.key);
         return null;
     }
 
@@ -487,6 +500,7 @@
         if (!target) return;
         const release = reserve(target.itemId, numbers);
         if (!release) return;
+        rememberFocus(button);
         try {
             const intent = await checkAtClick(target, button.dataset.intent || '', now, button);
             if (intent) await run(intent);
@@ -682,7 +696,7 @@
      * @returns {void}
      */
     function decorate(page, status, ctx, parts) {
-        if (!JE.arrAsk?.enabled()) return;
+        if (!JE.arrAsk?.enabled()) { pendingFocus = null; return; }
         JE.internals?.arrAskStyles?.syncTheme?.();
         ensureRows(status);
         const byId = new Map();
@@ -700,7 +714,7 @@
         syncDrawnRows(page, status, ctx, list, season?.rows?.displayMissing ? (parts.drawn || new Set()) : new Set(), byNumber);
         decorateBanner(parts.banner, status);
         syncNote(page, parts.banner ? null : list, status);
-        // A refused press's focus survives the page being drawn again.
+        // Every checked press keeps its semantic origin through all of these renderers.
         focusStable();
     }
 
@@ -995,7 +1009,6 @@
         if (JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
         const binding = bindingOf([ep], target.statusRef);
         const instanceId = intent ? intent.instance : adminInstance([ep], target.statusRef, ep.key, caps);
-        const place = button?.closest('.listItem') || null;
         busy.add(ep.episode);
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
@@ -1008,7 +1021,7 @@
             busy.delete(ep.episode);
         }
         if (JE.arrAsk.epoch() !== started) return;
-        if (result && pressRefusal(result, button)) return;
+        if (result && pressRefusal(result)) return;
         if (!result) {
             // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
             // edition of its binding, only while that ask reaches the copy.
@@ -1023,15 +1036,6 @@
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
         JE.internals?.arrStatusEpisodes?.apply?.();
-        // The outcome takes the focus the button had (keyboard and TV users stay in place).
-        if (button && !document.contains(button)) {
-            const holder = place && document.contains(place) ? place : document.querySelector(`.je-ask-row[data-je-ask-episode="${ep.episode}"]`);
-            const focusTarget = holder?.querySelector('.je-ask-searched, .je-ask-get, .je-arr-chip') || null;
-            if (focusTarget) {
-                if (focusTarget.tagName !== 'BUTTON') focusTarget.tabIndex = -1;
-                focusTarget.focus();
-            }
-        }
     }
 
     /**
@@ -1050,8 +1054,6 @@
         const target = season;
         const rows = target?.rows;
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
-        const place = button?.closest('.listItem, .je-arr-banner') || null;
-        const placeEpisode = place?.classList.contains('je-ask-row') ? place.dataset.jeAskEpisode : null;
         // Seerr mode: the button asks for the whole season, so every episode of it waits for the answer.
         const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
         affected.forEach(n => busy.add(n));
@@ -1079,7 +1081,7 @@
         }
         // Answered after a sign-out: the next person is not told about it.
         if (!result || result.stale || JE.arrAsk.epoch() !== started) return;
-        if (pressRefusal(result, button)) return;
+        if (pressRefusal(result)) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('tv') : null;
         const words = JE.arrAsk.describe(result, caps, allowance);
@@ -1093,17 +1095,6 @@
         JE.arrAsk.toast(words.text);
         if (stillHere) {
             JE.internals?.arrStatusEpisodes?.apply?.();
-            // The new chip takes the focus the button had (keyboard and TV users stay in place).
-            if (button && !document.contains(button)) {
-                let holder = place && document.contains(place) ? place : null;
-                if (!holder && placeEpisode) holder = document.querySelector(`.je-ask-row[data-je-ask-episode="${placeEpisode}"]`);
-                if (!holder && place?.classList.contains('je-arr-banner')) holder = document.querySelector('#itemDetailPage:not(.hide) .je-arr-banner');
-                const focusTarget = holder?.querySelector('.je-ask-banner-action .je-arr-chip, .je-arr-chip') || null;
-                if (focusTarget) {
-                    focusTarget.tabIndex = -1;
-                    focusTarget.focus();
-                }
-            }
             // The server's truth is read again through JE.arrAsk.onChange (see initialize).
         }
     }
@@ -1112,12 +1103,11 @@
      * The server refused a press (D53, edition round 19): it no longer does what it was drawn to do, or it couldn't be checked.
      * Nothing was sent: the page is drawn again and the person told. False for any other answer.
      * @param {Object} result The answer ({@link JE.arrAsk.ask}, adminSearch or familySearch).
-     * @param {HTMLElement|null} button The control pressed.
      * @returns {boolean} It was a press refusal.
      */
-    function pressRefusal(result, button) {
+    function pressRefusal(result) {
         if (result?.reason !== 'press_changed' && result?.reason !== 'press_unverified') return false;
-        refused(tr(result.reason === 'press_unverified' ? 'arr_ask_check_failed' : 'arr_ask_changed'), button);
+        refused(tr(result.reason === 'press_unverified' ? 'arr_ask_check_failed' : 'arr_ask_changed'));
         return true;
     }
 
@@ -1599,7 +1589,7 @@
             numbers.forEach(n => busy.delete(n));
         }
         if (JE.arrAsk.epoch() !== started) return;
-        if (result && pressRefusal(result, button)) return;
+        if (result && pressRefusal(result)) return;
         // A household Search asks for what no request sent yet (like Get them), in the edition of its binding, only while
         // that ask reaches the copy.
         const mayAsk = !instanceId && (!binding || (binding.search && binding.ask));
@@ -1618,13 +1608,6 @@
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
         JE.internals?.arrStatusEpisodes?.apply?.();
-        if (button && !document.contains(button)) {
-            const focusTarget = document.querySelector('#itemDetailPage:not(.hide) .je-arr-banner .je-ask-banner-action .je-ask-searched, #itemDetailPage:not(.hide) .je-arr-banner .je-ask-get');
-            if (focusTarget) {
-                if (focusTarget.tagName !== 'BUTTON') focusTarget.tabIndex = -1;
-                focusTarget.focus();
-            }
-        }
     }
 
     /**
@@ -1677,7 +1660,7 @@
             get.classList.add('je-ask-get-large');
             if (opener && opener !== document.body) {
                 const row = opener.closest?.('.listItem, .je-arr-banner') || null;
-                origins.set(get, { el: opener, episode: opener.dataset?.jeAskEpisode || row?.dataset?.jeAskEpisode || null, focusKey: opener.dataset?.jeFocus || null, neighbours: neighboursOf(row) });
+                origins.set(get, { el: opener, page: opener.closest?.('#itemDetailPage') || null, episode: opener.dataset?.jeAskEpisode || row?.dataset?.jeAskEpisode || null, focusKey: opener.dataset?.jeFocus || null, neighbours: neighboursOf(row) });
             }
             get.addEventListener('click', () => close());
             actions.appendChild(get);
@@ -1748,6 +1731,7 @@
      * @returns {void}
      */
     function clear(page) {
+        pendingFocus = null;
         closeDialog();
         (page || document).querySelectorAll('.je-ask-row, .je-ask-get, .je-ask-searched, .je-ask-paused, .je-ask-paused-note, .je-ask-ring, .je-ask-banner-action, .je-ask-meta').forEach(n => n.remove());
         (page || document).querySelectorAll('.je-ask-dim, .je-ask-native-label-off').forEach(n => n.classList.remove('je-ask-dim', 'je-ask-native-label-off'));
@@ -1770,6 +1754,7 @@
             season = again;
             load(again);
         });
+        JE.core?.navigation?.onNavigate?.(() => { pendingFocus = null; });
     }
 
     JE.session?.onUserChange?.('arr-ask-episodes', () => {
@@ -1785,6 +1770,6 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskEpisodes = { initialize, chip, drawn, decorate, clear, isMissing, askable, offerable, requestState, getEpisodes, searchEpisode, searchBanner, openDetails, closeDialog, adminSearchable, stop: () => { if (unsubscribe) unsubscribe(); } };
+    JE.internals.arrAskEpisodes = { initialize, chip, drawn, decorate, clear, isMissing, askable, offerable, requestState, getEpisodes, searchEpisode, searchBanner, openDetails, closeDialog, adminSearchable, stop: () => { pendingFocus = null; if (unsubscribe) unsubscribe(); } };
     JE.initializeArrAskEpisodes = initialize;
 })(window.JellyfinEnhanced);
