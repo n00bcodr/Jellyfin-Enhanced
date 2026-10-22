@@ -98,8 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public string? Fingerprint { get; init; }
 
         /// <summary>
-        /// The connection a destructive action's confirmation must have been issued for (an opaque tag of the connection the
-        /// action was checked on): a token confirmed on another connection is refused. Null: the target alone.
+        /// The original checked connection's opaque tag, saved with the durable command before transport. A destructive
+        /// confirmation must name this connection too: a token from another connection is refused. Null when no client is bound.
         /// </summary>
         public string? Binding { get; init; }
     }

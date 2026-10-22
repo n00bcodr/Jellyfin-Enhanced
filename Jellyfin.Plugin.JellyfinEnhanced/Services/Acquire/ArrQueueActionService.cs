@@ -322,6 +322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 IdempotencyKey = input.IdempotencyKey,
                 Tier = ArrActionTier.Safe,
                 Fingerprint = Identity(input),
+                Binding = ArrClientFactory.Tag(bound),
                 Details = details,
                 Timeout = TimeSpan.FromSeconds(30),
                 Execute = async ct =>

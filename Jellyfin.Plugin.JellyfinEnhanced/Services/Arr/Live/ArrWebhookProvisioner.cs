@@ -202,6 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 UserId = userId,
                 UserName = userName,
                 IdempotencyKey = idempotencyKey,
+                Binding = bound.Ok ? ArrClientFactory.Tag(bound.Value!) : null,
                 Fingerprint = ArrActionRunner.Identity("webhook.provision", instance.Id, "notification:webhook", hookUrl),
                 Tier = ArrActionTier.Change,
                 Details = new Dictionary<string, string> { ["url"] = hookUrl },
@@ -302,6 +303,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 UserId = userId,
                 UserName = userName,
                 IdempotencyKey = idempotencyKey,
+                Binding = bound.Ok ? ArrClientFactory.Tag(bound.Value!) : null,
                 Tier = ArrActionTier.Change,
                 Execute = async ct =>
                 {

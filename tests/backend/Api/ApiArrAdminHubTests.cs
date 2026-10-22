@@ -1010,6 +1010,44 @@ public class ApiArrAdminHubTests
         Assert.Single(r.Sonarr.Writes, write => write.Path == "/api/v3/command");
     }
 
+    [Theory]
+    [InlineData("search", "dl2")]
+    [InlineData("retry_import", "dl3")]
+    public async Task QueueCommandsPersistTheirOriginalBindingBeforeTransport(string action, string download)
+    {
+        using var rig = new Rig();
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(3, 45745, "Sintel", state: "importPending", status: "warning"));
+        await rig.Warm();
+        const string key = "bound-command";
+        var path = Path.Combine(Path.GetDirectoryName(rig.Audit.FilePath)!, AcquireDatabase.FileName);
+        using var db = new AcquireDatabase(path);
+        string? Binding(AcquireDatabase data, bool sending = false) => data.Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT binding,state,command FROM retry_owners WHERE retry_key=$key";
+            cmd.Parameters.AddWithValue("$key", key);
+            using var row = cmd.ExecuteReader();
+            Assert.True(row.Read(), "The reserved owner row must exist before transport.");
+            if (sending) Assert.Equal("sending", row.GetString(1));
+            Assert.False(row.IsDBNull(2));
+            using var command = JsonDocument.Parse(row.GetString(2));
+            Assert.Equal("queue." + action, command.RootElement.GetProperty("Action").GetString());
+            return row.IsDBNull(0) ? null : row.GetString(0);
+        });
+        var expected = ArrClientFactory.Tag(rig.Arr.Factory.For(rig.Instance("RadarrMainZ").Id).Value!);
+        var captured = new List<string?>();
+        rig.Radarr.Before = (route, _) =>
+        {
+            if (route == "/api/v3/command") captured.Add(Binding(db, sending: true));
+            return Task.CompletedTask;
+        };
+        var result = Json(await Act(rig, rig.AdminUser, "RadarrMainZ", download, action, key: key));
+        Assert.Equal("Succeeded", result.GetProperty("status").GetString());
+        Assert.Equal(expected, Assert.Single(captured));
+        using var reopened = new AcquireDatabase(path);
+        Assert.Equal(expected, Binding(reopened));
+    }
+
 }
 
 /// <summary>Shared helper: adds a path mapping to every instance row of a JSON list.</summary>
@@ -1021,5 +1059,7 @@ internal static class IntegrationArrBridgeTestsAccess
         foreach (var row in rows) row!["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = arr, ["JellyfinPath"] = jf });
         return rows.ToJsonString();
     }
+
+
 
 }

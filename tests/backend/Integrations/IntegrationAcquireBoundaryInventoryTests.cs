@@ -112,6 +112,22 @@ public class IntegrationAcquireBoundaryInventoryTests
             Assert.Contains("PressChecks.IncomingIdentity(", File.ReadAllText(Path.Combine(root, file)));
     }
 
+    [Fact]
+    public void EveryBoundQueueAndWebhookActionPersistsItsConnectionTag()
+    {
+        var root = Root();
+        foreach (var name in new[] { "RemoveRequest", "CommandRequest" })
+        {
+            var body = Method(File.ReadAllText(Path.Combine(root, "Services/Acquire/ArrQueueActionService.cs")), name);
+            Assert.Contains("Binding = ArrClientFactory.Tag(bound)", body);
+        }
+        foreach (var name in new[] { "ProvisionLockedAsync", "RemoveLockedAsync" })
+        {
+            var body = Method(File.ReadAllText(Path.Combine(root, "Services/Arr/Live/ArrWebhookProvisioner.cs")), name);
+            Assert.Contains("Binding = bound.Ok ? ArrClientFactory.Tag(bound.Value!) : null", body);
+        }
+    }
+
     private static IEnumerable<string> Files(string root) => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
         .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar));
 }

@@ -842,4 +842,46 @@ public class ApiArrLiveRoutesTests
         Assert.Single(r.Radarr.Notifications);
     }
 
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WebhookActionsPersistTheirOriginalBindingBeforeTransport(bool remove)
+    {
+        using var rig = new Rig();
+        if (remove)
+            Assert.Equal(ArrActionStatus.Succeeded, (await rig.Provisioner.ProvisionAsync(rig.Instance, "http://jellyfin.lan", rig.UserId, null, "prepare-hook", default)).Status);
+        const string key = "bound-hook";
+        var path = Path.Combine(Path.GetDirectoryName(rig.Audit.FilePath)!, AcquireDatabase.FileName);
+        using var db = new AcquireDatabase(path);
+        string? Binding(AcquireDatabase data, bool sending = false) => data.Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT binding,state,command FROM retry_owners WHERE retry_key=$key";
+            cmd.Parameters.AddWithValue("$key", key);
+            using var row = cmd.ExecuteReader();
+            Assert.True(row.Read(), "The reserved owner row must exist before transport.");
+            if (sending) Assert.Equal("sending", row.GetString(1));
+            Assert.False(row.IsDBNull(2));
+            using var command = JsonDocument.Parse(row.GetString(2));
+            Assert.Equal(remove ? "webhook.remove" : "webhook.provision", command.RootElement.GetProperty("Action").GetString());
+            return row.IsDBNull(0) ? null : row.GetString(0);
+        });
+        var expected = ArrClientFactory.Tag(rig.Arr.Factory.For(rig.Instance.Id).Value!);
+        var captured = new List<string?>();
+        rig.Radarr.Before = (route, _) =>
+        {
+            if (route == "/api/v3/notification") captured.Add(Binding(db, sending: true));
+            return Task.CompletedTask;
+        };
+        var outcome = remove
+            ? await rig.Provisioner.RemoveAsync(rig.Instance, rig.UserId, null, key, default)
+            : await rig.Provisioner.ProvisionAsync(rig.Instance, "http://jellyfin.lan", rig.UserId, null, key, default);
+        Assert.Equal(ArrActionStatus.Succeeded, outcome.Status);
+        Assert.NotEmpty(captured);
+        Assert.All(captured, binding => Assert.Equal(expected, binding));
+        using var reopened = new AcquireDatabase(path);
+        Assert.Equal(expected, Binding(reopened));
+    }
+
 }
