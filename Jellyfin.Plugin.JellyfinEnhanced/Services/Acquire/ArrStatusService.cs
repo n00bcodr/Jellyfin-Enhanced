@@ -391,7 +391,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _ => seerr ? null : _store.Registry.DefaultFor(ArrKind.Sonarr, edition == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id,
             };
             // The copy the press acts for is held where its binding says, whatever that instance's role is labelled.
-            Func<ArrConnection, bool> depends = i => PressDepends(i, edition, destination) || (intent.Copy != null && string.Equals(i.Role, intent.Copy, StringComparison.Ordinal));
+            // Seerr owns its title-wide request and selects its server. JE discovery, connection proof and downloads
+            // are prerequisites only for a JE command, on both real and synthetic season pages.
+            Func<ArrConnection, bool>? depends = seerr ? null : i => PressDepends(i, edition, destination) || (intent.Copy != null && string.Equals(i.Role, intent.Copy, StringComparison.Ordinal));
             // Not a library item the viewer opens: a synthetic absent season page, resolved as the page itself for the viewer.
             AbsentTitle? absent = null;
             if (_view.Resolve(itemId, viewer) == null && pages != null)
@@ -416,7 +418,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin, out var bound) is { } refusal) return new PressProof(refusal);
                 // An episode the press names is under way on an instance it depends on (any of its copies): no longer missing.
                 var named = (intent.Episodes ?? Array.Empty<int>()).ToHashSet();
-                if (gather.UnderWay.Any(u => u.Title.Equals(title) && u.Season == season && named.Contains(u.Episode))) return PressProof.Changed;
+                if (!seerr && gather.UnderWay.Any(u => u.Title.Equals(title) && u.Season == season && named.Contains(u.Episode))) return PressProof.Changed;
                 return resolve ? Resolve(gather, pressed, season, bound) : new PressProof(null);
             }
             // The command the check proves: built only from what was just compared and read (nothing chosen before the check).

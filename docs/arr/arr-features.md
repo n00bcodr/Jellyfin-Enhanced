@@ -1343,6 +1343,7 @@ Approved requests go out through the request handling the administrator chose: s
       while it isn't in the library, say) is known by its TVDB id only; Jellyfin Enhanced finds its TMDB id on TMDB
       (through the shared TMDB cache, so it needs the TMDB API key) and sends it under that. Without one it waits
       (`title_not_found`).
+    - Ordinary Seerr requests do not require JE's Sonarr discovery or download checks; an unrelated JE instance being unavailable does not block them.
     - Seerr picks the server a request goes to (its default for the edition); Jellyfin Enhanced never names one. Buttons
       that act on one copy of a title (**Get them in 4K** on a 4K copy's season, an administrator's **Search in 4K**) need
       the Jellyfin Enhanced request backend and aren't offered in Seerr mode; Seerr's standard and 4K requests work as usual.
