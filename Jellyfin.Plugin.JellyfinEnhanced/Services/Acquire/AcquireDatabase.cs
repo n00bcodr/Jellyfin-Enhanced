@@ -518,9 +518,12 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     _logger?.Error("Requests & downloads: " + _unavailable);
                     return;
                 }
+                // Keep one original preimage for versioned migrations and additive repairs together.
+                var migrationBackedUp = false;
                 if (version < Migrations.Count && existed && version > 0)
                 {
                     BackupBeforeMigration(connection, version);
+                    migrationBackedUp = true;
                 }
                 for (var v = version; v < Migrations.Count; v++)
                 {
@@ -534,14 +537,13 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     transaction.Commit();
                     _logger?.Info($"Requests & downloads: database migrated to schema {v + 1}.");
                 }
-                var extensionBackedUp = false;
                 // Earlier phase-3a installations already have schema 2. Extend that migration idempotently.
                 using (var columns = connection.CreateCommand())
                 {
                     columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
                     if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
-                        if (existed && version >= 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && version >= 2 && !migrationBackedUp) { BackupBeforeMigration(connection, version); migrationBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
@@ -563,7 +565,11 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                     {
                         columns.CommandText = addTarget ? "SELECT COUNT(*) FROM wants" : "SELECT COUNT(*) FROM wants WHERE target_key='' AND status IN ('pending','queued','sent','stale')";
                         var repairsRows = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
-                        if (existed && version >= 2 && !extensionBackedUp && (addTarget || addJob || repairsRows)) BackupBeforeMigration(connection, version);
+                        if (existed && version >= 2 && !migrationBackedUp && (addTarget || addJob || repairsRows))
+                        {
+                            BackupBeforeMigration(connection, version);
+                            migrationBackedUp = true;
+                        }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;

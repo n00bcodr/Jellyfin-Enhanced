@@ -223,12 +223,36 @@ public class IntegrationRequestReviewRound1Tests
             cmd.CommandText = "INSERT INTO acquisitions VALUES('a',$key,'standard','active',1); INSERT INTO wants(id,acquisition_id,user_id,client_request_id,fingerprint,title_key,variant,mutation_input,owned_input,status,reason,cost,parental_signature,created_at,updated_at) VALUES('w','a',$u,'k','f',$key,'standard',$input,$input,'queued','queued_outage',0,'null',1,1); INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope) VALUES('r','w',$u,0,2,'charged',1,'initial');";
             cmd.Parameters.AddWithValue("$key", input.Key); cmd.Parameters.AddWithValue("$u", user); cmd.Parameters.AddWithValue("$input", input.Canonical); cmd.ExecuteNonQuery();
         }
+        Dictionary<string, byte[]>? originalFiles = null;
         for (var pass = 0; pass < 2; pass++)
         {
             using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             Assert.Equal(2, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT episode_count FROM reservations WHERE id='r'"; return Convert.ToInt32(cmd.ExecuteScalar()); }));
+            var files = Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*").ToDictionary(p => p, File.ReadAllBytes);
+            if (originalFiles is null) originalFiles = files;
+            else
+            {
+                Assert.Equal(originalFiles.Keys.OrderBy(p => p), files.Keys.OrderBy(p => p));
+                foreach (var file in originalFiles) Assert.Equal(file.Value, files[file.Key]);
+            }
         }
-        Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*"));
+        var copies = Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*");
+        Assert.NotEmpty(copies);
+        foreach (var copy in copies)
+        {
+            using var original = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + copy);
+            original.Open(); using var saved = original.CreateCommand();
+            saved.CommandText = "PRAGMA user_version";
+            Assert.Equal(2L, (long)saved.ExecuteScalar()!);
+            saved.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
+            Assert.Equal(0L, (long)saved.ExecuteScalar()!);
+            saved.CommandText = "SELECT COUNT(*) FROM wants WHERE id='w' AND user_id=$user AND client_request_id='k' AND owned_input=$input";
+            saved.Parameters.AddWithValue("$input", input.Canonical); saved.Parameters.AddWithValue("$user", user);
+            Assert.Equal(1L, (long)saved.ExecuteScalar()!);
+            saved.CommandText = "SELECT state || '|' || scope FROM reservations WHERE id='r'";
+            Assert.Equal("charged|initial", (string)saved.ExecuteScalar()!);
+        }
+        Assert.Single(copies);
     }
 
     [Fact]
