@@ -40,8 +40,11 @@
      * Automatically dismisses after {@link UNDO_TOAST_DURATION}.
      * @param {string} itemName Display name of the hidden item.
      * @param {string} itemId Storage key used to unhide if the user clicks Undo.
+     * @param {Object} [owner] The owner the Hide was written for. Hidden from inside a window (More Info), the toast is
+     *     that window's (D46S2-R13-9): it is shown inside it, so its Undo is live, focusable and pressable while the
+     *     window is the topmost surface, covered with it by a newer one, and gone when it closes. Else the page's.
      */
-    function showUndoToast(itemName, itemId) {
+    function showUndoToast(itemName, itemId, owner) {
         const action = JE.createSessionAction();
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
@@ -94,7 +97,9 @@
         });
         toast.appendChild(undoBtn);
 
-        document.body.appendChild(toast);
+        const surface = owner ? JE.surfaceOf?.(owner) : null;
+        if (surface) surface.appendChild(toast);
+        else document.body.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add('je-visible'));
 
         dismissTimer = setTimeout(() => {

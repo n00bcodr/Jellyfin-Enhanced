@@ -43,7 +43,10 @@
     /** Ends every operation started so far (a user switch, the feature going off, disposal). */
     function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
-    /** Releases every operation that has ended (D46S2-R11-13): each route change prunes the registry. */
+    /**
+     * Releases every operation that has ended (D46S2-R11-13): each route change and each reconciliation pass (once per
+     * pass, D46S2-R13-1) prunes the registry.
+     */
     const prune = () => { for (const token of live) if (!token.current()) live.delete(token); };
     for (const type of ['hashchange', 'popstate', 'je:navigate']) window.addEventListener(type, () => queueMicrotask(prune));
     // Leaving the document (pagehide, freeze) and coming back (pageshow from the cache, resume) end every operation in
@@ -304,5 +307,5 @@
     }
     /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
     const registrySize = () => live.size;
-    Object.assign(A, { context, fromKey, routeKey, generation, finish, release, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
+    Object.assign(A, { context, fromKey, routeKey, generation, finish, release, end, prune, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
 })(window.JellyfinEnhanced);

@@ -115,7 +115,8 @@
                 // Taken after another account signed in (D46S2-R12-4): the origin's rule changed on the server; the new
                 // account's rules and page are not touched.
                 else if (written?.outcome === 'accepted') return false;
-                else if (err?.name === 'AbortError' && !submitted.writable()) return false;
+                // Never sent (D46S2-R13-5: the transport's outcome decides, never the error's name): nothing changed.
+                else if (written?.outcome === 'unsent') return false;
                 else throw err;
             }
             if (!action.current()) return false;
@@ -140,7 +141,7 @@
             // Feedback is a page effect (D46S2-R11-8): only while its owner is current (the library's own owner-less path:
             // its session, checked above); a write the server took after its owner ended changes state, not the page.
             if (accepted) return false;
-            if (hidden && (!owner || submitted.current())) showUndoToast(item.name, title.key);
+            if (hidden && (!owner || submitted.current())) showUndoToast(item.name, title.key, owner ? submitted.owner : null);
             return true;
         }));
         ruleWrites.set(title.key, task);

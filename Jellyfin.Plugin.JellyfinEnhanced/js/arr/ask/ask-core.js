@@ -21,7 +21,13 @@
     const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked', 'no_4k_instance']);
 
     let meState = null; // { at, epoch (cacheEpoch), promise, value }
-    /** @type {Map<string, string>} input fingerprint -> clientRequestId kept until a definitive answer */
+    /**
+     * The pending submission of each input fingerprint (D46S2-R13-4): { id: its clientRequestId, epoch: the session it
+     * started in }, kept until that submission's definitive answer. A retry of the same pending ask reuses it; an answer
+     * removes only its own submission's entry, and only while that entry is still the installed one, so an older ask
+     * answered late (after a newer one replaced it, or after another account signed in) never takes a newer ask's id.
+     * @type {Map<string, {id: string, epoch: number}>}
+     */
     const openIds = new Map();
     /** @type {Set<Function>} */
     const listeners = new Set();
@@ -340,9 +346,14 @@
     async function ask(input, options) {
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
         const print = fingerprint(input);
-        const clientRequestId = options?.clientRequestId || openIds.get(print) || newClientId();
-        openIds.set(print, clientRequestId);
         const started = epoch();
+        const installed = openIds.get(print);
+        const entry = installed && installed.epoch === started && (!options?.clientRequestId || options.clientRequestId === installed.id)
+            ? installed : { id: options?.clientRequestId || newClientId(), epoch: started };
+        openIds.set(print, entry);
+        const clientRequestId = entry.id;
+        /** A definitive answer ends this submission: its own entry goes, never one that replaced it. */
+        const settle = () => { if (openIds.get(print) === entry) openIds.delete(print); };
         let answer;
         try {
             answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal, bound: options?.bound });
@@ -352,10 +363,10 @@
             // surfaces showing the title re-read) with no page effect (`stale`: nobody is told on a newer page).
             // Answered after another account signed in (D46S2-R12-4): still accepted — the origin's key is spent and its
             // caches went with its session (onUserChange) — and nothing reaches the new account (no change event).
-            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
-            if (written?.outcome === 'accepted') {
+            const written = JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : { outcome: 'failed', sent: false };
+            if (written.outcome === 'accepted') {
                 const answered = written.answer || {};
-                if (!(answered.status >= 500)) openIds.delete(print);
+                if (!(answered.status >= 500)) settle();
                 const result = { ...interpret(answered.status || 0, answered.body), clientRequestId, stale: true, accepted: true, sessionChanged: written.sessionChanged };
                 if (!written.sessionChanged && started === epoch() && (result.ok || result.state === 'unknown')) {
                     meState = null;
@@ -364,14 +375,24 @@
                 }
                 return result;
             }
-            // Bound to an operation or session that ended before the send (unsent): nothing was sent, nothing to say.
-            if (err?.name === 'AbortError' && options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
-            if (err?.name === 'AbortError') throw err;
+            // Never sent (D46S2-R13-5: the transport's outcome says so, never the error's name): bound to an operation or
+            // session that ended before the send, nothing was sent and there is nothing to say; a caller's own abort
+            // before the send is its own.
+            if (written.outcome === 'unsent') {
+                if (options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
+                if (err?.name === 'AbortError') throw err;
+            }
+            // Sent, and its answer lost (an abort or a network failure after the send): the server may or may not have
+            // taken it. Uncertain, never an unsent cancellation; the id stays, so a retry is the same ask.
+            if (written.sent) {
+                console.warn(`${logPrefix} ask sent, no answer (${err?.message || err})`);
+                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'uncertain', certainty: '', requestId: null, clientRequestId, sent: true };
+            }
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };
         }
         // A server error may or may not have recorded the ask: keep the id so a retry is the same ask.
-        if (answer.status < 500) openIds.delete(print);
+        if (answer.status < 500) settle();
         const result = { ...interpret(answer.status, answer.body), clientRequestId };
         if (started !== epoch()) return { ...result, stale: true };
         if (result.ok || result.state === 'unknown') {
@@ -402,6 +423,8 @@
             // Taken after another account signed in (D46S2-R12-4): it happened, for the origin only; nothing for the new one.
             else if (written?.outcome === 'accepted') return { ...interpret(written.answer?.status || 0, written.answer?.body), requestId, stale: true, accepted: true, sessionChanged: true };
             else if (written?.outcome === 'unsent') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId, stale: true };
+            // Sent with its answer lost: uncertain, said as a failure to retry, never as never-sent (D46S2-R13-5).
+            else if (written?.sent) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'uncertain', certainty: '', requestId, sent: true };
             else {
                 console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
                 return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
@@ -708,16 +731,18 @@
     async function adminSearch(key, instanceId, options) {
         let answer;
         let accepted = false;
+        let sessionChanged = false;
         try {
             answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said);
-            // after another account signed in (D46S2-R12-4): accepted for the origin, nothing for the new account.
-            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
-            if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
-            else if (written?.outcome === 'accepted') return { ok: true, state: 'accepted', chip: '', text: '', tone: '', stale: true, accepted: true, sessionChanged: true };
-            else if (err?.name === 'AbortError') throw err;
-            else return { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: err?.message || String(err) }), tone: 'attention' };
+            // Three outcomes (D46S2-R11-9), decided by the transport (D46S2-R13-5), never by the error's name: answered
+            // after its owner ended or after another account signed in → the answer is read below like any other
+            // (D46S2-R13-6) and only its origin is reconciled; never sent → the caller's never-sent abort; sent with its
+            // answer lost → a failure to report (it may have run).
+            const written = searchOutcome(err);
+            if (written.outcome === 'accepted') { answer = written.answer || { status: 0, body: null }; accepted = true; sessionChanged = written.sessionChanged; }
+            else if (written.outcome === 'unsent' && err?.name === 'AbortError') throw err;
+            else return { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: err?.message || String(err) }), tone: 'attention', ...(written.sent ? { sent: true } : {}) };
         }
         const body = answer.body || {};
         let result;
@@ -731,8 +756,23 @@
         } else {
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
-        if (result.ok) emit({ type: 'search', key, result });
-        return accepted ? { ...result, stale: true, accepted: true } : result;
+        return searched(result, key, accepted, sessionChanged);
+    }
+
+    /** The transport's outcome of a Search's error (D46S2-R13-5): unsent, accepted (answered after its owner ended) or failed (`sent`). */
+    function searchOutcome(err) {
+        return JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : { outcome: err?.name === 'AbortError' ? 'unsent' : 'failed', sent: false };
+    }
+
+    /**
+     * A Search's interpreted answer as its caller gets it (D46S2-R13-6): answered for a current owner, the title's
+     * surfaces re-read on success; answered after its owner ended, `stale` and `accepted` with the same business
+     * result (a rejection stays a failure, a success a success) and the origin session's surfaces re-read; answered
+     * after another account signed in, also `sessionChanged`, and nothing reaches the new account.
+     */
+    function searched(result, key, accepted, sessionChanged) {
+        if (result.ok && !sessionChanged) emit({ type: 'search', key, result });
+        return accepted ? { ...result, stale: true, accepted: true, ...(sessionChanged ? { sessionChanged: true } : {}) } : result;
     }
 
     /**
@@ -741,7 +781,8 @@
      * scope that has been missing for a long while, the server runs the arr's search for exactly those
      * again (no new request, nothing charged, no OK needed) and says what it found. Resolves null when
      * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
-     * may not): the caller then asks for it instead, as before.
+     * may not): the caller then asks for it instead, as before. An answer that came after the Search's owner ended (or
+     * after another account signed in) never resolves null: it starts no ask (state 'skipped', `stale`).
      * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
      * @param {{bound?: Object}} [options] bound: the operation's transport binding (as {@link adminSearch}).
      * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}|null>} Result, or null to ask instead.
@@ -751,15 +792,16 @@
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
         let accepted = false;
+        let sessionChanged = false;
         try {
             answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said);
-            // after another account signed in (D46S2-R12-4): accepted for the origin, nothing for the new account.
-            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
-            if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
-            else if (written?.outcome === 'accepted') return { ok: true, state: 'accepted', chip: '', text: '', tone: '', stale: true, accepted: true, sessionChanged: true };
-            else if (err?.name === 'AbortError') throw err;
+            // As adminSearch (D46S2-R11-9, R13-5, R13-6). Nothing went out (no answer and never sent): ask instead, as
+            // before; sent with its answer lost: a failure to report, never a new ask for what may have run.
+            const written = searchOutcome(err);
+            if (written.outcome === 'accepted') { answer = written.answer || { status: 0, body: null }; accepted = true; sessionChanged = written.sessionChanged; }
+            else if (written.outcome === 'unsent' && err?.name === 'AbortError') throw err;
+            else if (written.sent) return { ok: false, state: 'failed', chip: '', text: tr('arr_search_failed_family'), tone: 'attention', sent: true };
             else return null;
         }
         const body = answer.body || {};
@@ -772,7 +814,9 @@
         } else if (answer.status >= 500) {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_search_failed_family'), tone: 'attention' };
         } else if (answer.status !== 200 || body.outcome === 'skipped') {
-            return null;
+            // Nothing to search for it: the caller asks instead — only for a current owner.
+            if (!accepted) return null;
+            result = { ok: false, state: 'skipped', chip: '', text: '', tone: '' };
         } else if (body.found === true) {
             result = { ok: true, state: 'found', chip: tr('arr_search_found_chip'), text: tr('arr_search_found'), tone: 'downloading' };
         } else if (body.found === false) {
@@ -780,8 +824,7 @@
         } else {
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
-        if (result.ok) emit({ type: 'search', key: k, result });
-        return accepted ? { ...result, stale: true, accepted: true } : result;
+        return searched(result, k, accepted, sessionChanged);
     }
 
     /**

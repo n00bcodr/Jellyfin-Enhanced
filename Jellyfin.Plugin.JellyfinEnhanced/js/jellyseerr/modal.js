@@ -51,6 +51,7 @@
      *   closes when that owner ends (its session, document or route), and onSave runs only while it is current.
      * @returns {object} - An object with methods to show and close the modal.
      */
+    let titles = 0;
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
         const submitted = JE.captureSubmitted(operation);
         const modalElement = document.createElement('div');
@@ -73,16 +74,18 @@
         const contentEl = document.createElement('div');
         contentEl.className = 'jellyseerr-season-content';
         contentEl.setAttribute('role', 'document');
-        contentEl.setAttribute('aria-labelledby', 'jellyseerr-modal-title');
 
         const headerEl = document.createElement('div');
         headerEl.className = 'jellyseerr-season-header';
         headerEl.style.cssText = `background-image: ${backdropImage}; background-size: cover; background-position: center;`;
 
         const titleEl = document.createElement('div');
-        titleEl.id = 'jellyseerr-modal-title';
+        // The dialog is named by its own title (D46S2-R13-8), through an id of its own so forms that overlap (one
+        // closing while the next opens) never share it; a heading in the form's body stays body content.
+        titleEl.id = `jellyseerr-modal-title-${++titles}`;
         titleEl.className = 'jellyseerr-season-title';
         titleEl.textContent = title;
+        modalElement.setAttribute('aria-labelledby', titleEl.id);
 
         const subtitleEl = document.createElement('div');
         subtitleEl.className = 'jellyseerr-season-subtitle';

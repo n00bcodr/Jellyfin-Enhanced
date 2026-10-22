@@ -95,11 +95,13 @@ const press = async (page, locator, isMobile) => (isMobile ? locator.tap() : loc
  * Loads jellyfin-web's own input modules for `version` into the page (keyboard navigation enabled; `tv`: its TV layout),
  * plus, with `remote`, its serverNotifications wired to a REAL WebSocket to `remote` (a loopback server the test runs):
  * every server message reaches the page as Chromium delivers one (a trusted MessageEvent), and the host turns a
- * GeneralCommand into inputManager.handleCommand. Resolves once the socket is open.
+ * GeneralCommand into inputManager.handleCommand. `history`: its router's back() goes back in the browser's history
+ * (jellyfin-web's appRouter does), else it only counts (window.backs). Resolves once the socket is open.
  */
-async function loadHost(page, version, { tv = false, remote = null } = {}) {
-  await page.evaluate(async ({ modules, version, tv, remote }) => {
-    const stubs = { 22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } }, 70267: { appRouter: { canGoBack: () => true, back() { window.backs = (window.backs || 0) + 1; } } },
+async function loadHost(page, version, { tv = false, remote = null, history = false } = {}) {
+  await page.evaluate(async ({ modules, version, tv, remote, history }) => {
+    // `history`: the router goes back through the browser's history, as jellyfin-web's appRouter.back() does.
+    const stubs = { 22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } }, 70267: { appRouter: { canGoBack: () => true, back() { window.backs = (window.backs || 0) + 1; if (history) window.history.back(); } } },
       97339: { Y: { Exit: 'Exit' } }, 36300: { Ay: { addEventListener: (t, ty, f, o) => t.addEventListener(ty, f, o), removeEventListener: (t, ty, f, o) => t.removeEventListener(ty, f, o), parentWithClass: (n, c) => n.closest?.('.' + c) } },
       34789: { A: { tv }, default: { tv } }, 46782: { A: { tv }, default: { tv } }, 90381: { A: { enableGamepad: () => false }, default: { enableGamepad: () => false } }, 93599: { Ay: { isEnabled: () => false } } };
     const factories = {}, exports = {};
@@ -129,7 +131,7 @@ async function loadHost(page, version, { tv = false, remote = null } = {}) {
     (notifications.D || notifications.initializeServerConnections)();
     window.remoteMessages = 0;
     socket.addEventListener('message', () => { window.remoteMessages++; });
-  }, { modules: HOST_INPUT[version].modules, version, tv, remote });
+  }, { modules: HOST_INPUT[version].modules, version, tv, remote, history });
 }
 
 /** A loopback WebSocket server (this process): send(command) delivers GeneralCommand `command` to every client. */

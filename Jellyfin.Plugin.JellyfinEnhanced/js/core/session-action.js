@@ -256,12 +256,19 @@
      * event or click() is not a server message.
      */
     function remoteSelect(target) {
+        return target === document.activeElement ? remoteCommand('Select') : null;
+    }
+    /**
+     * The server message being dispatched right now when it is jellyfin-web's remote-control GeneralCommand `name`: a
+     * trusted 'message' of a WebSocket (the browser delivering the server's message), else null.
+     */
+    function remoteCommand(name) {
         const message = window.event;
         if (!message || message.isTrusted !== true || message.type !== 'message' || message.eventPhase === 0 ||
-            typeof WebSocket !== 'function' || !(message.target instanceof WebSocket) || target !== document.activeElement) return null;
+            typeof WebSocket !== 'function' || !(message.target instanceof WebSocket)) return null;
         let data = null;
         try { data = typeof message.data === 'string' ? JSON.parse(message.data) : null; } catch (_) { return null; }
-        return data?.MessageType === 'GeneralCommand' && data.Data?.Name === 'Select' ? message : null;
+        return data?.MessageType === 'GeneralCommand' && data.Data?.Name === name ? message : null;
     }
     // The adapter: jellyfin-web's select() calls the focused element's click(); while that click is dispatched inside a
     // remote Select's server message, its one click event is the viewer's (see hostActivation). Every other click()
@@ -706,9 +713,12 @@
             entry.opener = entry.holder = entry.path = null;
         };
         entry.close = () => { if (entry.closed) return; entry.release(); close(); };
+        // Chronological (D46S2-R13-3): a host dialog that arrived (or left) before this opening is taken into account
+        // first, so it is under the new surface, never pushed above it by a later flush.
+        watchHost();
+        flushHost();
         surfaces.add(entry);
         stack.push(entry);
-        watchHost();
         root.classList.add('focuscontainer');
         if (entry.modal) announce(root, options);
         for (const type of INPUTS) root.addEventListener(type, guard, true);
@@ -839,8 +849,52 @@
         return finish;
     };
 
+    // Remote Back (D46S2-R13-7): another Jellyfin client's GeneralCommand Back reaches jellyfin-web's router with no key
+    // event (10.11.11 and 12.2: serverNotifications → inputManager.handleCommand('back') → appRouter.back() → the
+    // browser's history, all inside the server message's dispatch). While a JE surface is the topmost, that history step
+    // is the surface stack's: the top surface is dismissed once, as Back dismisses it (a form with a history entry of
+    // its own takes that entry back itself), and the router does not navigate. A host dialog on top, or no surface,
+    // keeps the host's own behaviour. Any other history step (the page's, a script's, JE's own) is untouched.
+    const handledBacks = new WeakSet();
+    let dismissing = false;
+    const historyStep = (original, isBack) => function (...args) {
+        if (!dismissing && isBack(args)) {
+            const message = remoteCommand('Back');
+            // One command dismisses one surface: a second history step in the same message changes nothing.
+            if (message && handledBacks.has(message)) return undefined;
+            const top = message ? topmost() : null;
+            if (top && !top.host) {
+                handledBacks.add(message);
+                dismissing = true;
+                try { if (top.dismiss) top.dismiss(message); else top.close(); } finally { dismissing = false; }
+                return undefined;
+            }
+        }
+        return original.apply(this, args);
+    };
+    if (window.History?.prototype) {
+        const history = window.History.prototype;
+        history.back = historyStep(history.back, () => true);
+        history.go = historyStep(history.go, args => Number(args[0]) < 0);
+    }
+
     /** True while `root` is the topmost open surface: Escape and Back act on it only (D46S2 audit S2). */
     JE.isTopmostSurface = root => topmost()?.root === root;
+    /**
+     * The surface feedback for `owner` belongs in (D46S2-R13-9): the newest open modal surface the core registered for
+     * that owner, so an action the feedback offers (Hide's Undo) shares that surface's active or covered state, focus,
+     * keys and accessibility, and goes with it. Null when the owner has none open (the page's own feedback).
+     */
+    JE.surfaceOf = owner => {
+        const token = ownerOf(owner);
+        const surfaces = token ? scopes.get(token) : null;
+        let newest = null;
+        for (const entry of surfaces || []) {
+            if (!entry.root || entry.closed || entry.modal === false || !entry.root.isConnected) continue;
+            if (!newest || stack.indexOf(entry) > stack.indexOf(newest)) newest = entry;
+        }
+        return newest?.root || null;
+    };
     /** True once `root` (a surface) has closed: it is terminal, no input reaches it. */
     JE.surfaceClosed = root => !!root?._jeClosed;
 
