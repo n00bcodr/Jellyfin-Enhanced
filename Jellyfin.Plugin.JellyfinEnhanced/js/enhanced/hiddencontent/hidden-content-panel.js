@@ -262,9 +262,10 @@
                 const card = createItemCard(item, () => overlay.remove());
 
                 card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
+                    const origin = JE.core.userWrite.origin();
                     card.classList.add('je-hidden-item-removing');
                     setTimeout(() => {
-                        unhideItem(item._key || item.itemId);
+                        unhideItem(item._key || item.itemId, origin);
                         card.remove();
                         const remaining = gridContainer.querySelectorAll('.je-hidden-item-card').length;
                         header.querySelector('h2').textContent = `${JE.t('hidden_content_manage_title')} (${remaining})`;
@@ -288,8 +289,9 @@
         toolbar.searchInput.addEventListener('input', () => renderGrid(toolbar.searchInput.value));
 
         toolbar.unhideAllBtn.addEventListener('click', () => {
+            const origin = JE.core.userWrite.origin();
             if (!confirm(JE.t('hidden_content_clear_confirm'))) return;
-            unhideAll();
+            unhideAll(origin);
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'je-hidden-management-empty';
             emptyDiv.textContent = JE.t('hidden_content_manage_empty');

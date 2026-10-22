@@ -19,7 +19,10 @@
      * @param {string} title - Display title of the movie.
      * @param {Object|null} searchResultItem - Original search result data.
      */
-    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
+    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, origin = undefined) {
+        // The request's origin: the click that opened this dialog. Its reads, its Save and the answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
@@ -44,7 +47,9 @@
                 const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
 
                 try {
-                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem);
+                    if (!current()) { JE.core.userWrite.notSent(); closeFn(); return; }
+                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, origin);
+                    if (!current()) return;
                     // Manually update the original button on the card
                     const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
                     if (originalButton) {
@@ -54,6 +59,7 @@
                     }
                     closeFn();
                 } catch (error) {
+                    if (!current()) return;
                     await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'));
                 }
             }
@@ -65,7 +71,7 @@
         if (bodyEl) {
             fetchUserQuota().then(quota => {
                 const chip = internal.buildQuotaChip(quota, 'movie');
-                if (chip && document.body.contains(modalElement)) {
+                if (chip && current() && document.body.contains(modalElement)) {
                     bodyEl.insertBefore(chip, bodyEl.firstChild);
                 }
             }).catch(err => console.warn(`${logPrefix} Quota chip render failed:`, err));
@@ -73,10 +79,11 @@
 
         try {
             const data = await fetchAdvancedRequestData('movie');
+            if (!current()) return;
             populateAdvancedOptions(modalElement, data, 'movie', is4k);
         } catch (error) {
             console.error(`${logPrefix} Failed to load advanced options:`, error);
-            JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
+            if (current()) JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
         }
 
 
@@ -88,7 +95,10 @@
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
      */
-    ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null) {
+    ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null, origin = undefined) {
+        // The requests' origin: the click that opened this dialog (through its reads, its Save and every request of it).
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { fetchCollectionDetails, requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
 
@@ -97,9 +107,11 @@
         try {
             collectionDetails = await fetchCollectionDetails(collectionId);
         } catch (error) {
-            JE.toast(JE.t('jellyseerr_toast_collection_fetch_failed'), 4000);
+            if (current()) JE.toast(JE.t('jellyseerr_toast_collection_fetch_failed'), 4000);
             return;
         }
+        // The read waited: a dialog whose session ended is not opened for the next person.
+        if (!current()) return;
 
         if (!collectionDetails?.parts || collectionDetails.parts.length === 0) {
             JE.toast(JE.t('jellyseerr_toast_no_movies_in_collection'), 4000);
@@ -211,21 +223,30 @@
 
                     let successCount = 0;
                     let otherFailures = 0;
+                    let unconfirmed = 0;
                     let quotaHitError = null;
                     for (const tmdbId of selectedMovies) {
+                        // One action: once its session ended no further title is requested (as anyone), and the
+                        // results are not reported to the next person.
+                        if (!current()) { JE.core.userWrite.notSent(); return; }
                         try {
-                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
+                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem, null, origin);
                             successCount++;
                         } catch (error) {
+                            if (error?.sessionChanged || !current()) return;
                             // Once quota is hit every remaining request will also fail — break.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
                                 quotaHitError = error;
                                 break;
                             }
-                            otherFailures++;
+                            // A lost answer may have been a request made: counted as unconfirmed, never as failed.
+                            if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) unconfirmed++;
+                            else otherFailures++;
                             console.error(`Failed to request movie ${tmdbId}:`, error);
                         }
                     }
+                    if (!current()) return;
+                    if (unconfirmed > 0) JE.core.userWrite.reportUncertain();
 
                     const requestedLabel = JE.t('jellyseerr_toast_collection_requested') || 'Requested';
                     const moviesLabel = JE.t('jellyseerr_toast_movies') || 'movies';

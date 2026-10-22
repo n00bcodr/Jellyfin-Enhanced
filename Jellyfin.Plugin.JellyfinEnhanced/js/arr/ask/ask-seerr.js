@@ -55,6 +55,8 @@
      * @returns {Promise<Object|null>} The ask result, or null.
      */
     async function openSheet(title, options) {
+        // The sheet's origin (its click): what an ask from it shows on the opener belongs to that session only.
+        const origin = JE.core.userWrite.originOf(options?.origin);
         const sheet = JE.arrAskSheet;
         if (!sheet || !title) return null;
         const opener = options?.opener || null;
@@ -62,13 +64,14 @@
         let result = null;
         try {
             result = title.kind === 'movie' && variant === 'standard'
-                ? await sheet.openOrAsk(title, { opener })
-                : await sheet.open(title, { opener, variant });
+                ? await sheet.openOrAsk(title, { opener, origin })
+                : await sheet.open(title, { opener, variant, origin });
         } catch (err) {
             console.warn(`${logPrefix} the request sheet could not open (${err?.message || err})`);
             JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
+        if (!JE.core.userWrite.isBound(origin) || result?.stale) return result;
         if (result && (result.ok || result.state === 'unknown') && opener?.isConnected && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
             if (title.kind !== 'movie') {
                 // A season or an episode asked for leaves the rest to ask for: the button stays and reopens the sheet.
@@ -76,7 +79,10 @@
                 opener.classList.add('je-ask-seerr-asked');
             } else if (variant === 'standard') {
                 // (A 4K ask leaves the standard button as it is; the sheet said what happened.)
-                const said = JE.arrAsk.describe(result, await JE.arrAsk.me(), null);
+                const caps = await JE.arrAsk.me();
+                // The capability read waited: the chip is shown in the ask's session only.
+                if (!JE.core.userWrite.isBound(origin)) return result;
+                const said = JE.arrAsk.describe(result, caps, null);
                 if (said.chip) {
                     opener.disabled = true;
                     opener.textContent = said.chip;
@@ -165,8 +171,12 @@
      * @param {string} [collectionName] Collection name.
      * @returns {Promise<void>}
      */
-    async function collectionAsk(collectionId, collectionName) {
+    async function collectionAsk(collectionId, collectionName, origin) {
+        // The asks' origin: the click that opened this picker (through its reads, its Save and every ask of it).
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const caps = await JE.arrAsk.me();
+        if (!current()) return;
         if (!JE.arrAsk.canAsk(caps, 'movie')) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return;
@@ -263,13 +273,15 @@
                 button.disabled = true;
                 const results = [];
                 for (const tmdbId of ids) {
+                    // One action: no further ask once its session ended, and nothing reported to the next person.
+                    if (!current()) { JE.core.userWrite.notSent(); return; }
                     let result;
                     try {
-                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`));
+                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`), { session: origin });
                     } catch {
                         result = { ok: false, state: 'failed' };
                     }
-                    if (result?.stale) return;
+                    if (result?.stale || !current()) return;
                     results.push(result || { ok: false, state: 'failed' });
                 }
                 const line = JE.internals?.arrAskCollection?.summarize?.(results, caps);

@@ -729,7 +729,9 @@
      * Saves the changes (after the confirmation) and says how it went; reads the rules again.
      * @returns {Promise<void>}
      */
-    async function save() {
+    async function save(origin) {
+        // The save's origin (the confirming click): sent, and its answer shown, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         if (state.saving || !dirty()) return;
         const local = problem();
         if (local) {
@@ -741,14 +743,14 @@
         const body = saveBody();
         state.saving = true;
         redraw();
-        const asked = X.epoch();
-        const answer = await X.call(ROUTE, { method: 'POST', body });
+        const answer = await X.call(ROUTE, { method: 'POST', body, session: origin });
         state.saving = false;
-        if (asked !== X.epoch()) return;
+        if (!JE.core.userWrite.isBound(origin)) return;
         const ok = answer.status === 200;
         const code = typeof answer.body?.reason === 'string' ? answer.body.reason : '';
         let text;
         if (ok) text = X.tr('arr_rules_saved');
+        else if (X.unconfirmed(answer)) text = X.tr('arr_write_unconfirmed');
         else if (answer.status === 400) text = INVALID.has(code) ? X.tr(`arr_rules_${code}`) : X.tr('arr_rules_invalid');
         else if (answer.status === 409 && code === 'rules_seerr_owned') text = X.tr('arr_rules_save_seerr');
         else if (answer.status === 403 && code === 'feature_disabled' && body.pools) text = X.tr('arr_rules_save_pools_off');

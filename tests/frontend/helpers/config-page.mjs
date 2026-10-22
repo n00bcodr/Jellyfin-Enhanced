@@ -8,6 +8,19 @@ import { repositoryRoot } from './discovery.mjs';
 // successfully or not. Saves are recorded as the bytes the page sent.
 export const configPagePath = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html');
 
+/**
+ * Stage 1 fix round 12: the page's own origin contract (jeOrigin, jeOriginCurrent, jeAdminSend, jeAdminFetch,
+ * jeAdminNative, jeAdminOutcome), as the page defines it, for tests that evaluate a fragment of the page: every write a
+ * fragment makes goes through it.
+ */
+export function adminOriginSource(source = readFileSync(configPagePath, 'utf8')) {
+  const from = source.indexOf("            // ==================== The administrator's origin ====================");
+  const marker = '\n            jeAdminCheck();\n\n';
+  const to = source.indexOf(marker, from);
+  if (from < 0 || to < 0) throw new Error('the page\'s origin contract was not found');
+  return source.slice(from, to + marker.length);
+}
+
 /** Markup without scripts, and the scripts in page order. */
 export function configPageParts(source = readFileSync(configPagePath, 'utf8')) {
   const body = source.slice(source.indexOf('<body'), source.lastIndexOf('</body>'));

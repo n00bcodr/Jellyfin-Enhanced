@@ -257,23 +257,25 @@
          */
         isCurrent: (capturedEpoch) => capturedEpoch === epoch,
         /**
-         * The session a write belongs to, taken when the person makes the change: the identity epoch and the signed-in user.
-         * @returns {{epoch: number, userId: string|null}}
+         * The origin of an action (JE.core.userWrite.origin): the identity epoch, the signed-in user and server, taken when
+         * the person acts. It names a session, never a credential.
+         * @returns {{epoch: number, userId: string|null, serverId: string|null}}
          */
         bind: () => {
             checkNow('bind');
-            return Object.freeze({ epoch, userId: currentUserId });
+            return Object.freeze({ epoch, userId: currentUserId, serverId: currentServerId });
         },
         /**
-         * Whether a bound session is still the signed-in one, right now: the host's credentials are read again first (a
-         * switch none of the detectors reported yet is a transition from here on), then the epoch and the user must match.
-         * @param {{epoch: number, userId: string|null}} binding - From bind().
+         * Whether an origin is still the signed-in session, right now: the host's credentials are read again first (a switch
+         * none of the detectors reported yet is a transition from here on), then the epoch, the user and the server must match.
+         * @param {{epoch: number, userId: string|null, serverId?: string|null}} binding - From bind().
          * @returns {boolean}
          */
         isBound: (binding) => {
             if (!binding) return false;
             checkNow('send');
-            return binding.epoch === epoch && !!binding.userId && binding.userId === currentUserId;
+            return binding.epoch === epoch && !!binding.userId && binding.userId === currentUserId
+                && (binding.serverId === undefined || binding.serverId === currentServerId);
         },
         /**
          * Build a per-user localStorage key: `${base}:${userId}`. Shared by

@@ -135,7 +135,7 @@
             button.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                JE.hiddenContent.unhideItem(itemId);
+                JE.hiddenContent.unhideItem(itemId, JE.core.userWrite.origin());
                 setHideState();
             };
         }
@@ -150,6 +150,9 @@
             button.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // The session this hide belongs to, from the click on: carried through the metadata reads and the dialog.
+                const origin = JE.core.userWrite.origin();
+                const current = () => JE.core.userWrite.isBound(origin);
 
                 // Get item name from the page title
                 const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
@@ -174,6 +177,8 @@
                 } catch (err) {
                     console.warn('🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button', err);
                 }
+                // The metadata read waited: a hide whose session ended meanwhile is cancelled, never rebound.
+                if (!current()) return;
 
                 const isEpisode = lastDetailsItemType === 'Episode';
                 const isSeason = lastDetailsItemType === 'Season';
@@ -195,9 +200,11 @@
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
                     }, {
+                        origin,
                         showEpisodeChoice: true,
                         onChooseShow: async () => {
                             // User chose to hide the entire show
+                            if (!current()) { JE.core.userWrite.notSent(); return; }
                             let seriesTmdbId = '';
                             try {
                                 const userId = ApiClient.getCurrentUserId();
@@ -206,13 +213,14 @@
                             } catch (err) {
                                 console.warn('🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action', err);
                             }
+                            if (!current()) { JE.core.userWrite.notSent(); return; }
                             JE.hiddenContent.hideItem({
                                 itemId: seriesId,
                                 name: seriesName || itemName,
                                 type: 'Series',
                                 tmdbId: seriesTmdbId,
                                 posterPath: ''
-                            });
+                            }, origin);
                             setHiddenState();
                         }
                     });
@@ -220,12 +228,12 @@
                     // Season: hide with series metadata
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    });
+                    }, { origin });
                 } else {
                     // Movie or Series: standard hide
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    });
+                    }, { origin });
                 }
             };
         }

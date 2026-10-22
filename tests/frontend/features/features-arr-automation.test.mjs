@@ -38,7 +38,9 @@ function unit(t, answer) {
       core: {
         api: {
           plugin: async (path, options) => {
-            calls.push({ path, options });
+            // Stage 1 fix round 12: a write carries the origin of its click; recorded apart from its options.
+            const { session: origin, ...rest } = options || {};
+            calls.push(origin ? { path, options: rest, origin } : { path, options });
             const out = await answer(path, options, calls.length);
             if (out instanceof Error) throw out;
             return out;
@@ -50,7 +52,7 @@ function unit(t, answer) {
   });
   t.after(() => h.close());
   h.window.console.warn = (...args) => warnings.push(args.map(String).join(' '));
-  for (const m of ['arr/status/status-core.js', 'arr/admin/admin-render.js', 'arr/admin/admin-automation.js']) h.load(m);
+  for (const m of ['core/mutation-queue.js', 'arr/status/status-core.js', 'arr/admin/admin-render.js', 'arr/admin/admin-automation.js']) h.load(m);
   const A = h.JE.internals.arrHub.admin;
   return { ...h, A, calls, warnings, session };
 }
@@ -237,7 +239,8 @@ test('an open breaker says until when and Try again now resets it, then the stat
   for (let i = 0; i < 20 && h.A.automationCard()?.querySelector('button'); i++) await wait(5);
   const posts = h.calls.filter(c => c.options?.method === 'POST');
   assert.equal(posts.length, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(posts[0])), { path: '/arr/admin/automation/breakers/reset', options: { method: 'POST', body: { target: 's1' }, skipRetry: true } });
+  assert.ok(posts[0].origin, 'sent with the origin of its click');
+  assert.deepEqual(JSON.parse(JSON.stringify({ path: posts[0].path, options: posts[0].options })), { path: '/arr/admin/automation/breakers/reset', options: { method: 'POST', body: { target: 's1' }, skipRetry: true } });
   assert.equal(h.calls.filter(c => c.path === STATUS).length, 2);
   assert.equal(h.A.automationCard().querySelector('button'), null);
   assert.ok(changes >= 3);
@@ -379,6 +382,8 @@ test('another person signing in drops the shown status and a late answer for the
 // ------------------------------------------------------------- through the real Requests page
 
 const MODULES = [
+  // Stage 1 fix round 12: the writes go out through JE.core.userWrite with the origin of the click.
+  'core/mutation-queue.js',
   'arr/live/arr-intent.js',
   'arr/status/status-core.js', 'arr/status/status-styles.js',
   'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js',
@@ -401,7 +406,9 @@ function page(t, responses) {
       core: {
         api: {
           plugin: async (path, options) => {
-            calls.push({ path, options });
+            // Stage 1 fix round 12: a write carries the origin of its click; recorded apart from its options.
+            const { session: origin, ...rest } = options || {};
+            calls.push(origin ? { path, options: rest, origin } : { path, options });
             if (path === '/acquire/hub') return { contact: 'Dad', lookingHours: 24, seerr: { configured: true, loaded: true, unavailable: false }, mine: [], soon: [], ready: [], admin: { downloads: true, calendar: true, hub: true } };
             const answer = await responses(path, options);
             if (answer instanceof Error) throw answer;

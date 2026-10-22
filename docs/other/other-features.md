@@ -791,7 +791,7 @@ You can script maintenance using these routes with an authenticated administrato
     |---|---|
     | `GET /JellyfinEnhanced/MaintenanceMode/Status` | Current window state, source, recorded change counts, end time, and server-local time/offset. |
     | `GET /JellyfinEnhanced/MaintenanceMode/Users` | Lists all eligible non-admin accounts for the selector, not just currently affected users. |
-    | `POST /JellyfinEnhanced/MaintenanceMode/Enable` | Applies a manual window. |
+    | `POST /JellyfinEnhanced/MaintenanceMode/Enable` | Applies a manual window (with an API key). Saving the settings page applies the saved choice on the server instead; see [Configuration effects](../advanced/api.md#configuration-effects). |
     | `POST /JellyfinEnhanced/MaintenanceMode/Disable` | Ends maintenance and attempts restoration. `includeScheduled=true` also ends the current scheduled occurrence without immediately reopening it. |
     | `POST /JellyfinEnhanced/MaintenanceMode/Broadcast` | Attempts a native message independently of the Active Streams widget. |
 

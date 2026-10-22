@@ -106,11 +106,12 @@
      * Performs a POST request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
+     * @param {any} origin - The action's origin (JE.core.userWrite.origin() when the person acted): required.
      * @returns {Promise<any>} - The server's response.
      */
-    async function post(path, body) {
+    async function post(path, body, origin) {
         // skipRetry: POSTs are not idempotent — never auto-retry them.
-        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true });
+        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true, session: origin });
     }
 
     /**
@@ -680,9 +681,12 @@
      * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
+     * @param {any} [origin] - The action's origin, taken when the person acted (required from a caller that waited: a
+     *   dialog, a loop): the override reads, the request and every effect of its answer belong to that session.
      * @returns {Promise<any>}
      */
-    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null) {
+    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null, origin = undefined) {
+        origin = JE.core.userWrite.originOf(origin);
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
@@ -701,13 +705,14 @@
             ...(is4k ? { is4k: true } : {})
         };
 
-        const result = await post('/request', body);
+        const result = await post('/request', body, origin);
 
-        // Add to watchlist after successful request
-        if (result) {
+        // Add to watchlist after successful request. The answer's effects belong to the request's session: once it
+        // ended, nothing is invalidated, announced or counted for the next person.
+        if (result && JE.core.userWrite.isBound(origin)) {
             invalidateRequestCaches(tmdbId, mediaType);
             emitMediaRequested(tmdbId, mediaType, is4k);
-            JE.helpers.trackUsage('seerr.request_submitted');
+            JE.helpers.trackUsage('seerr.request_submitted', origin);
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
             } catch (error) {
@@ -729,9 +734,11 @@
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for shows TMDB has none for (#653).
      *   Passed separately from advancedSettings so a manual match does not
      *   disable override-rule evaluation.
+     * @param {any} [origin] - The action's origin (see requestMedia).
      * @returns {Promise<any>}
      */
-    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null) {
+    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null, origin = undefined) {
+        origin = JE.core.userWrite.originOf(origin);
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
@@ -749,13 +756,13 @@
             ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
-        const result = await post('/request', body);
+        const result = await post('/request', body, origin);
 
-        // Add to watchlist after successful request
-        if (result) {
+        // Add to watchlist after successful request (its effects: the request's session only).
+        if (result && JE.core.userWrite.isBound(origin)) {
             invalidateRequestCaches(tmdbId, 'tv');
             emitMediaRequested(tmdbId, 'tv', is4k);
-            JE.helpers.trackUsage('seerr.request_submitted');
+            JE.helpers.trackUsage('seerr.request_submitted', origin);
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
             } catch (error) {
@@ -968,7 +975,9 @@
     // to be provided by the UI. Keep logic in `api.reportIssue` that
     // parses the numeric value and forwards it to Seerr.
 
-    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
+    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0, origin = undefined) {
+        // The report's origin, taken before the media-id read: the report is sent only in that session.
+        origin = JE.core.userWrite.originOf(origin);
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
@@ -997,7 +1006,7 @@
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
-            const result = await post('/issue', body);
+            const result = await post('/issue', body, origin);
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {

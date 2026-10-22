@@ -21,17 +21,23 @@
      * Saves one change to the person's hidden content.
      * @param {{upsert?: Object, remove?: string[], set?: Object}} operation Items by key to add or replace, item keys to
      *   remove, settings to set.
+     * @param {any} origin JE.core.userWrite.origin() when the person acted (required: without it nothing is sent).
      * @returns {Promise<boolean>} Whether the server stored it.
      */
-    function persist(operation) {
+    function persist(operation, origin) {
         const generation = saveGeneration;
         // reportsFailure: a refusal is said here (an account change is said once by the page for all cancelled changes).
-        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true, reportsFailure: true }).then(() => true, error => {
+        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true, reportsFailure: true, origin }).then(() => true, error => {
             if (generation !== saveGeneration || error?.sessionChanged) return false;
             // A change refused because the document couldn't be read was already reported by the store.
             if (!error?.settingsNotRead) {
-                console.warn('🪼 Jellyfin Enhanced: hidden-content change not saved', error);
-                try { JE.toast?.(JE.t('hidden_content_save_failed_persistent'), 5000); } catch (_) { /* best effort */ }
+                // An answer that was lost doesn't prove it wasn't saved: the store reads the document again and says.
+                if (JE.core.userWrite.outcome(error) === 'uncertain') {
+                    JE.core.userWrite.reportUncertain(error);
+                } else {
+                    console.warn('🪼 Jellyfin Enhanced: hidden-content change not saved', error);
+                    try { JE.toast?.(JE.t('hidden_content_save_failed_persistent'), 5000); } catch (_) { /* best effort */ }
+                }
             }
             return false;
         });
@@ -103,12 +109,13 @@
      * throws into the UI.
      * @param {string} targetUserId Jellyfin user ID in N format (no dashes).
      * @param {string[]} keys Keys (item._key) of the items to unhide for that user.
-     * @returns {Promise<boolean>} true on success.
+     * @param {any} origin JE.core.userWrite.origin() when the administrator acted.
+     * @returns {Promise<boolean|'uncertain'>} true on success; 'uncertain' when the answer was lost (it may be stored).
      */
-    async function adminUnhideForUser(targetUserId, keys) {
+    async function adminUnhideForUser(targetUserId, keys, origin) {
         if (!targetUserId || !Array.isArray(keys) || keys.length === 0) return false;
         try {
-            await JE.core.userWrite.ajax(JE.core.userWrite.bind(), {
+            await JE.core.userWrite.ajax(origin, {
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/unhide`),
                 data: JSON.stringify(keys),
@@ -117,7 +124,7 @@
             return true;
         } catch (e) {
             if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin unhide denied (not an admin).');
-            return false;
+            return JE.core.userWrite.outcome(e) === 'uncertain' && !e?.sessionChanged ? 'uncertain' : false;
         }
     }
 
@@ -126,12 +133,14 @@
      * admin + the HiddenContentAdmin toggle. Fails soft (returns false) so a denied/transient error never throws.
      * @param {string} targetUserId Jellyfin user ID in N format (no dashes).
      * @param {Array<Object>} items Hidden-content item objects to add (same shape as getAllHiddenItems).
-     * @returns {Promise<number|false>} Count newly added, or false on failure.
+     * @param {any} origin JE.core.userWrite.origin() when the administrator acted.
+     * @returns {Promise<number|boolean|'uncertain'>} Count newly added, or false on failure; 'uncertain' when the answer
+     *   was lost (it may be stored).
      */
-    async function adminHideForUser(targetUserId, items) {
+    async function adminHideForUser(targetUserId, items, origin) {
         if (!targetUserId || !Array.isArray(items) || items.length === 0) return false;
         try {
-            const res = await JE.core.userWrite.ajax(JE.core.userWrite.bind(), {
+            const res = await JE.core.userWrite.ajax(origin, {
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/hide`),
                 data: JSON.stringify(items),
@@ -140,7 +149,7 @@
             return (res && typeof res.added === 'number') ? res.added : true;
         } catch (e) {
             if (e && e.status === 403) console.warn('🪼 Jellyfin Enhanced: Hidden Content admin hide denied (not an admin / disabled).');
-            return false;
+            return JE.core.userWrite.outcome(e) === 'uncertain' && !e?.sessionChanged ? 'uncertain' : false;
         }
     }
 

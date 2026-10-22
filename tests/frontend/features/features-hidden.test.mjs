@@ -22,7 +22,9 @@ test('hidden scope filters home rows without hiding same title in the library',t
 });
 test('home-section scopes merge without weakening an existing global hide',t=>{
  const h=setup(t,{items:{a:{itemId:'a',hideScope:'nextup'},b:{itemId:'b',hideScope:'global'}}});
- h.api.markScopedHidden('a','continuewatching');h.api.markScopedHidden('b','nextup');
+ // Stage 1 fix round 12: a route's answer goes into the document it was sent for (the handle taken at the action).
+ const doc=h.JE.internals.userDocumentHandle('hidden-content.json',h.JE.core.userWrite.origin());
+ h.api.markScopedHidden('a','continuewatching',undefined,doc);h.api.markScopedHidden('b','nextup',undefined,doc);
  assert.equal(h.api.isHiddenOnSurface('a','nextup'),true);
  assert.equal(h.api.isHiddenOnSurface('a','continuewatching'),true);
  assert.equal(h.api.isHiddenOnSurface('a','library'),false);

@@ -175,7 +175,7 @@ test('calendar Shoko cards escape metadata, map public URLs, and use Jellyfin po
 function actions(t){
   const h=rendering(t);const saved=[];h.JE.saveUserSettings=(file,settings)=>saved.push({file,settings:{...settings}});
   h.P.renderPage=()=>{};h.P.syncPageModeClasses=()=>{};h.P.updateDisplayModeButtons=()=>{};h.P.toggleSidebarCollapsed=()=>{};
-  h.load('arr/calendar/calendar-page-actions.js');return {...h,saved};
+  h.load('core/mutation-queue.js');h.load('arr/calendar/calendar-page-actions.js');return {...h,saved};
 }
 test('calendar view and display controls persist user preferences without redundant saves',async t=>{
   const h=actions(t);h.P.setDisplayMode('grid');h.P.setDisplayMode('grid');assert.equal(h.saved.length,1);assert.equal(h.saved[0].settings.calendarDisplayMode,'grid');

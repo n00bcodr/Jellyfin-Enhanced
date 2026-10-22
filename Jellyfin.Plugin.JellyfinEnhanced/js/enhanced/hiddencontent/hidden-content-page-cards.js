@@ -11,7 +11,7 @@
   const internal = JE.internals.hiddenContentPage = JE.internals.hiddenContentPage || {};
 
   const { scopeBadgeText, scopeUnhideText, showUnhideConfirmation,
-    handleUnhide, handleUnhideMany, POSTER_MAX_WIDTH } = internal;
+    handleUnhide, handleUnhideMany, adminActionScope, POSTER_MAX_WIDTH } = internal;
 
   /** Delay before removing a card after unhide animation. */
   const UNHIDE_FADE_DELAY_MS = 200;
@@ -214,13 +214,15 @@
     unhideBtn.className = 'je-hidden-group-unhide';
     unhideBtn.textContent = scopeUnhideText(mainItem.hideScope);
     unhideBtn.addEventListener('click', () => {
+      // The unhide belongs to this click (session and viewed list), through the confirmation and the fade.
+      const scope = adminActionScope();
       const itemLabel = hasEpisodes
         ? (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(mainItem)
         : (group.seriesName || mainItem.name || 'this item');
       showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
         unhideBtn.closest('.je-hidden-group-card').style.opacity = '0.3';
         setTimeout(() => {
-          handleUnhide(mainItem._key || mainItem.itemId);
+          handleUnhide(mainItem._key || mainItem.itemId, scope);
         }, UNHIDE_FADE_DELAY_MS);
       }, itemLabel);
     });
@@ -291,11 +293,12 @@
       unhideBtn.textContent = scopeUnhideText(item.hideScope);
       unhideBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        const scope = adminActionScope();
         const rowLabel = (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(item);
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           row.style.opacity = '0.3';
           setTimeout(() => {
-            handleUnhide(item._key || item.itemId);
+            handleUnhide(item._key || item.itemId, scope);
           }, UNHIDE_FADE_DELAY_MS);
         }, rowLabel);
       });
@@ -310,8 +313,9 @@
     unhideAllBtn.className = 'je-hidden-group-unhide-all';
     unhideAllBtn.textContent = JE.t('hidden_content_unhide_all_show');
     unhideAllBtn.addEventListener('click', () => {
+      const scope = adminActionScope();
       showUnhideConfirmation(JE.t('hidden_content_unhide_all_confirm') || 'Unhide all items for this show?', () => {
-        handleUnhideMany(group.items.map((item) => item._key || item.itemId));
+        handleUnhideMany(group.items.map((item) => item._key || item.itemId), scope);
       }, group.seriesName || 'this show');
     });
     fragment.appendChild(unhideAllBtn);

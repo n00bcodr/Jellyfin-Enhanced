@@ -8,6 +8,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
 import { shippedLocales } from '../helpers/served-scripts.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -140,7 +143,7 @@ for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badg
     assert.deepEqual(h.resets, [false], 'Hide removes badges immediately, even with a pending save');
   }
   if (outcome === 'switched') epoch++;
-  if (outcome === 'failed') held.reject(new Error('save failed'));
+  if (outcome === 'failed') held.reject(refused('save failed'));
   else held.resolve();
   await new Promise(done => setImmediate(done));
   assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' || outcome === 'failed' ? [false] : []);
@@ -189,7 +192,7 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) {
     held[0].resolve();
     await new Promise(done => setImmediate(done));
     await h.choose(keys[1] + 'Select', initial === false ? '' : 'off');
-    held[1].reject(new Error('later save fails'));
+    held[1].reject(refused('later save fails'));
     await new Promise(done => setImmediate(done));
     assert.equal(posted.length, 2);
     for (const key of keys) {
@@ -279,7 +282,7 @@ for (const [id, key, value, initial] of [
   if (input.type === 'checkbox') input.checked = value; else input.value = value;
   input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   await new Promise(done => setImmediate(done));
-  held.reject(new Error('save fails'));
+  held.reject(refused('save fails'));
   await new Promise(done => setImmediate(done));
   assert.equal(h.JE.currentSettings[key], initial);
   assert.equal(h.JE.userConfig.settings[key], initial);
@@ -544,7 +547,7 @@ test('failed French save does not mirror or reload after close', async t => {
   const h = await languagePanel(t);
   h.transition('close');
   h.allowConsoleError('Failed to save settings.json');
-  h.held.reject(new Error('save failed')); await tick();
+  h.held.reject(refused('save failed')); await tick();
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
   assert.equal(h.toasts.length, 0);
   assert.equal(h.timers.length, 0);
@@ -567,7 +570,7 @@ for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelec
 test('failed French save in an open panel does not mirror or reload', async t => {
   const h = await languagePanel(t);
   h.allowConsoleError('Failed to save settings.json');
-  h.held.reject(new Error('save failed')); await tick();
+  h.held.reject(refused('save failed')); await tick();
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
   assert.equal(h.toasts.length, 0);
   assert.equal(h.timers.length, 0);
@@ -607,7 +610,7 @@ for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelec
     h.window.ApiClient.ajax = () => held.promise;
     h.allowConsoleError('Failed to save settings.json');
     await h.choose(id, id === 'listSwapInSelect' ? 'on' : 'off'); h.panelCleanups.forEach(cleanup => cleanup());
-    held.reject(new Error('save failed')); await tick();
+    held.reject(refused('save failed')); await tick();
     assert.equal(h.toasts.length, 0);
   });
 }
@@ -622,11 +625,11 @@ for (const [initial, target] of [['en', 'fr'], ['fr', 'en-US']]) {
       h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
       await h.choose('nativeAcquisitionStampsSelect', 'off');
       assert.equal(h.writes.length, 1, 'the second save is queued');
-      if (firstSuccess) h.held.resolve(); else h.held.reject(new Error('first fails'));
+      if (firstSuccess) h.held.resolve(); else h.held.reject(refused('first fails'));
       await tick();
       assert.equal(h.writes.length, 2);
       assert.deepEqual(sent(h.writes[1]), { nativeAcquisitionStamps: false }, 'the later save carries only its own field');
-      if (secondSuccess) second.resolve(); else second.reject(new Error('second fails'));
+      if (secondSuccess) second.resolve(); else second.reject(refused('second fails'));
       await tick();
       const saved = firstSuccess;
       assert.equal(h.window.localStorage.getItem('user-a-language'), saved ? target : initial);
@@ -642,7 +645,7 @@ for (const [initial, target] of [['en', 'fr'], ['fr', 'en-US']]) {
       h.wire();
       h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
       await h.choose('nativeAcquisitionStampsSelect', 'off');
-      h.held.reject(new Error('language save fails')); await tick();
+      h.held.reject(refused('language save fails')); await tick();
       assert.equal(h.writes.length, 2);
       h.transition(boundary);
       second.resolve(); await tick();
@@ -689,10 +692,10 @@ for (const [id, key, initial, target, toast] of [
     assert.equal(h.toasts.length, 0, 'never claim saved before persistence');
     const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
     h.allowConsoleError('Failed to save settings.json');
-    held[0].reject(new Error('original fails')); await tick();
+    held[0].reject(refused('original fails')); await tick();
     assert.equal(h.toasts.length, 0, 'failed original never claims saved');
     assert.deepEqual(h.notSaved, [tr('settings_not_saved')], 'it is shown as not saved');
-    if (laterSaved) held[1].resolve(); else held[1].reject(new Error('later fails'));
+    if (laterSaved) held[1].resolve(); else held[1].reject(refused('later fails'));
     await later;
     assert.deepEqual(sent(h.writes[1]), { showFileSizes: true });
     assert.deepEqual(h.toasts, []);
@@ -722,7 +725,7 @@ for (const [id, key, initial, target, toast] of [
     assert.equal(h.toasts.length, 0, 'never claim saved before persistence');
     const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
     if (consentSaved) held[0].resolve({ consents: { [key[0].toUpperCase() + key.slice(1)]: target === 'on' ? true : false } });
-    else held[0].reject(new Error('consent fails'));
+    else held[0].reject(refused('consent fails'));
     await tick();
     held[1].resolve();
     await later;
@@ -744,8 +747,8 @@ for (const laterSaved of [false, true]) test(`applied subtitle styles and positi
   h.window.ApiClient.ajax = () => held[post++].promise;
   const first = h.JE.updateSettings({ subtitleHorizontalPosition: 20, selectedFontSizePresetIndex: 1 }, { throwOnError: true }).catch(() => {});
   const second = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
-  held[0].reject(new Error('style POST fails')); await tick();
-  if (laterSaved) held[1].resolve(); else held[1].reject(new Error('later fails'));
+  held[0].reject(refused('style POST fails')); await tick();
+  if (laterSaved) held[1].resolve(); else held[1].reject(refused('later fails'));
   await Promise.all([first, second]);
   assert.deepEqual(applied.slice(-2), [['style', 2], ['position', 50]]);
 });
@@ -754,7 +757,7 @@ test('consent-only success cannot persist or mirror a failed display language', 
   const h = await languagePanel(t), consent = deferred();
   h.window.ApiClient.ajax = request => { h.writes.push(request); return consent.promise; };
   const saving = h.JE.setPersonalConsent('listSwapIn', true, { throwOnError: true });
-  h.held.reject(new Error('language fails')); await tick();
+  h.held.reject(refused('language fails')); await tick();
   assert.equal(h.writes[1].type, 'PATCH');
   consent.resolve({ consents: { ListSwapIn: true } }); await saving;
   assert.equal(h.JE.userConfig.settings.displayLanguage, 'en');
@@ -770,7 +773,7 @@ test('a read while French is pending mirrors only persisted English, never the s
   assert.equal(h.JE.currentSettings.displayLanguage, 'fr', 'pending choice still shown');
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
   assert.equal(h.toasts.length, 0);
-  h.held.reject(new Error('language fails')); await tick();
+  h.held.reject(refused('language fails')); await tick();
   expectReload(h, false);
 });
 
@@ -823,8 +826,8 @@ for (const kind of ['quality tags', 'tag hover', 'random button', 'subtitle styl
     const input = h.document.getElementById(id);input.checked = false;
     input.dispatchEvent(new h.window.Event('change', { bubbles: true }));await tick();
     const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
-    h.allowConsoleError('Failed to save settings.json');held[0].reject(new Error('first fails'));await tick();
-    if (laterSaved) held[1].resolve();else held[1].reject(new Error('second fails'));
+    h.allowConsoleError('Failed to save settings.json');held[0].reject(refused('first fails'));await tick();
+    if (laterSaved) held[1].resolve();else held[1].reject(refused('second fails'));
     await later;
     assert.equal(h.JE.currentSettings[key], true);
     if (kind === 'quality tags') assert.equal(!!h.document.querySelector('.quality-overlay-container'), true);
@@ -855,7 +858,7 @@ test('quality audio filter rolls back through document observers after close', a
   await h.choose('qualityTagsAudioLanguageSelect', 'none');
   const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
   h.panelCleanups.forEach(fn => fn());h.allowConsoleError('Failed to save settings.json');
-  held[0].reject(new Error('first fails'));await tick();held[1].reject(new Error('second fails'));await later;
+  held[0].reject(refused('first fails'));await tick();held[1].reject(refused('second fails'));await later;
   assert.equal(applied.at(-1), '');
 });
 
@@ -873,7 +876,7 @@ test('subtitle preset preview rolls back through document observers after close'
   assert.equal(h.document.getElementById('subtitlePositionPreview').style.fontSize, '8px');
   const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
   h.panelCleanups.forEach(fn => fn());h.allowConsoleError('Failed to save settings.json');
-  held[0].reject(new Error('first fails'));await tick();held[1].reject(new Error('second fails'));await later;
+  held[0].reject(refused('first fails'));await tick();held[1].reject(refused('second fails'));await later;
   assert.equal(h.document.getElementById('subtitlePositionPreview').style.fontSize, '13px');
 });
 
@@ -882,7 +885,7 @@ for (const type of ['quality', 'rating']) test(`${type} section visibility follo
   h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
   const input=h.document.getElementById(type+'TagsToggle');input.checked=false;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));await tick();
   assert.equal(h.document.getElementById(type+'TagsSubWrap').style.display,'none');
-  held.reject(Error('save fails'));await tick();
+  held.reject(refused('save fails'));await tick();
   assert.equal(input.checked,true);assert.equal(h.document.getElementById(type+'TagsSubWrap').style.display,'block');
 });
 
@@ -891,14 +894,14 @@ test('quality category DOM order follows a failed reorder',async t=>{
  const order=()=>[...group.querySelectorAll('.je-quality-cat-row')].map(r=>r.dataset.orderKey),before=order(),held=deferred();
  h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
  group.querySelector('.je-cat-down').click();await tick();assert.notDeepEqual(order(),before);
- held.reject(Error('reorder fails'));await tick();assert.deepEqual(order(),before);
+ held.reject(refused('reorder fails'));await tick();assert.deepEqual(order(),before);
 });
 
 test('subtitle warnings follow document rollback',async t=>{
  const h=panel(t,{settings:{disableCustomSubtitleStyles:false}});h.wire();const note=h.document.getElementById('je-subtitle-position-note'),held=deferred();
  h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
  const input=h.document.getElementById('disableCustomSubtitleStyles');input.checked=true;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));await tick();
- assert.equal(note.style.display,'none');held.reject(Error('style disable fails'));await tick();assert.equal(note.style.display,'flex');
+ assert.equal(note.style.display,'none');held.reject(refused('style disable fails'));await tick();assert.equal(note.style.display,'flex');
 });
 
 test('late language enumeration renders the current document rather than its opening snapshot',async t=>{
@@ -1003,7 +1006,7 @@ test('reload is released after the final queued save fails, retaining committed 
   await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
   await h.choose('acquisitionBadgesSelect', 'off'); h.clock.advance(2500);
   assert.equal(h.clock.reloads, 0);
-  h.held[1].reject(new Error('save failed')); await tick(); h.clock.advance(0);
+  h.held[1].reject(refused('save failed')); await tick(); h.clock.advance(0);
   assert.equal(h.JE.currentSettings.acquisitionBadges, undefined);
   assert.equal(h.clock.reloads, 1);
 });
@@ -1169,7 +1172,7 @@ async function publicationFault(h, reason) {
   const consentOutcome = consent.then(() => 'saved', () => 'failed');
   await tick(); h.clock.advance(0); assert.equal(h.clock.reloads, 0);
   assert.equal(held.length, 1);
-  if (reason === 'failed') held[0].reject(new Error('transport rejected')); else held[0].resolve();
+  if (reason === 'failed') held[0].reject(refused('transport rejected')); else held[0].resolve();
   assert.equal(await outcome, reason === 'failed' ? 'failed' : 'saved', 'effect failures cannot alter transport outcome');
   await tick(); assert.equal(held.length, 2); held[1].resolve();
   assert.equal(await consentOutcome, 'saved');
@@ -1226,7 +1229,7 @@ for (const phase of ['initialize', 'reinitialize']) test(`async Quality Tags ${p
 
 for (const consumer of ['effect', 'observer']) test(`rejected async ${consumer} is caught without blocking later publications`, async t => {
   const h = await faultPanel(t); let hits = 0;
-  const fail = () => { hits++; return h.window.Promise.reject(Error('injected async consumer')); };
+  const fail = () => { hits++; return h.window.Promise.reject(refused('injected async consumer')); };
   if (consumer === 'effect') h.JE.internals.settingsDocumentEffects.set('pause-delay', fail);
   else h.JE.internals.observeSettingsDocument('async-proof', fail);
   await publicationFault(h, 'saved'); await tick();

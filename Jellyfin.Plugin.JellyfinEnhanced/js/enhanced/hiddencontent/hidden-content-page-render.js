@@ -12,7 +12,7 @@
   const internal = JE.internals.hiddenContentPage = JE.internals.hiddenContentPage || {};
 
   const { state, scopeBadgeText, showUnhideConfirmation,
-    handleUnhide, handleUnhideMany, maybeInitAdminFilter, onAdminUserChange,
+    handleUnhide, handleUnhideMany, adminActionScope, maybeInitAdminFilter, onAdminUserChange,
     toOpaqueColor, applyAdminThemeVars, isCssColor, createAdminViewingBadge,
     openAdminAddModal, createGroupCard, createSection } = internal;
   // Late-bound cross-module reference (defined in hidden-content-page-nav.js).
@@ -425,11 +425,12 @@
       toolbar.unhideAllBtn.style.display = 'none';
     } else {
       toolbar.unhideAllBtn.addEventListener('click', () => {
+        const scope = adminActionScope();
         showUnhideConfirmation(JE.t('hidden_content_clear_confirm') || 'Unhide all items?', () => {
           if (viewingOther) {
-            handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId));
+            handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId), scope);
           } else {
-            JE.hiddenContent.unhideAll();
+            JE.hiddenContent.unhideAll(scope.origin);
           }
         });
       });
@@ -461,10 +462,11 @@
     const unhideBtn = card.querySelector('.je-hidden-item-unhide');
     if (unhideBtn) {
       unhideBtn.addEventListener('click', () => {
+        const scope = adminActionScope();
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           card.classList.add('je-hidden-item-removing');
           setTimeout(() => {
-            handleUnhide(item._key || item.itemId);
+            handleUnhide(item._key || item.itemId, scope);
           }, 300);
         }, item.name || 'this item');
       });

@@ -4,7 +4,7 @@ import {createHarness,deferred,plain} from '../helpers/harness.mjs';
 function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html='',globals={}}={}){
   let epoch=0,changed;const notices=[],calls=[];
   const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
-  t.after(()=>h.close());h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
+  t.after(()=>h.close());h.load('core/mutation-queue.js');h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
   return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
 // Pages hold whole grid rows: with three live columns that is four rows of 12 cards.
@@ -87,7 +87,9 @@ for(const enabled of [false,true]){
 }
 test('downloads approval uses a single non-retried mutation then refreshes permission and data',async t=>{
   const h=setup(t,{api:async()=>({requests:[],canApproveRequests:false})});h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
-  await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');assert.deepEqual(plain(h.calls[0][1]),{method:'POST',skipRetry:true});assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
+  await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');const{session,...sent}=plain(h.calls[0][1]);assert.deepEqual(sent,{method:'POST',skipRetry:true});
+  // Stage 1 fix round 12: the approval carries the origin of the click.
+  assert.equal(session.userId,'user-a');assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
 });
 test('history read errors are toasted once per instance, escaped, and not again for an instance the queue already reported',async t=>{
   let historyErrors=[{source:'Sonarr',instanceName:'TV',reason:'network error'},{source:'Radarr',instanceName:'<b>4K</b>',reason:'HTTP 500'}];

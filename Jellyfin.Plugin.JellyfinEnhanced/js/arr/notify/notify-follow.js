@@ -98,8 +98,9 @@
         button.setAttribute('aria-busy', 'true');
         const res = await JE.arrNotify.setFollow(key, on);
         button.removeAttribute('aria-busy');
+        if (res.code === 'user_changed') return;
         if (!res.ok) {
-            const msg = res.code === 'not_allowed' ? 'arr_notify_follow_not_allowed' : res.code === 'too_many' ? 'arr_notify_follow_too_many' : 'arr_notify_follow_failed';
+            const msg = res.code === 'unconfirmed' ? 'arr_write_unconfirmed' : res.code === 'not_allowed' ? 'arr_notify_follow_not_allowed' : res.code === 'too_many' ? 'arr_notify_follow_too_many' : 'arr_notify_follow_failed';
             if (typeof JE.toast === 'function') JE.toast(JE.escapeHtml ? JE.escapeHtml(JE.arrNotify.tr(msg)) : JE.arrNotify.tr(msg), 3000);
         }
         syncAll();
@@ -153,7 +154,9 @@
             if (button.getAttribute('aria-disabled') === 'true') return;
             button.setAttribute('aria-disabled', 'true');
             const res = await JE.arrNotify.remind(status.key, itemId);
+            if (res.code === 'user_changed') return;
             if (res.ok) text.textContent = JE.arrNotify.tr('arr_notify_reminded', { contact: who });
+            else if (res.code === 'unconfirmed') text.textContent = JE.arrNotify.tr('arr_write_unconfirmed');
             else if (res.code === 'too_soon') text.textContent = JE.arrNotify.tr('arr_notify_reminded_already', { contact: who });
             else {
                 text.textContent = JE.arrNotify.tr('arr_notify_remind_failed');

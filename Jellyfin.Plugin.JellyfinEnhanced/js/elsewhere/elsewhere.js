@@ -473,7 +473,7 @@
                 const sent = JSON.parse(JSON.stringify(set));
                 inFlight.push(sent);
                 const settled = () => { const i = inFlight.indexOf(sent); if (i !== -1) inFlight.splice(i, 1); };
-                JE.patchUserSettings('elsewhere.json', { set }, { throwOnError: true })
+                JE.patchUserSettings('elsewhere.json', { set }, { throwOnError: true, origin: JE.core.userWrite.origin() })
                     .then(() => { settled(); acknowledged(sent); }, () => { settled(); /* the store logs it and shows the stored values again */ });
             };
 

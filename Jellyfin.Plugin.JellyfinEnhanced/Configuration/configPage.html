@@ -3751,6 +3751,88 @@
         (() => {
             const pluginId = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
 
+            // ==================== The administrator's origin ====================
+            // Every action on this page that changes something on the server belongs to the administrator who started it.
+            // Its origin is taken when the administrator acts (jeOrigin(), at the click or the submit), before anything the
+            // action waits for (a save it waits behind, a confirmation, a read), and is carried through every step of it.
+            // Every write goes out through jeAdminSend (Jellyfin's ApiClient.ajax), jeAdminFetch (fetch) or jeAdminNative
+            // (another ApiClient command), which check immediately before sending that the same administrator is still the
+            // signed-in one (Jellyfin's ApiClient: user and server) and refuse the write otherwise: a continuation of A's
+            // action never goes out as B, and its answers change nothing on B's page. This page doesn't rely on the
+            // injected Jellyfin Enhanced scripts (they may not be loaded on the dashboard): the contract is its own.
+            // A write ends stored (answered), refused (the server answered no) or uncertain (no usable answer: it may be
+            // stored): an uncertain one is never shown as not saved (jeAdminOutcome).
+            var _jeAdminIdentity = null;
+            var _jeAdminEpoch = 0;
+            /** The signed-in identity as the host's ApiClient tells it now (user and server), never a credential. */
+            function jeAdminIdentityNow() {
+                try {
+                    var client = window.ApiClient;
+                    var user = client && typeof client.getCurrentUserId === 'function' ? client.getCurrentUserId() : null;
+                    var server = client ? (typeof client.serverId === 'function' ? client.serverId() : client.serverId) : null;
+                    return JSON.stringify([user || null, server || null]);
+                } catch (e) {
+                    return JSON.stringify([null, null]);
+                }
+            }
+            /** Reads the identity again; a change is a new epoch from here on. */
+            function jeAdminCheck() {
+                var now = jeAdminIdentityNow();
+                if (_jeAdminIdentity !== now) {
+                    if (_jeAdminIdentity !== null) _jeAdminEpoch++;
+                    _jeAdminIdentity = now;
+                }
+            }
+            /** The origin of an action: take it when the administrator acts, before any wait. */
+            function jeOrigin() {
+                jeAdminCheck();
+                return Object.freeze({ epoch: _jeAdminEpoch, identity: _jeAdminIdentity });
+            }
+            /** Whether an origin is still the signed-in administrator, read now. */
+            function jeOriginCurrent(origin) {
+                if (!origin) return false;
+                jeAdminCheck();
+                return origin.epoch === _jeAdminEpoch && origin.identity === _jeAdminIdentity && JSON.parse(origin.identity)[0] !== null;
+            }
+            /** The refusal of a write whose administrator changed (nothing was sent). */
+            function jeAdminCancelled(what) {
+                var error = new Error(what + ': the signed-in administrator changed; this was not sent');
+                error.sessionChanged = true;
+                error.writeOutcome = 'unsent';
+                console.warn('[JE] ' + error.message);
+                return error;
+            }
+            /**
+             * What a failed write proves: 'unsent' (cancelled before it went out), 'refused' (the server answered that it
+             * didn't store it: 4xx but 408, or 503) or 'uncertain' (no usable answer: it may be stored).
+             */
+            function jeAdminOutcome(error) {
+                if (error && typeof error.writeOutcome === 'string') return error.writeOutcome;
+                var status = Number(error && (error.status || error.statusCode));
+                if (status > 0 && ((status >= 400 && status < 500 && status !== 408) || status === 503)) return 'refused';
+                return 'uncertain';
+            }
+            function jeAdminClassify(error) {
+                try { if (error && typeof error === 'object' && typeof error.writeOutcome !== 'string') error.writeOutcome = jeAdminOutcome(error); } catch (e) { /* frozen */ }
+                return error;
+            }
+            /** THE send of this page's writes through Jellyfin's ApiClient.ajax: the origin is checked right before it. */
+            function jeAdminSend(origin, request) {
+                if (!jeOriginCurrent(origin)) return Promise.reject(jeAdminCancelled(request && request.url));
+                return Promise.resolve(ApiClient.ajax(request)).catch(function(error) { throw jeAdminClassify(error); });
+            }
+            /** The same, for the uploads and backups this page sends with fetch. */
+            function jeAdminFetch(origin, url, init) {
+                if (!jeOriginCurrent(origin)) return Promise.reject(jeAdminCancelled(url));
+                return Promise.resolve(fetch(url, init)).catch(function(error) { throw jeAdminClassify(error); });
+            }
+            /** The same for another of Jellyfin's ApiClient commands (`transmit` sends it, synchronously up to the network). */
+            function jeAdminNative(origin, transmit, what) {
+                if (!jeOriginCurrent(origin)) return Promise.reject(jeAdminCancelled(what));
+                return Promise.resolve(transmit()).catch(function(error) { throw jeAdminClassify(error); });
+            }
+            jeAdminCheck();
+
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
 
@@ -4995,34 +5077,17 @@
         // The Custom Tabs plugin (https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)
         // stores its tab list at /Plugins/{guid}/Configuration as
         // `{ "Tabs": [{ "Title": "...", "ContentHtml": "..." }, ...] }`.
-        // We can manage individual entries on the user's behalf, but only when
-        // the schema we observe matches that shape exactly. If the schema has
-        // changed in a future release, every code path here bails out silently
-        // and the related UI ("Add the Custom Tabs entry for me" toggles) stays
-        // hidden — the user falls back to manual setup with no error noise.
+        // Jellyfin Enhanced manages individual entries on the user's behalf, but only
+        // when the schema matches that shape exactly. If the schema has changed in a
+        // future release, the server's sync skips it and the related UI ("Add the
+        // Custom Tabs entry for me" toggles) stays hidden — the user falls back to
+        // manual setup.
         // ---------------------------------------------------------------------
         var CUSTOM_TABS_PLUGIN_ID = 'fbacd0b6fd464a05b0a42045d6a135b0';
 
-        // Per managed Custom Tabs entry: which JE config flags drive it
-        // (parent + auto-create), what Title to write, and the exact
-        // ContentHtml snippet that JE's matching front-end module looks for.
-        // ContentHtml strings are the SOURCE OF TRUTH for "this tab is ours" —
-        // the sync logic identifies our entries by exact-string match.
-        // `masterKey` is the top-level feature toggle (Enable Bookmarks / Enable
-        // Hidden Content / Enable Requests Page / Enable Calendar Page). Sync
-        // requires ALL THREE — masterKey, parentKey, autoKey — to be true for
-        // the entry to exist. Without masterKey in the predicate, disabling the
-        // master feature would leave an orphan Custom Tabs entry that opens to
-        // broken/empty content (the JE module behind it is off).
-        var CUSTOM_TAB_MANAGED_ENTRIES = [
-            { masterKey: 'BookmarksEnabled',      parentKey: 'BookmarksUseCustomTabs',     autoKey: 'BookmarksAutoCreateCustomTab',     ownedKey: 'BookmarksCustomTabJeOwned',     title: 'Bookmarks',      html: '<div class="sections bookmarks"></div>' },
-            { masterKey: 'HiddenContentEnabled',  parentKey: 'HiddenContentUseCustomTabs', autoKey: 'HiddenContentAutoCreateCustomTab', ownedKey: 'HiddenContentCustomTabJeOwned', title: 'Hidden Content', html: '<div class="jellyfinenhanced hidden-content"></div>' },
-            { masterKey: 'DownloadsPageEnabled',  parentKey: 'DownloadsUseCustomTabs',     autoKey: 'DownloadsAutoCreateCustomTab',     ownedKey: 'DownloadsCustomTabJeOwned',     title: 'Requests',       html: '<div class="jellyfinenhanced requests"></div>' },
-            { masterKey: 'CalendarPageEnabled',   parentKey: 'CalendarUseCustomTabs',      autoKey: 'CalendarAutoCreateCustomTab',      ownedKey: 'CalendarCustomTabJeOwned',      title: 'Calendar',       html: '<div class="jellyfinenhanced calendar"></div>' },
-            { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' },
-            { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' },
-            { masterKey: 'CatchUpEnabled',      parentKey: 'CatchUpUseCustomTabs',        autoKey: 'CatchUpAutoCreateCustomTab',        ownedKey: 'CatchUpCustomTabJeOwned',       title: 'Catch Up',       html: '<div class="jellyfinenhanced catchup"></div>' }
-        ];
+        // The entries Jellyfin Enhanced manages in Custom Tabs are synced by the server (Services/ConfigurationEffects.cs),
+        // from the configuration it holds after each save: never from this page's snapshot. This page only checks the
+        // Custom Tabs configuration's shape (to show the auto-create toggles) and reports the server's sync.
 
         function isCustomTabsConfigShapeOk(cfg) {
             if (!cfg || typeof cfg !== 'object') {
@@ -5094,150 +5159,6 @@
                 try { renderOptionalPluginsDashboard(); } catch (e) {
                     console.warn('[JE] renderOptionalPluginsDashboard threw from checkCustomTabsConfigCompat (catch):', e);
                 }
-            });
-        }
-
-        /**
-         * Plan + apply Custom Tabs sync for every managed entry.
-         *
-         * Returns a promise resolving to `{ ok, status, detail, ownedUpdates }`:
-         *  - `ok: true` → sync ran cleanly (or was a clean no-op)
-         *  - `ok: false` → something failed; `detail` describes it (admin-visible)
-         *  - `status: 'noop' | 'ok' | 'skipped' | 'failed'`
-         *  - `ownedUpdates: [{ ownedKey, value }]` — *JE-side* flag updates the caller
-         *    must persist alongside the rest of the JE config so future syncs know
-         *    which entries we created vs. which the admin added manually.
-         *
-         * Sync rules per managed entry (uses `ownedKey` to gate destructive deletes):
-         *  - shouldExist (auto+parent both on) AND no matching CT entry → ADD; owned=true
-         *  - shouldExist AND a matching CT entry exists → leave entry alone; preserve owned
-         *  - !shouldExist AND a matching CT entry exists AND we own it → REMOVE; owned=false
-         *  - !shouldExist AND a matching CT entry exists but we don't own it → leave it
-         *    (it's the admin's manually-created tab); owned stays false
-         *  - !shouldExist AND no matching entry → no-op; owned=false
-         *
-         * The single GET → mutate → single POST sequence avoids the race where
-         * multiple per-entry round-trips would clobber each other.
-         */
-        function syncAllManagedCustomTabs(savedConfig) {
-            if (!document.body.classList.contains('je-has-customtabs-compat')) {
-                // Bail early. If the admin has auto-create intent stored but we
-                // can't act on it (compat probe failed / detection unknown),
-                // return ok:false so the save-flow alert gate fires — otherwise
-                // the green "Saved!" toast masks the dropped intent.
-                // Mirror `shouldExist`: intent requires all three flags —
-                // master + parent + auto. A disabled-at-master feature with
-                // auto+parent still checked wouldn't have a real sync action
-                // anyway, so shouldn't trigger the cosmetic "saved but CT
-                // dropped your auto-create" alert.
-                var anyIntent = CUSTOM_TAB_MANAGED_ENTRIES.some(function(e) {
-                    return savedConfig[e.autoKey] === true
-                        && savedConfig[e.parentKey] === true
-                        && savedConfig[e.masterKey] === true;
-                });
-                // Custom Tabs definitely absent (not installed, or installed
-                // but disabled): there is nothing to sync and nothing the admin
-                // can fix from here, so skip cleanly. Typical after a 10.11 →
-                // 12 upgrade where Custom Tabs was dropped in favour of the
-                // native home tabs; the stored intent is deliberately kept so
-                // the entries sync again if the plugin is reinstalled. The
-                // auto-create toggles are hidden in this state, so an ok:false
-                // here would re-alert on every save with no way out.
-                if (hasCustomTabs === false) {
-                    return Promise.resolve({
-                        ok: true,
-                        status: 'skipped',
-                        detail: 'Custom Tabs not installed; nothing to sync.',
-                        ownedUpdates: []
-                    });
-                }
-                return Promise.resolve({
-                    ok: !anyIntent, // only "skipped cleanly" when there was nothing to do
-                    status: 'skipped',
-                    detail: anyIntent
-                        ? (hasCustomTabs === true
-                            ? 'Custom Tabs is installed, but its config could not be read or has an unrecognized shape, so the auto-create entry was skipped.'
-                            : 'Plugin detection did not complete, so the auto-create entry was skipped.')
-                          + ' Use the Retry button on the "Plugin detection issue" banner at the top of this page (or reload the page), then save again.'
-                        : 'Custom Tabs compat probe not passed; nothing to sync.',
-                    ownedUpdates: []
-                });
-            }
-            return ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl('/Plugins/' + CUSTOM_TABS_PLUGIN_ID + '/Configuration'),
-                dataType: 'json'
-            }).then(function(cfg) {
-                if (!isCustomTabsConfigShapeOk(cfg)) {
-                    return {
-                        ok: false,
-                        status: 'failed',
-                        detail: 'Custom Tabs configuration shape no longer matches what Jellyfin Enhanced knows how to write; auto-manage skipped to avoid corrupting it.',
-                        ownedUpdates: []
-                    };
-                }
-                var changed = false;
-                var ownedUpdates = [];
-                CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
-                    // ALL three gates must be on: the master feature, the
-                    // Use-Custom-Tabs child toggle, and the Auto-Create
-                    // opt-in. Missing the master-flag check here meant
-                    // disabling the top-level feature still left an orphan
-                    // CT entry that opened to broken content.
-                    var shouldExist =
-                        savedConfig[entry.autoKey] === true &&
-                        savedConfig[entry.parentKey] === true &&
-                        savedConfig[entry.masterKey] === true;
-                    var isOwned = savedConfig[entry.ownedKey] === true;
-                    var idx = -1;
-                    for (var i = 0; i < cfg.Tabs.length; i++) {
-                        if (cfg.Tabs[i].ContentHtml === entry.html) { idx = i; break; }
-                    }
-                    if (shouldExist && idx === -1) {
-                        cfg.Tabs.push({ Title: entry.title, ContentHtml: entry.html });
-                        changed = true;
-                        ownedUpdates.push({ ownedKey: entry.ownedKey, value: true });
-                    } else if (shouldExist /* && idx !== -1 */) {
-                        // Entry already exists — preserve current owned flag. Do NOT
-                        // claim ownership of an existing entry that we didn't add,
-                        // so that the admin can manage it manually if they later
-                        // turn auto-create off.
-                        ownedUpdates.push({ ownedKey: entry.ownedKey, value: isOwned });
-                    } else if (!shouldExist && idx !== -1 && isOwned) {
-                        // We created this; safe to remove.
-                        cfg.Tabs.splice(idx, 1);
-                        changed = true;
-                        ownedUpdates.push({ ownedKey: entry.ownedKey, value: false });
-                    } else {
-                        // !shouldExist + (no entry, OR entry but not ours) → leave alone.
-                        ownedUpdates.push({ ownedKey: entry.ownedKey, value: false });
-                    }
-                });
-                if (!changed) {
-                    return { ok: true, status: 'noop', detail: 'Custom Tabs already in sync.', ownedUpdates: ownedUpdates };
-                }
-                return ApiClient.ajax({
-                    type: 'POST',
-                    url: ApiClient.getUrl('/Plugins/' + CUSTOM_TABS_PLUGIN_ID + '/Configuration'),
-                    contentType: 'application/json',
-                    data: JSON.stringify(cfg)
-                }).then(function() {
-                    return { ok: true, status: 'ok', detail: 'Custom Tabs updated.', ownedUpdates: ownedUpdates };
-                }).catch(function(err) {
-                    return {
-                        ok: false,
-                        status: 'failed',
-                        detail: 'Custom Tabs update failed: ' + ((err && err.message) || 'see console'),
-                        ownedUpdates: []  // do NOT persist owned flags if the POST didn't land
-                    };
-                });
-            }).catch(function(err) {
-                return {
-                    ok: false,
-                    status: 'failed',
-                    detail: 'Could not read Custom Tabs configuration: ' + ((err && err.message) || 'see console'),
-                    ownedUpdates: []
-                };
             });
         }
 
@@ -6478,6 +6399,8 @@
          * @returns {Promise<void>}
          */
         async function jeCheckArrConnections() {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             var out = document.getElementById('arrIntegrationCheckResult');
             var btn = document.getElementById('arrIntegrationCheckBtn');
             if (!out) return;
@@ -6509,8 +6432,9 @@
                     out.appendChild(row);
                     var r;
                     try {
-                        r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/test'), dataType: 'json' });
+                        r = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/test'), dataType: 'json' });
                     } catch (e) {
+                        if (e && e.sessionChanged) return;
                         detail.textContent = 'Check failed (error ' + (e && e.status ? e.status : '?') + ').';
                         row.classList.add('je-arr-check-bad');
                         continue;
@@ -6659,15 +6583,18 @@
          * @returns {Promise<void>}
          */
         async function jeArrNotifyTest(channel) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             var out = document.getElementById(channel === 'ntfy' ? 'arrNtfyTestResult' : 'arrEmailTestResult');
             var body = channel === 'ntfy'
                 ? { channel: 'ntfy', topic: (document.querySelector('#arrNtfyTestTopic').value || '').trim() }
                 : { channel: 'email', address: (document.querySelector('#arrEmailTestAddress').value || '').trim() };
             out.textContent = 'Sending...';
             try {
-                var res = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/test'), data: JSON.stringify(body), contentType: 'application/json', dataType: 'json' });
+                var res = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/test'), data: JSON.stringify(body), contentType: 'application/json', dataType: 'json' });
                 out.textContent = res && res.ok ? 'Sent.' : ('Not sent: ' + ((res && res.error) || 'unknown error'));
             } catch (e) {
+                if (e && e.sessionChanged) return;
                 var code = '';
                 try { code = (await e.json()).code || ''; } catch (_) { /* no body */ }
                 var texts = { invalid_topic: 'Enter a topic (8-64 letters, digits, - or _).', invalid_server: 'Save a valid ntfy server address first.', invalid_address: 'Enter a valid e-mail address.', email_not_set_up: 'Save the SMTP server and sender address first.' };
@@ -6715,10 +6642,14 @@
                 row.appendChild(createEl('div', { className: 'fieldDescription', textContent: (u.name || u.id) + ' · phone: ' + (u.ntfy ? 'on (' + (u.topic || '') + (u.topicByAdmin ? ', set by you' : '') + ')' : 'off') + ' · e-mail: ' + (u.email ? 'on' : (u.emailVerified ? 'off' : 'not set up')) + (u.quietHours ? ' · quiet ' + u.quietHours : '') }));
                 var give = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Give a new random phone topic' });
                 give.addEventListener('click', async function() {
+                    var origin = jeOrigin();
                     try {
-                        await ApiClient.ajax({ type: 'PUT', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/users/' + encodeURIComponent(u.id)), data: JSON.stringify({ generate: true }), contentType: 'application/json', dataType: 'json' });
-                        jeArrNotifyStatus();
-                    } catch (e) { give.textContent = 'Could not set it'; }
+                        await jeAdminSend(origin, { type: 'PUT', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/users/' + encodeURIComponent(u.id)), data: JSON.stringify({ generate: true }), contentType: 'application/json', dataType: 'json' });
+                        if (jeOriginCurrent(origin)) jeArrNotifyStatus();
+                    } catch (e) {
+                        if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                        give.textContent = jeAdminOutcome(e) === 'uncertain' ? 'Could not confirm it was set' : 'Could not set it';
+                    }
                 });
                 row.appendChild(give);
                 out.appendChild(row);
@@ -6761,6 +6692,8 @@
          * @returns {Promise<void>}
          */
         async function jeArrLiveWebhookAction(inst, what, out) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
             var message = what === 'provision'
                 ? 'Jellyfin Enhanced will add (or update) a webhook named "Jellyfin Enhanced" in ' + inst.name + ' (Settings > Connect) that sends download, import, delete and health events to ' + (url || '(address not set)') + '/JellyfinEnhanced/arr/hook/... with a secret header. ' + inst.name + ' sends a test event first, so this also proves it can reach Jellyfin. Continue?'
@@ -6768,7 +6701,7 @@
             if (!window.confirm(message)) return;
             out.textContent = what === 'provision' ? 'Setting up...' : 'Removing...';
             try {
-                var r = await ApiClient.ajax({
+                var r = await jeAdminSend(origin, {
                     type: what === 'provision' ? 'POST' : 'DELETE',
                     url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook'),
                     data: JSON.stringify({ consent: true, jellyfinUrl: url || null, idempotencyKey: jeNewGuid() }),
@@ -6778,10 +6711,13 @@
                 var ok = r && r.status === 'Succeeded';
                 out.textContent = (ok ? '✓ ' : '✗ ') + ((r && (r.readBack || r.message)) || 'Done.') + (r && r.error && r.error.message && !ok ? ' ' + r.error.message : '');
             } catch (e) {
+                if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
                 var code = e && e.status;
-                out.textContent = code === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it, save, and try again.' : '✗ Failed (error ' + (code || '?') + ').';
+                out.textContent = code === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it, save, and try again.'
+                    : jeAdminOutcome(e) === 'uncertain' ? '? Could not confirm (the answer was lost): the status below says how it stands.'
+                    : '✗ Failed (error ' + (code || '?') + ').';
             }
-            jeArrLiveStatus(true);
+            if (jeOriginCurrent(origin)) jeArrLiveStatus(true);
         }
 
         /**
@@ -6791,16 +6727,19 @@
          * @returns {Promise<void>}
          */
         async function jeArrLiveManual(inst, out) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
             out.textContent = 'Loading...';
             try {
-                var m = await ApiClient.ajax({
+                var m = await jeAdminSend(origin, {
                     type: 'POST',
                     url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook/manual'),
                     data: JSON.stringify({ jellyfinUrl: url || null }),
                     contentType: 'application/json',
                     dataType: 'json'
                 });
+                if (!jeOriginCurrent(origin)) return;
                 out.textContent = '';
                 var lines = [
                     'In ' + inst.name + ': Settings > Connect > + > Webhook.',
@@ -6813,6 +6752,7 @@
                 ];
                 lines.forEach(function(line) { out.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-note', textContent: line })); });
             } catch (e) {
+                if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
                 out.textContent = e && e.status === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it first.' : '✗ Failed (error ' + (e && e.status ? e.status : '?') + ').';
             }
         }
@@ -7134,9 +7074,10 @@
                 row.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-bad', textContent: t.name + ': automatic sends paused after ' + t.breakerFailures + ' failures in a row, until ' + time(t.breakerOpenUntil) + '.' }));
                 var retry = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Try again now' });
                 retry.addEventListener('click', async function() {
+                    var origin = jeOrigin();
                     retry.disabled = true;
-                    try { await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/breakers/reset'), data: JSON.stringify({ target: t.id }), contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
-                    jeArrAutomationStatus();
+                    try { await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/breakers/reset'), data: JSON.stringify({ target: t.id }), contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
+                    if (jeOriginCurrent(origin)) jeArrAutomationStatus();
                 });
                 row.appendChild(retry);
                 out.appendChild(row);
@@ -7154,9 +7095,10 @@
                 if (m.notice === 'pending') {
                     var got = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Got it (hide this notice in the Requests page)' });
                     got.addEventListener('click', async function() {
+                        var origin = jeOrigin();
                         got.disabled = true;
-                        try { await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/notice/dismiss'), data: '{}', contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
-                        jeArrAutomationStatus();
+                        try { await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/notice/dismiss'), data: '{}', contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
+                        if (jeOriginCurrent(origin)) jeArrAutomationStatus();
                     });
                     out.appendChild(got);
                 }
@@ -7329,18 +7271,27 @@
          * @returns {Promise<void>}
          */
         async function jeArrMigrationCommit(digest, confirmed, button, note) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             if (!window.confirm('Move these requests into Jellyfin Enhanced and switch request handling to Jellyfin Enhanced? You can roll this back for 14 days.')) return;
             button.disabled = true;
             note.textContent = 'Moving...';
             try {
-                var result = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/commit'),
+                var result = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/commit'),
                     data: JSON.stringify({ digest: digest, confirmRequestsDisabled: confirmed }), contentType: 'application/json', dataType: 'json' });
+                if (!jeOriginCurrent(origin)) return;
                 jeArrMigrationSyncBackend(result.backend);
                 button.remove();
                 // Check again so the panel shows the state after the move (and the move's Roll back button).
                 await jeArrMigrationCheck('✓ ' + String(result.message || '').replace(/\.$/, '') + ' (' + result.imported + ' moved).');
             } catch (e) {
+                if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
                 note.textContent = '';
+                if (jeAdminOutcome(e) === 'uncertain') {
+                    // The answer was lost: the move may have happened. The check below reads what holds now.
+                    await jeArrMigrationCheck('? Could not confirm the move (the answer was lost): this shows how it stands now.');
+                    return;
+                }
                 jeArrMigrationLine(note, '✗ ' + await jeArrMigrationError(e) + ' Nothing was moved.', 'je-arr-check-bad');
                 button.disabled = false;
             }
@@ -7354,16 +7305,24 @@
          * @returns {Promise<void>}
          */
         async function jeArrMigrationRollback(batchId, where, returnsTo) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             var handling = returnsTo === 'je' ? 'request handling stays Jellyfin Enhanced'
                 : 'request handling goes back to ' + (returnsTo === 'status_only' ? 'Status only' : 'Seerr');
             if (!window.confirm('Roll this move back? Moved requests nobody changed since are removed from Jellyfin Enhanced, and ' + handling + '.')) return;
             try {
-                var result = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/rollback'),
+                var result = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/rollback'),
                     data: JSON.stringify({ batchId: batchId }), contentType: 'application/json', dataType: 'json' });
+                if (!jeOriginCurrent(origin)) return;
                 jeArrMigrationSyncBackend(result.backend);
                 // Check again so the panel shows what can be moved now.
                 await jeArrMigrationCheck('✓ ' + String(result.message || '').replace(/\.$/, '') + ' (' + result.removed + ' removed, ' + result.kept + ' kept).');
             } catch (e) {
+                if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                if (jeAdminOutcome(e) === 'uncertain') {
+                    await jeArrMigrationCheck('? Could not confirm the roll back (the answer was lost): this shows how it stands now.');
+                    return;
+                }
                 jeArrMigrationLine(where, '✗ ' + await jeArrMigrationError(e), 'je-arr-check-bad');
             }
         }
@@ -7570,12 +7529,6 @@
 
         // ==================== End Multi-Instance Arr Management ====================
 
-        // Cache of the four "JE owns this Custom Tabs entry" booleans from the
-        // most recently loaded config. Sync uses these to decide whether a
-        // matching CT entry was created by JE (safe to delete) or by the admin
-        // (must not touch). Only the Custom Tabs sync writes them (as a patch of
-        // those fields alone).
-        var _jeCustomTabOwnedCache = Object.create(null);
 
         // Tracks whether the most recent `renderQualityCatOrderAdmin` call ran
         // to completion. If false at save time, we skip writing positional
@@ -8084,6 +8037,8 @@
             var statusEl = document.getElementById('spoilerApplyExistingStatus');
             if (!btn || !statusEl) return;
             btn.addEventListener('click', function () {
+                // The run's origin: this click, through the dry run and the confirmation.
+                var origin = jeOrigin();
                 if (document.querySelector('.je-save-dock.je-dirty')) {
                     Dashboard.alert({ title: 'Save first', message: 'This uses the saved auto-enable settings. Save your changes, then try again.' });
                     return;
@@ -8118,11 +8073,12 @@
                     Dashboard.confirm(spoilerApplyExistingLinesHtml(lines), 'Apply Spoiler Guard to existing titles?', function (confirmed) {
                         if (!confirmed) { btn.disabled = false; return; }
                         statusEl.textContent = 'Starting…';
-                        ApiClient.ajax({
+                        jeAdminSend(origin, {
                             type: 'POST',
                             url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing', { skipStarted: skipStarted }),
                             dataType: 'json'
                         }).then(function (res) {
+                            if (!jeOriginCurrent(origin)) return;
                             if (res && typeof res.completedRuns === 'number') {
                                 pollSpoilerApplyExisting(res.completedRuns);
                             } else {
@@ -8130,6 +8086,12 @@
                                 statusEl.textContent = 'Started. Follow it in Dashboard > Scheduled Tasks.';
                             }
                         }).catch(function (err) {
+                            if (err && err.sessionChanged || !jeOriginCurrent(origin)) return;
+                            if (jeAdminOutcome(err) === 'uncertain') {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Could not confirm the run started (the answer was lost). Check Dashboard > Scheduled Tasks before starting it again.';
+                                return;
+                            }
                             spoilerApplyExistingErrorMessage(err).then(function (msg) {
                                 btn.disabled = false;
                                 statusEl.textContent = 'Could not start the run: ' + (msg || 'see Dashboard > Scheduled Tasks and the server log.');
@@ -8487,9 +8449,6 @@
                 // values and stay unsaved (their baseline stays as it was); every other field shows what the server holds now.
                 const kept = _jeConfigReadOk ? jeKeepUnsaved(read) : null;
                 const config = kept ? kept.config : read;
-                CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
-                    _jeCustomTabOwnedCache[entry.ownedKey] = config[entry.ownedKey] === true;
-                });
                 const savedShortcuts = (config.Shortcuts && config.Shortcuts.length > 0) ? config.Shortcuts : defaultShortcuts;
                 shortcutOverrides = savedShortcuts.filter(saved => {
                     const def = defaultShortcuts.find(d => d.Name === saved.Name);
@@ -9689,74 +9648,6 @@
             return config;
         }
 
-        /**
-         * Run sync, then if any owned-flag updates were produced, persist them
-         * back to JE config in a second write so future saves see the new state.
-         * Returns the (possibly downgraded) sync result so the caller can surface
-         * any failure to the admin.
-         *
-         * Cache discipline: `_jeCustomTabOwnedCache` is mutated ONLY after the
-         * server confirms the owned-flag write. On failure we re-read the live
-         * config and restore the cache to ground truth — otherwise a partial
-         * write would leave the in-memory cache disagreeing with what the next
-         * page-load will see, causing JE to silently orphan its own tabs on
-         * future cleanup. The downgraded result tells `saveConfig` to surface
-         * the partial-success to the admin.
-         */
-        async function runCustomTabsSync(config) {
-            const syncResult = await syncAllManagedCustomTabs(config);
-            if (!syncResult || !Array.isArray(syncResult.ownedUpdates) || syncResult.ownedUpdates.length === 0) {
-                return syncResult;
-            }
-            // Detect changes against the cache, but DO NOT mutate the cache yet.
-            const pendingUpdates = syncResult.ownedUpdates.filter(function(u) {
-                return _jeCustomTabOwnedCache[u.ownedKey] !== u.value;
-            });
-            if (pendingUpdates.length === 0) {
-                return syncResult;
-            }
-            // Second write: ONLY the owned-flag delta, applied by the server to the configuration it holds then, so an
-            // interleaving save (another tab or administrator) is never replayed over.
-            const ownedPatch = { Set: {}, Instances: {} };
-            pendingUpdates.forEach(function(u) { ownedPatch.Set[u.ownedKey] = u.value; });
-            try {
-                await jePatchConfiguration(ownedPatch);
-                pendingUpdates.forEach(function(u) { jeAcceptStored(u.ownedKey, u.value); });
-                // Server confirmed — commit cache.
-                pendingUpdates.forEach(function(u) {
-                    _jeCustomTabOwnedCache[u.ownedKey] = u.value;
-                });
-                return syncResult;
-            } catch (persistErr) {
-                console.error('[JE] Failed to persist Custom Tabs owned-flag updates:', persistErr);
-                // Roll cache back to ground truth so the next save's plan
-                // computes against the actual server state, not a poisoned cache.
-                try {
-                    const fresh = await ApiClient.getPluginConfiguration(pluginId);
-                    CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
-                        _jeCustomTabOwnedCache[entry.ownedKey] = fresh[entry.ownedKey] === true;
-                    });
-                } catch (reloadErr) {
-                    console.error('[JE] Cache rollback after owned-flag persist failure also failed:', reloadErr);
-                }
-                // Downgrade the result so saveConfig's check surfaces the partial.
-                // The recovery message has to be specific because the trivial "re-save"
-                // path does not actually repair the state: post-rollback the cache and
-                // server agree on owned=false, the CT entry exists, and the next sync's
-                // shouldExist+entry-exists branch will preserve owned=false (no second
-                // write fires). Real recovery is to delete the CT entry from the
-                // Custom Tabs plugin UI and then re-save here so the next sync ADDs
-                // a fresh entry and stamps it owned=true.
-                return Object.assign({}, syncResult, {
-                    ok: false,
-                    status: 'partial',
-                    detail: (syncResult.detail ? syncResult.detail + ': ' : '') +
-                            "Custom Tabs has the new entry, but Jellyfin Enhanced could not save its ownership record. " +
-                            "JE will not be able to clean this entry up on a later toggle change. " +
-                            "To restore JE management: open the Custom Tabs plugin, delete the JE-managed entry there, then save this page again; JE will recreate it and record ownership properly."
-                });
-            }
-        }
 
         /** Every page-level asynchronously filled field (see jeAsyncField). */
         function jeAsyncFields() {
@@ -9952,10 +9843,11 @@
         /**
          * Sends changes to the server, which applies them to the configuration it holds now.
          * @param {Object} patch - { Set, Instances }
+         * @param {Object} origin - jeOrigin() taken when the administrator acted
          * @returns {Promise<Object>} { configuration (as stored afterwards), applied, ignored, skipped }
          */
-        function jePatchConfiguration(patch) {
-            return ApiClient.ajax({
+        function jePatchConfiguration(patch, origin) {
+            return jeAdminSend(origin, {
                 type: 'PATCH',
                 url: ApiClient.getUrl('/JellyfinEnhanced/configuration'),
                 contentType: 'application/json',
@@ -9980,24 +9872,31 @@
         }
 
         // Saves run one after another. A save requested while one runs (a second click, Import Users Now, Apply to all
-        // users) waits for it and then saves what the form says by then; requests made meanwhile share that one save.
+        // users) waits for it and then saves what the form says by then; requests of the same administrator made meanwhile
+        // share that one save. Each save belongs to the origin of the action that asked for it (jeOrigin(), taken at the
+        // click): at its turn it goes out only while that administrator is still the signed-in one, and its answer is
+        // applied only on their page.
         var _jeSaveChain = Promise.resolve();
         var _jeSaveWaiting = null;
 
         /**
          * Saves the administrator's changes.
-         * @returns {Promise<boolean>} true once they are stored, false when the save was refused or failed (the
-         *   administrator was told why)
+         * @param {Object} origin - jeOrigin() taken when the administrator acted (before any wait)
+         * @returns {Promise<boolean>} true once they are stored for this administrator, false when the save was refused,
+         *   failed or couldn't be confirmed, or its administrator changed (the administrator was told why)
          */
-        function jeSave() {
-            if (_jeSaveWaiting) return _jeSaveWaiting;
-            var waiting = _jeSaveChain.then(function() {
-                if (_jeSaveWaiting === waiting) _jeSaveWaiting = null;
-                return jeSaveNow();
+        function jeSave(origin) {
+            if (_jeSaveWaiting && _jeSaveWaiting.origin.epoch === origin.epoch && _jeSaveWaiting.origin.identity === origin.identity) {
+                return _jeSaveWaiting.promise;
+            }
+            var entry = { origin: origin, promise: null };
+            entry.promise = _jeSaveChain.then(function() {
+                if (_jeSaveWaiting === entry) _jeSaveWaiting = null;
+                return jeSaveNow(origin);
             });
-            _jeSaveWaiting = waiting;
-            _jeSaveChain = waiting.then(function() {}, function() {});
-            return waiting;
+            _jeSaveWaiting = entry;
+            _jeSaveChain = entry.promise.then(function() {}, function() {});
+            return entry.promise;
         }
 
         /**
@@ -10018,12 +9917,14 @@
          * goes with the next save; that is checked again right before drawing (an edit may come while the read runs). What
          * is drawn again counts as read.
          * @param {Object} sentNow - The configuration the save was built from
+         * @param {Object} origin - The save's origin
          */
-        async function jeRedrawSavedFields(sentNow) {
+        async function jeRedrawSavedFields(sentNow, origin) {
             if (!jeUneditedRedrawGroups(sentNow).length) return;
             var revision = _jeConfigRevision;
             var fresh = await ApiClient.getPluginConfiguration(pluginId);
-            if (!fresh) return;
+            // A read for the administrator of the save, drawn only on their page.
+            if (!fresh || !jeOriginCurrent(origin)) return;
             // A read that began before another change of what the page holds (a value taken, another read) isn't drawn.
             if (revision !== _jeConfigRevision) return;
             // Check at apply time: only what is still unedited now is drawn.
@@ -10042,11 +9943,51 @@
         }
 
         /**
-         * One save: refuses when it must (no read yet, an empty "specific users" choice), sends the changes, then applies
-         * the side effects (Custom Tabs, maintenance mode) from the configuration as stored.
+         * After a save: what the configuration's runtime effects (maintenance mode, the Custom Tabs entries Jellyfin Enhanced
+         * manages) do. The server's one owner reconciles them from the configuration it holds now (never from this page's
+         * snapshot); the page asks it, for the generation its save answered, to confirm, and says what holds. When the
+         * configuration as stored now is no longer this save's (another administrator saved since), the newer save owns the
+         * effects: nothing is sent. A stale generation is refused by the server too (409), whatever this page believed.
+         * @param {Object} stored - The configuration as this save stored it
+         * @param {Object} origin - The save's origin
+         * @returns {Promise<Object|null>} The server's confirmation ({ maintenance, customTabs }), or null when nothing was asked
+         */
+        async function jeConfirmEffects(stored, origin) {
+            var generation = stored.ConfigurationGeneration;
+            var fresh;
+            try {
+                fresh = await ApiClient.getPluginConfiguration(pluginId);
+            } catch (e) {
+                fresh = null;
+            }
+            if (!jeOriginCurrent(origin)) return null;
+            if (!fresh || fresh.ConfigurationGeneration !== generation || !!fresh.MaintenanceModeEnabled !== !!stored.MaintenanceModeEnabled) {
+                console.info('[JE] The configuration changed since this save: its effects follow the newer save.');
+                return null;
+            }
+            try {
+                return await jeAdminSend(origin, {
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/' + (stored.MaintenanceModeEnabled ? 'Enable' : 'Disable'), { generation: generation }),
+                    contentType: 'application/json',
+                    data: '{}',
+                    dataType: 'json'
+                });
+            } catch (e) {
+                if (e && e.status === 409) return null; // a newer save owns the effects
+                throw e;
+            }
+        }
+
+        /**
+         * One save: refuses when it must (no read yet, an empty "specific users" choice), sends the changes, then asks the
+         * server to confirm the configuration's effects. Every step after a wait goes on only while the save's administrator
+         * is still the signed-in one.
+         * @param {Object} origin - The save's origin
          * @returns {Promise<boolean>}
          */
-        async function jeSaveNow() {
+        async function jeSaveNow(origin) {
+            if (!jeOriginCurrent(origin)) { jeAdminCancelled('save'); return false; }
             if (!jeConfigSaveAllowed()) return false;
             if (!jeMaintenanceSelectionAllowed()) return false;
             enforceTabExclusivity();
@@ -10054,6 +9995,7 @@
             var saveBtns = document.querySelectorAll('.je-save-dock-btn');
             saveBtns.forEach(function(b) { b.disabled = true; });
 
+            let stored = null;
             try {
                 // This save's snapshot: an edit from here on belongs to the next save.
                 const revisions = jeAsyncFields().map(function(field) { return field.revision; });
@@ -10067,7 +10009,7 @@
                 _jeConfigRevision++;
                 jeUpdateDirtyIndicator();
                 try {
-                    result = await jePatchConfiguration(jeConfigPatch(_jeSent, now));
+                    result = await jePatchConfiguration(jeConfigPatch(_jeSent, now), origin);
                 } finally {
                     _jeInFlight = null;
                     _jeConfigRevision++;
@@ -10079,67 +10021,26 @@
                 jeAsyncFieldsSaved(now, revisions);
                 jeUpdateDirtyIndicator();
                 resets.forEach(function(type) { _jeArrResetConfirmed[type] = false; });
-                const stored = (result && (result.configuration || result.Configuration)) || now;
+                stored = (result && (result.configuration || result.Configuration)) || now;
                 const skipped = (result && (result.skipped || result.Skipped)) || [];
-                // After JE config is persisted, sync any managed Custom Tabs entries.
-                // We surface non-OK results to the admin via Dashboard.alert so a
-                // partial failure doesn't hide behind the green "saved" toast.
-                const syncResult = await runCustomTabsSync(stored);
+                // The administrator changed while the save was out: it is stored (their change), but nothing of it goes on
+                // as, or is shown to, the next administrator.
+                if (!jeOriginCurrent(origin)) { Dashboard.hideLoadingMsg(); return false; }
 
-                // Apply maintenance mode as stored (another administrator's change included): enable/disable users to match
+                // The configuration's effects (maintenance mode, Custom Tabs), confirmed by the server.
+                let effects = null;
                 try {
-                    if (stored.MaintenanceModeEnabled) {
-                        const affectedIds = stored.MaintenanceModeAffectedUsers === 'all'
-                            ? []
-                            : JSON.parse(stored.MaintenanceModeAffectedUsers || '[]');
-                        await ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Enable'),
-                            contentType: 'application/json',
-                            data: JSON.stringify({
-                                message: stored.MaintenanceModeMessage || '',
-                                notificationMessage: stored.MaintenanceModeNotificationMessage || '',
-                                durationMinutes: stored.MaintenanceModeDurationMinutes || 0,
-                                action: stored.MaintenanceModeAction || 'disable_accounts',
-                                affectedUserIds: affectedIds
-                            })
-                        });
-                        // Broadcast a native Jellyfin message to all active sessions
-                        // (reaches non-web clients like TV apps too — works regardless of Active Streams setting)
-                        const mmMsg = (stored.MaintenanceModeNotificationMessage || '').trim()
-                            || (stored.MaintenanceModeMessage || '').trim()
-                            || 'Server maintenance is starting. Please finish up and try again later.';
-                        try {
-                            await ApiClient.ajax({
-                                type: 'POST',
-                                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Broadcast'),
-                                contentType: 'application/json',
-                                data: JSON.stringify({
-                                    header: 'Server Maintenance',
-                                    text: mmMsg,
-                                    timeoutMs: 30000
-                                })
-                            });
-                        } catch (bcErr) {
-                            console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
-                        }
-                    } else {
-                        // With the daily schedule on, "manual off" must leave a scheduled window running;
-                        // with it off, nothing should be active, so end a scheduled window right away too.
-                        await ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable', {
-                                includeScheduled: !stored.MaintenanceScheduleEnabled
-                            })
-                        });
-                    }
-                } catch (mmErr) {
-                    console.warn('[JE] Maintenance mode apply failed:', mmErr);
+                    effects = await jeConfirmEffects(stored, origin);
+                } catch (effectsErr) {
+                    console.warn('[JE] Could not confirm the configuration effects:', effectsErr);
+                    effects = { maintenance: jeAdminOutcome(effectsErr) === 'uncertain' ? 'pending' : 'failed' };
                 }
+                if (!jeOriginCurrent(origin)) { Dashboard.hideLoadingMsg(); return false; }
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 // Show the saved credentials as placeholders again (never leave a typed key on screen).
-                try { await jeRedrawSavedFields(now); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
+                try { await jeRedrawSavedFields(now, origin); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
+                if (!jeOriginCurrent(origin)) return false;
                 // What this save sent is saved; an edit made since still shows as unsaved.
                 jeUpdateDirtyIndicator();
                 if (skipped.length) {
@@ -10150,12 +10051,23 @@
                         });
                     } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
                 }
-                if (syncResult && syncResult.ok === false) {
+                if (effects && (effects.maintenance === 'failed' || effects.maintenance === 'pending')) {
+                    try {
+                        Dashboard.alert({
+                            title: effects.maintenance === 'failed' ? 'Maintenance mode not applied' : 'Maintenance mode still being applied',
+                            message: effects.maintenance === 'failed'
+                                ? 'Your Jellyfin Enhanced settings were saved, but maintenance mode could not be applied. Check the server log, then save again.'
+                                : 'Your Jellyfin Enhanced settings were saved. The server is still applying maintenance mode; reload this page in a moment to see how it stands.'
+                        });
+                    } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
+                }
+                const tabs = effects && (effects.customTabs || effects.CustomTabs);
+                if (tabs && tabs.ok === false) {
                     try {
                         Dashboard.alert({
                             title: 'Custom Tabs sync issue',
                             message: 'Your Jellyfin Enhanced settings were saved, but the Custom Tabs entry could not be updated.\n\n' +
-                                     (syncResult.detail || 'See browser console for details.')
+                                     (tabs.detail || 'See the server log for details.')
                         });
                     } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
                 }
@@ -10163,8 +10075,22 @@
             } catch (saveErr) {
                 Dashboard.hideLoadingMsg();
                 console.error('[JE] saveConfig failed:', saveErr);
-                // Nothing of it is stored: the form is compared with what the server last answered again.
+                // An account change: the save was not sent (the next administrator's page isn't told about it).
+                if (saveErr && saveErr.sessionChanged) return false;
                 jeUpdateDirtyIndicator();
+                if (stored === null && jeAdminOutcome(saveErr) === 'uncertain') {
+                    // Sent, and its answer was lost: it may be stored. Never "Save failed": the settings are read again and
+                    // the page shows what the server holds (an edit kept unsaved stays as typed).
+                    try {
+                        Dashboard.alert({
+                            title: 'Could not confirm the save',
+                            message: 'Jellyfin Enhanced could not confirm your settings were saved (the answer was lost). The page now reads the settings again; check them before saving again.'
+                        });
+                    } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
+                    _jeRefreshWanted = true;
+                    return false;
+                }
+                // Nothing of it is stored: the form is compared with what the server last answered again.
                 try {
                     Dashboard.alert({
                         title: 'Save failed',
@@ -10175,37 +10101,45 @@
             } finally {
                 saveBtns.forEach(function(b) { b.disabled = false; });
                 // A read dropped while this save was out is read again now (unless another save follows).
-                if (_jeRefreshWanted) jeRefreshAfterSaves();
+                if (_jeRefreshWanted && jeOriginCurrent(origin)) jeRefreshAfterSaves();
             }
         }
 
         function saveConfig(e) {
             if (e) e.preventDefault();
-            jeSave();
+            jeSave(jeOrigin());
             return false;
         }
 
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
+            // The action's origin: the click. The save, the reset and what they show belong to this administrator.
+            var origin = jeOrigin();
             if (!jeConfigSaveAllowed()) return;
             if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
                 // First, save the current configuration (after a save already running): only once it is stored are the
-                // users' settings replaced with it.
-                if (!await jeSave()) return;
+                // users' settings replaced with it, and only as the administrator who asked.
+                if (!await jeSave(origin)) return;
+                if (!jeOriginCurrent(origin)) return;
                 Dashboard.showLoadingMsg();
                 try {
-                    await ApiClient.ajax({
+                    await jeAdminSend(origin, {
                         type: 'POST',
                         url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
                         dataType: 'json'
                     });
 
                     Dashboard.hideLoadingMsg();
+                    if (!jeOriginCurrent(origin)) return;
                     Dashboard.alert({ title: 'Success', message: 'Configuration saved and applied to all users successfully!\n\nSettings will take effect after users refresh their browsers.' });
                 } catch (e) {
                     Dashboard.hideLoadingMsg();
                     console.error('Failed to apply settings to all users:', e);
-                    Dashboard.alert({
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    Dashboard.alert(jeAdminOutcome(e) === 'uncertain' ? {
+                        title: 'Could not confirm',
+                        message: 'Your settings were saved. Jellyfin Enhanced could not confirm they were applied to all users (the answer was lost); check a user\'s settings before trying again.'
+                    } : {
                         title: 'Error',
                         message: 'Your settings were saved, but applying them to all users failed. Check server logs for details.'
                     });
@@ -10465,6 +10399,8 @@
         }
 
         async function uploadBrandingImage(file, config, statusDiv) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
                 statusDiv.textContent = '✗ Only image files allowed';
@@ -10514,7 +10450,7 @@
                 formData.append('fileName', config.fileName);
 
                 const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
-                const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/UploadBrandingImage'), {
+                const response = await jeAdminFetch(origin, ApiClient.getUrl('/JellyfinEnhanced/UploadBrandingImage'), {
                     method: 'POST',
                     body: formData,
                     headers: {
@@ -10525,6 +10461,8 @@
                     }
                 });
 
+                // The answer is shown only to the administrator who sent it.
+                if (!jeOriginCurrent(origin)) return;
                 if (response.ok) {
                     statusDiv.textContent = '✓ Uploaded';
                     statusDiv.style.color = '#51cf66';
@@ -10537,6 +10475,14 @@
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
+                if (error && error.sessionChanged || !jeOriginCurrent(origin)) return;
+                // A lost answer: the image may be stored (the preview below shows what the server holds).
+                if (jeAdminOutcome(error) === 'uncertain') {
+                    statusDiv.textContent = '? Could not confirm the upload (the answer was lost).';
+                    statusDiv.style.color = '#ff9800';
+                    await refreshBrandingPreview(config).catch(function() {});
+                    return;
+                }
                 statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
             }
@@ -10588,6 +10534,8 @@
         }
 
         async function deleteBrandingImage(config, statusDiv) {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            var origin = jeOrigin();
             statusDiv.textContent = 'Deleting...';
             statusDiv.style.color = '#ffa500';
 
@@ -10596,7 +10544,7 @@
             const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
 
             try {
-                const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/DeleteBrandingImage'), {
+                const response = await jeAdminFetch(origin, ApiClient.getUrl('/JellyfinEnhanced/DeleteBrandingImage'), {
                     method: 'POST',
                     body: formData,
                     // Jellyfin 12 authenticates from the Authorization header; the
@@ -10604,6 +10552,8 @@
                     headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
                 });
 
+                // The answer is shown only to the administrator who sent it.
+                if (!jeOriginCurrent(origin)) return;
                 if (response.ok) {
                     statusDiv.textContent = '✓ Deleted';
                     statusDiv.style.color = '#51cf66';
@@ -10620,6 +10570,14 @@
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
+                if (err && err.sessionChanged || !jeOriginCurrent(origin)) return;
+                // A lost answer: the image may be deleted (the preview below shows what the server holds).
+                if (jeAdminOutcome(err) === 'uncertain') {
+                    statusDiv.textContent = '? Could not confirm the delete (the answer was lost).';
+                    statusDiv.style.color = '#ff9800';
+                    await refreshBrandingPreview(config).catch(function() {});
+                    return;
+                }
                 statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
@@ -11697,7 +11655,7 @@
         }
 
         function dismissWhatsNew() {
-            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/whats-new/dismiss') })
+            jeAdminSend(jeOrigin(), { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/whats-new/dismiss') })
                 .catch(function(err) { console.warn('[JE] whats-new dismiss failed:', err); });
             renderWhatsNewBanner([]);
             renderWhatsNewBadges([]);
@@ -12982,11 +12940,13 @@
         }
 
         clearTagsCacheBtn.addEventListener('click', async () => {
+            const origin = jeOrigin();
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
                 Dashboard.showLoadingMsg();
                 try {
                     const stamp = Date.now();
-                    await jePatchConfiguration({ Set: { ClearLocalStorageTimestamp: stamp }, Instances: {} });
+                    await jePatchConfiguration({ Set: { ClearLocalStorageTimestamp: stamp }, Instances: {} }, origin);
+                    if (!jeOriginCurrent(origin)) { Dashboard.hideLoadingMsg(); return; }
                     jeAcceptStored('ClearLocalStorageTimestamp', stamp);
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert({
@@ -12996,9 +12956,14 @@
                 } catch (e) {
                     Dashboard.hideLoadingMsg();
                     console.error('Failed to set cache clear timestamp:', e);
+                    // Its administrator changed: nothing is shown on the next administrator's page.
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    // A lost answer: the signal may be stored. Never "failed" then.
                     Dashboard.alert({
                         title: 'Error',
-                        message: 'Failed to set cache clear timestamp. Check server logs for details.'
+                        message: jeAdminOutcome(e) === 'uncertain'
+                            ? 'Could not confirm the cache clear signal was saved (the answer was lost). Reload this page to check before sending it again.'
+                            : 'Failed to set cache clear timestamp. Check server logs for details.'
                     });
                 }
             }
@@ -13051,12 +13016,14 @@
          * @param {Document} doc - The page document
          * @returns {Promise<string>} The status message shown to the admin
          */
-        async function jeBackupExport(doc) {
+        async function jeBackupExport(doc, origin) {
+            // The export's origin: the click's (a direct call is its own action now).
+            origin = origin || jeOrigin();
             var opts = jeBackupExportOptions(doc);
             if (opts.error) return opts.error;
             var headers = jeBackupAuthHeaders();
             headers['Content-Type'] = 'application/json';
-            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/export'), {
+            var res = await jeAdminFetch(origin, ApiClient.getUrl('/JellyfinEnhanced/admin/backup/export'), {
                 method: 'POST', headers: headers, body: JSON.stringify({ secrets: opts.secrets, passphrase: opts.passphrase })
             });
             if (!res.ok) {
@@ -13085,7 +13052,8 @@
          * @param {'inspect'|'restore'} action - Which route
          * @returns {Promise<{ok: boolean, body: Object}>}
          */
-        async function jeBackupUpload(doc, action) {
+        async function jeBackupUpload(doc, action, origin) {
+            origin = origin || jeOrigin();
             var input = doc.querySelector('#backupRestoreFile');
             var file = input && input.files && input.files[0];
             if (!file) return { ok: false, body: { message: 'Choose a backup file first.' } };
@@ -13093,7 +13061,7 @@
             form.append('file', file, file.name);
             form.append('passphrase', (doc.querySelector('#backupRestorePassphrase') || {}).value || '');
             if (action === 'restore') form.append('confirm', 'restore');
-            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/' + action), { method: 'POST', headers: jeBackupAuthHeaders(), body: form });
+            var res = await jeAdminFetch(origin, ApiClient.getUrl('/JellyfinEnhanced/admin/backup/' + action), { method: 'POST', headers: jeBackupAuthHeaders(), body: form });
             var body = await res.json().catch(function() { return {}; });
             return { ok: res.ok, body: body };
         }
@@ -13132,10 +13100,11 @@
             secretsSelect.addEventListener('change', syncPassRow);
             syncPassRow();
             exportBtn.addEventListener('click', async function() {
+                var origin = jeOrigin();
                 exportBtn.disabled = true;
                 exportStatus.textContent = 'Preparing the backup…';
                 try {
-                    exportStatus.textContent = await jeBackupExport(document);
+                    exportStatus.textContent = await jeBackupExport(document, origin);
                 } catch (e) {
                     exportStatus.textContent = 'Backup failed: ' + (e && e.message ? e.message : e);
                 } finally {
@@ -13143,22 +13112,29 @@
                 }
             });
             document.querySelector('#backupInspectBtn').addEventListener('click', async function() {
+                var origin = jeOrigin();
                 restoreStatus.textContent = 'Checking…';
                 try {
-                    var r = await jeBackupUpload(document, 'inspect');
+                    var r = await jeBackupUpload(document, 'inspect', origin);
                     restoreStatus.textContent = r.ok ? jeBackupSummaryText(r.body) : (r.body.message || 'This file can\'t be used.');
                 } catch (e) {
                     restoreStatus.textContent = 'Check failed: ' + (e && e.message ? e.message : e);
                 }
             });
             document.querySelector('#backupRestoreBtn').addEventListener('click', async function() {
+                var origin = jeOrigin();
                 if (!confirm('Restore this backup?\n\nJellyfin Enhanced\'s settings and the files in the backup replace the current ones. A copy of the current data is saved first.')) return;
                 restoreStatus.textContent = 'Restoring…';
                 try {
-                    var r = await jeBackupUpload(document, 'restore');
+                    var r = await jeBackupUpload(document, 'restore', origin);
+                    if (!jeOriginCurrent(origin)) return;
                     restoreStatus.textContent = r.ok ? jeBackupRestoreText(r.body) : (r.body.message || 'Restore failed.');
                 } catch (e) {
-                    restoreStatus.textContent = 'Restore failed: ' + (e && e.message ? e.message : e);
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    // The answer was lost: the restore may have run. Never "failed" then.
+                    restoreStatus.textContent = jeAdminOutcome(e) === 'uncertain'
+                        ? 'Could not confirm the restore (the answer was lost). Restart Jellyfin, then reload this page and check the settings.'
+                        : 'Restore failed: ' + (e && e.message ? e.message : e);
                 }
             });
         }
@@ -13167,20 +13143,25 @@
         var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
         if (rebuildTagCacheBtn) {
             rebuildTagCacheBtn.addEventListener('click', async () => {
+                const origin = jeOrigin();
                 if (!confirm("Rebuild the server tag cache?\n\nThis re-scans the whole library in the background and may take a few minutes. Tags keep serving from the existing cache until the rebuild finishes.")) {
                     return;
                 }
                 rebuildTagCacheBtn.disabled = true;
                 try {
                     const url = ApiClient.getUrl('/JellyfinEnhanced/tag-cache/rebuild');
-                    const res = await ApiClient.ajax({ type: 'POST', url: url, dataType: 'json' });
+                    const res = await jeAdminSend(origin, { type: 'POST', url: url, dataType: 'json' });
+                    if (!jeOriginCurrent(origin)) return;
                     Dashboard.alert({
                         title: 'Rebuild Started',
                         message: (res && res.message) || 'Rebuilding the tag cache in the background. Check the server logs for progress and completion.'
                     });
                 } catch (e) {
                     console.error('Failed to start tag cache rebuild:', e);
-                    var message = 'Failed to start the rebuild. Check server logs for details.';
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    var message = jeAdminOutcome(e) === 'uncertain'
+                        ? 'Could not confirm the rebuild started (the answer was lost). Check the server log before starting it again.'
+                        : 'Failed to start the rebuild. Check server logs for details.';
                     if (e && e.status === 409) {
                         message = 'A tag cache rebuild is already in progress.';
                     } else if (e && e.status === 400) {
@@ -13203,6 +13184,8 @@
         });
 
         async function triggerSeerrScanNow() {
+            // The action's origin: the click (its writes go out, and their answers show, only for this administrator).
+            const origin = jeOrigin();
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
             const apiKey = jeSecretWireValue(document.querySelector('#JellyseerrApiKey'));
             const btn = document.querySelector('#triggerSeerrScanNowBtn');
@@ -13223,7 +13206,7 @@
             for (const url of urls) {
                 try {
                     const triggerUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/trigger-recently-added-scan', { url: url });
-                    const res = await ApiClient.ajax({ type: 'POST', url: triggerUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKey } });
+                    const res = await jeAdminSend(origin, { type: 'POST', url: triggerUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKey } });
                     if (res && res.ok) {
                         triggered = true;
                         break;
@@ -13541,6 +13524,8 @@
         }
 
         document.getElementById('btnImportJellyseerrUsers').addEventListener('click', async () => {
+            // The import's origin: this click. The save before it, the import and what they show belong to this administrator.
+            const origin = jeOrigin();
             const btn = document.getElementById('btnImportJellyseerrUsers');
             const resultDiv = document.getElementById('importUsersResult');
             // The import saves the page first: not before the settings were read (see jeConfigSaveAllowed).
@@ -13551,7 +13536,8 @@
 
             // Save config first so the server uses the current blocklist: after a save already running, and only once this
             // save is stored.
-            if (!await jeSave()) {
+            if (!await jeSave(origin)) {
+                if (!jeOriginCurrent(origin)) return;
                 resultDiv.style.display = 'block';
                 resultDiv.textContent = 'Could not save config. Import was not attempted.';
                 resultDiv.style.color = '#f44336';
@@ -13562,11 +13548,13 @@
 
             try {
                 btn.textContent = 'Importing...';
-                const response = await ApiClient.fetch({
+                // Jellyfin's ApiClient.fetch, sent only while the import's administrator is the signed-in one.
+                const response = await jeAdminNative(origin, () => ApiClient.fetch({
                     url: ApiClient.getUrl('JellyfinEnhanced/jellyseerr/import-users'),
                     type: 'POST',
                     dataType: 'json'
-                });
+                }), 'import-users');
+                if (!jeOriginCurrent(origin)) return;
 
                 // Handle different response shapes defensively (object, wrapped object, or JSON string)
                 let payload = response;
@@ -13609,10 +13597,15 @@
                     resultDiv.appendChild(list);
                 }
             } catch (e) {
+                // Its administrator changed: nothing was sent (or what came back isn't shown on the next administrator's page).
+                if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
                 resultDiv.style.display = 'block';
                 while (resultDiv.firstChild) resultDiv.removeChild(resultDiv.firstChild);
                 const msg = document.createElement('div');
-                msg.textContent = 'Import failed. Check Seerr configuration and API key permissions.';
+                // A lost answer: the import may have run (importing again skips users already imported).
+                msg.textContent = jeAdminOutcome(e) === 'uncertain'
+                    ? 'Could not confirm the import (the answer was lost). Users already imported are skipped if you import again.'
+                    : 'Import failed. Check Seerr configuration and API key permissions.';
                 msg.style.color = '#f44336';
                 resultDiv.appendChild(msg);
                 // Show response.errors[] when the server returned 502 with structured errors.

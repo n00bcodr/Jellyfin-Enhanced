@@ -1051,14 +1051,18 @@
         timeoutInput.value = '10';
     };
 
-    const sendBroadcast = async (header, text, timeoutMs, resultEl) => {
+    const sendBroadcast = async (header, text, timeoutMs, resultEl, origin) => {
+        // The broadcast's origin (the send click): sent, and its result shown, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         try {
             // skipRetry: broadcasting is not idempotent — never auto-repeat it.
             const data = await JE.core.api.plugin('/active-streams/broadcast', {
                 method: 'POST',
                 body: { header: header || null, text, timeoutMs },
-                skipRetry: true
+                skipRetry: true,
+                session: origin
             });
+            if (!JE.core.userWrite.isBound(origin)) return;
             const errNote = data.errors?.length ? ` (${data.errors.length} error${data.errors.length > 1 ? 's' : ''})` : '';
             resultEl.className = 'je-as-broadcast-result je-as-broadcast-ok';
             resultEl.textContent = `Sent to ${data.sent} of ${data.sent + data.skipped} sessions${errNote}`;

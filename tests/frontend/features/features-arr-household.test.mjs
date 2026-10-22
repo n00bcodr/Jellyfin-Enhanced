@@ -602,3 +602,96 @@ test('a Ready standard edition never suppresses an outstanding 4K ledger row', a
   assert.ok(rows[0].querySelector('.je-hub-cancel'));
   assert.equal(rows[0].querySelector('.je-hub-btn-primary'), null, 'generic title metadata cannot give a 4K row the HD Play link');
 });
+
+// Stage 1 fix round 12 (P33): Cancel on a merged row is one action of the person who clicked it: once their session
+// ends, no further member is cancelled (as anyone) and nothing is said on the next person's page.
+test('My requests: a merged row\'s cancels stop at an account switch; the next member is never cancelled', async t => {
+  const waiting = own(21, { cancelIds: [own(21).id, own(22).id] });
+  const cancels = [];
+  const first = deferred();
+  const h = setupHub(t, {
+    me: { role: 'kid', contact: 'Dad' },
+    hub: { contact: 'Dad', seerr: { configured: false, loaded: true, ledger: true }, mine: [], soon: [], ready: [] },
+    routes: async (method, path) => {
+      if (path === '/acquire/requests/mine') return mine([waiting]);
+      const m = /^\/acquire\/requests\/([a-z0-9]+)\/cancel$/.exec(path);
+      if (m) {
+        cancels.push(m[1]);
+        if (cancels.length === 1) await first.promise;
+        return { status: 200, body: { outcome: 'accepted', reason: 'cancelled', certainty: 'Succeeded', requestId: m[1] } };
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelectorAll('.je-hub-row').length === 1);
+  page.querySelector('.je-hub-cancel').click();
+  await until(() => cancels.length === 1);
+  h.switchUser();
+  first.resolve();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(cancels.length, 1, 'the second member is never cancelled after the switch');
+  assert.deepEqual(h.toasts, [], 'nothing is said on the next person\'s page');
+});
+
+// Stage 1 fix round 12 (P33/P34): Get it again is one action of the person who clicked it: once their session ends, no
+// further part is asked for and nothing (no outcome) is said on the next person's page.
+test('My requests: Get it again stops at an account switch and says nothing on the next person\'s page', async t => {
+  const posts = [];
+  const first = deferred();
+  const h = setupHub(t, {
+    me: { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false },
+    hub: ledgerHub(goneEntry()),
+    routes: async (method, path, body) => {
+      if (path === '/acquire/requests/mine') return mine([]);
+      if (method === 'POST' && path === '/acquire/requests') {
+        posts.push(body.input);
+        if (posts.length === 1) await first.promise;
+        return { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', message: 'Asked!', requestId: 'r'.repeat(31) + posts.length } };
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelector('.je-hub-again'));
+  page.querySelector('.je-hub-again').click();
+  await until(() => posts.length === 1);
+  h.switchUser();
+  first.resolve();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(posts.length, 1, 'the second part is never asked for after the switch');
+  assert.deepEqual(h.toasts, []);
+});
+
+test('My requests: Get it again whose capability read waits across an account switch says nothing on the next person\'s page', async t => {
+  const posts = [];
+  const capabilities = deferred();
+  let reads = 0, holding = false;
+  const h = setupHub(t, {
+    me: { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false },
+    hub: ledgerHub(goneEntry()),
+    routes: async (method, path, body) => {
+      if (path === '/acquire/requests/mine') return mine([]);
+      if (method === 'POST' && path === '/acquire/requests') {
+        posts.push(body.input);
+        if (posts.length === 2) holding = true;
+        return { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', message: 'Asked!', requestId: 'r'.repeat(31) + posts.length } };
+      }
+      // The capability read after the asks (what the outcome says) waits.
+      if (path === '/acquire/requests/me' && holding) { reads++; await capabilities.promise; }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelector('.je-hub-again'));
+  page.querySelector('.je-hub-again').click();
+  await until(() => reads === 1);
+  h.switchUser();
+  capabilities.resolve();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(posts.length, 2, 'both parts were asked for before the switch');
+  assert.deepEqual(h.toasts, [], 'its outcome is not said on the next person\'s page');
+});

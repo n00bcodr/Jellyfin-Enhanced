@@ -429,16 +429,17 @@
      * Saves the edits (after the confirmation) and says how it went; reads the household again.
      * @returns {Promise<void>}
      */
-    async function save() {
+    async function save(origin) {
+        // The save's origin (the confirming click): sent, and its answer shown, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         if (state.saving || !dirty()) return;
         state.saving = true;
         draw();
-        const asked = X.epoch();
-        const answer = await X.call(ROUTE, { method: 'POST', body: saveBody() });
+        const answer = await X.call(ROUTE, { method: 'POST', body: saveBody(), session: origin });
         state.saving = false;
-        if (asked !== X.epoch()) return;
+        if (!JE.core.userWrite.isBound(origin)) return;
         const ok = answer.status === 200;
-        let text = X.tr(ok ? 'arr_household_saved' : answer.status === 400 ? 'arr_household_save_invalid' : answer.status === 403 ? 'arr_household_save_denied' : 'arr_household_save_failed');
+        let text = X.tr(ok ? 'arr_household_saved' : X.unconfirmed(answer) ? 'arr_write_unconfirmed' : answer.status === 400 ? 'arr_household_save_invalid' : answer.status === 403 ? 'arr_household_save_denied' : 'arr_household_save_failed');
         if (!ok && typeof answer.body?.reason === 'string' && answer.body.reason) text = X.tr('arr_approvals_result_code', { text, code: answer.body.reason });
         state.result = { text, tone: ok ? 'done' : 'attention' };
         state.confirming = false;

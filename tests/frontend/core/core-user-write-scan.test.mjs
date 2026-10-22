@@ -132,12 +132,14 @@ test('R11 scan: every write on the person\'s behalf goes out through JE.core.use
 
 test('R11 scan: the core fetch sends its writes through userWrite.send after the limiter, and checks again before a retry', () => {
   const api = readFileSync(join(jsRoot, 'core/api-client.js'), 'utf8');
-  assert.match(api, /const binding = !isGet && auth && JE\.core\.userWrite \? \(options\.session \|\| JE\.core\.userWrite\.bind\(\)\) : null;/);
+  // Round 12: the core fetch never takes a session of its own for a write: without the origin it is handed, it is refused.
+  assert.match(api, /const binding = write \? \(options\.session \|\| null\) : null;/);
+  assert.match(api, /if \(write && !binding\) return JE\.core\.userWrite\.send\(null, \(\) => Promise\.resolve\(\), url\);/);
   assert.match(api, /const fetchFn = \(\) => \(binding \? JE\.core\.userWrite\.send\(binding, sendRequest, url\) : sendRequest\(\)\);/);
   assert.match(api, /withConcurrencyLimit\(\(\) => \{[\s\S]*?return fetchFn\(\);/, 'fetchFn runs inside the limiter slot');
   assert.match(api, /if \(binding && attempt > 1 && !JE\.core\.userWrite\.isBound\(binding\)\)/);
   const queue = readFileSync(join(jsRoot, 'core/mutation-queue.js'), 'utf8');
-  assert.match(queue, /return transmit\(binding\);/, 'a queue hands its write the binding it was made in');
+  assert.match(queue, /return transmit\(origin\);/, 'a queue hands its write the origin it was made in');
   // Every listed exception still names a raw write (an allow-list entry that matches nothing any more is removed).
   const writes = sources().flatMap(([file, source]) => unboundWrites(file, source));
   for (const [file, text] of NOT_A_PERSONS_WRITE) {

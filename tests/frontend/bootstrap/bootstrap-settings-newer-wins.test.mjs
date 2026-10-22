@@ -74,7 +74,7 @@ test('R11-3: an older unhide answer keeps a home-row hide acknowledged after it'
   await until(applied);
   // Another route of the server (the home-row removal) hides it again and is acknowledged before the unhide is answered.
   s.apply('hidden-content.json', 'PATCH', { Upsert: { movie: { ItemId: 'movie' } } });
-  h.JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { movie: { itemId: 'movie' } } }, s.revision('hidden-content.json'));
+  h.JE.internals.userDocumentHandle('hidden-content.json', h.JE.core.userWrite.origin()).acknowledge({ upsert: { movie: { itemId: 'movie' } } }, s.revision('hidden-content.json'));
   held.resolve();
   await save;
   assert.ok(s.documents.HiddenContent.Items.movie);

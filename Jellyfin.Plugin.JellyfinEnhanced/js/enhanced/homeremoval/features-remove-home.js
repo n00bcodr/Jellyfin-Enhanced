@@ -371,18 +371,23 @@
      * @param {string} itemId Jellyfin item ID.
      * @param {string} surface 'continuewatching' | 'nextup'.
      * @param {Element} [card] The specific card element the action was triggered from.
+     * @param {any} [origin] The action's origin (the menu choice; required from a caller that waited): the hide is sent,
+     *   and its answer applied, in that session only.
      * @returns {Promise<boolean>}
      */
-    async function removeFromHomeSurface(itemId, surface, card) {
+    async function removeFromHomeSurface(itemId, surface, card, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const config = REMOVE_SURFACES[surface];
-        const userId = ApiClient.getCurrentUserId();
+        const userId = origin.userId || ApiClient.getCurrentUserId();
         if (!userId || !itemId || !config) {
             showNotification(JE.t('remove_continue_watching_error'), "error");
             return false;
         }
 
-        // The session the person acted in: the hide is sent only while it is still the signed-in one (JE.core.userWrite).
-        const binding = JE.core.userWrite.bind();
+        // The person's Hidden Content document, taken now: the hide goes out on its queue (after the Hidden Content
+        // changes this page queued before, answered first) and its answer goes into this document only: never into the
+        // next person's (a late answer after an account change hides nothing, acknowledges nothing, moves no revision).
+        const handle = JE.internals.userDocumentHandle ? JE.internals.userDocumentHandle('hidden-content.json', origin) : null;
         const request = {
             type: 'POST',
             url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
@@ -395,22 +400,30 @@
             // The route writes the person's Hidden Content document: it goes out on that document's queue, after the Hidden
             // Content changes this page queued before (answered first, so the server applies them before this hide), and an
             // account switch cancels it unsent.
-            const answer = JE.internals.sendUserDocumentWrite
-                ? await JE.internals.sendUserDocumentWrite('hidden-content.json', bound => JE.core.userWrite.ajax(bound, request), binding)
-                : await JE.core.userWrite.ajax(binding, request);
+            const answer = handle
+                ? await handle.send(bound => JE.core.userWrite.ajax(bound, request))
+                : await JE.core.userWrite.ajax(origin, request);
 
+            // The answer belongs to the action's session: once it ended, nothing on this page changes because of it.
+            if (handle ? !handle.isCurrent() : !JE.core.userWrite.isBound(origin)) return false;
             optimisticHideRemovedCard(itemId, surface, card);
 
-            // The server's answer: its entry becomes part of this page's Hidden Content document.
+            // The server's answer: its entry becomes part of this person's Hidden Content document (the handle's).
             try {
-                JE.hiddenContent?.markScopedHidden?.(itemId, surface, answer?.revision ?? answer?.Revision);
+                if (handle) JE.hiddenContent?.markScopedHidden?.(itemId, surface, answer?.revision ?? answer?.Revision, handle);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
             }
             return true;
         } catch (error) {
             // Cancelled by an account switch: the page already said a change wasn't saved (JE.core.userWrite.notSent).
-            if (error?.sessionChanged) return false;
+            if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return false;
+            // A lost answer: the hide may be stored; said as such, and the document is read again.
+            if (JE.core.userWrite.outcome(error) === 'uncertain') {
+                JE.core.userWrite.reportUncertain(error);
+                if (handle?.isCurrent()) JE.readUserSettings?.('hidden-content.json').catch(() => {});
+                return false;
+            }
             const errorMessage = error.responseJSON?.message
                 || error.responseJSON?.Message
                 || error.statusText
@@ -498,7 +511,7 @@
 
         // Let jellyfin-web's actionSheet.ts close the sheet rather than trying to handle it ourselves.
         button.addEventListener('click', async () => {
-            const success = await removeFromHomeSurface(itemId, surface, card);
+            const success = await removeFromHomeSurface(itemId, surface, card, JE.core.userWrite.origin());
             if (success) {
                 showNotification(JE.t(config.successKey), "success");
                 hideEmptyHomeSections();

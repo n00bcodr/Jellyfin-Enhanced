@@ -100,17 +100,23 @@
     return added;
   }
 
-  // Actions (what each swipe does in Jellyfin)
-  const playedUrl = (id) => `/Users/${userId()}/PlayedItems/${id}`;
-  const ratingUrl = (id) => `/Users/${userId()}/Items/${id}/Rating`;
+  // Actions (what each swipe does in Jellyfin). Each belongs to the session of the swipe (its origin, taken by the deck at
+  // the gesture, before any wait such as the season lookup): its URLs name that person and its writes go out only while
+  // that session is still the signed-in one, never as the next person. Marking played and the Likes flag are idempotent
+  // (sending one again changes nothing), so a lost answer may be retried; an action called by itself (no origin) is the
+  // person's own direct action now.
+  const playedUrl = (id, origin) => `/Users/${origin.userId}/PlayedItems/${id}`;
+  const ratingUrl = (id, origin) => `/Users/${origin.userId}/Items/${id}/Rating`;
   /** The watchlist is the Likes flag, the same one Seerr watchlist sync uses. */
   const likeId = (item) => item.SeriesId || item.Id;
+  const write = (path, method, origin) => jf(path, { method, session: origin, idempotent: true });
+  const own = origin => JE.core.userWrite.originOf(origin);
 
   const ACTIONS = {
     right: {
       name: 'watched',
-      run: (i, o) => Promise.all((o?.seasons || [i.Id]).map((id) => jf(playedUrl(id), { method: 'POST' }))),
-      undo: (i, o) => Promise.all((o?.seasons || [i.Id]).map((id) => jf(playedUrl(id), { method: 'DELETE' }))),
+      run: (i, o, origin = own()) => Promise.all((o?.seasons || [i.Id]).map((id) => write(playedUrl(id, origin), 'POST', origin))),
+      undo: (i, o, origin = own()) => Promise.all((o?.seasons || [i.Id]).map((id) => write(playedUrl(id, origin), 'DELETE', origin))),
     },
     left: {
       name: 'dismiss',
@@ -119,22 +125,24 @@
     },
     up: {
       name: 'watchlist',
-      run: (i) => jf(`${ratingUrl(likeId(i))}?likes=true`, { method: 'POST' }),
-      undo: (i) => jf(ratingUrl(likeId(i)), { method: 'DELETE' }),
+      run: (i, o, origin = own()) => write(`${ratingUrl(likeId(i), origin)}?likes=true`, 'POST', origin),
+      undo: (i, o, origin = own()) => write(ratingUrl(likeId(i), origin), 'DELETE', origin),
     },
   };
   const ACT_NAME = { right: 'watched', left: 'dismiss', up: 'watchlist', down: 'open' };
 
   // Activity log. Best effort, never blocks the UI.
-  // The server drops these when CatchUpLogEnabled is off.
-  function logEvent(ev) {
-    JE.core.api.plugin('/catchup/event', { method: 'POST', body: ev, skipRetry: true }).catch(() => { /* logging is optional */ });
+  // The server drops these when CatchUpLogEnabled is off. An event belongs to the swipe's session: once that session
+  // ended (an answer arriving after an account change), nothing is logged, for anyone.
+  function logEvent(ev, origin) {
+    if (!JE.core.userWrite.isBound(origin)) return;
+    JE.core.api.plugin('/catchup/event', { method: 'POST', body: ev, skipRetry: true, session: origin }).catch(() => { /* logging is optional */ });
   }
-  function logSwipe(item, dir, opts, ok) {
+  function logSwipe(item, dir, opts, ok, origin) {
     logEvent({
       type: 'swipe', action: ACT_NAME[dir], itemId: item.Id, ok,
       seasons: dir === 'right' && item.Type === 'Series' ? (opts?.numbers ?? ['all']) : undefined,
-    });
+    }, origin);
   }
 
   Object.assign(internal, {

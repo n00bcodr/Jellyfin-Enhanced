@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
 
 function setup(t, { get = async () => ({}), post = async () => ({ id: 7 }), config = {} } = {}) {
-  const calls = [], invalidated = [], usage = [], events = [], toasts = [];
+  const calls = [], invalidated = [], usage = [], events = [], toasts = [], origins = [];
   let epoch = 0, onChange;
   const h = createHarness({ JE: {
     pluginConfig: config, t: (key, args) => key + (args ? JSON.stringify(args) : ''),
@@ -11,12 +11,15 @@ function setup(t, { get = async () => ({}), post = async () => ({ id: 7 }), conf
     toast: (...args) => toasts.push(args), helpers: { trackUsage: key => usage.push(key) },
     session: { getEpoch: () => epoch, isCurrent: value => value === epoch, onUserChange: (_, fn) => { onChange = fn; } },
     requestManager: { clearCacheMatching: key => invalidated.push(key) },
-    core: { api: { fetch: (url, options) => get(url, options), plugin: (url, options) => { calls.push([url, plain(options)]); return post(url, options); } } }
+    // Stage 1 fix round 12: every request carries the origin of the action (taken when the person acted); it is recorded
+    // apart from the request's options.
+    core: { api: { fetch: (url, options) => get(url, options), plugin: (url, options) => { const { session, ...rest } = options || {}; calls.push([url, plain(rest)]); origins.push(session); return post(url, options); } } }
   }});
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('jellyseerr/api.js');
   for (const event of ['jellyseerr-media-requested', 'jellyseerr-tv-requested']) h.document.addEventListener(event, e => events.push([event, plain(e.detail)]));
-  return { ...h, api: h.JE.jellyseerrAPI, calls, invalidated, usage, events, toasts, switchUser() { epoch++; onChange(); } };
+  return { ...h, api: h.JE.jellyseerrAPI, calls, invalidated, usage, events, toasts, origins, switchUser() { epoch++; onChange(); } };
 }
 
 for (const type of ['movie', 'tv']) test(`${type} request sends explicit settings without retry and broadcasts success`, async t => {
@@ -428,4 +431,24 @@ test('JE handling does not tell a person Seerr linkage is required to enable req
   h.JE.pluginConfig.ArrRequestsJeMode = false;
   h.api.surfaceUserStatusBanner({ reason: 'unlinked' });
   assert.equal(h.toasts.length, 1);
+});
+
+// Stage 1 fix round 12 (P31): a collection's requests are one action of the person who saved it: once their session ends
+// no further title is requested (as anyone) and the count is never reported on the next person's page.
+test('a collection request stops at an account switch: the next title is never requested and nothing is reported', async t => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  let posts = 0;
+  const h = requestModals(t, { post: async () => { if (++posts === 1) await held; return { id: 7 }; } });
+  h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: 'One' }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga');
+  const saving = h.save();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.length, 1, 'the first title is out');
+  h.switchUser();
+  release();
+  await saving;
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(h.calls.length, 1, 'no further title after the switch');
+  assert.ok(!h.toasts.some(([text]) => /jellyseerr_toast_collection_requested|Requested/.test(String(text))), 'no count on the next page');
 });

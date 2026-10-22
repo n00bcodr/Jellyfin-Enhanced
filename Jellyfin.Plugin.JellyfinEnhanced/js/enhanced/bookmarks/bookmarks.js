@@ -34,10 +34,11 @@
   /**
    * Saves bookmark changes: { upsert: { id: bookmark }, remove: [id] }. Rejects when the save failed or was refused.
    * @param {object} changes
+   * @param {any} origin JE.core.userWrite.origin() taken when the person acted (required).
    * @returns {Promise<void>}
    */
   // reportsFailure: the bookmark dialogs say themselves that a change wasn't saved (and cleanup reports its errors).
-  const saveBookmarkChanges = changes => JE.patchUserSettings('bookmark.json', changes, { throwOnError: true, reportsFailure: true });
+  const saveBookmarkChanges = (changes, origin) => JE.patchUserSettings('bookmark.json', changes, { throwOnError: true, reportsFailure: true, origin });
 
   /**
    * Runs a bookmark mutation once every earlier mutation for the same owner has settled.
@@ -46,6 +47,22 @@
    * @param {() => Promise<T>} mutation - Reads the shown bookmarks and saves its changes.
    * @returns {Promise<T>} The mutation's own result or rejection.
    */
+  /**
+   * Whether a bookmark change's failure was said already, so its caller says nothing more: an account change (the page
+   * said once that the change wasn't saved), or an uncertain outcome (its answer was lost: the page says it couldn't be
+   * confirmed, never that it failed; the store reads the bookmarks again). Anything else is the caller's "failed".
+   * @param {*} error
+   * @returns {boolean}
+   */
+  function handledFailure(error) {
+    if (error?.sessionChanged) return true;
+    if (error && typeof error === 'object' && JE.core.userWrite.outcome(error) === 'uncertain') {
+      JE.core.userWrite.reportUncertain(error);
+      return true;
+    }
+    return false;
+  }
+
   function queueBookmarkMutation(owner, mutation) {
     const run = (mutationQueues.get(owner) || Promise.resolve()).then(mutation);
     mutationQueues.set(owner, run.catch(() => {}));
@@ -254,11 +271,14 @@
   /**
    * Add a new bookmark
    */
-  async function addBookmark(timestamp, label = '') {
+  async function addBookmark(timestamp, label = '', origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     const itemData = getCurrentItemData();
     if (!itemData) {
       JE.toast(JE.t('toast_bookmark_no_item'), 3000);
@@ -295,7 +315,7 @@
       };
 
       try {
-        await saveBookmarkChanges({ upsert: { [bookmarkId]: bookmark } });
+        await saveBookmarkChanges({ upsert: { [bookmarkId]: bookmark } }, origin);
         console.log(`${logPrefix} Bookmark added:`, bookmarkId, bookmark);
         if (isCurrentOwner()) emitBookmarksUpdated('add');
         return { id: bookmarkId, ...bookmark };
@@ -309,11 +329,14 @@
   /**
    * Update an existing bookmark
    */
-  async function updateBookmark(bookmarkId, updates) {
+  async function updateBookmark(bookmarkId, updates, origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
       return false;
@@ -329,13 +352,14 @@
       const bookmark = { ...original, ...updates, updatedAt: new Date().toISOString() };
 
       try {
-        await saveBookmarkChanges({ upsert: { [bookmarkId]: bookmark } });
+        await saveBookmarkChanges({ upsert: { [bookmarkId]: bookmark } }, origin);
         console.log(`${logPrefix} Bookmark updated:`, bookmarkId);
         if (isCurrentOwner()) emitBookmarksUpdated('update');
         return true;
       } catch (e) {
         console.error(`${logPrefix} Failed to update bookmark:`, e);
-        return false;
+        // null: said already (an account change, or an outcome that couldn't be confirmed); false: not saved.
+        return handledFailure(e) ? null : false;
       }
     });
   }
@@ -347,11 +371,14 @@
    *   failed and the record was restored; null when there was nothing to delete (already
    *   gone, e.g. a double-clicked delete, or the user changed).
    */
-  async function deleteBookmark(bookmarkId) {
+  async function deleteBookmark(bookmarkId, origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
       return null;
@@ -365,13 +392,13 @@
       }
 
       try {
-        await saveBookmarkChanges({ remove: [bookmarkId] });
+        await saveBookmarkChanges({ remove: [bookmarkId] }, origin);
         console.log(`${logPrefix} Bookmark deleted:`, bookmarkId);
         if (isCurrentOwner()) emitBookmarksUpdated('delete');
         return true;
       } catch (e) {
         console.error(`${logPrefix} Failed to delete bookmark:`, e);
-        return false;
+        return handledFailure(e) ? null : false;
       }
     });
   }
@@ -382,16 +409,19 @@
    * @returns {Promise<boolean>} true once saved; false if the user changed before it ran.
    *   Rejects (the bookmarks shown again) when the save fails.
    */
-  async function deleteAllBookmarks() {
+  async function deleteAllBookmarks(origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     return queueBookmarkMutation(owner, async () => {
       if (!isCurrentOwner()) return false;
 
       try {
-        await saveBookmarkChanges({ remove: Object.keys(shownBookmarks()) });
+        await saveBookmarkChanges({ remove: Object.keys(shownBookmarks()) }, origin);
         console.log(`${logPrefix} All bookmarks deleted`);
         return true;
       } catch (e) {
@@ -412,13 +442,20 @@
    * @param {{replaceOriginals?: boolean}} [options]
    * @returns {Promise<Array<object>>} The new bookmarks; rejects if the save fails.
    */
-  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0, { replaceOriginals = false } = {}) {
+  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0, { replaceOriginals = false, origin = undefined } = {}) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     return queueBookmarkMutation(owner, async () => {
-      if (!isCurrentOwner()) throw new Error('Bookmark owner changed before sync');
+      if (!isCurrentOwner()) {
+        const error = Object.assign(new Error('Bookmark owner changed before sync'), { sessionChanged: true, writeOutcome: 'unsent' });
+        JE.core.userWrite.notSent(error);
+        throw error;
+      }
       const bookmarks = shownBookmarks();
       const synced = [];
       const removed = [];
@@ -456,7 +493,7 @@
 
       try {
         // One save: the copies and (when replacing) the removal of the originals, or neither.
-        await saveBookmarkChanges({ upsert, remove: removed });
+        await saveBookmarkChanges({ upsert, remove: removed }, origin);
         console.log(`${logPrefix} Synced ${synced.length} bookmarks to new item ID`);
         if (isCurrentOwner()) emitBookmarksUpdated('sync');
         return synced;
@@ -472,11 +509,14 @@
    * populates seasonNumber/episodeNumber and corrects tvdbId to the episode's own
    * per-episode ID (previously stored as the series-level value).
    */
-  async function backfillEpisodeMetadata() {
+  async function backfillEpisodeMetadata(origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
+    // The action's origin (taken by the caller when the person acted): its writes go out, and its answers count, only
+    // while that session is still the signed-in one.
     const isCurrentOwner = () => JE.userConfig === owner
-      && (!JE.session || JE.session.isCurrent(epoch));
+      && (!JE.session || JE.session.isCurrent(epoch)) && JE.core.userWrite.isBound(origin);
     const allBookmarks = owner?.bookmark?.bookmarks || {};
     const candidates = Object.entries(allBookmarks).filter(
       ([, bm]) => bm?.mediaType === 'tv' && bm.itemId && bm.episodeNumber == null
@@ -513,7 +553,7 @@
       if (Object.keys(upsert).length === 0) return;
 
       try {
-        await saveBookmarkChanges({ upsert });
+        await saveBookmarkChanges({ upsert }, origin);
         console.log(`${logPrefix} Backfilled episode metadata for ${Object.keys(upsert).length} bookmark(s)`);
       } catch (e) {
         console.warn(`${logPrefix} Failed to save backfilled episode metadata:`, e);
@@ -524,7 +564,8 @@
   /**
    * Delete bookmarks for items that no longer exist in Jellyfin
    */
-  async function cleanupOrphanedBookmarks() {
+  async function cleanupOrphanedBookmarks(origin = undefined) {
+    origin = JE.core.userWrite.originOf(origin);
     const allBookmarks = JE.userConfig?.bookmark?.bookmarks || {};
     const itemIds = new Set();
     const toDelete = [];
@@ -534,9 +575,9 @@
       if (bookmark?.itemId) itemIds.add(bookmark.itemId);
     }
 
-    // Check which items still exist
-    const userId = ApiClient.getCurrentUserId?.();
-    if (!userId) return { cleaned: 0, errors: 0 };
+    // Check which items still exist (as the person whose cleanup this is: it stops once their session ended)
+    const userId = origin?.userId || ApiClient.getCurrentUserId?.();
+    if (!userId || !JE.core.userWrite.isBound(origin)) return { cleaned: 0, errors: 0 };
 
     let cleaned = 0;
     let errors = 0;
@@ -559,10 +600,11 @@
 
     // Delete orphaned bookmarks
     for (const bookmarkId of toDelete) {
+      if (!JE.core.userWrite.isBound(origin)) break;
       try {
         // deleteBookmark reports a failed save (rolled back) as false and an
         // already-gone record as null, which is neither a removal nor an error.
-        const deleted = await deleteBookmark(bookmarkId);
+        const deleted = await deleteBookmark(bookmarkId, origin);
         if (deleted) cleaned++;
         else if (deleted === false) errors++;
       } catch (e) {
@@ -1146,19 +1188,22 @@
 
     // Submit
     modal.querySelector('.je-bookmark-btn-submit').addEventListener('click', async () => {
+      const origin = JE.core.userWrite.origin();
       const labelInput = modal.querySelector('#bookmark-label').value.trim();
 
       try {
         if (isEdit) {
           // A failed save is rolled back and reported as false.
-          if (!await updateBookmark(existingBookmark.id, { label: labelInput })) {
+          const updated = await updateBookmark(existingBookmark.id, { label: labelInput }, origin);
+          if (updated === null) return; // Said already (an account change, or not confirmed).
+          if (!updated) {
             JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
             return;
           }
           JE.toast(JE.t('toast_bookmark_updated'), 2000);
         } else {
           // null: no item, or the lookup failed (already reported) or the user changed.
-          if (!await addBookmark(timestamp, labelInput)) return;
+          if (!await addBookmark(timestamp, labelInput, origin)) return;
           JE.toast(JE.t('toast_bookmark_updated'), 2000);
         }
 
@@ -1166,7 +1211,7 @@
         updateBookmarkMarkersForCurrentVideo();
         closeDialog();
       } catch (e) {
-        JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
+        if (!handledFailure(e)) JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
       }
     });
 
@@ -1186,11 +1231,12 @@
     // Delete bookmark buttons
     modal.querySelectorAll('.je-bookmark-btn-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const origin = JE.core.userWrite.origin();
         const bookmarkId = btn.dataset.bookmarkId;
         btn.disabled = true;
         let deleted;
         try {
-          deleted = await deleteBookmark(bookmarkId);
+          deleted = await deleteBookmark(bookmarkId, origin);
         } finally {
           btn.disabled = false;
         }
@@ -1221,7 +1267,8 @@
     formatTimestamp,
     syncBookmarks,
     cleanupOrphaned: cleanupOrphanedBookmarks,
-    backfillEpisodeMetadata
+    backfillEpisodeMetadata,
+    handledFailure
   };
 
   /**
@@ -1273,7 +1320,7 @@
       console.log(`${logPrefix} Initializing enhanced bookmarks...`);
 
       // Fire-and-forget: backfill existing bookmarks with episode metadata.
-      backfillEpisodeMetadata().catch(e => console.warn(`${logPrefix} Backfill failed:`, e));
+      backfillEpisodeMetadata(JE.core.userWrite.origin()).catch(e => console.warn(`${logPrefix} Backfill failed:`, e));
 
       let lastVideoUrl = null;
       let lastInjectedOsdKey = null;

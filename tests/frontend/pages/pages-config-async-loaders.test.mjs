@@ -38,12 +38,13 @@ const PAGE_MANIFEST = [
   ["headers: { 'X-Arr-ApiKey': apiKey }", 'Test button for an *arr connection: shows a result line'],
   ["await ApiClient.ajax({ type: 'GET', url: validationUrl });", 'Test button for a Seerr address: shows a result line'],
   ["url: ApiClient.getUrl('/Plugins'),", 'installed plugins: enables or disables dependent controls, never sets a value'],
+  ['return Promise.resolve(ApiClient.ajax(request)).catch(', "not a read (round 12): the page's origin-checked send (jeAdminSend) every write of the page goes through"],
+  ["return Promise.resolve(fetch(url, init)).catch(function(error) { throw jeAdminClassify(error); });\n            }\n            /** The same for another of Jellyfin's ApiClient commands", "not a read (round 12): the page's origin-checked fetch (jeAdminFetch) for uploads and backups"],
   ['function checkCustomTabsConfigCompat() {\n            ApiClient.ajax({', "the Custom Tabs plugin's configuration: shape check for a banner"],
-  ["            return ApiClient.ajax({\n                type: 'GET',\n                url: ApiClient.getUrl('/Plugins/' + CUSTOM_TABS_PLUGIN_ID", "the Custom Tabs plugin's configuration: read right before JE's own narrow write to it"],
-  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            if (!fresh) return;', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration (each only if unedited when drawn)'],
+  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            // A read for the administrator of the save, drawn only on their page.\n            if (!fresh || !jeOriginCurrent(origin)) return;', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration (each only if unedited when drawn)'],
+  ['                fresh = await ApiClient.getPluginConfiguration(pluginId);\n            } catch (e) {\n                fresh = null;', 'after a save (round 12): the configuration as stored now, to tell whether a newer save owns the effects; draws nothing'],
   ["/JellyfinEnhanced/arr/admin/instances'), dataType: 'json' });", 'Check button: lists the saved instances'],
   ["/JellyfinEnhanced/arr/admin/notify'), dataType: 'json' });", 'notification status display'],
-  ["type: what === 'provision' ? 'POST' : 'DELETE',", 'not a read: provisions or removes a webhook (method chosen at run time)'],
   ["/JellyfinEnhanced/arr/admin/live'), dataType: 'json' });", 'live-updates status display'],
   ["/JellyfinEnhanced/arr/admin/automation/status'), dataType: 'json' });", 'automation status display'],
   ["/JellyfinEnhanced/acquire/migration/seerr'), dataType: 'json' });", 'Seerr migration status display'],
@@ -53,7 +54,6 @@ const PAGE_MANIFEST = [
   ['ApiClient.getJSON(previewUrl)', 'Spoiler Guard apply-to-existing preview (counts)'],
   ["ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog')", 'the list of tags to style: the saved overrides come from the stored JSON model (tagStyles.serialize), never from the list'],
   ['ApiClient.getPluginConfiguration(pluginId).then((read) => {', 'the configuration read itself: until it succeeds no whole save runs (jeConfigSaveAllowed)'],
-  ['const fresh = await ApiClient.getPluginConfiguration(pluginId);\n                    CUSTOM_TAB_MANAGED_ENTRIES', 'Custom Tabs owned flags: cache rollback after a failed write'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Status'),", "the server's clock, shown under the maintenance window"],
   ["fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingStatus')", 'branding image previews (files, not configuration)'],
   ["fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingImage'", 'a branding image preview'],
@@ -96,7 +96,7 @@ export function checkConfigPage(source) {
   for (const [anchor, count] of anchorHits) if (count !== 1) problems.push(`manifest entry matched ${count} sites: ${anchor}`);
   for (const field of fields) if (!used.has(field)) problems.push(`field "${field}" has no loader marked for it`);
   // The save writes a registered field only through the field (saveInto / value()), never from its control.
-  const build = source.slice(source.indexOf('function jeFormConfig(base, quiet)'), source.indexOf('async function runCustomTabsSync('));
+  const build = source.slice(source.indexOf('function jeFormConfig(base, quiet)'), source.indexOf('// ==================== Saves are patches ===================='));
   for (const field of savedFields(source)) {
     if (new RegExp(`config\\.${field}\\s*=`).test(build)) problems.push(`jeFormConfig writes ${field} directly`);
   }
@@ -112,8 +112,9 @@ test('every read on the configuration page is a registered field loader or a lis
   const { problems, sites } = checkConfigPage(page);
   assert.deepEqual(problems, []);
   const loaders = sites.filter(s => s.fields);
-  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 27 other reads (round 7: a
-  // save, the Custom Tabs owned flags and the cache-clear stamp no longer read first; they send only their changes).
+  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 27 other sites (round 7: a
+  // save, the Custom Tabs owned flags and the cache-clear stamp no longer read first; they send only their changes; round
+  // 12: the server syncs Custom Tabs, and a save's effects are confirmed after one read of the stored configuration).
   assert.equal(loaders.length, 12);
   assert.equal(sites.length - loaders.length, PAGE_MANIFEST.length);
   assert.equal(PAGE_MANIFEST.length, 27);

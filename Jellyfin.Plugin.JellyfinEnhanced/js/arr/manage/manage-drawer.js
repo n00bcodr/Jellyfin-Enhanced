@@ -485,26 +485,29 @@
      * @returns {void}
      */
     function queueAction(instance, download, action, opener, data) {
+        // The action's origin: this click. A removal confirmed in its dialog is still this click's (never the next person's).
+        const origin = JE.core.userWrite.origin();
         const state = current;
         const key = `${instance.id}|${download.downloadId}`;
         if (!state || state.queueBusy[key]) return;
         const send = async (body) => {
             if (current !== state || state.queueBusy[key]) return;
+            if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
             state.queueBusy[key] = true;
             renderShell(state.root, state.data || data);
             const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
             let message;
             let failed = false;
             try {
-                const outcome = await JE.core.api.plugin('/arr/admin/queue/action', { method: 'POST', body: { ...body, idempotencyKey }, skipRetry: true });
+                const outcome = await JE.core.api.plugin('/arr/admin/queue/action', { method: 'POST', body: { ...body, idempotencyKey }, skipRetry: true, session: origin });
                 failed = outcome?.status === 'Failed' || outcome?.status === 'Rejected';
                 message = failed ? tr('arr_ops_action_failed', { message: outcome?.message || '' }) : [outcome?.message, outcome?.readBack].filter(Boolean).join(' ');
             } catch (err) {
                 failed = true;
-                message = tr('arr_ops_action_failed', { message: err?.message || String(err) });
+                message = JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed') : tr('arr_ops_action_failed', { message: err?.message || String(err) });
             }
             delete state.queueBusy[key];
-            if (current !== state) return;
+            if (current !== state || !JE.core.userWrite.isBound(origin)) return;
             state.result = { message: message || '', failed };
             renderShell(state.root, state.data || data);
             setTimeout(() => { if (current === state) load(state.generation); }, 1500);
@@ -718,7 +721,9 @@
      * @param {Object} data Overview.
      * @returns {Promise<void>}
      */
-    async function submitAdd(instance, data) {
+    async function submitAdd(instance, data, origin) {
+        // The add's origin (the submit click): sent, followed and shown in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         const state = current;
         const sheet = state?.adding?.[instance.id];
         if (!sheet || sheet.phase !== 'form') return;
@@ -747,18 +752,21 @@
                     seasons: series ? sheet.seasons : undefined,
                     idempotencyKey: sheet.key
                 },
-                skipRetry: true
+                skipRetry: true,
+                session: origin
             });
         } catch (err) {
-            if (current !== state || state.adding[instance.id] !== sheet) return;
+            if (current !== state || state.adding[instance.id] !== sheet || !JE.core.userWrite.isBound(origin)) return;
             sheet.phase = 'form';
             sheet.failed = true;
-            sheet.message = tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
+            // A lost answer: the add may be recorded (sending again keeps its idempotency key: never a second add).
+            sheet.message = JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed')
+                : tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
             renderShell(state.root, state.data || data);
             focusOn(`add-submit-${instance.id}`);
             return;
         }
-        if (current !== state || state.adding[instance.id] !== sheet) return;
+        if (current !== state || state.adding[instance.id] !== sheet || !JE.core.userWrite.isBound(origin)) return;
         await followAdd(state, sheet, instance, data, outcome?.requestId);
     }
 
@@ -980,7 +988,9 @@
      * @param {Object} data Overview.
      * @returns {Promise<void>}
      */
-    async function searchNow(instance, data) {
+    async function searchNow(instance, data, origin) {
+        // The search's origin (the click): sent and shown in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         const state = current;
         if (!state || state.searching[instance.id]) return;
         state.searching[instance.id] = true;
@@ -992,17 +1002,18 @@
             const outcome = await JE.core.api.plugin('/arr/admin/manage/search', {
                 method: 'POST',
                 body: { instanceId: instance.id, key: data.key, idempotencyKey },
-                skipRetry: true
+                skipRetry: true,
+                session: origin
             });
             failed = outcome?.status === 'Failed' || outcome?.status === 'Rejected';
             message = [outcome?.message, outcome?.readBack].filter(Boolean).join(' ');
             if (failed) message = tr('arr_manage_search_failed', { message: outcome?.message || '' });
         } catch (err) {
             failed = true;
-            message = tr('arr_manage_search_failed', { message: err?.message || String(err) });
+            message = JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed') : tr('arr_manage_search_failed', { message: err?.message || String(err) });
         }
         delete state.searching[instance.id];
-        if (current !== state) return;
+        if (current !== state || !JE.core.userWrite.isBound(origin)) return;
         state.result = { message: message || '', failed };
         renderShell(state.root, state.data || data);
         // What changed comes through the change feed; read once more in any case.

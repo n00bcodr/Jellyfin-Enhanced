@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
 function section(start, end) {
@@ -25,7 +27,8 @@ function setup(t) {
     const h = createHarness({ html });
     t.after(() => h.close());
     h.window.ApiClient = { getUrl: path => path, ajax: async () => ({}) };
-    h.window.eval(`${createEl} ${functions} ${parents} window.load = jeLoadArrAutomationSettings; window.save = jeSaveArrAutomationSettings; window.deps = PARENT_DEPS;`);
+    h.window.eval(`${adminOriginSource()}
+${createEl} ${functions} ${parents} window.load = jeLoadArrAutomationSettings; window.save = jeSaveArrAutomationSettings; window.deps = PARENT_DEPS;`);
     return h;
 }
 

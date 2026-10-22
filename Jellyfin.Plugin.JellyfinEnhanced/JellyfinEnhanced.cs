@@ -471,6 +471,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 base.UpdateConfiguration(configuration);
             }
+            // The configuration's runtime effects (maintenance mode, the Custom Tabs entries) follow the configuration held
+            // now: one server owner reconciles them from the current generation (never from a snapshot a page carried).
+            Services.ConfigurationEffects.Instance?.Request();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try
@@ -553,13 +556,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         internal bool MutateConfiguration(Func<PluginConfiguration, bool> change)
         {
             ArgumentNullException.ThrowIfNull(change);
+            bool effectsChanged;
             lock (ConfigurationLock)
             {
                 var live = Configuration;
-                if (live == null || !change(live)) return false;
+                if (live == null) return false;
+                var before = Services.ConfigurationEffects.EffectFingerprint(live);
+                if (!change(live)) return false;
                 SaveConfiguration(live);
-                return true;
+                effectsChanged = before != Services.ConfigurationEffects.EffectFingerprint(live);
             }
+            // A field writer that changed what the runtime effects follow (maintenance mode, the Custom Tabs intent) asks the
+            // one owner to reconcile them (it never waits for it: the configuration lock is not held across that).
+            if (effectsChanged) Services.ConfigurationEffects.Instance?.Request();
+            return true;
         }
 
         /// <summary>

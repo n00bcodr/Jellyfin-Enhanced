@@ -64,21 +64,27 @@
             event.preventDefault();
             event.stopPropagation();
             if (button.disabled) return;
+            // The toggle belongs to this click's session, through the confirmation and the write.
+            const origin = JE.core.userWrite.origin();
             button.disabled = true;
             const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
             void (async function() {
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
-                        await internal.disableForTmdb(mediaType, tmdbId);
-                        JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
+                        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
+                        await internal.disableForTmdb(mediaType, tmdbId, origin);
+                        if (JE.core.userWrite.isBound(origin)) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
-                        await internal.enableForTmdb(mediaType, tmdbId, displayName);
-                        JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
+                        await internal.enableForTmdb(mediaType, tmdbId, displayName, origin);
+                        if (JE.core.userWrite.isBound(origin)) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
                 } catch (e) {
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
-                    JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
+                    if (!e?.sessionChanged && JE.core.userWrite.isBound(origin)) {
+                        if (JE.core.userWrite.outcome(e) === 'uncertain') JE.core.userWrite.reportUncertain(e);
+                        else JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
+                    }
                 } finally {
                     refresh();
                     button.disabled = false;

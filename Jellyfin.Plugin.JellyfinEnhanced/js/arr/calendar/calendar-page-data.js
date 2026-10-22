@@ -294,8 +294,10 @@
         episodeNumber: evt.episodeNumber,
       }));
 
+      // A read sent as POST (its event list in the body): never a person's write.
       const data = await JE.core.api.plugin("/arr/calendar/user-data", {
         method: "POST",
+        readOnly: true,
         body: { events: eventsToCheck },
       });
       if (JE.session && !JE.session.isCurrent(epoch)) return;

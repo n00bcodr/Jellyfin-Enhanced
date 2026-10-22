@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 // The configuration page is one inline script: run its real Backup & Restore helpers in a fresh realm.
 const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
@@ -37,7 +39,8 @@ function setup(t, respond) {
   });
   h_url(h.window);
   t.after(() => h.close());
-  h.window.eval(`${helpers}\nwindow.__je = { jeBackupExportOptions, jeBackupExport, jeBackupUpload, jeBackupSummaryText, jeBackupRestoreText, jeBackupInit };`);
+  h.window.eval(`${adminOriginSource()}
+${helpers}\nwindow.__je = { jeBackupExportOptions, jeBackupExport, jeBackupUpload, jeBackupSummaryText, jeBackupRestoreText, jeBackupInit };`);
   return { ...h, je: h.window.__je, requests, $: id => h.document.getElementById(id) };
 }
 

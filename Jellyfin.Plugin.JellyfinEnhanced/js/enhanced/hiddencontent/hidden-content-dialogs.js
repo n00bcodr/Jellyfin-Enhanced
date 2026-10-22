@@ -40,8 +40,9 @@
      * Automatically dismisses after {@link UNDO_TOAST_DURATION}.
      * @param {string} itemName Display name of the hidden item.
      * @param {string} itemId Storage key used to unhide if the user clicks Undo.
+     * @param {any} origin The hide's origin: Undo undoes that person's hide only (an account change removes the toast).
      */
-    function showUndoToast(itemName, itemId) {
+    function showUndoToast(itemName, itemId, origin) {
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
         const themeVars = JE.themer?.getThemeVariables() || {};
@@ -72,7 +73,7 @@
         });
         undoBtn.textContent = JE.t('hidden_content_undo');
         undoBtn.addEventListener('click', () => {
-            unhideItem(itemId);
+            unhideItem(itemId, origin);
             toast.classList.remove('je-visible');
             setTimeout(() => toast.remove(), 300);
         });
@@ -298,6 +299,8 @@
      * @param {boolean} [dialogOptions.showEpisodeChoice] If true, shows "Hide episode" vs "Hide show" choice.
      * @param {Function} [dialogOptions.onChooseShow] Called if user picks "Hide entire show".
      * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
+     * @param {any} [dialogOptions.origin] The action's origin: a choice made once its session ended does nothing (an
+     *   account change also closes the dialog).
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
         document.querySelector('.je-hide-confirm-overlay')?.remove();
@@ -359,19 +362,27 @@
      * Episode-choice and surface-scoped dialogs always show (never suppressed).
      * @param {Object} itemData Data for the item to hide.
      * @param {Function} onHidden Callback after hiding.
-     * @param {Object} [dialogOptions] Options passed to showHideConfirmation.
+     * @param {Object} [dialogOptions] Options passed to showHideConfirmation (`origin`: the action's, required).
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
-        if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            hideItem(itemData);
+        const origin = dialogOptions.origin;
+        const hide = () => {
+            // The dialog belongs to the session its action began in: a choice made after it ended changes nothing.
+            if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
+            hideItem(itemData, origin);
             if (onHidden) onHidden();
+        };
+        if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
+            hide();
             return;
         }
-        showHideConfirmation(itemData.name || 'Item', () => {
-            hideItem(itemData);
-            if (onHidden) onHidden();
-        }, dialogOptions);
+        showHideConfirmation(itemData.name || 'Item', hide, dialogOptions);
     }
+
+    // The previous person's open dialog and undo toast are theirs: an account change removes them.
+    JE.session?.onUserChange('hidden-content-dialogs', () => {
+        document.querySelectorAll('.je-hide-confirm-overlay, .je-undo-toast').forEach(el => el.remove());
+    });
 
     Object.assign(internal, { showUndoToast, confirmAndHide });
 

@@ -95,7 +95,9 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      */
-    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
+    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null, origin = undefined) {
+        // The report's origin: the click that opened this dialog (its Save sends the report in that session only).
+        origin = JE.core.userWrite.originOf(origin);
         // Create the form HTML
         const ISSUE_TYPES = getIssueTypes();
         const formHtml = `
@@ -184,7 +186,8 @@
                     button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
-                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode);
+                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, origin);
+                    if (!JE.core.userWrite.isBound(origin)) return;
 
                     if (result) {
                         JE.toast(JE.t('jellyseerr_report_issue_success'), 3000);
@@ -195,6 +198,12 @@
                     }
                 } catch (error) {
                     console.error(`${logPrefix} Error reporting issue:`, error);
+                    if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                    if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) {
+                        JE.core.userWrite.reportUncertain(error);
+                        closeModal();
+                        return;
+                    }
                     const errorMsg = error?.message || error?.toString() || '';
                     if (error?.status === 403) {
                         JE.toast(JE.t('jellyseerr_err_no_issue_permission'), 4000);

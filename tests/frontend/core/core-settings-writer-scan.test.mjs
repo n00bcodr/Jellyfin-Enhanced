@@ -101,7 +101,8 @@ function queueViolations(src) {
   if (!operation || !/state\.queue\.send\(async bound => \{/.test(operation) || !/JE\.core\.userWrite\.ajax\(bound, /.test(operation)) found.push('a per-user document write goes out past its queue');
   if (/\.chain\.then\(/.test(src.store)) found.push('a per-user document has a chain of its own');
   if (!/state\.queue = JE\.core\.mutationQueue\(`settings:\$\{fileName\}`, \{ isCurrent: \(\) => isActiveDocument\(created\) \}\)/.test(src.store)) found.push('a document\'s queue is not bound to its session');
-  const send = member(src.queue, /send\(transmit, binding = bindNow\(\)\) \{/);
+  // Round 12: the queue's send takes the origin it is handed (it never takes a session of its own).
+  const send = member(src.queue, /send\(transmit, origin\) \{/);
   if (!send || !/const run = chain\.then\(\(\) => \{\s*if \(!current\(\)\)/.test(send)) found.push('the queue does not check the session right before each send');
   if (!/JE\.session\.onUserChange\(`mutation-queue:\$\{name\}`/.test(src.queue)) found.push('an account switch does not cancel the queue');
   return found;

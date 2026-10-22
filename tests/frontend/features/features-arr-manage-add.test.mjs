@@ -10,7 +10,8 @@ import { setTimeout as wait } from 'node:timers/promises';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
-const MODULES = ['arr/status/status-core.js', 'arr/status/status-styles.js', 'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js'];
+// Stage 1 fix round 12: the writes go out through JE.core.userWrite with the origin of the click.
+const MODULES = ['core/mutation-queue.js', 'arr/status/status-core.js', 'arr/status/status-styles.js', 'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js'];
 
 function translate(key, params) {
   const text = en[key];

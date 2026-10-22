@@ -66,7 +66,7 @@
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     JE.currentSettings.calendarDefaultViewMode = mode;
     if (typeof JE.saveUserSettings === 'function') {
-      JE.saveUserSettings('settings.json', JE.currentSettings);
+      JE.saveUserSettings('settings.json', JE.currentSettings, { origin: JE.core.userWrite.origin() });
     }
 
     loadAllData();
@@ -79,7 +79,7 @@
     JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
     JE.currentSettings.calendarDisplayMode = mode;
     if (typeof JE.saveUserSettings === 'function') {
-      JE.saveUserSettings('settings.json', JE.currentSettings);
+      JE.saveUserSettings('settings.json', JE.currentSettings, { origin: JE.core.userWrite.origin() });
     }
 
     if (state.viewMode === "agenda") {

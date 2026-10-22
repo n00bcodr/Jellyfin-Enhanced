@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, plain } from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 /**
  * Loads the real settings saver and bookmarks. `save` answers each user-settings save made through ApiClient.ajax (a
@@ -64,7 +67,7 @@ test('bookmark update/delete persist and emit only successful changes',async t=>
 for(const operation of ['update','delete']){
   test(`failed bookmark ${operation} restores in-memory record without emitting success`,async t=>{
     const original={itemId:'item',label:'keep',updatedAt:'old'};
-    const h=setup(t,{one:{...original}},async()=>{throw new Error('offline');});
+    const h=setup(t,{one:{...original}},async()=>{throw refused('offline');});
     h.expectConsoleError(new RegExp(`Failed to ${operation} bookmark`));
     assert.equal(await h.api[operation]('one',{label:'lost'}),false);
     assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks.one),original);
@@ -72,7 +75,7 @@ for(const operation of ['update','delete']){
   });
 }
 test('saveUserSettings rejects only for callers that opt in',async t=>{
-  let fail=true;const h=setup(t,{},async()=>{if(fail)throw new Error('offline');});
+  let fail=true;const h=setup(t,{},async()=>{if(fail)throw refused('offline');});
   h.expectConsoleError(/Failed to save settings\.json/);
   assert.equal(await h.JE.saveUserSettings('settings.json',{a:1}),undefined);
   await assert.rejects(h.JE.saveUserSettings('settings.json',{a:1},{throwOnError:true}),/offline/);
@@ -83,7 +86,7 @@ test('saveUserSettings rejects only for callers that opt in',async t=>{
 });
 test('bookmark sync preserves originals, offsets timestamps and rolls back failed copies',async t=>{
   let fail=false;
-  const h=setup(t,{old:{itemId:'old-item',timestamp:5,label:'scene'}},async()=>{if(fail)throw new Error('offline');});
+  const h=setup(t,{old:{itemId:'old-item',timestamp:5,label:'scene'}},async()=>{if(fail)throw refused('offline');});
   const result=await h.api.syncBookmarks([{id:'old',...h.JE.userConfig.bookmark.bookmarks.old}],{itemId:'new-item',tmdbId:'42'},-10);
   assert.equal(result[0].timestamp,0);
   assert.equal(result[0].syncedFrom,'old-item');
@@ -106,7 +109,7 @@ for(const operation of ['update','delete']) {
   await new Promise(done=>setImmediate(done));
   h.JE.userConfig={bookmark:{bookmarks:{}}};
   h.expectConsoleError(new RegExp(`Failed to ${operation} bookmark`));
-  reject(new Error('offline'));
+  reject(refused('offline'));
   assert.equal(await pending,false);
   assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{});
  });
@@ -130,7 +133,7 @@ for(const operation of ['add','update','delete','syncBookmarks'])for(const failu
   const pending=operation==='add'?h.api.add(5):operation==='syncBookmarks'?h.api.syncBookmarks([{itemId:'old',timestamp:5}],{itemId:'new'}):h.api[operation]('one',{label:'updated'});
   await new Promise(done=>setImmediate(done));
   h.JE.userConfig={};
-  if(failure){h.expectConsoleError(new RegExp(`Failed to ${operation==='add'?'save':operation==='syncBookmarks'?'sync':operation} bookmark`));reject(new Error('offline'));if(operation==='add'||operation==='syncBookmarks')await assert.rejects(pending,/offline/);else assert.equal(await pending,false);}else{resolve();await pending;}
+  if(failure){h.expectConsoleError(new RegExp(`Failed to ${operation==='add'?'save':operation==='syncBookmarks'?'sync':operation} bookmark`));reject(refused('offline'));if(operation==='add'||operation==='syncBookmarks')await assert.rejects(pending,/offline/);else assert.equal(await pending,false);}else{resolve();await pending;}
   assert.deepEqual(h.JE.userConfig,{});assert.deepEqual(h.events,[]);
  });
 }
@@ -153,7 +156,7 @@ test('overlapping bookmark deletes cannot resurrect a record the server no longe
   const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two'}},saves.save);
   h.expectConsoleError(/Failed to delete bookmark/);
   const first=h.api.delete('a'),second=h.api.delete('b');
-  (await saves.next(1)).reject(new Error('offline'));
+  (await saves.next(1)).reject(refused('offline'));
   (await saves.next(2)).resolve();
   assert.deepEqual([await first,await second],[false,true]);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['a']);
@@ -168,7 +171,7 @@ test('overlapping bookmark adds leave memory equal to the saved set',async t=>{
   h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
   h.expectConsoleError(/Failed to save bookmark/);
   const first=h.api.add(1),second=h.api.add(2);const firstFailure=assert.rejects(first,/offline/);
-  (await saves.next(1)).reject(new Error('offline'));
+  (await saves.next(1)).reject(refused('offline'));
   (await saves.next(2)).resolve();
   await firstFailure;const added=await second;
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),[added.id]);
@@ -205,7 +208,7 @@ async function migrate(h,group){
 const orphanGroup=bookmarks=>({details:{itemId:'old-item-0000000000000000',tmdbId:'42',mediaType:'movie',name:'Old cut'},bookmarks:Object.entries(bookmarks).map(([id,bm])=>({id,...bm}))});
 test('failed bookmark migration keeps the old group, and the next save still persists it',async t=>{
   let fail=true;const saved=[];
-  const h=setup(t,{a:{itemId:'old-item-0000000000000000',timestamp:5,label:'scene'},b:{itemId:'old-item-0000000000000000',timestamp:9},keep:{itemId:'other'}},async(file,data)=>{if(fail)throw new Error('offline');saved.push(plain(data));});
+  const h=setup(t,{a:{itemId:'old-item-0000000000000000',timestamp:5,label:'scene'},b:{itemId:'old-item-0000000000000000',timestamp:9},keep:{itemId:'other'}},async(file,data)=>{if(fail)throw refused('offline');saved.push(plain(data));});
   h.expectConsoleError(/Failed to sync bookmarks/);h.expectConsoleError(/Migration failed/);
   const before=plain(h.JE.userConfig.bookmark.bookmarks);
   await migrate(h,orphanGroup({a:before.a,b:before.b}));
@@ -228,7 +231,7 @@ test('successful bookmark migration replaces the old group in one save',async t=
   assert.deepEqual(records.map(bm=>[bm.itemId,bm.timestamp,bm.syncedFrom]),[['new-item-0000000000000000',5,'old-item-0000000000000000']]);
 });
 test('orphan cleanup counts only deletes that were saved',async t=>{
-  let fail=true;const h=setup(t,{a:{itemId:'gone'},b:{itemId:'gone'},c:{itemId:'present'}},async()=>{if(fail)throw new Error('offline');});
+  let fail=true;const h=setup(t,{a:{itemId:'gone'},b:{itemId:'gone'},c:{itemId:'present'}},async()=>{if(fail)throw refused('offline');});
   h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone')throw new Error('404');return {Id:id};};
   h.expectConsoleError(/Failed to delete bookmark/);
   assert.deepEqual(plain(await h.api.cleanupOrphaned()),{cleaned:0,errors:2});
@@ -237,7 +240,7 @@ test('orphan cleanup counts only deletes that were saved',async t=>{
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['c']);
 });
 test('player bookmark modal reports a failed edit or delete instead of success',async t=>{
-  const h=setup(t,{one:{itemId:'item',timestamp:5,label:'old'}},async()=>{throw new Error('offline');});
+  const h=setup(t,{one:{itemId:'item',timestamp:5,label:'old'}},async()=>{throw refused('offline');});
   h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="item"></button></div>';
   h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
   h.expectConsoleError(/Failed to update bookmark/);h.expectConsoleError(/Failed to delete bookmark/);
@@ -263,7 +266,7 @@ test('episode backfill queued behind a failing delete also saves the restored re
   await saves.next(1);
   const backfill=h.api.backfillEpisodeMetadata();
   await settle(()=>lookups===1);await ticks();
-  saves.calls[0].reject(new Error('offline'));
+  saves.calls[0].reject(refused('offline'));
   assert.equal(await deleting,false);
   (await saves.next(2)).resolve();await backfill;
   // Round 7: the backfill sends only the record it filled; the failed delete left "other" on the server and in memory.
@@ -273,7 +276,7 @@ test('episode backfill queued behind a failing delete also saves the restored re
 });
 test('episode backfill skips a record deleted meanwhile and rolls back a failed save',async t=>{
   let fail=false,release;const saved=[];const gate=new Promise(done=>{release=done;});
-  const h=setup(t,{gone:{itemId:'ep-gone',mediaType:'tv'},kept:{itemId:'ep-kept',mediaType:'tv'}},async(file,data)=>{if(fail)throw new Error('offline');saved.push(plain(data));});
+  const h=setup(t,{gone:{itemId:'ep-gone',mediaType:'tv'},kept:{itemId:'ep-kept',mediaType:'tv'}},async(file,data)=>{if(fail)throw refused('offline');saved.push(plain(data));});
   let lookups=0;h.routes.items=async()=>{if(++lookups===1)await gate;return episodeLookup(1,lookups);};
   const backfill=h.api.backfillEpisodeMetadata();
   await settle(()=>lookups===1);
@@ -282,7 +285,7 @@ test('episode backfill skips a record deleted meanwhile and rolls back a failed 
   assert.deepEqual(saved.map(data=>[Object.keys(data.Upsert),data.Remove]),[[[],['gone']],[['kept'],[]]]);
   assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{kept:{itemId:'ep-kept',mediaType:'tv',seasonNumber:1,episodeNumber:2}});
 
-  const failing=setup(t,{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}},async()=>{throw new Error('offline');});
+  const failing=setup(t,{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}},async()=>{throw refused('offline');});
   failing.routes.items=async()=>episodeLookup(3,4,'episode');
   await failing.api.backfillEpisodeMetadata();
   assert.deepEqual(plain(failing.JE.userConfig.bookmark.bookmarks),{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}});
@@ -296,7 +299,7 @@ test('delete-all runs after queued mutations and restores them when its save fai
   (await saves.next(2)).resolve();
   // Delete-all removes the bookmarks this page shows (after the delete and update before it).
   const clear=await saves.next(3);assert.deepEqual(clear.data.Remove,['b']);
-  clear.reject(new Error('offline'));await clearFailure;
+  clear.reject(refused('offline'));await clearFailure;
   assert.deepEqual([await deleting,await updating],[true,true]);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['b']);
   assert.equal(h.JE.userConfig.bookmark.bookmarks.b.label,'new');
@@ -312,7 +315,7 @@ async function renderLibrary(h){
   return container;
 }
 test('library delete-all reports a failed save and keeps every bookmark',async t=>{
-  const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'two',mediaType:'movie',timestamp:2}},async()=>{throw new Error('offline');});
+  const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'two',mediaType:'movie',timestamp:2}},async()=>{throw refused('offline');});
   h.expectConsoleError(/Failed to delete all bookmarks/);h.expectConsoleError(/Delete failed/);
   const container=await renderLibrary(h);const button=container.querySelector('.btnDeleteAllBookmarks');
   button.click();assert.equal(button.disabled,true);
@@ -331,7 +334,7 @@ test('a repeated delete of the same bookmark reports nothing to delete rather th
   // checked) as neither removed nor an error.
   // Removed elsewhere: a read of another tab's removal reaches the store (the one source). It reports the revision it began
   // with (round 9: a read that began before a later change is not taken).
-  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')h.JE.internals.noteSettingsRead('bookmark.json',{bookmarks:{c:{itemId:'gone-2'}}},h.JE.internals.userDocumentRevision('bookmark.json'));throw new Error('404');};
+  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')(doc=>doc.noteRead({bookmarks:{c:{itemId:'gone-2'}}},doc.revision))(h.JE.internals.userDocumentHandle('bookmark.json',h.JE.core.userWrite.origin()));throw new Error('404');};
   const cleanup=h.api.cleanupOrphaned();
   (await saves.next(2)).resolve();
   assert.deepEqual(plain(await cleanup),{cleaned:1,errors:0});
@@ -366,7 +369,7 @@ test('library and player delete buttons are disabled while their delete is in fl
   await h.api.showModal('edit',{id:'b',...h.JE.userConfig.bookmark.bookmarks.b});
   const player=h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="b"]');
   player.click();player.click();assert.equal(player.disabled,true);
-  (await saves.next(2)).reject(new Error('offline'));
+  (await saves.next(2)).reject(refused('offline'));
   await settle(()=>h.toasts.length===2);await ticks();
   assert.deepEqual(h.toasts,['toast_bookmark_deleted','toast_bookmark_delete_failed']);
   assert.equal(player.disabled,false);assert.equal(saves.calls.length,2);

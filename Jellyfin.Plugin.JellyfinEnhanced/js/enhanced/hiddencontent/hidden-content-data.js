@@ -202,12 +202,13 @@
     // The answer of a server-side hide write (the home-row removal) as part of the store's document — preserves existing
     // metadata + merges scopes via mergeCwScope, as the server did. Looks up under hyphenated AND N-format keys (server
     // canonical is hyphenated; some callers pass N-format from data-id). `revision`: the document's revision the route
-    // answered (the store orders it with its own saves' answers).
-    function markScopedHidden(itemId, scope, revision) {
-        if (!itemId) return;
+    // answered (the store orders it with its own saves' answers). `handle`: the document the write was sent for
+    // (JE.internals.userDocumentHandle, taken when the person acted): the answer goes into that document only, never into
+    // whichever person's document is the signed-in one by then.
+    function markScopedHidden(itemId, scope, revision, handle) {
+        if (!itemId || !handle || !handle.isCurrent()) return;
         const _scope = (scope || 'continuewatching').toLowerCase();
-        const data = getHiddenData();
-        const items = (data.items) || {};
+        const items = (handle.document().items) || {};
         const noHyphen = itemId.replace(/-/g, '');
         const hyphenated = noHyphen.length === 32
             ? `${noHyphen.slice(0, 8)}-${noHyphen.slice(8, 12)}-${noHyphen.slice(12, 16)}-${noHyphen.slice(16, 20)}-${noHyphen.slice(20)}`
@@ -242,7 +243,7 @@
             hideScope: finalScope,
         };
         const remove = [hyphenated, noHyphen].filter(key => key !== itemId && items[key]);
-        JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { [itemId]: merged }, remove }, revision);
+        handle.acknowledge({ upsert: { [itemId]: merged }, remove }, revision);
     }
 
     // ============================================================
@@ -288,8 +289,13 @@
      * @param {number|null} [params.seasonNumber] Season number.
      * @param {number|null} [params.episodeNumber] Episode number.
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (before any wait; required after one): the
+     *   hide, its undo toast and its answer belong to that session only.
      */
-    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
+    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        // A continuation of an action whose session ended changes nothing (the store would refuse it too).
+        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
         // Synthetic ids (titles not in the library, shown on a native details page) are never stored.
         if ((itemId && JE.titleDetails?.isSynthetic?.(itemId)) || (seriesId && JE.titleDetails?.isSynthetic?.(seriesId))) return;
         const key = itemId || `tmdb-${tmdbId}`;
@@ -307,16 +313,19 @@
             hideScope: hideScope || 'global'
         };
 
-        persist({ upsert: { [key]: newItem } });
-        showUndoToast(name || 'Item', key);
+        persist({ upsert: { [key]: newItem } }, origin);
+        showUndoToast(name || 'Item', key, origin);
     }
 
     /**
      * Unhides an item by removing it from the hidden-content data store.
      * Restores visibility for the item's native cards.
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait).
      */
-    function unhideItem(itemId) {
+    function unhideItem(itemId, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
         const items = getHiddenData().items;
         // Try direct key match first (covers storage keys like "tmdb-12345")
         let key = items[itemId] ? itemId : undefined;
@@ -330,7 +339,7 @@
             key = wanted ? Object.keys(items).find(k => normalizeId(items[k].itemId) === wanted) : undefined;
         }
         // The server also removes the same item stored under another spelling of its id (another tab may have hidden it so).
-        persist({ remove: [key || itemId].filter(Boolean) });
+        persist({ remove: [key || itemId].filter(Boolean) }, origin);
         // Cards of a scoped hide (not in the global lookup set) come back too.
         if (itemId && !String(itemId).startsWith('tmdb-')) restoreNativeCardsForIds(new Set([itemId]));
     }
@@ -339,9 +348,11 @@
      * Merges partial settings into the hidden-content settings.
      * Triggers a save, change event, and native card re-filter.
      * @param {Object} partial Key-value pairs to merge into settings.
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait).
      */
-    function updateSettings(partial) {
-        persist({ set: { ...partial } });
+    function updateSettings(partial, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        persist({ set: { ...partial } }, origin);
     }
 
     /**
@@ -429,10 +440,12 @@
 
     /**
      * Unhides every item this page shows (an item another tab or device hid since its answer stays hidden).
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait).
      */
-    function unhideAll() {
+    function unhideAll(origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const keys = Object.keys(getHiddenData().items);
-        if (keys.length) persist({ remove: keys });
+        if (keys.length) persist({ remove: keys }, origin);
     }
 
     /**

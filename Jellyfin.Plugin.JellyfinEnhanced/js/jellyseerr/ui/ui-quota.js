@@ -152,6 +152,13 @@
     }
 
     async function handleRequestError(error, mediaType, requestBtn, resetLabel) {
+        // An account change said once that it wasn't sent; a lost answer is "couldn't confirm", never "failed" (the request
+        // may have been made: it isn't offered again as if it hadn't).
+        if (error?.sessionChanged) return;
+        if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) {
+            JE.core.userWrite.reportUncertain(error);
+            return;
+        }
         if (isQuotaError(error)) {
             await showQuotaErrorDialog(error, mediaType);
         } else {

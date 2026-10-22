@@ -577,3 +577,30 @@ test('JE mode: the more-info window with public details says in one line that Se
   await settle();
   assert.equal(note(), null, 'details read through the viewer\'s own account: no line');
 });
+
+// Stage 1 fix round 12 (P34): what an ask shows on its Seerr button after a further read (the person's capabilities)
+// belongs to the session that asked: a switch during that read leaves the next person's page untouched.
+test('JE mode: an asked chip whose capability read waited across an account switch is never shown on the next page', async t => {
+  const h = setup(t);
+  const sent = h.window.fetch;
+  let gate = null, reached, gated = false;
+  const atGate = new Promise(resolve => { reached = () => { gated = true; resolve(); }; });
+  h.window.fetch = async (url, init = {}) => {
+    if (gate && String(url).includes('/acquire/requests/me')) { reached(); await gate; }
+    const answer = await sent(url, init);
+    if ((init.method || 'GET') === 'POST') { let release; gate = new Promise(r => { release = r; }); h.release = release; }
+    return answer;
+  };
+  const button = seerrCard(h, { id: 603, mediaType: 'movie', title: 'The Matrix', releaseDate: '1999-03-31', posterPath: '/m.jpg' }, () => {});
+  const before = button.textContent;
+  click(h, button);
+  await Promise.race([atGate, settle(40)]);
+  assert.ok(gated, 'the capability read after the ask is out');
+  h.JE.session.epoch++;
+  h.release?.();
+  await settle();
+  assert.equal(h.posts.length, 1, 'asked as the person who clicked');
+  assert.notEqual(button.textContent, translate('arr_ask_chip_asked'), 'no chip on the next person\'s page');
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, before);
+});

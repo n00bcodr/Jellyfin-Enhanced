@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
 function section(start, end) {
@@ -26,6 +28,8 @@ function setup(status) {
     const h = createHarness({ html });
     const calls = [];
     h.window.ApiClient = {
+        // Stage 1 fix round 12: the signed-in administrator (the page's writes go out only while it is the same one).
+        getCurrentUserId: () => 'admin-a',
         getUrl: path => path,
         ajax: async options => {
             calls.push(options);
@@ -33,7 +37,8 @@ function setup(status) {
             return options.type === 'GET' ? status : {};
         },
     };
-    h.window.eval(`${createEl} ${functions} ${parents} window.load = jeLoadArrAutomationSettings; window.save = jeSaveArrAutomationSettings; window.statusNow = jeArrAutomationStatus; window.deps = PARENT_DEPS;`);
+    h.window.eval(`${adminOriginSource()}
+${createEl} ${functions} ${parents} window.load = jeLoadArrAutomationSettings; window.save = jeSaveArrAutomationSettings; window.statusNow = jeArrAutomationStatus; window.deps = PARENT_DEPS;`);
     return { h, calls };
 }
 

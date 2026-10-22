@@ -1,6 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred,jsonResponse} from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 // The details page's visit owner (features-details-page.js) with the real chip modules: a fresh
 // details view starts the chips' item-stats and release lookups once the item is known, and the
@@ -158,7 +161,7 @@ test('the real settings store restores failed file-size visibility through the d
  const held=deferred();h.window.ApiClient.ajax=()=>held.promise;
  const saving=h.JE.updateSettings({showFileSizes:false},{throwOnError:true}).catch(()=>{});
  assert.equal(h.row.querySelector('.mediaInfoItem-fileSize'),null);
- held.reject(new Error('display save fails'));await saving;
+ held.reject(refused('display save fails'));await saving;
  h.runScheduled();await h.flush();
  assert.ok(h.row.querySelector('.mediaInfoItem-fileSize'),'document rollback schedules the real dispatcher');
  assert.equal(h.plugin.length,1,'cached facts are reused');

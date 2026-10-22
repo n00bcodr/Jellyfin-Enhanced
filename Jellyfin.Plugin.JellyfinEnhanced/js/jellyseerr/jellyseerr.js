@@ -1074,6 +1074,9 @@
 
         // Main click handler for request buttons and 4K popup items
         document.body.addEventListener('click', async function(event) {
+            // Every request this click makes (directly, or through the dialog it opens) belongs to this click's session.
+            const origin = JE.core.userWrite.origin();
+            const current = () => JE.core.userWrite.isBound(origin);
             // Handle 4K popup item clicks
             if (event.target.closest('.jellyseerr-4k-popup-item')) {
                 const item = event.target.closest('.jellyseerr-4k-popup-item');
@@ -1100,16 +1103,17 @@
                     try {
                         if (mediaType === 'tv') {
                             if (popup) popup.remove();
-                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true);
+                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, origin);
                             return;
                         }
 
                         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();
-                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
+                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true, origin);
                         } else {
-                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
+                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, origin); // true for 4K, pass searchResultItem for override rules
+                            if (!current()) return;
                             console.debug(`${logPrefix} Seerr 4K request response:`, response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
@@ -1125,6 +1129,8 @@
                             }
                         }
                     } catch (error) {
+                        if (error?.sessionChanged || !current()) return;
+                        if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                         // Quota errors get a themed dialog with usage + reset info.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
@@ -1161,27 +1167,30 @@
                 || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
 
             if (mediaType === 'collection' && collectionId) {
-                showCollectionRequestModal(collectionId, titleText, searchResultItem);
+                showCollectionRequestModal(collectionId, titleText, searchResultItem, origin);
                 return;
             }
 
             if (mediaType === 'tv') {
-                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);
+                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, origin);
                 return;
             }
 
             if (mediaType === 'movie') {
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    showMovieRequestModal(tmdbId, titleText, searchResultItem);
+                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, origin);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem); // Pass searchResultItem for override rules
+                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, origin); // Pass searchResultItem for override rules
+                        if (!current()) return;
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
+                        if (error?.sessionChanged || !current()) return;
+                        if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {

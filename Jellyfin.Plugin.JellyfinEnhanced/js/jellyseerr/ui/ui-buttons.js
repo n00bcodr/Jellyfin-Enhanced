@@ -215,13 +215,16 @@
             if (!mainButtonDisabled) {
                 const requestHandler = async (e) => {
                     e.stopPropagation();
+                    // The request belongs to this click's session (through its reads, the request and the answer).
+                    const origin = JE.core.userWrite.origin();
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
+                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, origin);
                     } else {
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, origin);
+                            if (!JE.core.userWrite.isBound(origin)) return;
                             if (requestHandlers.get(mainButton) !== requestHandler) return;
                             if (!item.mediaInfo) item.mediaInfo = {};
                             item.mediaInfo.status = 3;
@@ -229,6 +232,10 @@
                             mainButton.classList.remove('jellyseerr-button-request');
                             mainButton.classList.add('jellyseerr-button-pending');
                         } catch (error) {
+                            // Its session ended: the next person's page isn't changed by it (an account change said it once).
+                            if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                            // A lost answer may have been a request made: "couldn't confirm", never an error state.
+                            if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                             if (requestHandlers.get(mainButton) !== requestHandler) return;
                             mainButton.disabled = false;
                             // Quota errors get a themed dialog; restore button to idle.
@@ -287,13 +294,16 @@
             const requestHandler = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // The request belongs to this click's session (through its reads, the request and the answer).
+                const origin = JE.core.userWrite.origin();
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
+                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, origin);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, origin);
+                        if (!JE.core.userWrite.isBound(origin)) return;
                         if (requestHandlers.get(button) !== requestHandler) return;
                         if (!item.mediaInfo) item.mediaInfo = {};
                         item.mediaInfo.status = 3;
@@ -301,6 +311,10 @@
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
+                        // Its session ended: the next person's page isn't changed by it (an account change said it once).
+                        if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                        // A lost answer may have been a request made: "couldn't confirm", never an error state.
+                        if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                         if (requestHandlers.get(button) !== requestHandler) return;
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.

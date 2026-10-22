@@ -245,7 +245,7 @@
                 const remove = [...initial].filter((id) => !draft.has(id));
                 try {
                     // Refused (with a toast) when the picks can't be read first.
-                    await JE.patchUserSettings('ddd-triggers.json', { add, remove }, { throwOnError: true });
+                    await JE.patchUserSettings('ddd-triggers.json', { add, remove }, { throwOnError: true, origin: JE.core.userWrite.origin() });
                 } catch (e) {
                     console.warn(`${logPrefix} Could not save your triggers.`, e);
                     return;

@@ -34,7 +34,7 @@
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
+                        JE.hiddenContent.updateSettings({ [key]: e.target.checked }, JE.core.userWrite.origin());
                         if (key === 'showButtonLibrary' || key === 'showButtonCast') {
                             if (e.target.checked) {
                                 JE.hiddenContent.addLibraryHideButtons();
@@ -61,14 +61,14 @@
             const masterToggle = document.getElementById('hiddenContentEnabledToggle');
             if (masterToggle) {
                 masterToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ enabled: e.target.checked });
+                    JE.hiddenContent.updateSettings({ enabled: e.target.checked }, JE.core.userWrite.origin());
                     resetAutoCloseTimer();
                 });
             }
             const buttonsToggle = document.getElementById('hiddenShowHideButtons');
             if (buttonsToggle) {
                 buttonsToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideButtons: e.target.checked });
+                    JE.hiddenContent.updateSettings({ showHideButtons: e.target.checked }, JE.core.userWrite.origin());
                     if (e.target.checked) {
                         if (JE.hiddenContent.getSettings().showButtonLibrary) {
                             JE.hiddenContent.addLibraryHideButtons();
@@ -83,7 +83,7 @@
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', (e) => {
-                        JE.hiddenContent.updateSettings({ [key]: e.target.checked });
+                        JE.hiddenContent.updateSettings({ [key]: e.target.checked }, JE.core.userWrite.origin());
                         resetAutoCloseTimer();
                     });
                 }
@@ -91,7 +91,7 @@
             const confirmToggle = document.getElementById('hiddenShowConfirmation');
             if (confirmToggle) {
                 confirmToggle.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked });
+                    JE.hiddenContent.updateSettings({ showHideConfirmation: e.target.checked }, JE.core.userWrite.origin());
                     localStorage.removeItem('je_hide_confirm_suppressed_until');
                     resetAutoCloseTimer();
                 });
@@ -99,7 +99,7 @@
             const experimentalCollections = document.getElementById('hiddenExperimentalCollections');
             if (experimentalCollections) {
                 experimentalCollections.addEventListener('change', (e) => {
-                    JE.hiddenContent.updateSettings({ experimentalHideCollections: e.target.checked });
+                    JE.hiddenContent.updateSettings({ experimentalHideCollections: e.target.checked }, JE.core.userWrite.origin());
                     if (!e.target.checked) {
                         JE.hiddenContent.removeLibraryHideButtons();
                         JE.hiddenContent.addLibraryHideButtons();

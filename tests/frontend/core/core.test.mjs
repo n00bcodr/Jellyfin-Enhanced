@@ -274,3 +274,15 @@ test("JE's toasts sit above every window, sheet and panel JE opens, and below Je
   // Jellyfin's dialogs (999999) stay under every toast; Jellyfin's own toasts (9999999) stay on top.
   assert.ok(layer > 999999 && layer < 9999999);
 });
+
+// Stage 1 fix round 12: a "couldn't confirm" notice and the outcome of its check are shown one after the other; toasts on
+// screen at the same time stack (the newest at the bottom) instead of being drawn over each other.
+test("JE's toasts shown at the same time stack instead of covering each other", t => {
+  const { JE, document } = setup(t, {}, ['ui-kit']);
+  JE.toast('Couldn\'t confirm your change was saved.', 5000);
+  JE.toast('Your change was saved.', 5000);
+  const [older, newer] = [...document.querySelectorAll('.jellyfin-enhanced-toast')];
+  assert.equal(newer.style.bottom, '20px', 'the newest sits in the corner');
+  assert.notEqual(older.style.bottom, newer.style.bottom, 'the older one moved up, not under it');
+  assert.ok(parseInt(older.style.bottom, 10) > parseInt(newer.style.bottom, 10));
+});

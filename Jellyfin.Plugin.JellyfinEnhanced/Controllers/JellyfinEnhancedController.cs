@@ -3762,7 +3762,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Information disclosure of the plugin version is acceptable — Jellyfin core
         // exposes its own version pre-auth too. CVEs against JE are tracked publicly
         // so attackers do not need this endpoint to fingerprint a vulnerable version.
+        // The build handshake too: an older page confirms the server's build (X-JE-Build) from this answer, which no cache may
+        // keep (no-store here; the page asks for it with no-store as well): only an answer that can't be a kept copy proves
+        // the build that runs (js/core/api-client.js).
         [HttpGet("version")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
         [HttpGet("private-config")]
@@ -5280,16 +5284,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Reads a per-user document with its revision. The revision is taken before the read, so a write landing in between
-        /// leaves the revision older than the document (a whole write built on it is refused, never allowed); a read that
-        /// itself wrote (a first read stores the defaults) reads once more behind the newer revision.
+        /// Reads a per-user document with its revision as ONE snapshot: both are taken under the document's lock (the lock
+        /// every writer of the document holds, a restore and a quarantine included), so no write can land between them, and a
+        /// read that itself writes (a first read storing the defaults, a normalization) does so inside it and is answered with
+        /// the revision of what it wrote. The document and the revision the answer names (ETag, envelope) are always the
+        /// same instant's. The read callbacks take only this document's own (re-entrant) lock, never the configuration lock,
+        /// so the lock order stays document lock → nothing. Within one server process (the supported model: see api.md).
         /// </summary>
         private (T Document, string Revision) ReadWithRevision<T>(string authorizedUserId, string fileName, Func<T> read)
         {
-            var revision = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
-            var document = read();
-            var after = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
-            return after == revision ? (document, revision) : (read(), after);
+            lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+            {
+                var document = read();
+                return (document, _userConfigurationManager.RevisionOf(authorizedUserId, fileName));
+            }
         }
 
         /// <summary>
@@ -12635,11 +12643,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             });
         }
 
+        /// <summary>
+        /// The configuration page's follow-up of a save (<paramref name="generation"/>: the generation its save answered):
+        /// never a command from its snapshot. The server's one owner reconciles maintenance mode (and the Custom Tabs entries)
+        /// from the configuration held now; this waits, bounded, for that and says what holds. A generation older than the
+        /// one held now, or one whose maintenance setting isn't <paramref name="enabled"/>, is refused (409, nothing done): a
+        /// newer save owns the effects.
+        /// </summary>
+        private async Task<IActionResult> ConfirmConfigurationEffects(long generation, bool? enabled)
+        {
+            var effects = Services.ConfigurationEffects.Instance;
+            long held;
+            bool heldEnabled;
+            lock (JellyfinEnhanced.ConfigurationLock)
+            {
+                var cfg = JellyfinEnhanced.Instance?.Configuration;
+                if (cfg == null || effects == null) return StatusCode(503);
+                held = cfg.ConfigurationGeneration;
+                heldEnabled = cfg.MaintenanceModeEnabled;
+            }
+            if (generation != held || (enabled.HasValue && enabled.Value != heldEnabled))
+            {
+                return StatusCode(409, new { success = false, code = "stale_generation", generation = held, message = "The configuration changed since this save; its effects follow the newer configuration." });
+            }
+            var outcome = await effects.ReconcileAsync(generation, TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+            return Ok(new
+            {
+                success = outcome.Maintenance == "applied" || outcome.Maintenance == "superseded",
+                generation = outcome.Generation,
+                maintenance = outcome.Maintenance,
+                customTabs = outcome.CustomTabs == null ? null : new { ok = outcome.CustomTabs.Ok, status = outcome.CustomTabs.Status, detail = outcome.CustomTabs.Detail }
+            });
+        }
+
+        /// <summary>
+        /// A maintenance command without a generation from a signed-in page: only a page of an earlier JE build sends one (the
+        /// current page confirms its save's generation instead). It would replay that page's snapshot over whatever was saved
+        /// since, so it is refused and the session is told to reload (an API key, a script, keeps the direct command).
+        /// </summary>
+        private IActionResult? RefuseSnapshotCommand()
+        {
+            if (!Services.ClientReloadNotice.FromSession(User)) return null;
+            Services.ClientReloadNotice.Send(_sessionManager, User, Services.ClientReloadNotice.EffectsText, _logger);
+            return StatusCode(409, new { success = false, code = "reload_required", message = "Reload the configuration page: maintenance mode follows the saved configuration." });
+        }
+
         [Authorize]
         [HttpPost("MaintenanceMode/Enable")]
-        public async Task<IActionResult> EnableMaintenanceMode([FromBody] MaintenanceModeRequest request)
+        public async Task<IActionResult> EnableMaintenanceMode([FromBody] MaintenanceModeRequest request, [FromQuery] long? generation = null)
         {
             if (!IsAdminUser()) return Forbid();
+            if (generation.HasValue) return await ConfirmConfigurationEffects(generation.Value, true).ConfigureAwait(false);
+            if (RefuseSnapshotCommand() is { } refused) return refused;
             await _maintenanceModeService.EnableAsync(
                 request.Message ?? string.Empty,
                 request.DurationMinutes,
@@ -12659,11 +12714,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </param>
         [Authorize]
         [HttpPost("MaintenanceMode/Disable")]
-        public async Task<IActionResult> DisableMaintenanceMode([FromQuery] bool includeScheduled = true)
+        public async Task<IActionResult> DisableMaintenanceMode([FromQuery] bool includeScheduled = true, [FromQuery] long? generation = null)
         {
             if (!IsAdminUser()) return Forbid();
+            if (generation.HasValue) return await ConfirmConfigurationEffects(generation.Value, false).ConfigureAwait(false);
+            if (RefuseSnapshotCommand() is { } refused) return refused;
             await _maintenanceModeService.DisableAsync(includeScheduled).ConfigureAwait(false);
             return Ok(new { success = true });
+        }
+
+        /// <summary>
+        /// The configuration page's follow-up of a save for the Custom Tabs entries Jellyfin Enhanced manages: the server syncs
+        /// them from the configuration held now (never from the page's snapshot) and says how it went. A generation older than
+        /// the one held is refused (409, nothing done).
+        /// </summary>
+        [Authorize]
+        [HttpPost("custom-tabs/sync")]
+        public async Task<IActionResult> SyncCustomTabs([FromQuery] long generation)
+        {
+            if (!IsAdminUser()) return Forbid();
+            return await ConfirmConfigurationEffects(generation, null).ConfigureAwait(false);
         }
 
         [Authorize]

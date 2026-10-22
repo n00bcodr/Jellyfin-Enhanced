@@ -21,16 +21,23 @@ function buildSingle4kButton(data) {
     button.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        // The request belongs to this click's session (through its reads, the request and the answer).
+        const origin = JE.core.userWrite.origin();
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, origin);
             return;
         }
         button.disabled = true;
         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
         try {
-            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data, null, origin);
+            if (!JE.core.userWrite.isBound(origin)) return;
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
+            // Its session ended: the next person's page isn't changed by it (an account change said it once).
+            if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+            // A lost answer may have been a request made: "couldn't confirm", never an error state.
+            if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
             // Quota errors get a themed dialog; restore button to idle.
             if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                 await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
@@ -79,16 +86,23 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         mainButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // The request belongs to this click's session (through its reads, the request and the answer).
+            const origin = JE.core.userWrite.origin();
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, origin);
                 return;
             }
             mainButton.disabled = true;
             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
-                const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data, null, origin);
+                if (!JE.core.userWrite.isBound(origin)) return;
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
+                // Its session ended: the next person's page isn't changed by it (an account change said it once).
+                if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                // A lost answer may have been a request made: "couldn't confirm", never an error state.
+                if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                 // Quota errors get a themed dialog; restore button to idle.
                 if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                     await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
@@ -151,18 +165,25 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             option.addEventListener('click', async (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
+                // The request belongs to this click's session (through its reads, the request and the answer).
+                const origin = JE.core.userWrite.origin();
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     close4k();
-                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, origin);
                     return;
                 }
                 option.disabled = true;
                 option.textContent = JE.t('jellyseerr_btn_requesting');
                 try {
-                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data, null, origin);
+                    if (!JE.core.userWrite.isBound(origin)) return;
                     mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {
+                    // Its session ended: the next person's page isn't changed by it (an account change said it once).
+                    if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                    // A lost answer may have been a request made: "couldn't confirm", never an error state.
+                    if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                     // Quota errors get a themed dialog; restore option to idle.
                     if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                         await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
@@ -197,16 +218,23 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         requestButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // The request belongs to this click's session (through its reads, the request and the answer).
+            const origin = JE.core.userWrite.origin();
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, origin);
                 return;
             }
             requestButton.disabled = true;
             requestButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
-                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data, null, origin);
+                if (!JE.core.userWrite.isBound(origin)) return;
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
+                // Its session ended: the next person's page isn't changed by it (an account change said it once).
+                if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                // A lost answer may have been a request made: "couldn't confirm", never an error state.
+                if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) { JE.core.userWrite.reportUncertain(error); return; }
                 // Quota errors get a themed dialog; restore button to idle.
                 if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                     await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');

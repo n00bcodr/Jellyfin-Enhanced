@@ -601,29 +601,31 @@
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope) {
+    async function searchEpisode(ep, button, scope, origin) {
+        // The Search's origin (the click): the search, the ask it falls back to and what they show, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
-        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
-        if (JE.arrAsk.epoch() !== started || season !== target) return;
+        if (!current() || season !== target) return;
         const instanceId = JE.arrAsk.searchInstance(caps, target.statusRef, ep.key);
         const place = button?.closest('.listItem') || null;
         busy.add(ep.episode);
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : await JE.arrAsk.familySearch(ep.key);
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { session: origin }) : await JE.arrAsk.familySearch(ep.key, { session: origin });
         } finally {
             busy.delete(ep.episode);
         }
-        if (JE.arrAsk.epoch() !== started) return;
+        if (!current() || result?.stale) return;
         if (!result) {
-            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it.
+            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it (as this click's).
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes([ep.episode], button, true, target.itemId);
+            await getEpisodes([ep.episode], button, true, target.itemId, origin);
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
@@ -650,9 +652,12 @@
      * @param {HTMLButtonElement} button The button pressed (focus goes to the new chip after).
      * @param {boolean} [search] The ask is a Search (its state then shows for a while only).
      * @param {string|null} [scope] The season the button was made for (nothing is asked on another).
+     * @param {any} [origin] The click's origin (a Search falling back to this passes its own).
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope) {
+    async function getEpisodes(episodes, button, search, scope, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const rows = target?.rows;
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
@@ -662,7 +667,6 @@
         const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
         affected.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
-        const started = JE.arrAsk.epoch();
         let result = null;
         try {
             const caps = await JE.arrAsk.me();
@@ -675,14 +679,16 @@
                 input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season]) : null;
                 if (!input) result = { ok: false, state: button?.dataset.rounded === '1' ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
-            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input);
+            if (!result && current()) result = await JE.arrAsk.ask(input, { session: origin });
         } finally {
             affected.forEach(n => busy.delete(n));
         }
         // Answered after a sign-out: the next person is not told about it.
-        if (!result || result.stale || JE.arrAsk.epoch() !== started) return;
+        if (!result || result.stale || !current()) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('tv') : null;
+        // These reads waited too: shown in the ask's session only.
+        if (!current()) return;
         const words = JE.arrAsk.describe(result, caps, allowance);
         // The same season page is still shown (the ask itself makes the page read the season again).
         const stillHere = !!season && season.itemId === target.itemId;
@@ -1104,14 +1110,17 @@
      * @param {HTMLButtonElement} button The button pressed.
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button) {
+    async function searchBanner(eps, status, button, origin) {
+        // The Search's origin (the click): every search of it, the ask it falls back to and what they show, in that
+        // session only (a loop never goes on as the next person).
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const numbers = eps.map(ep => ep.episode);
         if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
         const key = eps.length === 1 ? eps[0].key : status.key;
-        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
-        if (JE.arrAsk.epoch() !== started || season !== target) return;
+        if (!current() || season !== target) return;
         const instanceId = key ? JE.arrAsk.searchInstance(caps, status, key) : null;
         numbers.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
@@ -1119,15 +1128,15 @@
         let toAsk = [];
         try {
             if (instanceId) {
-                result = await JE.arrAsk.adminSearch(key, instanceId);
+                result = await JE.arrAsk.adminSearch(key, instanceId, { session: origin });
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key) : null;
-                if (JE.arrAsk.epoch() !== started) return;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { session: origin }) : null;
+                if (!current()) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key) : null;
-                    if (JE.arrAsk.epoch() !== started) return;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { session: origin }) : null;
+                    if (!current()) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);
                 }
@@ -1136,14 +1145,15 @@
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
-        if (JE.arrAsk.epoch() !== started) return;
+        if (!current()) return;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes(numbers, button, true, target.itemId);
+            await getEpisodes(numbers, button, true, target.itemId, origin);
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId);
+        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, origin);
+        if (!current()) return;
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         announce(result.text);

@@ -193,14 +193,15 @@
      * @param {number[]|null} ids Ids, or null for all.
      * @returns {Promise<void>}
      */
-    async function markRead(ids) {
+    async function markRead(ids, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const body = ids ? { ids } : { all: true };
         state.items = state.items.map(i => (!ids || ids.includes(i.id)) ? Object.assign({}, i, { read: true }) : i);
         state.unread = ids ? Math.max(0, state.unread - ids.length) : 0;
         emit('inbox');
         const identity = state.identity;
         try {
-            const res = await api('/acquire/notify/read', { method: 'POST', body });
+            const res = await api('/acquire/notify/read', { method: 'POST', body, session: origin });
             if (identity === state.identity && res && typeof res.unread === 'number') {
                 state.unread = res.unread;
                 emit('inbox');
@@ -271,12 +272,16 @@
      * @param {boolean} on Follow.
      * @returns {Promise<{ok: boolean, code?: string}>} Outcome.
      */
-    async function setFollow(key, on) {
+    async function setFollow(key, on, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         try {
-            await api('/acquire/follows', { method: 'PUT', body: { key, on } });
+            await api('/acquire/follows', { method: 'PUT', body: { key, on }, session: origin });
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
         }
+        if (!JE.core.userWrite.isBound(origin)) return { ok: false, code: 'user_changed' };
         await loadFollows(true);
         return { ok: true };
     }
@@ -287,11 +292,14 @@
      * @param {string|null} itemId Jellyfin item shown, if any.
      * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
      */
-    async function remind(key, itemId) {
+    async function remind(key, itemId, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         try {
-            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null } });
+            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, session: origin });
             return { ok: true, nextAt: res?.nextAt };
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };
         }
     }
@@ -340,12 +348,13 @@
      * @param {string} path Route.
      * @param {string} method Method.
      * @param {Object} [body] Body.
+     * @param {any} [origin] The change's origin (taken when the person acted; required from a caller that waited, e.g.
+     *   the second call of a chain): sent only while it is the signed-in session (JE.core.userWrite).
      * @returns {Promise<{ok: boolean, code?: string, body?: Object}>} Outcome.
      */
-    async function prefsCall(path, method, body) {
+    async function prefsCall(path, method, body, origin) {
         const identity = state.identity;
-        // The session this change is made in: sent only while it is the signed-in one (JE.core.userWrite).
-        const binding = JE.core.userWrite.bind();
+        const binding = JE.core.userWrite.originOf(origin);
         try {
             const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);
             if (identity !== state.identity) return { ok: false, code: 'user_changed' };
@@ -353,6 +362,8 @@
             return { ok: true, body: res };
         } catch (err) {
             if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            // A lost answer: the change may be stored; said as such (the next read of the settings shows what holds).
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             const code = err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed');
             return { ok: false, code, status: err?.status };
         }

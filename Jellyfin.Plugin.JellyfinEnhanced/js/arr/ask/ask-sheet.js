@@ -358,6 +358,9 @@
      * @returns {Promise<Object|null>} The ask result, or null when closed without one.
      */
     async function open(title, options) {
+        // The sheet's origin: the click that opened it (or the caller's). Its loaders, its asks and their answers belong
+        // to that session only.
+        const origin = JE.core.userWrite.originOf(options?.origin);
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
         const listTicket = options?.fixed ? options?.listTicket : null;
         const opener = options?.opener || document.activeElement;
@@ -374,7 +377,8 @@
             if (state) finish(state, null);
         };
         const off = listTicket?.onRevoke(cancel);
-        const live = () => !cancelled && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        const live = () => !cancelled && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch
+            && JE.core.userWrite.isBound(origin);
         pendingOpens.add(cancel);
         try {
             if (!live()) return null;
@@ -401,7 +405,7 @@
             return await new Promise(resolve => {
                 const painted = sheetPaint(listTicket, () => {
                     close();
-                    state = build(shown, kind, caps, quota, { ...options, listTicket, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+                    state = build(shown, kind, caps, quota, { ...options, origin, listTicket, blocks: { [variant]: blockOf(check) } }, opener, resolve);
                     current = state;
                 });
                 if (!painted) resolve(null);
@@ -460,6 +464,8 @@
         const contact = JE.arrAsk.contact(caps);
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
+            // The origin of the action that opened the sheet (open() takes it): its asks go out in that session only.
+            origin: options?.origin,
             listTicket: options?.listTicket || null,
             title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
@@ -879,7 +885,7 @@
         });
         let result;
         try {
-            result = state.fixed ? await state.fixed.send() : await JE.arrAsk.ask(input);
+            result = state.fixed ? await state.fixed.send(state.origin) : await JE.arrAsk.ask(input, { session: state.origin });
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
@@ -889,12 +895,14 @@
             state.primary.disabled = false;
             state.primary.removeAttribute('aria-busy');
         });
-        if (result.stale) {
+        if (result.stale || !JE.core.userWrite.isBound(state.origin)) {
             finish(state, null);
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
         if (state.listTicket && (state.done || !state.listTicket.current())) return;
+        // The allowance read waited: the answer is shown in the sheet's session only.
+        if (!JE.core.userWrite.isBound(state.origin)) { finish(state, null); return; }
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
             sheetPaint(state.listTicket, () => JE.arrAsk.toast(words.text));
@@ -1031,9 +1039,9 @@
         if (title.kind !== 'movie') return open(title, options);
         if (inflight.has(title.key)) return inflight.get(title.key);
         // Capabilities and allowance are read for this session: a sign-out (and someone else's
-        // sign-in) before the ask goes out drops it instead of asking as the next person.
-        const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
-        const sameSession = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        // sign-in) before the ask goes out drops it instead of asking as the next person. The ask's origin is the tap's.
+        const origin = JE.core.userWrite.originOf(options?.origin);
+        const sameSession = () => JE.core.userWrite.isBound(origin);
         const run = (async () => {
             const caps = await JE.arrAsk.me();
             if (!sameSession()) return null;
@@ -1044,13 +1052,15 @@
             const quota = await JE.arrAsk.quota('movie');
             if (!sameSession()) return null;
             if (needsSheet(caps, quota, 'movie')) return { sheet: true, caps, quota };
-            const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key));
-            if (result.stale) return null;
+            const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { session: origin });
+            if (result.stale || !sameSession()) return null;
             const allowance = result.state === 'quota' ? (await JE.arrAsk.quota('movie')) || quota : quota;
+            // The allowance read waited: the answer is told in the ask's session only.
+            if (!sameSession()) return null;
             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
             return result;
         })();
-        const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
+        const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, origin, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
         const settled = run.finally(() => inflight.delete(title.key));
         settled.catch(() => {});
         inflight.set(title.key, tracked);
@@ -1241,6 +1251,10 @@
                 e.preventDefault();
                 e.stopPropagation();
                 if (busy) return;
+                // The search (and the ask it may fall back to) belongs to this click's session: once it ended, nothing
+                // more is sent or shown (a family search that didn't apply never becomes the next person's ask).
+                const origin = JE.core.userWrite.origin();
+                const current = () => JE.core.userWrite.isBound(origin);
                 busy = true;
                 const pressed = document.activeElement === b;
                 b.disabled = true;
@@ -1250,15 +1264,18 @@
                 try {
                     if (instanceId) {
                         label.textContent = tr('arr_ask_searching');
-                        const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId);
+                        const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId, { session: origin });
+                        if (result.stale || !current()) return;
                         JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
-                    } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key))) {
+                    } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key, { session: origin })) || !current()) {
+                        if (searched?.stale || !current()) return;
                         // Requests already sent it: search for it again instead of asking.
                         JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else {
-                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key)) : await open(title, { opener: b });
+                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { session: origin }) : await open(title, { opener: b, origin });
+                        if (result?.stale || !current()) return;
                         if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);
                             if (kind === 'movie') JE.arrAsk.toast(said.text);

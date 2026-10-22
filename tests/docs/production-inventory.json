@@ -1167,6 +1167,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ConfigurationEffects.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
@@ -3964,7 +3968,9 @@
       "path": "/JellyfinEnhanced/version",
       "method": "GetVersion",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
-      "following_attributes": []
+      "following_attributes": [
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
     },
     {
       "verb": "GET",
@@ -5050,6 +5056,13 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/MaintenanceMode/Disable",
       "method": "DisableMaintenanceMode",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/custom-tabs/sync",
+      "method": "SyncCustomTabs",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
     },
@@ -11093,8 +11106,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 634,
-    "routes": 300,
+    "files": 635,
+    "routes": 301,
     "configuration_properties": 647,
     "storage_references": 100,
     "scheduled_tasks": 15,

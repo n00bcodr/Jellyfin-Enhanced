@@ -345,3 +345,44 @@ test('phase 4 switch off: the Seerr row and the gaps block both show, exactly as
   assert.deepEqual([...row.querySelectorAll('.card')].map(c => c.dataset.id), ['11']);
   assert.equal(h.JE.internals.arrAskCollection.covers('box1'), false);
 });
+
+// Stage 1 fix round 12 (P33): "Get the N missing" is one action of the person who pressed it: once their session ends, no
+// further movie is asked for (as anyone).
+test('Get the missing movies stops at an account switch: the next movie is never asked for', async t => {
+  const h = setup(t, { gaps: () => GAPS });
+  h.JE.internals.arrAskActions.attachDetails(h.page(), null);
+  await settle();
+  const sent = h.window.fetch;
+  let release, reached;
+  const held = new Promise(resolve => { release = resolve; });
+  const arrived = new Promise(resolve => { reached = resolve; });
+  let asks = 0;
+  h.window.fetch = async (url, init = {}) => {
+    // The first ask is out when the session ends; it then fails (aborted), which the loop catches.
+    if ((init.method || 'GET') === 'POST' && ++asks === 1) { h.posts.push(JSON.parse(init.body)); reached(); await held; throw Object.assign(new Error('aborted'), { name: 'AbortError' }); }
+    return sent(url, init);
+  };
+  const said = [];
+  const toast = h.JE.toast;
+  h.JE.toast = (...args) => { said.push(String(args[0])); return toast?.(...args); };
+  click(h, getButton(h));
+  await arrived;
+  h.JE.session.epoch++;
+  release();
+  await settle(60);
+  assert.equal(h.posts.length, 1, 'only the movie already out when the session ended');
+  assert.deepEqual(said, [], 'and no summary on the next person\'s page');
+});
+
+test('control: Get the missing movies in its own session asks for each and says the summary', async t => {
+  const h = setup(t, { gaps: () => GAPS });
+  h.JE.internals.arrAskActions.attachDetails(h.page(), null);
+  await settle();
+  const said = [];
+  const toast = h.JE.toast;
+  h.JE.toast = (...args) => { said.push(String(args[0])); return toast?.(...args); };
+  click(h, getButton(h));
+  await settle(60);
+  assert.equal(h.posts.length, 3);
+  assert.equal(said.length, 1, 'one summary');
+});

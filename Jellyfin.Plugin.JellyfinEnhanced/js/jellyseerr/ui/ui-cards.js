@@ -847,8 +847,10 @@
         const item = state.item;
         e.preventDefault();
         e.stopPropagation();
+        // The session this click belongs to, through the confirmation.
+        const origin = JE.core.userWrite.origin();
         if (hideBtn.classList.contains('je-already-hidden')) {
-            JE.hiddenContent.unhideItem(state.jellyfinMediaId || `tmdb-${item.id}`);
+            JE.hiddenContent.unhideItem(state.jellyfinMediaId || `tmdb-${item.id}`, origin);
             setHideButtonState(hideBtn, false, state.ctx);
             return;
         }
@@ -860,7 +862,7 @@
             posterPath: item.posterPath || ''
         }, () => {
             card.style.display = 'none';
-        });
+        }, { origin });
     }
 
     /**

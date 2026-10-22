@@ -460,6 +460,8 @@
   }
 
   async function handleRequestAction(btn, action) {
+    // The action's origin: this click (sent, and its answer shown, in that session only).
+    const origin = JE.core.userWrite.origin();
     const requestId = btn.getAttribute('data-request-id');
     if (!requestId) return;
 
@@ -472,7 +474,9 @@
       await JE.core.api.plugin(`/arr/requests/${requestId}/${action}`, {
         method: 'POST',
         skipRetry: true,
+        session: origin,
       });
+      if (!JE.core.userWrite.isBound(origin)) return;
       await fetchRequests();
       renderPage();
     } catch (err) {

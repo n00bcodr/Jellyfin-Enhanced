@@ -689,8 +689,8 @@
      * @param {HTMLElement} [opener] The control clicked.
      * @returns {Promise<Object|null>} Outcome.
      */
-    function runQueue(body, busyId, opener) {
-        return post('/arr/admin/queue/action', body, busyId, opener);
+    function runQueue(body, busyId, opener, origin) {
+        return post('/arr/admin/queue/action', body, busyId, opener, origin);
     }
 
     /**
@@ -701,17 +701,21 @@
      * @param {HTMLElement} [opener] The control clicked.
      * @returns {Promise<Object|null>} Outcome.
      */
-    async function post(path, body, busyId, opener) {
+    async function post(path, body, busyId, opener, origin) {
+        // The action's origin (the click, or the dialog's confirmation of it): sent, and shown, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         state.busy.add(busyId);
         state.banner = null;
         draw();
         let outcome = null;
         try {
-            outcome = await JE.core.api.plugin(path, { method: 'POST', body: { ...body, idempotencyKey: newKey() }, skipRetry: true });
+            outcome = await JE.core.api.plugin(path, { method: 'POST', body: { ...body, idempotencyKey: newKey() }, skipRetry: true, session: origin });
         } catch (err) {
-            outcome = { status: 'Failed', message: err?.message || String(err) };
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) { state.busy.delete(busyId); return null; }
+            outcome = { status: 'Failed', message: JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed') : (err?.message || String(err)) };
         }
         state.busy.delete(busyId);
+        if (!JE.core.userWrite.isBound(origin)) return null;
         report(busyId, outcome);
         opener?.focus?.({ preventScroll: true });
         return outcome;
@@ -723,18 +727,21 @@
      * @param {HTMLElement} [opener] The control clicked.
      * @returns {Promise<void>}
      */
-    async function scanNow(target, opener) {
+    async function scanNow(target, opener, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         if (state.busy.has(target.id)) return;
         state.busy.add(target.id);
         state.banner = null;
         draw();
         let outcome;
         try {
-            outcome = await JE.core.api.plugin('/arr/admin/bridge/scan', { method: 'POST', body: { instanceId: target.instanceId, path: target.arrPath, idempotencyKey: newKey() }, skipRetry: true });
+            outcome = await JE.core.api.plugin('/arr/admin/bridge/scan', { method: 'POST', body: { instanceId: target.instanceId, path: target.arrPath, idempotencyKey: newKey() }, skipRetry: true, session: origin });
         } catch (err) {
-            outcome = { status: 'Failed', message: err?.message || String(err) };
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) { state.busy.delete(target.id); return; }
+            outcome = { status: 'Failed', message: JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed') : (err?.message || String(err)) };
         }
         state.busy.delete(target.id);
+        if (!JE.core.userWrite.isBound(origin)) return;
         report(target.id, outcome);
         opener?.focus?.({ preventScroll: true });
     }
@@ -922,9 +929,10 @@
      *   (shown in the dialog and sent with the removal).
      * @returns {Promise<void>}
      */
-    async function confirmDataDialog(target, busyId, opener, choices) {
+    async function confirmDataDialog(target, busyId, opener, choices, origin) {
         // The answer may come after the admin left the tab or someone else signed in: then nothing
-        // opens. The row is busy meanwhile.
+        // opens. The row is busy meanwhile. The dialog and the removal it confirms carry the click's origin.
+        origin = JE.core.userWrite.originOf(origin);
         const generation = state.generation;
         const tab = state.tab;
         closeDialog();
@@ -932,7 +940,7 @@
         draw();
         let confirmation;
         try {
-            confirmation = await JE.core.api.plugin('/arr/admin/queue/confirm', { method: 'POST', body: { instanceId: target.instanceId, downloadId: target.downloadId }, skipRetry: true });
+            confirmation = await JE.core.api.plugin('/arr/admin/queue/confirm', { method: 'POST', body: { instanceId: target.instanceId, downloadId: target.downloadId }, skipRetry: true, session: origin });
         } catch (err) {
             state.busy.delete(busyId);
             if (generation !== state.generation || !tab || state.tab !== tab) return;
@@ -979,7 +987,7 @@
                 confirmationToken: confirmation?.token
             };
             closeDialog();
-            runQueue(body, busyId, opener);
+            runQueue(body, busyId, opener, origin);
         });
         cancel.addEventListener('click', () => closeDialog());
         buttons.appendChild(cancel);

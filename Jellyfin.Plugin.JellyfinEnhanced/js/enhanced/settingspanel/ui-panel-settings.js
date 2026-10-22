@@ -34,7 +34,7 @@
      * @param {string} [message] The confirmation.
      * @returns {Promise<boolean>} Whether it was stored.
      */
-    const saveThenConfirm = (scope, patch, message) => JE.updateSettings(patch, { throwOnError: true }).then(() => {
+    const saveThenConfirm = (scope, patch, message) => JE.updateSettings(patch, { throwOnError: true, origin: JE.core.userWrite.origin() }).then(() => {
         if (message && scope.session.isCurrent()) JE.toast(message);
         return true;
     }, () => false);
@@ -149,13 +149,13 @@
                 const fmtSel = document.getElementById('watchProgressTimeFormatSelect');
                 if (modeSel) {
                     listen(modeSel, 'change', (e) => {
-                        JE.updateSettings({ watchProgressMode: e.target.value });
+                        JE.updateSettings({ watchProgressMode: e.target.value }, { origin: JE.core.userWrite.origin() });
                         resetAutoCloseTimer();
                     });
                 }
                 if (fmtSel) {
                     listen(fmtSel, 'change', (e) => {
-                        JE.updateSettings({ watchProgressTimeFormat: e.target.value });
+                        JE.updateSettings({ watchProgressTimeFormat: e.target.value }, { origin: JE.core.userWrite.origin() });
                         resetAutoCloseTimer();
                     });
                 }
@@ -165,7 +165,7 @@
         listen(document.getElementById('nativePosterTagsToggle'), 'change', (event) => {
             if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
             const enabled = event.target.checked;
-            JE.updateSettings({ useNativePosterTags: enabled });
+            JE.updateSettings({ useNativePosterTags: enabled }, { origin: JE.core.userWrite.origin() });
             resetAutoCloseTimer();
         });
         // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit. They are consents:
@@ -174,7 +174,7 @@
             listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrAutomationEngineEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
-                JE.setPersonalConsent(key, value, { throwOnError: true })
+                JE.setPersonalConsent(key, value, { throwOnError: true, origin: JE.core.userWrite.origin() })
                     .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: automatic request preference save failed', err); });
                 resetAutoCloseTimer();
             });
@@ -185,8 +185,8 @@
             listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrListsEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
-                const save = key === 'listSwapIn' ? JE.setPersonalConsent(key, value === true, { throwOnError: true })
-                    : JE.updateSettings({ [key]: value }, { throwOnError: true });
+                const save = key === 'listSwapIn' ? JE.setPersonalConsent(key, value === true, { throwOnError: true, origin: JE.core.userWrite.origin() })
+                    : JE.updateSettings({ [key]: value }, { throwOnError: true, origin: JE.core.userWrite.origin() });
                 save.catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
                 resetAutoCloseTimer();
             });
@@ -199,7 +199,7 @@
                 const value = event.target.value === 'off' ? false : null;
                 resetAutoCloseTimer();
                 try {
-                    await JE.updateSettings({ [key]: value }, { throwOnError: true });
+                    await JE.updateSettings({ [key]: value }, { throwOnError: true, origin: JE.core.userWrite.origin() });
                 } catch (err) {
                     if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }
@@ -212,7 +212,7 @@
             listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrHomeRowsEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
-                JE.updateSettings({ [key]: value }, { throwOnError: true })
+                JE.updateSettings({ [key]: value }, { throwOnError: true, origin: JE.core.userWrite.origin() })
                     .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: home row settings save failed', err); });
                 resetAutoCloseTimer();
             });
@@ -253,7 +253,7 @@
                 if (!row) return;
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
-                JE.updateSettings({ [settingKey]: target.checked });
+                JE.updateSettings({ [settingKey]: target.checked }, { origin: JE.core.userWrite.origin() });
                 resetAutoCloseTimer();
             });
             // Handle ↑/↓ stack reorder buttons
@@ -282,7 +282,7 @@
                     const orderKey = r.dataset.orderKey;
                     if (orderKey) order[orderKey] = idx + 1;
                 });
-                JE.updateSettings(order);
+                JE.updateSettings(order, { origin: JE.core.userWrite.origin() });
 
                 refreshQualityCatArrowStates(qualitySubGroup);
                 resetAutoCloseTimer();
@@ -332,7 +332,7 @@
                 audioLangSelect.value = saved;
             })();
             listen(audioLangSelect, 'change', (e) => {
-                JE.updateSettings({ qualityTagsPreferredAudioLanguage: e.target.value });
+                JE.updateSettings({ qualityTagsPreferredAudioLanguage: e.target.value }, { origin: JE.core.userWrite.origin() });
                 resetAutoCloseTimer();
             });
         }
@@ -372,7 +372,7 @@
             listen(pauseScreenDelayInput, 'change', () => {
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
-                JE.updateSettings({ pauseScreenDelaySeconds: val });
+                JE.updateSettings({ pauseScreenDelaySeconds: val }, { origin: JE.core.userWrite.origin() });
 
             });
         }
@@ -409,7 +409,7 @@
                 if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
                 const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
                 if (!settingKey) return;
-                JE.updateSettings({ [settingKey]: target.checked });
+                JE.updateSettings({ [settingKey]: target.checked }, { origin: JE.core.userWrite.origin() });
                 resetAutoCloseTimer();
             });
         }
@@ -494,7 +494,7 @@
             const textColor = customTextColorPicker.value + parseInt(customTextAlpha.value).toString(16).padStart(2, '0').toUpperCase();
             const bgColor = customBgColorPicker.value + parseInt(customBgAlpha.value).toString(16).padStart(2, '0').toUpperCase();
 
-            JE.updateSettings({ customSubtitleTextColor: textColor, customSubtitleBgColor: bgColor, usingCustomColors: true });
+            JE.updateSettings({ customSubtitleTextColor: textColor, customSubtitleBgColor: bgColor, usingCustomColors: true }, { origin: JE.core.userWrite.origin() });
 
             resetAutoCloseTimer();
         };
@@ -513,7 +513,7 @@
             let gesture;
             const commitPosition = () => {
                 if (!gesture || !scope.isCurrent()) { gesture = undefined; return; }
-                JE.updateSettings(gesture);
+                JE.updateSettings(gesture, { origin: JE.core.userWrite.origin() });
                 gesture = undefined;
             };
             const updatePosition = (xPct, yPct) => {
@@ -584,7 +584,7 @@
 
         if (posResetBtn) {
             listen(posResetBtn, 'click', () => {
-                JE.updateSettings({ subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95 });
+                JE.updateSettings({ subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95 }, { origin: JE.core.userWrite.origin() });
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
                 resetAutoCloseTimer();
             });

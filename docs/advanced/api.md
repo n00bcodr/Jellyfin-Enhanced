@@ -102,7 +102,7 @@ Error bodies vary: some are strings, some have `message`, some have `success:fal
 
 ### Check version
 
-`GET /JellyfinEnhanced/version` is anonymous. It returns unquoted text such as `12.12.0.0`, or `unknown` if the plugin instance is unavailable.
+`GET /JellyfinEnhanced/version` is anonymous. It returns unquoted text such as `12.12.0.0`, or `unknown` if the plugin instance is unavailable. It is answered `Cache-Control: no-store`, and its `X-JE-Build` header is the build the server runs now: the web client asks it (with `cache: 'no-store'`) to confirm a build that a cacheable answer named.
 
 ```bash
 curl "$JE_URL/version"
@@ -1226,7 +1226,7 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | Field | Shape |
 |---|---|
 | `Version`, `UserId` | Version string and caller's N-format ID. |
-| `Build` | The server's JE build (the client script's cache key: the version and the running assembly's identity, new with every build and the same for the same DLL copied again). Every answer of JE's routes names it in `X-JE-Build` too; the web client compares it with the build of the scripts it runs and asks for a reload when they differ. |
+| `Build` | The server's JE build (the client script's cache key: the version and the running assembly's identity, new with every build and the same for the same DLL copied again). Every answer of JE's routes names it in `X-JE-Build` too. The web client trusts only answers no browser cache can have kept: the bootstrap and `version` (both no-store), answers of writes, and answers it asked for with `cache: 'no-store'`. A build named by any other answer (Awards and ratings are cached for 30 minutes, for example) is a hint, confirmed by one shared `version` request before the client asks for a reload. A failed confirmation is retried no sooner than 30 seconds later, doubling up to 10 minutes. |
 | `PublicConfig` | Same field set as `public-config`, authenticated context. |
 | `PrivateConfig` | Curated admin object below; null/omitted for viewers. |
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
@@ -2081,8 +2081,8 @@ These routes require **Administrator** access. See [Other settings](../other/oth
 | Method | Path | Request → response |
 |---|---|---|
 | GET | `MaintenanceMode/Status` | Current state object. |
-| POST | `MaintenanceMode/Enable` | JSON request below → `{"success":true}`. |
-| POST | `MaintenanceMode/Disable` | Optional query `includeScheduled=true` → `{"success":true}`. |
+| POST | `MaintenanceMode/Enable` | JSON request below → `{"success":true}`. With `?generation=N`, see [Configuration effects](#configuration-effects). |
+| POST | `MaintenanceMode/Disable` | Optional query `includeScheduled=true` → `{"success":true}`. With `?generation=N`, see [Configuration effects](#configuration-effects). |
 | GET | `MaintenanceMode/Users` | Bare array of all eligible non-admin `{Id,Username,HasImage}` accounts. |
 | POST | `MaintenanceMode/Broadcast` | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 
@@ -2107,6 +2107,18 @@ curl -X POST -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 !!! warning "Maintenance access changes"
 
     `disable_accounts` and `both` can disable selected accounts; `disable_remote` and `both` can disable remote access. Use `Action:"none"` for a notice-only window. Unknown action strings are not rejected, but disable neither account nor remote access.
+
+### Configuration effects
+
+Maintenance mode and the Custom Tabs entries JE manages follow the configuration the server holds. Every configuration write advances `ConfigurationGeneration`; a write that changes what these effects follow (a configuration page save, Jellyfin's configuration route, a backup restore, a server-side writer) asks one server owner to reconcile. It runs one reconcile at a time from the configuration it reads then, and checks the generation again before each account it changes. An older Enable therefore cannot land after a newer Disable has completed.
+
+| Request | Result |
+|---|---|
+| `POST MaintenanceMode/Enable?generation=N` or `MaintenanceMode/Disable?generation=N` | Waits (up to 20 seconds) for the reconcile covering generation `N`, then `{"success","generation","maintenance","customTabs"}`. `maintenance` is `applied`, `superseded` (a newer configuration's effects apply), `failed` or `pending`. `409` with `code:"stale_generation"` when the configuration changed since `N`, or when it no longer asks for that state. Nothing is replayed then. |
+| `POST custom-tabs/sync?generation=N` | The same confirmation, for the Custom Tabs entries. `customTabs.status` is `noop`, `ok`, `skipped` (Custom Tabs not installed), `superseded` or `failed` (with `detail`). |
+| `MaintenanceMode/Enable` or `Disable` without `generation`, from a signed-in session | `409` with `code:"reload_required"`, and the session is asked to reload. Only a configuration page of an earlier JE build sends this. It would replay that page's copy over newer saves. An API key keeps the direct command. |
+
+The configuration page confirms its own save this way. It reads the configuration back first and sends nothing when another save has landed since.
 
 For an active manual window, resending the same duration, action, and affected-user set preserves the existing deadline. Target-set comparison ignores order/duplicates but compares supplied strings, so differently formatted IDs can compare differently. Changing these values can establish a new deadline.
 

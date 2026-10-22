@@ -16,3 +16,21 @@ test('percentage seek uses actual duration and last-position tracker is consumed
 test('player item identity comes from the video route id',t=>{
  const h=setup(t);h.window.location.hash='#!/video?id=route-item';assert.equal(h.JE.internals.player.getCurrentVideoItemId(),'route-item');
 });
+// Stage 1 fix round 12 (P11): a track press belongs to the session of the keypress, through its queue behind an earlier
+// press and its probes. Before, a press queued behind another took its session when its turn came, so a press made by A
+// sent B's player a track command after a switch.
+test('a track press queued behind another across an account switch never commands the next person\'s player',async t=>{
+ let user='a',release;const held=new Promise(r=>{release=r;});const posts=[];let probes=0;
+ const session={Id:'s1',DeviceId:'dev',NowPlayingItem:{Id:'item1',MediaStreams:[{Type:'Subtitle',Index:2},{Type:'Subtitle',Index:3}]},PlayState:{SubtitleStreamIndex:-1}};
+ const h=createHarness({html:'<video></video>',url:'http://jellyfin.test/web/index.html#!/video?id=item1',JE:{currentSettings:{},t:key=>key,toast(){},escapeHtml:s=>String(s),isVideoPage:()=>true},
+  apiClient:{getCurrentUserId:()=>user,deviceId:()=>'dev',ajax:async req=>{if(req.type==='GET'){if(++probes===1)await held;return [session];}posts.push({user,url:req.url});return {};}}});
+ h.allowConsoleError(/./);t.after(()=>h.close());h.load('core/mutation-queue.js');h.load('enhanced/player/playback.js');
+ h.JE.cycleSubtitleTrack();h.JE.cycleSubtitleTrack();
+ await new Promise(r=>setImmediate(r));
+ user='b';release();
+ await new Promise(r=>setTimeout(r,30));
+ assert.deepEqual(posts,[],'neither of A\'s presses commands B\'s player');
+ // A press made now is B's own and commands B's player.
+ h.JE.cycleSubtitleTrack();await new Promise(r=>setTimeout(r,30));
+ assert.deepEqual(posts.map(p=>p.user),['b']);
+});

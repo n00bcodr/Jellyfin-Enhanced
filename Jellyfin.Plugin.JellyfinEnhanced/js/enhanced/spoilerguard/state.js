@@ -114,69 +114,75 @@
         return internal.isEnabledFor(id);
     };
 
-    internal.enableForSeries = function(id) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.enableForSeries = function(id, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
-        return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'POST', skipRetry: true })
+        return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'POST', skipRetry: true, session: origin })
             .then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledSeries.add(normalized);
                 notifyPolicyChanged();
             });
     };
 
-    internal.disableForSeries = function(id) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.disableForSeries = function(id, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
-        return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
+        return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true, session: origin })
             .then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledSeries.delete(normalized);
                 notifyPolicyChanged();
             });
     };
 
-    internal.enableForMovie = function(id, name) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.enableForMovie = function(id, name, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, {
-            method: 'POST', body: { MovieName: name || '' }, skipRetry: true
+            method: 'POST', body: { MovieName: name || '' }, skipRetry: true, session: origin
         }).then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledMovies.add(normalized);
                 notifyPolicyChanged();
             });
     };
 
-    internal.disableForMovie = function(id) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.disableForMovie = function(id, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
-        return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
+        return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true, session: origin })
             .then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledMovies.delete(normalized);
                 notifyPolicyChanged();
             });
     };
 
-    internal.enableForCollection = function(id, name) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.enableForCollection = function(id, name, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, {
-            method: 'POST', body: { CollectionName: name || '' }, skipRetry: true
+            method: 'POST', body: { CollectionName: name || '' }, skipRetry: true, session: origin
         }).then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledCollections.add(normalized);
                 notifyPolicyChanged();
             });
     };
 
-    internal.disableForCollection = function(id) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.disableForCollection = function(id, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const normalized = internal.normalizeId(id);
-        return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
+        return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true, session: origin })
             .then(function() {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (!JE.core.userWrite.isBound(origin)) return;
                 enabledCollections.delete(normalized);
                 notifyPolicyChanged();
             });
@@ -192,15 +198,16 @@
         return false;
     };
 
-    internal.enableForTmdb = function(mediaType, tmdbId, displayName) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.enableForTmdb = function(mediaType, tmdbId, displayName, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         const query = displayName ? `?displayName=${encodeURIComponent(displayName)}` : '';
-        return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true })
+        return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true, session: origin })
             .then(function(response) {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                if (!JE.core.userWrite.isBound(origin)) return response;
                 const key = internal.pendingKey(type, id);
                 if (response?.promoted === 'pending') {
                     if (key) enabledPendingTmdb.add(key);
@@ -218,14 +225,15 @@
             });
     };
 
-    internal.disableForTmdb = function(mediaType, tmdbId) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+    internal.disableForTmdb = function(mediaType, tmdbId, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
-        return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true })
+        return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true, session: origin })
             .then(function(response) {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                if (!JE.core.userWrite.isBound(origin)) return response;
                 const key = internal.pendingKey(type, id);
                 if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.delete(key); }
                 if (response?.removedFrom === 'series' && response.jellyfinId) {
@@ -251,10 +259,10 @@
     // only the preferences that differ from what the server will hold once the saves still out are answered (userPrefs +
     // those saves), one save at a time, and the server applies them to what it holds then, so a preference another tab or
     // device changed meanwhile stays, and a preference changed back while its save is out is sent too.
-    internal.setUserPrefs = function(next) {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        // The session this change is made in: the save goes out only while it is the signed-in one (JE.core.userWrite).
-        const binding = JE.core.userWrite.bind();
+    internal.setUserPrefs = function(next, origin) {
+        // The session this change was made in (its origin: taken by the control when the person acted, before any wait):
+        // the save goes out, and its answer counts, only while it is the signed-in one (JE.core.userWrite).
+        const binding = JE.core.userWrite.originOf(origin);
         const expected = expectedPrefs();
         const set = {};
         for (const [key, value] of Object.entries(next || {})) {
@@ -269,7 +277,7 @@
         return save
             .then(function acknowledged(response) {
                 settled();
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                if (!JE.core.userWrite.isBound(binding)) return response;
                 userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
                 notifyPolicyChanged();
                 return Object.assign({}, userPrefs);
@@ -281,6 +289,26 @@
                 if (!err?.sessionChanged) console.error(`${logPrefix} setUserPrefs failed:`, err);
                 throw err;
             });
+    };
+
+    /**
+     * After a preference save whose outcome is uncertain (its answer was lost): ONE read of the person's state says what is
+     * stored now. Only for the save's own session (an account change cancels it: nothing is read as the next person), and
+     * taken only while no other preference save is out; the save itself is never sent again.
+     * @param {any} origin The save's origin.
+     * @returns {Promise<object|null>} The stored preferences, or null when they couldn't be read for that session.
+     */
+    internal.reconcilePrefs = async function(origin) {
+        if (!JE.core.userWrite.isBound(origin)) return null;
+        const readRevision = prefsQueue.revision;
+        let value;
+        try { value = await request('/spoiler-blur/series', { skipCache: true }); } catch (_) { return null; }
+        if (!JE.core.userWrite.isBound(origin)) return null;
+        if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) {
+            userPrefs = Object.assign({}, value?.Prefs || {});
+            notifyPolicyChanged();
+        }
+        return Object.assign({}, userPrefs);
     };
 
     // Spoiler Guard state (enabled series/movies/collections, prefs) is

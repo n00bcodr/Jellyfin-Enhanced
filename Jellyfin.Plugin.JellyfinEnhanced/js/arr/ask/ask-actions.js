@@ -368,17 +368,10 @@
             e.preventDefault();
             e.stopPropagation();
             if (busy.has(doneKey)) return;
-            onClick(b);
+            // The action belongs to this click's session, through its reads, the ask and what its answer shows.
+            onClick(b, JE.core.userWrite.origin());
         });
         return b;
-    }
-
-    /**
-     * The session's sign-in epoch (0 without the session helper).
-     * @returns {number} Epoch.
-     */
-    function sessionEpoch() {
-        return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
     }
 
     /**
@@ -390,7 +383,9 @@
      * @param {'movie'|'tv'} type Media type (quota words).
      * @returns {Promise<void>}
      */
-    async function run(button, doneKey, makeInput, type) {
+    async function run(button, doneKey, makeInput, type, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         busy.add(doneKey);
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
@@ -399,21 +394,22 @@
         if (text) text.textContent = tr('arr_ask_asking');
         // The input is prepared from this session's reads: a sign-out (and someone else's sign-in)
         // before it is sent drops the ask instead of sending it as the next person.
-        const started = sessionEpoch();
         let result = null;
         try {
             const input = await makeInput();
-            if (sessionEpoch() !== started) result = { stale: true };
-            else if (input) result = await JE.arrAsk.ask(input);
+            if (!current()) result = { stale: true };
+            else if (input) result = await JE.arrAsk.ask(input, { session: origin });
             else result = { ok: true, state: 'nothing' };
         } catch {
             result = { ok: false, state: 'failed' };
         } finally {
             busy.delete(doneKey);
         }
-        if (result.stale) return;
+        if (result.stale || !current()) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota(type) : null;
+        // These reads waited too: the answer is shown in its own session only.
+        if (!current()) return;
         const words = JE.arrAsk.describe(result, caps, allowance);
         JE.arrAsk.toast(words.text);
         quotas.clear();
@@ -444,10 +440,12 @@
      * @param {string} doneKey key|action.
      * @param {string} key Title key in scope.
      * @param {string|null} instanceId Instance (JE.arrAsk.searchInstance), or null for a family Search.
-     * @param {Function} [fallback] Asks for it instead (family Search that doesn't apply).
+     * @param {Function} [fallback] Asks for it instead (family Search that doesn't apply), handed the origin.
+     * @param {any} [origin] The click's origin: the search, the ask it falls back to and what they show belong to it.
      * @returns {Promise<void>}
      */
-    async function runSearch(button, doneKey, key, instanceId, fallback) {
+    async function runSearch(button, doneKey, key, instanceId, fallback, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         busy.add(doneKey);
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
@@ -456,17 +454,19 @@
         if (text) text.textContent = tr('arr_ask_searching');
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(key, instanceId) : await JE.arrAsk.familySearch(key);
+            result = instanceId ? await JE.arrAsk.adminSearch(key, instanceId, { session: origin }) : await JE.arrAsk.familySearch(key, { session: origin });
         } catch {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: '' }), tone: 'attention' };
         } finally {
             busy.delete(doneKey);
         }
+        // Its session ended: nothing more (no ask as the next person, nothing shown on their page).
+        if (result?.stale || !JE.core.userWrite.isBound(origin)) return;
         if (!result) {
             button.disabled = false;
             button.removeAttribute('aria-busy');
             if (text) text.textContent = label;
-            if (fallback) await fallback();
+            if (fallback) await fallback(origin);
             return;
         }
         JE.arrAsk.toast(result.text);
@@ -506,7 +506,7 @@
         const box = actionsBox(caps);
         const contact = JE.arrAsk.contact(caps);
         const roundedUp = !!JE.arrAsk.seasonsOnly?.(caps);
-        const ask = (b, doneKey) => run(b, doneKey, async () => (roundedUp ? required(JE.arrAsk.roundedInput(key, caps, [season])) : JE.arrAsk.episodesInput(key, [{ season, episode }])), 'tv');
+        const ask = (b, doneKey, origin) => run(b, doneKey, async () => (roundedUp ? required(JE.arrAsk.roundedInput(key, caps, [season])) : JE.arrAsk.episodesInput(key, [{ season, episode }])), 'tv', origin);
         const instanceId = JE.arrStatus.searchable?.(status) ? JE.arrAsk.searchInstance(caps, status, status.key) : null;
         // Seerr mode: someone else's Search that would be an ask (nothing sent for the episode yet) is the season's ask.
         if (JE.arrStatus.searchable?.(status) && !(roundedUp && !instanceId && status.reason?.params?.sent !== '1')) {
@@ -514,16 +514,16 @@
             // Requests already sent this episode: the Search runs with no new OK (plain "Search" for a Kid too).
             const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
             // Seerr mode: a Search that turns out not to apply never asks for the season behind a "Search" label.
-            const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : () => ask(b, doneKey));
-            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, fallback(b)), false, instanceId ? 'search' : 'ask'));
+            const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : (origin) => ask(b, doneKey, origin));
+            box.appendChild(action(doneKey, 'search', text, (b, origin) => runSearch(b, doneKey, status.key, instanceId, fallback(b), origin), false, instanceId ? 'search' : 'ask'));
         } else if (roundedUp) {
             const doneKey = JE.arrAsk.wholeSeriesOnly(caps) ? `${key}|series` : `${key}|season:${season}`;
-            box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst), (b) => ask(b, doneKey)));
+            box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst), (b, origin) => ask(b, doneKey, origin)));
             box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost je-ask-action-note', JE.arrAsk.roundedNote(caps, [season])));
         } else {
             const doneKey = `${key}|s${season}e${episode}`;
             const text = caps.asksFirst ? tr('arr_actions_ask_episode', { contact }) : tr('arr_ask_get_it');
-            box.appendChild(action(doneKey, 'add', text, (b) => ask(b, doneKey)));
+            box.appendChild(action(doneKey, 'add', text, (b, origin) => ask(b, doneKey, origin)));
         }
         box.dataset.sig = signature(box);
         return box;
@@ -556,14 +556,14 @@
             const doneKey = `${key}|series`;
             const known = plan.seasons.map(s => s.season);
             box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, known, ask),
-                (b) => run(b, doneKey, () => required(JE.arrAsk.wholeSeriesInput(key, 'standard', known)), 'tv')));
+                (b, origin) => run(b, doneKey, () => required(JE.arrAsk.wholeSeriesInput(key, 'standard', known)), 'tv', origin)));
             firstCost = JE.arrAsk.seasonsInput(key, known);
             note = JE.arrAsk.roundedNote(caps, known);
         }
         if (!whole && plan.nextSeason != null) {
             const doneKey = `${key}|season:${plan.nextSeason}`;
             box.appendChild(action(doneKey, 'download', ask ? tr('arr_actions_ask_season', { contact, season: plan.nextSeason }) : tr('arr_actions_get_season', { season: plan.nextSeason }),
-                (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, [plan.nextSeason]), 'tv')));
+                (b, origin) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, [plan.nextSeason]), 'tv', origin)));
             firstCost = JE.arrAsk.seasonsInput(key, [plan.nextSeason]);
         }
         if (!whole && roundedUp && plan.missing > 0) {
@@ -571,7 +571,7 @@
             const seasons = partial.map(s => s.season);
             const doneKey = `${key}|missing|seasons:${seasons.join(',')}`;
             box.appendChild(action(doneKey, 'playlist_add', JE.arrAsk.roundedLabel(caps, seasons, ask),
-                (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, seasons), 'tv'), plan.nextSeason != null));
+                (b, origin) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, seasons), 'tv', origin), plan.nextSeason != null));
             if (!firstCost) firstCost = JE.arrAsk.seasonsInput(key, seasons);
             note = JE.arrAsk.roundedNote(caps, seasons);
         } else if (!whole && plan.missing > 0) {
@@ -579,7 +579,7 @@
             const words = ask ? tr('arr_actions_ask_missing', { contact }) : tr('arr_actions_get_missing');
             const label = one && plan.partial.length > 1 ? `${words} · ${tr('arr_sheet_season', { season: partial[0].season })}` : words;
             box.appendChild(action(doneKey, 'playlist_add', label,
-                (b) => run(b, doneKey, () => missingInput(key, partial), 'tv'), plan.nextSeason != null));
+                (b, origin) => run(b, doneKey, () => missingInput(key, partial), 'tv', origin), plan.nextSeason != null));
             if (!firstCost) firstCost = { scope: 'episodes', episodes: new Array(partial.reduce((count, s) => count + notFetchedOf(s.summary), 0)).fill(0) };
         }
         // Every episode still to come is monitored and missing for a long while: Search. An administrator's
@@ -594,8 +594,8 @@
             if (searchFrom || wanted.length) {
                 const doneKey = `${key}|search`;
                 const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-                const askSeasons = (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv');
-                box.appendChild(action(doneKey, 'search', label, (b) => runSearch(b, doneKey, key, searchFrom, () => askSeasons(b)),
+                const askSeasons = (b, origin) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv', origin);
+                box.appendChild(action(doneKey, 'search', label, (b, origin) => runSearch(b, doneKey, key, searchFrom, (o) => askSeasons(b, o), origin),
                     plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
@@ -649,7 +649,7 @@
         const label = whole ? JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst)
             : caps.asksFirst ? tr('arr_actions_ask_season', { contact, season }) : tr('arr_actions_get_season', { season });
         box.appendChild(action(doneKey, 'download', label,
-            (b) => run(b, doneKey, async () => (whole ? required(JE.arrAsk.wholeSeriesInput(key)) : JE.arrAsk.seasonsInput(key, [season])), 'tv')));
+            (b, origin) => run(b, doneKey, async () => (whole ? required(JE.arrAsk.wholeSeriesInput(key)) : JE.arrAsk.seasonsInput(key, [season])), 'tv', origin)));
         if (whole) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost je-ask-action-note', JE.arrAsk.roundedNote(caps, [season])));
         const allowance = await quota('tv');
         if (gen !== generation) return null;
@@ -779,7 +779,7 @@
         const key = status.key;
         const doneKey = `${key}|4k`;
         box.appendChild(action(doneKey, '4k', caps.asksFirst ? tr('arr_actions_ask_4k', { contact }) : tr('arr_actions_get_4k'),
-            (b) => run(b, doneKey, async () => JE.arrAsk.movieInput(key, '4k'), 'movie'), true));
+            (b, origin) => run(b, doneKey, async () => JE.arrAsk.movieInput(key, '4k'), 'movie', origin), true));
         box.dataset.jeAskVariant = '4k';
         box.dataset.sig = signature(box);
         return box;

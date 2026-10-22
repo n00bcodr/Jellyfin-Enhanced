@@ -19,7 +19,12 @@
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, origin = undefined) {
+        // The request's origin: the click that opened this dialog. Its reads (request settings, seasons, the library's
+        // seasons, advanced options), its Save and the answer's effects belong to it; a dialog whose session ended while
+        // it was prepared is not opened, and its Save is not sent, as the next person.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         if (mediaType !== 'tv') return;
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);
@@ -45,6 +50,7 @@
         const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
+        if (!current()) return;
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -167,7 +173,9 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                        if (!current()) { JE.core.userWrite.notSent(); closeFn(); return; }
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, origin);
+                        if (!current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -175,11 +183,13 @@
                             .map(season => season.seasonNumber)
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
+                        if (!current()) { JE.core.userWrite.notSent(); closeFn(); return; }
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, origin);
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
+                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId, origin);
                         }
+                        if (!current()) return;
 
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
@@ -201,6 +211,7 @@
                         }
                     }, 1000);
                 } catch (error) {
+                    if (!current()) return;
                     const resetLabel = is4k
                         ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
                         : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));

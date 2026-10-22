@@ -133,6 +133,11 @@ public class CoreConfigurationWriterTests
                 continue;
             }
 
+            // The configuration effects' Custom Tabs sync writes Custom Tabs' own configuration (`host`, the Custom Tabs plugin
+            // found through the plugin manager), never Jellyfin Enhanced's: its ownership flags go through MutateConfiguration.
+            if (fileName == "ConfigurationEffects.cs" && name == "UpdateConfiguration" && methodName == "SyncCustomTabs"
+                && call.Expression.ToString() == "host.UpdateConfiguration") continue;
+
             // Elsewhere only the request services' default save delegates (a lambda handed to their constructor chain).
             var inDefaultDelegate = LockedServices.Contains(fileName) && call.Ancestors().OfType<ConstructorInitializerSyntax>().Any()
                 && call.Ancestors().OfType<LambdaExpressionSyntax>().Any();
@@ -159,6 +164,17 @@ public class CoreConfigurationWriterTests
             .SelectMany(path => Violations(Path.GetFileName(path), File.ReadAllText(path)))
             .ToList();
         Assert.True(found.Count == 0, "configuration writes outside MutateConfiguration / the configuration lock:\n" + string.Join("\n", found));
+    }
+
+    [Fact]
+    public void TheCustomTabsExceptionCoversOnlyCustomTabsOwnConfiguration()
+    {
+        // Stage 1 fix round 12: the server owns the Custom Tabs sync. Its write of Custom Tabs' configuration is allowed; a
+        // write of Jellyfin Enhanced's own configuration in the same file (or in another method) is still found.
+        Assert.Empty(Violations("ConfigurationEffects.cs", "class A { void SyncCustomTabs(IHasPluginConfiguration host, object next) { host.UpdateConfiguration(next); } }"));
+        Assert.Single(Violations("ConfigurationEffects.cs", "class A { void SyncCustomTabs(object next) { JellyfinEnhanced.Instance.UpdateConfiguration(next); } }"));
+        Assert.Single(Violations("ConfigurationEffects.cs", "class A { void Reconcile(IHasPluginConfiguration host, object next) { host.UpdateConfiguration(next); } }"));
+        Assert.Single(Violations("ConfigurationEffects.cs", "class A { void SyncCustomTabs(PluginConfiguration c) { JellyfinEnhanced.Instance.SaveConfiguration(); } }"));
     }
 
     [Theory]

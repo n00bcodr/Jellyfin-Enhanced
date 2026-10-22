@@ -193,37 +193,61 @@
    * Routes a single-item unhide to the correct store: the admin endpoint when editing another
    * user, otherwise the current user's own store. No-op in read-only admin view.
    * @param {string} key Item key (item._key || item.itemId).
+   * @param {{origin: any, uid: string|null, token: number}} scope adminActionScope() taken at the click.
    */
-  function handleUnhide(key) {
-    if (state.selectedAdminUserId) {
-      if (state.adminEditMode) adminUnhide([key]);
-      return; // read-only view: ignore (the control should already be stripped)
-    }
-    JE.hiddenContent.unhideItem(key);
+  function handleUnhide(key, scope) {
+    handleUnhideMany([key], scope);
   }
 
   /**
    * Routes a bulk unhide (whole show / unhide-all) the same way as {@link handleUnhide}.
    * @param {string[]} keys Item keys to unhide.
+   * @param {{origin: any, uid: string|null, token: number}} scope adminActionScope() taken at the click.
    */
-  function handleUnhideMany(keys) {
-    if (!Array.isArray(keys) || keys.length === 0) return;
-    if (state.selectedAdminUserId) {
-      if (state.adminEditMode) adminUnhide(keys);
-      return;
+  function handleUnhideMany(keys, scope) {
+    if (!Array.isArray(keys) || keys.length === 0 || !scope) return;
+    if (scope.uid) {
+      // The keys are the viewed user's of the click: another user viewed since (or another account) gets nothing.
+      if (state.adminEditMode && adminView(scope)()) adminUnhide(keys, scope);
+      return; // read-only view: ignore (the control should already be stripped)
     }
-    keys.forEach((k) => JE.hiddenContent.unhideItem(k));
+    if (state.selectedAdminUserId) return;
+    keys.forEach((k) => JE.hiddenContent.unhideItem(k, scope.origin));
+  }
+
+  /**
+   * The scope of a click on this page, taken at the click: the action's origin (JE.core.userWrite.origin()), the user
+   * whose list is viewed (null: the person's own) and the page's load token (moved on by every change of viewed user
+   * and by an account change).
+   * @returns {{origin: any, uid: string|null, token: number}}
+   */
+  function adminActionScope() {
+    return Object.freeze({ origin: JE.core.userWrite.origin(), uid: state.selectedAdminUserId || null, token: state.adminLoadToken });
+  }
+
+  /**
+   * Whether an administrator's action is still in its view: its origin is the signed-in session, and the same user is
+   * viewed through the same load. Its answer changes the page (caches, counts, cards) only while this holds.
+   * @param {{origin: any, uid: string|null, token: number}} scope
+   */
+  function adminView(scope) {
+    return () => JE.core.userWrite.isBound(scope.origin) && state.adminLoadToken === scope.token && state.selectedAdminUserId === scope.uid;
   }
 
   /**
    * Performs an admin-side unhide for the currently-viewed user, then prunes the local cache and
    * repaints. Keeps the dropdown count roughly in sync without a full refetch.
-   * @param {string[]} keys Item keys to unhide for state.selectedAdminUserId.
+   * @param {string[]} keys Item keys to unhide for the scope's viewed user.
+   * @param {{origin: any, uid: string|null, token: number}} scope adminActionScope() taken at the click.
    */
-  async function adminUnhide(keys) {
-    const uid = state.selectedAdminUserId;
+  async function adminUnhide(keys, scope) {
+    const uid = scope.uid;
     if (!uid) return;
-    const ok = await JE.hiddenContent.adminUnhideForUser(uid, keys);
+    const current = adminView(scope);
+    const ok = await JE.hiddenContent.adminUnhideForUser(uid, keys, scope.origin);
+    // The answer belongs to the view it was made in: another viewed user, or the next account, is not changed by it.
+    if (!current()) return;
+    if (ok === 'uncertain') { JE.core.userWrite.reportUncertain(); return; }
     if (!ok) return;
     const removed = new Set(keys);
     if (Array.isArray(state.adminItems)) {
@@ -242,9 +266,11 @@
    * (admin adding). Updates the local cache + dropdown count and repaints.
    * @param {string} targetUserId The user to hide the item for.
    * @param {Object} result A normalized search result (library or Seerr).
+   * @param {{origin: any, uid: string|null, token: number}} scope adminActionScope() taken at the click.
    * @returns {Promise<boolean>} true on success.
    */
-  async function adminAddItem(targetUserId, result) {
+  async function adminAddItem(targetUserId, result, scope) {
+    const current = adminView(scope);
     const item = {
       itemId: result.itemId || '',
       name: result.name || '',
@@ -260,7 +286,10 @@
       hideScope: 'global',
       hiddenAt: new Date().toISOString(),
     };
-    const added = await JE.hiddenContent.adminHideForUser(targetUserId, [item]);
+    const added = await JE.hiddenContent.adminHideForUser(targetUserId, [item], scope.origin);
+    // The answer belongs to the view it was made in: another viewed user, or the next account, is not changed by it.
+    if (!current()) return false;
+    if (added === 'uncertain') { JE.core.userWrite.reportUncertain(); return false; }
     if (added === false) return false;
     // The server returns the number of items it newly added; 0 means the user already had it hidden.
     // Only update the local cache + dropdown count for a real add, so the count can't drift upward.
@@ -392,9 +421,13 @@
       } else {
         btn.textContent = JE.t('hidden_content_admin_add_hide');
         btn.addEventListener('click', async () => {
+          // Hides for the user this modal was opened for, as the administrator of this click.
+          const scope = Object.freeze({ ...adminActionScope(), uid });
           btn.disabled = true;
           btn.textContent = JE.t('hidden_content_admin_add_hiding');
-          const ok = await adminAddItem(uid, n);
+          const ok = await adminAddItem(uid, n, scope);
+          // The modal may belong to an earlier view (or account) by now: its button is left as it is.
+          if (!adminView(scope)()) return;
           btn.textContent = ok ? JE.t('hidden_content_admin_add_added') : JE.t('hidden_content_admin_add_hide');
           if (!ok) btn.disabled = false;
         });
@@ -480,6 +513,7 @@
     createAdminViewingBadge,
     handleUnhide,
     handleUnhideMany,
+    adminActionScope,
     openAdminAddModal,
   });
 

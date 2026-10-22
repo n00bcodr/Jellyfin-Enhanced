@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -138,7 +141,7 @@ for (const consentSucceeds of [false, true]) test(`explicit revocation followed 
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
     if (request.url.endsWith('/consent')) return new Promise((resolve, reject) => {
-      release = () => consentSucceeds ? resolve({ consents: { ListSwapIn: false } }) : reject(new Error('consent refused'));
+      release = () => consentSucceeds ? resolve({ consents: { ListSwapIn: false } }) : reject(refused('consent refused'));
     });
     return Promise.resolve({ consents: { ListSwapIn: consentSucceeds ? false : true } });
   };
@@ -162,7 +165,7 @@ test('a consent operation never retains a display save that failed ahead of it',
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
-    if (!request.url.endsWith('/consent')) return new Promise((_, reject) => { fail = () => reject(new Error('display refused')); });
+    if (!request.url.endsWith('/consent')) return new Promise((_, reject) => { fail = () => reject(refused('display refused')); });
     return Promise.resolve({ consents: { ListSwapIn: true } });
   };
   h.wire();
@@ -176,7 +179,7 @@ test('a consent operation never retains a display save that failed ahead of it',
 
 test('a failed explicit consent rolls back and never announces success', async t => {
   const h = panel(t, { config: lists, settings: { listSwapIn: false } });
-  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') throw new Error('save refused'); return []; };
+  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') throw refused('save refused'); return []; };
   h.wire();await h.choose('listSwapInSelect', 'on');
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.deepEqual(h.toasts, []);

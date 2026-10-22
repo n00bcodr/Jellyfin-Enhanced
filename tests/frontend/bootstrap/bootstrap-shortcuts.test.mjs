@@ -32,6 +32,8 @@ function setup(t, disabled = false) {
       helpers: { createObserver() {}, throttle: fn => fn, onBodyMutation() {} } } });
   t.after(() => h.close());
   store.view = h.JE.userConfig.shortcuts;
+  // Stage 1 fix round 12: the editor's saves carry the origin of the key press (JE.core.userWrite).
+  h.load('core/mutation-queue.js');
   loadKeyCombo(h); h.load('enhanced/events.js'); h.load('enhanced/settingspanel/ui-panel-shortcut-editor.js');
   h.JE.internals.enhancedUi.wireShortcutEditor({ help: h.document.getElementById('help'), pluginShortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }], primaryAccentColor: 'blue', kbdBackground: 'black' });
   const key = h.document.querySelector('kbd');

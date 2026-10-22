@@ -25,7 +25,7 @@
         button.appendChild(content);
     }
 
-    function performToggle(button, itemId, kind, page, enable) {
+    function performToggle(button, itemId, kind, page, enable, origin) {
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
             try {
@@ -37,11 +37,13 @@
         }
 
         let operation;
-        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName) : internal.disableForMovie(itemId);
-        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName) : internal.disableForCollection(itemId);
-        else operation = enable ? internal.enableForSeries(itemId) : internal.disableForSeries(itemId);
+        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName, origin) : internal.disableForMovie(itemId, origin);
+        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName, origin) : internal.disableForCollection(itemId, origin);
+        else operation = enable ? internal.enableForSeries(itemId, origin) : internal.disableForSeries(itemId, origin);
 
         operation.then(function() {
+            // The answer belongs to the toggle's session: the next person's page is not changed by it.
+            if (!JE.core.userWrite.isBound(origin)) return;
             renderButton(button, enable);
             button.setAttribute('data-je-spoiler-state', enable ? 'on' : 'off');
             // Keep separate per-kind keys so translators can tailor the
@@ -78,7 +80,9 @@
             if (JE.pluginConfig?.SpoilerBlurStrictRefresh === true) internal.scheduleFullReload();
         }).catch(function(err) {
             console.error(`${logPrefix} toggle failed:`, err);
-            JE.toast?.(JE.t('spoiler_blur_error_toast'));
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+            if (JE.core.userWrite.outcome(err) === 'uncertain') JE.core.userWrite.reportUncertain(err);
+            else JE.toast?.(JE.t('spoiler_blur_error_toast'));
         }).finally(function() {
             button.disabled = false;
         });
@@ -86,14 +90,16 @@
 
     function onToggle(button, itemId, kind, page) {
         if (button.disabled) return;
+        // The toggle belongs to this click's session, through the confirmation.
+        const origin = JE.core.userWrite.origin();
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
         if (enable) {
-            performToggle(button, itemId, kind, page, true);
+            performToggle(button, itemId, kind, page, true, origin);
             return;
         }
         internal.confirmDisableSpoiler().then(function(proceed) {
-            if (proceed) performToggle(button, itemId, kind, page, false);
+            if (proceed && JE.core.userWrite.isBound(origin)) performToggle(button, itemId, kind, page, false, origin);
             else button.disabled = false;
         }).catch(function(err) {
             console.warn(`${logPrefix} disable confirmation failed:`, err);

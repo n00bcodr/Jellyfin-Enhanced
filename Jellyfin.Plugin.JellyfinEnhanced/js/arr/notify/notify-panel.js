@@ -101,7 +101,8 @@
         b.dataset.jeFocus = focusKey || labelKey;
         b.addEventListener('click', (e) => {
             e.preventDefault();
-            onClick();
+            // The click's origin: every call the handler makes (a chain included) is made in that session.
+            onClick(JE.core.userWrite.origin());
         });
         return b;
     }
@@ -110,10 +111,12 @@
      * Saves a change (with the browser's zone) and re-renders.
      * @param {HTMLElement} host Pane content.
      * @param {Object} change Fields.
+     * @param {any} [origin] The change's origin (the control's change event when left out: save is called from it).
      * @returns {Promise<void>}
      */
-    async function save(host, change) {
-        const res = await N.prefsCall('/acquire/notify/prefs', 'PUT', Object.assign({}, change, zone()));
+    async function save(host, change, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        const res = await N.prefsCall('/acquire/notify/prefs', 'PUT', Object.assign({}, change, zone()), origin);
         if (!res.ok) note(host, errorText(res.code));
         render(host);
     }
@@ -144,7 +147,7 @@
     }
 
     /** Server error codes that have their own text in en.json (arr_notify_err_<code>). */
-    const ERRORS = ['invalid_topic', 'invalid_address', 'too_soon', 'too_many_today', 'email_not_set_up', 'send_failed', 'no_pending_code', 'wrong_code', 'too_many_attempts', 'email_not_verified', 'ntfy_topic_missing', 'invalid_time'];
+    const ERRORS = ['unconfirmed', 'invalid_topic', 'invalid_address', 'too_soon', 'too_many_today', 'email_not_set_up', 'send_failed', 'no_pending_code', 'wrong_code', 'too_many_attempts', 'email_not_verified', 'ntfy_topic_missing', 'invalid_time'];
 
     /**
      * Draws the section again, keeping focus on the same control (or the first one when it is gone).
@@ -219,8 +222,8 @@
                 phone.appendChild(el('div', 'je-arr-alerts-desc', tr('arr_notify_panel_phone_none')));
             }
             const row = el('div', 'je-arr-alerts-row');
-            row.appendChild(button(prefs.ntfyTopic ? 'arr_notify_panel_phone_new' : 'arr_notify_panel_phone_make', async () => {
-                const res = await N.prefsCall('/acquire/notify/ntfy/topic', 'POST', { generate: true });
+            row.appendChild(button(prefs.ntfyTopic ? 'arr_notify_panel_phone_new' : 'arr_notify_panel_phone_make', async (origin) => {
+                const res = await N.prefsCall('/acquire/notify/ntfy/topic', 'POST', { generate: true }, origin);
                 if (!res.ok) note(host, errorText(res.code));
                 render(host);
             }, 'phone-generate'));
@@ -231,10 +234,10 @@
             input.setAttribute('aria-label', tr('arr_notify_panel_phone_own'));
             input.dataset.jeFocus = 'phone-topic';
             row.appendChild(input);
-            row.appendChild(button('arr_notify_panel_phone_use', async () => {
-                const res = await N.prefsCall('/acquire/notify/ntfy/topic', 'POST', { topic: input.value.trim() });
+            row.appendChild(button('arr_notify_panel_phone_use', async (origin) => {
+                const res = await N.prefsCall('/acquire/notify/ntfy/topic', 'POST', { topic: input.value.trim() }, origin);
                 if (!res.ok) note(host, errorText(res.code));
-                else if (!JE.arrNotify.prefs.ntfy) await N.prefsCall('/acquire/notify/prefs', 'PUT', Object.assign({ ntfy: true }, zone()));
+                else if (!JE.arrNotify.prefs.ntfy) await N.prefsCall('/acquire/notify/prefs', 'PUT', Object.assign({ ntfy: true }, zone()), origin);
                 render(host);
             }));
             phone.appendChild(row);
@@ -250,8 +253,8 @@
             if (prefs.emailAddress) {
                 mail.appendChild(checkbox('arr_notify_pref_email', null, prefs.email, on => save(host, { email: on })));
                 mail.appendChild(el('div', 'je-arr-alerts-desc', tr('arr_notify_panel_email_to', { address: prefs.emailAddress })));
-                mail.appendChild(button('arr_notify_panel_email_remove', async () => {
-                    const res = await N.prefsCall('/acquire/notify/email', 'DELETE');
+                mail.appendChild(button('arr_notify_panel_email_remove', async (origin) => {
+                    const res = await N.prefsCall('/acquire/notify/email', 'DELETE', undefined, origin);
                     if (!res.ok) note(host, errorText(res.code));
                     render(host);
                 }));
@@ -264,8 +267,8 @@
             address.dataset.jeFocus = 'email-address';
             address.value = prefs.emailPending || '';
             row.appendChild(address);
-            row.appendChild(button('arr_notify_panel_email_send', async () => {
-                const res = await N.prefsCall('/acquire/notify/email', 'POST', { address: address.value.trim() });
+            row.appendChild(button('arr_notify_panel_email_send', async (origin) => {
+                const res = await N.prefsCall('/acquire/notify/email', 'POST', { address: address.value.trim() }, origin);
                 await JE.arrNotify.loadPrefs(true);
                 note(host, res.ok ? tr('arr_notify_panel_email_sent') : errorText(res.code));
                 render(host);
@@ -281,8 +284,8 @@
                 code.setAttribute('aria-label', tr('arr_notify_panel_email_code'));
                 code.dataset.jeFocus = 'email-code';
                 confirm.appendChild(code);
-                confirm.appendChild(button('arr_notify_panel_email_confirm', async () => {
-                    const res = await N.prefsCall('/acquire/notify/email/verify', 'POST', { code: code.value.trim() });
+                confirm.appendChild(button('arr_notify_panel_email_confirm', async (origin) => {
+                    const res = await N.prefsCall('/acquire/notify/email/verify', 'POST', { code: code.value.trim() }, origin);
                     note(host, res.ok ? tr('arr_notify_panel_email_confirmed') : errorText(res.code));
                     render(host);
                 }));
@@ -326,8 +329,8 @@
 
         // Test.
         const test = el('div', 'je-arr-alerts-group');
-        test.appendChild(button('arr_notify_panel_test', async () => {
-            const res = await N.prefsCall('/acquire/notify/test', 'POST', {});
+        test.appendChild(button('arr_notify_panel_test', async (origin) => {
+            const res = await N.prefsCall('/acquire/notify/test', 'POST', {}, origin);
             note(host, res.ok ? tr('arr_notify_panel_test_sent') : errorText(res.code));
         }));
         host.appendChild(test);
@@ -341,12 +344,14 @@
     function wireSettings(ctx) {
         const host = ctx?.help?.querySelector?.(`section[data-pane="${PANE}"] .je-arr-alerts`);
         if (!host || !JE.arrNotify?.enabled()) return;
+        // Storing the browser's zone is this panel's own action: it belongs to the session that opened it.
+        const origin = JE.core.userWrite.origin();
         JE.arrNotify.loadPrefs(true).then(() => {
             if (!host.isConnected) return;
             render(host);
             // The browser's zone is stored the first time (for quiet hours), without changing anything else.
             const z = zone();
-            if (JE.arrNotify.prefs && z.timeZone && JE.arrNotify.prefs.timeZone !== z.timeZone) N.prefsCall('/acquire/notify/prefs', 'PUT', z);
+            if (JE.arrNotify.prefs && z.timeZone && JE.arrNotify.prefs.timeZone !== z.timeZone && JE.core.userWrite.isBound(origin)) N.prefsCall('/acquire/notify/prefs', 'PUT', z, origin);
         });
     }
 

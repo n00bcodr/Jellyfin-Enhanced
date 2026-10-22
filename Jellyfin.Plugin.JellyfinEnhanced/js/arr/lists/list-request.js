@@ -74,14 +74,15 @@
      * @param {string} listId List id.
      * @param {string} placeholderId Entry id.
      * @param {string} clientId The confirmation id (kept for a retry of this same confirmation).
+     * @param {any} [origin] The sheet's origin (its confirmation is sent in that session only).
      * @returns {Promise<Object>} Result.
      */
-    async function send(listId, placeholderId, clientId) {
+    async function send(listId, placeholderId, clientId, origin) {
         const interpret = JE.arrAsk.interpret;
         const rule = JE.arrLists.ticket(listId);
         let answer;
         try {
-            answer = await JE.arrLists.requestEntries(listId, { clientId, placeholderIds: [placeholderId] });
+            answer = await JE.arrLists.requestEntries(listId, { clientId, placeholderIds: [placeholderId] }, undefined, origin);
             if (!rule.current()) return { ok: false, stale: true, state: 'failed', status: 0 };
         } catch (err) {
             if (err?.stale) return { ok: false, stale: true, state: 'failed', status: 0 };
@@ -166,7 +167,7 @@
                         input: { scope: 'list', placeholderId: ph.id },
                         cost: Number.isInteger(item.cost) ? item.cost : 0,
                         note: previewNote(item),
-                        send: () => send(list.listId, ph.id, clientId)
+                        send: (origin) => send(list.listId, ph.id, clientId, origin)
                     }
                 });
             }, 'sheet');

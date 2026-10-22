@@ -164,7 +164,7 @@
                 // value, a language JE ships no bundle for) is Auto (''), never written to the shared language key.
                 const languageTag = JE.supportedLanguageCode(newLang);
                 try {
-                    await JE.updateSettings({ displayLanguage: languageTag }, { throwOnError: true });
+                    await JE.updateSettings({ displayLanguage: languageTag }, { throwOnError: true, origin: JE.core.userWrite.origin() });
                 } catch (err) {
                     if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: language settings save failed', err);
                     return;
