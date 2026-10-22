@@ -498,6 +498,24 @@ for (const version of HOSTS) {
     });
   }
 
+  test(`R13-7: remote Back after remote Back: the More sheet, then More Info, then the router, in order (${version})`, async t => {
+    const h = setup(t, { asks: false, card: true });
+    h.window.history.replaceState(null, '', '#/home'); h.window.history.pushState(null, '', '#/search?query=matrix'); await delivered();
+    const input = hostInput(h, version, { tv: true }); const remote = await input.remote(); t.after(() => remote.close());
+    h.a.initialize();
+    h.click(h.document.querySelector('.je-card-more')); await delivered();
+    assert.ok(h.document.querySelector('.je-actions-backdrop'));
+    await remote.command('Back'); await wait(30); await delivered();
+    assert.equal(h.document.querySelector('.je-actions-backdrop'), null);
+    await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
+    await remote.command('Back'); await wait(30); await delivered();
+    assert.equal(moreInfo(h), null, 'the router\'s next Back was not left waiting on the first');
+    assert.equal(h.window.location.hash, '#/search?query=matrix');
+    await remote.command('Back'); await wait(30); await delivered();
+    assert.equal(h.window.location.hash, '#/home');
+    assert.equal(input.back, 3);
+  });
+
   test(`R13-7: remote Back closes a nested request form (its own history entry) and leaves More Info open (${version})`, async t => {
     const h = setup(t, { asks: false });
     h.window.history.replaceState(null, '', '#/home'); h.window.history.pushState(null, '', '#/search?query=matrix'); await delivered();
@@ -507,6 +525,7 @@ for (const version of HOSTS) {
     form.show(); await delivered();
     await remote.command('Back'); await wait(30); await delivered();
     assert.equal(form.modalElement._isClosing, true, 'the form closed');
+    assert.equal(h.window.history.state?.jeModal, undefined, 'the form\'s own history entry was the one left');
     assert.ok(moreInfo(h), 'More Info under it stays open');
     assert.equal(h.window.location.hash, '#/search?query=matrix');
     await remote.command('Back'); await wait(30); await delivered();
@@ -520,12 +539,14 @@ for (const version of HOSTS) {
     const input = hostInput(h, version, { tv: true }); const remote = await input.remote(); t.after(() => remote.close());
     await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
     // jellyfin-web's dialogHelper: its own history entry, and the dialog closes when that entry is left.
-    const host = h.document.createElement('div'); host.className = 'dialogContainer'; host.innerHTML = '<div class="dialog opened"><button>OK</button></div>';
+    const host = h.document.createElement('div'); host.className = 'dialogContainer'; host.innerHTML = '<div class="dialog opened"><button class="btnOption">Delete</button></div>';
+    let pressed = 0; host.querySelector('button').addEventListener('click', () => { pressed++; host.remove(); });
     h.window.history.pushState({ dialogId: 'host' }, '', h.window.location.href);
     h.window.addEventListener('popstate', () => host.remove(), { once: true });
     h.document.body.append(host); await delivered();
     await remote.command('Back'); await wait(30); await delivered();
     assert.equal(host.isConnected, false, 'the host closed its dialog');
+    assert.equal(pressed, 0, 'Back left the host dialog; none of its buttons was pressed');
     assert.ok(moreInfo(h), 'More Info under it stays');
     assert.equal(input.back, 1);
     assert.equal(h.window.location.hash, '#/search?query=matrix');

@@ -197,7 +197,7 @@
         // Opened for an owner: the modal is in its scope, so once the owner ends (another page, mount, user or the
         // document leaving) it takes no more input and closes. Not admitted (an owner that is not current): terminal.
         // Escape and every Back key (the core's surface stack, while it is topmost) dismiss it as Cancel does.
-        releaseScope = JE.openSurface(modalElement, close, submitted.owner, { dismiss: () => dismiss() });
+        releaseScope = JE.openSurface(modalElement, close, submitted.owner, { dismiss: () => dismiss(), ownsHistory: () => pushed });
         if (!releaseScope) closed = true;
 
         // Event listeners for closing the modal

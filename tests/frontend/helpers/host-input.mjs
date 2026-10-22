@@ -27,7 +27,20 @@ function inert() {
 export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
   const { window } = h;
   const calls = { back: 0, home: 0 };
-  const appRouter = { canGoBack: () => canGoBack, back() { calls.back++; window.history.back(); }, goHome() { calls.home++; },
+  // The router's back() as jellyfin-web's appRouter does it (12.2 and 10.11.11): one pending back at a time, settled
+  // when its history step lands (the history's next change); a back() while one is pending waits on it, so a step
+  // that never lands leaves every later Back stuck.
+  let pending = null;
+  const appRouter = { canGoBack: () => canGoBack, goHome() { calls.home++; },
+    back() {
+      calls.back++;
+      if (pending) return pending;
+      pending = new Promise(resolve => {
+        window.addEventListener('popstate', () => { pending = null; resolve(); }, { once: true });
+        window.history.back();
+      });
+      return pending;
+    },
     showSettings() {}, showSearch() {}, showFavorites() {}, showGuide() {}, showLiveTV() {}, showRecordedTV() {}, showNowPlaying() {} };
   const dom = {
     addEventListener: (target, type, handler, options) => target.addEventListener(type, handler, options),

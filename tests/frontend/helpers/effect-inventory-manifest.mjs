@@ -467,6 +467,7 @@ export const SITES = {
     'end state closure stopped': [1, 'module', 'core'],
     'finish state closure life': [1, 'module', 'core'],
     'flushHost state flushing': [2, 'module', 'core'],
+    'historyStep navigation pushState': [1, 'core', 'sync'],
     'historyStep state dismissing': [2, 'module', 'core'],
     'historyStep state handledBacks': [1, 'module', 'core'],
     'focusFirst focus focus': [1, 'core', 'sync'],

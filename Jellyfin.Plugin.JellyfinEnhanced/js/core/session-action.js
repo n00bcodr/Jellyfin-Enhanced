@@ -659,7 +659,8 @@
      * Registers an admitted surface `root` for `owner` (see admitSurface; an owner that is not current is rejected:
      * null, and `close()` runs at once for a caller that drew it already). `close()` closes it; `options.opener`: the
      * control focus goes back to (default: the focused one); `options.dismiss`: what Escape and every Back key do while
-     * it is topmost (default close); `options.modal` (default true; a popup: false): it covers what is under it (inert,
+     * it is topmost (default close); `options.ownsHistory`: true while the surface has a history entry of its own that
+     * leaving closes it (a remote's Back then takes that entry); `options.modal` (default true; a popup: false): it covers what is under it (inert,
      * out of the accessibility tree) and is announced as a named modal dialog (`options.dialog`: the element that is
      * the dialog, default the root or the dialog inside it; `options.label`: its name when it has no heading). It joins
      * the one surface stack, takes focus (once it is in the document) and keeps the host's D-pad inside it. Every
@@ -680,7 +681,7 @@
         const opener = options.opener || (document.activeElement !== document.body ? document.activeElement : null);
         const path = [];
         for (let n = opener?.parentElement; n && n !== document.body; n = n.parentElement) path.push(n);
-        const entry = { root, owner: resolved, dismiss: options.dismiss || null, closed: false, close: null, release: null, opener, path,
+        const entry = { root, owner: resolved, dismiss: options.dismiss || null, ownsHistory: options.ownsHistory || null, closed: false, close: null, release: null, opener, path,
             modal: options.modal !== false,
             holder: opener?.closest?.('.card, .jellyseerr-card, .mainDetailButtons, .detailButtons, .je-more-info-modal, .page') || null };
         const guard = event => {
@@ -852,22 +853,24 @@
     // Remote Back (D46S2-R13-7): another Jellyfin client's GeneralCommand Back reaches jellyfin-web's router with no key
     // event (10.11.11 and 12.2: serverNotifications → inputManager.handleCommand('back') → appRouter.back() → the
     // browser's history, all inside the server message's dispatch). While a JE surface is the topmost, that history step
-    // is the surface stack's: the top surface is dismissed once, as Back dismisses it (a form with a history entry of
-    // its own takes that entry back itself), and the router does not navigate. A host dialog on top, or no surface,
-    // keeps the host's own behaviour. Any other history step (the page's, a script's, JE's own) is untouched.
+    // is the surface stack's: the top surface is dismissed once, as Back dismisses it, and the step lands on the same
+    // page. jellyfin-web's router waits for each Back's step to land (its next Back waits on it), so the step is never
+    // dropped: an entry of the same URL is added and left. A form with a history entry of its own takes the step itself
+    // (leaving its entry closes it). A host dialog on top, or no surface, keeps the host's own behaviour. Any other
+    // history step (the page's, a script's, JE's own) is untouched.
     const handledBacks = new WeakSet();
     let dismissing = false;
     const historyStep = (original, isBack) => function (...args) {
         if (!dismissing && isBack(args)) {
             const message = remoteCommand('Back');
-            // One command dismisses one surface: a second history step in the same message changes nothing.
-            if (message && handledBacks.has(message)) return undefined;
-            const top = message ? topmost() : null;
+            const top = message && !handledBacks.has(message) ? topmost() : null;
             if (top && !top.host) {
+                // One command dismisses one surface.
                 handledBacks.add(message);
+                if (top.ownsHistory?.() === true) return original.apply(this, args);
                 dismissing = true;
                 try { if (top.dismiss) top.dismiss(message); else top.close(); } finally { dismissing = false; }
-                return undefined;
+                window.history.pushState(window.history.state, '', window.location.href);
             }
         }
         return original.apply(this, args);

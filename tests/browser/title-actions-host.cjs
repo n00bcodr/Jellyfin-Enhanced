@@ -101,7 +101,14 @@ const press = async (page, locator, isMobile) => (isMobile ? locator.tap() : loc
 async function loadHost(page, version, { tv = false, remote = null, history = false } = {}) {
   await page.evaluate(async ({ modules, version, tv, remote, history }) => {
     // `history`: the router goes back through the browser's history, as jellyfin-web's appRouter.back() does.
-    const stubs = { 22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } }, 70267: { appRouter: { canGoBack: () => true, back() { window.backs = (window.backs || 0) + 1; if (history) window.history.back(); } } },
+    const stubs = { 22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } }, 70267: { appRouter: { canGoBack: () => true, back() {
+      // jellyfin-web's appRouter.back(): one pending back at a time, settled when its history step lands.
+      window.backs = (window.backs || 0) + 1;
+      if (!history) return undefined;
+      if (window.pendingBack) return window.pendingBack;
+      window.pendingBack = new Promise(resolve => { window.addEventListener('popstate', () => { window.pendingBack = null; resolve(); }, { once: true }); window.history.back(); });
+      return window.pendingBack;
+    } } },
       97339: { Y: { Exit: 'Exit' } }, 36300: { Ay: { addEventListener: (t, ty, f, o) => t.addEventListener(ty, f, o), removeEventListener: (t, ty, f, o) => t.removeEventListener(ty, f, o), parentWithClass: (n, c) => n.closest?.('.' + c) } },
       34789: { A: { tv }, default: { tv } }, 46782: { A: { tv }, default: { tv } }, 90381: { A: { enableGamepad: () => false }, default: { enableGamepad: () => false } }, 93599: { Ay: { isEnabled: () => false } } };
     const factories = {}, exports = {};
