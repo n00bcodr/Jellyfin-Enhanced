@@ -68,6 +68,7 @@
 
     page.classList.remove("hide");
     page.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "custom", isRestored: false, options: {} } }));
+    JE.helpers.markBackdropPage(page);
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
 
     const container = document.getElementById("je-recommendations-container");

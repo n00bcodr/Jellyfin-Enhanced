@@ -63,12 +63,34 @@ test('recommendations standalone navigation preserves host lifecycle, prevents d
   h.document.body.innerHTML='<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage"></div></div>';
   const home=h.document.querySelector('#home');const events=[];home.addEventListener('viewhide',()=>events.push('hide'));home.addEventListener('viewshow',()=>events.push('show'));
   let renders=0;h.P.renderInto=container=>{renders++;container.textContent='Recommendations';};h.P.hideCategoryPage=()=>{};
-  h.load('jellyseerr/recommendations/recommendations-page.js');
+  h.load('enhanced/helpers.js');h.load('jellyseerr/recommendations/recommendations-page.js');
   h.P.showPage();h.P.showPage();assert.equal(renders,1);assert.equal(home.classList.contains('hide'),true);
   assert.equal(h.window.location.hash,'#/recommendations');assert.equal(h.document.querySelectorAll('#je-recommendations-page').length,1);
+  // Jellyfin clears the backdrop on pageshow for any page that isn't a backdrop page.
+  const page=h.document.querySelector('#je-recommendations-page');
+  assert.equal(page.classList.contains('backdropPage'),true);assert.equal(page.classList.contains('globalBackdropPage'),true);
+  assert.equal(page.getAttribute('data-backdroptype'),'movie,series,book');
   const controller=new AbortController();h.P.state.currentAbortController=controller;h.P.hidePage();
   assert.equal(controller.signal.aborted,true);assert.equal(home.classList.contains('hide'),false);assert.deepEqual(events,['hide','show']);
   assert.equal(h.P.state.pageVisible,false);
+  // With Backdrops off Jellyfin strips backdropPage; reopening the reused page marks it again.
+  page.classList.remove('backdropPage');h.P.showPage();
+  assert.equal(page.classList.contains('backdropPage'),true);
+});
+test('a JE page shows the backdrop again when Jellyfin\'s Page not found page clears it after the JE page opened',t=>{
+  const h=setup(t,async()=>({}));h.JE.pluginConfig={RecommendationsPageEnabled:true};h.JE.t=key=>key;
+  h.document.body.innerHTML='<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage"></div><div id="fallbackPage" class="page mainAnimatedPage hide"></div></div>';
+  h.P.renderInto=()=>{};h.P.hideCategoryPage=()=>{};
+  h.load('enhanced/helpers.js');h.load('jellyseerr/recommendations/recommendations-page.js');
+  const shows=[];h.document.addEventListener('pageshow',e=>shows.push(e.target.id));
+  const fallbackShows=()=>h.document.getElementById('fallbackPage').dispatchEvent(new h.window.CustomEvent('pageshow',{bubbles:true}));
+  h.P.showPage();assert.deepEqual(shows,['je-recommendations-page']);
+  const page=h.document.querySelector('#je-recommendations-page');page.classList.remove('backdropPage');
+  fallbackShows();assert.deepEqual(shows,['je-recommendations-page','fallbackPage','je-recommendations-page']);
+  assert.equal(page.classList.contains('backdropPage'),true);
+  // Once the page is hidden, the fallback page is left alone.
+  h.P.hidePage();fallbackShows();
+  assert.deepEqual(shows,['je-recommendations-page','fallbackPage','je-recommendations-page','fallbackPage']);
 });
 test('recommendations disabled standalone page leaves current host untouched',t=>{
   const h=setup(t,async()=>({}));h.JE.pluginConfig={RecommendationsPageEnabled:false};h.JE.t=key=>key;h.P.renderInto=()=>{throw Error('must not render');};

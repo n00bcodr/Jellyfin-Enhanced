@@ -434,6 +434,7 @@
 
     page.classList.remove("hide");
     page.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "custom", isRestored: false, options: {} } }));
+    JE.helpers.markBackdropPage(page);
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
     if (stopStickyTracking) stopStickyTracking();
     stopStickyTracking = P.trackStickyBar(document.getElementById('je-recommendations-category-header'));

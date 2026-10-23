@@ -119,6 +119,7 @@
       }),
     );
 
+    JE.helpers.markBackdropPage(page);
     page.dispatchEvent(
       new CustomEvent('pageshow', {
         bubbles: true,

@@ -395,6 +395,45 @@
         return JE.headerActions?.getTray() || null;
     }
 
+    /** Whether reshowBackdropAfterFallback listens for `pageshow` yet. */
+    let backdropGuardInstalled = false;
+
+    /**
+     * Marks a JE standalone page (`.page` shown by a JE route such as
+     * `#/calendar`) as a backdrop page. On every `pageshow` Jellyfin clears
+     * the backdrop unless the page is a `backdropPage`, so without this the
+     * home backdrop vanished when one of these pages opened. The attributes
+     * mirror the home page's, so the same library backdrops show, and the
+     * user's Backdrops display setting still decides whether any appear.
+     * Call it before every `pageshow`: with Backdrops off, Jellyfin removes
+     * `backdropPage` from the page, and JE reuses its page elements.
+     * @param {HTMLElement} page The page element about to be shown.
+     */
+    function markBackdropPage(page) {
+        page.classList.add('backdropPage', 'globalBackdropPage');
+        page.setAttribute('data-backdroptype', 'movie,series,book');
+        page.setAttribute('data-je-backdrop-page', '');
+        if (!backdropGuardInstalled) {
+            backdropGuardInstalled = true;
+            document.addEventListener('pageshow', reshowBackdropAfterFallback);
+        }
+    }
+
+    /**
+     * Jellyfin's router has no route for JE's pages and answers them with its
+     * "Page not found" page, whose `pageshow` clears the backdrop. That can
+     * come after the JE page has shown (and kept the route), so fire
+     * `pageshow` on the JE page again.
+     * @param {Event} e The `pageshow` event.
+     */
+    function reshowBackdropAfterFallback(e) {
+        if (e.target?.id !== 'fallbackPage') return;
+        const page = document.querySelector('.page[data-je-backdrop-page]:not(.hide)');
+        if (!page) return;
+        markBackdropPage(page);
+        page.dispatchEvent(new CustomEvent('pageshow', { bubbles: true, detail: {} }));
+    }
+
     /**
      * Finds the container plugin sidebar nav links should be injected into.
      *
@@ -724,6 +763,7 @@
         getHeaderRightContainer,
         getHeaderButtonTray,
         getSidebarContainer,
+        markBackdropPage,
         onSidebarRebuilt,
         isActiveTabContainer,
         observeTabContainers,
