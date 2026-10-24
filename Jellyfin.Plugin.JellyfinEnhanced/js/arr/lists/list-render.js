@@ -576,6 +576,9 @@ button.je-list-card-main { cursor: pointer; }
             if (ctx.tv) main.classList.add('focusable');
         }
         main.appendChild(poster(ph, 'w185', ctx));
+        // D95: download progress on the poster (the shared status module's overlay, when its switch is on).
+        const art = JE.arrStatus?.artworkEnabled?.() ? JE.arrStatus.buildArtworkProgress?.(statusOf(ph, ctx)) : null;
+        if (art) main.appendChild(art);
         if (ph.kind === 'season' || ph.kind === 'episodes' || ph.kind === 'custom') main.appendChild(el('span', 'je-list-chip je-list-chip-kind', kindLabel(ph)));
         const fill = fillParts(ph).join(' · ');
         if (fill) main.appendChild(el('span', 'je-list-chip je-list-chip-fill', fill));

@@ -234,7 +234,8 @@ test('a season page re-renders when Jellyfin announces a new episode under its s
   const h = setup(t, {
     html: detailsHtml, hash: '#/details?id=season1',
     responses: path => path.startsWith('/acquire/status/item/season1')
-      ? { items: [{ key: 'tv:tvdb:7:s1', kind: 'season', stage: ready === 2 ? 'ready' : 'almostReady', reason: { code: ready === 2 ? 'ready' : 'library_pending' }, summary: { aired: 2, ready, almostReady: 2 - ready, missing: 0 } }] }
+      // Still on its way after the announcement (D95: a season that is all ready shows nothing at all).
+      ? { items: [{ key: 'tv:tvdb:7:s1', kind: 'season', stage: 'almostReady', reason: { code: 'library_pending' }, summary: { aired: 3, ready, almostReady: 3 - ready, missing: 0 } }] }
       : null
   });
   // The season's ready count shows the re-render (D92: an opt-in setting).

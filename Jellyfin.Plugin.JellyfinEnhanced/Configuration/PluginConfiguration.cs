@@ -232,6 +232,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // D92: series-page summary chips and the admin Sonarr/Radarr line, off by default.
             ArrStatusSeasonSummaryEnabled = false;
             ArrStatusAdminLineEnabled = false;
+            // D95: download progress on artwork, on by default (the user asked for it).
+            ArrStatusArtworkProgressEnabled = true;
             ArrHouseholdContactName = "";
             ArrWebhookJellyfinUrl = string.Empty;
             ArrRequestsHubEnabled = true;
@@ -1191,6 +1193,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ArrStatusAdminLineEnabled { get; set; }
 
         // ---- end D92 ----
+
+        // ---- D95: download progress on artwork ----
+
+        /// <summary>
+        /// Show the download progress on the artwork of a title on its way: a ring with the percentage on poster cards,
+        /// the details-page poster and list placeholders while it downloads, a gently pulsing full ring while it is almost
+        /// ready; nothing once it is ready. On by default (D95, an exception to the default-off rule the user asked for).
+        /// </summary>
+        public bool ArrStatusArtworkProgressEnabled { get; set; } = true;
+
+        // ---- end D95 ----
 
         /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
         public string ArrHouseholdContactName { get; set; } = string.Empty;

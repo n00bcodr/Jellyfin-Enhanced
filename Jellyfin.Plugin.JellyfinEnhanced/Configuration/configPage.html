@@ -2581,7 +2581,7 @@
                             <!-- Requests & downloads, phase 1: status on pages, kept current by live updates -->
                             <div class="checkboxContainer"><label><input id="arrPhase1Enabled" is="emby-checkbox" type="checkbox"/><span>Show where things have got to (status on pages)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase1Enabled">
-                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators can also see the instance, the arr's own message and what would fix it (below). Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
+                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with its journey (open while the title is on its way; nothing once it is ready), badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators can also see the instance, the arr's own message and what would fix it (below). Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrStatusPosterBadges" is="emby-checkbox" type="checkbox"/><span>Show status badges on posters</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrStatusPosterBadges">
@@ -2595,6 +2595,11 @@
                             <div class="checkboxContainer"><label><input id="arrStatusAdminLineEnabled" is="emby-checkbox" type="checkbox"/><span>Show the Sonarr/Radarr status line to admins</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrStatusAdminLineEnabled">
                                 <div class="fieldDescription">Administrators see a line under the status on details pages with the instance, the arr's own words and what would fix it, e.g. "Sonarr · Some episodes missing · Fix: search now in Sonarr". The Manage drawer shows the same details either way.</div>
+                            </div>
+                            <!-- D95: download progress on artwork, on by default -->
+                            <div class="checkboxContainer"><label><input id="arrStatusArtworkProgressEnabled" is="emby-checkbox" type="checkbox"/><span>Show download progress on artwork</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusArtworkProgressEnabled">
+                                <div class="fieldDescription">While a title downloads, its poster shows a ring with the percentage (a spinning ring when the percentage isn't known yet), on poster cards, the details page and list placeholders; while it is almost ready the ring is full and pulses gently. It goes away once the title is ready. Works with or without the corner badges above.</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="arrStatusLookingHours">"Missing" with Search after (hours)</label>
@@ -8808,6 +8813,7 @@
                 document.querySelector('#arrStatusPosterBadges').checked = config.ArrStatusPosterBadges !== false;
                 document.querySelector('#arrStatusSeasonSummaryEnabled').checked = config.ArrStatusSeasonSummaryEnabled === true;
                 document.querySelector('#arrStatusAdminLineEnabled').checked = config.ArrStatusAdminLineEnabled === true;
+                document.querySelector('#arrStatusArtworkProgressEnabled').checked = config.ArrStatusArtworkProgressEnabled !== false;
                 document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
                 document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
                 document.querySelector('#arrWebhookJellyfinUrl').value = config.ArrWebhookJellyfinUrl || '';
@@ -9488,6 +9494,7 @@
             config.ArrStatusPosterBadges = document.querySelector('#arrStatusPosterBadges').checked;
             config.ArrStatusSeasonSummaryEnabled = document.querySelector('#arrStatusSeasonSummaryEnabled').checked;
             config.ArrStatusAdminLineEnabled = document.querySelector('#arrStatusAdminLineEnabled').checked;
+            config.ArrStatusArtworkProgressEnabled = document.querySelector('#arrStatusArtworkProgressEnabled').checked;
             var __lookingHours = parseInt(document.querySelector('#arrStatusLookingHours').value, 10);
             config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
             config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
@@ -11283,7 +11290,7 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusSeasonSummaryEnabled', 'arrStatusAdminLineEnabled', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusSeasonSummaryEnabled', 'arrStatusAdminLineEnabled', 'arrStatusArtworkProgressEnabled', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrStandardNeedsNonFourK', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4HouseholdRulesEnabled', label: 'Household rules', children: ['arrPhase4GroupQuotasEnabled'] },

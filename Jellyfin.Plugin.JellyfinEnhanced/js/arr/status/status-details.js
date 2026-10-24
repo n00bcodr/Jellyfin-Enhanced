@@ -5,6 +5,8 @@
  * request per page view; re-rendered in place when the change feed (or JE.arrStatus.refresh)
  * reports a change for the page's title. Each read is handed to status-arrival.js, which turns the
  * page into the playable one once its title arrives.
+ * D95: a title on its way opens with its journey shown (the chevron closes it for that page view), its poster
+ * shows the download progress, and a title that is ready shows nothing at all.
  */
 (function (JE) {
     'use strict';
@@ -14,6 +16,8 @@
     const RETRY_MS = [5000, 15000, 60000];
     let current = null; // { page, itemId, epoch, userId, serverId, controller, loading, dirty, quiet, unsubscribe, retries, retryTimer }
     let started = false;
+    /** D95: the page view whose journey the viewer closed ({page, itemId}), or null. */
+    let collapsed = null;
 
     /**
      * The details page currently shown, or null.
@@ -78,7 +82,35 @@
      * @returns {void}
      */
     function clear(root) {
-        (root || document).querySelectorAll(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`).forEach(n => n.remove());
+        (root || document).querySelectorAll(`.je-arr-status[data-je-arr-surface="${SURFACE}"], .je-arr-art[data-je-arr-surface="${SURFACE}"]`).forEach(n => n.remove());
+    }
+
+    /**
+     * D95: the details page's posters, where the download progress is drawn. jellyfin-web draws two (one for
+     * desktop and TV, one for phones, each hidden in the other layouts), so both get it.
+     * @param {HTMLElement} page Details page.
+     * @returns {HTMLElement[]} Hosts.
+     */
+    function postersOf(page) {
+        return [...page.querySelectorAll('.detailImageContainer')]
+            .map(box => box.querySelector('.cardImageContainer') || box.querySelector('.card') || box);
+    }
+
+    /**
+     * D95: draws the download progress on the details poster (when the switch is on and the title is downloading or
+     * almost ready).
+     * @param {HTMLElement} page Details page.
+     * @param {Object} status Item status.
+     * @returns {void}
+     */
+    function paintPoster(page, status) {
+        if (!JE.arrStatus.artworkEnabled?.() || !JE.arrStatus.buildArtworkProgress?.(status)) return;
+        for (const host of postersOf(page)) {
+            const art = JE.arrStatus.buildArtworkProgress(status);
+            if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+            art.dataset.jeArrSurface = SURFACE;
+            host.appendChild(art);
+        }
     }
 
     /**
@@ -89,18 +121,30 @@
      * @returns {HTMLElement|null} The block rendered (null when quiet).
      */
     function render(page, status, ctx) {
+        // A live update re-draws the block: the pill keeps the keyboard/D-pad focus it had.
+        const before = page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`);
+        const refocus = !!before && before.contains(document.activeElement) && document.activeElement.classList.contains('je-arr-pill');
         clear(page);
         const episodes = JE.internals?.arrStatusEpisodes;
         if (status.kind === 'season' && episodes) episodes.render(page, status, ctx);
         else if (episodes) episodes.clear();
+        // D95: a title that is ready, with nothing on its way, shows nothing from JE (no pill, journey or arr line).
+        if (JE.arrStatus.settled?.(status)) return null;
         if (status.quiet && !status.admin) return null;
+        if (!status.quiet) paintPoster(page, status);
         let block = null;
         // The ready/missing counts and the administrators' Sonarr/Radarr lines only when switched on
         // (D92): with neither, a summary with nothing on its way draws no block, so no space either.
-        const options = JE.arrStatus.detailsOptions();
+        const itemId = itemIdFromHash();
+        const options = {
+            ...JE.arrStatus.detailsOptions(),
+            // D95: on its way, the journey is shown unless the viewer closed it on this page view.
+            expanded: !!JE.arrStatus.inFlight?.(status) && !(collapsed && collapsed.page === page && collapsed.itemId === itemId),
+            onToggle: open => { collapsed = open ? null : { page, itemId }; }
+        };
         // The page of a title that isn't in the library: one pill for its scope (not here, asked,
         // downloading…), like the more-info modal, rather than the counts of a library series.
-        const absent = !!JE.titleDetails?.isSynthetic?.(itemIdFromHash());
+        const absent = !!JE.titleDetails?.isSynthetic?.(itemId);
         if (absent && !status.quiet) {
             block = JE.arrStatus.buildPill(status, ctx, options);
         } else if (status.kind === 'series' || status.kind === 'season') {
@@ -115,6 +159,7 @@
         const anchor = anchorOf(page);
         if (!anchor) return null;
         anchor.insertBefore(block, anchor.firstChild);
+        if (refocus) block.querySelector('button.je-arr-pill')?.focus({ preventScroll: true });
         return block;
     }
 
@@ -275,6 +320,8 @@
         };
         const schedule = JE.helpers?.debounce ? JE.helpers.debounce(look, 60) : () => setTimeout(look, 60);
         const changed = () => {
+            // A journey closed on another page view opens again here.
+            if (collapsed && (collapsed.page !== visiblePage() || collapsed.itemId !== itemIdFromHash())) collapsed = null;
             // Cancellation is immediate; only the next page's first look is debounced.
             if (current && !sameContext(current)) stop();
             schedule();
@@ -290,6 +337,7 @@
     }
 
     JE.session?.onUserChange?.('arr-status-details', () => {
+        collapsed = null;
         stop();
         clear();
     });

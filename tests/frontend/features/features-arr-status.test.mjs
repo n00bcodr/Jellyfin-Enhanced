@@ -359,7 +359,8 @@ test('season pages: chips on the rows the viewer has, the others in the banner, 
     key: 'tv:tvdb:1:s1', kind: 'season', stage: 'downloading', reason: { code: 'downloading' },
     summary: { aired: 4, ready: 1, downloading: 1, missing: 1, almostReady: 1, attention: 0 },
     episodes: [
-      { key: 'e1', season: 1, episode: 1, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', row: true, stage: 'ready', reason: { code: 'ready' } },
+      // D95: a plain ready episode has no chip; one with a better copy on its way still says so.
+      { key: 'e1', season: 1, episode: 1, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', row: true, stage: 'ready', reason: { code: 'upgrading' } },
       { key: 'e2', season: 1, episode: 2, row: false, stage: 'looking', reason: { code: 'no_release_yet' } },
       { key: 'e3', season: 1, episode: 3, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3', row: true, stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 60 } },
       { key: 'e4', season: 1, episode: 4, row: false, stage: 'almostReady', reason: { code: 'library_pending' } },
@@ -370,7 +371,7 @@ test('season pages: chips on the rows the viewer has, the others in the banner, 
   const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', config: { ArrStatusSeasonSummaryEnabled: true }, responses: () => ({ items: [season] }) });
   await h.JE.internals.arrStatusDetails.update(false);
   const rows = [...h.document.querySelectorAll('.listItem')];
-  assert.equal(rows[0].querySelector('.je-arr-chip').textContent, 'Ready');
+  assert.equal(rows[0].querySelector('.je-arr-chip').textContent, 'Ready · better copy coming');
   assert.equal(rows[1].querySelector('.je-arr-chip').textContent, 'Downloading 60%');
   const banner = h.document.querySelector('.je-arr-banner');
   assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E2');
@@ -391,19 +392,19 @@ test('season pages: chips on the rows the viewer has, the others in the banner, 
   phone.innerHTML = '<div class="listItemImage"></div><div class="listItemBody"><div class="listItemMediaInfo" style="display:none"></div></div>';
   rows[0].parentNode.appendChild(phone);
   h.JE.internals.arrStatusEpisodes.apply();
-  assert.equal(phone.querySelector('.listItemImage > .je-arr-chip.je-arr-chip-overlay').textContent, 'Ready');
+  assert.equal(phone.querySelector('.listItemImage > .je-arr-chip.je-arr-chip-overlay').textContent, 'Ready · better copy coming');
   assert.equal(phone.querySelector('.listItemMediaInfo .je-arr-chip'), null);
   // With the overview line under the row (jellyfin-web's phone layout) the chip gets its own line above it.
   phone.querySelector('.je-arr-chip').remove();
   phone.insertAdjacentHTML('beforeend', '<div class="listItem-bottomoverview"></div>');
   h.JE.internals.arrStatusEpisodes.apply();
-  assert.equal(phone.querySelector('.je-arr-chip-row + .listItem-bottomoverview').previousElementSibling.textContent, 'Ready');
+  assert.equal(phone.querySelector('.je-arr-chip-row + .listItem-bottomoverview').previousElementSibling.textContent, 'Ready · better copy coming');
   assert.equal(phone.querySelectorAll('.je-arr-chip').length, 1);
   h.JE.internals.arrStatusEpisodes.apply();
   assert.equal(phone.querySelectorAll('.je-arr-chip-row').length, 1, 'idempotent');
   phone.remove();
   // A quiet season (all ready) shows no "Ready" chips.
-  h.JE.internals.arrStatusEpisodes.render(h.document.querySelector('#itemDetailPage'), { ...season, quiet: true, episodes: [season.episodes[0]] }, {});
+  h.JE.internals.arrStatusEpisodes.render(h.document.querySelector('#itemDetailPage'), { ...season, quiet: true, episodes: [{ ...season.episodes[0], reason: { code: 'ready' } }] }, {});
   assert.equal(rows[0].querySelector('.je-arr-chip'), null);
   assert.equal(h.document.querySelector('.je-arr-banner'), null);
 });
@@ -780,7 +781,7 @@ test('D92: a season page leaves out "x of y ready" and "n missing" by default; t
   await h.JE.internals.arrStatusDetails.update(false);
   assert.equal(h.document.querySelector('.je-arr-status[data-je-arr-surface="details"]'), null);
   assert.equal(h.document.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
-  assert.equal(h.document.querySelector('.listItem .je-arr-chip').textContent, 'Ready');
+  assert.equal(h.document.querySelector('.listItem .je-arr-chip'), null, 'D95: a ready episode row shows nothing');
 });
 
 test('D92: a movie keeps its in-flight pill; the Sonarr/Radarr line under it only with the setting', async t => {
@@ -798,9 +799,10 @@ test('D92: a movie keeps its in-flight pill; the Sonarr/Radarr line under it onl
 });
 
 test('D92: a quiet title an administrator only had the Sonarr/Radarr line for draws nothing by default', async t => {
+  // Not in the library and nobody asked (quiet for the family); the arrs have something to say to administrators.
   const quiet = {
-    key: 'movie:tmdb:2', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true,
-    admin: { variants: [{ instance: 'Radarr', stage: 'ready', reason: { code: 'ready' } }, { instance: 'Radarr 4K', stage: 'looking', reason: { code: 'looking' } }] }
+    key: 'movie:tmdb:2', kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' }, quiet: true,
+    admin: { variants: [{ instance: 'Radarr', stage: 'notHere', reason: { code: 'not_in_arr' } }, { instance: 'Radarr 4K', stage: 'looking', reason: { code: 'looking' } }] }
   };
   const off = setup(t, { html: detailsHtml, hash: '#/details?id=movie2', responses: () => ({ items: [quiet] }) });
   await off.JE.internals.arrStatusDetails.update(false);
@@ -820,4 +822,159 @@ test('D92: the shared builders keep their defaults for the other surfaces (Manag
   assert.equal(h.S.buildPill(movie, ctx).querySelectorAll('.je-arr-admin-line').length, 1);
   assert.equal(h.S.buildPill(movie, ctx, { admin: false }).querySelector('.je-arr-admin'), null);
   same(h.S.detailsOptions(), { counts: false, admin: false });
+});
+
+// ---- D95: progress on the artwork, the journey open while on its way, nothing once ready ----
+
+const ART = { ArrStatusArtworkProgressEnabled: true };
+// jellyfin-web draws the poster twice: one for desktop and TV (hidden on phones), one for phones.
+const posterBox = cls => `<div class="detailImageContainer ${cls}"><div class="card"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div></div></div></div>`;
+const posterDetailsHtml = detailsHtml.replace('<div class="detailPagePrimaryContent">',
+  posterBox('hide-mobile') + '<div class="detailPagePrimaryContent">' + posterBox('hide-desktop hide-tv'));
+const journey = [{ stage: 'asked', at: iso(-1), state: 'done', byYou: true }, { stage: 'approved', at: iso(-1), state: 'done' }, { stage: 'downloading', state: 'current' }, { stage: 'almostReady', state: 'next' }, { stage: 'ready', state: 'next' }];
+
+/** Cards with these answers, all in view and read once. */
+async function artCards(t, statuses, config = ART) {
+  const ids = statuses.map((_, i) => i.toString(16).padStart(32, '0'));
+  const answers = new Map(statuses.map((s, i) => [ids[i], s && { itemId: ids[i], key: `movie:tmdb:${i + 1}`, kind: 'movie', ...s }]));
+  const h = setup(t, {
+    html: cardsHtml(statuses.length), config,
+    responses: path => ({ items: decodeURIComponent(/ids=([^&]*)/.exec(path)[1]).split(',').map(id => answers.get(id)).filter(Boolean) })
+  });
+  h.JE.initializeArrStatus();
+  h.JE.internals.arrStatusCards.scan();
+  const io = h.observers[0];
+  io.fn([...io.observed].map(target => ({ isIntersecting: true, target })));
+  await h.JE.internals.arrStatusCards.flush();
+  await nextTurn();
+  const card = i => h.document.querySelectorAll('.card')[i];
+  return { h, answers, card, ids };
+}
+
+test('D95: cards show the download on their artwork: the percentage, a spinner when unknown, a full ring while almost ready', async t => {
+  const { h, card } = await artCards(t, [
+    { stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 41.6 } },
+    { stage: 'downloading', reason: { code: 'queued' } },
+    { stage: 'almostReady', reason: { code: 'importing' } },
+    { stage: 'ready', reason: { code: 'ready' } },
+    { stage: 'looking', reason: { code: 'looking' } }
+  ]);
+  assert.equal(h.calls.length, 1, 'one batched read for statuses, as before');
+  const art = i => card(i).querySelector('.cardImageContainer > .je-arr-art');
+  assert.equal(art(0).querySelector('.je-arr-art-text').textContent, '42%');
+  assert.equal(art(0).getAttribute('aria-label'), 'Downloading 42%');
+  assert.equal(card(0).querySelector('.je-arr-ring'), null, 'the corner leaves the ring to the artwork');
+  assert.ok(art(1).classList.contains('je-arr-art-busy'));
+  assert.equal(art(1).querySelector('.je-arr-art-text').textContent, 'download');
+  assert.ok(art(2).classList.contains('je-arr-art-almost'));
+  assert.equal(card(2).querySelector('.je-arr-badge'), null, 'no hourglass chip next to the full ring');
+  assert.equal(art(3), null, 'ready: nothing on the artwork');
+  assert.equal(art(4), null, 'looking: nothing to show on the artwork');
+  const css = h.document.getElementById('je-arr-status-styles').textContent;
+  assert.match(css, /\.je-arr-art \{ position: absolute; inset: 0;/, 'over the image, out of the flow (no layout shift)');
+  assert.match(css, /prefers-reduced-motion: reduce\) \{ \.je-arr-art-busy svg, \.je-arr-art-almost \.je-arr-art-ring \{ animation: none; \}/);
+});
+
+test('D95: the artwork follows the download and is gone once the title is ready', async t => {
+  const { h, answers, card, ids } = await artCards(t, [{ stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 10 } }]);
+  const art = () => card(0).querySelector('.je-arr-art');
+  assert.equal(art().textContent, '10%');
+  answers.set(ids[0], { ...answers.get(ids[0]), progress: { percent: 75 } });
+  h.S.refresh(['movie:tmdb:1']);
+  await h.JE.internals.arrStatusCards.flush();
+  assert.equal(art().textContent, '75%');
+  assert.equal(card(0).querySelectorAll('.je-arr-art').length, 1);
+  answers.set(ids[0], { ...answers.get(ids[0]), stage: 'almostReady', reason: { code: 'library_pending' }, progress: null });
+  h.S.refresh(['movie:tmdb:1']);
+  await h.JE.internals.arrStatusCards.flush();
+  assert.ok(art().classList.contains('je-arr-art-almost'));
+  answers.set(ids[0], { ...answers.get(ids[0]), stage: 'ready', reason: { code: 'ready' } });
+  h.S.refresh(['movie:tmdb:1']);
+  await h.JE.internals.arrStatusCards.flush();
+  assert.equal(art(), null);
+});
+
+test('D95: artwork progress has its own switch: on without the corner badges, off draws the badges as before', async t => {
+  const dl = { stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } };
+  const only = await artCards(t, [dl], { ...ART, ArrStatusPosterBadges: false });
+  assert.equal(only.h.calls.length, 1, 'statuses are read for the artwork alone');
+  assert.equal(only.card(0).querySelector('.je-arr-art').textContent, '42%');
+  assert.equal(only.card(0).querySelector('.je-arr-badge'), null);
+  const off = await artCards(t, [dl], { ArrStatusArtworkProgressEnabled: false });
+  assert.equal(off.card(0).querySelector('.je-arr-art'), null);
+  assert.equal(off.card(0).querySelector('.je-arr-ring-text').textContent, '42');
+});
+
+test('D95: a title on its way opens with its journey and its poster shows the download', async t => {
+  let percent = 11;
+  const h = setup(t, {
+    html: posterDetailsHtml, hash: '#/details?id=movie1', config: ART,
+    responses: () => ({ contact: 'Dad', items: [{ key: 'movie:tmdb:1', kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent, etaSeconds: 120 }, journey }] })
+  });
+  await h.JE.internals.arrStatusDetails.update(false);
+  const pill = () => h.document.querySelector('.je-arr-status button.je-arr-pill');
+  const open = () => !h.document.querySelector('.je-arr-status .je-arr-journey').hidden;
+  assert.equal(pill().getAttribute('aria-expanded'), 'true');
+  assert.ok(open(), 'the journey is shown without a tap');
+  same([...h.document.querySelectorAll('.detailImageContainer .cardImageContainer > .je-arr-art .je-arr-art-text')].map(e => e.textContent), ['11%', '11%'],
+    'both posters (desktop/TV and phone) show it');
+
+  // A live update keeps it open and keeps the focus on the pill.
+  pill().focus();
+  percent = 50;
+  h.S.refresh(['movie:tmdb:1']);
+  await nextTurn();
+  assert.equal(h.calls.length, 2);
+  assert.ok(open());
+  assert.equal(h.document.activeElement, pill(), 'focus stays on the re-drawn pill');
+  assert.equal(h.document.querySelectorAll('.je-arr-art').length, 2, 'one per poster, never piled up');
+  assert.equal(h.document.querySelector('.je-arr-art-text').textContent, '50%');
+
+  // Closed by the viewer: it stays closed for this page view, through updates.
+  pill().click();
+  assert.ok(!open());
+  percent = 60;
+  h.S.refresh(['movie:tmdb:1']);
+  await nextTurn();
+  assert.equal(h.calls.length, 3);
+  assert.ok(!open(), 'the chevron closes it for the page view');
+  assert.equal(pill().getAttribute('aria-expanded'), 'false');
+});
+
+test('D95: every in-flight stage opens the journey; a title that is ready shows nothing, not even the admin line', async t => {
+  const h = setup(t);
+  for (const stage of ['asked', 'approved', 'notOut', 'downloading', 'almostReady']) {
+    const block = h.S.buildPill({ key: 'k', stage, reason: { code: 'x' }, journey }, ctx, { expanded: h.S.inFlight({ stage }) });
+    assert.equal(block.querySelector('.je-arr-journey').hidden, false, stage);
+  }
+  assert.equal(h.S.inFlight({ stage: 'ready', reason: { code: 'ready' } }), false);
+  assert.equal(h.S.inFlight({ stage: 'ready', reason: { code: 'upgrading' } }), true, 'a better copy on its way');
+  assert.equal(h.S.inFlight({ stage: 'ready', attention: true }), true);
+  assert.equal(h.S.buildPill({ key: 'k', stage: 'downloading', journey }, ctx).querySelector('.je-arr-journey').hidden, true, 'other surfaces keep it closed');
+
+  const ready = {
+    key: 'movie:tmdb:9', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, journey: journey.map(s => ({ ...s, state: 'done' })),
+    admin: { variants: [{ instance: 'Radarr', stage: 'ready', reason: { code: 'ready' } }, { instance: 'Radarr 4K', stage: 'ready', reason: { code: 'ready' }, library: 'Movies 4K' }] }
+  };
+  const manage = [];
+  const page = setup(t, { html: posterDetailsHtml, hash: '#/details?id=movie9', config: { ...ART, ArrStatusAdminLineEnabled: true }, responses: () => ({ items: [ready] }) });
+  page.JE.internals.arrManage = { attachDetails: (p, s) => manage.push(s) };
+  await page.JE.internals.arrStatusDetails.update(false);
+  assert.equal(page.document.querySelector('.je-arr-status'), null, 'no "Ready to watch", no journey, no arr line');
+  assert.equal(page.document.querySelector('.je-arr-art'), null);
+  assert.equal(manage.length, 1, 'Manage is still handed the status');
+  // A series that is all here with nothing coming is ready too; one with an episode still to air is not.
+  assert.equal(h.S.settled({ kind: 'series', stage: 'ready', summary: { readySeasons: [1], aired: 6, ready: 6, missing: 0 } }), true);
+  assert.equal(h.S.settled({ kind: 'series', stage: 'ready', summary: { aired: 6, ready: 6, nextAir: iso(3) } }), false);
+  assert.equal(h.S.settled({ kind: 'series', stage: 'ready', summary: { aired: 6, ready: 5, downloading: 1 } }), false);
+});
+
+test('D95: the artwork overlay is off without its switch on details pages too', async t => {
+  const h = setup(t, {
+    html: posterDetailsHtml, hash: '#/details?id=movie1',
+    responses: () => ({ items: [{ key: 'movie:tmdb:1', kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 5 } }] })
+  });
+  await h.JE.internals.arrStatusDetails.update(false);
+  assert.equal(h.document.querySelector('.je-arr-art'), null);
+  assert.match(h.document.querySelector('.je-arr-status').textContent, /Downloading · 5%/);
 });

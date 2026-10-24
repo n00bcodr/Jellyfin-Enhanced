@@ -229,4 +229,35 @@ public class ApiConfigurationTests
         Assert.Equal(expectSummary, document.RootElement.GetProperty("ArrStatusSeasonSummaryEnabled").GetBoolean());
         Assert.Equal(expectAdminLine, document.RootElement.GetProperty("ArrStatusAdminLineEnabled").GetBoolean());
     }
+
+    // ---- D95: download progress on artwork, on by default ----
+
+    [Fact]
+    public void ArtworkProgressIsOnByDefaultAndForConfigurationsSavedBeforeIt()
+    {
+        Assert.True(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration().ArrStatusArtworkProgressEnabled);
+        var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration));
+        using var reader = new StringReader("<PluginConfiguration><ArrPhase1Enabled>true</ArrPhase1Enabled></PluginConfiguration>");
+        var old = Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration>(serializer.Deserialize(reader));
+        Assert.True(old.ArrStatusArtworkProgressEnabled);
+    }
+
+    [Theory]
+    [InlineData(true, true, true, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, true, true, false)]
+    public void PublicConfigSendsArtworkProgressOnlyWhenStatusIsOn(bool integration, bool phase1, bool artwork, bool expected)
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.ArrIntegrationEnabled = integration;
+        config.ArrPhase1Enabled = phase1;
+        config.ArrStatusArtworkProgressEnabled = artwork;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        Assert.Equal(expected, document.RootElement.GetProperty("ArrStatusArtworkProgressEnabled").GetBoolean());
+    }
 }

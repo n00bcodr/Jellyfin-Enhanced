@@ -442,6 +442,40 @@
         }
     }
 
+    /** Stages of a title on its way (D95): its pill opens with the journey shown. */
+    const IN_FLIGHT = new Set(['asked', 'approved', 'notOut', 'looking', 'downloading', 'almostReady']);
+
+    /**
+     * D95: true while a title is on its way (asked, OK'd, not out yet, looking, downloading, almost
+     * ready, a better copy coming) or needs attention.
+     * @param {Object} status Status.
+     * @returns {boolean} In flight.
+     */
+    function inFlight(status) {
+        if (!status) return false;
+        return !!status.attention || IN_FLIGHT.has(status.stage) || status.reason?.code === 'upgrading';
+    }
+
+    /**
+     * D95: true when a title is ready and nothing about it is on its way (no download, nothing almost
+     * ready, nothing needing attention, no episode still to air): its page shows nothing from JE.
+     * @param {Object} status Status.
+     * @returns {boolean} Ready and settled.
+     */
+    function settled(status) {
+        if (!status || status.stage !== 'ready' || inFlight(status)) return false;
+        const s = status.summary;
+        return !(s && ((s.downloading || 0) > 0 || (s.almostReady || 0) > 0 || (s.attention || 0) > 0 || (s.unknown || 0) > 0 || s.nextAir));
+    }
+
+    /**
+     * D95: true when the server has download progress on artwork on (with the status surfaces).
+     * @returns {boolean} On.
+     */
+    function artworkEnabled() {
+        return enabled() && JE?.pluginConfig?.ArrStatusArtworkProgressEnabled === true;
+    }
+
     /**
      * What a details page shows besides the status itself (D92): the ready and missing counts of
      * series and season summaries, and the administrators' Sonarr/Radarr lines. Both are admin
@@ -733,7 +767,9 @@
      * Colour is never the only signal (icon and text always present).
      * @param {Object} status Movie or episode status.
      * @param {Object} ctx Response context.
-     * @param {{admin?: boolean}} [options] admin false leaves out the administrators' lines.
+     * @param {{admin?: boolean, expanded?: boolean, onToggle?: function(boolean): void}} [options] admin false leaves
+     *   out the administrators' lines; expanded opens the journey from the start (D95: a title on its way); onToggle
+     *   hears each open/close of the journey.
      * @returns {HTMLElement} The status block.
      */
     function buildPill(status, ctx, options) {
@@ -764,13 +800,19 @@
         }
         if (hasJourney) {
             const journey = buildJourney(status.journey);
-            journey.hidden = true;
+            const expanded = options?.expanded === true;
+            journey.hidden = !expanded;
+            if (expanded) {
+                pill.setAttribute('aria-expanded', 'true');
+                block.classList.add('je-arr-open');
+            }
             block.appendChild(journey);
             pill.addEventListener('click', () => {
                 const open = journey.hidden;
                 journey.hidden = !open;
                 pill.setAttribute('aria-expanded', String(open));
                 block.classList.toggle('je-arr-open', open);
+                if (typeof options?.onToggle === 'function') options.onToggle(open);
             });
         }
         if (options?.admin !== false) appendAdmin(block, status);
@@ -851,9 +893,12 @@
      * "◐ ready/aired" first.
      * @param {Object|null} [status] Card status (null: none known; a stamp alone still draws).
      * @param {'upgraded'|'new'|'fourK'|null} [stamp] Acquisition stamp.
+     * @param {{art?: boolean}} [options] art: the artwork shows the download or almost-ready progress (D95), so
+     *   the corner leaves it out (and still shows no stamp meanwhile).
      * @returns {HTMLElement|null} Badge host content.
      */
-    function buildBadge(status, stamp) {
+    function buildBadge(status, stamp, options) {
+        const art = options?.art === true;
         const chip = Object.prototype.hasOwnProperty.call(STAMPS, stamp) ? STAMPS[stamp] : null;
         if (!status && !chip) return null;
         status = status || {};
@@ -883,14 +928,18 @@
             box.appendChild(warn);
             any = true;
         } else if (downloading) {
-            box.appendChild(ring(status.progress?.percent));
-            any = true;
+            if (!art) {
+                box.appendChild(ring(status.progress?.percent));
+                any = true;
+            }
         } else if (status.stage === 'almostReady' || (s && s.almostReady > 0)) {
-            const almost = el('span', 'je-arr-badge-chip je-arr-tone-almostReady');
-            almost.appendChild(icon('hourglass_bottom', 'je-arr-badge-icon'));
-            almost.title = tr('arr_status_almost_ready');
-            box.appendChild(almost);
-            any = true;
+            if (!art) {
+                const almost = el('span', 'je-arr-badge-chip je-arr-tone-almostReady');
+                almost.appendChild(icon('hourglass_bottom', 'je-arr-badge-icon'));
+                almost.title = tr('arr_status_almost_ready');
+                box.appendChild(almost);
+                any = true;
+            }
         } else if (chip) {
             const mark = el('span', `je-arr-badge-chip je-arr-tone-${stamp} je-arr-badge-stamp`);
             mark.appendChild(icon(chip.icon, 'je-arr-badge-icon'));
@@ -900,9 +949,69 @@
             any = true;
         }
         if (!any) return null;
+        return finishBadge(box);
+    }
+
+    /**
+     * Labels a badge for screen readers from its parts' titles.
+     * @param {HTMLElement} box Badge.
+     * @returns {HTMLElement} The badge.
+     */
+    function finishBadge(box) {
         box.setAttribute('role', 'img');
         box.setAttribute('aria-label', [...box.querySelectorAll('[title]')].map(x => x.title).join(', '));
         return box;
+    }
+
+    /**
+     * D95: the download progress drawn on a title's artwork (poster cards, the details-page poster, list
+     * placeholders): a ring with the percentage while downloading, a spinning ring when the percentage isn't
+     * known, a full ring that pulses gently while almost ready (importing, Jellyfin adding it). Null otherwise,
+     * and once the title is ready. Absolutely positioned over its host, so nothing moves.
+     * @param {Object|null} status Status.
+     * @returns {HTMLElement|null} Overlay.
+     */
+    function buildArtworkProgress(status) {
+        if (!status || settled(status)) return null;
+        const s = status.summary;
+        const downloading = status.stage === 'downloading' || (s && s.downloading > 0);
+        const almost = !downloading && (status.stage === 'almostReady' || (s && s.almostReady > 0));
+        if (!downloading && !almost) return null;
+        const raw = downloading ? status.progress?.percent : null;
+        const pct = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : null;
+        const mode = almost ? 'almost' : pct === null ? 'busy' : 'pct';
+        const wrap = el('div', `je-arr-art je-arr-art-${mode}`);
+        wrap.dataset.jeArrArt = mode === 'pct' ? `pct:${pct}` : mode;
+        wrap.setAttribute('role', 'img');
+        wrap.setAttribute('aria-label', mode === 'almost' ? tr('arr_status_almost_ready')
+            : mode === 'pct' ? tr('arr_chip_downloading_pct', { pct }) : tr('arr_chip_downloading'));
+        const holder = el('div', 'je-arr-art-ring');
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 36 36');
+        svg.setAttribute('aria-hidden', 'true');
+        const track = document.createElementNS(ns, 'circle');
+        track.setAttribute('class', 'je-arr-art-track');
+        const bar = document.createElementNS(ns, 'circle');
+        bar.setAttribute('class', 'je-arr-art-bar');
+        for (const c of [track, bar]) {
+            c.setAttribute('cx', '18');
+            c.setAttribute('cy', '18');
+            c.setAttribute('r', '15.5');
+        }
+        const circumference = 2 * Math.PI * 15.5;
+        const value = mode === 'almost' ? 100 : mode === 'busy' ? 25 : pct;
+        bar.setAttribute('stroke-dasharray', `${(circumference * value / 100).toFixed(1)} ${circumference.toFixed(1)}`);
+        svg.appendChild(track);
+        svg.appendChild(bar);
+        holder.appendChild(svg);
+        const label = el('span', 'je-arr-art-text');
+        if (mode === 'pct') label.textContent = `${pct}%`;
+        else label.appendChild(icon(mode === 'almost' ? 'hourglass_bottom' : 'download', 'je-arr-art-icon'));
+        label.setAttribute('aria-hidden', 'true');
+        holder.appendChild(label);
+        wrap.appendChild(holder);
+        return wrap;
     }
 
     /**
@@ -1029,6 +1138,9 @@
         invalidateResponses,
         familyText,
         searchable,
+        inFlight,
+        settled,
+        artworkEnabled,
         detailsOptions,
         summaryPieces,
         chipText,
@@ -1045,6 +1157,7 @@
         buildSummary,
         buildJourney,
         buildBadge,
+        buildArtworkProgress,
         staleNote,
         retryDelay,
         subscribe,

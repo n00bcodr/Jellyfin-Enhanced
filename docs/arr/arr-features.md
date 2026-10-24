@@ -579,7 +579,13 @@ may see when it is sent: if your access, parental limit or role changes while it
 again for you as you are now (if you were removed or keep changing, the Requests page answers as for nobody).
 
 ??? info "Where the status shows"
-    - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
+    - **Details pages**: a pill under the title with the journey (asked, OK'd, downloading, … with dates) shown while
+      the title is on its way (tap the pill to close it for that page view); with *Show download progress on artwork*
+      on (the default) the poster shows a ring with the percentage while it downloads, a spinning ring while the
+      percentage isn't known and a gently pulsing full ring while it is almost ready. Once the title is ready, with
+      nothing else on its way, the page shows nothing from Jellyfin Enhanced: no "Ready to watch", no journey, no
+      Sonarr/Radarr line, no ring (the "ready to watch" notifications still go out), and episode rows that are ready
+      get no chip. Poster cards (library, home rows, list placeholders) show the same ring on their artwork;
       series and season pages get a summary of what is on its way ("1 downloading", "Season 3 airing (ep 6 Fri)";
       episodes Sonarr is still looking for read "Looking for 3"); with *Show the season summary on series pages* on (off
       by default) it also counts what is here and what is missing ("Season 1 ready", "8 of 10 ready", "2 missing" for ones
@@ -2060,7 +2066,8 @@ With *Poster badges: New for you, Upgraded, 4K* on (under phase 4, off by defaul
 badge about what changed for the person looking at it. At most one per card, in this order:
 
 1. The download ring (and the *taking longer* and *almost ready* badges) of the phase-1 poster badges, while something
-   is on its way. Season cards keep their ✓ / ◐ ready count next to it.
+   is on its way (with *Show download progress on artwork* on, the ring and *almost ready* are drawn on the artwork
+   instead, and the corner stays empty meanwhile). Season cards keep their ✓ / ◐ ready count next to it.
 2. **Upgraded**: Sonarr or Radarr replaced the file with a better copy (its history says the old file was deleted for an
    upgrade, and Jellyfin has the new file), or the first 4K version arrived alongside an existing HD copy.
    Alternate versions use their own first observed arrival, even when Jellyfin promotes one to the primary version

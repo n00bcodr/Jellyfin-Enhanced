@@ -1826,3 +1826,26 @@ test('LIST-REQ-INFLIGHT-2 control: a page element\'s own bubbling pageshow / pag
   assert.equal(ticket.current(), true);
   assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
 });
+
+// D95: list placeholder cards show the download progress on their poster (the shared status overlay, behind its switch).
+test('D95: a placeholder card that is downloading shows the progress on its poster; almost ready pulses; off without the switch', async t => {
+  const entries = [
+    ph(P(1), { title: 'Coming', status: { key: 'movie:tmdb:100', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 30 } } }),
+    ph(P(2), { title: 'Importing', titleKey: 'movie:tmdb:200', tmdbId: 200, status: { key: 'movie:tmdb:200', stage: 'almostReady', reason: { code: 'importing' } } }),
+    ph(P(3), { title: 'Asked', titleKey: 'movie:tmdb:300', tmdbId: 300, status: { key: 'movie:tmdb:300', stage: 'asked', reason: { code: 'awaiting_approval' } } })
+  ];
+  const coll = { listId: COLL, listKind: 'collection', rev: 2, canEdit: false, actions: [], statusShown: true, placeholders: entries, order: null };
+  for (const [config, expected] of [[{ ArrStatusArtworkProgressEnabled: true }, ['30%', 'hourglass_bottom', null]], [{}, [null, null, null]]]) {
+    const h = setup(t, { config, views: () => [coll], items: { [COLL]: { Id: COLL, Type: 'BoxSet' } } });
+    const page = h.document.createElement('div');
+    page.className = 'page itemDetailPage';
+    page.innerHTML = '<div class="detailSection"><div class="collectionItems"><div class="verticalSection"></div></div><div class="nextUpSection"></div></div>';
+    h.document.body.appendChild(page);
+    await h.start();
+    await h.show(page, '#/details?id=' + COLL);
+    const cards = [...page.querySelectorAll('.je-list-card')];
+    assert.equal(cards.length, 3);
+    const shown = cards.map(c => c.querySelector('.je-list-card-main > .je-arr-art .je-arr-art-text')?.textContent ?? null);
+    assert.deepEqual(shown, expected, JSON.stringify(config));
+  }
+});

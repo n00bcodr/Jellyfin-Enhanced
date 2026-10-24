@@ -125,7 +125,6 @@
         if (!state) return;
         const { page, status } = state;
         if (!document.contains(page) || page.classList.contains('hide')) return;
-        const showReady = !status.quiet;
         const byId = new Map();
         for (const ep of status.episodes || []) {
             if (ep.row && ep.itemId) byId.set(ep.itemId.replace(/-/g, '').toLowerCase(), ep);
@@ -136,7 +135,8 @@
             const ep = byId.get(id);
             if (!firstRow && (row.getAttribute('data-type') === 'Episode')) firstRow = row;
             const existing = row.querySelector('.je-arr-chip');
-            if (!ep || (ep.stage === 'ready' && ep.reason?.code === 'ready' && !showReady)) {
+            // D95: an episode that is ready shows nothing from JE (a better copy on its way still says so).
+            if (!ep || (ep.stage === 'ready' && ep.reason?.code === 'ready')) {
                 if (existing) remove(existing);
                 return;
             }

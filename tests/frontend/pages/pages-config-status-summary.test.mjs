@@ -63,3 +63,19 @@ test('D92: both switches are shown under the status switch', t => {
         assert.deepEqual(JSON.parse(JSON.stringify(deps.filter(d => d.children.includes(id)).map(d => d.parent))), ['arrPhase1Enabled'], id);
     }
 });
+
+test('D95: "Show download progress on artwork" sits with them, is on unless saved off, and is shown under the status switch', t => {
+    const h = setup(t);
+    assert.equal(h.document.querySelector('label:has(#arrStatusArtworkProgressEnabled) span')?.textContent, 'Show download progress on artwork');
+    h.window.load({ ArrStatusPosterBadges: true });
+    assert.equal(h.document.getElementById('arrStatusArtworkProgressEnabled').checked, true, 'on for a configuration saved before it existed');
+    let out = {};
+    h.window.save(out);
+    assert.equal(out.ArrStatusArtworkProgressEnabled, true);
+    h.window.load({ ArrStatusArtworkProgressEnabled: false });
+    out = {};
+    h.window.save(out);
+    assert.equal(out.ArrStatusArtworkProgressEnabled, false);
+    const deps = h.window.deps;
+    assert.deepEqual(JSON.parse(JSON.stringify(deps.filter(d => d.children.includes('arrStatusArtworkProgressEnabled')).map(d => d.parent))), ['arrPhase1Enabled']);
+});

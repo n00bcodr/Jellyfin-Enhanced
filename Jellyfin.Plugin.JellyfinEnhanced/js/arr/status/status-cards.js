@@ -7,6 +7,8 @@
  * Phase 4e: with acquisition badges on, the same batches also read each card's stamp (Upgraded,
  * New for you, 4K) in parallel, painted when no in-progress badge takes the card; the person's
  * own watch state changing (Jellyfin's UserDataChanged) re-reads those cards.
+ * D95: the same status answers draw the download progress on the card's artwork (its own switch, so it works
+ * with the corner badges off too); the corner then leaves the download ring out.
  */
 (function (JE) {
     'use strict';
@@ -86,6 +88,22 @@
     }
 
     /**
+     * True when download progress on artwork (D95) is on.
+     * @returns {boolean} On.
+     */
+    function artworkOn() {
+        return JE.arrStatus?.artworkEnabled?.() === true;
+    }
+
+    /**
+     * True when the cards' statuses are read at all (corner badges or artwork progress).
+     * @returns {boolean} On.
+     */
+    function statusReadsOn() {
+        return statusBadgesOn() || artworkOn();
+    }
+
+    /**
      * True when acquisition badges (phase 4e) are on for this person.
      * @returns {boolean} On.
      */
@@ -101,9 +119,11 @@
      * @returns {void}
      */
     function paint(card, status, stamp) {
+        const art = paintArt(card, artworkOn() ? status : null);
         const host = card.querySelector('.cardScalable') || card.querySelector('.cardBox') || card;
         const old = host.querySelector(':scope > .je-arr-badge');
-        const badge = status || stamp ? JE.arrStatus.buildBadge(status || null, stamp || null) : null;
+        const shown = statusBadgesOn() ? status : null;
+        const badge = shown || stamp ? JE.arrStatus.buildBadge(shown || null, stamp || null, { art }) : null;
         if (!badge) {
             if (old) old.remove();
             return;
@@ -121,6 +141,27 @@
         raise(card, host, badge);
         // The tags may draw after the badge (their data still loading): measure once more.
         setTimeout(() => { if (badge.isConnected) raise(card, host, badge); }, 1500);
+    }
+
+    /**
+     * D95: draws (or removes) the download progress on a card's artwork.
+     * @param {Element} card Card element.
+     * @param {Object|null} status Status (null: none).
+     * @returns {boolean} True when the artwork shows progress.
+     */
+    function paintArt(card, status) {
+        const host = card.querySelector('.cardImageContainer') || card.querySelector('.cardScalable');
+        if (!host) return false;
+        const old = host.querySelector(':scope > .je-arr-art');
+        const art = status ? JE.arrStatus.buildArtworkProgress(status) : null;
+        if (!art) {
+            if (old) old.remove();
+            return false;
+        }
+        if (old && old.dataset.jeArrArt === art.dataset.jeArrArt) return true;
+        if (old) old.replaceWith(art);
+        else host.appendChild(art);
+        return true;
     }
 
     /** JE's poster tag groups. */
@@ -170,7 +211,7 @@
      */
     async function flush() {
         flushTimer = null;
-        const withStatus = statusBadgesOn();
+        const withStatus = statusReadsOn();
         const withStamps = stampsOn();
         if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
@@ -322,7 +363,7 @@
      * @returns {void}
      */
     function scan() {
-        if (!statusBadgesOn() && !stampsOn()) return;
+        if (!statusReadsOn() && !stampsOn()) return;
         if (!io) return;
         document.querySelectorAll('.card[data-id][data-type]').forEach(card => {
             if (seen.has(card)) return;
@@ -508,7 +549,7 @@
         if (typeof unsubscribe === 'function') unsubscribe();
         unsubscribe = null;
         subscribedKeys = '';
-        document.querySelectorAll('.je-arr-badge').forEach(n => n.remove());
+        document.querySelectorAll('.je-arr-badge, .card .je-arr-art').forEach(n => n.remove());
         if (io) {
             io.disconnect();
             setTimeout(scan, 0);
@@ -533,7 +574,7 @@
      * @returns {void}
      */
     function initialize() {
-        if (started || (!statusBadgesOn() && !stampsOn())) return;
+        if (started || (!statusReadsOn() && !stampsOn())) return;
         if (typeof IntersectionObserver !== 'function') return;
         started = true;
         io = new IntersectionObserver((entries) => {

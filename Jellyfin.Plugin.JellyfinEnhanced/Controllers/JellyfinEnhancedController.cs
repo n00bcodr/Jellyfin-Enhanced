@@ -4154,6 +4154,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // D92: the details-page ready/missing counts and the admin Sonarr/Radarr line (both opt-in).
                 ArrStatusSeasonSummaryEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusSeasonSummaryEnabled,
                 ArrStatusAdminLineEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusAdminLineEnabled,
+                // D95: download progress on artwork (on by default).
+                ArrStatusArtworkProgressEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusArtworkProgressEnabled,
                 ArrRequestsHubEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrRequestsHubEnabled,
                 ArrManageDrawerEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrManageDrawerEnabled,
                 ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,
