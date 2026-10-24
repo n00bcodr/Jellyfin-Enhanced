@@ -199,3 +199,4 @@ tags/userreviewtags.js	_inFlight	uncached	reads in flight only
 tags/userreviewtags.js	_queue	uncached	lookups waiting for the next batch
 tags/userreviewtags.js	_reviewCache	revalidated	review averages by title: superseded by the ratings map every tag answer carries (an entry older than the latest map is dropped)
 tags/userreviewtags.js	_reviewCacheAt	revalidated	when each average was read (compared with the latest tag answer's map)
+jellyseerr/discovery/discovery-base.js	listOwner	state	client-paged render lifetime proof (session and access revision); checked after readiness and each slice before state or DOM effects

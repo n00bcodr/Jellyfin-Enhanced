@@ -440,13 +440,15 @@
     function getBootstrap(userId) {
         if (bootstrapPromise && bootstrapUserId === userId) return bootstrapPromise;
         bootstrapUserId = userId;
+        // Taken before the request (core/access-revision.js orders what it observed; absent before the core loads).
+        const observation = JE.core?.revision?.begin?.();
         const promise = fetchBootstrap().then((payload) => {
             if (!bootstrapMatchesUser(payload, userId)) throw new Error('Bootstrap response is for a different user');
             storePrefetched(payload, userId);
             // The person's revisions as the server took them before reading the documents in this payload: the mirrors
             // loaded from it are kept under them (core/access-revision.js takes them when it loads, or now if loaded).
             JE.bootstrapRevision = typeof payload.Revision === 'string' ? { userId, revision: payload.Revision } : null;
-            if (JE.bootstrapRevision) JE.core?.revision?.noteRevision?.(payload.Revision);
+            if (JE.bootstrapRevision) JE.core?.revision?.noteRevision?.(payload.Revision, observation);
             return payload;
         }).catch((e) => {
             if (bootstrapPromise === promise) bootstrapPromise = null;

@@ -120,7 +120,7 @@ function settingsTab(t, pluginConfig, prefs = {}) {
   const h = setup(t);
   const saved = [];
   Object.assign(h.JE, { pluginConfig: { SpoilerBlurEnabled: true, ...pluginConfig }, t: key => key, icon: () => '', IconName: { BLUR_ON: 'blur_on' } });
-  h.JE.internals = { spoilerGuard: { getUserPrefs: () => ({ ...prefs }), whenLoaded: async () => {}, isLoadOk: () => true, setUserPrefs: async next => { saved.push(next); } } };
+  h.JE.internals = { spoilerGuard: { getUserPrefs: () => ({ ...prefs }), whenLoaded: async () => {}, isLoadOk: () => true, setUserPrefs: async next => { saved.push(next); }, updateUserPref: async (key, value) => { saved.push({ ...prefs, [key]: value }); } } };
   h.load('enhanced/spoilerguard/settings-tab.js');
   const ctx = { presetBoxBackground: 'black', toggleAccentColor: 'white', help: h.document.body, resetAutoCloseTimer() {} };
   h.document.body.innerHTML = h.JE.internals.spoilerGuard.buildSettingsHtml(ctx);

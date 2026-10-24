@@ -249,10 +249,11 @@ public class ApiSeerrTests
             });
             JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         };
-        // That request answers from the old Seerr (it was asked before the save) ...
-        Assert.Contains("Old source", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content);
+        // That request's account belonged to the old Seerr: it is asked again as the person's account at the Seerr configured
+        // now (never answered, or kept, as the old one) ...
+        Assert.Contains("New source", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content);
         Assert.Equal("http://new-seerr.invalid", f.Plugin.Plugin.Configuration.JellyseerrUrls);
-        // ... but it never keeps that answer past the save: the next read reaches the new Seerr.
+        // ... and the next read reaches the new Seerr too.
         Assert.Contains("New source", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content);
     }
 

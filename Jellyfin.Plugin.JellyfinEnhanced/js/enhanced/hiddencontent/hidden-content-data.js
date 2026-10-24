@@ -38,8 +38,15 @@
     let loadedRevision = null;
     // A newer revision was seen while the rules couldn't be read again (a save of this tab pending, a read running).
     let revisionPending = false;
-    /** @type {Promise<boolean>|null} */
+    // The read again running now and the sign-in it belongs to: a read of the previous person is never joined, and its
+    // completion can't take (or retry) anything of the next one.
+    /** @type {{epoch: number, current: () => boolean, promise: Promise<boolean>}|null} */
     let revalidating = null;
+    // A read again that failed is retried after a pause that grows, a few times at most (then on the next page or the
+    // next revision); never at once, so an unreachable server isn't asked in a loop.
+    const RELOAD_RETRY_MS = [2000, 8000, 30000];
+    let retryTimer = null;
+    let retryAttempt = 0;
 
     // ============================================================
     // Internal helpers
@@ -705,44 +712,104 @@
         hiddenData = null;
         getHiddenData();
         // The page-load documents were read under the bootstrap's revision (the core holds it from then).
-        loadedRevision = JE.core?.revision?.document?.('hidden-content') ?? null;
+        loadedRevision = knownRevision();
         revisionPending = false;
         rebuildSets();
         JE.internals.observeUserDocument?.('hidden-content.json', 'hidden-content-data', followStore);
     }
 
+    /** @returns {string|null} The rules' document revision known now (core/access-revision.js). */
+    function knownRevision() {
+        return JE.core?.revision?.document?.('hidden-content') ?? null;
+    }
+
+    /** @returns {number} The sign-in's session epoch now. */
+    function sessionEpoch() {
+        return JE.session ? JE.session.getEpoch() : 0;
+    }
+
+    /** @param {number} epoch @returns {boolean} The sign-in that epoch belongs to is the current one. */
+    function isCurrentEpoch(epoch) {
+        return !JE.session || JE.session.isCurrent(epoch);
+    }
+
+    /** Ends a waiting retry of a failed read. */
+    function cancelRetry() {
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
+    }
+
+    /**
+     * A read again failed: try once more after a pause (longer each time, a few times at most) while this sign-in is
+     * current and the rules known are still newer than the ones read.
+     * @param {number} epoch
+     */
+    function scheduleRetry(epoch) {
+        cancelRetry();
+        if (retryAttempt >= RELOAD_RETRY_MS.length) {
+            console.warn('🪼 Jellyfin Enhanced: Hidden Content rules could not be read again; trying on the next page');
+            return;
+        }
+        retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (isCurrentEpoch(epoch) && hiddenData && knownRevision() !== loadedRevision) revalidate();
+        }, RELOAD_RETRY_MS[retryAttempt++]);
+    }
+
+    /**
+     * Reads the person's rules from the server.
+     * @returns {Promise<any>} The rules (camelCase), or null with nobody signed in.
+     */
+    async function readRules() {
+        const userId = ApiClient.getCurrentUserId();
+        if (!userId) return null;
+        const fresh = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+            dataType: 'json'
+        });
+        return (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
+    }
+
     /**
      * The rules' document moved on the server (another tab or device saved them): read them again and bring this tab
      * in line in place: only what changed is hidden or shown again, nothing is cleared first. Not while a save of this
-     * tab is pending (its own change is not overwritten; the next revision after it reads again), and a change made here
-     * while the read runs keeps the read from being taken (read again later).
+     * tab is pending (its own change is not overwritten: it goes to the server as operations; the next revision
+     * after it reads again), and a change made here while the read runs keeps the read from being taken (read again
+     * later). The read belongs to the sign-in that started it; a failed one is retried with a growing pause.
      * @returns {Promise<boolean>} True when the rules are the server's as of a known revision.
      */
     function revalidate() {
-        if (revalidating) { revisionPending = true; return revalidating; }
+        const epoch = sessionEpoch();
+        const session = JE.core?.api?.session?.();
+        const sameReader = () => isCurrentEpoch(epoch) && session?.current?.() !== false;
+        if (revalidating && revalidating.epoch === epoch && revalidating.current()) { revisionPending = true; return revalidating.promise; }
         // A change of this tab still out (an item change in the store's queue, or a title rule's write): read after it.
         if (internal.hasPendingSave?.() || ruleWrites.size > 0) { revisionPending = true; return Promise.resolve(false); }
+        cancelRetry();
         revisionPending = false;
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         // Taken before the read: the rules as read are at least this new.
-        const revision = JE.core?.revision?.document?.('hidden-content') ?? null;
         const before = getHiddenData();
-        revalidating = (async () => {
+        /** @type {{epoch: number, current: () => boolean, promise: Promise<boolean>}} */
+        const owner = { epoch, current: sameReader, promise: Promise.resolve(false) };
+        owner.promise = (async () => {
+            let failed = false;
             try {
-                const userId = ApiClient.getCurrentUserId();
-                if (!userId) return false;
-                const fresh = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
-                    dataType: 'json'
-                });
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+                let next = null;
+                let revision = null;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    revision = knownRevision();
+                    const read = await readRules();
+                    if (!sameReader() || read === null) return false;
+                    if (knownRevision() === revision) { next = read; break; }
+                }
+                // Known-superseded bytes are never a visible policy or merge
+                // base. Bounded churn uses the existing bounded retry schedule.
+                if (next === null) { failed = true; revisionPending = false; return false; }
+                retryAttempt = 0;
                 // Changed here meanwhile, or a save started: this tab's change wins; read again after it.
                 if (hiddenData !== before || internal.hasPendingSave?.() || ruleWrites.size > 0) { revisionPending = true; return false; }
-                const next = (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
-                const after = JE.core?.revision?.document?.('hidden-content') ?? null;
-                loadedRevision = after === revision ? revision : null;
-                if (after !== revision) revisionPending = true;
+                loadedRevision = revision;
                 if (JSON.stringify(next) === JSON.stringify(before)) return true;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.hiddenContent = next;
@@ -750,19 +817,25 @@
                 followStore(next, 'revalidated');
                 return true;
             } catch (e) {
+                if (!sameReader()) return false;
                 console.warn('🪼 Jellyfin Enhanced: Failed to read hidden-content again after a revision', e);
-                revisionPending = true;
+                failed = true;
                 return false;
             } finally {
-                revalidating = null;
-                if (revisionPending && (JE.core?.revision?.document?.('hidden-content') ?? null) !== loadedRevision) {
-                    revisionPending = false;
-                    // A newer revision came while this ran: once more (each run is caused by a real move).
-                    setTimeout(() => { if (!JE.session || JE.session.isCurrent(requestEpoch)) revalidate(); }, 0);
+                if (revalidating === owner) revalidating = null;
+                if (sameReader()) {
+                    if (failed) {
+                        scheduleRetry(epoch);
+                    } else if (revisionPending && knownRevision() !== loadedRevision) {
+                        revisionPending = false;
+                        // A newer revision came while this ran: once more (each run is caused by a real move).
+                        setTimeout(() => { if (isCurrentEpoch(epoch)) revalidate(); }, 0);
+                    }
                 }
             }
         })();
-        return revalidating;
+        revalidating = owner;
+        return owner.promise;
     }
 
     /**
@@ -780,17 +853,32 @@
         if (detail.document !== 'hidden-content' || detail.revision === loadedRevision) return;
         // Nothing read yet: the first read takes the current rules anyway.
         if (!hiddenData) return;
+        // A real move: a read now, and a fresh set of retries if it fails.
+        retryAttempt = 0;
         revalidate();
     });
+
+    // A page shown after reads that failed (or gave up): the rules known to be newer are read again now.
+    try {
+        JE.core?.navigation?.onNavigate?.(() => {
+            if (!hiddenData || retryTimer || revalidating || knownRevision() === loadedRevision || knownRevision() === null) return;
+            retryAttempt = 0;
+            revalidate();
+        });
+    } catch (_) { /* no navigation module: the next revision reads again */ }
 
     // Hidden-content data is per-user. Clear the local mirror the moment the
     // identity changes (don't read JE.userConfig here — reset handlers run in
     // registration order and the globals may not be wiped yet), then rebuild
     // from the incoming user's config once the re-bootstrap has loaded it.
+    // The previous person's read and its retry end with them.
     JE.session?.onUserChange('hidden-content-data', () => {
         hiddenData = null;
         loadedRevision = null;
         revisionPending = false;
+        revalidating = null;
+        cancelRetry();
+        retryAttempt = 0;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
         knownTitles.clear();

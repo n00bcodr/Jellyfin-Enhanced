@@ -129,7 +129,7 @@ public class ApiArrRoutesTests
         config.JellyseerrUrls = FakeSeerr.Url;
         config.JellyseerrApiKey = FakeSeerr.Key;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        cache[rig.Member.ToString()] = ("7", DateTime.UtcNow);
+        cache[rig.Member.ToString()] = SeerrSeeds.Id(rig.Member.ToString(), "7");
         try
         {
             seerr.Requests.Add(FakeSeerr.Request(1, "movie", 45745, 2, rig.Member, DateTime.UtcNow.AddDays(-1)));
@@ -457,7 +457,7 @@ public class ApiArrRoutesTests
         c.JellyseerrApiKey = FakeSeerr.Key;
         // The member is Seerr user 7 (cached link) and asked for Sintel and the hidden-library title.
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        cache[rig.Member.ToString()] = ("7", DateTime.UtcNow);
+        cache[rig.Member.ToString()] = SeerrSeeds.Id(rig.Member.ToString(), "7");
         try
         {
             seerr.Requests.Add(FakeSeerr.Request(1, "movie", 45745, 2, rig.Member, DateTime.UtcNow.AddDays(-1)));
@@ -712,7 +712,7 @@ public class ApiArrRoutesTests
         Assert.False(readModel.Active);
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), readModel);
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        cache[kidId.ToString()] = ("7", DateTime.UtcNow);
+        cache[kidId.ToString()] = SeerrSeeds.Id(kidId.ToString(), "7");
         try
         {
             seerr.Requests.Add(FakeSeerr.Request(1, "movie", 3, 2, kidId, DateTime.UtcNow.AddDays(-1)));
@@ -776,8 +776,8 @@ public class ApiArrRoutesTests
         var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), readModel);
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        cache[kidId.ToString()] = ("7", DateTime.UtcNow);
-        cache[someId.ToString()] = ("7", DateTime.UtcNow);
+        cache[kidId.ToString()] = SeerrSeeds.Id(kidId.ToString(), "7");
+        cache[someId.ToString()] = SeerrSeeds.Id(someId.ToString(), "7");
         try
         {
             seerr.Requests.Add(FakeSeerr.Request(1, "movie", 3, 2, kidId, DateTime.UtcNow.AddDays(-1)));
@@ -836,7 +836,7 @@ public class ApiArrRoutesTests
         callers.Register(kidId, admin: false).MaxParentalRatingScore = 10;
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), null);
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        cache[kidId.ToString()] = ("7", DateTime.UtcNow);
+        cache[kidId.ToString()] = SeerrSeeds.Id(kidId.ToString(), "7");
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reads = 0;
         seerr.Before = () =>
@@ -903,7 +903,7 @@ public class ApiArrRoutesTests
         var fields = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", fields)!.GetValue(null)!;
         var userKey = rig.Member.ToString();
-        cache[userKey] = ("7", DateTime.UtcNow);
+        cache[userKey] = SeerrSeeds.Id(userKey, "7");
         var proof = Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Shared;
         var proofKey = userKey + "|" + FakeSeerr.Url;
         Assert.NotNull(await proof.GetAsync(proofKey, () => Task.FromResult<IReadOnlySet<(int, string)>?>(new HashSet<(int, string)> { (9501, "tv") })));
@@ -980,7 +980,7 @@ public class ApiArrRoutesTests
             // Await the actual background read after releasing Seerr, so both cache assertions run
             // after its writes, rather than depending on a sleep or observing an HTTP call early.
             var entries = (System.Collections.IDictionary)proof.GetType().GetField("_entries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(proof)!;
-            var entry = entries[userKey + "|" + FakeSeerr.Url]!;
+            var entry = entries[SeerrSeeds.ProofKey(userKey, FakeSeerr.Url)]!;
             lock (entry) inflight = (Task)entry.GetType().GetProperty("Inflight")!.GetValue(entry)!;
             c.JellyseerrImportBlockedUsers = kidId.ToString("N");
             JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
@@ -1008,7 +1008,7 @@ public class ApiArrRoutesTests
                 if (inflight == null)
                 {
                     var entries = (System.Collections.IDictionary)proof.GetType().GetField("_entries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(proof)!;
-                    if (entries[userKey + "|" + FakeSeerr.Url] is { } entry)
+                    if (entries[SeerrSeeds.ProofKey(userKey, FakeSeerr.Url)] is { } entry)
                         lock (entry) inflight = (Task?)entry.GetType().GetProperty("Inflight")!.GetValue(entry);
                 }
                 gate.TrySetResult();
@@ -1062,7 +1062,7 @@ public class ApiArrRoutesTests
             c.DownloadsFilterByUserRequests = false;
             c.JellyseerrDisableCache = false;
             c.JellyseerrImportBlockedUsers = kidId.ToString("N");
-            lock (cacheLock) cache[userKey] = ("7", DateTime.UtcNow);
+            lock (cacheLock) cache[userKey] = SeerrSeeds.Id(userKey, "7");
             seerr.Users.Add(new System.Text.Json.Nodes.JsonObject { ["id"] = 7, ["jellyfinUserId"] = kidId.ToString("N"), ["displayName"] = "Member" });
             seerr.Requests.Add(FakeSeerr.Request(1, "movie", 3, 2, kidId, DateTime.UtcNow.AddDays(-1)));
             rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(3, 3, "T3"));
@@ -1086,7 +1086,7 @@ public class ApiArrRoutesTests
     public async Task TheAskedForCacheReusesFreshAnswersServesStaleOnesAtOnceAndDoesntRetryAFailureRightAway()
     {
         var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
-        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now, TimeSpan.FromSeconds(5));
+        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
         var reads = 0;
         IReadOnlySet<(int, string)>? answer = new HashSet<(int, string)> { (3, "movie") };
         Task<IReadOnlySet<(int TmdbId, string MediaType)>?> Read()
@@ -1126,7 +1126,7 @@ public class ApiArrRoutesTests
     public async Task ClearingAskedForProofDropsFreshAndStaleAnswers(bool stale)
     {
         var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
-        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now, TimeSpan.FromSeconds(5));
+        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
         var key = Guid.NewGuid().ToString();
         var reads = 0;
         IReadOnlySet<(int, string)>? answer = new HashSet<(int, string)> { (3, "movie") };

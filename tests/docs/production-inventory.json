@@ -275,6 +275,14 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrAccountAuthority.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrAccountLookup.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrCertificationExtractor.cs",
       "category": "Helpers"
     },
@@ -11750,7 +11758,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 735,
+    "files": 737,
     "routes": 312,
     "configuration_properties": 661,
     "storage_references": 107,

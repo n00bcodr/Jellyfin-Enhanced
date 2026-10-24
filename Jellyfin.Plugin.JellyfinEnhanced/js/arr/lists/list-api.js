@@ -108,12 +108,14 @@
                 cache: 'no-store'
             });
         };
+        // Taken before the request: its answer's revisions are taken only while nothing newer was (core/access-revision.js).
+        const observation = JE.core?.revision?.begin?.();
         const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
         // Every answer names the server's build: seen before the rule or the body can end this call (asked with no-store:
         // the server's now).
         JE.core.build?.noteAnswer?.(response, { fresh: true });
         // The answer carries the person's revisions (core/access-revision.js).
-        JE.core?.revision?.noteResponse(response);
+        JE.core?.revision?.noteResponse(response, observation);
         if (!rule.current()) throw STALE;
 
         let body = null;

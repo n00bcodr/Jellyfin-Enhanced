@@ -26,12 +26,14 @@
      */
     function persist(operation, origin) {
         const generation = saveGeneration;
+        const owner = JE.core?.api?.session?.();
+        const current = () => generation === saveGeneration && owner?.current?.() !== false;
         // reportsFailure: a refusal is said here (an account change is said once by the page for all cancelled changes).
         const sent = JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true, reportsFailure: true, origin });
         // A revision seen while this change was out is read once every change of this tab is answered.
-        sent.finally(() => internal.readAfterSave?.()).catch(() => {});
+        sent.finally(() => { if (current()) internal.readAfterSave?.(); }).catch(() => {});
         return sent.then(() => true, error => {
-            if (generation !== saveGeneration || error?.sessionChanged) return false;
+            if (!current() || error?.sessionChanged) return false;
             // A change refused because the document couldn't be read was already reported by the store.
             if (!error?.settingsNotRead) {
                 // An answer that was lost doesn't prove it wasn't saved: the store reads the document again and says.

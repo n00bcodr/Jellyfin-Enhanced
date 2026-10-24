@@ -232,6 +232,7 @@
         // the new access no longer has are taken away (the others stay as they are).
         /** @type {string|null} */
         let listRevision = null;
+        let listOwner = null;
         let listStale = false;
         /** @type {string|null} */
         let listId = null;
@@ -260,27 +261,37 @@
 
         /** @returns {boolean} The client-paged list was read under an access the person may no longer have. */
         function listIsStale() {
-            return isClientPaged && clientListActive && (listStale || listRevision !== accessRevision());
+            return isClientPaged && clientListActive && (listStale || listRevision !== accessRevision() || listOwner?.current?.() === false);
         }
 
         /**
          * Reads the client-paged list again (its access revision moved) and brings the section in line in place: the
          * cards of titles the list no longer holds are taken away, the rest stay, and paging continues after the titles
          * already drawn.
+         * Only a read still current when it comes in is put in place: one whose access moved again while it ran is
+         * dropped (nothing of it is kept or drawn) and the list is read again, a few times at most.
          * @param {AbortSignal} [signal]
          * @returns {Promise<boolean>} False when superseded or the list couldn't be read (nothing more is drawn then).
          */
         function revalidateList(signal) {
             if (revalidating) return revalidating;
             const epoch = renderEpoch;
+            const owner = JE.core?.api?.session?.();
             revalidating = (async () => {
                 try {
-                    const revision = accessRevision();
-                    listStale = false;
-                    const resolved = await spec.resolveItems({ id: /** @type {string} */ (listId), signal: /** @type {AbortSignal} */ (signal) });
-                    if (signal?.aborted || epoch !== renderEpoch || !clientListActive) return false;
+                    let resolved = null;
+                    let revision = null;
+                    for (let attempt = 0; attempt < 3 && resolved === null; attempt++) {
+                        revision = accessRevision();
+                        listStale = false;
+                        const read = await spec.resolveItems({ id: /** @type {string} */ (listId), signal: /** @type {AbortSignal} */ (signal) });
+                        if (signal?.aborted || epoch !== renderEpoch || !clientListActive || owner?.current?.() === false) return false;
+                        // Read under an access that has moved again since: not the person's list now.
+                        if (accessRevision() === revision) resolved = read || {};
+                    }
+                    if (resolved === null) { listStale = true; return false; }
                     listRevision = revision;
-                    if (accessRevision() !== revision) listStale = true;
+                    listOwner = owner;
                     const items = resolved?.items || [];
                     cachedAllResults = items;
                     const allowed = new Set(items.map(titleKey));
@@ -564,7 +575,7 @@
          * @param {number} [chunkSize=PAGE_SIZE] - How many items to render this call
          */
         function renderChunk(itemsContainer, mode, reset = false, chunkSize = PAGE_SIZE) {
-            if (!itemsContainer) return;
+            if (!itemsContainer || listIsStale()) return;
 
             if (reset) {
                 renderEpoch++;
@@ -615,7 +626,7 @@
             }
 
             const epoch = renderEpoch;
-            const isCurrent = () => epoch === renderEpoch && !signal?.aborted;
+            const isCurrent = () => epoch === renderEpoch && !signal?.aborted && !listIsStale();
             await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent, keepLibraryItems: keepLibrary });
             // A reset (filter / sort change) or navigation during the build owns
             // the pagination state now.
@@ -1273,10 +1284,19 @@
          * @param {string} pageKey
          */
         async function renderClientPaged(id, signal, pageKey) {
-            // Taken before the read: the list is kept under it (and read again once it moves).
-            const revision = accessRevision();
-            const resolved = await spec.resolveItems({ id, signal });
-            if (signal.aborted) return;
+            const owner = JE.core?.api?.session?.();
+            const renderOwner = renderEpoch;
+            // Taken before the read: the list is drawn and kept only under the access it was read for (read again,
+            // a few times at most, when it moved while the read ran; nothing is drawn from a superseded read).
+            let revision = null;
+            let resolved = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                revision = accessRevision();
+                resolved = await spec.resolveItems({ id, signal });
+                if (signal.aborted || owner?.current?.() === false || renderOwner !== renderEpoch) return;
+                if (accessRevision() === revision) break;
+                resolved = null;
+            }
             if (!resolved || !resolved.items || resolved.items.length === 0) return;
 
             // Store all results for filter switching
@@ -1284,7 +1304,8 @@
             clientListActive = true;
             listId = id;
             listRevision = revision;
-            listStale = accessRevision() !== revision;
+            listOwner = owner;
+            listStale = false;
 
             // Check if we have both media types
             const hasBoth = JE.discoveryFilter?.resultHasBothTypes(cachedAllResults) || false;
@@ -1305,7 +1326,7 @@
 
             // Wait for page content
             const detailSection = await waitForPageReady(signal);
-            if (signal.aborted) return;
+            if (signal.aborted || owner?.current?.() === false || renderOwner !== renderEpoch || listIsStale()) return;
 
             if (!detailSection) {
                 console.debug(`${logPrefix} Could not find detail section to insert into`);

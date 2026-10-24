@@ -370,6 +370,9 @@
             try {
                 assertSession();
                 if (onSend) onSend();
+                // Each attempt is its own observation, taken before it is sent (core/access-revision.js), only once its call's
+                // own sign-in was checked just above: a retry never begins an observation in another sign-in (core R7-8).
+                const observation = JE.core?.revision?.begin?.();
                 const response = await fetch(url, options);
                 // Every JE answer names the server's build: before anything about its body can fail, the page compares it
                 // (an answer of a write, or one asked with no-store, is the server's now; any other is a hint, confirmed
@@ -377,7 +380,7 @@
                 build.noteAnswer(response, { fresh });
                 assertSession();
                 // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
-                JE.core?.revision?.noteResponse(response);
+                JE.core?.revision?.noteResponse(response, observation);
 
                 if (response.ok || acceptHttpErrors) {
                     if (metrics.enabled) {
@@ -1140,6 +1143,9 @@
         const write = !isGet && auth && options.readOnly !== true && !!JE.core.userWrite;
         const binding = write ? (options.session || originOfBound(bound)) : null;
         if (write && !binding) return JE.core.userWrite.send(null, () => Promise.resolve(), url);
+        // The sign-in and the access revision this call was made under (before any queue): it shares a read only with calls
+        // made under the same access (never one started before a move); its sends are checked against its session above.
+        const flight = `${JE.session ? JE.session.getEpoch() : 0}|${JE.core?.revision?.access?.() ?? ''}|`;
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -1264,14 +1270,14 @@
             return fetchFn();
         }, limit);
         let pending;
-        if (isGet && !withStatus && cacheKey) pending = deduplicatedFetch(scope + cacheKey, limitedFetch, signal, limit);
+        if (isGet && !withStatus && cacheKey) pending = deduplicatedFetch(flight + scope + cacheKey, limitedFetch, signal, limit);
 
         // Plain GETs share concurrent identical requests too, even without a cacheKey
         // (nothing is cached). Skipped when a caller customises the headers, since the
         // response could then differ for the same URL. Each caller gets its own copy so
         // one mutating its result cannot affect the others.
         else if (isGet && !withStatus && auth && Object.keys(headers).length === 0) {
-            pending = deduplicatedFetch(`${scope}GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
+            pending = deduplicatedFetch(`${flight}${scope}GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
         } else pending = limitedFetch();
         let data;
         try { data = await pending; }
