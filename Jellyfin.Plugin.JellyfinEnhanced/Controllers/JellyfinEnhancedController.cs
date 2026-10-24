@@ -4117,7 +4117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     Enabled = NativeAbsentDetailsCapable && config.NativeAbsentDetailsEnabled && Services.NativeDetails.NativeDetailsPolicy.MetadataReady(config),
                     ContractVersion = 1,
-                    Source = Services.NativeDetails.NativeDetailsPolicy.JeMode(config) ? "tmdb" : "seerr",
+                    Source = Services.NativeDetails.NativeDetailsPolicy.JeBackend(config) ? "tmdb" : "seerr",
                 },
                 // ---- end A1 ----
                 config.AddRequestedMediaToWatchlist,

@@ -283,6 +283,46 @@ public partial class ApiNativeDetailsTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TheJeBackendWithSeerrSettingsKeptReadsTmdbAndNeverAsksSeerrForAnAccountOrATitle(bool rolloutOn)
+    {
+        // BEH-02: a strict-JE server keeps its Seerr settings (and answers every Seerr route with backend_disabled);
+        // backend je alone selects TMDB, with or without the request rollout switches, and no Seerr account is asked for.
+        using var net = new TmdbNet();
+        var owned = new List<IDisposable>();
+        using var rig = ModeRig(net, owned);
+        try
+        {
+            var c = rig.Plugin.Plugin.Configuration;
+            c.ArrRequestBackend = "je";
+            c.ArrIntegrationEnabled = rolloutOn;
+            c.ArrPhase1Enabled = rolloutOn;
+            c.ArrPhase3Enabled = rolloutOn;
+            c.TMDB_API_KEY = "test-tmdb";
+            Assert.True(NativeDetailsPolicy.SeerrConfigured(c));
+            var unlinked = rig.Person(linked: false);
+            unlinked.DisplayMissingEpisodes = true;
+            var me = Me(unlinked);
+            Assert.Equal(NativeDetailsPolicy.Access.Allowed, await rig.Policy.ViewerAccessAsync(unlinked, CancellationToken.None));
+            Assert.Equal("Dune: Part Two", Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result).Name);
+            Assert.Equal("Kassa", Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.EpisodeOf(83867, 1, 1)) })).Result).Name);
+            Assert.Equal(3, Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = Id(SyntheticId.Series(83867)), ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result).Items.Count);
+            // The More Info window's public details answer for the JE backend (native pages on or off).
+            c.NativeAbsentDetailsEnabled = false;
+            Assert.True(NativeDetailsPolicy.PublicDetailsEnabled(c));
+            Assert.Equal("Andor", Body(await rig.Feeds.TitleAsync(unlinked, false, 83867, CancellationToken.None)).GetProperty("name").GetString());
+            Assert.Equal("Dune Collection", Body(await rig.Feeds.CollectionAsync(unlinked, 726871, CancellationToken.None)).GetProperty("name").GetString());
+            Assert.Empty(rig.SeerrReads);
+            Assert.Empty(net.Foreign);
+        }
+        finally
+        {
+            foreach (var o in owned) o.Dispose();
+        }
+    }
+
     [Fact]
     public async Task TheParentalTagRefusalWithoutSeerrStaysInJellyfinEnhancedMode()
     {
@@ -338,8 +378,9 @@ public partial class ApiNativeDetailsTests
     [InlineData("je", true, true, true, true, "tmdb")]
     [InlineData("je", true, true, false, false, "tmdb")]   // JE mode never falls back to Seerr
     [InlineData("je", true, false, false, false, "tmdb")]
-    [InlineData("je", false, true, true, true, "seerr")]   // phases off: not JE mode, Seerr as before
-    [InlineData("je", false, false, true, false, "seerr")]
+    [InlineData("je", false, true, true, true, "tmdb")]    // backend je, rollout off: still TMDB, never Seerr (BEH-02)
+    [InlineData("je", false, false, true, true, "tmdb")]
+    [InlineData("je", false, true, false, false, "tmdb")]
     [InlineData("seerr", true, true, false, true, "seerr")]
     [InlineData("seerr", true, false, true, false, "seerr")]
     [InlineData("seerr", true, true, true, true, "seerr")]

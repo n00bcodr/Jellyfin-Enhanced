@@ -1267,7 +1267,9 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     (with their people's pages and filmographies), *More like this*, similar and recommended titles and the movie's
     collection are read from TMDB with Jellyfin Enhanced's own TMDB key, so Seerr can be turned off completely (no Seerr
     address or key, every Seerr feature off) and the pages still work for everyone their rules let in. The pages need the
-    switch and a TMDB key; whatever Seerr settings remain are never read in this mode. A series TMDB doesn't link to TVDB or
+    switch and a TMDB key; whatever Seerr settings remain are never read in this mode (the request backend alone decides,
+    with or without its rollout switches). Seerr's More Info window reads the same public details there, also when the
+    server answers Seerr's own routes with `backend_disabled`. A series TMDB doesn't link to TVDB or
     IMDb takes the ids Sonarr or Radarr know it by, so the page carries the same identity as its status and requests.
     What only Seerr has is left out: Seerr's Rotten Tomatoes and IMDb scores (TMDB's own score still shows) and Seerr's
     request records (the request controls and status come from Jellyfin Enhanced anyway). A title TMDB doesn't know shows

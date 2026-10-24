@@ -1414,3 +1414,20 @@ test('JE mode: a provider key the server can\'t place opens its TMDB page when t
   assert.equal(await seerr.td.openKey('movie:tmdb:438631', { owner: seerr.NATIVE }), true);
   assert.deepEqual(seerr.modal, [[438631, 'movie']]);
 });
+
+test('the JE backend with Seerr settings kept (A1/BEH-02): no Seerr Request window on the page, and Seerr\'s account state never keeps a title off its page', async t => {
+  const h0 = setup(t);
+  const id = h0.td.syntheticId('series', 83867);
+  const item = { Id: id, Type: 'Series', Name: 'Andor', ProviderIds: { Tmdb: '83867', Tvdb: '393189' } };
+  // Request feature off and JellyseerrEnabled still stored: the Seerr source would offer Seerr's window; TMDB's never does.
+  const off = setup(t, { cap: TMDB_CAP, ask: false, seerr: true, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${id}&serverId=${SERVER}`, getItem: async () => item });
+  await off.JE.internals.nativeDetails.onView();
+  assert.equal(off.document.querySelector('.je-native-absent-legacy-request'), null);
+  assert.deepEqual(off.modal, []);
+  // A Seerr account refusal in the loaded user status doesn't send the viewer to Seerr's window instead of the page.
+  const h = setup(t, { cap: TMDB_CAP });
+  h.JE.jellyseerrAPI = { knownAccountRefusal: () => 'unlinked' };
+  assert.equal(gesture(h, owner => h.td.show(693134, 'movie', undefined, owner)), true);
+  assert.equal(h.shown.at(-1), `/details?id=${h.td.syntheticId('movie', 693134)}&serverId=${SERVER}`);
+  assert.deepEqual(h.modal, []);
+});

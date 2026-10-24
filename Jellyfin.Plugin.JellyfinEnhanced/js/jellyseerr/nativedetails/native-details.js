@@ -247,7 +247,8 @@
      * @returns {boolean} Seerr refuses the viewer.
      */
     function seerrRefusesViewer() {
-        return !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
+        // The JE backend's pages read TMDB (A1/BEH-02): no Seerr account is ever asked for.
+        return !tmdbSource() && !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
     }
 
     /**
@@ -1046,7 +1047,8 @@
             return;
         }
         if (parts.kind !== 'movie' && parts.kind !== 'series') return;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
+        // Seerr's own Request window is no fallback for the JE backend (A1/BEH-02), whatever Seerr settings remain.
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
         const b = pageButton('add', JE.t('jellyseerr_btn_request'), 'button-submit je-native-absent-legacy-request');
         b.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1136,7 +1138,7 @@
      */
     async function titleData(state) {
         const internal = JE.internals?.moreInfoModal;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
         try {
             return await internal.fetchMediaDetails(state.parts.tmdbId, state.mediaType);
         } catch {

@@ -7,8 +7,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 {
     /// <summary>
     /// The native details source the request mode picks, read on every call so a mode change needs no
-    /// restart (Requests &amp; downloads, A1): Jellyfin Enhanced mode (<see cref="NativeDetailsPolicy.JeMode"/>)
-    /// reads TMDB (<see cref="TmdbNativeDetailsSource"/>) and never Seerr, whatever Seerr settings remain;
+    /// restart (Requests &amp; downloads, A1): the Jellyfin Enhanced backend (<see cref="NativeDetailsPolicy.JeBackend"/>,
+    /// with or without the rollout switches and whatever Seerr settings remain) reads TMDB (<see cref="TmdbNativeDetailsSource"/>) and never Seerr;
     /// every other mode keeps Seerr (<see cref="SeerrNativeDetailsSource"/>) exactly as before. Every member
     /// is forwarded, the interface's defaults included.
     /// </summary>
@@ -22,7 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="seerr">Seerr's source.</param>
         /// <param name="tmdb">TMDB's source.</param>
         public ModeNativeDetailsSource(SeerrNativeDetailsSource seerr, TmdbNativeDetailsSource tmdb)
-            : this(seerr, tmdb, () => JellyfinEnhanced.Instance?.Configuration is { } c && NativeDetailsPolicy.JeMode(c))
+            : this(seerr, tmdb, () => JellyfinEnhanced.Instance?.Configuration is { } c && NativeDetailsPolicy.JeBackend(c))
         {
         }
 

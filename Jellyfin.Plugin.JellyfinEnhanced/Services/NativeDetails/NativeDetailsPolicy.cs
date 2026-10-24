@@ -112,12 +112,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je";
 
         /// <summary>
-        /// True when Jellyfin Enhanced mode has its own metadata source for native details: TMDB through Jellyfin
+        /// True when Jellyfin Enhanced is the selected request backend, whatever the rollout switches say (Requests &amp;
+        /// downloads, A1/BEH-02): native details then read TMDB and never Seerr, even with Seerr settings still stored
+        /// (a strict-JE server answers every Seerr route with <c>backend_disabled</c>).
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether the JE backend is selected.</returns>
+        public static bool JeBackend(PluginConfiguration config) => config.ArrRequestBackend == "je";
+
+        /// <summary>
+        /// True when the Jellyfin Enhanced backend has its own metadata source for native details: TMDB through Jellyfin
         /// Enhanced's key (Requests &amp; downloads, A1). Seerr's settings play no part.
         /// </summary>
         /// <param name="config">Configuration.</param>
-        /// <returns>Whether JE mode's metadata is ready.</returns>
-        public static bool JeMetadataReady(PluginConfiguration config) => JeMode(config) && !string.IsNullOrWhiteSpace(config.GetTmdbApiKey());
+        /// <returns>Whether JE's metadata is ready.</returns>
+        public static bool JeMetadataReady(PluginConfiguration config) => JeBackend(config) && !string.IsNullOrWhiteSpace(config.GetTmdbApiKey());
 
         /// <summary>
         /// True when native details have a metadata source in the request mode in effect: TMDB in Jellyfin Enhanced mode
@@ -127,14 +136,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         /// <param name="config">Configuration.</param>
         /// <returns>Whether a metadata source is ready.</returns>
-        public static bool MetadataReady(PluginConfiguration config) => JeMode(config) ? JeMetadataReady(config) : SeerrConfigured(config);
+        public static bool MetadataReady(PluginConfiguration config) => JeBackend(config) ? JeMetadataReady(config) : SeerrConfigured(config);
 
         /// <summary>
         /// True when a title's public details (details, ratings, a movie collection's parts) are answered:
-        /// native pages are on, or the request feature runs in Jellyfin Enhanced mode, where Seerr's
-        /// more-info window reads them for a viewer without a Seerr account (native pages or not).
+        /// native pages are on, or Jellyfin Enhanced is the request backend, where the more-info window reads
+        /// them instead of Seerr (native pages or not; A1/BEH-02).
         /// </summary>
-        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeMode(config));
+        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeBackend(config));
 
         /// <summary>Whether the viewer may see this title's page (and its children).</summary>
         /// <param name="viewer">The effective viewer.</param>
@@ -306,7 +315,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!(details ? PublicDetailsEnabled(config) : FeatureEnabled(config)) || viewer.HasPermission(PermissionKind.IsDisabled)) return Access.Refused;
             if (!MetadataReady(config!)) return Access.Refused;
-            if (JeMode(config!)) return Access.Allowed;
+            // The JE backend (A1/BEH-02): no Seerr account is asked for, so Seerr is never read here.
+            if (JeBackend(config!)) return Access.Allowed;
             if (ImportBlocked(config!, viewer)) return Access.Refused;
             return await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) switch
             {
@@ -568,6 +578,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 // The metadata source is ready (Seerr mode: Seerr configured, the same fact as before).
                 + "|" + (config != null && MetadataReady(config))
                 + "|" + (config != null && JeMode(config)) + "|" + (config != null && RequestsOn(config))
+                // The JE backend selected (Seerr mode's text stays as it was).
+                + (config != null && JeBackend(config) ? "|je" : string.Empty)
                 + "|" + (config != null && ImportBlocked(config, viewer))
                 + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture)
                 // Any other access-deciding change ends the grants too.
