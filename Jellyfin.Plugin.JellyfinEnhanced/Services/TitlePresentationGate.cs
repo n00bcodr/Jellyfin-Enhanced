@@ -457,8 +457,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 return;
             }
             // Retryable partial pages still carry titles, so they need the same final privacy projection.
-            // Projection must preserve their error status and must never turn them into cacheable success/304.
-            if (context.Result is ContentResult { StatusCode: >= 400 } incomplete)
+            // Projection preserves partial/error status and must never attach validators to a no-store answer.
+            if (context.Result is ContentResult incomplete && (incomplete.StatusCode >= 400
+                || context.HttpContext.Response.Headers.CacheControl.ToString().Contains("no-store", StringComparison.OrdinalIgnoreCase)))
             {
                 context.Result = new ContentResult { Content = projected, ContentType = "application/json; charset=utf-8", StatusCode = incomplete.StatusCode };
                 context.HttpContext.Response.Headers.CacheControl = "private, no-store";

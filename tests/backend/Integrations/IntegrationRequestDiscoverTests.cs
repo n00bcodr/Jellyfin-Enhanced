@@ -389,7 +389,7 @@ public class IntegrationRequestDiscoverTests
         };
 
         var (status, body, _) = await rig.Discover(kid, "trending");
-        Assert.Equal(503, status);
+        Assert.Equal(200, status);
         Assert.False(body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.Equal(new[] { "movie:tmdb:1", "movie:tmdb:3" }, Keys(body));
         Assert.Equal(3, rig.MaySeeCalls);                     // absent titles only; copies decide by Jellyfin's own check

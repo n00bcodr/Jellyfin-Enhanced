@@ -44,6 +44,7 @@ public class IntegrationParentalEvidenceReviewTests
         public AcquireDatabase Database { get; }
         public RequestService Requests { get; }
         public ILibraryManager Library { get; }
+        public Mock<ILibraryManager> LibraryMock { get; }
         public DiscoverService Discover { get; }
         public Rig()
         {
@@ -69,6 +70,7 @@ public class IntegrationParentalEvidenceReviewTests
             localization.Setup(m => m.GetRatingScore("THROWS", "US")).Throws(new InvalidOperationException("unscorable"));
             var server = new Mock<IServerConfigurationManager>(); server.SetupGet(m => m.Configuration).Returns(Server);
             var library = new Mock<ILibraryManager>(); library.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem>());
+            LibraryMock = library;
             Library = library.Object;
             Gate = new SeerrParentalFilter(Transport, users.Object, localization.Object, server.Object, Arr.Plugin.Core.Logger,
                 new TitleParentalEvidenceProvider(Transport, Tmdb, library.Object));
@@ -204,7 +206,7 @@ public class IntegrationParentalEvidenceReviewTests
     {
         using var r = new Rig(); r.Evidence = (_, _) => Task.FromResult<string?>(null);
         var first = await r.Read(search);
-        Assert.Equal(503, first.Status);
+        Assert.Equal(200, first.Status);
         Assert.Equal("partial", first.Body.GetProperty("answer").GetProperty("verification").GetString());
         Assert.Equal("evidence_unavailable", first.Body.GetProperty("reason").GetString());
         Assert.Equal("private, no-store", first.Controller.Response.Headers.CacheControl);
@@ -243,7 +245,7 @@ public class IntegrationParentalEvidenceReviewTests
         r.Page = IntegrationRequestDiscoverTests.Page(IntegrationRequestDiscoverTests.Movie(603, "Allowed"), IntegrationRequestDiscoverTests.Movie(604, "Never disclose"));
         r.Evidence = (id, _) => Task.FromResult<string?>(id == 603 ? IntegrationParentalEvidenceTests.Movie(id) : null);
         var result = await r.Read(search);
-        Assert.Equal(503, result.Status);
+        Assert.Equal(200, result.Status);
         Assert.False(result.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.Single(result.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
         Assert.DoesNotContain("Never disclose", result.Body.GetRawText());
@@ -278,7 +280,7 @@ public class IntegrationParentalEvidenceReviewTests
         var pending = r.Read(); await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         r.View.CopiesByKey.Remove(key.ToString()); r.View.Rev++;
         release.SetResult(); var result = await pending;
-        Assert.Equal(503, result.Status);
+        Assert.Equal(200, result.Status);
         Assert.Single(result.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
         Assert.DoesNotContain("Became absent", result.Body.GetRawText());
     }
@@ -298,13 +300,192 @@ public class IntegrationParentalEvidenceReviewTests
         try
         {
             var result = await first.WaitAsync(TimeSpan.FromSeconds(4));
-            Assert.Equal(503, result.Status); Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
-            Assert.Equal(503, (await second.WaitAsync(TimeSpan.FromSeconds(4))).Status);
+            Assert.Equal(200, result.Status); Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
+            Assert.Equal(200, (await second.WaitAsync(TimeSpan.FromSeconds(4))).Status);
         }
         finally { release.TrySetResult(); await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10)); }
         var recovered = await r.Read();
         Assert.Equal(200, recovered.Status);
         Assert.Equal(20, recovered.Body.GetProperty("answer").GetProperty("results").GetArrayLength());
         Assert.All(reads.Values, n => Assert.Equal(1, n)); // Shared reads survive abandoned waiters.
+    }
+
+    [Theory]
+    [InlineData("tv/603")]
+    [InlineData("tv/603/season/1")]
+    [InlineData("tv/603/season/1/watch/providers")]
+    [InlineData("apply-detail")]
+    [InlineData("apply-list")]
+    [InlineData("apply-knownfor")]
+    [InlineData("apply-nested")]
+    [InlineData("apply-subresource")]
+    public async Task OwnedOpenableUnratedSeriesUsesNativeEntitlementOnEveryBroadConsumer(string route)
+    {
+        using var r = new Rig();
+        var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid(), Path = "/media/tv/Owned", ProviderIds = new() { ["Tmdb"] = "603" } };
+        var visible = true;
+        r.LibraryMock.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+            q.User == null || visible ? new List<BaseItem> { series } : new List<BaseItem>());
+        r.LibraryMock.Setup(m => m.GetItemById<BaseItem>(series.Id, r.User)).Returns(() => visible ? series : null);
+        r.Evidence = (id, _) => Task.FromResult<string?>(JsonSerializer.Serialize(new { id, adult = false, seasons = new[] { new { season_number = 1 } }, content_ratings = new { results = Array.Empty<object>() } }));
+        async Task<bool> Allowed()
+        {
+            if (route.StartsWith("apply"))
+            {
+                var (path, body) = route switch
+                {
+                    "apply-list" => ("/api/v1/discover/tv", IntegrationRequestDiscoverTests.Page(IntegrationRequestDiscoverTests.Show(603, "Owned"))),
+                    "apply-knownfor" => ("/api/v1/search", """{"results":[{"mediaType":"person","id":2,"knownFor":[{"mediaType":"tv","id":603}]}]}"""),
+                    "apply-nested" => ("/api/v1/issue/1", """{"media":{"mediaType":"tv","tmdbId":603}}"""),
+                    "apply-subresource" => ("/api/v1/tv/603/season/1", "{}"),
+                    _ => ("/api/v1/tv/603", "{}"),
+                };
+                var filtered = await r.Gate.ApplyAsync(body, path, r.User.Id.ToString("N"));
+                if (filtered.Block) return false;
+                using var parsed = JsonDocument.Parse(filtered.Body);
+                return route switch
+                {
+                    "apply-list" => parsed.RootElement.GetProperty("results").GetArrayLength() == 1,
+                    "apply-knownfor" => parsed.RootElement.GetProperty("results")[0].GetProperty("knownFor").GetArrayLength() == 1,
+                    _ => true,
+                };
+            }
+            var proxy = ApiAssetTests.Controller(r.Arr.Plugin.Core, r.Tmdb, r.Gate);
+            proxy.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+            return await proxy.ProxyTmdbRequest(route) is ContentResult or FileContentResult;
+        }
+        Assert.True(await Allowed());
+        // Native access is read afresh: a hidden physical copy cannot confer this exception.
+        visible = false;
+        Assert.False(await Allowed());
+        Assert.Null(r.Gate.AbsentVerdict("tv", 603, r.User.Id.ToString("N")));
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task OnlyAFailedListReadReturns503WhileMovingEvidenceRemainsAnIncomplete200(bool search)
+    {
+        using var r = new Rig(); var change = 0;
+        r.Evidence = (id, _) =>
+        {
+            r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "moving-source-" + ++change;
+            return Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id));
+        };
+        var moving = await r.Read(search);
+        Assert.Equal(200, moving.Status);
+        Assert.False(moving.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
+        Assert.Empty(moving.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
+        Assert.Equal("evidence_unavailable", moving.Body.GetProperty("reason").GetString());
+        r.Page = null!;
+        r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "failed-list-source";
+        Assert.Equal(503, (await r.Read(search)).Status);
+    }
+
+    [Fact]
+    public async Task ExpiredUnknownFollowedByFailedRefreshBacksOffSequentialRatingChecks()
+    {
+        using var r = new Rig();
+        r.Evidence = (id, _) => Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id, ""));
+        Assert.Null(await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default));
+        // Age the real signature cache without a five-minute wall-clock sleep.
+        var cache = (System.Collections.IDictionary)typeof(SeerrParentalFilter).GetField("_certCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(r.Gate)!;
+        foreach (var key in cache.Keys.Cast<string>().ToArray())
+        {
+            var value = cache[key]!;
+            var fields = (System.Runtime.CompilerServices.ITuple)value;
+            cache[key] = Activator.CreateInstance(value.GetType(), fields[0], fields[1], DateTime.UtcNow.AddMinutes(-6));
+        }
+        var refreshes = 0;
+        r.Evidence = (_, _) => { refreshes++; return Task.FromResult<string?>(null); };
+        for (var i = 0; i < 3; i++) Assert.Null(await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default));
+        Assert.Equal(1, refreshes);
+    }
+
+    [Fact]
+    public async Task FailedTagUpgradePreservesAFreshRatedSignatureAndBacksOffTagCallers()
+    {
+        using var r = new Rig();
+        var rating = SeerrParentalFilter.PolicyFor(r.User);
+        Assert.True(await r.Gate.AbsentVerdictAsync("movie", 603, rating, default));
+        var failures = 0;
+        r.Evidence = (_, _) => { failures++; return Task.FromResult<string?>(null); };
+        r.User.SetPreference(PreferenceKind.AllowedTags, new[] { "family" });
+        var tagged = SeerrParentalFilter.PolicyFor(r.User);
+        Assert.Null(await r.Gate.AbsentVerdictAsync("movie", 603, tagged, default));
+        Assert.Null(await r.Gate.AbsentVerdictAsync("movie", 603, tagged, default));
+        Assert.True(await r.Gate.AbsentVerdictAsync("movie", 603, rating, default));
+        Assert.Equal(1, failures);
+    }
+
+    [Fact]
+    public async Task EvidenceChangeDuringMultiTitleBuildCannotPublishOrCacheEarlierDecisions()
+    {
+        using var r = new Rig(); var key = TitleKey.Parse("movie:tmdb:603")!;
+        await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
+        var status = new ArrStatusService(r.Store, r.View, new NoRequestFacts(), () => r.Arr.Plugin.Plugin.Configuration, () => r.Arr.Now, libraries: r.Libraries);
+        await Assert.ThrowsAsync<ArrStatusService.ViewerChangedException>(() => status.ForTitlesAsync(r.Viewer, new[] { key }, "review", "same", rows =>
+        {
+            Assert.Single(rows);
+            r.Server.MetadataCountryCode = "AU";
+            return JsonSerializer.SerializeToUtf8Bytes(new { items = rows.Select(row => row.Status) });
+        }, default));
+        Assert.Equal(0, status.Cache.Count);
+    }
+
+    [Fact]
+    public async Task EvidenceRevisionMovingAcrossDeferredGatherIsCheckedBeforeAStatusCacheHit()
+    {
+        using var r = new Rig(); var key = TitleKey.Parse("movie:tmdb:603")!;
+        await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
+        var status = new ArrStatusService(r.Store, r.View, new NoRequestFacts(), () => r.Arr.Plugin.Plugin.Configuration, () => r.Arr.Now, libraries: r.Libraries);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        r.Arr.Hosts["movies.invalid"].Before = async (_, ct) => { started.TrySetResult(); await release.Task.WaitAsync(ct); };
+        var pending = status.ForKeyDetailAsync(r.Viewer, key, default);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        r.Server.MetadataCountryCode = "AU";
+        release.SetResult();
+        Assert.Empty(JsonDocument.Parse((await pending).Json).RootElement.GetProperty("items").EnumerateArray());
+    }
+
+    public static IEnumerable<object[]> StatusCaches()
+    {
+        foreach (var route in new[] { "batch", "detail", "absent", "part", "titles" })
+        foreach (var change in new[] { "country", "connection", "refusal-recovery" }) yield return new object[] { route, change };
+    }
+
+    [Theory]
+    [MemberData(nameof(StatusCaches))]
+    public async Task SerializedStatusDecisionsFollowEvidenceRevisionBothDirections(string route, string change)
+    {
+        using var r = new Rig();
+        var key = TitleKey.Parse("movie:tmdb:603")!;
+        var refused = change == "refusal-recovery";
+        r.Evidence = (id, _) => Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id, refused ? "R" : "G"));
+        await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
+        var status = new ArrStatusService(r.Store, r.View, new NoRequestFacts(), () => r.Arr.Plugin.Plugin.Configuration, () => r.Arr.Now, libraries: r.Libraries);
+        var absent = new AbsentTitle { PageId = Guid.NewGuid(), Title = key, TmdbId = 603 };
+        async Task<byte[]> Read()
+        {
+            if (route is "batch" or "detail")
+            {
+                var controller = new ArrStatusController(status) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+                controller.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+                return Assert.IsType<FileContentResult>(await controller.GetStatuses(null, key.ToString(), default, route == "detail")).FileContents;
+            }
+            return (route switch
+            {
+                "absent" => await status.ForAbsentAsync(r.Viewer, absent, default),
+                "part" => await status.ForPartAsync(r.Viewer, key, Array.Empty<int>(), Array.Empty<(int, int)>(), false, default),
+                _ => await status.ForTitlesAsync(r.Viewer, new[] { key }, "review", "same", rows => JsonSerializer.SerializeToUtf8Bytes(new { items = rows.Select(row => row.Status) }), default),
+            }).Json;
+        }
+        static int Count(byte[] body) => JsonDocument.Parse(body).RootElement.GetProperty("items").GetArrayLength();
+        Assert.Equal(refused ? 0 : 1, Count(await Read()));
+        Assert.Equal(refused ? 0 : 1, Count(await Read())); // warm cache hit
+        if (change == "country") r.Server.MetadataCountryCode = "AU";
+        else { r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "changed-source"; refused = !refused; }
+        await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
+        Assert.Equal(change == "refusal-recovery" ? 1 : 0, Count(await Read()));
     }
 }

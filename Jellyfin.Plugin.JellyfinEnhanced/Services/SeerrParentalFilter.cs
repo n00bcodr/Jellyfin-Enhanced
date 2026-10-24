@@ -135,6 +135,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             HashSet<string> BlockedTags,
             HashSet<string> AllowedTags)
         {
+            internal Jellyfin.Database.Implementations.Entities.User? NativeUser { get; init; }
+
             /// <summary>True when the user has any Blocked or Allowed Tags (keyword lookups are then needed).</summary>
             public bool HasTagRules => (BlockedTags?.Count ?? 0) > 0 || (AllowedTags?.Count ?? 0) > 0;
 
@@ -206,7 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.BlockedTags));
             var allowedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.AllowedTags));
 
-            return new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
+            return new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags) { NativeUser = user };
         }
 
         private string Region()
@@ -560,8 +562,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return RatedAndTaggedAllowed(signature, mediaType, policy);
         }
 
-        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
-            => JeEvidence ? JeVerdict(resolved, mediaType, policy) == true : resolved != null && RatedAndTaggedAllowed(resolved, mediaType, policy);
+        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy, int tmdbId = 0)
+            => JeEvidence ? (tmdbId > 0 && _evidence.MayOpenLocal(mediaType, tmdbId, policy.NativeUser)) || JeVerdict(resolved, mediaType, policy) == true
+                : resolved != null && RatedAndTaggedAllowed(resolved, mediaType, policy);
 
         // Seerr's broad/native-style unrated rules stay unchanged; JE's completeness rule lives above.
         private static bool RatedAndTaggedAllowed(Signature resolved, string mediaType, Policy policy)
@@ -629,7 +632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "seerr", StringComparison.OrdinalIgnoreCase)
                 && detail.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
             {
-                StoreSignature(CacheKey(mediaType, tmdbId, region), resolved, DateTime.UtcNow, CacheTtl());
+                StoreSignature(CacheKey(mediaType, tmdbId, region), resolved, DateTime.UtcNow);
             }
 
             return !IsAllowed(resolved, mediaType, policy);
@@ -668,7 +671,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return true;
             }
 
-            if (JeEvidence) return await AbsentVerdictAsync(mediaType, tmdbId, policy, requestAborted).ConfigureAwait(false) != true;
+            if (JeEvidence)
+            {
+                if (_evidence.MayOpenLocal(mediaType, tmdbId, policy.NativeUser)) return false;
+                return await AbsentVerdictAsync(mediaType, tmdbId, policy, requestAborted).ConfigureAwait(false) != true;
+            }
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(_overallBudget);
             var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
@@ -905,7 +912,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             scores.TryGetValue(CacheKey(mediaType, tmdbId, region), out var score);
-            return IsAllowed(score, mediaType, policy);
+            return IsAllowed(score, mediaType, policy, tmdbId);
         }
 
         private int FilterKnownFor(
@@ -938,7 +945,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 scores.TryGetValue(CacheKey(mediaType, tmdbId, region), out var score);
-                if (!IsAllowed(score, mediaType, policy))
+                if (!IsAllowed(score, mediaType, policy, tmdbId))
                 {
                     knownFor.RemoveAt(j);
                     removed++;
@@ -968,7 +975,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return true; // recently failed to verify -> still hidden, no refetch
                     }
                 }
-                else if (age < (key.StartsWith("je:", StringComparison.Ordinal) && cached.Sig?.Adult != true && cached.Sig?.Score == null ? NegativeCacheTtl : CacheTtl()) && (!needTags || cached.Sig?.Adult == true || (cached.Sig?.Keywords != null && cached.Sig.Genres != null)))
+                else if (age < SignatureTtl(key, cached.Sig) && (!needTags || cached.Sig?.Adult == true || (cached.Sig?.Keywords != null && cached.Sig.Genres != null)))
                 {
                     // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
                     signature = cached.Sig;
@@ -988,6 +995,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return false;
         }
+
+        private static TimeSpan SignatureTtl(string key, Signature? signature)
+            => key.StartsWith("je:", StringComparison.Ordinal) && signature?.Adult != true && signature?.Score == null ? NegativeCacheTtl : CacheTtl();
 
         private bool TryGetTitleSignature(string mediaType, int tmdbId, string region, bool needTags, out Signature? signature)
         {
@@ -1064,7 +1074,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var now = DateTime.UtcNow;
-                var ttl = CacheTtl();
                 if (detail == null)
                 {
                     if (needTags)
@@ -1079,7 +1088,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _certCache.AddOrUpdate(
                         key,
                         _ => (null, true, now),
-                        (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < ttl
+                        (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < SignatureTtl(key, current.Sig)
                             ? current
                             : (null, true, now));
                     TrimCache();
@@ -1094,7 +1103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _tagFetchFailedAt.TryRemove(key, out _);
                 }
 
-                StoreSignature(key, resolved, now, ttl);
+                StoreSignature(key, resolved, now);
                 if (needTags && resolved.Adult != true && (resolved.Keywords == null || resolved.Genres == null))
                 {
                     _tagFetchFailedAt[key] = now;
@@ -1117,7 +1126,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// change bypass a tag-restricted user), so existing tags are kept only
         /// while the existing entry is itself still fresh.
         /// </summary>
-        private void StoreSignature(string key, Signature resolved, DateTime now, TimeSpan ttl)
+        private void StoreSignature(string key, Signature resolved, DateTime now)
         {
             _certCache.AddOrUpdate(
                 key,
@@ -1125,9 +1134,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 (_, current) =>
                 {
                     var stored = resolved;
-                    if (!current.Unresolved && current.Sig != null && now - current.CachedAt < ttl)
+                    if (!current.Unresolved && current.Sig != null && now - current.CachedAt < SignatureTtl(key, current.Sig))
                         stored = stored with { Adult = stored.Adult ?? current.Sig.Adult };
-                    if (stored.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
+                    if (stored.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < SignatureTtl(key, current.Sig))
                     {
                         return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
                     }
@@ -1149,10 +1158,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var now = DateTime.UtcNow;
-            var ttl = CacheTtl();
             foreach (var kv in _certCache)
             {
-                var limit = kv.Value.Unresolved ? NegativeCacheTtl : ttl;
+                var limit = kv.Value.Unresolved ? NegativeCacheTtl : SignatureTtl(kv.Key, kv.Value.Sig);
                 if (now - kv.Value.CachedAt > limit)
                 {
                     _certCache.TryRemove(kv.Key, out _);

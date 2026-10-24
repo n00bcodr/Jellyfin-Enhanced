@@ -75,6 +75,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 || string.Equals(mode, "status_only", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
+        /// Current native entitlement for broad metadata consumers. A physical copy must be returned by Jellyfin's
+        /// user-scoped query and its user-scoped item read; user-neutral local facts never grant this exception.
+        /// </summary>
+        internal bool MayOpenLocal(string mediaType, int tmdbId, Jellyfin.Database.Implementations.Entities.User? user)
+        {
+            if (_library == null || user == null) return false;
+            try
+            {
+                var id = tmdbId.ToString(CultureInfo.InvariantCulture);
+                var items = _library.GetItemList(new InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { mediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series },
+                    HasAnyProviderId = new Dictionary<string, string> { ["Tmdb"] = id },
+                    Recursive = true, IsVirtualItem = false, Limit = 33,
+                });
+                return items.Take(32).Any(item => !item.IsVirtualItem && !string.IsNullOrWhiteSpace(item.Path)
+                    && Path.IsPathFullyQualified(item.Path) && item.ProviderIds.TryGetValue("Tmdb", out var actual) && actual == id
+                    && _library.GetItemById<BaseItem>(item.Id, user) != null);
+            }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>
         /// Reads authoritative local item rating/tags afresh, so native edits never inherit the remote cache TTL.
         /// Only physical movies/series with this exact TMDB id count. Conflicting copies or a capped read stay
         /// unknown; they must not be replaced with a more permissive upstream answer. This conveys no library access.

@@ -670,7 +670,8 @@ Jellyfin Enhanced's request sheet.
 Parental rating and tag checks in JE mode use the same TMDB key, with Seerr completely disabled. Ratings use
 Jellyfin's metadata country. Missing metadata remains hidden for restricted people and can be retried later;
 it does not grant permission to request a title. Changing the metadata country or evidence connection also
-invalidates cached Discover/search decisions. No extra parental-filter switch is needed.
+invalidates cached Discover/search and status decisions. Existing openable library copies keep Jellyfin's
+native entitlement for title/season metadata, including unrated copies. No extra parental-filter switch is needed.
 
 ### Everywhere and gentle automation (phase 4)
 

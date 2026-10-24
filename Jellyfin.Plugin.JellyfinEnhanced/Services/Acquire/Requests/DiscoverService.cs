@@ -236,7 +236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _recent = recent;
             _hidden = hidden;
             _now = now;
-            _gate = new ResponseGate(requests.View, () => requests.Policy.Configuration);
+            _gate = new ResponseGate(requests.View, () => requests.Policy.Configuration, _evidenceRevision);
         }
 
         /// <summary>
@@ -291,12 +291,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
             using var bound = CopyLookupBound.Track();
             using var budget = new EvidenceDeadline(ct);
+            Prepared? lastRead = null;
             for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
             {
                 var hidden = Hidden(viewer.UserId);
                 var stamp = _gate.Take(viewer, hidden.Stamp);
-                var evidence = _evidenceRevision();
-                var cacheKey = CacheKey(viewer, what, hidden) + "|" + evidence;
+                var cacheKey = CacheKey(viewer, what, hidden) + "|" + stamp.Evidence;
                 Prepared? prepared;
                 if (Cached(cacheKey) is { } cached) prepared = cached;
                 else
@@ -304,12 +304,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     prepared = await prepare(viewer, hidden, budget).ConfigureAwait(false);
                     if (prepared == null) return null;
                 }
+                lastRead = prepared;
                 var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
                 // Publication: no await from here on.
                 var nowHidden = Hidden(viewer.UserId);
-                if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now || evidence != _evidenceRevision())
+                if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now)
                 {
-                    if (_requests.View.Viewer(viewer.UserId) is not { } changed) return null;
+                    if (_requests.View.Viewer(viewer.UserId) is not { } changed) break;
                     viewer = changed;
                     continue;
                 }
@@ -317,7 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // The final Hidden Content and Spoiler Guard projection (D46), at publication, under the presentation revision it read.
                 var revision = _presentation?.Load(now.UserId).Revision;
                 var answer = Present(now, Project(now, prepared, search ? nowHidden.Search : nowHidden.Discovery, paused), nowHidden);
-                if (!ResponseGate.SameViewer(before, _gate.Take(now, Hidden(now.UserId).Stamp)) || _presentation?.Load(now.UserId).Revision != revision || evidence != _evidenceRevision())
+                if (!ResponseGate.SameViewer(before, _gate.Take(now, Hidden(now.UserId).Stamp)) || _presentation?.Load(now.UserId).Revision != revision || !_gate.EvidenceCurrent(stamp))
                 {
                     viewer = now;
                     continue;
@@ -326,7 +327,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (answer.Complete && ResponseGate.Same(stamp, before)) Store(cacheKey, prepared);
                 return answer;
             }
-            return null;
+            // The list succeeded. Continuous authority/evidence changes leave no card verified for publication,
+            // but this is still an incomplete successful list read, never an upstream-list failure or complete empty.
+            return lastRead == null ? null : new DiscoverAnswer
+            {
+                List = lastRead.List, Type = lastRead.Type, Page = lastRead.Page, TotalPages = lastRead.TotalPages,
+                Complete = false, Groups = lastRead.Groups == null ? null : Array.Empty<DiscoverGroup>(),
+            };
         }
 
         private async Task<Prepared?> PrepareDiscoverAsync(StatusViewer viewer, string list, string type, int page, string? lang, HiddenTitles hidden, EvidenceDeadline budget, CancellationToken ct)

@@ -89,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // reserves error ObjectResults for model-binding refusals and would replace this body.
                 return new ContentResult
                 {
-                    StatusCode = 503, ContentType = "application/json; charset=utf-8",
+                    StatusCode = 200, ContentType = "application/json; charset=utf-8",
                     Content = JsonSerializer.Serialize(new { outcome = "partial", reason = "evidence_unavailable", certainty = "Unknown", message = "Some results couldn't be checked. Try again shortly.", answer }),
                 };
             }

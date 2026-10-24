@@ -238,7 +238,7 @@ Include:
 ### Incomplete JE Discover/search verification
 
 When a restricted person's list loads but some title evidence cannot be checked,
-`/JellyfinEnhanced/acquire/discover` and `/JellyfinEnhanced/acquire/search` return HTTP 503 with
+`/JellyfinEnhanced/acquire/discover` and `/JellyfinEnhanced/acquire/search` return HTTP 200 with
 `outcome: "partial"`, `reason: "evidence_unavailable"` and `certainty: "Unknown"`. The `answer` keeps
 only safe cards, with `complete: false`, `verification: "partial"` and `retryAfterSeconds: 5`.
 The response is `private, no-store`, has `Retry-After: 5`, and never answers 304. An empty partial
@@ -246,7 +246,7 @@ answer does not mean there are no matches. Completed pages retain HTTP 200/ETag 
 `complete: true`, `verification: "complete"`, `retryAfterSeconds: null`.
 
 The UI must retain a retry/unavailable state for partial answers, including a partial answer containing
-safe cards. Missing TMDB lists still use the existing `discover_unavailable` 503. Failed or incomplete
+safe cards. HTTP 503 is reserved for a failed TMDB list read (`discover_unavailable`). Failed or incomplete
 evidence is retried after the gate's five-minute failure cache expires; in-flight reads may recover
 earlier by completing in the background. Avoid rapid retries. The initial list read has its own
 transport timeout; the two-second budget applies to title evidence preparation, including slot waits

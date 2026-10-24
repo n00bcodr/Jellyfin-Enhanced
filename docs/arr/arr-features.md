@@ -188,12 +188,17 @@ Restricted people see only verified, rated absent titles within their limits. Ad
 An unavailable or incomplete metadata response stays unverified and hidden until it can be checked;
 a verified rating or tag refusal remains a refusal. An empty ratings container, a certification only for another
 country, or a certification Jellyfin cannot score also stays unverified, even when Block unrated is off.
+A physical title Jellyfin currently lets the person open keeps that native entitlement for title and season
+metadata, including request-sheet season choices and Elsewhere providers. The stricter absent-title evidence
+requirement does not block an openable unrated copy. Hidden copies confer no exception.
 People without parental restrictions need no additional lookup.
 
-Discover/search responses distinguish incomplete verification from a completed empty result. Unknown titles
-stay hidden. Evidence preparation has one two-second budget including queued checks; already-started shared
+Discover/search return HTTP 200 with verified-safe cards when the list read succeeds. If title verification is
+incomplete, `complete=false` and `reason=evidence_unavailable` signal that results are still being checked.
+Unknown titles stay hidden; partial pages are not cached as complete. A failed list read returns HTTP 503. Evidence preparation has one two-second budget including queued checks; already-started shared
 lookups can finish and warm the cache for a retry. This budget does not cover the initial TMDB list read or
-other request work. Changing the metadata country, backend or evidence connection invalidates prepared decisions.
+other request work. Changing the metadata country, backend or evidence connection invalidates prepared
+Discover/search decisions and serialized status responses.
 
 ## ARR Tags
 

@@ -35,14 +35,15 @@ public class PrivacyPresentationGateTests
         http.Request.Headers.IfNoneMatch = "*"; http.Response.Headers.ETag = "stale"; http.Response.Headers.RetryAfter = "5";
         var result = new ContentResult
         {
-            StatusCode = 503, ContentType = "application/json; charset=utf-8",
+            StatusCode = 200, ContentType = "application/json; charset=utf-8",
             Content = """{"outcome":"partial","reason":"evidence_unavailable","answer":{"complete":false,"verification":"partial","retryAfterSeconds":5,"results":[{"key":"movie:tmdb:42","title":"hidden"},{"key":"movie:tmdb:43","overview":"secret"}]}}""",
         };
+        http.Response.Headers.CacheControl = "private, no-store";
         var context = new ResultExecutingContext(EndpointRouting.Bind(http), new List<IFilterMetadata>(), result, new object());
         new Jellyfin.Plugin.JellyfinEnhanced.Helpers.RequestOutcomeFilterAttribute().OnResultExecuting(context);
         new TitlePresentationResultFilter(f.Core.Manager, spoilers, library, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), null!).OnResultExecuting(context);
         var partial = Assert.IsType<ContentResult>(context.Result);
-        Assert.Equal(503, partial.StatusCode); Assert.Equal("private, no-store", http.Response.Headers.CacheControl);
+        Assert.Equal(200, partial.StatusCode); Assert.Equal("private, no-store", http.Response.Headers.CacheControl);
         Assert.Equal("5", http.Response.Headers.RetryAfter); Assert.False(http.Response.Headers.ContainsKey("ETag"));
         Assert.DoesNotContain("hidden", partial.Content); Assert.DoesNotContain("secret", partial.Content);
         var answer = JsonNode.Parse(partial.Content!)!["answer"]!;
