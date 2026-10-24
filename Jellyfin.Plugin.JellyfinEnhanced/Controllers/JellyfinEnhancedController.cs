@@ -3825,6 +3825,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarFilterByLibraryAccess,
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
+                ShokoConfigured = config.IsShokoConfigured(),
 
                 // Recommendations Page Settings
                 config.RecommendationsPageEnabled,

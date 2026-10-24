@@ -329,6 +329,13 @@
         <button type="button" class="je-calendar-filter-invert ${state.filterInvert ? 'active' : ''} ${hasActiveFilters ? '' : 'is-disabled'}" data-filter-invert="true" ${hasActiveFilters ? '' : 'disabled aria-disabled="true"'}>NOT</button>
       </div>`;
 
+    const animeLegend = JE.pluginConfig?.ShokoConfigured
+      ? `<div class="je-calendar-legend-item ${getItemClass('Anime')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Anime'); event.stopPropagation();">
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>
+          <span>${JE.t("calendar_anime")}</span>
+        </div>`
+      : "";
+
     return `
       <div class="je-calendar-legend">
         ${filterControls}
@@ -348,10 +355,7 @@
           <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
         </div>
-        <div class="je-calendar-legend-item ${getItemClass('Anime')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Anime'); event.stopPropagation();">
-          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>
-          <span>${JE.t("calendar_anime")}</span>
-        </div>
+        ${animeLegend}
         <div class="je-calendar-legend-item ${getItemClass('Available')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Available'); event.stopPropagation();">
           <span class="je-msym-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>
           <span>${JE.t?.("jellyseerr_btn_available") || "Available"}</span>
