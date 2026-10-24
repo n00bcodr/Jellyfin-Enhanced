@@ -17,6 +17,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// <param name="Evidence">The parental evidence source, configuration, country and decision revision.</param>
     internal sealed record ResponseStamp(Guid User, bool Admin, string Policy, long Library, string Hidden, string Edition, string Evidence);
 
+    /// <summary>The shared publication fence for decisions derived from a captured parental evidence revision.</summary>
+    internal sealed class EvidencePublication
+    {
+        private readonly Func<string> _current;
+        internal EvidencePublication(Func<string> current)
+        {
+            _current = current;
+            Revision = current();
+        }
+
+        internal string Revision { get; }
+        internal bool Current => Matches(Revision, _current);
+        internal static bool Matches(string revision, Func<string> current) => revision == current();
+
+        // The callback must be synchronous: a caller cannot carry an admission across another await.
+        internal T? Publish<T>(Func<T> project) where T : class
+        {
+            if (!Current) return null;
+            var answer = project();
+            return Current ? answer : null;
+        }
+    }
+
     /// <summary>
     /// The one response gate of the routes that return copy facts (discover, search, season rows and absent-season rows; the
     /// status routes' <c>GatedAsync</c> is the same rule over the same revisions). A response is prepared across awaits (TMDB,
@@ -54,7 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => new(viewer.UserId, viewer.IsAdmin, viewer.PolicyRevision, _view.Revision, hidden, EditionAvailability.SemanticRevision(_config()), _evidence());
 
         /// <summary>Whether an evidence-dependent decision still belongs to the current source/configuration/country.</summary>
-        public bool EvidenceCurrent(ResponseStamp prepared) => prepared.Evidence == _evidence();
+        public bool EvidenceCurrent(ResponseStamp prepared) => EvidencePublication.Matches(prepared.Evidence, _evidence);
 
         /// <summary>
         /// The viewer as Jellyfin has them now, when nothing <paramref name="prepared"/> was taken under changed (the library
@@ -69,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var stamp = Take(now, hidden);
             return stamp.Admin == prepared.Admin && string.Equals(stamp.Policy, prepared.Policy, StringComparison.Ordinal)
                 && string.Equals(stamp.Hidden, prepared.Hidden, StringComparison.Ordinal) && string.Equals(stamp.Edition, prepared.Edition, StringComparison.Ordinal)
-                && stamp.Evidence == prepared.Evidence
+                && EvidenceCurrent(prepared)
                 && (rereadsLibrary || stamp.Library == prepared.Library) ? now : null;
         }
 

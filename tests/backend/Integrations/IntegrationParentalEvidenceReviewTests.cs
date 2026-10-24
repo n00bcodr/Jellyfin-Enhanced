@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jellyfin.Data;
@@ -19,6 +20,12 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.DependencyInjection;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources;
 using Moq;
 
 namespace JE.Tests;
@@ -43,6 +50,7 @@ public class IntegrationParentalEvidenceReviewTests
         public RequestPolicy Policy { get; }
         public AcquireDatabase Database { get; }
         public RequestService Requests { get; }
+        public IUserManager Users { get; }
         public ILibraryManager Library { get; }
         public Mock<ILibraryManager> LibraryMock { get; }
         public DiscoverService Discover { get; }
@@ -64,6 +72,7 @@ public class IntegrationParentalEvidenceReviewTests
             });
             Tmdb = new TmdbResponseCache(Transport, TimeProvider.System);
             var users = new Mock<IUserManager>(); users.Setup(m => m.GetUserById(User.Id)).Returns(User);
+            Users = users.Object;
             var localization = new Mock<ILocalizationManager>();
             localization.Setup(m => m.GetRatingScore("G", "US")).Returns(new ParentalRatingScore(1, null));
             localization.Setup(m => m.GetRatingScore("R", "US")).Returns(new ParentalRatingScore(18, null));
@@ -488,4 +497,229 @@ public class IntegrationParentalEvidenceReviewTests
         await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
         Assert.Equal(change == "refusal-recovery" ? 1 : 0, Count(await Read()));
     }
+    private static string TvEvidence(int id) => JsonSerializer.Serialize(new
+    {
+        id, adult = false, content_ratings = new { results = new[] { new { iso_3166_1 = "US", rating = "G" } } },
+        keywords = new { results = Array.Empty<object>() }, genres = Array.Empty<object>(),
+    });
+
+    private sealed class Pages(Func<Task<AbsentPageResult>> resolve) : IAbsentTitlePages
+    {
+        public Task<AbsentPageResult> ResolveAsync(Guid viewer, Guid id, CancellationToken ct) => resolve();
+    }
+
+    [Theory]
+    [InlineData("stable")] [InlineData("metadata")] [InlineData("page")] [InlineData("projection")]
+    public async Task SeasonControllerNeverPublishesRevokedAbsentMetadata(string change)
+    {
+        using var r = new Rig();
+        r.Arr.Add("tv.invalid", "Sonarr");
+        r.Arr.Configure(("TV", ArrKind.Sonarr, "http://tv.invalid", "test-key"));
+        r.Evidence = (id, _) => Task.FromResult<string?>(TvEvidence(id));
+        Assert.True(await r.Gate.MaySeeAbsentAsync("tv", 603, r.User.Id.ToString("N"), default));
+        var page = new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse("tv:tvdb:393189")!,
+            TmdbId = 603, Season = 1, SeriesPageId = Guid.NewGuid() };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rows = new SeasonRowsService(r.View, r.Requests.Ledger, r.Policy, null, async (_, _, _, _) =>
+        {
+            entered.TrySetResult();
+            if (change == "metadata") await release.Task;
+            return """{"episodes":[{"episode_number":1,"name":"Private episode","overview":"Private plot","still_path":"/private.jpg"}]}""";
+        });
+        var pages = new Pages(async () =>
+        {
+            if (change == "page") { entered.TrySetResult(); await release.Task; }
+            return new AbsentPageResult(AbsentLookup.Found, page);
+        });
+        using var services = new ServiceCollection().AddSingleton<IAbsentTitlePages>(pages).BuildServiceProvider();
+        var c = new AcquireRequestsController(r.Requests, rows) { ControllerContext = new() { HttpContext = new DefaultHttpContext { RequestServices = services } } };
+        c.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+        if (change == "projection")
+        {
+            // RequestPolicy's publication probe re-reads its current native view synchronously.
+            r.View.OnCopies = () => r.Server.MetadataCountryCode = "AU";
+        }
+        var pending = c.Season(page.PageId.ToString("N"));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        if (change is "metadata" or "page") r.Server.MetadataCountryCode = "AU";
+        release.TrySetResult();
+        var answer = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        if (change == "stable")
+        {
+            var file = Assert.IsType<FileContentResult>(answer);
+            Assert.Contains("Private episode", System.Text.Encoding.UTF8.GetString(file.FileContents));
+        }
+        else Assert.Equal(404, Assert.IsType<ObjectResult>(answer).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("title")] [InlineData("season")] [InlineData("ratings")] [InlineData("related")]
+    public async Task PublicDetailsControllerPreservesOwnedUnratedNativeEntitlement(string route)
+    {
+        using var r = new Rig();
+        var config = r.Arr.Plugin.Plugin.Configuration;
+        // A1 owns source selection. This existing source-admission guard is independent of the parental consumer.
+        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://configured.invalid"; config.JellyseerrApiKey = "test-only";
+        var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid(), Path = "/media/owned", ProviderIds = new() { ["Tmdb"] = "603" } };
+        var visible = true;
+        r.LibraryMock.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == null || visible ? new List<BaseItem> { series } : new List<BaseItem>());
+        r.LibraryMock.Setup(m => m.GetItemById<BaseItem>(series.Id, r.User)).Returns(() => visible ? series : null);
+        r.Evidence = (id, _) => Task.FromResult<string?>(JsonSerializer.Serialize(new { id, adult = false, content_ratings = new { results = Array.Empty<object>() } }));
+        var source = new Mock<INativeDetailsSource>();
+        var data = SourceAnswer.Of(JsonDocument.Parse("""{"id":603,"name":"Owned","seasons":[{"seasonNumber":1}],"episodes":[{"episodeNumber":1,"seasonNumber":1}],"results":[]}""").RootElement.Clone());
+        source.Setup(m => m.SeriesAsync(603, r.User.Id, It.IsAny<CancellationToken>())).ReturnsAsync(data);
+        source.Setup(m => m.SeasonAsync(603, 1, r.User.Id, It.IsAny<CancellationToken>())).ReturnsAsync(data);
+        source.Setup(m => m.RatingsAsync(false, 603, r.User.Id, It.IsAny<CancellationToken>())).ReturnsAsync(data);
+        source.Setup(m => m.RelatedAsync(false, 603, "similar", 1, r.User.Id, It.IsAny<CancellationToken>())).ReturnsAsync(data);
+        var libraries = new FakeLibraryAccess(); libraries.AddLibrary("TV", "tvshows", "/media");
+        var policy = new NativeDetailsPolicy(r.Gate, source.Object, libraries, physical: new NativeDetailsLibrary(r.Library));
+        var feeds = new NativeDetailsFeeds(source.Object, policy, r.Gate, r.Library);
+        var c = new NativeDetailsFeedsController(feeds, r.Users) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+        c.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+        async Task<IActionResult> Read() => route switch
+        {
+            "season" => await c.Season(603, 1, default), "ratings" => await c.Ratings("tv", 603, default),
+            "related" => await c.Related("tv", 603, "similar", 1), _ => await c.Title("tv", 603, default),
+        };
+        Assert.IsType<ContentResult>(await Read());
+        visible = false;
+        Assert.Equal(404, Assert.IsAssignableFrom<ObjectResult>(await Read()).StatusCode);
+        Assert.False(await policy.MaySeeAsync(r.User, SyntheticId.SeasonOf(603, 1), default));
+    }
+
+    [Fact]
+    public async Task FeedAudienceDoesNotReuseAnAllowOrRefusalAcrossEvidenceRevisions()
+    {
+        using var r = new Rig();
+        var audience = new ArrFeedAudience(r.Library, r.Users, r.Store, view: r.View, libraries: r.Libraries);
+        var changes = new[] { new ArrFeedChange("movie:tmdb:603", 1, r.Arr.Instance("Movies").Id) };
+        Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+        Assert.Single(audience.Visible(r.User.Id, false, changes));
+        r.Server.MetadataCountryCode = "AU";
+        Assert.Empty(audience.Visible(r.User.Id, false, changes));
+        r.Server.MetadataCountryCode = "US";
+        Assert.Single(audience.Visible(r.User.Id, false, changes));
+    }
+
+    [Theory]
+    [InlineData("ProxyTmdbRequest")] [InlineData("Title")] [InlineData("Season")] [InlineData("Ratings")]
+    [InlineData("Related")] [InlineData("Filmography")] [InlineData("Discover")] [InlineData("Collection")]
+    [InlineData("native-item")] [InlineData("native-episodes")] [InlineData("native-image")] [InlineData("stable")]
+    public void FinalHttpPublicationRejectsEvidenceChangedAfterAdmission(string action)
+    {
+        using var r = new Rig();
+        var actualAction = action == "stable" ? "ProxyTmdbRequest" : action;
+        ControllerBase controller = actualAction == "ProxyTmdbRequest" ? ApiAssetTests.Controller(r.Arr.Plugin.Core, r.Tmdb, r.Gate)
+            : new NativeDetailsFeedsController(null!, r.Users);
+        controller.ControllerContext = new() { HttpContext = new DefaultHttpContext() };
+        controller.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+        controller.HttpContext.Request.Method = "GET";
+        Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor descriptor = action.StartsWith("native-")
+            ? new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor { RouteValues = new Dictionary<string, string?> { ["controller"] = action == "native-item" ? "UserLibrary" : action == "native-image" ? "Image" : "TvShows", ["action"] = action == "native-item" ? "GetItem" : action == "native-image" ? "GetItemImage" : "GetEpisodes" } }
+            : new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor
+        {
+            ControllerTypeInfo = controller.GetType().GetTypeInfo(), ControllerName = controller.GetType().Name.Replace("Controller", ""), ActionName = actualAction,
+            MethodInfo = controller.GetType().GetMethods().First(m => m.Name == actualAction),
+        };
+        var context = new Microsoft.AspNetCore.Mvc.ActionContext(controller.HttpContext, new Microsoft.AspNetCore.Routing.RouteData(), descriptor);
+        var spoilers = new SpoilerPresentation(r.Arr.Plugin.Core.Manager, r.Library, r.Users, Mock.Of<IUserDataManager>());
+        using var services = new ServiceCollection().AddSingleton(r.Gate).BuildServiceProvider();
+        var filter = ActivatorUtilities.CreateInstance<TitlePresentationResultFilter>(services, r.Arr.Plugin.Core.Manager, spoilers, r.Library,
+            Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!));
+        filter.OnResourceExecuting(new ResourceExecutingContext(context, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>()));
+        if (action != "stable") r.Server.MetadataCountryCode = "AU";
+        controller.Response.Headers.ETag = "\"old\"";
+        IActionResult body = action == "native-image" ? new FileContentResult(new byte[] { 0xff, 0xd8, 0xff }, "image/jpeg")
+            : new ContentResult { Content = "{\"title\":\"private\"}", ContentType = "application/json" };
+        var result = new ResultExecutingContext(context, new List<IFilterMetadata>(), body, controller);
+        filter.OnResultExecuting(result);
+        if (action == "stable") { Assert.IsType<ContentResult>(result.Result); return; }
+        Assert.Equal(503, Assert.IsType<StatusCodeResult>(result.Result).StatusCode);
+        Assert.Equal("private, no-store", controller.Response.Headers.CacheControl);
+        Assert.False(controller.Response.Headers.ContainsKey("ETag"));
+    }
+
+    private sealed class MovingImportView(Action move) : IImportViewerPolicy
+    {
+        public ImportViewer For(User viewer) { move(); return ImportViewer.None; }
+    }
+
+    [Fact]
+    public async Task ListProjectionDoesNotReusePreparedPlaceholderVisibilityAcrossEvidenceRevisions()
+    {
+        using var r = new Rig();
+        var host = new FakeListHost();
+        var access = new ListAccessService(host, r.Users, r.Gate, r.Arr.Plugin.Core.Logger);
+        var list = host.AddPlaylist(r.User, false);
+        var context = access.Resolve(list.Info.Id, r.User)!;
+        var items = new[] { new Placeholder { Id = "p", Kind = PlaceholderKinds.Movie, TmdbId = 603 } };
+        var known = await access.Gate.VisibilityAsync(items, r.User, default);
+        Assert.True(known.IsVisible(items[0]));
+        r.Server.MetadataCountryCode = "AU";
+        var published = await access.Gate.ProjectAsync(context, items, known, grant => items.Where(grant.Visibility.IsVisible).ToList(), default);
+        Assert.NotNull(published);
+        Assert.Empty(published);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task ImportAndSourcePreviewWithholdEarlierAllowAfterFinalAwait(bool preview)
+    {
+        using var r = new Rig();
+        var host = new FakeListHost();
+        var access = new ListAccessService(host, r.Users, r.Gate, r.Arr.Plugin.Core.Logger);
+        var lookup = new FakeImportLookup(); lookup.AddSearch("Allowed", FakeImportLookup.Movie(603, "Allowed", "2000-01-01"));
+        var limiter = new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System);
+        var viewer = new MovingImportView(() => r.Server.MetadataCountryCode = "AU");
+        var resolver = new ListImportResolver(lookup, new FakeLibraryLookup(), access, limiter, r.Arr.Plugin.Core.Logger, viewer);
+        if (preview)
+        {
+            var fetcher = new FakeSourceFetcher { Items = new() { new SourceItem("movie", 603, null, null, "Allowed", 2000, null, null, null) } };
+            var source = new ListSourcePreview(fetcher, resolver, access, r.Arr.Plugin.Core.Logger, viewer);
+            var answer = await source.FetchAsync(r.User, new SourceFetchRequest { Url = "https://mdblist.com/lists/test/list" }, default);
+            Assert.Equal(504, answer.StatusCode);
+            Assert.IsType<ListErrorDto>(answer.Value);
+        }
+        else
+        {
+            var answer = await resolver.ResolveAsync(new[] { new ImportEntryDto { Title = "Allowed", Year = 2000, TypeHint = "movie" } },
+                new ImportResolveOptions { Caller = r.User, LibraryUsers = new[] { r.User }, Context = new ImportCallContext(r.User.Id.ToString("N"), false), Deadline = TimeSpan.FromSeconds(5) }, default);
+            Assert.Empty(answer.Response.Results);
+            Assert.False(answer.Response.Complete);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task CollectionGapsDiscardEarlierEvidenceAcrossAwaitAndProjection(bool projection)
+    {
+        using var r = new Rig();
+        var config = r.Arr.Plugin.Plugin.Configuration;
+        config.ArrPhase4Enabled = config.ArrPhase4CollectionGapsEnabled = true;
+        var box = new MediaBrowser.Controller.Entities.Movies.BoxSet { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "99" } };
+        r.LibraryMock.Setup(m => m.GetItemById<BaseItem>(box.Id, r.User)).Returns(box);
+        r.Evidence = (id, _) => Task.FromResult<string?>(id == 99
+            ? """{"parts":[{"id":603,"title":"Allowed","release_date":"2000-01-01"}]}""" : IntegrationParentalEvidenceTests.Movie(id));
+        Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coverage = new Mock<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home.ICollectionCoverage>();
+        coverage.Setup(m => m.PrepareAsync(box.Id, r.Viewer, It.IsAny<CancellationToken>())).Returns(async () =>
+        { entered.TrySetResult(); if (!projection) await release.Task; return () => new HashSet<string>(); });
+        var gaps = new CollectionGapsService(r.View, r.Library, r.Requests.Ledger, new TitleAliases(r.Store, null), r.Tmdb, r.Gate, r.Policy, r.Requests, coverage.Object);
+        var moved = false;
+        var pending = gaps.ProjectAsync(r.Viewer, box.Id, null, answer =>
+        {
+            if (projection && !moved) { moved = true; r.Server.MetadataCountryCode = "AU"; }
+            return answer;
+        }, default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        if (!projection) r.Server.MetadataCountryCode = "AU";
+        release.TrySetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.NotNull(result.Gaps);
+        Assert.Empty(result.Gaps.Missing);
+    }
+
 }

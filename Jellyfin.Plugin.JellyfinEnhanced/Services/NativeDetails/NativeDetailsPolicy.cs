@@ -153,7 +153,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
-            if (!await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
+            // A2 owned-copy exemption: keep the following library and exact season/episode visibility checks.
+            if (!_parental.MayOpenLocal(mediaType, title.TmdbId, viewer.Id.ToString("N"))
+                && !await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 

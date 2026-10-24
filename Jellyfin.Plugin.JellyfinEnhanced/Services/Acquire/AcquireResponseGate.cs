@@ -34,7 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var current = Read();
             if (current == null || current.Revision != prepared.Revision) throw new Changed();
-            return project(current.Viewer);
+            var answer = project(current.Viewer);
+            if (!EvidencePublication.Matches(prepared.Revision, () => Read()?.Revision ?? string.Empty)) throw new Changed();
+            return answer;
         }
 
         internal sealed class Changed : Exception { }

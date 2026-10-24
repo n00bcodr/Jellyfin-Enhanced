@@ -96,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceOutcomes.ParseFailure(parseError);
             }
 
+            var publication = _access.CapturePublication();
             var options = new SourceFetchOptions
             {
                 AllowMdblistApi = request.UseMdblistApi && ListAccessService.IsAdmin(caller),
@@ -174,6 +175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
             }
 
+            if (!publication.Current)
+                return new ListOutcome { StatusCode = 504, RetryAfterSeconds = 2, Value = new ListErrorDto { Code = "parental_pending", Message = "Checking titles against your parental controls; try again in a moment." } };
             return ListOutcome.Ok(response);
         }
 

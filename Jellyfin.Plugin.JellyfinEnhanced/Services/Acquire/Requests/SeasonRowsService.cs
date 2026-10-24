@@ -128,7 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _aliases = aliases;
             _tmdbSeason = tmdbSeason;
             _now = now ?? (() => DateTimeOffset.UtcNow);
-            _gate = new ResponseGate(view, () => policy.Configuration);
+            _gate = new ResponseGate(view, () => policy.Configuration, () => policy.EvidenceRevision);
         }
 
         /// <summary>
@@ -175,24 +175,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         /// <returns>The rows.</returns>
         public Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct)
+            => ForAbsentSeasonAsync(viewer, page, language, ct, Admission(viewer));
+
+        /// <summary>Captures admission before the caller resolves an absent page, including its awaited policy reads.</summary>
+        internal ResponseStamp Admission(StatusViewer viewer) => _gate.Take(viewer);
+
+        internal Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct, ResponseStamp admission)
         {
-            if (page.Kind != "season" || page.Season is not int season || page.SeriesPageId is not Guid seriesPageId) return Task.FromResult<SeasonRows?>(null);
-            // Episodes the library has but hides from the viewer get no row, as on a library series.
+            if (page.Kind != "season" || page.Season is not int season || page.SeriesPageId is not Guid seriesPageId || _gate.Current(admission) == null)
+                return Task.FromResult<SeasonRows?>(null);
             var hidden = page.HiddenEpisodes.Select(n => new JfEpisode { Season = season, Episode = n, Hidden = true }).ToList();
-            return ComposeAbsentAsync(viewer, page, seriesPageId, season, hidden, language, ct);
+            return ComposeAbsentAsync(viewer, page, seriesPageId, season, hidden, language, ct, admission);
         }
 
-        private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct)
+        private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct, ResponseStamp stamp)
         {
-            var stamp = _gate.Take(viewer);
             var meta = await PrepareAsync(page.ScopeKey, season, page.TmdbId, language, ct).ConfigureAwait(false);
             // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer and the library as
             // they were before the metadata read: none when either changed meanwhile (the page asks again).
             if (_gate.Current(stamp) is not { } now) return null;
+            // The resolver already knows TMDB even when an absent series' TVDB alias is not in any arr index yet.
+            var visibilityKey = TitleKey.Parse("tv:tmdb:" + page.TmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? page.Title;
+            if (!_policy.Evaluate(now.UserId, Probe(visibilityKey, season, "standard")).Visible) return null;
             var rows = Project(now, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, meta);
-            if (page.Spoilers is not { } spoilers) return rows;
+            if (page.Spoilers is not { } spoilers) return _gate.Current(stamp) != null ? rows : null;
             // Spoiler Guard on the title: the rows carry no plot (as the page's own episode list).
-            return rows with
+            var guarded = rows with
             {
                 Episodes = rows.Episodes.Select(e => e with
                 {
@@ -202,6 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     Still = null,
                 }).ToList(),
             };
+            return _gate.Current(stamp) != null ? guarded : null;
         }
 
         /// <summary>The metadata of a season's episodes (TMDB) and the policy's disk facts of both editions, read ahead of publication.</summary>

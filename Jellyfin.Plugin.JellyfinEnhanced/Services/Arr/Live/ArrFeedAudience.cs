@@ -183,6 +183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (_series.Count > MaxCacheEntries) _series.Clear();
             if (_seasons.Count > MaxCacheEntries) _seasons.Clear();
 
+            var publication = _libraries.Parental?.CapturePublication();
             var now = _now();
             // What every answer depends on besides the key: a change to any of it decides afresh. The policy revision
             // is the one of the user the answers are decided with (not another read, which a change could land
@@ -190,9 +191,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             var stamp = Acquire.ArrJellyfinView.PolicyRevisionOf(user)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
                 + "|" + RegistryStamp()
+                + "|" + publication?.Revision
                 + "|" + _libraries.Revision
                 + "|" + (_requests?.Revision ?? 0).ToString(CultureInfo.InvariantCulture);
-            var visible = own;
+            var visible = new List<string>(own);
+            var unverified = new List<string>();
             foreach (var change in changes)
             {
                 if (!ArrTitleKey.TryParse(change.Key, out var type, out var id, out _, out _)) continue;
@@ -210,8 +213,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                     wantsProof |= v == Verdict.Absent;
                 }
                 if (shown) visible.Add(change.Key);
-                else if (wantsProof) absent?.Add(change.Key);
+                else if (wantsProof) unverified.Add(change.Key);
             }
+            if (publication?.Current == false) return own;
+            foreach (var key in unverified) absent?.Add(key);
             return visible;
         }
 

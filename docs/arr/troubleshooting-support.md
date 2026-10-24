@@ -251,3 +251,15 @@ evidence is retried after the gate's five-minute failure cache expires; in-fligh
 earlier by completing in the background. Avoid rapid retries. The initial list read has its own
 transport timeout; the two-second budget applies to title evidence preparation, including slot waits
 and repeated preparation after settings change.
+
+### A title disappears while its metadata is loading
+
+A change to the parental evidence provider, connection or metadata country ends earlier decisions,
+including cached feed and list decisions and pending season rows. Reload the page to check the title
+under the current settings. A response withheld at final publication returns 503 with private/no-store
+caching and a short Retry-After; a refused season page returns 404. Discover/search retain their
+safe partial HTTP 200 contract above.
+
+Public title details preserve Jellyfin's current permission to open an owned copy, including an
+unrated series when Block Unrated Series is off. Hidden copies and hidden seasons or episodes do not
+grant this permission. For restricted viewers, genuinely absent titles still require verified parental evidence.

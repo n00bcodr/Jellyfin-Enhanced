@@ -213,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private string Region()
         {
-            var code = _serverConfig.Configuration.MetadataCountryCode;
+            var code = _serverConfig.Configuration?.MetadataCountryCode;
             return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
         }
 
@@ -551,6 +551,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Nonsecret revision of evidence source, configuration, country and decision semantics.</summary>
         public string EvidenceRevision => "parental-v2|" + JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend + "|" + _evidence.Capture().CacheScope + "|" + Region();
+
+        /// <summary>Captures the evidence used by a JE publication; legacy backend behavior is unchanged.</summary>
+        internal Acquire.EvidencePublication CapturePublication() => new(() =>
+            string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase) ? EvidenceRevision : "-");
+
+        /// <summary>Current native entitlement for a broad consumer; absent-title checks never use this exemption.</summary>
+        internal bool MayOpenLocal(string kind, int tmdb, string userId)
+            => TryGetRestrictedPolicy(userId, out var policy) && JeEvidence && _evidence.MayOpenLocal(kind, tmdb, policy.NativeUser);
 
         // All JE entry points share this decision. Adult is a verified refusal even without other facets;
         // missing regional ratings, failed scoring and incomplete required tags remain unknown.

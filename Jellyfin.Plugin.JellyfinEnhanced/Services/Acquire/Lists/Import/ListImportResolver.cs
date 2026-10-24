@@ -175,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>The outcome.</returns>
         public async Task<ImportResolveOutcome> ResolveAsync(IReadOnlyList<ImportEntryDto> entries, ImportResolveOptions options, CancellationToken cancellationToken)
         {
+            var publication = _access.CapturePublication();
             var clock = Stopwatch.StartNew();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(options.Deadline);
@@ -217,6 +218,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _logger.Info($"[Lists] Resolved {entries.Count} import entries for {options.Context.Owner} in {clock.ElapsedMilliseconds} ms: "
                 + $"{response.Results.Count(r => r.Confidence == ImportScoring.Levels.High)} high, {response.Results.Count(r => r.State == "transient")} transient, {options.Context.Calls} {Provider} calls "
                 + $"(limiter since start: {total} calls, peak {peak} concurrent, at most {perSecond} started in any second).");
+            if (!publication.Current)
+            {
+                response.Results.Clear();
+                response.Complete = false;
+                pending = true;
+            }
             return new ImportResolveOutcome(response, pending);
         }
 

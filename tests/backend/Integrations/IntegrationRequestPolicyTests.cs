@@ -108,7 +108,7 @@ public class IntegrationRequestParentalTests
     [Theory]
     [InlineData("G", true, false)]
     [InlineData("R", false, false)]
-    [InlineData("", false, false)]
+    [InlineData("", false, true)]
     [InlineData("fail", false, true)]
     public async Task AnAbsentTitlesUnverifiedRatingIsUnknownNotARefusal(string rating, bool visible, bool unknownAfter)
     {

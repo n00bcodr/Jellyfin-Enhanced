@@ -378,7 +378,7 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
 /// </summary>
 public sealed class TitlePresentationResultFilter(UserConfigurationManager manager, SpoilerPresentation spoilers, ILibraryManager library,
     MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null, IUserManager? users = null,
-    MediaBrowser.Model.Globalization.ILocalizationManager? localization = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
+    MediaBrowser.Model.Globalization.ILocalizationManager? localization = null, SeerrParentalFilter? parental = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
 {
     /// <summary>What the host vouches for in one projection (its closed lists, the library's entities).</summary>
     private PrivacyValueHost Values() => new(library, localization);
@@ -388,6 +388,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
+    private const string EvidenceMark = "__JE_PARENTAL_PUBLICATION";
+
     private const string InputsMark = "__JE_PRESENTATION_INPUTS";
 
     /// <inheritdoc />
@@ -396,6 +398,13 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         // The input tick before the action reads anything: the host builds its answer (an item's user data, its owner) with
         // the inputs of that moment, so the delivery gate compares from here.
         context.HttpContext.Items[InputsMark] = PrivacyInputs.Now;
+        // Capture before any action/facade reads. This also covers page resolution before a downstream service's stamp.
+        // All authenticated reads are fenced, including native images and facade short circuits outside the JSON registry.
+        // Discover/search already retry through ResponseGate and own the safe-partial 200 contract.
+        if (context.ActionDescriptor is not ControllerActionDescriptor { ControllerName: "AcquireDiscover" }
+            && (PrivacySurfaceRegistry.IsRead(context.HttpContext) || context.ActionDescriptor is ControllerActionDescriptor { ControllerName: "AcquireListImport", ActionName: "Resolve" or "Fetch" })
+            && parental?.TryGetRestrictedPolicy(UserHelper.GetCurrentUserId(context.HttpContext.User)?.ToString("N"), out _) == true)
+            context.HttpContext.Items[EvidenceMark] = parental.CapturePublication();
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -412,6 +421,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <inheritdoc />
     public void OnResultExecuting(ResultExecutingContext context)
     {
+        if (context.HttpContext.Items[EvidenceMark] is Acquire.EvidencePublication evidence && !evidence.Current)
+        {
+            Withhold(context);
+            context.HttpContext.Response.Headers.Remove("ETag");
+            context.HttpContext.Response.Headers.Remove("Last-Modified");
+            context.HttpContext.Response.Headers["Retry-After"] = "1";
+            return;
+        }
         var read = PrivacySurfaceRegistry.IsRead(context.HttpContext);
         var viewer = UserHelper.GetCurrentUserId(context.HttpContext.User);
         if (viewer == null || viewer == Guid.Empty) return;
