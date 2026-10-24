@@ -248,8 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 if (requiresDrain != null && !requiresDrain())
                 {
                     ct.ThrowIfCancellationRequested();
-                    commit();
-                    lock (_gate) Read();
+                    CommitConfigurationChoice(commit, resetSignature: false);
                     return;
                 }
                 Admission[] active;
@@ -266,11 +265,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 ct.ThrowIfCancellationRequested();
                 // The atomic configuration writer may wait for a lifecycle/configuration lock. Keep admissions
                 // fenced, but never hold the backend monitor while calling that writer (or while draining).
-                commit();
-                lock (_gate) { _signature = null; Read(); }
+                CommitConfigurationChoice(commit, resetSignature: true);
             }
             finally { lock (_gate) { _fenced = false; _drained = null; } _transitions.Release(); }
         }
+        // A2 JOIN SEAM: wrap this entire method body in EvidenceRevision.Advance(() => { ... }).
+        // Enter that barrier BEFORE commit() or _gate, after the E1 admission drain. No configuration,
+        // ledger or backend monitor may be held while A2 drains outstanding HTTP responses. Both
+        // coordinated writer branches converge here; neither invents a second facts-generation owner.
+        private void CommitConfigurationChoice(Action commit, bool resetSignature)
+        {
+            commit();
+            lock (_gate)
+            {
+                if (resetSignature) _signature = null;
+                Read();
+            }
+        }
+
         /// <summary>A cancellable admission to one backend epoch.</summary>
         public sealed class Admission : IDisposable
         {

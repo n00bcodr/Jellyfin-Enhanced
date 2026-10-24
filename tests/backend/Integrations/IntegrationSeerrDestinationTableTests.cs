@@ -609,13 +609,13 @@ public class IntegrationSeerrDestinationTableTests
     };
 
     // Where the title identity itself is worked out: these look titles up by each alias on purpose.
-    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore" };
+    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore", "RequestLedger.IsRetainedIdentity" };
 
     // The rule file a listed path is in.
     private static string FileOf(string member) => member switch
     {
         "RequestLedger.ImportSeerr" => "RequestLedgerImport.cs",
-        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" => "RequestLedgerTitles.cs",
+        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" or "RequestLedger.IsRetainedIdentity" => "RequestLedgerTitles.cs",
         _ when member.StartsWith("FutureSeasonCharges.", StringComparison.Ordinal) => "FutureSeasonCharges.cs",
         _ => "RequestLedger.cs",
     };

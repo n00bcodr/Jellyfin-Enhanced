@@ -80,7 +80,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 using var effect = SeerrFacts.BeginEffect();
                 var keys = Keys(aliases, parsed);
-                if (keys.Count < 2 || ledger.Unify(keys, policy, now) is not { } merge) return null;
+                // The combined resolver may reach an arr identity through a Seerr-only id. Record
+                // each actual arr-only proof independently before writing the combined incidental
+                // join. The enclosing effect still fences all writes if those original inputs retire.
+                TitleMerge? local = null;
+                foreach (var candidate in keys.Select(TitleKey.Parse).OfType<TitleKey>())
+                {
+                    var proved = ledger.UnifyJeAliases(aliases.ArrOnly(candidate).Prepend(candidate).Select(k => k.ToString()), policy, now);
+                    if (proved == null) continue;
+                    local = proved;
+                    feed?.Bump(proved.Keys.Concat(proved.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
+                }
+                var merge = keys.Count < 2 ? null : ledger.Unify(keys, policy, now);
+                if (merge == null) return local;
                 feed?.Bump(merge.Keys.Concat(merge.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
                 return merge;
             }

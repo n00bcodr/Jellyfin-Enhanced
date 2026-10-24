@@ -371,9 +371,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public void WarnRateLimited(string key, string message)
         {
-            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
-            var stored = _warnedAtFacts.AddOrUpdate(key, now,
+            var stored = _warnedAt.AddOrUpdate(key, now,
                 (_, last) => (now - last) >= PerKeyWarnInterval ? now : last);
             if (stored != now) return;
             _logger.Warning(message);
@@ -414,8 +413,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _corruptionLog.TryRemove(userKey, out _);
         }
-        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _warnedAtFactsOwner = new();
-        private static ConcurrentDictionary<string, DateTime> _warnedAtFacts { get => _warnedAtFactsOwner.Read(ref _warnedAt, () => new()); set => _warnedAtFactsOwner.Store(ref _warnedAt, value); }
         private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)>> _collectionScopeCacheFactsOwner = new();
         private static ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCacheFacts { get => _collectionScopeCacheFactsOwner.Read(ref _collectionScopeCache, () => new(StringComparer.Ordinal)); set => _collectionScopeCacheFactsOwner.Store(ref _collectionScopeCache, value); }
         private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)>> _providerTitlesFactsOwner = new();

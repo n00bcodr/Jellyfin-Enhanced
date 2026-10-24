@@ -15,8 +15,8 @@ including resolved TMDB identities, edition and scope. It requires a real Jellyf
 `available`, `complete`, `reason`, `backend`, `revision`, `from`, `to`, `titles`, `code` and `retryable`. A `503` means the underlying ownership read is unavailable; consumers must preserve their requested-only restriction. Title membership does not
 grant library, parental, edition or episode access. Downloads and History apply their existing audience
 checks in addition to this ownership filter. Visibility uses each interest's stored destination, even
-when the default instance changes. Learned provider aliases remain available from the ledger after restart
-or removal from an arr library.
+when the default instance changes. Accepted/imported and independently proved JE aliases remain available from the ledger after restart
+or removal from an arr library. Incidental Seerr aliases retain the generation fence described below.
 
 The HTTP result groups interests by `(mediaType, tmdbId)`. Each title has a normalized TMDB `key`,
 known provider `aliases`, and `parts[]` retaining scope, edition (`variant`), seasons, episodes and
@@ -126,3 +126,47 @@ Seerr entry gate; preview and status remain fenced readers.
 
 Only a completed durable migration command receives that acknowledgement treatment. An uncommitted
 response on the same route remains subject to the ordinary stale-reader checks.
+
+
+### Alias provenance rank (E1s round 6)
+
+An existing accepted/imported association and an independently established JE association share
+one durable rank. An incidental association learned from a Seerr answer has the lower rank and
+retains its original process/facts generation. A missing association is unknown, never durable
+proof merely because an origin row is absent. The additive schema-4 origin table represents
+these ranks without a destructive migration: existing physical association plus no origin is
+durable; an origin row is incidental. No new schema version or irreversible rewrite is needed.
+
+A later incidental join captures the old rank before writing. It cannot replace a durable
+association, change its canonical anchor, or give a new alias the authority of an existing
+request. A hint that would join two separately retained identities is withheld for independent
+proof. Retirement of the incidental alias leaves every accepted association and its request,
+job, acquisition and history accessible under the original accepted ids. Provider preference
+(TVDB for series, TMDB for movies) applies within the authority available for the join.
+
+Independent JE proof promotes only its own proved ids and already durable connected ids;
+incidental members pulled into the group do not gain that rank. The arr-only part of the
+resolver is recorded independently before writing the combined incidental join. Acceptance/import promotes only currently
+visible associations; asking under an already hidden alias cannot revive its retired mapping.
+
+| Alias writer / entry | Rank enforcement |
+|---|---|
+| `RequestLedger.Unify` / `UnifyJeAliases` → `Group`, `IndependentGroup`, `UnifyCore` | Capture existing authority before upsert; preserve durable anchors and associations; only new/incidental Seerr associations receive an origin; independent proof does not promote other incidental members |
+| `RequestTitleIdentity.Learn` (including `Entry` and background `Reconcile`) | Record all arr-only groups reached by the resolver with independent rank first, then pass combined resolution through the same ranked ledger join; existing effect/database fences remain |
+| `RequestLedger.AcceptActiveAliases` from `CreateCore`, `ApproveCore`, and `ImportSeerr` | Explicit acceptance/import upgrades current visible associations only; origin removal is a promotion and cannot affect hidden associations |
+| `AcquireDatabase` additive schema-4 initialization | Existing accepted request/acquisition groups stay durable; unaccepted legacy associations receive conservative process/generation origins, once |
+
+Native library poster tags retain their native publication lifecycle across adoption. Their
+snapshot is independent native metadata, checked by the compiled producer proof; replacing a
+published snapshot with an empty dictionary while keeping its version is not a valid miss.
+The proof follows stored callback initializers, static initializer side effects and assignment sites, as well as async/iterator
+bodies. Producer discovery recognizes conditional cache stores (`?.Add`) as writers.
+
+The log-only warning throttles in `TitlePresentationResultFilter` and `SpoilerUserResolver`
+are explicit operational state. They suppress repeated diagnostics, never answer a provider or
+make a delivery decision. Keeping them outside the backend monitor also preserves the privacy
+rule that delivery takes no blocking backend lock after its final policy check. The operational
+inventory records their exact types and purpose; answer caches remain fenced or proven independent.
+The notification source guard follows a private facts-scope body only when every reference is
+an invocation from its matching owner inside `SeerrFacts.Compose`/`ComposeAsync`/`BackgroundAsync`; a direct caller
+around that scope invalidates the mapping and is a retained negative calibration.

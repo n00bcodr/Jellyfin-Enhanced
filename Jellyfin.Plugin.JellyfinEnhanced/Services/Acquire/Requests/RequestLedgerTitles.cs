@@ -117,18 +117,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="policy">Current policy (a waiting request a merged one covers is released only when its asker may still ask).</param>
         /// <param name="now">Now.</param>
         public TitleMerge? Unify(IEnumerable<string> keys, IRequestPolicy policy, DateTimeOffset now)
+            => Unify(keys, policy, now, SeerrFacts.HasSeerrDependency);
+
+        // Only RequestTitleIdentity's arr-only resolver may supply independent proof inside an
+        // enclosing Seerr effect. The final database publication still retains that effect's fence.
+        internal TitleMerge? UnifyJeAliases(IEnumerable<string> keys, IRequestPolicy policy, DateTimeOffset now)
+            => Unify(keys, policy, now, false);
+
+        private TitleMerge? Unify(IEnumerable<string> keys, IRequestPolicy policy, DateTimeOffset now, bool seerrOrigin)
         {
-            var seerrOrigin = SeerrFacts.HasSeerrDependency;
             var factsOrigin = Helpers.UserCacheRegistry.PersistentOrigin(Helpers.UserCacheRegistry.Begin());
             var given = keys.Select(TitleKey.Parse).OfType<TitleKey>().Select(k => k.Title).DistinctBy(k => k.ToString()).ToList();
             if (given.Count < 2 || given.Any(k => k.IsMovie != given[0].IsMovie) || !_db.Available) return null;
-            if (!_db.Read(c => Group(c, null, given) is { } group && Needed(c, null, group, seerrOrigin))) return null;
-            return _db.Write((c, t) => Group(c, t, given) is { } group && Needed(c, t, group, seerrOrigin) ? UnifyCore(c, t, group, policy, now, seerrOrigin, factsOrigin) : null);
+            if (!_db.Read(c => Group(c, null, given, seerrOrigin) is { } group && Needed(c, null, group, given, seerrOrigin))) return null;
+            return _db.Write((c, t) => Group(c, t, given, seerrOrigin) is { } group && Needed(c, t, group, given, seerrOrigin) ? UnifyCore(c, t, group, given, policy, now, seerrOrigin, factsOrigin) : null);
         }
 
         // The title's keys: the ones given, what the ledger already maps them to, and the aliases it maps to those, with the
         // canonical one first. Null when two ids of one provider disagree.
-        private static List<string>? Group(SqliteConnection c, SqliteTransaction? t, IReadOnlyList<TitleKey> given)
+        private static List<string>? Group(SqliteConnection c, SqliteTransaction? t, IReadOnlyList<TitleKey> given, bool seerrOrigin)
         {
             var keys = new HashSet<string>(given.Select(k => k.ToString()), StringComparer.Ordinal);
             foreach (var canonical in keys.Select(k => Canonical(c, t, k)).ToList()) keys.Add(canonical);
@@ -140,33 +147,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var parsed = keys.Select(TitleKey.Parse).OfType<TitleKey>().ToList();
             if (parsed.GroupBy(k => k.Provider).Any(g => g.Count() > 1)) return null;
-            return parsed.OrderBy(Rank).Select(k => k.ToString()).ToList();
+            var ordered = parsed.OrderBy(Rank).Select(k => k.ToString()).ToList();
+            if (seerrOrigin)
+            {
+                // An incidental join may add identities, but cannot replace a durable group's anchor.
+                // Otherwise retiring the new anchor would also retire the old accepted association.
+                var anchors = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var id in ordered)
+                {
+                    var durable = Scalar(c, t, "SELECT canonical FROM title_aliases a WHERE alias=$a AND NOT EXISTS(SELECT 1 FROM title_alias_origins o WHERE o.alias=a.alias)", ("$a", id));
+                    if (durable != null) anchors.Add(durable);
+                    if (IsRetainedIdentity(c, t, id)) anchors.Add(id);
+                }
+                // A low-authority hint cannot merge two independently retained identities.
+                if (anchors.Count > 1) return null;
+                if (anchors.SingleOrDefault() is { } anchor)
+                {
+                    ordered.Remove(anchor);
+                    ordered.Insert(0, anchor);
+                }
+            }
+            else
+            {
+                var proved = IndependentGroup(c, t, given);
+                // Incidental members pulled in by Group do not become independent evidence.
+                var anchor = ordered.First(proved.Contains);
+                foreach (var alias in ordered)
+                {
+                    if (AssociationAuthority(c, t, alias) == AliasAuthority.Durable
+                        && (!proved.Contains(alias) || !proved.Contains(Canonical(c, t, alias)))) return null;
+                    if (!proved.Contains(alias) && IsRetainedIdentity(c, t, alias)) return null;
+                }
+                ordered.Remove(anchor);
+                ordered.Insert(0, anchor);
+            }
+            return ordered;
+        }
+
+        // Exact stored identities establish authority, not title membership: resolving aliases here
+        // would let the incidental association being judged manufacture its own durable anchor.
+        private static bool IsRetainedIdentity(SqliteConnection c, SqliteTransaction? t, string id)
+            => Scalar(c, t, "SELECT 1 WHERE EXISTS(SELECT 1 FROM wants WHERE title_key=$a) OR EXISTS(SELECT 1 FROM acquisitions WHERE title_key=$a)", ("$a", id)) != null;
+
+        private static HashSet<string> IndependentGroup(SqliteConnection c, SqliteTransaction? t, IReadOnlyList<TitleKey> given)
+        {
+            var proved = given.Select(k => k.ToString()).ToHashSet(StringComparer.Ordinal);
+            foreach (var id in proved.ToArray())
+                if (AssociationAuthority(c, t, id) == AliasAuthority.Durable) proved.Add(Canonical(c, t, id));
+            foreach (var id in proved.ToArray())
+            {
+                using var cmd = Cmd(c, t, "SELECT alias FROM title_aliases a WHERE canonical=$c AND NOT EXISTS(SELECT 1 FROM title_alias_origins o WHERE o.alias=a.alias)", ("$c", id));
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) proved.Add(r.GetString(0));
+            }
+            return proved;
         }
 
         // Something to do: an alias not mapped to the canonical key yet, or a row still held under an alias.
-        private static bool Needed(SqliteConnection c, SqliteTransaction? t, List<string> group, bool seerrOrigin)
+        private static bool Needed(SqliteConnection c, SqliteTransaction? t, List<string> group, IReadOnlyList<TitleKey> given, bool seerrOrigin)
         {
             var aliases = group.Skip(1).ToList();
-            if (!seerrOrigin && aliases.Any(a => Scalar(c, t, "SELECT alias FROM title_alias_origins WHERE alias=$a", ("$a", a)) != null)) return true;
+            if (!seerrOrigin)
+            {
+                var proved = IndependentGroup(c, t, given);
+                if (aliases.Any(a => proved.Contains(a) && AssociationAuthority(c, t, a) == AliasAuthority.Incidental)) return true;
+            }
             if (aliases.Any(a => Scalar(c, t, "SELECT canonical FROM active_title_aliases WHERE alias=$a", ("$a", a)) != group[0])) return true;
             if (Scalar(c, t, "SELECT alias FROM active_title_aliases WHERE alias=$c", ("$c", group[0])) != null) return true;
             return aliases.Any(a => Scalar(c, t, "SELECT 1 WHERE EXISTS(SELECT 1 FROM wants WHERE title_key=$a) OR EXISTS(SELECT 1 FROM acquisitions WHERE title_key=$a)", ("$a", a)) != null);
         }
 
-        private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IRequestPolicy policy, DateTimeOffset now, bool seerrOrigin, string factsOrigin)
+        // The origin table is the persisted rank: absence on an EXISTING association is durable;
+        // presence is incidental and carries the original facts generation. Absence of an association
+        // is never evidence. All writers and acceptance/import promotion use this same ordering.
+        private enum AliasAuthority { Unknown, Incidental, Durable }
+
+        private static AliasAuthority AssociationAuthority(SqliteConnection c, SqliteTransaction? t, string alias)
+            => Scalar(c, t, "SELECT alias FROM title_aliases WHERE alias=$a", ("$a", alias)) == null ? AliasAuthority.Unknown
+                : Scalar(c, t, "SELECT alias FROM title_alias_origins WHERE alias=$a", ("$a", alias)) == null ? AliasAuthority.Durable : AliasAuthority.Incidental;
+
+        private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IReadOnlyList<TitleKey> given, IRequestPolicy policy, DateTimeOffset now, bool seerrOrigin, string factsOrigin)
         {
             var canonical = group[0];
             var aliases = group.Skip(1).ToList();
             // The aliases, each mapped straight to the canonical key (an earlier canonical key included).
+            // Capture authority BEFORE replacing rows. Missing origin on an existing association means
+            // accepted/imported or independently learned JE proof; it outranks any incidental Seerr hint.
+            var durable = aliases.Where(alias => AssociationAuthority(c, t, alias) == AliasAuthority.Durable).ToHashSet(StringComparer.Ordinal);
+            var independent = seerrOrigin ? new HashSet<string>(StringComparer.Ordinal) : IndependentGroup(c, t, given);
             Exec(c, t, "DELETE FROM title_aliases WHERE alias=$c", ("$c", canonical));
             foreach (var alias in aliases)
                 Exec(c, t, "INSERT INTO title_aliases(alias,canonical,learned_at) VALUES($a,$c,$at) ON CONFLICT(alias) DO UPDATE SET canonical=$c,learned_at=$at WHERE canonical<>$c", ("$a", alias), ("$c", canonical), ("$at", Ms(now)));
             Exec(c, t, "DELETE FROM title_alias_origins WHERE alias=$c", ("$c", canonical));
             foreach (var alias in aliases)
             {
-                if (seerrOrigin)
+                if (seerrOrigin && !durable.Contains(alias))
                     Exec(c, t, "INSERT INTO title_alias_origins(alias,facts_generation) VALUES($a,$g) ON CONFLICT(alias) DO UPDATE SET facts_generation=$g", ("$a", alias), ("$g", factsOrigin));
-                else Exec(c, t, "DELETE FROM title_alias_origins WHERE alias=$a", ("$a", alias));
+                else if (durable.Contains(alias) || independent.Contains(alias))
+                    Exec(c, t, "DELETE FROM title_alias_origins WHERE alias=$a", ("$a", alias));
+                else
+                    Exec(c, t, "INSERT INTO title_alias_origins(alias,facts_generation) VALUES($a,$g) ON CONFLICT(alias) DO NOTHING", ("$a", alias), ("$g", factsOrigin));
             }
             var people = new HashSet<Guid>();
             var moved = new List<RequestWant>();

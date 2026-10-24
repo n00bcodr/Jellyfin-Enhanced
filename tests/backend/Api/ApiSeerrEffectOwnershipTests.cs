@@ -90,18 +90,19 @@ public class ApiSeerrEffectOwnershipTests
         await work.WaitAsync(Limit); await transition.WaitAsync(Limit);
         Assert.False(committedWhileBlocked, "adoption committed before the consumed alias reached its actual SQLite/feed sink");
         Assert.False(feedAfterAdoption);
-        Assert.Equal(Tmdb, r.Lab.Db.Read(c =>
+        Assert.Equal(Imdb, r.Lab.Db.Read(c =>
         {
             using var query = c.CreateCommand();
             query.CommandText = "SELECT canonical FROM title_aliases WHERE alias=$alias";
-            query.Parameters.AddWithValue("$alias", Imdb);
+            query.Parameters.AddWithValue("$alias", Tmdb);
             return (string?)query.ExecuteScalar();
         }));
         Assert.Equal(Imdb, r.Lab.Ledger.CanonicalKey(Imdb));
         Assert.True(r.Lab.Feed.Cursor > feedAt);
         Assert.Empty(r.Facts.All);
-        // Round 5 retains this incidental commit physically, but adoption retires its Seerr read authority.
-        // Deliberate request/import acceptance has separate durable-history controls.
+        Assert.Equal(Tmdb, r.Lab.Ledger.CanonicalKey(Tmdb));
+        // The existing IMDb want stays accepted. The newly incidental TMDB association is
+        // retained physically, but adoption retires only its Seerr read authority.
         Assert.Equal(Imdb, RequestTitleIdentity.Held(r.Lab.Ledger, r.Aliases, TitleKey.Parse(Imdb)!).ToString());
     }
 
@@ -123,7 +124,7 @@ public class ApiSeerrEffectOwnershipTests
         try
         {
             await written.Task.WaitAsync(Limit);
-            Assert.Equal(Tmdb, r.Lab.Ledger.CanonicalKey(Imdb));
+            Assert.Equal(Imdb, r.Lab.Ledger.CanonicalKey(Tmdb));
             transition = EffectiveRequestsBackend.Shared.TransitionAsync(() => r.Lab.Config.ArrRequestBackend = "je", default);
             early = await Task.WhenAny(transition, Task.Delay(1000)) == transition;
         }
@@ -158,7 +159,8 @@ public class ApiSeerrEffectOwnershipTests
         using var r = new Rig(); await r.Warm();
         if (adopt) await EffectiveRequestsBackend.Shared.TransitionAsync(() => r.Lab.Config.ArrRequestBackend = "je", default);
         r.Run(root);
-        Assert.Equal(adopt ? Imdb : Tmdb, r.Lab.Ledger.CanonicalKey(Imdb));
+        Assert.Equal(adopt ? Tmdb : Imdb, r.Lab.Ledger.CanonicalKey(Tmdb));
+        Assert.Equal(Imdb, r.Lab.Ledger.CanonicalKey(Imdb));
     }
 
     [Theory]

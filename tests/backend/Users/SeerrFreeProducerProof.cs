@@ -16,6 +16,7 @@ internal static class SeerrFreeProducerProof
             var graph = Production.Value;
             return roots.Select(m => graph.GetValueOrDefault((m.Module, m.MetadataToken))).OfType<string>().Distinct().ToArray();
         }
+        var callbacks = CallbackAssignments(assembly);
         var pending = new Stack<(MethodBase Method, string Path)>(roots.Select(m => (m, m.DeclaringType!.FullName + "." + m.Name)));
         var seen = new HashSet<(Module, int)>();
         var violations = new List<string>();
@@ -28,6 +29,9 @@ internal static class SeerrFreeProducerProof
             {
                 if (forbidden(reference.DeclaringType) || reference is FieldInfo field && ForbiddenType(field.FieldType, forbidden))
                 { violations.Add(item.Path + " -> " + reference.DeclaringType?.FullName + "." + reference.Name); continue; }
+                if (reference is FieldInfo callback && callbacks.TryGetValue((callback.Module, callback.MetadataToken), out var assignments))
+                    foreach (var assignment in assignments)
+                        pending.Push((assignment, item.Path + " -> stored callback " + callback.Name + " -> " + assignment.Name));
                 if (reference is MethodBase called && called.DeclaringType?.Assembly == assembly)
                 {
                     pending.Push((called, item.Path + " -> " + called.DeclaringType.Name + "." + called.Name));
@@ -78,6 +82,7 @@ internal static class SeerrFreeProducerProof
         var producers = new Dictionary<(Module, int), HashSet<(Module, int)>>();
         var bad = new Dictionary<(Module, int), string>();
         var dispatch = new Dictionary<(Module, int), MethodBase[]>();
+        var callbacks = CallbackAssignments(assembly);
         void Edge(MethodBase from, MethodBase to)
         {
             if (to.DeclaringType?.Assembly != assembly) return;
@@ -98,6 +103,8 @@ internal static class SeerrFreeProducerProof
             {
                 if (Seerr(reference.DeclaringType) || reference is FieldInfo field && ForbiddenType(field.FieldType, Seerr))
                     bad.TryAdd(key, method.DeclaringType!.FullName + "." + method.Name + " -> " + reference.DeclaringType?.FullName + "." + reference.Name);
+                if (reference is FieldInfo callback && callbacks.TryGetValue((callback.Module, callback.MetadataToken), out var assignments))
+                    foreach (var assignment in assignments) Edge(method, assignment);
                 if (reference is not MethodBase called || called.DeclaringType?.Assembly != assembly) continue;
                 Edge(method, called);
                 if (called.DeclaringType.IsInterface && called is MethodInfo contract)
@@ -131,6 +138,50 @@ internal static class SeerrFreeProducerProof
         _producerCallers = producers;
         _producerMethods = methods.GroupBy(m => (m.Module, m.MetadataToken)).ToDictionary(g => g.Key, g => g.First());
         return bad;
+    }
+
+    // Delegate Invoke has no direct call edge to a stored target. Include targets from every
+    // assignment (constructors/type initializers included), delegate factories and copied callback
+    // fields, following compiler-generated lambda caches to their own initializers. Do not treat
+    // unrelated instance-constructor work as computation of a field's callback.
+    private static Dictionary<(Module, int), MethodBase[]> CallbackAssignments(Assembly assembly)
+    {
+        var definitions = new Dictionary<(Module, int), HashSet<MemberInfo>>();
+        var methods = assembly.GetTypes().SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)));
+        foreach (var method in methods)
+        {
+            var stores = PrivacyOutputPathScan.Referenced(method, fieldStoresOnly: true).OfType<FieldInfo>()
+                .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType)).ToArray();
+            if (stores.Length == 0) continue;
+            var targets = PrivacyOutputPathScan.Referenced(method, fieldStoresOnly: false, callbackTargetsOnly: true).ToArray();
+            foreach (var field in stores)
+            {
+                var id = (field.Module, field.MetadataToken);
+                if (!definitions.TryGetValue(id, out var found)) definitions[id] = found = new();
+                found.UnionWith(targets);
+                // Loading a static callback also runs its type initializer. Its side effects are
+                // reachable even when they are separate from the callback-producing expression.
+                if (field.IsStatic && field.DeclaringType?.TypeInitializer is { } initializer) found.Add(initializer);
+            }
+        }
+        var result = new Dictionary<(Module, int), MethodBase[]>();
+        foreach (var field in definitions.Keys)
+        {
+            var seen = new HashSet<(Module, int)>();
+            var pending = new Stack<(Module, int)>(); pending.Push(field);
+            var targets = new HashSet<MethodBase>();
+            while (pending.TryPop(out var id))
+            {
+                if (!seen.Add(id) || !definitions.TryGetValue(id, out var references)) continue;
+                foreach (var reference in references)
+                {
+                    if (reference is MethodBase target) targets.Add(target);
+                    else if (reference is FieldInfo copied) pending.Push((copied.Module, copied.MetadataToken));
+                }
+            }
+            result[field] = targets.ToArray();
+        }
+        return result;
     }
 
     private static bool ForbiddenType(Type type, Func<Type?, bool> forbidden)

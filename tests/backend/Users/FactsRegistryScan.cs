@@ -53,8 +53,14 @@ internal static class FactsRegistryScan
             if (element.Parent is AssignmentExpressionSyntax write && write.Left == element) return true;
             if (element.Parent is MemberAccessExpressionSyntax on && on.Parent is InvocationExpressionSyntax) return true;
         }
+        // Conditional calls use a MemberBinding rather than MemberAccess. Resolve the invoked
+        // method semantically; the actual cache receiver remains the conditional expression.
+        if (node.Parent is ConditionalAccessExpressionSyntax conditional && conditional.Expression == node
+            && conditional.WhenNotNull is InvocationExpressionSyntax conditionalCall
+            && model.GetSymbolInfo(conditionalCall).Symbol is IMethodSymbol conditionalMethod)
+            return Mutates(conditionalMethod.Name);
         if (node.Parent is MemberAccessExpressionSyntax access && access.Expression == node && access.Parent is InvocationExpressionSyntax)
-            return access.Name.Identifier.ValueText is "Add" or "TryAdd" or "AddOrUpdate" or "GetOrAdd" or "TryUpdate" or "Set" or "Enqueue" or "Push" or "Insert" or "InsertRange" or "AddRange" or "AddFirst" or "AddLast" or "UnionWith" or "Sort";
+            return Mutates(access.Name.Identifier.ValueText);
         if (node.Parent is ArgumentSyntax argument)
         {
             if (argument.RefKindKeyword.ValueText is "ref" or "out") return true;
@@ -76,6 +82,8 @@ internal static class FactsRegistryScan
         return type?.IsValueType != true && type?.SpecialType != SpecialType.System_String && !immutableRecord
             && node.Parent is ReturnStatementSyntax or ArrowExpressionClauseSyntax or EqualsValueClauseSyntax;
     }
+
+    private static bool Mutates(string name) => name is "Add" or "TryAdd" or "AddOrUpdate" or "GetOrAdd" or "TryUpdate" or "Set" or "Enqueue" or "Push" or "Insert" or "InsertRange" or "AddRange" or "AddFirst" or "AddLast" or "UnionWith" or "Sort";
 
     internal static string TypeName(Type type)
         => type.DeclaringType == null ? type.Name.Split('`')[0] : TypeName(type.DeclaringType) + "." + type.Name.Split('`')[0];

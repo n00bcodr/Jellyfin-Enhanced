@@ -158,6 +158,7 @@ SpoilerFieldStripFilter.CategoryReveal.None	Jellyfin.Plugin.JellyfinEnhanced.Ser
 SpoilerUserResolver.CollectionScopeCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
 SpoilerUserResolver.PerKeyWarnInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
 SpoilerUserResolver.UserStateCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerUserResolver._warnedAt	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	diagnostic log de-duplication only, no reusable provider answer or delivery decision
 TagCacheMonitor._disposed	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
 TagCacheService.Instance	Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService?	service identity/reference, not a memoized computed answer
 TagCacheService._cacheReleased	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
@@ -176,6 +177,7 @@ TagCacheService._maxLastUpdated	long	service lifecycle, dirty-work admission, di
 TagCacheService._mutationEpoch	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
 TagCacheService._pending	Jellyfin.Plugin.JellyfinEnhanced.Services.TagCachePendingChanges	pending durable update work queue, not a lookup of a reusable fact
 TagCacheService._version	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TitlePresentationResultFilter._warnedUnclassified	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	diagnostic log de-duplication only, no reusable provider answer or delivery decision
 UserAccessCache.Ticket.Facts	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.Ticket	input provenance retained by the common envelope, not a reusable domain answer
 UserAccessCache.Ticket.Stamp	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority.Stamp	input provenance retained by the common envelope, not a reusable domain answer
 UserCacheRegistry.Operation.Tainted	bool	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer

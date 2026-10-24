@@ -522,10 +522,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private void WarnUnclassified(ActionContext context, object value)
     {
-        using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         var name = context.ActionDescriptor.DisplayName ?? "?";
         var now = DateTime.UtcNow;
-        if (_warnedUnclassifiedFacts.AddOrUpdate(name, now, (_, last) => now - last >= TimeSpan.FromHours(1) ? now : last) != now) return;
+        if (_warnedUnclassified.AddOrUpdate(name, now, (_, last) => now - last >= TimeSpan.FromHours(1) ? now : last) != now) return;
         logger?.Warning($"Presentation gate: {name} answered titles ({value.GetType().Name}) but is not in the privacy surface registry; withheld while a privacy policy applies. Re-warns hourly.");
     }
 
@@ -955,6 +954,4 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     /// <inheritdoc />
     public void OnResultExecuted(ResultExecutedContext context) { }
-    private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>> _warnedUnclassifiedFactsOwner = new();
-    private static System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedUnclassifiedFacts { get => _warnedUnclassifiedFactsOwner.Read(ref _warnedUnclassified, () => new(StringComparer.Ordinal)); set => _warnedUnclassifiedFactsOwner.Store(ref _warnedUnclassified, value); }
 }
