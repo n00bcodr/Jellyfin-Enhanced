@@ -28,6 +28,9 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
     /// <summary>The host's user-data store (whose saves the input log compares the watched state it judged with).</summary>
     internal IUserDataManager UserDataStore => userData;
 
+    /// <summary>The host's users (whose user data the delivery gate compares).</summary>
+    internal IUserManager Users => users;
+
     /// <summary>
     /// The viewer's <see cref="SpoilerPresentationContext.StateRevision"/> as of now: the state file and the admin's settings
     /// only, no library read (the delivery gate's re-read).
@@ -51,16 +54,12 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
         var key = "__JE_SPOILER_PRESENTATION_" + viewer.ToString("N");
         if (http?.Items.TryGetValue(key, out var hit) == true && hit is SpoilerPresentationContext cached)
         {
-            // The request's context is the state and library facts read earlier: the current attempt records them, as of then.
+            // The request's context is the state and library facts read earlier: the current attempt replays them (the
+            // document's content, and every library fact and watched state the context consumed).
             if (!cached.Unavailable) config.RecordPolicyRead(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, cached.State);
-            if (PrivacyReadSet.Current is { } reads)
-            {
-                reads.Library(cached.LibraryInputs, cached.ReadAt);
-                foreach (var id in cached.LibraryInputs) reads.Watched(viewer, id, cached.ReadAt);
-            }
+            if (cached.Evidence is { } evidence) PrivacyReadSet.ReplayCurrent(evidence);
             return cached;
         }
-        var readAt = PrivacyInputs.Now;
         var plugin = JellyfinEnhanced.Instance?.Configuration ?? new();
         SpoilerPresentationContext context;
         try
@@ -69,52 +68,60 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
             lock (config.GetUserFileLock(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName))
                 state = config.GetUserConfigurationStrict<UserSpoilerBlur>(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, quarantineCorrupt: false);
             context = new(state, plugin);
-            if (plugin.SpoilerBlurEnabled)
-            {
-                var ids = state.Series.Keys.Concat(state.Movies.Keys).Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty)
-                    .Where(id => id != Guid.Empty).Distinct().ToArray();
-                var person = users.GetUserById(viewer);
-                if (ids.Length > 0 && person != null)
-                {
-                    foreach (var batch in ids.Chunk(2000))
-                    {
-                        PrivacyReadSet.Current?.Library(batch);
-                        var items = library.GetItemList(new InternalItemsQuery { ItemIds = batch,
-                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } });
-                        foreach (var item in items)
-                        {
-                            if (item is not (Movie or Series)) continue;
-                            if (PrivacyIdentities.TitleKey(item) is not { } title) continue;
-                            var watched = item is Movie && PrivacyReads.UserData(userData, person, item)?.Played == true;
-                            context.AddLibraryTitle(title, watched);
-                        }
-                    }
-                }
-                // Collection membership is resolved once for the whole context from each guarded BoxSet's linked
-                // children (a BoxSet is not its movies' ancestor), never once per result card.
-                var collections = state.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToArray();
-                if (collections.Length > 0 && person != null)
-                {
-                    var members = collections.SelectMany(c => PrivacyIdentities.CollectionMembers(library, c)).Distinct().ToArray();
-                    context.AddCollectionMembers(members);
-                    foreach (var batch in members.Chunk(2000))
-                    {
-                        PrivacyReadSet.Current?.Library(batch);
-                        foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch,
-                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } }))
-                        {
-                            if (item is not Movie || PrivacyIdentities.TitleKey(item) is not { } title) continue;
-                            context.AddLibraryTitle(title, PrivacyReads.UserData(userData, person, item)?.Played == true);
-                        }
-                    }
-                }
-            }
+            if (plugin.SpoilerBlurEnabled) context.Evidence = PrivacyReadSet.Capture(() => { AddLibrary(context, state, viewer); return 0; }, out var evidence) == 0 ? evidence : null;
         }
         catch (Exception) { context = new(new(), plugin, unavailable: true); }
-        context.ReadAt = readAt;
         context.Seal();
         if (http != null) http.Items[key] = context;
         return context;
+    }
+
+    /// <summary>
+    /// The library facts a context consumes: its guarded titles' provider keys and the viewer's watched state of the movies,
+    /// and each guarded collection's members (with theirs), all recorded as facts of the reading answer.
+    /// </summary>
+    private void AddLibrary(SpoilerPresentationContext context, UserSpoilerBlur state, Guid viewer)
+    {
+        var ids = state.Series.Keys.Concat(state.Movies.Keys).Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty)
+            .Where(id => id != Guid.Empty).Distinct().ToArray();
+        var person = users.GetUserById(viewer);
+        if (ids.Length > 0 && person != null)
+        {
+            foreach (var batch in ids.Chunk(2000))
+            {
+                var items = PrivacyReads.Items(library, batch).Values;
+                foreach (var item in items)
+                {
+                    if (item is not (Movie or Series)) continue;
+                    if (PrivacyIdentities.TitleKey(item) is not { } title) continue;
+                    var watched = item is Movie && PrivacyReads.UserData(userData, person, item)?.Played == true;
+                    context.AddLibraryTitle(title, watched);
+                }
+            }
+        }
+        // Collection membership is resolved once for the whole context from each guarded BoxSet's linked
+        // children (a BoxSet is not its movies' ancestor), never once per result card.
+        var collections = state.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (collections.Length > 0 && person != null)
+        {
+            // Each collection's whole membership is consumed (the context answers for any later item): one fact each.
+            foreach (var c in collections)
+            {
+                var set = PrivacyIdentities.CollectionMembers(library, c);
+                PrivacyReads.Query("members:" + c.ToString("N"), PrivacyReads.SetOf(set), () => PrivacyReads.SetOf(PrivacyIdentities.MembersNow(library, c)),
+                    () => PrivacyIdentities.ForgetCollection(c));
+            }
+            var members = collections.SelectMany(c => PrivacyIdentities.CollectionMembers(library, c)).Distinct().ToArray();
+            context.AddCollectionMembers(members);
+            foreach (var batch in members.Chunk(2000))
+            {
+                foreach (var item in PrivacyReads.Items(library, batch).Values)
+                {
+                    if (item is not Movie || PrivacyIdentities.TitleKey(item) is not { } title) continue;
+                    context.AddLibraryTitle(title, PrivacyReads.UserData(userData, person, item)?.Played == true);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -138,8 +145,8 @@ public sealed class SpoilerPresentationContext
     private readonly bool _unavailable;
     internal bool Unavailable => _unavailable;
 
-    /// <summary>The input tick the context's library facts were read at.</summary>
-    internal long ReadAt { get; set; }
+    /// <summary>The library facts the context consumed (replayed by every answer of the request that reuses it).</summary>
+    internal PrivacyReadSet.Evidence? Evidence { get; set; }
     internal bool Enabled => _config.SpoilerBlurEnabled;
 
     /// <summary>The viewer's state; callers pass it to the existing native DTO stripper.</summary>
@@ -151,13 +158,9 @@ public sealed class SpoilerPresentationContext
     /// <summary>
     /// The fingerprint of what the viewer's state file and the admin's settings say, before the library facts the context
     /// adds (its guarded titles' keys, their watched state, collections' members): what the delivery gate re-reads, the
-    /// library facts being inputs it compares by their own revisions (<see cref="LibraryInputs"/>).
+    /// library facts being facts of their own (<see cref="Evidence"/>).
     /// </summary>
     public string StateRevision { get; }
-
-    /// <summary>The library items whose facts this context read: the guarded titles and collections, and the collections' members.</summary>
-    internal IEnumerable<Guid> LibraryInputs => State.Series.Keys.Concat(State.Movies.Keys).Concat(State.Collections.Keys)
-        .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Concat(_members);
 
     /// <summary>Creates a context; no shared upstream objects are modified.</summary>
     public SpoilerPresentationContext(UserSpoilerBlur state, PluginConfiguration config, bool unavailable = false)

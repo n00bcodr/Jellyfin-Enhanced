@@ -158,13 +158,43 @@ public sealed class PrivacyValueHost
     public BaseItem? Item(Guid? id)
     {
         if (id is not { } key || key == Guid.Empty || Library == null) return null;
-        // An entity the projection reads is one of the answer's inputs (the attempt's read-set records it).
-        PrivacyReadSet.Current?.Library(key);
-        if (_items.TryGetValue(key, out var known)) return known;
+        // An entity the projection reads is one of the answer's inputs: read as the host serves it now, and its facts (or
+        // its absence) recorded in the attempt's read-set; a memo hit within the strip replays them.
+        if (_items.TryGetValue(key, out var known))
+        {
+            Consumed(key, known);
+            return known;
+        }
         BaseItem? item;
-        try { item = Library.GetItemById(key) ?? Library.GetItemById<BaseItem>(key); }
+        try { item = PrivacyHostView.Item(Library, key); }
         catch (Exception) { item = null; }
+        Consumed(key, item);
         return _items[key] = item;
+    }
+
+    /// <summary>Reads several items a projection will take values from in one batch (each then answers from the memo).</summary>
+    public void Prefetch(IEnumerable<Guid> ids)
+    {
+        if (Library == null) return;
+        var wanted = ids.Where(id => id != Guid.Empty && !_items.ContainsKey(id)).Distinct().ToArray();
+        if (wanted.Length == 0) return;
+        Dictionary<Guid, BaseItem> found;
+        try { found = PrivacyHostView.Items(Library, wanted); }
+        catch (Exception) { return; }
+        foreach (var id in wanted) _items[id] = found.GetValueOrDefault(id);
+    }
+
+    /// <summary>
+    /// The values a projection takes from a library item (its ownership facts, and the vocabulary it lends: its genres and
+    /// its age rating) are facts of the answer, compared with the host's current item at every check.
+    /// </summary>
+    private void Consumed(Guid id, BaseItem? item)
+    {
+        var library = Library!;
+        PrivacyReads.Judged(library, id, item);
+        if (item == null) return;
+        static string Values(BaseItem? of) => of == null ? "-" : (of.OfficialRating ?? "~") + "|" + string.Join("\u001f", of.Genres ?? []);
+        PrivacyReads.Query("values:" + id.ToString("N"), Values(item), check => Values(check.Item(id)));
     }
 
     /// <summary>Whether the library holds an entity of this kind with this id and exactly this name.</summary>
@@ -196,11 +226,23 @@ public sealed class PrivacyValueHost
     /// <summary>The title's own people (the library's people of that item), memoized.</summary>
     public IReadOnlyList<PersonInfo> People(BaseItem title)
     {
-        if (_people.TryGetValue(title.Id, out var known)) return known;
-        IReadOnlyList<PersonInfo> people;
-        try { people = Library?.GetPeople(title) ?? []; }
-        catch (Exception) { people = []; }
-        return _people[title.Id] = people;
+        if (!_people.TryGetValue(title.Id, out var people))
+        {
+            try { people = Library?.GetPeople(title) ?? []; }
+            catch (Exception) { people = []; }
+            _people[title.Id] = people;
+        }
+        // The names a protected item may keep are the title's own: a fact of the answer (memo hits included).
+        if (Library is { } library)
+        {
+            static string Names(IEnumerable<PersonInfo> list) => string.Join("\u001f", list.Select(p => p?.Name + "\u001e" + p?.Role + "\u001e" + p?.Type));
+            PrivacyReads.Query("people:" + title.Id.ToString("N"), Names(people), check =>
+            {
+                try { return check.Item(title.Id) is { } live ? Names(library.GetPeople(live) ?? []) : null; }
+                catch (Exception) { return null; }
+            });
+        }
+        return people;
     }
 }
 

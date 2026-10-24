@@ -30,7 +30,14 @@
         const sent = JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true, reportsFailure: true, origin });
         // A revision seen while this change was out is read once every change of this tab is answered.
         sent.finally(() => internal.readAfterSave?.()).catch(() => {});
-        return sent.then(() => true, error => {
+        return sent.then(() => {
+            // The server now answers with these rules: what was asked for before it had them (card tags) is asked again
+            // ('je-hidden-content-changed' fired when the rules changed locally, before this save) (D46 r26).
+            if (generation === saveGeneration) {
+                try { window.dispatchEvent(new CustomEvent('je-hidden-content-saved')); } catch (_) { /* no listeners */ }
+            }
+            return true;
+        }, error => {
             if (generation !== saveGeneration || error?.sessionChanged) return false;
             // A change refused because the document couldn't be read was already reported by the store.
             if (!error?.settingsNotRead) {

@@ -86,9 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static bool IsUserStateCachedForTest(string userIdN)
             => !string.IsNullOrEmpty(userIdN) && _userStateCache.TryGet(userIdN, out _);
 
-        // An item's typed TMDB key (a library fact, the same for every viewer), with when it was read and the input tick it
-        // was read at: used only while the input log shows no library change of the item since then.
-        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)> _providerTitles = new();
+        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At, PrivacyFacts? Facts)> _providerTitles = new();
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
         private readonly RequestIdentityService _identity;
@@ -104,6 +102,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _libraryManager = libraryManager;
             _identity = identity;
             PrivacyInputs.Observe(libraryManager, null);
+            // A remembered provider key goes with any change of its item (D46: its facts are also checked at every answer).
+            libraryManager.ItemAdded += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
+            libraryManager.ItemUpdated += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
+            libraryManager.ItemRemoved += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
             _logger = logger;
         }
 
@@ -114,30 +116,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId)
         {
             if (movieId == Guid.Empty || userState.Collections.Count == 0) return null;
+            var collections = userState.Collections.Keys.Select(k => Guid.TryParse(k, out var guid) ? guid : Guid.Empty).Where(g => g != Guid.Empty).ToArray();
 
             // F6 memo. The static cache serves BOTH within-request repeats (the
             // 2-3 calls per movie hit the same entry) AND repeats across the
             // page/session, so a separate HttpContext.Items layer would be
-            // redundant.
+            // redundant. Membership is a verdict input: whichever way the answer
+            // is found (the memo, the walk, or the >64-collection walk with no
+            // memo), the predicate it consumed is the same fact: the first guarded
+            // collection that links the movie, compared with the collections'
+            // live links at every check (an unrelated member or a new order
+            // changes nothing; a link added or removed for this movie does).
             var cacheKey = BuildCollectionScopeKey(userState, movieId);
+            var factKey = "collection-scope:" + movieId.ToString("N") + ":" + PrivacyReads.SetOf(collections);
+            void Record(Guid? result) => PrivacyReads.Query(factKey, result?.ToString("N") ?? "-",
+                check => (collections.FirstOrDefault(c => check.Memo("members:" + c.ToString("N"), () => PrivacyIdentities.MembersNow(_libraryManager, c)).Contains(movieId)) is var found && found != Guid.Empty ? found.ToString("N") : "-"),
+                cacheKey == null ? null : () => _collectionScopeCache.TryRemove(cacheKey, out _));
             var now = DateTime.UtcNow;
-            // Membership is a verdict input: the guarded collections and the movie are recorded (the memo follows the
-            // collections' own changes, CollectionChanged).
-            if (PrivacyReadSet.Current is { } reads)
-            {
-                reads.Library(movieId);
-                foreach (var key in userState.Collections.Keys) if (Guid.TryParse(key, out var guid)) reads.Library(guid);
-            }
             if (cacheKey != null
                 && _collectionScopeCache.TryGetValue(cacheKey, out var hit)
                 && (now - hit.CachedAt) < CollectionScopeCacheTtl)
             {
-                // The memo's own inputs, as of when it was read.
-                if (PrivacyReadSet.Current is { } memo)
-                {
-                    memo.Library(movieId, hit.ReadAt);
-                    foreach (var key in userState.Collections.Keys) if (Guid.TryParse(key, out var guid)) memo.Library(guid, hit.ReadAt);
-                }
+                Record(hit.CollectionId);
                 return hit.CollectionId;
             }
             var readAt = PrivacyInputs.Now;
@@ -145,9 +145,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Guid? result = null;
             try
             {
-                foreach (var collKeyN in userState.Collections.Keys)
+                foreach (var collGuid in collections)
                 {
-                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
                     // The shared identity resolver's linked-children membership (the same answer every surface gets).
                     if (PrivacyIdentities.CollectionMembers(_libraryManager, collGuid).Contains(movieId)) { result = collGuid; break; }
                 }
@@ -157,12 +156,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 WarnRateLimited(
                     "movie-in-collection:" + ex.GetType().FullName,
                     $"Spoiler Guard: movie-in-collection linked-children walk failed for {movieId}: {ex.Message}");
-                return null; // don't cache a transient failure
+                // Not cached and not a value: a failed walk never becomes an authoritative "not a member".
+                PrivacyReads.Query(factKey, "unreadable", _ => null);
+                return null;
             }
+            Record(result);
 
             // A walk that overlapped a collection change is not memoized (the change's event may already have run).
             if (cacheKey != null && PrivacyInputs.LibraryChangesSince(readAt) is { } changed
-                && !userState.Collections.Keys.Any(k => Guid.TryParse(k, out var guid) && changed.Contains(guid)))
+                && !collections.Any(changed.Contains))
             {
                 _collectionScopeCache[cacheKey] = (result, now, readAt);
                 // Opportunistic eviction, mirroring the season-watched cache in
@@ -240,24 +242,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (state.ProviderTitles.Count + state.PendingTmdb.Count == 0) return false;
             if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
-            // A remembered key holds while nothing changed the item since it was read; the answer records it as of then, so
-            // the delivery gate sees a change after that too. A key read while the item changed is not remembered.
-            if (_providerTitles.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30)
-                && (PrivacyInputs.Now == hit.Since || PrivacyInputs.LibraryChangesSince(hit.Since) is { } moved && !moved.Contains(id)))
+            // The title's provider key is a fact of the answer however it is found: a memo hit replays the facts its read
+            // consumed (the item, or its absence), compared with the live library at every check.
+            if (_providerTitles.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30))
             {
-                PrivacyReadSet.Current?.Library(id, hit.Since);
+                if (hit.Facts is { } facts) PrivacyReadSet.Current?.Item(_libraryManager, id, facts);
+                else PrivacyReadSet.Current?.Absent(_libraryManager, id);
+                PrivacyReadSet.Current?.OnStale(id, () => _providerTitles.TryRemove(id, out _));
             }
             else
             {
-                var since = PrivacyInputs.Now;
                 var item = PrivacyReads.Item(_libraryManager, id);
-                hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow, since);
-                if (PrivacyInputs.LibraryChangesSince(since) is { } changed && !changed.Contains(id))
-                {
-                    if (_providerTitles.Count >= 8192) _providerTitles.Clear();
-                    _providerTitles[id] = hit;
-                }
-                else _providerTitles.TryRemove(id, out _);
+                hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow,
+                    item == null ? null : PrivacyFacts.Of(item, item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : PrivacyIdentities.ExtraOwner(_libraryManager, item)));
+                if (_providerTitles.Count >= 8192) _providerTitles.Clear();
+                _providerTitles[id] = hit;
             }
             return hit.Key != null && (state.ProviderTitles.ContainsKey(hit.Key) || state.PendingTmdb.ContainsKey(hit.Key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
         }

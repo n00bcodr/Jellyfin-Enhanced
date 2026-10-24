@@ -64,16 +64,17 @@ public static class PrivacySettings
 }
 
 /// <summary>
-/// What one attempt at a protected answer read: every verdict input with the revision it was observed at — the privacy
-/// settings, each viewer's policy files (by content), the host inputs a decision reads (a chapter's start, a trickplay
-/// interval, the host's season settings), and the library and user-data facts of each item it judged. Each item fact is
-/// recorded with its own observation tick (a remembered fact with the tick it was read at, so it never backdates anything
-/// else) and, where the decision read the item itself, with the ownership facts it saw: the gate compares those with the
-/// host's live items as well as with the input log (<see cref="PrivacyInputs"/>), so a change the host made before announcing
-/// it is seen. Inputs are recorded by the one accessor that reads them (<see cref="PrivacyReads"/>, the policy readers, the
-/// identity resolver), never assembled by the answer, and the delivery gate validates exactly this set: an input not read
-/// cannot invalidate the answer, an input read and changed always does. Each attempt starts a new set (<see cref="Begin"/>);
-/// a nested attempt's reads are also its parent's.
+/// What one attempt at a protected answer consumed: every verdict input as an immutable fact, the value the decision used
+/// together with how to read that value again from the same live source — the privacy settings, each viewer's policy
+/// documents (by content), the host inputs a decision reads (a chapter's start, a trickplay interval, the host's season
+/// settings), the result of each query a decision used (the next unwatched episode, a season's watched evidence, a
+/// collection's membership of a title, the watched state of what a batch asked), each user-data value it used, and the
+/// ownership facts of every item it judged (or that an item it looked for is absent). Inputs are recorded by the one
+/// accessor that reads them (<see cref="PrivacyReads"/>, the policy readers, the identity resolver), and a remembered
+/// answer replays its facts; nothing is assembled by the answer. The gate's check (<see cref="Valid"/>, the same at the end
+/// of an attempt and at the commit) compares EVERY fact's value with its live source: an input that was read and changed
+/// always invalidates the answer, an event that changes no consumed value never does. Each attempt starts a new set
+/// (<see cref="Begin"/>); a nested attempt's facts are also its parent's.
 /// </summary>
 public sealed class PrivacyReadSet
 {
@@ -82,35 +83,36 @@ public sealed class PrivacyReadSet
     /// <summary>The set of the attempt running on this flow (null outside one).</summary>
     public static PrivacyReadSet? Current => _current.Value;
 
+    private static readonly AsyncLocal<bool> _checking = new();
+
+    /// <summary>Whether this flow is inside a check (its live re-reads), not building an answer (diagnostics and tests).</summary>
+    internal static bool Checking => _checking.Value;
+
+    /// <summary>One consumed input other than an item's ownership: its value and how to read it again.</summary>
+    /// <param name="Value">The value the decision used.</param>
+    /// <param name="Live">Reads the value again from the same live source (null: the source could not answer).</param>
+    /// <param name="Stale">Drops the memo the value came from, when the live value differs (the rebuild recomputes it).</param>
+    internal sealed record Input(string Value, Func<PrivacyCheck, string?> Live, Action? Stale);
+
+    /// <summary>A user-data value a decision used (an item's watched state; with a position predicate, how far it was watched).</summary>
+    internal sealed record UserFact(string Value, JUser User, IUserDataManager Store, Func<UserItemData?, string> Of, BaseItem? Item);
+
     private readonly object _lock = new();
     private readonly PrivacyReadSet? _parent;
-    private readonly Dictionary<Guid, long> _library = new();
-    private readonly Dictionary<(Guid User, Guid Item), long> _watched = new();
-    private readonly Dictionary<(Guid User, Guid Item), long> _progress = new();
-    private readonly Dictionary<Guid, long> _scopes = new();
-    private readonly Dictionary<string, (string Value, Func<string> Reread)> _revisions = new(StringComparer.Ordinal);
-    private readonly Dictionary<Guid, PrivacyFacts> _facts = new();
+    private readonly Dictionary<string, Input> _facts = new(StringComparer.Ordinal);
+    private readonly Dictionary<(Guid User, Guid Item, string Kind), UserFact> _userFacts = new();
+    // The ownership facts each judged item was judged by; null: the item was looked for and the library did not have it.
+    private readonly Dictionary<Guid, PrivacyFacts?> _items = new();
     private ILibraryManager? _host;
-    private readonly long _mark;
-    private bool _inconsistent;
-    private long _earliest;
-    private long _checked;
-    private long _epoch;
+    private string? _inconsistent;
 
-    private PrivacyReadSet(long mark, PrivacyReadSet? parent)
+    private PrivacyReadSet(PrivacyReadSet? parent)
     {
-        _mark = mark;
-        _earliest = mark;
-        _checked = mark;
         _parent = parent;
-        _epoch = UserConfigurationManager.SaveEpoch;
         // The settings are an input of every answer: recorded before anything reads them.
         Revision("settings", PrivacySettings.Revision(JellyfinEnhanced.Instance?.Configuration),
             static () => PrivacySettings.Revision(JellyfinEnhanced.Instance?.Configuration));
     }
-
-    /// <summary>The input tick the attempt's own reads are observed at (its start, or the host's earlier reads).</summary>
-    public long Mark => _mark;
 
     /// <summary>The attempt's scope: <see cref="Reads"/> is current until it is disposed.</summary>
     public readonly struct Scope : IDisposable
@@ -130,15 +132,11 @@ public sealed class PrivacyReadSet
         public void Dispose() => _current.Value = _previous;
     }
 
-    /// <summary>
-    /// Starts an attempt: a new, empty set that records every input read on this flow until the scope ends.
-    /// <paramref name="mark"/> is the tick its facts were first read at (the host's own reads, when it built the answer
-    /// earlier in the request); now by default.
-    /// </summary>
-    public static Scope Begin(long? mark = null)
+    /// <summary>Starts an attempt: a new, empty set that records every input read on this flow until the scope ends.</summary>
+    public static Scope Begin()
     {
         var previous = _current.Value;
-        var reads = new PrivacyReadSet(mark ?? PrivacyInputs.Now, previous);
+        var reads = new PrivacyReadSet(previous);
         _current.Value = reads;
         return new Scope(reads, previous);
     }
@@ -152,274 +150,250 @@ public sealed class PrivacyReadSet
         finally { _current.Value = previous; }
     }
 
-    /// <summary>Records <paramref name="key"/> as observed at <paramref name="at"/> (the earliest observation wins).</summary>
-    private static void Observe<TKey>(Dictionary<TKey, long> inputs, TKey key, long at) where TKey : notnull
-    {
-        if (!inputs.TryGetValue(key, out var known) || at < known) inputs[key] = at;
-    }
-
-    private void Earliest(long at)
-    {
-        if (at < _earliest) _earliest = at;
-    }
-
-    private long At(long? at) => at ?? _mark;
-
     /// <summary>
-    /// An item's library facts were read (its identity, owner, kind, series and season, numbering, TMDB key, members),
-    /// as of <paramref name="at"/> (a remembered fact's tick; the attempt's own reads by default).
-    /// </summary>
-    internal void Library(Guid id, long? at = null)
-    {
-        if (id == Guid.Empty) return;
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock) { var tick = set.At(at); Observe(set._library, id, tick); set.Earliest(tick); }
-    }
-
-    /// <summary>The library facts of several items were read.</summary>
-    internal void Library(IEnumerable<Guid> ids, long? at = null)
-    {
-        foreach (var id in ids) Library(id, at);
-    }
-
-    /// <summary>
-    /// The decision read <paramref name="item"/> itself (the facts it saw are compared with the host's live item at the
-    /// gate). <paramref name="owner"/> is the owner the judgment normalised it to (10.11's listed owner of an extra whose row
-    /// names none), when it differs from the row's own.
+    /// The decision judged <paramref name="item"/> by its ownership facts (compared with the host's live item at every check).
+    /// <paramref name="owner"/> is the owner the judgment normalised it to (10.11's listed owner of an extra whose row names
+    /// none), when it differs from the row's own.
     /// </summary>
     internal void Item(ILibraryManager? library, BaseItem item, Guid? owner = null)
     {
         if (item.Id == Guid.Empty) return;
-        var facts = PrivacyFacts.Of(item, owner);
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock)
-            {
-                var tick = set._mark;
-                Observe(set._library, item.Id, tick);
-                set.Earliest(tick);
-                // The first view the attempt judged by is the one compared (a later view of the same item, another
-                // instance of it, does not replace it).
-                set._facts.TryAdd(item.Id, facts);
-                set._host ??= library;
-            }
+        Item(library, item.Id, PrivacyFacts.Of(item, owner));
     }
 
-    /// <summary>A reused judgment of item <paramref name="id"/> (its facts as they were judged) is part of this answer.</summary>
-    internal void Item(ILibraryManager? library, Guid id, PrivacyFacts facts)
+    /// <summary>A judgment of item <paramref name="id"/> by <paramref name="facts"/> (a remembered judgment replays its facts).</summary>
+    internal void Item(ILibraryManager? library, Guid id, PrivacyFacts facts) => Observe(library, id, facts);
+
+    /// <summary>The decision looked for item <paramref name="id"/> and the library did not have it: absence is a fact too.</summary>
+    internal void Absent(ILibraryManager? library, Guid id) => Observe(library, id, null);
+
+    private void Observe(ILibraryManager? library, Guid id, PrivacyFacts? facts)
     {
         if (id == Guid.Empty) return;
         for (var set = this; set != null; set = set._parent)
             lock (set._lock)
             {
-                set._facts.TryAdd(id, facts);
-                set._host ??= library;
-            }
-    }
-
-    /// <summary>
-    /// A user's watched state of an item was read (for a series or season: of the episodes it holds; a save of an
-    /// episode is logged with its season and series), as of <paramref name="at"/>.
-    /// </summary>
-    internal void Watched(Guid user, Guid item, long? at = null)
-    {
-        if (item == Guid.Empty) return;
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock) { var tick = set.At(at); Observe(set._watched, (user, item), tick); set.Earliest(tick); }
-    }
-
-    /// <summary>
-    /// The set of items under a series or season was read (which episodes it holds, their order): an episode added, moved
-    /// or renumbered under it moves the read.
-    /// </summary>
-    internal void ChildrenOf(Guid id, long? at = null)
-    {
-        if (id == Guid.Empty) return;
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock) { var tick = set.At(at); Observe(set._scopes, id, tick); set.Earliest(tick); }
-    }
-
-    /// <summary>A user's watched state was read over the whole library (a query of everything the user has played).</summary>
-    internal void WatchedAll(Guid user, long? at = null)
-    {
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock) { var tick = set.At(at); Observe(set._watched, (user, Guid.Empty), tick); set.Earliest(tick); }
-    }
-
-    /// <summary>A user's playback position of an item was read (only by the decisions that use how far it was watched).</summary>
-    internal void Progress(Guid user, Guid item, long? at = null)
-    {
-        if (item == Guid.Empty) return;
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock) { var tick = set.At(at); Observe(set._progress, (user, item), tick); set.Earliest(tick); }
-    }
-
-    /// <summary>
-    /// A named input was read with <paramref name="value"/> (a policy file's content, the settings, a host input such as a
-    /// chapter's start); the gate calls <paramref name="reread"/> to compare. Two reads of one input with different values
-    /// make the set invalid.
-    /// </summary>
-    internal void Revision(string key, string value, Func<string> reread)
-    {
-        for (var set = this; set != null; set = set._parent)
-            lock (set._lock)
-            {
-                if (set._revisions.TryGetValue(key, out var known)) { if (!string.Equals(known.Value, value, StringComparison.Ordinal)) set._inconsistent = true; }
-                else set._revisions[key] = (value, reread);
-            }
-    }
-
-    /// <summary>
-    /// Whether a change logged at <paramref name="tick"/> moves an input this set observed before it (each input compared
-    /// from its own observation).
-    /// </summary>
-    internal bool Reads(PrivacyInputKind kind, Guid user, Guid[] items, long tick)
-    {
-        lock (_lock)
-        {
-            static bool Before<TKey>(Dictionary<TKey, long> inputs, TKey key, long tick) where TKey : notnull
-                => inputs.TryGetValue(key, out var at) && at < tick;
-            foreach (var id in items)
-                switch (kind)
+                // Two observations of one input must agree (else the attempt saw it change, and is built again).
+                if (set._items.TryGetValue(id, out var known))
                 {
-                    case PrivacyInputKind.Library when Before(_library, id, tick) || Before(_scopes, id, tick):
-                        return true;
-                    // A first-seen update: what the answer judged the item by is compared with the live item (when it
-                    // recorded it); the event log decides only for an item whose facts it did not record.
-                    case PrivacyInputKind.FirstSeen when Before(_library, id, tick) && !_facts.ContainsKey(id) || Before(_scopes, id, tick):
-                        return true;
-                    case PrivacyInputKind.Added when Before(_scopes, id, tick):
-                        return true;
-                    case PrivacyInputKind.Watched when Before(_watched, (user, id), tick) || Before(_progress, (user, id), tick) || Before(_watched, (user, Guid.Empty), tick):
-                        return true;
-                    case PrivacyInputKind.Progress when Before(_progress, (user, id), tick):
-                        return true;
+                    if (!Same(known, facts)) set._inconsistent ??= "the library facts of " + id.ToString("N") + " were read twice with different values";
                 }
-        }
-        return false;
+                else set._items[id] = facts;
+                set._host ??= library;
+            }
+    }
+
+    private static bool Same(PrivacyFacts? a, PrivacyFacts? b) => a is { } x ? b is { } y && x.SameOwnership(y) : b == null;
+
+    /// <summary>
+    /// A consumed input with <paramref name="value"/> (a policy document's content, the settings, a host input such as a
+    /// chapter's start, a query result); every check compares it with <paramref name="live"/>, the same source read again
+    /// (null: the source could not answer, which counts as changed). <paramref name="stale"/> drops the memo the value came
+    /// from when the live value differs. Two reads of one input with different values make the set invalid.
+    /// </summary>
+    internal void Fact(string key, string value, Func<PrivacyCheck, string?> live, Action? stale = null)
+    {
+        for (var set = this; set != null; set = set._parent)
+            lock (set._lock)
+            {
+                if (set._facts.TryGetValue(key, out var known))
+                {
+                    if (!string.Equals(known.Value, value, StringComparison.Ordinal)) set._inconsistent ??= key + " was read twice with different values";
+                }
+                else set._facts[key] = new Input(value, live, stale);
+            }
+    }
+
+    /// <summary>A named input read with <paramref name="value"/>; every check reads it again with <paramref name="reread"/>.</summary>
+    internal void Revision(string key, string value, Func<string> reread) => Fact(key, value, _ => reread());
+
+    /// <summary>
+    /// A user-data value a decision used: <paramref name="of"/> turns the user's data for the item into the value the
+    /// decision consumed (its watched state, or a predicate of its position); every check reads the data again from the
+    /// host's store for the item as the host serves it now.
+    /// </summary>
+    internal void UserValue(IUserDataManager store, JUser user, Guid item, string kind, UserItemData? data, Func<UserItemData?, string> of,
+        BaseItem? instance = null, ILibraryManager? library = null)
+    {
+        if (item == Guid.Empty) return;
+        var value = of(data);
+        var key = (user.Id, item, kind);
+        for (var set = this; set != null; set = set._parent)
+            lock (set._lock)
+            {
+                if (set._userFacts.TryGetValue(key, out var known))
+                {
+                    if (!string.Equals(known.Value, value, StringComparison.Ordinal)) set._inconsistent ??= "a user's " + kind + " was read twice with different values";
+                }
+                else set._userFacts[key] = new UserFact(value, user, store, of, instance);
+                set._host ??= library;
+            }
     }
 
     /// <summary>
-    /// Whether every input the set read is unchanged: each named input re-read and equal, every item the decision read
-    /// equal to the host's live item, and no logged change after an input's observation moves it. The gate's full check,
-    /// at the end of an attempt.
+    /// Whether every input the set consumed still has the value the decision used: each fact read again from its live
+    /// source, each user-data value read again, every judged item compared with the host's live item (present or absent).
+    /// The gate's one check, with no exemption by answer size, response stage or save epoch: at the end of an attempt and at
+    /// the commit alike.
     /// </summary>
     public bool Valid()
     {
-        long now, from;
-        // Captured before the walk: a save during it leaves the epoch behind, so the next check reads every document again.
-        var epoch = UserConfigurationManager.SaveEpoch;
-        lock (_lock)
-        {
-            if (_inconsistent) { Failure = "one input read twice with different values"; return false; }
-            now = PrivacyInputs.Now;
-            from = _earliest;
-        }
-        if (!RevisionsHold()) return false;
-        if (!LiveHolds()) return false;
-        if (PrivacyInputs.ChangedSince(from, this, out var which)) { Failure = which; return false; }
-        lock (_lock)
-        {
-            if (now > _checked) _checked = now;
-            _epoch = epoch;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// The commit check of an answer already validated: the named inputs are re-read when a policy file was saved since
-    /// the last check or the settings changed, the items the decision read are compared with the host's live items, and
-    /// the changes logged since the last check are compared.
-    /// </summary>
-    public bool StillValid(bool live = true)
-    {
-        long from, now; bool reread;
-        var epoch = UserConfigurationManager.SaveEpoch;
-        lock (_lock)
-        {
-            if (_inconsistent) return false;
-            now = PrivacyInputs.Now;
-            from = _checked;
-            reread = epoch != _epoch;
-        }
-        if (!reread && !string.Equals(Settings(), PrivacySettings.Revision(JellyfinEnhanced.Instance?.Configuration), StringComparison.Ordinal)) { Failure = "settings changed"; return false; }
-        if (reread && !RevisionsHold()) return false;
-        if (live && !LiveHolds()) return false;
-        if (now != from && PrivacyInputs.ChangedSince(from, this, out var which)) { Failure = which; return false; }
-        lock (_lock)
-        {
-            if (now > _checked) _checked = now;
-            if (reread) _epoch = epoch;
-        }
-        return true;
-    }
-
-    private string Settings()
-    {
-        lock (_lock) return _revisions.TryGetValue("settings", out var settings) ? settings.Value : string.Empty;
-    }
-
-    private bool RevisionsHold()
-    {
-        KeyValuePair<string, (string Value, Func<string> Reread)>[] revisions;
-        lock (_lock) revisions = _revisions.ToArray();
-        foreach (var (key, (value, reread)) in revisions)
-        {
-            string now;
-            try { now = Unrecorded(reread); }
-            catch (Exception) { Failure = key + " could not be read again"; return false; }
-            if (!string.Equals(now, value, StringComparison.Ordinal)) { Failure = key.StartsWith("file:", StringComparison.Ordinal) ? "a policy document changed" : key + " changed"; return false; }
-        }
-        return true;
-    }
-
-    /// <summary>The largest batch of live items one host lookup reads.</summary>
-    private const int LiveBatch = 2000;
-
-    /// <summary>
-    /// Up to this many judged items, each is also compared with the host's in-memory item (the host changes an item in
-    /// memory before it saves it and announces the change); larger answers compare with the stored rows only.
-    /// </summary>
-    internal const int InMemoryCheck = 256;
-
-    /// <summary>
-    /// Whether every item the decision read still has the facts it was judged by, read from the host's live items (one
-    /// batched lookup per <see cref="LiveBatch"/> items; 10.11's listed owner normalised by the same rule the judgment used).
-    /// An item the host no longer has counts as changed.
-    /// </summary>
-    private bool LiveHolds()
-    {
-        KeyValuePair<Guid, PrivacyFacts>[] judged;
+        string? inconsistent;
+        KeyValuePair<string, Input>[] facts;
+        KeyValuePair<(Guid User, Guid Item, string Kind), UserFact>[] users;
+        KeyValuePair<Guid, PrivacyFacts?>[] items;
         ILibraryManager? library;
-        lock (_lock) { judged = _facts.ToArray(); library = _host; }
-        if (judged.Length == 0 || library == null) return true;
+        lock (_lock)
+        {
+            inconsistent = _inconsistent;
+            facts = _facts.ToArray();
+            users = _userFacts.ToArray();
+            items = _items.ToArray();
+            library = _host;
+        }
+        if (inconsistent != null) { Failure = inconsistent; return false; }
+        var check = new PrivacyCheck(library);
+        var outer = _checking.Value;
+        _checking.Value = true;
         try
         {
             return Unrecorded(() =>
             {
-                var folders = new Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?>(StringComparer.Ordinal);
-                foreach (var batch in judged.Chunk(LiveBatch))
+                // The items every reader needs, as the host serves them now: one batched read.
+                check.Prepare(items.Select(p => p.Key).Concat(users.Where(u => u.Value.Item == null).Select(u => u.Key.Item)));
+                foreach (var (key, fact) in facts)
                 {
-                    var live = new Dictionary<Guid, BaseItem>();
-                    foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch.Select(p => p.Key).ToArray(), DtoOptions = PrivacyFacts.Options }) ?? [])
-                        if (item != null) live[item.Id] = item;
-                    foreach (var (id, facts) in batch)
+                    string? now;
+                    try { now = fact.Live(check); }
+                    catch (Exception) { now = null; }
+                    if (now == null) { Failure = key + " could not be read again"; fact.Stale?.Invoke(); return false; }
+                    if (!string.Equals(now, fact.Value, StringComparison.Ordinal))
                     {
-                        // An item the batched query did not list is looked up by itself (the host's direct lookup).
-                        if (!live.TryGetValue(id, out var item) && (item = library.GetItemById(id)) == null) { Failure = "an item it judged left the library"; return false; }
-                        if (PrivacyFacts.Live(library, item, facts, folders) != facts) { Failure = "library change of " + id.ToString("N") + " not announced yet"; return false; }
-                        // The host's in-memory item when it is newer than the stored row (the host stamps an item it is about
-                        // to save before it writes the row): a change in progress reaches it first. An older cached instance
-                        // is not the live item (the row is).
-                        if (judged.Length <= InMemoryCheck && library.GetItemById(id) is { } current && !ReferenceEquals(current, item)
-                            && current.DateLastSaved > item.DateLastSaved
-                            && !PrivacyFacts.Live(library, current, facts, folders).SameOwnership(facts))
-                        { Failure = "library change of " + id.ToString("N") + " not saved yet"; return false; }
+                        Failure = key.StartsWith("file:", StringComparison.Ordinal) ? "a policy document changed" : key + " changed";
+                        fact.Stale?.Invoke();
+                        return false;
                     }
                 }
-                return true;
+                foreach (var ((_, id, kind), fact) in users)
+                {
+                    // The user's data for the item it was read for (the store keys it by the item), else the host's item now.
+                    if ((fact.Item ?? check.Item(id)) is not { } item) { Failure = "an item whose " + kind + " was read left the library"; return false; }
+                    if (!string.Equals(fact.Of(fact.Store.GetUserData(fact.User, item)), fact.Value, StringComparison.Ordinal)) { Failure = "a user's " + kind + " changed"; return false; }
+                }
+                return ItemsHold(check, items);
             });
         }
-        catch (Exception) { Failure = "the library could not be read again"; return false; }
+        catch (Exception) { Failure = "the inputs could not be read again"; return false; }
+        finally { _checking.Value = outer; }
+    }
+
+    /// <summary>The commit's check of an answer validated before: the same complete check (<see cref="Valid"/>).</summary>
+    public bool StillValid() => Valid();
+
+    /// <summary>
+    /// Whether every judged item still has the facts it was judged by, in the host's view of it now (its stored row, or the
+    /// item it holds in memory when that is at least as new; 10.11's listed owner normalised by the rule the judgment used),
+    /// and every item judged absent is still absent.
+    /// </summary>
+    private bool ItemsHold(PrivacyCheck check, KeyValuePair<Guid, PrivacyFacts?>[] judged)
+    {
+        if (judged.Length == 0) return true;
+        if (check.Library is not { } library) return true;
+        foreach (var (id, facts) in judged)
+        {
+            var item = check.Item(id);
+            if (facts is not { } was)
+            {
+                if (item != null) { Failure = "an item it judged absent is in the library"; Stale(id); return false; }
+                continue;
+            }
+            if (item == null) { Failure = "an item it judged left the library"; Stale(id); return false; }
+            if (!PrivacyFacts.Live(library, item, was, check.Folders).SameOwnership(was)) { Failure = "library change of " + id.ToString("N"); Stale(id); return false; }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The facts a computation consumed, kept with its remembered result: reusing the result replays them into the reusing
+    /// answer (<see cref="Replay"/>), so a memo hit carries the complete proof its cold computation recorded (presence and
+    /// absence, every owner hop, the query results and user data it used).
+    /// </summary>
+    public sealed class Evidence
+    {
+        internal Evidence(KeyValuePair<string, Input>[] facts, KeyValuePair<(Guid User, Guid Item, string Kind), UserFact>[] users,
+            KeyValuePair<Guid, PrivacyFacts?>[] items, ILibraryManager? host, bool consistent)
+        {
+            Facts = facts; Users = users; Items = items; Host = host; Consistent = consistent;
+        }
+
+        internal KeyValuePair<string, Input>[] Facts { get; }
+        internal KeyValuePair<(Guid User, Guid Item, string Kind), UserFact>[] Users { get; }
+        internal KeyValuePair<Guid, PrivacyFacts?>[] Items { get; }
+        internal ILibraryManager? Host { get; }
+
+        /// <summary>Whether the computation read every input consistently (only then may its result be remembered).</summary>
+        public bool Consistent { get; }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="compute"/> recording what it consumed (also into the current attempt, as any read) and gives
+    /// that as <paramref name="evidence"/>, for a memo of its result to replay.
+    /// </summary>
+    public static T Capture<T>(Func<T> compute, out Evidence evidence)
+    {
+        using var scope = Begin();
+        var result = compute();
+        evidence = scope.Reads.Snapshot();
+        return result;
+    }
+
+    private Evidence Snapshot()
+    {
+        lock (_lock)
+            return new Evidence(_facts.Where(p => p.Key != "settings").ToArray(), _userFacts.ToArray(), _items.ToArray(), _host, _inconsistent == null);
+    }
+
+    /// <summary>
+    /// A remembered result is reused: the facts its computation consumed become facts of this answer.
+    /// <paramref name="stale"/> drops the memo when any of them no longer holds at a check.
+    /// </summary>
+    internal void Replay(Evidence evidence, Action? stale = null)
+    {
+        foreach (var (key, fact) in evidence.Facts) Fact(key, fact.Value, fact.Live, stale + fact.Stale);
+        foreach (var ((user, item, kind), fact) in evidence.Users)
+            for (var set = this; set != null; set = set._parent)
+                lock (set._lock)
+                {
+                    if (set._userFacts.TryGetValue((user, item, kind), out var known))
+                    {
+                        if (!string.Equals(known.Value, fact.Value, StringComparison.Ordinal)) set._inconsistent ??= "a user's " + kind + " was read twice with different values";
+                    }
+                    else set._userFacts[(user, item, kind)] = fact;
+                }
+        foreach (var (id, facts) in evidence.Items)
+        {
+            Observe(evidence.Host, id, facts);
+            if (stale != null) OnStale(id, stale);
+        }
+    }
+
+    /// <summary>Replays <paramref name="evidence"/> into the current attempt, when there is one.</summary>
+    public static void ReplayCurrent(Evidence evidence, Action? stale = null) => Current?.Replay(evidence, stale);
+
+    private readonly Dictionary<Guid, Action?> _itemStale = new();
+
+    /// <summary>Drops a memo when the judged item <paramref name="id"/> it consumed no longer holds at a check.</summary>
+    internal void OnStale(Guid id, Action stale)
+    {
+        for (var set = this; set != null; set = set._parent)
+            lock (set._lock) set._itemStale[id] = set._itemStale.GetValueOrDefault(id) + stale;
+    }
+
+    private void Stale(Guid id)
+    {
+        Action? stale;
+        lock (_lock) stale = _itemStale.GetValueOrDefault(id);
+        stale?.Invoke();
     }
 
     /// <summary>Why the last check of this set failed (diagnostics: the kind of input that changed; no private values).</summary>
@@ -436,105 +410,288 @@ public sealed class PrivacyReadSet
 
     /// <summary>
     /// What this attempt looked up of an owner by folder (10.11's owner-list fallback): one lookup per distinct folder per
-    /// answer, shared by the identity resolver, naming and the vocabulary owner.
+    /// answer, shared by the identity resolver, naming and the vocabulary owner. Each listing an extra's owner was taken from
+    /// is a fact of the answer (<see cref="PrivacyIdentities"/>).
     /// </summary>
     internal Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?> FolderOwners { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Whether the set read an item's library facts (diagnostics and tests).</summary>
+    /// <summary>Whether the set judged an item by its library facts, or found it absent (diagnostics and tests).</summary>
     internal bool HoldsLibrary(Guid id)
     {
-        lock (_lock) return _library.ContainsKey(id);
+        lock (_lock) return _items.ContainsKey(id);
     }
 
-    /// <summary>Whether the set read a user's watched state of an item (diagnostics and tests).</summary>
+    /// <summary>Whether the set consumed a user's watched state of an item, or a fact of what it holds (diagnostics and tests).</summary>
     internal bool HoldsWatched(Guid user, Guid item)
     {
-        lock (_lock) return _watched.ContainsKey((user, item));
+        var n = item.ToString("N");
+        lock (_lock)
+            return _userFacts.ContainsKey((user, item, PrivacyReads.WatchedKind))
+                || _facts.Keys.Any(k => k.Contains(n, StringComparison.Ordinal) && k.Contains(user.ToString("N"), StringComparison.Ordinal));
     }
 
-    /// <summary>Whether the set read a user's playback position of an item (diagnostics and tests).</summary>
+    /// <summary>Whether the set consumed how far a user watched an item (diagnostics and tests).</summary>
     internal bool HoldsProgress(Guid user, Guid item)
     {
-        lock (_lock) return _progress.ContainsKey((user, item));
+        lock (_lock) return _userFacts.Keys.Any(k => k.User == user && k.Item == item && k.Kind != PrivacyReads.WatchedKind);
     }
 
-    /// <summary>The named inputs the set read (diagnostics and tests).</summary>
+    /// <summary>The named facts the set consumed (diagnostics and tests).</summary>
     internal IReadOnlyCollection<string> Named
     {
-        get { lock (_lock) return _revisions.Keys.ToArray(); }
+        get { lock (_lock) return _facts.Keys.ToArray(); }
     }
 }
 
 /// <summary>
-/// The one accessor of the verdict inputs a privacy decision reads from the host: an item by id, a viewer's user data
-/// (watched state, and where a decision uses it the playback position), a user's watched state over a series or season.
-/// Each read is recorded in the current attempt's read-set with its revision before the host is asked, and the host's
-/// answer is remembered by the input log (so a later save that changes nothing a verdict reads moves no answer).
+/// One check of a read-set: the host's live view every reader of the check shares (the judged items in one batched read,
+/// 10.11's folder listings, the memo of a query several facts ask), so a check costs a bounded number of host reads.
 /// </summary>
-public static class PrivacyReads
+internal sealed class PrivacyCheck
 {
-    /// <summary>An item by id (its library facts are recorded, and the facts the decision sees are compared with the live item at the gate).</summary>
-    public static BaseItem? Item(ILibraryManager library, Guid id)
+    private readonly Dictionary<Guid, BaseItem?> _items = new();
+    private readonly Dictionary<string, object?> _memo = new(StringComparer.Ordinal);
+
+    internal PrivacyCheck(ILibraryManager? library) => Library = library;
+
+    /// <summary>The library the answer's items were judged in (null: the answer judged none).</summary>
+    public ILibraryManager? Library { get; }
+
+    /// <summary>The 10.11 folder listings this check looked up (one lookup per distinct folder).</summary>
+    public Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?> Folders { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Reads the host's current view of <paramref name="ids"/> in one batched read (those not read yet).</summary>
+    public void Prepare(IEnumerable<Guid> ids)
     {
-        var reads = PrivacyReadSet.Current;
-        reads?.Library(id);
-        if (id == Guid.Empty) return null;
-        var item = library.GetItemById(id);
-        if (item != null) reads?.Item(library, item, item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : PrivacyIdentities.ExtraOwner(library, item));
-        return item;
+        if (Library is not { } library) return;
+        var wanted = ids.Where(id => id != Guid.Empty && !_items.ContainsKey(id)).Distinct().ToArray();
+        if (wanted.Length == 0) return;
+        var view = PrivacyHostView.Items(library, wanted);
+        foreach (var id in wanted) _items[id] = view.GetValueOrDefault(id);
     }
 
-    /// <summary>
-    /// A user's data for an item: its watched state is recorded (with <paramref name="progress"/>, also its playback
-    /// position: only a decision that uses how far it was watched asks for it).
-    /// </summary>
-    public static UserItemData? UserData(IUserDataManager data, JUser user, BaseItem item, bool progress = false)
+    /// <summary>The host's current view of item <paramref name="id"/> (null: the library does not have it).</summary>
+    public BaseItem? Item(Guid id)
     {
-        var reads = PrivacyReadSet.Current;
-        reads?.Watched(user.Id, item.Id);
-        if (progress) reads?.Progress(user.Id, item.Id);
-        var answer = data.GetUserData(user, item);
-        PrivacyInputs.KnowWatched(data, user.Id, item.Id, answer);
+        if (_items.TryGetValue(id, out var known)) return known;
+        Prepare([id]);
+        return _items.GetValueOrDefault(id);
+    }
+
+    /// <summary>A value several facts of the check read (a collection's members, a user's played series): read once.</summary>
+    public T Memo<T>(string key, Func<T> read)
+    {
+        if (_memo.TryGetValue(key, out var known)) return (T)known!;
+        var value = read();
+        _memo[key] = value;
+        return value;
+    }
+}
+
+/// <summary>
+/// The host's view of a library item, the same at observation and at every check: its stored row, unless the item the host
+/// holds in memory (what the host itself serves by id, and changes before it saves the row) is at least as new. An older
+/// cached instance than the stored row is not the item. Reads are batched: the rows in one query per
+/// <see cref="Batch"/> items, the memory view from the host's item cache without loading anything.
+/// </summary>
+internal static class PrivacyHostView
+{
+    /// <summary>The largest batch of rows one host query reads.</summary>
+    internal const int Batch = 2000;
+
+    /// <summary>The host's current view of one item (null: the library does not have it).</summary>
+    public static BaseItem? Item(ILibraryManager library, Guid id)
+        => id == Guid.Empty ? null : Items(library, [id]).GetValueOrDefault(id);
+
+    /// <summary>The host's current view of several items (absent ones are missing from the answer).</summary>
+    public static Dictionary<Guid, BaseItem> Items(ILibraryManager library, IReadOnlyCollection<Guid> ids)
+    {
+        var answer = new Dictionary<Guid, BaseItem>();
+        foreach (var batch in ids.Where(id => id != Guid.Empty).Distinct().Chunk(Batch))
+        {
+            var rows = new Dictionary<Guid, BaseItem>();
+            foreach (var row in library.GetItemList(new InternalItemsQuery { ItemIds = batch, DtoOptions = PrivacyFacts.Options }) ?? [])
+                if (row != null) rows[row.Id] = row;
+            foreach (var id in batch)
+                if (Newer(rows.GetValueOrDefault(id), PrivacyItemMemory.Of(library, id)) is { } item) answer[id] = item;
+        }
         return answer;
     }
 
-    /// <summary>A decision used how far <paramref name="user"/> watched <paramref name="item"/> (a position it already read).</summary>
-    public static void Progress(Guid user, Guid item) => PrivacyReadSet.Current?.Progress(user, item);
+    /// <summary>The newer of a stored row and the host's in-memory item (the in-memory one when they are as new).</summary>
+    private static BaseItem? Newer(BaseItem? row, BaseItem? memory)
+        => memory == null ? row : row == null || memory.DateLastSaved >= row.DateLastSaved ? memory : row;
+}
 
-    /// <summary>An item by id, by the host's typed lookup (its library facts are recorded).</summary>
-    public static T? Item<T>(ILibraryManager library, Guid id) where T : BaseItem
+/// <summary>
+/// The host's item cache, read without loading anything: the instance the host serves by id when it holds one. A host
+/// whose cache is reachable (Jellyfin 10.11 and 12 keep it as the library manager's item cache, the one
+/// <c>GetItemById</c> answers from) is read directly, one lookup per item with no database read; for any other host, the
+/// host's own lookup by id is asked (which also loads a row it does not hold, the same view).
+/// </summary>
+internal static class PrivacyItemMemory
+{
+    internal delegate bool Peek(Guid id, out BaseItem item);
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, PeekBox> _peeks = new();
+
+    private sealed class PeekBox(Peek? peek)
     {
-        var reads = PrivacyReadSet.Current;
-        reads?.Library(id);
+        public Peek? Peek { get; } = peek;
+    }
+
+    /// <summary>Whether the host's item cache is read directly (diagnostics and tests).</summary>
+    internal static bool Direct(ILibraryManager library) => library is IPrivacyItemMemory || PeekOf(library) != null;
+
+    /// <summary>The host's in-memory item <paramref name="id"/>, or null when it holds none.</summary>
+    public static BaseItem? Of(ILibraryManager library, Guid id)
+    {
+        if (library is IPrivacyItemMemory memory) return memory.Peek(id);
+        if (PeekOf(library) is { } peek) return peek(id, out var cached) ? cached : null;
+        try { return library.GetItemById(id) ?? library.GetItemById<BaseItem>(id); }
+        catch (Exception) { return null; }
+    }
+
+    private static Peek? PeekOf(ILibraryManager library)
+        => _peeks.GetValue(library, static host => new PeekBox(Find(host))).Peek;
+
+    /// <summary>The direct read of <paramref name="host"/>'s item cache (its <c>_cache</c> with <c>TryGet</c>), or null.</summary>
+    internal static Peek? Find(object host)
+    {
+        try
+        {
+            var cache = host.GetType().GetField("_cache", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(host);
+            var tryGet = cache?.GetType().GetMethod("TryGet", BindingFlags.Instance | BindingFlags.Public, null, [typeof(Guid), typeof(BaseItem).MakeByRefType()], null);
+            return tryGet == null ? null : (Peek?)Delegate.CreateDelegate(typeof(Peek), cache, tryGet, false);
+        }
+        catch (Exception) { return null; }
+    }
+}
+
+/// <summary>A host that offers its item cache to the privacy checks directly (a test host models the host's cache with it).</summary>
+public interface IPrivacyItemMemory
+{
+    /// <summary>The in-memory item, or null when the host holds none.</summary>
+    BaseItem? Peek(Guid id);
+}
+
+/// <summary>
+/// The one accessor of the verdict inputs a privacy decision reads from the host: an item by id (as the host serves it
+/// now, <see cref="PrivacyHostView"/>), a viewer's user data, the result of a query a decision used. Each read is recorded
+/// in the current attempt's read-set as a fact with the value the decision used and how to read it again; the host's
+/// answer is also remembered by the input log (whose events refresh memos).
+/// </summary>
+public static class PrivacyReads
+{
+    /// <summary>The kind of a user-data fact that is the item's watched state.</summary>
+    internal const string WatchedKind = "watched";
+
+    /// <summary>An item by id, as the host serves it now: its ownership facts are recorded (or that the library lacks it).</summary>
+    public static BaseItem? Item(ILibraryManager library, Guid id)
+    {
         if (id == Guid.Empty) return null;
-        var item = library.GetItemById<T>(id);
-        if (item != null) reads?.Item(library, item, item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : PrivacyIdentities.ExtraOwner(library, item));
+        var item = PrivacyHostView.Item(library, id);
+        Judged(library, id, item);
         return item;
     }
 
-    /// <summary>A user's watched state over the episodes of a series or season was read (by a query).</summary>
-    public static void WatchedIn(Guid user, Guid scope)
+    /// <summary>Several items by id, as the host serves them now (one batched read): each found item's facts, or its absence, recorded.</summary>
+    public static Dictionary<Guid, BaseItem> Items(ILibraryManager library, IEnumerable<Guid> ids)
     {
-        PrivacyReadSet.Current?.Watched(user, scope);
-        PrivacyReadSet.Current?.ChildrenOf(scope);
+        var wanted = ids.Where(id => id != Guid.Empty).Distinct().ToArray();
+        var found = PrivacyHostView.Items(library, wanted);
+        foreach (var id in wanted) Judged(library, id, found.GetValueOrDefault(id));
+        return found;
     }
 
-    /// <summary>A user's watched state over the whole library was read (by a query).</summary>
-    public static void WatchedAll(Guid user) => PrivacyReadSet.Current?.WatchedAll(user);
+    /// <summary>An item by id and kind, as the host serves it now (its facts are recorded whatever its kind).</summary>
+    public static T? Item<T>(ILibraryManager library, Guid id) where T : BaseItem => Item(library, id) as T;
 
-    /// <summary>The watched state of several items was read (by one query).</summary>
-    public static void WatchedOf(Guid user, IEnumerable<Guid> items)
+    /// <summary>Records that a decision judged item <paramref name="id"/> as <paramref name="item"/> (null: absent).</summary>
+    internal static void Judged(ILibraryManager library, Guid id, BaseItem? item)
     {
-        if (PrivacyReadSet.Current is not { } reads) return;
-        foreach (var item in items) reads.Watched(user, item);
+        if (PrivacyReadSet.Current is not { } reads || id == Guid.Empty) return;
+        if (item == null) reads.Absent(library, id);
+        else reads.Item(library, item, item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : PrivacyIdentities.ExtraOwner(library, item));
+    }
+
+    private static string Played(UserItemData? data) => data?.Played == true ? "1" : "0";
+
+    /// <summary>A user's data for an item: the watched state it holds is the value recorded.</summary>
+    public static UserItemData? UserData(IUserDataManager data, JUser user, BaseItem item)
+    {
+        var answer = data.GetUserData(user, item);
+        PrivacyInputs.KnowWatched(data, user.Id, item.Id, answer);
+        PrivacyReadSet.Current?.UserValue(data, user, item.Id, WatchedKind, answer, Played, item);
+        return answer;
     }
 
     /// <summary>
-    /// What a batch query established of several items' watched state (<paramref name="played"/> holds the watched ones):
-    /// remembered by the input log, so a later save that leaves it as it was is a progress save, not a watched change.
+    /// A user's data for an item, of which a decision uses what <paramref name="consumed"/> derives (how far it was
+    /// watched, as a predicate the decision tested): that derived value is recorded, so a progress save that leaves it as
+    /// it was changes nothing.
     /// </summary>
-    public static void Established(IUserDataManager? store, Guid user, IEnumerable<Guid> items, ISet<Guid> played)
-        => PrivacyInputs.KnowWatched(store, user, items, played);
+    public static UserItemData? UserData(IUserDataManager data, JUser user, BaseItem item, string kind, Func<UserItemData?, string> consumed)
+    {
+        var answer = data.GetUserData(user, item);
+        PrivacyInputs.KnowWatched(data, user.Id, item.Id, answer);
+        PrivacyReadSet.Current?.UserValue(data, user, item.Id, kind, answer, consumed, item);
+        return answer;
+    }
+
+    /// <summary>
+    /// A user-data value an answer already carried (the host built it into the answer's item), consumed by a decision:
+    /// recorded as <paramref name="consumed"/> derives it, compared with the host's store at every check.
+    /// </summary>
+    public static void Carried(ILibraryManager library, IUserDataManager store, JUser user, Guid item, string kind, UserItemData? data, Func<UserItemData?, string> consumed)
+        => PrivacyReadSet.Current?.UserValue(store, user, item, kind, data, consumed, null, library);
+
+    /// <summary>The watched state an answer's item carried (from the host), consumed by a decision.</summary>
+    public static void CarriedWatched(ILibraryManager library, IUserDataManager store, JUser user, Guid item, bool played)
+        => Carried(library, store, user, item, WatchedKind, new UserItemData { Key = "carried", Played = played }, Played);
+
+    /// <summary>
+    /// The result of a query a decision used (the next unwatched episode, a season's watched evidence, the watched state of
+    /// what a batch asked, a collection's membership of a title), recorded as <paramref name="value"/> with how to run the
+    /// query again (<paramref name="live"/>, unrecorded) and the memo to drop when it changed.
+    /// </summary>
+    public static void Query(string key, string value, Func<string?> live, Action? stale = null)
+        => PrivacyReadSet.Current?.Fact(key, value, _ => live(), stale);
+
+    /// <summary>As <see cref="Query(string, string, Func{string?}, Action?)"/>, the reader sharing the check's reads.</summary>
+    internal static void Query(string key, string value, Func<PrivacyCheck, string?> live, Action? stale = null)
+        => PrivacyReadSet.Current?.Fact(key, value, live, stale);
+
+    /// <summary>A canonical, order-free fingerprint of a set of ids (an exact set comparison by a collision-resistant hash).</summary>
+    public static string SetOf(IEnumerable<Guid> ids)
+    {
+        var sorted = ids.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N")).OrderBy(id => id, StringComparer.Ordinal);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(string.Join(",", sorted))));
+    }
+
+    /// <summary>
+    /// Which of <paramref name="candidates"/> <paramref name="user"/> has played, by one batched host query; the set it
+    /// answered is a fact (the same query asked again at every check). Null when the query failed (fail closed).
+    /// </summary>
+    public static HashSet<Guid>? PlayedOf(ILibraryManager library, IUserDataManager? store, JUser user, IReadOnlyCollection<Guid> candidates)
+    {
+        var asked = candidates.Where(id => id != Guid.Empty).Distinct().ToArray();
+        var played = new HashSet<Guid>();
+        if (asked.Length == 0) return played;
+        HashSet<Guid> Ask()
+        {
+            var answer = new HashSet<Guid>();
+            foreach (var batch in asked.Chunk(PrivacyHostView.Batch))
+                foreach (var id in library.GetItemIds(new InternalItemsQuery(user) { ItemIds = batch, IsPlayed = true, GroupByPresentationUniqueKey = false }) ?? [])
+                    answer.Add(id);
+            return answer;
+        }
+        try { played = PrivacyReadSet.Unrecorded(Ask); }
+        catch (Exception) { return null; }
+        PrivacyInputs.KnowWatched(store, user.Id, asked, played);
+        Query("played:" + user.Id.ToString("N") + ":" + SetOf(asked), SetOf(played), () => SetOf(Ask()));
+        return played;
+    }
 
     /// <summary>The key of the host setting that decides which episodes a season holds (its specials).</summary>
     internal const string SpecialsInSeasons = "host:specials-in-seasons";
@@ -543,15 +700,11 @@ public static class PrivacyReads
         => (BaseItem.ConfigurationManager?.Configuration?.DisplaySpecialsWithinSeasons ?? false) ? "1" : "0";
 
     /// <summary>
-    /// The episodes a season holds for a user, as the host lists them: the season's episode set, the user's watched state
-    /// over it and the host's specials setting (which moves specials into or out of the season) are recorded.
+    /// The episodes a season holds for a user, as the host lists them (with the host's specials setting and every
+    /// special's placement). Callers record what they consume of it (<see cref="SeasonWatched"/>).
     /// </summary>
-    public static IEnumerable<BaseItem> SeasonEpisodes(MediaBrowser.Controller.Entities.TV.Season season, JUser user)
-    {
-        WatchedIn(user.Id, season.Id);
-        HostSpecials();
-        return season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false);
-    }
+    internal static IEnumerable<BaseItem> SeasonEpisodes(MediaBrowser.Controller.Entities.TV.Season season, JUser user)
+        => season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false);
 
     /// <summary>The host's specials-in-seasons setting was read (a season's episodes depend on it); returns its value.</summary>
     public static string HostSpecials()
@@ -559,6 +712,39 @@ public static class PrivacyReads
         var value = SpecialsSetting();
         PrivacyReadSet.Current?.Revision(SpecialsInSeasons, value, SpecialsSetting);
         return value;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="user"/> has watched any episode the host lists in <paramref name="season"/> (its specials
+    /// placed by the host's setting and each special's placement): the season's watched evidence, a fact compared with the
+    /// same query at every check. Fail closed: a failed read is "nothing watched" (and is not a value: the check fails).
+    /// </summary>
+    public static bool SeasonWatched(ILibraryManager library, IUserDataManager store, JUser user, MediaBrowser.Controller.Entities.TV.Season season)
+        => SeasonWatchedOrUnknown(library, store, user, season) == true;
+
+    /// <summary>As <see cref="SeasonWatched"/>; null when it could not be read (nothing is recorded: the caller protects).</summary>
+    public static bool? SeasonWatchedOrUnknown(ILibraryManager library, IUserDataManager store, JUser user, MediaBrowser.Controller.Entities.TV.Season season)
+    {
+        HostSpecials();
+        // The query's parts are read unrecorded: its result is the one fact.
+        var watched = PrivacyReadSet.Unrecorded(() => AnyWatched(library, store, user, season.Id));
+        if (watched is not { } known) return null;
+        Query("season-watched:" + user.Id.ToString("N") + ":" + season.Id.ToString("N"), known ? "1" : "0",
+            () => AnyWatched(library, store, user, season.Id) switch { true => "1", false => "0", null => null });
+        return known;
+    }
+
+    /// <summary>The season's watched evidence read now (null: it could not be read).</summary>
+    internal static bool? AnyWatched(ILibraryManager library, IUserDataManager store, JUser user, Guid seasonId)
+    {
+        try
+        {
+            if (PrivacyHostView.Item(library, seasonId) is not MediaBrowser.Controller.Entities.TV.Season season) return false;
+            foreach (var episode in SeasonEpisodes(season, user))
+                if (episode != null && store.GetUserData(user, episode)?.Played == true) return true;
+            return false;
+        }
+        catch (Exception) { return null; }
     }
 
     /// <summary>A chapter's start (the host's chapter timeline), recorded with how to read it again.</summary>

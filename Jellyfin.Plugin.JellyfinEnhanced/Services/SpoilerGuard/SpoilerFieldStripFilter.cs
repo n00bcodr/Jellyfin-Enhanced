@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -685,7 +687,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // resolved (caller treats null as fail-CLOSED → strip all). Used
         // when the DTO's UserData is missing (enableUserData=false on
         // lite clients).
-        private long? ResolveWatchedThroughTicksServerSide(Guid userId, Guid itemId)
+        private long? ResolveWatchedThroughTicksServerSide(Guid userId, Guid itemId, Func<UserItemData?, string> revealed)
         {
             try
             {
@@ -694,11 +696,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (jUser == null) return null;
                 var item = PrivacyReads.Item(_libraryManager, itemId);
                 if (item == null) return null;
-                var ud = PrivacyReads.UserData(_userDataManager, jUser, item, progress: true);
-                if (ud == null) return null;
-                if (ud.Played) return long.MaxValue;
-                if (ud.PlaybackPositionTicks > 0) return ud.PlaybackPositionTicks;
-                return null;
+                var ud = PrivacyReads.UserData(_userDataManager, jUser, item, ThroughKind, revealed);
+                return Through(ud);
             }
             catch (Exception ex)
             {
@@ -708,6 +707,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
         }
+
+        /// <summary>The kind of the user-data fact a movie's chapter reveal consumes (how far the viewer watched it).</summary>
+        private const string ThroughKind = "watched-through";
+
+        /// <summary>How far a viewer watched an item, from their data: all of it when played, else its resume point (null: unknown).</summary>
+        private static long? Through(UserItemData? data) => data switch
+        {
+            null => null,
+            { Played: true } => long.MaxValue,
+            { PlaybackPositionTicks: > 0 } d => d.PlaybackPositionTicks,
+            _ => null,
+        };
 
         // Server-side "has the user watched ANY episode in this season?"
         // probe. Used as a fallback when the Season DTO carries no
@@ -724,13 +735,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var seasonItem = PrivacyReads.Item(_libraryManager, seasonId)
                     as MediaBrowser.Controller.Entities.TV.Season;
                 if (seasonItem == null) return false;
-                foreach (var ep in PrivacyReads.SeasonEpisodes(seasonItem, jUser))
-                {
-                    if (ep == null) continue;
-                    var ud = PrivacyReads.UserData(_userDataManager, jUser, ep);
-                    if (ud?.Played == true) return true;
-                }
-                return false;
+                // The season's watched evidence (the host's listing and the viewer's watched state of it), one fact.
+                return PrivacyReads.SeasonWatched(_libraryManager, _userDataManager, jUser, seasonItem);
             }
             catch (Exception ex)
             {
@@ -962,18 +968,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // The answer's own position decides which chapters are revealed: it is an input of this answer (a
                 // rewind or a seek before the answer leaves makes it be projected again with the current one).
-                if (item.UserData != null && item.Id != Guid.Empty)
+                // What the decision consumes of the position is how many of the answer's chapters it reveals.
+                var starts = item.Chapters.Select(c => c?.StartPositionTicks ?? long.MaxValue).ToArray();
+                string Revealed(UserItemData? data) => Through(data) is { } through ? starts.Count(start => start < through).ToString(System.Globalization.CultureInfo.InvariantCulture) : "-";
+                if (item.UserData is { } carried && item.Id != Guid.Empty)
                 {
-                    PrivacyReadSet.Current?.Watched(userId, item.Id);
-                    PrivacyReads.Progress(userId, item.Id);
+                    var data = new UserItemData { Key = "carried", Played = carried.Played, PlaybackPositionTicks = carried.PlaybackPositionTicks };
+                    if (_userManager.GetUserById(userId) is { } viewer) PrivacyReads.Carried(_libraryManager, _userDataManager, viewer, item.Id, ThroughKind, data, Revealed);
+                    watchedThrough = Through(data);
                 }
-                watchedThrough = item.UserData switch
-                {
-                    { Played: true } => long.MaxValue,
-                    { PlaybackPositionTicks: > 0 } data => data.PlaybackPositionTicks,
-                    null => ResolveWatchedThroughTicksServerSide(userId, item.Id),
-                    _ => null,
-                };
+                else watchedThrough = ResolveWatchedThroughTicksServerSide(userId, item.Id, Revealed);
             }
 
             // Title replacement — "The Death of X" → "Season 2, Episode 6" for Episodes, "Season N" for Seasons, whatever

@@ -61,14 +61,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
         public event Action? ReviewsChanged;
 
-        private static long _saveEpoch;
-
-        /// <summary>
-        /// Advances on every per-user file save: the byte boundary's check re-reads the policy files an answer read only
-        /// when a save happened since its last check.
-        /// </summary>
-        public static long SaveEpoch => Interlocked.Read(ref _saveEpoch);
-
         /// <summary>The per-user files that are verdict inputs (a viewer's privacy policies), with their document types.</summary>
         private static readonly System.Collections.Generic.Dictionary<string, Type> _privacyFiles = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -82,7 +74,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>
         /// Records a read of a viewer's policy document (<paramref name="document"/> as the reader holds it, from the file or a
-        /// copy of it) in the current attempt's read-set: the gate re-reads the file and compares content.
+        /// copy of it) in the current attempt's read-set: every check of the answer reads the file again and compares content
+        /// (a document replaced by anything other than this plugin's save included).
         /// </summary>
         public void RecordPolicyRead(string userId, string fileName, object? document)
         {
@@ -880,7 +873,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 place();
                 Advance(path);
-                Interlocked.Increment(ref _saveEpoch);
             }
         }
 
@@ -975,7 +967,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 VersionOf(userId, fileName).Mutate(() =>
                 {
                     File.Move(tempPath, configPath, overwrite: true);
-                    Interlocked.Increment(ref _saveEpoch);
                     // The revision moves on once the new document is what readers see (a reader that took the revision
                     // before then hands out the older one: refused, never allowed, by a whole write built on it).
                     Advance(configPath);
@@ -1081,7 +1072,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _allSettingsVersion.Mutate(() =>
                 {
                     File.Move(filePath, backupPath);
-                    Interlocked.Increment(ref _saveEpoch);
                 });
                 Advance(filePath);
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
@@ -1092,7 +1082,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // Last resort: if the move failed, delete the unreadable file so
                 // the 503-per-request loop still breaks. The content is already
                 // unparseable, and the failure is logged above for forensics.
-                try { _allSettingsVersion.Mutate(() => { File.Delete(filePath); Interlocked.Increment(ref _saveEpoch); }); Advance(filePath); }
+                try { _allSettingsVersion.Mutate(() => { File.Delete(filePath); }); Advance(filePath); }
                 catch (Exception delEx)
                 {
                     _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");
