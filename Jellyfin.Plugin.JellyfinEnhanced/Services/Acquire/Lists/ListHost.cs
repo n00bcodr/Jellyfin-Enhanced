@@ -155,6 +155,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>Sources; no source is inferred from a folder, arr ownership or a virtual item.</returns>
         IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId);
 
+        /// <summary>
+        /// True while a movie or episode (or version) is a just-imported copy whose Jellyfin metadata isn't confirmed yet
+        /// (<see cref="BridgeImportReadiness"/>): it is never swapped in or inserted as Ready until it is.
+        /// </summary>
+        /// <param name="itemId">The item.</param>
+        /// <returns>True while it awaits its metadata.</returns>
+        bool AwaitingMetadata(Guid itemId) => false;
+
         /// <summary>Basic facts of a library item.</summary>
         /// <param name="itemId">Item.</param>
         /// <returns>Facts, or null when it doesn't exist.</returns>
@@ -308,6 +316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ICollectionManager _collectionManager;
         private readonly IFileSystem _fileSystem;
         private readonly IDbContextFactory<JellyfinDbContext>? _database;
+        private readonly BridgeImportReadiness? _readiness;
 
         /// <summary>Creates the host.</summary>
         /// <param name="libraryManager">Library manager.</param>
@@ -315,8 +324,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="collectionManager">Collection manager.</param>
         /// <param name="fileSystem">File system (Jellyfin's file-name rules for collection folders).</param>
         /// <param name="database">Host database factory for direct durable save-stamp reads; missing proof fails closed.</param>
-        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem, IDbContextFactory<JellyfinDbContext>? database = null)
+        /// <param name="readiness">The import readiness gate (just-imported copies awaiting their metadata), when registered.</param>
+        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem, IDbContextFactory<JellyfinDbContext>? database = null, BridgeImportReadiness? readiness = null)
         {
+            _readiness = readiness;
             _libraryManager = libraryManager;
             _playlistManager = playlistManager;
             _collectionManager = collectionManager;
@@ -423,6 +434,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <inheritdoc />
         public bool IsFourK(Guid itemId) => GetMediaSources(itemId).Any(s => s.Playable && (s.Width >= 3200 || s.Height >= 2000));
+
+        /// <inheritdoc />
+        public bool AwaitingMetadata(Guid itemId) => _readiness != null && _readiness.Pending(itemId, _libraryManager.GetItemById(itemId)?.Path);
 
         /// <inheritdoc />
         public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId)

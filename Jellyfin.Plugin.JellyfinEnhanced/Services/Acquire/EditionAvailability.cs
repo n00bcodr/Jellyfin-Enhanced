@@ -194,9 +194,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Whether one playable source qualifies for an edition. 4K needs 4K dimensions. Standard takes any source,
         /// or with <see cref="StandardNeedsNonFourK"/> one whose dimensions Jellyfin has read and aren't 4K (a file
-        /// Jellyfin hasn't read yet may still be 4K, and a request closed on it would be closed for good).
+        /// Jellyfin hasn't read yet may still be 4K, and a request closed on it would be closed for good). A just-imported
+        /// source whose metadata is still being read (<see cref="JfSource.AwaitingMetadata"/>) qualifies for nothing yet.
         /// </summary>
-        public bool Qualifies(JfSource source, Edition edition) => edition switch
+        public bool Qualifies(JfSource source, Edition edition) => !source.AwaitingMetadata && edition switch
         {
             Edition.FourK => IsFourK(source.Width, source.Height),
             Edition.Any => true,
@@ -211,10 +212,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// and the viewer may see (never missing, a placeholder or hidden from them). The view sets
         /// <see cref="JfEpisode.Playable"/> from the same "plays a file" fact its sources start from.
         /// </summary>
-        public static bool Plays(JfEpisode episode) => !episode.Hidden && episode.Playable;
+        /// <remarks>A just-imported episode whose metadata is still being read (<see cref="JfEpisode.AwaitingMetadata"/>) doesn't count yet:
+        /// "Ready" means the title shows properly, not only that its file plays (<see cref="BridgeImportReadiness"/>).</remarks>
+        public static bool Plays(JfEpisode episode) => !episode.Hidden && episode.Playable && !episode.AwaitingMetadata;
 
         /// <summary><see cref="Edition.Any"/> for a resolved movie or episode item (the viewer could resolve it, so they can open it).</summary>
-        public static bool Plays(JfItemRef item) => item.Playable;
+        /// <remarks>Not while its import's metadata is still being read (<see cref="JfItemRef.AwaitingMetadata"/>).</remarks>
+        public static bool Plays(JfItemRef item) => item.Playable && !item.AwaitingMetadata;
 
         /// <summary>
         /// The qualifying sources of one movie or episode item the viewer opens (a page's own item, an item an alert names):

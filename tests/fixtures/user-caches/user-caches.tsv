@@ -146,7 +146,6 @@ ImportPhysicalProjection._reads	both	independent	one review	one import review's 
 ImportPhysicalProjection._viewer	both	independent	one review	the person one import review is for, as that request read them; the projection is dropped with the review	write:per-call
 InvalidationLedger._epoch	both	independent	(record)	the ticket protocol's own invalidation records and floor, swapped whole by identity
 JellyfinBridge.QueuedRefresh.Paths	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
-JellyfinBridge._followUps	both	independent	path / item	library refresh bookkeeping: not per user
 JellyfinBridge._historyLoads	both	independent	path / item	library refresh bookkeeping: not per user
 JellyfinBridge._missing	both	independent	path / item	library refresh bookkeeping: not per user; every drop bumps _missingGeneration before it under _lock, and a list is served only under the generation it was read under (a read from before a refresh is never served)	write:fenced=_missingGeneration
 JellyfinBridge._pending	both	independent	path / item	library refresh bookkeeping: not per user; cleared when the bridge stops	write:disposal
@@ -518,3 +517,12 @@ WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's
 WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WrittenStateCache._entries	both	independent	key	the written-state helper's own storage: its ledger refuses and stops serving every entry read before an invalidation	write:own-state
+# Bridge metadata readiness: import and hydration state, independent of each viewer's access.
+BridgeImportReadiness.Entry.Items	both	independent	import generation	the Jellyfin item ids attached to one import; visibility is checked by each consumer for its viewer; the list is dropped with its entry	write:own-state
+BridgeImportReadiness._byItem	both	independent	Jellyfin item id	the import readiness gate's item index, shared by every viewer; Attach and Forget change the gate's own state under _lock, not an access answer	write:own-state
+BridgeImportReadiness._byPath	both	independent	physical path / import generation	the import readiness gate's current generations, shared by every viewer; Begin, Drop, Release and Prune change its own state under _lock	write:own-state
+BridgeImportReadiness._done	both	independent	import generation	the latest 50 completed imports for diagnostics, not viewer access; Release appends a completion and evicts the oldest under _lock	write:own-state
+JellyfinBridge._creating	both	independent	physical folder path	in-flight child-folder creation guards, not viewer access; CreateNewFolder removes its guard in finally under _lock	write:own-state
+JellyfinBridge._hydrationAsked	both	independent	Jellyfin item id	hydration scheduling and retry coalescing, not viewer access; asks and expired or refused asks update the scheduler's own state under _lock	write:own-state
+JellyfinBridge._hydrationJobs	both	independent	physical path / import generation	in-flight hydration guards, not viewer access; completion or failure removes the job under _lock	write:own-state
+JellyfinBridge._imports	both	independent	physical path / import generation	current imported generations and title identities, not viewer access; BeginImport, EndImport and Publish change the import ledger's own state under _lock	write:own-state

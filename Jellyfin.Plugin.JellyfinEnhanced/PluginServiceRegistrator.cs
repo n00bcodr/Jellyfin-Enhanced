@@ -91,6 +91,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton(sp => new Services.Acquire.ArrInstanceLibraries(sp.GetRequiredService<Services.Arr.ArrStateStore>(), sp.GetRequiredService<Services.Acquire.IJellyfinLibraryAccess>()) { Parental = sp.GetRequiredService<Services.SeerrParentalFilter>() });
             serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
+            // ---- Bridge fix (new imports are hydrated before they are Ready): the one readiness gate the bridge feeds and
+            // the Jellyfin view, list adapter, notifications, Ready playlist and request fulfilment read.
+            serviceCollection.AddSingleton<Services.Acquire.BridgeImportReadiness>();
+            // ---- end bridge fix
             serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();
             serviceCollection.AddSingleton<Services.Acquire.ArrQueueActionService>();
             serviceCollection.AddSingleton<Services.Arr.ArrActivityMirror>();

@@ -142,7 +142,7 @@ public class IntegrationNotificationsTests
             Store = Arr.Store();
             Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Config, () => Arr.Now, Feed, new ArrInstanceLibraries(Store, Library, () => Arr.Now));
-            Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20) };
+            Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20), StableQuietOverride = TimeSpan.FromMilliseconds(5), HydrationPoll = TimeSpan.FromMilliseconds(20) };
             Hub = new ArrAdminHubService(Store, Bridge, Requests, null, null, () => Config, () => Arr.Now);
             Admin = View.AddUser(admin: true, policy: "same");
             Emma = View.AddUser(admin: false, policy: "same");

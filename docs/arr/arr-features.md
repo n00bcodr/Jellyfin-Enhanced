@@ -761,11 +761,24 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
     When Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only
     the folder it landed in (the season; the series and then the new season folder for a new season; or the movie
     library's folder for a new movie), looking only at the new files, so the episode or movie appears within seconds
-    and open pages switch to "Ready" without a library scan. A whole TV library is never refreshed this way: a
-    brand-new series folder is handed to Jellyfin's own library monitor when that library has real-time monitoring
-    on, and otherwise waits for Jellyfin's next library scan (it is listed under "In Sonarr/Radarr, not in
-    Jellyfin" with **Scan now** meanwhile). It uses each app's path mappings (see the path doctor) and
-    waits while Jellyfin's own library scan runs. A folder is never refreshed twice at once: imports that arrive while
+    without a library scan. A whole TV library is never refreshed, scanned or handed to Jellyfin's library monitor
+    this way: a brand-new series folder is added on its own (Jellyfin reads only that folder), whatever the
+    library's real-time monitoring, and then the series, its seasons and its episodes have their details read
+    inside it. It uses each app's path mappings (see the path doctor) and waits while Jellyfin's own library scan
+    runs. Before Jellyfin reads an imported file, the file must stop changing for a moment (a copy still being
+    written is never read half-done).
+
+    **Ready means ready.** Jellyfin lists a new file within a second, long before its title, overview and artwork
+    are read; and a first read that found nothing can leave a movie with its raw folder name (for example
+    *Project Almanac (2015) {tmdb-227719}*) that a normal library scan doesn't repair. So a new title shows
+    **Almost ready** until Jellyfin Enhanced has read its details back: once the refresh that added it has ended, a
+    title still missing its name, overview, poster or media info gets one full read of its metadata and artwork
+    (only that title; your locked fields and existing artwork are kept), retried at most twice. Then it turns
+    **Ready**, and only then do the Ready notification, the request's "fulfilled", the Ready playlist and list
+    swap-in happen, once. If a metadata provider is down or has nothing for it, it turns Ready after the wait set
+    under Admin tools anyway, and the server log says what is missing. A file Jellyfin already lists without its
+    details (after a restart, or when you press **Scan now**) is repaired the same way. An upgrade of a title that
+    is already Ready stays Ready while the new file is read. A folder is never refreshed twice at once: imports that arrive while
     it runs are gathered into the next refresh of that folder, and a file whose refresh is still waiting its turn
     is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
     Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting

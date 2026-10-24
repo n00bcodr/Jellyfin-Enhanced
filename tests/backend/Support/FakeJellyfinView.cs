@@ -340,6 +340,24 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     /// viewer can open the item that plays it too; without <paramref name="readDimensions"/> its own file, unread.
     /// </summary>
     public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true)
+        => Gate(SourcesCore(itemId, viewer, readDimensions));
+
+    /// <summary>
+    /// The import readiness gate, as the production view reads it (<see cref="ArrJellyfinView"/>): a source, item or episode
+    /// it holds (by item id or path) carries AwaitingMetadata. Null (default): nothing is held.
+    /// </summary>
+    public BridgeImportReadiness? Readiness { get; set; }
+
+    private IReadOnlyList<JfSource> Gate(IReadOnlyList<JfSource> sources)
+        => Readiness == null ? sources : sources.Select(s => Readiness.Pending(s.BackingItemId, s.Path ?? PathOf(s.BackingItemId)) || Readiness.Pending(s.ItemId, s.Path ?? PathOf(s.ItemId))
+            ? new JfSource { SourceId = s.SourceId, ItemId = s.ItemId, BackingItemId = s.BackingItemId, Width = s.Width, Height = s.Height, Path = s.Path, DateCreated = s.DateCreated, AwaitingMetadata = true }
+            : s).ToList();
+
+    // The file of an item or copy, as the production view's sources carry it.
+    private string? PathOf(Guid itemId)
+        => Items.TryGetValue(itemId, out var item) ? item.Ref.Path : CopiesByKey.Values.SelectMany(l => l).Select(c => c.Copy).FirstOrDefault(c => c.ItemId == itemId)?.Path;
+
+    private IReadOnlyList<JfSource> SourcesCore(Guid itemId, StatusViewer viewer, bool readDimensions)
     {
         bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
         if (Placeholders.Contains(itemId) || (!viewer.IsLibraryContext && Withdrawn(itemId, viewer))) return Array.Empty<JfSource>();
@@ -387,8 +405,10 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     /// </summary>
     internal JfEpisode Shown(JfEpisode episode)
     {
+        if (Readiness?.Pending(episode.ItemId, null) == true)
+            episode = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden, AwaitingMetadata = true };
         if (!Placeholders.Contains(episode.ItemId) || typeof(JfEpisode).GetProperty("Placeholder") is not { } flag) return episode;
-        var copy = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden };
+        var copy = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden, AwaitingMetadata = episode.AwaitingMetadata };
         flag.SetValue(copy, true);
         return copy;
     }
@@ -399,6 +419,12 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     /// </summary>
     internal JfItemRef ShownItem(JfItemRef item)
     {
+        if (Readiness?.Pending(item.ItemId, item.Path) == true && !item.AwaitingMetadata)
+        {
+            var held = (JfItemRef)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(item, null)!;
+            typeof(JfItemRef).GetProperty(nameof(JfItemRef.AwaitingMetadata))!.SetValue(held, true);
+            item = held;
+        }
         if (!Placeholders.Contains(item.ItemId) || typeof(JfItemRef).GetProperty("Placeholder") is not { } flag) return item;
         var copy = (JfItemRef)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(item, null)!;
         flag.SetValue(copy, true);
@@ -432,7 +458,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
         return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
                 && Sees(e.VisibleTo) && (viewer.IsLibraryContext || !Withdrawn(e.Episode.ItemId, viewer)) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))
-            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : EpisodeVersionsFollowAccess ? Sources(e.Episode.ItemId, viewer, readDimensions) : SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
+            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : EpisodeVersionsFollowAccess ? Sources(e.Episode.ItemId, viewer, readDimensions) : Gate(SourcesOf(e.Episode.ItemId, e.Episode.DateCreated)) })
             .ToList();
     }
 

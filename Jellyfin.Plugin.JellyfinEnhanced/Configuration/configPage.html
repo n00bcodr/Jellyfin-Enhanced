@@ -2819,7 +2819,7 @@
                             <div id="arrAdminToolsSettings" class="je-arr-admin-settings">
                                 <div class="checkboxContainer"><label><input id="arrTargetedRefreshEnabled" is="emby-checkbox" type="checkbox"/><span>Show imports in Jellyfin right away</span></label></div>
                                 <div class="je-setting-description" data-desc-for="arrTargetedRefreshEnabled">
-                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is left to Jellyfin's own library monitor (a whole TV library is never refreshed this way). Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
+                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is added on its own (a whole TV library is never refreshed or scanned this way), and a new title has its title, overview, artwork and media info read before it shows as Ready. Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
                                 </div>
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="arrLibraryPendingMinutes">"In Sonarr/Radarr, not in Jellyfin" after (minutes)</label>
@@ -2828,6 +2828,22 @@
                                 <div class="je-setting-description" data-desc-for="arrLibraryPendingMinutes">
                                     <div class="fieldDescription">How long after an import a file Jellyfin still doesn't have is listed under Needs attention, with a Scan now button. 1-1440, default 10.</div>
                                 </div>
+                                <!-- Bridge fix: new imports are hydrated before they are Ready -->
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrBridgeStableSeconds">Wait for an imported file to stop changing (seconds)</label>
+                                    <input id="arrBridgeStableSeconds" is="emby-input" type="number" min="0" max="60"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrBridgeStableSeconds">
+                                    <div class="fieldDescription">Before Jellyfin is asked to read a file Sonarr/Radarr imported, its size and time must stay the same for this long, so a copy still being written is never read half-done. 0-60, default 3; 0 doesn't wait.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrBridgeMetadataWaitMinutes">Wait for a new title's details before calling it Ready (minutes)</label>
+                                    <input id="arrBridgeMetadataWaitMinutes" is="emby-input" type="number" min="1" max="120"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrBridgeMetadataWaitMinutes">
+                                    <div class="fieldDescription">A new movie or episode shows "Almost ready" while Jellyfin reads its title, overview, artwork and media info, and Ready (with its notification) once they are there. If a metadata provider is down or has nothing for it, it is shown Ready after this long anyway and the server log says what is missing. 1-120, default 10.</div>
+                                </div>
+                                <!-- end bridge fix -->
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="arrLowDiskPercent">Low disk warning below (% free)</label>
                                     <input id="arrLowDiskPercent" is="emby-input" type="number" min="1" max="50"/>
@@ -8824,6 +8840,8 @@
                 jeLoadArrNotifySettings(config);
                 document.querySelector('#arrTargetedRefreshEnabled').checked = config.ArrTargetedRefreshEnabled !== false;
                 document.querySelector('#arrLibraryPendingMinutes').value = (config.ArrLibraryPendingMinutes !== undefined && config.ArrLibraryPendingMinutes !== null) ? config.ArrLibraryPendingMinutes : 10;
+                document.querySelector('#arrBridgeStableSeconds').value = (config.ArrBridgeStableSeconds !== undefined && config.ArrBridgeStableSeconds !== null) ? config.ArrBridgeStableSeconds : 3;
+                document.querySelector('#arrBridgeMetadataWaitMinutes').value = (config.ArrBridgeMetadataWaitMinutes !== undefined && config.ArrBridgeMetadataWaitMinutes !== null) ? config.ArrBridgeMetadataWaitMinutes : 10;
                 document.querySelector('#arrLowDiskPercent').value = (config.ArrLowDiskPercent !== undefined && config.ArrLowDiskPercent !== null) ? config.ArrLowDiskPercent : 10;
                 document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
                 document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
@@ -9508,6 +9526,10 @@
             config.ArrTargetedRefreshEnabled = document.querySelector('#arrTargetedRefreshEnabled').checked;
             var __pendingMinutes = parseInt(document.querySelector('#arrLibraryPendingMinutes').value, 10);
             config.ArrLibraryPendingMinutes = isNaN(__pendingMinutes) ? 10 : Math.min(1440, Math.max(1, __pendingMinutes));
+            var __stableSeconds = parseInt(document.querySelector('#arrBridgeStableSeconds').value, 10);
+            config.ArrBridgeStableSeconds = isNaN(__stableSeconds) ? 3 : Math.min(60, Math.max(0, __stableSeconds));
+            var __metadataWait = parseInt(document.querySelector('#arrBridgeMetadataWaitMinutes').value, 10);
+            config.ArrBridgeMetadataWaitMinutes = isNaN(__metadataWait) ? 10 : Math.min(120, Math.max(1, __metadataWait));
             var __lowDisk = parseInt(document.querySelector('#arrLowDiskPercent').value, 10);
             config.ArrLowDiskPercent = isNaN(__lowDisk) ? 10 : Math.min(50, Math.max(1, __lowDisk));
             var __handoffMinutes = parseInt(document.querySelector('#arrSeerrHandoffGraceMinutes').value, 10);
@@ -11323,7 +11345,7 @@
             { parent: 'arrPhase4ListMdblistEnabled', label: 'MDBList public lists', children: ['arrPhase4ListMdblistApiEnabled'] },
             { parent: 'arrPhase4ListTraktEnabled', label: 'Trakt lists, watchlists and charts', children: ['arrListTraktApiKey'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
-            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrBridgeStableSeconds', 'arrBridgeMetadataWaitMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },

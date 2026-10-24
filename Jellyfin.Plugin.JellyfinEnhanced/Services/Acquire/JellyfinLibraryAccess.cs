@@ -50,6 +50,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool IsFolder { get; init; }
     }
 
+    /// <summary>How far one hydration of a just-imported item reaches (<see cref="IJellyfinLibraryAccess.QueueHydration"/>).</summary>
+    public enum HydrationScope
+    {
+        /// <summary>One movie or episode: queued, never anything around it.</summary>
+        Item,
+
+        /// <summary>A series JE just created and everything in it (its seasons and episodes are all new): queued; only inside that series.</summary>
+        SeriesTree,
+
+        /// <summary>A series' or season's own metadata only, without its children (an existing series whose own title is still raw).</summary>
+        ItemOnly,
+    }
+
+    /// <summary>
+    /// What the bridge reads back from one Jellyfin item to tell whether its metadata is usable: the title as Jellyfin shows
+    /// it, whether it has an overview, artwork and provider ids, the media info of a video, an episode's numbers and binding.
+    /// </summary>
+    public sealed class JfItemFacts
+    {
+        /// <summary>Item id.</summary>
+        public Guid Id { get; init; }
+
+        /// <summary>movie, episode, series, season, folder or other.</summary>
+        public string Kind { get; init; } = "other";
+
+        /// <summary>The item's file or folder (bridge form, '/').</summary>
+        public string? Path { get; init; }
+
+        /// <summary>The title Jellyfin shows.</summary>
+        public string? Name { get; init; }
+
+        /// <summary>It has an overview.</summary>
+        public bool HasOverview { get; init; }
+
+        /// <summary>It has a primary image (a poster, an episode still).</summary>
+        public bool HasPrimary { get; init; }
+
+        /// <summary>It has a backdrop.</summary>
+        public bool HasBackdrop { get; init; }
+
+        /// <summary>It has a TMDB, TVDB or IMDb id.</summary>
+        public bool HasProviderIds { get; init; }
+
+        /// <summary>A movie or episode whose file Jellyfin has read (runtime or video dimensions known).</summary>
+        public bool Probed { get; init; }
+
+        /// <summary>Season number (episodes).</summary>
+        public int? Season { get; init; }
+
+        /// <summary>Episode number (episodes).</summary>
+        public int? Episode { get; init; }
+
+        /// <summary>The series item (episodes, seasons).</summary>
+        public Guid SeriesId { get; init; }
+
+        /// <summary>The season item (episodes).</summary>
+        public Guid SeasonId { get; init; }
+
+        /// <summary>When Jellyfin last finished refreshing it without a failure (UTC), or null when it never has.</summary>
+        public DateTime? LastRefreshed { get; init; }
+
+        /// <summary>An administrator locked its metadata or its title: JE never asks for it to be replaced.</summary>
+        public bool NameLocked { get; init; }
+
+        /// <summary>An episode's series, as the same facts (null otherwise).</summary>
+        public JfItemFacts? Series { get; init; }
+    }
+
+    /// <summary>The item for a new folder (<see cref="IJellyfinLibraryAccess.CreateChildFolder"/>).</summary>
+    /// <param name="Id">Item id.</param>
+    /// <param name="Kind">series, movie, season, folder or other.</param>
+    /// <param name="Created">True when JE created it; false when Jellyfin already had it (its own monitor came first).</param>
+    public sealed record JfCreatedItem(Guid Id, string Kind, bool Created);
+
     /// <summary>
     /// What the Jellyfin bridge needs from Jellyfin's library: the libraries and their folders, the
     /// item at a path, which titles exist by provider id, and the targeted refresh itself. One seam
@@ -84,12 +158,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Validates one folder's children, non-recursively, looking only at <paramref name="refreshPaths"/>.</summary>
         Task RefreshFolderAsync(Guid folderId, IReadOnlyList<string> refreshPaths, CancellationToken cancellationToken);
 
-        /// <summary>Queues Jellyfin's own scan of one library (as its "Scan library" button does). False when the library is unknown.</summary>
-        bool QueueLibraryScan(string libraryId);
-
-        /// <summary>Queues a full metadata refresh of one item and its children (a new series). False when it isn't a folder.</summary>
-        bool QueueItemRefresh(Guid itemId);
-
         /// <summary>
         /// Queues a refresh of one movie or episode whose file changed in place (an upgrade imported at the same
         /// path): Jellyfin reads the file and its versions again (media info, dimensions). False when the item isn't a video.
@@ -99,7 +167,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Tells Jellyfin's library monitor a path changed (its own debounced refresh, as real-time
         /// monitoring does). Jellyfin acts on it whatever the library's monitoring setting, by
-        /// validating the nearest item it has recursively: only for libraries with real-time monitoring on.
+        /// validating the nearest item it has recursively: only for a library with real-time monitoring on
+        /// whose own folder Jellyfin has no item for (never a new series: that is added on its own).
         /// </summary>
         void ReportChanged(string path);
 
@@ -110,6 +179,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Jellyfin hasn't numbered that episode yet (its metadata does, a moment after it is added).
         /// </summary>
         int RemoveMissingTwins(string filePath);
+
+        /// <summary>A file's size and last write (UTC) as Jellyfin's process sees them, or null when it can't see a file there.</summary>
+        (long Size, DateTime ModifiedUtc)? FileStamp(string path);
+
+        /// <summary>The facts the bridge judges an item's metadata by (<see cref="JfItemFacts"/>), or null when there is no such item.</summary>
+        JfItemFacts? ReadFacts(Guid itemId);
+
+        /// <summary>
+        /// Has one just-imported item's metadata read in full and repaired: remote metadata AND remote images refreshed in
+        /// full (a first read that found nothing, or a refresh stamp, never keeps them from running), the title and overview
+        /// replaced by what the providers have (locked fields kept; existing artwork kept, missing artwork filled), at high
+        /// priority. <paramref name="scope"/> decides how far it reaches; never a library or a library folder. False when the
+        /// item isn't one the scope allows.
+        /// </summary>
+        bool QueueHydration(Guid itemId, HydrationScope scope);
+
+        /// <summary>
+        /// Adds the item for ONE new folder directly inside <paramref name="parentFolderId"/> (a new series folder in a TV
+        /// library's own folder) the way Jellyfin's scan would: its resolver reads only that folder, under that parent, and
+        /// the item is created there. Nothing else in the parent is looked at (no validation of the library folder). When
+        /// Jellyfin already has an item there (its monitor came first) that one is returned. Null when nothing resolves.
+        /// </summary>
+        JfCreatedItem? CreateChildFolder(Guid parentFolderId, string folderPath);
     }
 
     /// <summary><see cref="IJellyfinLibraryAccess"/> over the real library, provider and task managers.</summary>
@@ -176,17 +268,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 Id = item.Id,
                 IsFolder = item.IsFolder,
-                Kind = item switch
-                {
-                    Movie => "movie",
-                    Episode => "episode",
-                    Series => "series",
-                    Season => "season",
-                    Folder => "folder",
-                    _ => "other",
-                },
+                Kind = KindOf(item),
             };
         }
+
+        private static string KindOf(BaseItem item) => item switch
+        {
+            Movie => "movie",
+            Episode => "episode",
+            Series => "series",
+            Season => "season",
+            Folder => "folder",
+            _ => "other",
+        };
 
         /// <inheritdoc />
         public bool FileExists(string path)
@@ -283,36 +377,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
-        public bool QueueLibraryScan(string libraryId)
-        {
-            if (!Guid.TryParse(libraryId, out var id) || _libraryManager.GetItemById(id) is not Folder) return false;
-            _providerManager.QueueRefresh(
-                id,
-                new MetadataRefreshOptions(new DirectoryService(_fileSystem))
-                {
-                    MetadataRefreshMode = MetadataRefreshMode.Default,
-                    ImageRefreshMode = MetadataRefreshMode.Default,
-                },
-                RefreshPriority.High);
-            return true;
-        }
-
-        /// <inheritdoc />
-        public bool QueueItemRefresh(Guid itemId)
-        {
-            if (_libraryManager.GetItemById(itemId) is not Folder) return false;
-            _providerManager.QueueRefresh(
-                itemId,
-                new MetadataRefreshOptions(new DirectoryService(_fileSystem))
-                {
-                    MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
-                    ImageRefreshMode = MetadataRefreshMode.Default,
-                },
-                RefreshPriority.High);
-            return true;
-        }
-
-        /// <inheritdoc />
         public bool QueueFileRefresh(Guid itemId)
         {
             if (_libraryManager.GetItemById(itemId) is not Video) return false;
@@ -330,6 +394,138 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public void ReportChanged(string path) => _libraryMonitor.ReportFileSystemChanged(Native(path));
+
+        /// <inheritdoc />
+        public (long Size, DateTime ModifiedUtc)? FileStamp(string path)
+        {
+            try
+            {
+                var info = new FileInfo(Native(path));
+                // A fresh look every time (no cached file system entry): an arr still copying keeps changing both.
+                info.Refresh();
+                return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
+        public JfItemFacts? ReadFacts(Guid itemId)
+        {
+            var item = _libraryManager.GetItemById(itemId);
+            return item == null ? null : FactsOf(item, item is Episode e ? e.Series : null);
+        }
+
+        /// <summary>The facts of one item (and of an episode's series).</summary>
+        internal static JfItemFacts FactsOf(BaseItem item, Series? series)
+        {
+            var video = item as Video;
+            var episode = item as Episode;
+            return new JfItemFacts
+            {
+                Id = item.Id,
+                Kind = KindOf(item),
+                Path = string.IsNullOrEmpty(item.Path) ? null : item.Path.Replace('\\', '/'),
+                Name = item.Name,
+                HasOverview = !string.IsNullOrWhiteSpace(item.Overview),
+                HasPrimary = item.HasImage(ImageType.Primary, 0),
+                HasBackdrop = item.HasImage(ImageType.Backdrop, 0),
+                HasProviderIds = new[] { MetadataProvider.Tmdb, MetadataProvider.Tvdb, MetadataProvider.Imdb }.Any(p => !string.IsNullOrWhiteSpace(item.GetProviderId(p))),
+                Probed = video != null && ((item.RunTimeTicks ?? 0) > 0 || item.Width > 0 || item.Height > 0),
+                Season = episode?.ParentIndexNumber ?? (item as Season)?.IndexNumber,
+                Episode = episode?.IndexNumber,
+                SeriesId = episode?.SeriesId ?? (item as Season)?.SeriesId ?? Guid.Empty,
+                SeasonId = episode?.SeasonId ?? Guid.Empty,
+                LastRefreshed = item.DateLastRefreshed.Year < 1900 ? null : item.DateLastRefreshed,
+                NameLocked = item.IsLocked || (item.LockedFields ?? Array.Empty<MetadataField>()).Contains(MetadataField.Name),
+                Series = series == null ? null : FactsOf(series, null),
+            };
+        }
+
+        /// <inheritdoc />
+        public bool QueueHydration(Guid itemId, HydrationScope scope)
+        {
+            var item = _libraryManager.GetItemById(itemId);
+            if (item == null || !Hydratable(item, scope, _libraryManager)) return false;
+            var options = HydrationOptions(new DirectoryService(_fileSystem));
+            if (scope == HydrationScope.ItemOnly)
+            {
+                // The folder's own metadata only: a queued refresh of a folder would also validate everything in it with
+                // these options, so its own refresh runs directly (in the background; the bridge reads the result back).
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _providerManager.RefreshSingleItem(item, options, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        // The bridge reads the item back and retries or publishes it with what is missing.
+                    }
+                });
+                return true;
+            }
+            _providerManager.QueueRefresh(itemId, options, RefreshPriority.High);
+            return true;
+        }
+
+        /// <summary>
+        /// The refresh options of a hydration: remote metadata and remote images refreshed in full (FullRefresh skips the
+        /// "changed providers only" and "already refreshed" filters a default refresh applies once an item has a refresh
+        /// stamp), the providers' title and overview replacing the raw folder name (FullRefresh alone keeps a non-empty
+        /// name), locked fields kept by Jellyfin's own merge, existing artwork kept (only missing artwork is fetched), and
+        /// nothing removed. A fresh directory service, so the file is looked at as it is now.
+        /// </summary>
+        internal static MetadataRefreshOptions HydrationOptions(IDirectoryService directoryService)
+            => new(directoryService)
+            {
+                MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                ImageRefreshMode = MetadataRefreshMode.FullRefresh,
+                ReplaceAllMetadata = true,
+                ReplaceAllImages = false,
+                RemoveOldMetadata = false,
+            };
+
+        /// <summary>
+        /// The items a hydration may reach: a movie or episode (<see cref="HydrationScope.Item"/>), a series
+        /// (<see cref="HydrationScope.SeriesTree"/>), a series or season (<see cref="HydrationScope.ItemOnly"/>); never a
+        /// library, a library's own folder or any other folder.
+        /// </summary>
+        internal static bool Hydratable(BaseItem item, HydrationScope scope, ILibraryManager libraryManager)
+        {
+            if (item is ICollectionFolder or AggregateFolder or UserRootFolder || item.IsTopParent) return false;
+            if (!string.IsNullOrEmpty(item.Path) && libraryManager.GetVirtualFolders().Any(v => (v.Locations ?? Array.Empty<string>()).Any(l => BridgePaths.SamePath(l, item.Path)))) return false;
+            return scope switch
+            {
+                HydrationScope.Item => item is Movie or Episode,
+                HydrationScope.SeriesTree => item is Series,
+                _ => item is Series or Season,
+            };
+        }
+
+        /// <inheritdoc />
+        public JfCreatedItem? CreateChildFolder(Guid parentFolderId, string folderPath)
+        {
+            if (_libraryManager.GetItemById(parentFolderId) is not Folder parent || parent is ICollectionFolder or AggregateFolder or UserRootFolder) return null;
+            var native = Native(folderPath);
+            // Only a folder directly inside the parent, never the parent itself or anything deeper.
+            if (string.IsNullOrEmpty(parent.Path) || !BridgePaths.SamePath(BridgePaths.Parent(BridgePaths.Norm(folderPath)) ?? string.Empty, parent.Path)) return null;
+            if (_libraryManager.FindByPath(native, true) is { } existing) return new JfCreatedItem(existing.Id, KindOf(existing), false);
+            if (!Directory.Exists(native)) return null;
+            var directoryService = new DirectoryService(_fileSystem);
+            var info = _fileSystem.GetDirectoryInfo(native);
+            // Jellyfin's own resolution of that one folder, as its scan of the parent would do it for this entry (ignore
+            // rules, the library's content type and options, the parent as context).
+            var resolved = _libraryManager.ResolvePaths(new[] { info }, directoryService, parent, _libraryManager.GetLibraryOptions(parent), _libraryManager.GetContentType(parent))
+                .FirstOrDefault(i => !string.IsNullOrEmpty(i.Path) && BridgePaths.SamePath(i.Path, native));
+            if (resolved == null) return null;
+            // Its id is Jellyfin's own for that path and type: a monitor or scan that added it meanwhile added the same item.
+            if (_libraryManager.GetItemById(resolved.Id) is { } raced) return new JfCreatedItem(raced.Id, KindOf(raced), false);
+            parent.AddChild(resolved);
+            return new JfCreatedItem(resolved.Id, KindOf(resolved), true);
+        }
 
         /// <inheritdoc />
         public int RemoveMissingTwins(string filePath)

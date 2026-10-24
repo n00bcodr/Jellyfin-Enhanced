@@ -619,6 +619,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgeHydration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgeImportReadiness.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
       "category": "Services"
     },
@@ -8064,6 +8072,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrBridgeStableSeconds",
+      "type": "int",
+      "initializer": "3",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrBridgeMetadataWaitMinutes",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrLowDiskPercent",
       "type": "int",
       "initializer": "10",
@@ -11757,9 +11781,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 734,
+    "files": 736,
     "routes": 311,
-    "configuration_properties": 664,
+    "configuration_properties": 666,
     "storage_references": 106,
     "scheduled_tasks": 15,
     "locales": 33

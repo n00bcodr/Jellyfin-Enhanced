@@ -24,6 +24,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ILibraryManager _libraryManager;
         private readonly ListSwapService _swap;
         private readonly Logger _logger;
+        private readonly BridgeImportReadiness? _readiness;
         private CancellationTokenSource? _stopping;
         private Task? _startupPass;
 
@@ -31,11 +32,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="libraryManager">Library manager (events).</param>
         /// <param name="swap">Swap service.</param>
         /// <param name="logger">JE logger.</param>
-        public ListSwapMonitor(ILibraryManager libraryManager, ListSwapService swap, Logger logger)
+        /// <param name="readiness">The import readiness gate: a just-imported copy published Ready is matched again at once.</param>
+        public ListSwapMonitor(ILibraryManager libraryManager, ListSwapService swap, Logger logger, BridgeImportReadiness? readiness = null)
         {
             _libraryManager = libraryManager;
             _swap = swap;
             _logger = logger;
+            _readiness = readiness;
         }
 
         /// <inheritdoc />
@@ -44,6 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemRemoved;
+            if (_readiness != null) _readiness.Released += OnImportReady;
             _swap.Start();
             _stopping = new CancellationTokenSource();
             var token = _stopping.Token;
@@ -110,6 +114,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        /// <summary>
+        /// A just-imported copy was published Ready (its metadata read back): its items are matched now. Jellyfin's own
+        /// last update of it may have come before the readiness gate let it count, so that event alone could miss it.
+        /// </summary>
+        /// <param name="release">The release.</param>
+        internal void OnImportReady(ImportReadyRelease release)
+        {
+            foreach (var id in release.ItemIds) _swap.NotifyItemChanged(id);
+        }
+
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
             if (e?.Item is Playlist or BoxSet)
@@ -123,6 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemRemoved;
+            if (_readiness != null) _readiness.Released -= OnImportReady;
         }
     }
 }

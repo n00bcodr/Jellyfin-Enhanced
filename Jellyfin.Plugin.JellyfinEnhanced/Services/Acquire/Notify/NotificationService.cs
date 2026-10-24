@@ -2520,18 +2520,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 1) == 1) return;
             _bridge.Indexed += OnIndexed;
+            _bridge.Hydrated += OnIndexed;
         }
 
         private void UnsubscribeBridge()
         {
             if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 0) == 0) return;
             _bridge.Indexed -= OnIndexed;
+            _bridge.Hydrated -= OnIndexed;
         }
 
         /// <summary>
-        /// The Jellyfin bridge's targeted refresh found an imported file: the title (when someone
-        /// follows or asked for it) is looked at in the next round, without waiting for Jellyfin's
-        /// own item events (a new movie carries its provider ids only after its metadata is read).
+        /// The Jellyfin bridge's targeted refresh found an imported file (<see cref="JellyfinBridge.Indexed"/>), or its
+        /// metadata was read back and it was published Ready (<see cref="JellyfinBridge.Hydrated"/>): the title (when someone
+        /// follows or asked for it) is looked at in the next round, without waiting for Jellyfin's own item events (a new
+        /// movie carries its provider ids only after its metadata is read). Indexed alone never makes it Ready: the round
+        /// reads the status, which holds a just-imported copy as "Almost ready" until the readiness gate lets it count
+        /// (<see cref="BridgeImportReadiness"/>); the Hydrated wake-up is the one that finds it Ready.
         /// </summary>
         internal void OnIndexed(string key)
         {
