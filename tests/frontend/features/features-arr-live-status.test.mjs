@@ -237,6 +237,8 @@ test('a season page re-renders when Jellyfin announces a new episode under its s
       ? { items: [{ key: 'tv:tvdb:7:s1', kind: 'season', stage: ready === 2 ? 'ready' : 'almostReady', reason: { code: ready === 2 ? 'ready' : 'library_pending' }, summary: { aired: 2, ready, almostReady: 2 - ready, missing: 0 } }] }
       : null
   });
+  // The season's ready count shows the re-render (D92: an opt-in setting).
+  h.JE.pluginConfig.ArrStatusSeasonSummaryEnabled = true;
   h.JE.arr.live.seed('e1', 40);
   await h.JE.internals.arrStatusDetails.update(false);
   await h.tick();

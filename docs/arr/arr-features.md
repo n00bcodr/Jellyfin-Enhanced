@@ -567,8 +567,9 @@ Every title speaks one status language, for family members and administrators al
 
 *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
 Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
-Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
-own message ("Manual Import required") and what would fix it. A page or poster card of one copy of a series (a 4K
+Family members see these sentences only; administrators can also see which Sonarr/Radarr holds each copy, the app's
+own message ("Manual Import required") and what would fix it, in the Manage panel and, with *Show the Sonarr/Radarr
+status line to admins* on (off by default), under the status on details pages. A page or poster card of one copy of a series (a 4K
 folder, the series in another library, or one folder of a grouped series) reads only the Sonarr that owns that copy's
 folder: by its path mapping or the same path, else the folder names when they pair the copy with one Sonarr only (a
 standard and a 4K copy both under ".../TV/Firefly" with no mapping can't be told apart); one copy with one Sonarr is
@@ -579,11 +580,14 @@ again for you as you are now (if you were removed or keep changing, the Requests
 
 ??? info "Where the status shows"
     - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
-      series and season pages get a summary ("Season 1 ready · 1 downloading"; episodes Sonarr is still looking for read "Looking for 3", ones missing for a long while "2 missing"); seasons get episode chips and a
+      series and season pages get a summary of what is on its way ("1 downloading", "Season 3 airing (ep 6 Fri)";
+      episodes Sonarr is still looking for read "Looking for 3"); with *Show the season summary on series pages* on (off
+      by default) it also counts what is here and what is missing ("Season 1 ready", "8 of 10 ready", "2 missing" for ones
+      missing for a long while). With nothing to say, the page keeps no empty row. Seasons get episode chips and a
       "Missing: E5, E6" line. Episodes whose downloads can't be checked count as "taking longer than usual"
       in the series or season summary. When Sonarr's episode list of a series can't be read, the series and its seasons
       follow Sonarr's season counts, missing episodes get no row or chip until it can, and administrators see
-      "Sonarr … episode list … can't be read".
+      "Sonarr … episode list … can't be read" (in Manage, and on the page with the status line on).
       When the title arrives, the open page becomes the normal playable page by itself, with no manual refresh: Play,
       media info, versions and Jellyfin's own badges appear (the *Missing* badge goes). The same item is reloaded in
       place; a missing episode or season, which Jellyfin replaces with a new item once its file is there, is swapped for

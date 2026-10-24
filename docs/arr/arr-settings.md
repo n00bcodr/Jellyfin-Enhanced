@@ -450,6 +450,8 @@ Under **Show where things have got to (status on pages)**:
 | Setting | Default | What it does |
 |---|---|---|
 | **Show status badges on posters** | On | Corner badge on poster cards while something downloads, is almost ready or takes longer than usual |
+| **Show the season summary on series pages** (`ArrStatusSeasonSummaryEnabled`) | Off | Chips under the title of series and season pages with what is here and what is missing: "Seasons 1, 3, 4 ready", "8 of 10 ready", "54 missing". What is on its way (downloading, almost ready, looking for it, airing next) shows either way, and so do the season's "Missing: E5, E6" line and the episode chips. Off: those pages keep no empty row for them |
+| **Show the Sonarr/Radarr status line to admins** (`ArrStatusAdminLineEnabled`) | Off | The line administrators see under the status on details pages: the instance, the arr's own words and what would fix it ("Sonarr · Some episodes missing · Fix: search now in Sonarr"). The Manage panel shows the same details either way |
 | **"Missing" with Search after (hours)** | 24 | When "Looking for it" (nothing grabbed yet) becomes plainly **Missing** with a **Search** button (1-720) |
 | **What the family calls you** | (empty: "the admin") | Used in family texts: "Waiting for Dad to OK it" |
 | **Requests page** | On | The "Requests" sidebar page (`#/requests`): everyone's own requests (waiting for an OK, on the way, not out yet, said no), Coming soon and Ready. Administrators also get the Downloads and Calendar pages as tabs when those pages are on; with it on, the Downloads page's own sidebar link reads "Downloads" |

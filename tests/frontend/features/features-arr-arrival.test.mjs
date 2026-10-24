@@ -849,7 +849,8 @@ async function drain() {
 test('slow status answers keep applying during refreshes every 20 ms and arrival reloads the page', async t => {
   let slow = false;
   let aborted = 0;
-  const h = makeSeason(t, { answers: (path, n, options) => {
+  // The season's "2 of 6 ready" count shows each answer (D92: an opt-in setting).
+  const h = makeSeason(t, { config: { ArrStatusSeasonSummaryEnabled: true }, answers: (path, n, options) => {
     if (!slow) return season(1);
     return new Promise(resolve => {
       const onAbort = () => {

@@ -7956,6 +7956,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrStatusSeasonSummaryEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrStatusAdminLineEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrHouseholdContactName",
       "type": "string",
       "initializer": "string.Empty",
@@ -11723,7 +11739,7 @@
     "build_targets": 2,
     "files": 731,
     "routes": 311,
-    "configuration_properties": 661,
+    "configuration_properties": 663,
     "storage_references": 106,
     "scheduled_tasks": 15,
     "locales": 33

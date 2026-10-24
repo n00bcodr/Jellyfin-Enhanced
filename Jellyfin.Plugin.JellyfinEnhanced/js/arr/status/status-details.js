@@ -95,17 +95,20 @@
         else if (episodes) episodes.clear();
         if (status.quiet && !status.admin) return null;
         let block = null;
+        // The ready/missing counts and the administrators' Sonarr/Radarr lines only when switched on
+        // (D92): with neither, a summary with nothing on its way draws no block, so no space either.
+        const options = JE.arrStatus.detailsOptions();
         // The page of a title that isn't in the library: one pill for its scope (not here, asked,
         // downloading…), like the more-info modal, rather than the counts of a library series.
         const absent = !!JE.titleDetails?.isSynthetic?.(itemIdFromHash());
         if (absent && !status.quiet) {
-            block = JE.arrStatus.buildPill(status, ctx);
+            block = JE.arrStatus.buildPill(status, ctx, options);
         } else if (status.kind === 'series' || status.kind === 'season') {
-            block = JE.arrStatus.buildSummary(status);
+            block = JE.arrStatus.buildSummary(status, options);
         } else if (!status.quiet) {
-            block = JE.arrStatus.buildPill(status, ctx);
-        } else if (JE.arrStatus.adminLines(status).length) {
-            block = JE.arrStatus.buildPill(status, ctx);
+            block = JE.arrStatus.buildPill(status, ctx, options);
+        } else if (options.admin && JE.arrStatus.adminLines(status).length) {
+            block = JE.arrStatus.buildPill(status, ctx, options);
         }
         if (!block) return null;
         block.dataset.jeArrSurface = SURFACE;

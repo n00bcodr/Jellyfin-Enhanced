@@ -191,4 +191,42 @@ public class ApiConfigurationTests
         Assert.IsType<NotFoundObjectResult>(controller.GetView("unknown-view"));
     }
 
+    // ---- D92: the series-page summary chips and the admin Sonarr/Radarr line are opt-in ----
+
+    [Fact]
+    public void SeasonSummaryAndAdminLineAreOffByDefault()
+    {
+        var config = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration();
+        Assert.False(config.ArrStatusSeasonSummaryEnabled);
+        Assert.False(config.ArrStatusAdminLineEnabled);
+        // A configuration saved before they existed reads them as off too.
+        var serializer = new System.Xml.Serialization.XmlSerializer(typeof(Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration));
+        using var reader = new StringReader("<PluginConfiguration><ArrPhase1Enabled>true</ArrPhase1Enabled></PluginConfiguration>");
+        var old = Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration>(serializer.Deserialize(reader));
+        Assert.True(old.ArrPhase1Enabled);
+        Assert.False(old.ArrStatusSeasonSummaryEnabled);
+        Assert.False(old.ArrStatusAdminLineEnabled);
+    }
+
+    [Theory]
+    [InlineData(true, true, false, false, false, false)]
+    [InlineData(true, true, true, false, true, false)]
+    [InlineData(true, true, false, true, false, true)]
+    [InlineData(true, false, true, true, false, false)]
+    [InlineData(false, true, true, true, false, false)]
+    public void PublicConfigSendsTheSeasonSummaryAndAdminLineOnlyWhenStatusIsOn(bool integration, bool phase1, bool summary, bool adminLine, bool expectSummary, bool expectAdminLine)
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.ArrIntegrationEnabled = integration;
+        config.ArrPhase1Enabled = phase1;
+        config.ArrStatusSeasonSummaryEnabled = summary;
+        config.ArrStatusAdminLineEnabled = adminLine;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        Assert.Equal(expectSummary, document.RootElement.GetProperty("ArrStatusSeasonSummaryEnabled").GetBoolean());
+        Assert.Equal(expectAdminLine, document.RootElement.GetProperty("ArrStatusAdminLineEnabled").GetBoolean());
+    }
 }

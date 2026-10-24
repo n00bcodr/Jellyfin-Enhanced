@@ -4151,6 +4151,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // phase on) and the poster-badge toggle; nothing about the instances themselves.
                 ArrStatusEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled,
                 ArrStatusPosterBadges = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusPosterBadges,
+                // D92: the details-page ready/missing counts and the admin Sonarr/Radarr line (both opt-in).
+                ArrStatusSeasonSummaryEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusSeasonSummaryEnabled,
+                ArrStatusAdminLineEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusAdminLineEnabled,
                 ArrRequestsHubEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrRequestsHubEnabled,
                 ArrManageDrawerEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrManageDrawerEnabled,
                 ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,

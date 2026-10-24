@@ -367,7 +367,7 @@ test('season pages: chips on the rows the viewer has, the others in the banner, 
       { key: 'e6', season: 1, episode: 6, row: false, stage: 'notOut', reason: { code: 'not_aired', params: { date: iso(8) } } }
     ]
   };
-  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', responses: () => ({ items: [season] }) });
+  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', config: { ArrStatusSeasonSummaryEnabled: true }, responses: () => ({ items: [season] }) });
   await h.JE.internals.arrStatusDetails.update(false);
   const rows = [...h.document.querySelectorAll('.listItem')];
   assert.equal(rows[0].querySelector('.je-arr-chip').textContent, 'Ready');
@@ -418,7 +418,7 @@ test('a season page never lists episodes whose downloads cannot be checked as mi
       { key: 'e4', season: 1, episode: 4, row: false, stage: 'looking', reason: { code: 'looking' } }
     ]
   };
-  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', responses: () => ({ items: [season] }) });
+  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', config: { ArrStatusSeasonSummaryEnabled: true }, responses: () => ({ items: [season] }) });
   await h.JE.internals.arrStatusDetails.update(false);
   const banner = h.document.querySelector('.je-arr-banner');
   assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E4');
@@ -699,4 +699,125 @@ test('the details surface sends nothing in the first 400 ms, even for an early n
   await nextTurn();
   assert.equal(h.calls.length, 1, 'one look once the page has settled');
   assert.match(h.document.querySelector('.detailSection').textContent, /Downloading · 42%/);
+});
+
+// ---- D92: the ready/missing counts and the admin Sonarr/Radarr line are opt-in ----
+
+/** A series with some seasons here (the user's screenshot): six seasons ready, 54 episodes missing for a long while. */
+function partlyPresentSeries(extra = {}) {
+  return {
+    key: 'tv:tvdb:76156', kind: 'series', stage: 'looking', reason: { code: 'partial' },
+    summary: { readySeasons: [11, 1, 3, 4, 5, 8], aired: 120, ready: 66, missing: 54, longMissing: 54, unknown: 0, downloading: 0, almostReady: 0, attention: 0 },
+    admin: { variants: [{ instance: 'Sonarr', kind: 'Sonarr', stage: 'looking', reason: { code: 'partial' }, fix: 'search_now' }] },
+    ...extra
+  };
+}
+
+/** The details page of a series, rendered from one status answer; Manage and the action row record what they were handed. */
+async function seriesPage(t, status, config) {
+  const h = setup(t, { html: detailsHtml, hash: '#/details?id=series1', config, responses: () => ({ contact: 'Dad', items: [status] }) });
+  const manage = [];
+  h.JE.internals.arrManage = { attachDetails: (page, s) => manage.push(s) };
+  await h.JE.internals.arrStatusDetails.update(false);
+  const block = h.document.querySelector('.je-arr-status[data-je-arr-surface="details"]');
+  const pills = block ? [...block.querySelectorAll('.je-arr-summary-row .je-arr-pill-text')].map(p => p.textContent) : [];
+  const admin = block ? [...block.querySelectorAll('.je-arr-admin-text')].map(p => p.textContent) : [];
+  const fixes = block ? [...block.querySelectorAll('.je-arr-admin-fix')].map(p => p.textContent) : [];
+  return { h, block, pills, admin, fixes, manage };
+}
+
+test('D92: a partly present series page shows no summary chips and no Sonarr line by default, and keeps no space for them', async t => {
+  const { h, block, manage } = await seriesPage(t, partlyPresentSeries());
+  assert.equal(block, null, 'no status block at all, so no row and no margin');
+  assert.equal(h.document.querySelector('.je-arr-summary, .je-arr-summary-row, .je-arr-admin'), null);
+  assert.equal(h.document.querySelector('.detailSection').firstElementChild.tagName, 'FORM', 'the page starts with its own content');
+  assert.equal(manage.length, 1, 'Manage is still handed the status (it reads the admin block the server keeps sending)');
+  assert.equal(manage[0].admin.variants[0].instance, 'Sonarr');
+});
+
+test('D92: "Show the season summary" brings back "Seasons … ready" and "54 missing" without the Sonarr line', async t => {
+  const { pills, admin } = await seriesPage(t, partlyPresentSeries(), { ArrStatusSeasonSummaryEnabled: true });
+  same(pills, ['Seasons 1, 3, 4, 5, 8, 11 ready', '54 missing']);
+  same(admin, []);
+});
+
+test('D92: "Show the Sonarr/Radarr status line" brings back the admin line and its fix without the chips', async t => {
+  const { block, pills, admin, fixes } = await seriesPage(t, partlyPresentSeries(), { ArrStatusAdminLineEnabled: true });
+  same(pills, []);
+  assert.equal(block.querySelector('.je-arr-summary-row'), null, 'no empty chip row');
+  same(admin, ['Sonarr · Some episodes missing']);
+  same(fixes, ['Fix: search now in Sonarr']);
+});
+
+test('D92: with both on the series page reads as before', async t => {
+  const { pills, admin } = await seriesPage(t, partlyPresentSeries(), { ArrStatusSeasonSummaryEnabled: true, ArrStatusAdminLineEnabled: true });
+  same(pills, ['Seasons 1, 3, 4, 5, 8, 11 ready', '54 missing']);
+  same(admin, ['Sonarr · Some episodes missing']);
+});
+
+test('D92: what is on its way still shows on a series page with both settings off', async t => {
+  const status = partlyPresentSeries({
+    stage: 'downloading', reason: { code: 'downloading' },
+    summary: { readySeasons: [1], aired: 30, ready: 10, missing: 20, longMissing: 14, unknown: 1, downloading: 2, almostReady: 1, attention: 0, missingInCopy: 0, nextAir: iso(1), nextSeason: 3, nextEpisode: 6 }
+  });
+  const { pills, admin } = await seriesPage(t, status);
+  same(pills, ['Season 3 airing (ep 6 tomorrow)', '2 downloading', '1 almost ready', 'Looking for 5', '1 taking longer than usual']);
+  same(admin, []);
+});
+
+test('D92: a season page leaves out "x of y ready" and "n missing" by default; the Missing banner and chips stay', async t => {
+  const season = {
+    key: 'tv:tvdb:1:s1', kind: 'season', stage: 'looking', reason: { code: 'partial' },
+    summary: { aired: 3, ready: 1, missing: 2, longMissing: 2, unknown: 0 },
+    admin: { variants: [{ instance: 'Sonarr', stage: 'looking', reason: { code: 'partial' } }] },
+    episodes: [
+      { key: 'e1', season: 1, episode: 1, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', row: true, stage: 'ready', reason: { code: 'ready' } },
+      { key: 'e2', season: 1, episode: 2, row: false, stage: 'looking', reason: { code: 'no_release_yet' } },
+      { key: 'e4', season: 1, episode: 4, row: false, stage: 'looking', reason: { code: 'no_release_yet' } }
+    ]
+  };
+  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', responses: () => ({ items: [season] }) });
+  await h.JE.internals.arrStatusDetails.update(false);
+  assert.equal(h.document.querySelector('.je-arr-status[data-je-arr-surface="details"]'), null);
+  assert.equal(h.document.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
+  assert.equal(h.document.querySelector('.listItem .je-arr-chip').textContent, 'Ready');
+});
+
+test('D92: a movie keeps its in-flight pill; the Sonarr/Radarr line under it only with the setting', async t => {
+  const movie = {
+    key: 'movie:tmdb:1', kind: 'movie', stage: 'almostReady', attention: true, reason: { code: 'import_blocked' },
+    admin: { variants: [{ instance: 'Radarr', stage: 'almostReady', attention: true, reason: { code: 'import_blocked' }, fix: 'manual_import' }] }
+  };
+  for (const [config, lines] of [[{}, 0], [{ ArrStatusAdminLineEnabled: true }, 1]]) {
+    const h = setup(t, { html: detailsHtml, hash: '#/details?id=movie1', config, responses: () => ({ items: [movie] }) });
+    await h.JE.internals.arrStatusDetails.update(false);
+    const block = h.document.querySelector('.je-arr-status[data-je-arr-surface="details"]');
+    assert.equal(block.querySelector('.je-arr-pill-text').textContent, 'Taking longer than usual');
+    assert.equal(block.querySelectorAll('.je-arr-admin-line').length, lines, JSON.stringify(config));
+  }
+});
+
+test('D92: a quiet title an administrator only had the Sonarr/Radarr line for draws nothing by default', async t => {
+  const quiet = {
+    key: 'movie:tmdb:2', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true,
+    admin: { variants: [{ instance: 'Radarr', stage: 'ready', reason: { code: 'ready' } }, { instance: 'Radarr 4K', stage: 'looking', reason: { code: 'looking' } }] }
+  };
+  const off = setup(t, { html: detailsHtml, hash: '#/details?id=movie2', responses: () => ({ items: [quiet] }) });
+  await off.JE.internals.arrStatusDetails.update(false);
+  assert.equal(off.document.querySelector('.je-arr-status'), null);
+  const on = setup(t, { html: detailsHtml, hash: '#/details?id=movie2', config: { ArrStatusAdminLineEnabled: true }, responses: () => ({ items: [quiet] }) });
+  await on.JE.internals.arrStatusDetails.update(false);
+  assert.equal(on.document.querySelectorAll('.je-arr-admin-line').length, 2);
+});
+
+test('D92: the shared builders keep their defaults for the other surfaces (Manage drawer, Requests page, lists)', t => {
+  const h = setup(t);
+  const series = partlyPresentSeries();
+  same(h.S.summaryPieces(series).map(p => p.text), ['Seasons 1, 3, 4, 5, 8, 11 ready', '54 missing']);
+  same(h.S.summaryPieces(series, { counts: false }).map(p => p.text), []);
+  assert.equal(h.S.buildSummary(series, { counts: false, admin: false }), null);
+  const movie = { key: 'm', kind: 'movie', stage: 'looking', reason: { code: 'looking' }, admin: { variants: [{ instance: 'Radarr', stage: 'looking', reason: { code: 'looking' } }] } };
+  assert.equal(h.S.buildPill(movie, ctx).querySelectorAll('.je-arr-admin-line').length, 1);
+  assert.equal(h.S.buildPill(movie, ctx, { admin: false }).querySelector('.je-arr-admin'), null);
+  same(h.S.detailsOptions(), { counts: false, admin: false });
 });

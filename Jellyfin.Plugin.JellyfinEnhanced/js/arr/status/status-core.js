@@ -443,21 +443,37 @@
     }
 
     /**
+     * What a details page shows besides the status itself (D92): the ready and missing counts of
+     * series and season summaries, and the administrators' Sonarr/Radarr lines. Both are admin
+     * settings, off by default.
+     * @returns {{counts: boolean, admin: boolean}} Options for buildSummary and buildPill.
+     */
+    function detailsOptions() {
+        return {
+            counts: JE?.pluginConfig?.ArrStatusSeasonSummaryEnabled === true,
+            admin: JE?.pluginConfig?.ArrStatusAdminLineEnabled === true
+        };
+    }
+
+    /**
      * Summary pieces for a series or season ("Seasons 1–2 ready", "Season 3 airing (ep 6 Fri)",
      * "1 downloading", "8 of 10 ready", ...).
      * @param {Object} status Series or season status.
+     * @param {{counts?: boolean}} [options] counts false leaves out the ready and missing counts
+     *   ("Seasons 1, 3 ready", "8 of 10 ready", "54 missing"); what is on its way stays.
      * @returns {Array<{text: string, tone: string, icon: string}>} Pieces in display order.
      */
-    function summaryPieces(status) {
+    function summaryPieces(status, options) {
         const s = status?.summary;
         if (!s) return [];
+        const counts = options?.counts !== false;
         const pieces = [];
-        if (status.kind === 'series') {
+        if (counts && status.kind === 'series') {
             const seasons = s.readySeasons || [];
             if (seasons.length) pieces.push({ text: seasonRangeText(seasons), tone: 'ready', icon: 'check_circle' });
-        } else if (s.aired > 0 && s.ready < s.aired) {
+        } else if (counts && s.aired > 0 && s.ready < s.aired) {
             pieces.push({ text: tr('arr_summary_x_of_y_ready', { ready: s.ready, aired: s.aired }), tone: 'ready', icon: 'check_circle' });
-        } else if (s.aired > 0) {
+        } else if (counts && s.aired > 0) {
             pieces.push({ text: tr('arr_summary_all_ready'), tone: 'ready', icon: 'check_circle' });
         }
         if (s.nextAir) {
@@ -486,8 +502,8 @@
         // Of those, the page copy's own gaps (another copy the viewer opens plays them) say so, as their rows do.
         const role = status.copy?.role || (status.episodes || []).find(e => e?.copyGap)?.copyGap || null;
         const inCopy = role ? Math.min(long, Math.max(0, s.missingInCopy || 0)) : 0;
-        if (long - inCopy > 0) pieces.push({ text: tr('arr_summary_missing', { n: long - inCopy }), tone: 'looking', icon: 'search' });
-        if (inCopy > 0) pieces.push({ text: tr('arr_summary_missing_in_copy', { n: inCopy, copy: copyName(role) }), tone: 'looking', icon: 'search' });
+        if (counts && long - inCopy > 0) pieces.push({ text: tr('arr_summary_missing', { n: long - inCopy }), tone: 'looking', icon: 'search' });
+        if (counts && inCopy > 0) pieces.push({ text: tr('arr_summary_missing_in_copy', { n: inCopy, copy: copyName(role) }), tone: 'looking', icon: 'search' });
         const attention = (s.attention || 0) + unknown;
         if (attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: attention }), tone: 'attention', icon: 'schedule' });
         return pieces;
@@ -717,9 +733,10 @@
      * Colour is never the only signal (icon and text always present).
      * @param {Object} status Movie or episode status.
      * @param {Object} ctx Response context.
+     * @param {{admin?: boolean}} [options] admin false leaves out the administrators' lines.
      * @returns {HTMLElement} The status block.
      */
-    function buildPill(status, ctx) {
+    function buildPill(status, ctx, options) {
         const block = el('div', 'je-arr-status');
         block.dataset.jeArrKey = status.key || '';
         const tone = toneOf(status);
@@ -756,18 +773,19 @@
                 block.classList.toggle('je-arr-open', open);
             });
         }
-        appendAdmin(block, status);
+        if (options?.admin !== false) appendAdmin(block, status);
         return block;
     }
 
     /**
      * The series/season summary row: small pills with icons, plus admin lines.
      * @param {Object} status Series or season status.
+     * @param {{counts?: boolean, admin?: boolean}} [options] What to leave out (see summaryPieces and buildPill).
      * @returns {HTMLElement|null} Block, or null when there is nothing to say.
      */
-    function buildSummary(status) {
-        const pieces = summaryPieces(status);
-        const lines = adminLines(status);
+    function buildSummary(status, options) {
+        const pieces = summaryPieces(status, options);
+        const lines = options?.admin !== false ? adminLines(status) : [];
         if (!pieces.length && !lines.length) return null;
         const block = el('div', 'je-arr-status je-arr-summary');
         block.dataset.jeArrKey = status.key || '';
@@ -779,7 +797,7 @@
             row.appendChild(pill);
         }
         if (pieces.length) block.appendChild(row);
-        appendAdmin(block, status);
+        if (lines.length) appendAdmin(block, status);
         return block;
     }
 
@@ -1011,6 +1029,7 @@
         invalidateResponses,
         familyText,
         searchable,
+        detailsOptions,
         summaryPieces,
         chipText,
         copyName,

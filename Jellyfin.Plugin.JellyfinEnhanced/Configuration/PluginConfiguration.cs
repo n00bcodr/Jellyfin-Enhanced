@@ -229,6 +229,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrPhase1Enabled = false;
             ArrStatusPosterBadges = true;
             ArrStatusLookingHours = 24;
+            // D92: series-page summary chips and the admin Sonarr/Radarr line, off by default.
+            ArrStatusSeasonSummaryEnabled = false;
+            ArrStatusAdminLineEnabled = false;
             ArrHouseholdContactName = "";
             ArrWebhookJellyfinUrl = string.Empty;
             ArrRequestsHubEnabled = true;
@@ -1172,6 +1175,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Hours a monitored title may be "Looking for it" before it reads "Still looking". 1-720, default 24.</summary>
         public int ArrStatusLookingHours { get; set; } = 24;
+
+        // ---- D92: series-page summary chips and the admin status line (opt-in) ----
+
+        /// <summary>
+        /// Show the ready and missing counts on series and season pages ("Seasons 1, 3 ready", "8 of 10 ready",
+        /// "54 missing"). What is on its way (downloading, almost ready, looking, airing) shows either way. Off by default.
+        /// </summary>
+        public bool ArrStatusSeasonSummaryEnabled { get; set; }
+
+        /// <summary>
+        /// Show administrators the Sonarr/Radarr line under the status on details pages (instance, the arr's own words and
+        /// the fix, e.g. "Sonarr · Some episodes missing"). The Manage drawer shows it either way. Off by default.
+        /// </summary>
+        public bool ArrStatusAdminLineEnabled { get; set; }
+
+        // ---- end D92 ----
 
         /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
         public string ArrHouseholdContactName { get; set; } = string.Empty;
