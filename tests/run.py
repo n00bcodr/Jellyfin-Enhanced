@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+from runner.preflight import check as check_preflight
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,6 +21,7 @@ def main():
     parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts" / "regression")
     parser.add_argument("--backend-shards", type=int, choices=[1, 2, 3, 4], default=int(os.environ.get("JE_BACKEND_SHARDS", "1")))
     parser.add_argument("--reuse-build", action="store_true", help="Reuse only an identity-verified backend build")
+    parser.add_argument("--preflight-witnesses", action="store_true", help="Stop incomplete on a known-failing backend witness")
     parser.add_argument("--backend-durations", type=Path, help="Previous complete TRX for shard balancing")
     args = parser.parse_args()
     suites = {"fast": ["tooling", "backend", "frontend"], "all": ["tooling", "backend", "frontend", "browser", "poster", "host", "mutation", "history"]}.get(args.suite, [args.suite])
@@ -88,6 +90,10 @@ def main():
     if "npm" in required and not (ROOT / "node_modules").exists():
         prerequisite_error("Missing JavaScript dependencies. Run npm ci first.")
 
+    try:
+        check_preflight(ROOT, suites, targets, os.environ)
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
+        return incomplete("Prerequisite preflight failed: " + str(error))
 
     if args.suite in ["fast", "all"]:
         if not execute("inventory", [sys.executable, "tests/inventory/generate.py", "--check"]):
@@ -107,6 +113,8 @@ def main():
                            "--shards", args.backend_shards]
                 if args.reuse_build:
                     command.append("--reuse-build")
+                if args.preflight_witnesses:
+                    command.append("--preflight-witnesses")
                 if args.backend_durations:
                     command.extend(["--durations", args.backend_durations.resolve()])
                 if execute("backend-" + target, command):
@@ -117,7 +125,7 @@ def main():
                 else:
                     status_path = results_path / 'status.json'
                     status = json.loads(status_path.read_text()) if status_path.exists() else {'status': 'incomplete'}
-                    if status.get('status') == 'incomplete':
+                    if status.get('status') == 'incomplete' or args.preflight_witnesses:
                         return incomplete("Backend witness/preflight failed; full suite not completed")
         elif suite == "frontend":
             execute("frontend", ["npm", "run", "test:frontend:coverage"])

@@ -209,6 +209,41 @@ class BuildIdentityTests(unittest.TestCase):
             self.assertNotEqual(before, backend.fingerprint(root))
 
 
+class PreflightTests(unittest.TestCase):
+    def test_missing_runtime_and_invalid_worker_budget_fail_before_running_tests(self):
+        from preflight import check
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'package.json').write_text('{"devDependencies": {}}')
+            (root / 'package-lock.json').write_text('{"packages": {"": {"devDependencies": {}}}}')
+            with patch('preflight.subprocess.check_output', return_value='v26.2.0'):
+                with self.assertRaisesRegex(ValueError, 'worker budget'):
+                    check(root, ['frontend'], ['jf12'], {'JE_NODE_FILE_CONCURRENCY': '9', 'JE_NODE_NESTED_CONCURRENCY': '8'})
+            with patch('preflight.subprocess.check_output', side_effect=['Microsoft.NETCore.App 9.0.0', '10.0.401']):
+                with self.assertRaisesRegex(ValueError, 'Missing Microsoft.NETCore.App 10'):
+                    check(root, ['backend'], ['jf12'], {})
+
+    def test_measured_worker_budget_is_accepted_and_excess_shards_are_rejected(self):
+        from preflight import check
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'package.json').write_text('{"devDependencies": {}}')
+            (root / 'package-lock.json').write_text('{"packages": {"": {"devDependencies": {}}}}')
+            with patch('preflight.subprocess.check_output', return_value='v26.2.0'):
+                check(root, ['frontend'], ['jf12'], {})
+                check(root, ['frontend'], ['jf12'], {'JE_NODE_FILE_CONCURRENCY': '8', 'JE_FRONTEND_SHARDS': '2', 'JE_NODE_NESTED_CONCURRENCY': '8'})
+                with self.assertRaisesRegex(ValueError, 'worker budget'):
+                    check(root, ['frontend'], ['jf12'], {'JE_NODE_FILE_CONCURRENCY': '8', 'JE_FRONTEND_SHARDS': '5'})
+
+    def test_old_node_and_lock_drift_are_explicit_prerequisite_failures(self):
+        from preflight import check
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'package.json').write_text('{"devDependencies": {"x": "1"}}')
+            (root / 'package-lock.json').write_text('{"packages": {"": {"devDependencies": {}}}}')
+            with patch('preflight.subprocess.check_output', return_value='v20.1.0'):
+                with self.assertRaisesRegex(ValueError, 'Node >=22.12.0.*lock'):
+                    check(root, ['frontend'], ['jf12'], {})
 
 
 class CoverageDenominatorTests(unittest.TestCase):
@@ -268,6 +303,16 @@ class BuildReuseTests(unittest.TestCase):
                 self.assertEqual(5, state['builds'])
 
 
+class RunnerPreflightTests(unittest.TestCase):
+    def test_bad_worker_budget_exits_incomplete_before_frontend_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, 'JE_NODE_FILE_CONCURRENCY': '9', 'JE_NODE_NESTED_CONCURRENCY': '8'}
+            result = subprocess.run([sys.executable, str(ROOT / 'tests/run.py'), 'frontend', '--artifacts', tmp],
+                                    cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, result.returncode)
+            summary = json.loads((Path(tmp) / 'summary.json').read_text())
+            self.assertEqual('incomplete', summary[-1]['status'])
+            self.assertFalse((Path(tmp) / 'frontend.log').exists())
 
 
 class GeneratedCoverageTests(unittest.TestCase):

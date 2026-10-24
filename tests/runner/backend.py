@@ -125,6 +125,7 @@ def main():
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--shards', type=int, choices=[1, 2, 3, 4], default=2)
     parser.add_argument('--reuse-build', action='store_true')
+    parser.add_argument('--preflight-witnesses', action='store_true')
     parser.add_argument('--durations', type=Path, help='Previous full TRX used only for partition weights')
     args = parser.parse_args()
     results = args.results.resolve()
@@ -189,6 +190,18 @@ def main():
                 # Mutable copies are not eligible build caches; release disk after collection.
                 shutil.rmtree(build)
                 return result['exit_code']
+            if args.preflight_witnesses:
+                if WITNESS not in {c['method'] for c in cases}:
+                    raise ValueError('Known-failure witness is missing from discovery')
+                witness = {}
+                witness_code = worker(witness, witness=True)
+                actual_witness = trx_cases(results / 'witness/cases.trx')
+                if len(actual_witness) != 1 or actual_witness[0]['name'] != WITNESS:
+                    raise ValueError('Witness preflight did not execute exactly the expected test')
+                if witness_code:
+                    (results / 'status.json').write_text(json.dumps(dict(status='incomplete', reason='Known-failing witness failed', witness=witness)) + '\n')
+                    print('INCOMPLETE: known-failing StampFeed witness failed; full suite was not executed', flush=True)
+                    return 1
             with ThreadPoolExecutor(max_workers=args.shards) as pool:
                 codes = list(pool.map(worker, shards))
             manifest_path.write_text(json.dumps(manifest, indent=2) + '\n')
