@@ -59,6 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="config">The current configuration.</param>
         /// <param name="key">The title (any provider id; aliases are followed).</param>
         public TitleRequesters For(PluginConfiguration config, TitleKey key)
+            => LedgerAuthority(config) ? ForCore(config, key)
+                : EffectiveRequestsBackend.Shared.ReadSeerrCached(() => ForCore(config, key), new TitleRequesters(false, Array.Empty<Guid>()));
+
+        private TitleRequesters ForCore(PluginConfiguration config, TitleKey key)
         {
             if (LedgerAuthority(config))
             {
@@ -78,6 +82,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="config">The current configuration.</param>
         /// <param name="user">The person.</param>
         public UserRequestedTitles ForUser(PluginConfiguration config, Guid user)
+            => LedgerAuthority(config) ? ForUserCore(config, user)
+                : EffectiveRequestsBackend.Shared.ReadSeerrCached(() => ForUserCore(config, user), new UserRequestedTitles(false, Array.Empty<(bool, int)>()));
+
+        private UserRequestedTitles ForUserCore(PluginConfiguration config, Guid user)
         {
             if (LedgerAuthority(config))
             {

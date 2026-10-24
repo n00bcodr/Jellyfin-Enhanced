@@ -305,7 +305,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True/false from Seerr's job list; null when this address can't be read. A job list without the
         // job (or an older Seerr without the flag) counts as not running, as before.
-        private async Task<bool?> IsRunningAsync(string url, string apiKey, string jobId)
+        private Task<bool?> IsRunningAsync(string url, string apiKey, string jobId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => IsRunningAsyncCore(url, apiKey, jobId))
+                : IsRunningAsyncCore(url, apiKey, jobId);
+
+        private async Task<bool?> IsRunningAsyncCore(string url, string apiKey, string jobId)
         {
             var endpoint = $"{url.TrimEnd('/')}/api/v1/settings/jobs";
             try
@@ -382,7 +387,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return results;
         }
 
-        private async Task<DispatchResult> PostScanTrigger(string url, string apiKey, string jobId)
+        private Task<DispatchResult> PostScanTrigger(string url, string apiKey, string jobId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => PostScanTriggerCore(url, apiKey, jobId))
+                : PostScanTriggerCore(url, apiKey, jobId);
+
+        private async Task<DispatchResult> PostScanTriggerCore(string url, string apiKey, string jobId)
         {
             // previously reported `Success = response.IsSuccessStatusCode`,
             // which is true for a 200 + Cloudflare HTML challenge body — the

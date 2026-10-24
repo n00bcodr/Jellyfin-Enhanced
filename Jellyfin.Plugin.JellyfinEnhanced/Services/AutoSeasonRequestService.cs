@@ -108,7 +108,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return TimeSpan.FromMinutes(Math.Max(1, minutes));
         }
 
-        private async Task<string?> GetSeriesDetailsJsonAsync(string tmdbId)
+        private Task<string?> GetSeriesDetailsJsonAsync(string tmdbId)
+            => SeerrConfigured(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeriesDetailsJsonAsyncCore(tmdbId))
+                : GetSeriesDetailsJsonAsyncCore(tmdbId);
+
+        private async Task<string?> GetSeriesDetailsJsonAsyncCore(string tmdbId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || (!SeerrConfigured(config) && !TmdbDetails(config)))
@@ -619,7 +624,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Gets season status from Jellyseerr - always fetches fresh to ensure accurate request/availability state
-        private async Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
+        private Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeasonStatusFromJellyseerrCore(tmdbId, seasonNumber))
+                : GetSeasonStatusFromJellyseerrCore(tmdbId, seasonNumber);
+
+        private async Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerrCore(string tmdbId, int seasonNumber)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -773,7 +783,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Requests the next season from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing
         // more is sent). Neither: it failed.
-        private async Task<(bool Sent, string? Stopped)> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
+        private Task<(bool Sent, string? Stopped)> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestNextSeasonCore(tmdbId, seasonNumber, jellyfinUserId))
+                : RequestNextSeasonCore(tmdbId, seasonNumber, jellyfinUserId);
+
+        private async Task<(bool Sent, string? Stopped)> RequestNextSeasonCore(string tmdbId, int seasonNumber, string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -843,7 +858,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Gets the Jellyseerr user ID for a Jellyfin user
-        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+        private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
+                : GetJellyseerrUserIdCore(jellyfinUserId);
+
+        private async Task<string?> GetJellyseerrUserIdCore(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))

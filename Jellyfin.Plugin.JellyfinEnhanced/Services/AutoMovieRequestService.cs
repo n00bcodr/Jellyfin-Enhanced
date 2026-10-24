@@ -386,7 +386,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets next movie in collection from Jellyseerr collection endpoint. On the ledger path Seerr only names
         // the next part: its pending/processing status says nothing about JE's own requests once JE handles them
         // (moved requests stay pending in Seerr), so the ledger decides whether to record, merge or refuse.
-        private async Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
+        private Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger))
+                : GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger);
+
+        private async Task<NextMovie> GetNextMovieInCollectionAsyncCore(int collectionId, string currentTmdbId, bool ledger)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -566,7 +571,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Gets the quality profile of a movie from its existing Jellyseerr request
-        private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
+        private Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetOriginalMovieQualityProfileAsyncCore(tmdbId))
+                : GetOriginalMovieQualityProfileAsyncCore(tmdbId);
+
+        private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsyncCore(string tmdbId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -729,7 +739,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Requests a movie from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing more is
         // sent). Neither: it failed.
-        private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+        private Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings))
+                : RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings);
+
+        private async Task<(bool Sent, string? Stopped)> RequestMovieCore(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -810,7 +825,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Gets the Jellyseerr user ID for a Jellyfin user
-        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+        private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
+                : GetJellyseerrUserIdCore(jellyfinUserId);
+
+        private async Task<string?> GetJellyseerrUserIdCore(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))

@@ -24,15 +24,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                     || route.StartsWith("acquire/migration/seerr", StringComparison.OrdinalIgnoreCase)));
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (context.ActionDescriptor is ControllerActionDescriptor action && IsSeerrAction(action)
-                && _backend.CheckSeerr(SeerrUse.Diagnostics) is { Allowed: false } denied)
+            if (context.ActionDescriptor is not ControllerActionDescriptor action || !IsSeerrAction(action))
             {
-                _logger.Info("[RequestsBackend] Seerr action denied: " + denied.Reason);
-                context.HttpContext.Response.Headers["Cache-Control"] = "private, no-store";
-                context.Result = new ObjectResult(new { code = denied.Reason, error = true }) { StatusCode = 409 };
+                await next().ConfigureAwait(false);
                 return;
             }
-            await next().ConfigureAwait(false);
+            var captured = _backend.CheckSeerr(SeerrUse.Diagnostics);
+            void Deny(string reason)
+            {
+                _logger.Info("[RequestsBackend] Seerr action denied: " + reason);
+                context.HttpContext.Response.Headers["Cache-Control"] = "private, no-store";
+                context.Result = new ObjectResult(new { code = reason, error = true }) { StatusCode = 409 };
+            }
+            if (!captured.Allowed) { Deny(captured.Reason!); return; }
+            try
+            {
+                var executed = await next().ConfigureAwait(false);
+                try { _backend.PublishSeerr(captured.Epoch, () => true); }
+                catch (BackendDisabledException ex)
+                {
+                    Deny(ex.Reason);
+                    executed.Result = context.Result;
+                    executed.ExceptionHandled = true;
+                }
+            }
+            catch (BackendDisabledException ex) { Deny(ex.Reason); }
         }
     }
 }

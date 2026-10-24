@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         BackendDecision CheckSeerr(SeerrUse use, long? expectedEpoch = null);
         BackendDecision CheckDirectRequest(long? expectedEpoch = null);
         void DemandSeerr(SeerrUse use, long? expectedEpoch = null);
+        T PublishSeerr<T>(long epoch, Func<T> result);
     }
 
     /// <summary>
@@ -76,8 +77,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             lock (_gate)
             {
                 var s = Read();
-                return new(!_fenced && s.AllowSeerrTransport && (expectedEpoch == null || expectedEpoch == s.Epoch),
-                    _fenced || (expectedEpoch != null && expectedEpoch != s.Epoch) ? "configuration_changed" : s.AllowSeerrTransport ? null : "backend_disabled", s.Epoch);
+                // An unadopted installation has legacy admission semantics even across saves.
+                // Once adopted, the captured epoch is a mandatory publication/send precondition.
+                var current = s.IsolationVersion == 0 || expectedEpoch == null || expectedEpoch == s.Epoch;
+                return new(!_fenced && s.AllowSeerrTransport && current,
+                    _fenced || !current ? "configuration_changed" : s.AllowSeerrTransport ? null : "backend_disabled", s.Epoch);
             }
         }
         /// <inheritdoc />
@@ -121,7 +125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 var decision = CheckSeerr(use, expectedEpoch);
                 if (!decision.Allowed) LogDenial(use, "admission", decision.Reason!);
                 decision.Demand();
-                var admission = new Admission(this, decision.Epoch, Read().IsolationVersion == 0, ct);
+                var admission = new Admission(this, decision.Epoch, ct);
                 _active.Add(admission);
                 return admission;
             }
@@ -131,19 +135,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         {
             lock (_gate)
             {
-                var state = Read();
-                if (!CheckSeerr(SeerrUse.RequestRead, state.IsolationVersion == 0 ? null : epoch).Allowed) return false;
-                effect();
-                return true;
+                if (!CheckSeerr(SeerrUse.RequestRead, epoch).Allowed) return false;
+                return PublishSeerr(epoch, () => { effect(); return true; });
             }
+        }
+        /// <summary>The single fence for cached facts, local effects and returned provider results.</summary>
+        public T PublishSeerr<T>(long epoch, Func<T> result)
+        {
+            lock (_gate)
+            {
+                CheckSeerr(SeerrUse.RequestRead, epoch).Demand();
+                return result();
+            }
+        }
+        /// <summary>Publishes synchronous cached facts, or their inactive shape, at the same fence.</summary>
+        public T ReadSeerrCached<T>(Func<T> read, T inactive)
+        {
+            lock (_gate)
+            {
+                var admission = CheckSeerr(SeerrUse.RequestRead);
+                return admission.Allowed ? PublishSeerr(admission.Epoch, read) : inactive;
+            }
+        }
+        /// <summary>Checks a read again after all processing, without keeping an HTTP-body lease alive.</summary>
+        public async Task<T> ReadSeerrAsync<T>(SeerrUse use, Func<long, Task<T>> work)
+        {
+            var admission = CheckSeerr(use);
+            admission.Demand();
+            var result = await work(admission.Epoch).ConfigureAwait(false);
+            return PublishSeerr(admission.Epoch, () => result);
         }
         /// <summary>Keeps provider parsing and its returned facts in the admitted epoch, beyond HTTP buffering.</summary>
         public async Task<T> RunSeerrAsync<T>(SeerrUse use, CancellationToken ct, Func<CancellationToken, Task<T>> work)
         {
             using var operation = AdmitSeerr(use, ct);
             var result = await work(operation.Token).ConfigureAwait(false);
-            operation.DemandCurrent();
-            return result;
+            return operation.Publish(() => result);
         }
         /// <summary>
         /// Fences admissions, cancels and drains old sends, then calls the central writer's atomic commit.
@@ -175,8 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             private readonly EffectiveRequestsBackend _owner;
             private readonly CancellationTokenSource _cancel;
             private bool _disposed;
-            private readonly bool _legacy;
-            internal Admission(EffectiveRequestsBackend owner, long epoch, bool legacy, CancellationToken ct) { _owner = owner; Epoch = epoch; _legacy = legacy; _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct); }
+            internal Admission(EffectiveRequestsBackend owner, long epoch, CancellationToken ct) { _owner = owner; Epoch = epoch; _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct); }
             public long Epoch { get; }
             public CancellationToken Token => _cancel.Token;
             internal void Cancel() { try { _cancel.Cancel(); } catch (ObjectDisposedException) { /* A completed send has already drained. */ } }
@@ -184,13 +210,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             public void DemandCurrent()
             {
                 Token.ThrowIfCancellationRequested();
-                if (_legacy && _owner.Current.IsolationVersion == 0) return;
-                _owner.DemandSeerr(SeerrUse.Diagnostics, Epoch);
+                _owner.PublishSeerr(Epoch, () => true);
             }
             /// <summary>Serializes a local effect with transition commit and checks its captured epoch.</summary>
             public void Publish(Action effect)
             {
-                lock (_owner._gate) { DemandCurrent(); effect(); }
+                Publish(() => { effect(); return true; });
+            }
+            /// <summary>Returns a provider result at the same fence used by all local effects.</summary>
+            public T Publish<T>(Func<T> result)
+            {
+                Token.ThrowIfCancellationRequested();
+                return _owner.PublishSeerr(Epoch, result);
             }
             public void Dispose()
             {

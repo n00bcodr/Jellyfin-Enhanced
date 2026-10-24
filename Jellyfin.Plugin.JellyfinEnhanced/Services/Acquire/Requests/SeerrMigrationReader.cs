@@ -90,7 +90,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Reads every request and the requesting state from the first address that answers.</summary>
         /// <param name="config">The current configuration.</param>
         /// <param name="ct">Cancellation.</param>
-        public async Task<SeerrMigrationRead> ReadAsync(PluginConfiguration config, CancellationToken ct)
+        public Task<SeerrMigrationRead> ReadAsync(PluginConfiguration config, CancellationToken ct)
+            => Backends.EffectiveRequestsBackend.Shared.ReadSeerrAsync(Backends.SeerrUse.RequestRead, _ => ReadCoreAsync(config, ct));
+
+        private async Task<SeerrMigrationRead> ReadCoreAsync(PluginConfiguration config, CancellationToken ct)
         {
             var fingerprint = AddressFingerprint(config);
             var key = config.GetJellyseerrApiKey();

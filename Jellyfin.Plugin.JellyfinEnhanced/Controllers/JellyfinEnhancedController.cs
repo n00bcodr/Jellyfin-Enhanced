@@ -116,7 +116,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly object _seerrStatusCacheLock = new();
         private static readonly TimeSpan _seerrStatusCacheTtl = TimeSpan.FromSeconds(30);
 
-        private async Task<bool> IsSeerrReachableCached()
+        private Task<bool> IsSeerrReachableCached()
+            => EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Diagnostics, IsSeerrReachableCachedCore);
+
+        private async Task<bool> IsSeerrReachableCachedCore(long epoch)
         {
             var cached = TryGetCachedSeerrReachability();
             if (cached.HasValue)
@@ -129,10 +132,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var generation = Interlocked.Read(ref _seerrResponseGeneration);
             var probedAt = DateTime.UtcNow;
             bool active = await ProbeJellyseerrStatusAsync();
-            lock (_seerrStatusCacheLock)
+            EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
             {
-                if (generation == Interlocked.Read(ref _seerrResponseGeneration)) _seerrStatusCache = (active, probedAt);
-            }
+                lock (_seerrStatusCacheLock)
+                    if (generation == Interlocked.Read(ref _seerrResponseGeneration)) _seerrStatusCache = (active, probedAt);
+                return true;
+            });
             return active;
         }
 
@@ -358,7 +363,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // The Seerr user and when the read that found them began (a held answer's own read): a cache that keeps something
         // worked out from it (the account id) ends when this read does, never later.
-        private async Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserRead(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
+        private Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserRead(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
+            => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed
+                ? Task.FromResult<(JellyseerrUser?, DateTime)>((null, DateTime.UtcNow))
+                : EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Identity, epoch => GetJellyseerrUserReadCore(jellyfinUserId, bypassCache, allowAutoImport, epoch));
+
+        private async Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserReadCore(string jellyfinUserId, bool bypassCache, bool allowAutoImport, long epoch)
         {
             // Taken before anything is read: the generation fences a store after a clear, the instant starts the lifetime.
             var generation = Interlocked.Read(ref _userCacheGeneration);
@@ -429,11 +439,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             if (cacheEnabled)
                             {
-                                lock (_userCacheLock)
+                                EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
                                 {
-                                    if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                        _userCache[jellyfinUserId] = (user, readAt);
-                                }
+                                    lock (_userCacheLock)
+                                        if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                            _userCache[jellyfinUserId] = (user, readAt);
+                                    return true;
+                                });
                             }
                             return (user, readAt);
                         }
@@ -463,11 +475,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     if (cacheEnabled)
                     {
-                        lock (_userCacheLock)
-                        {
-                            if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                _userCache[jellyfinUserId] = (importedUser, readAt);
-                        }
+                        EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
+                                {
+                                    lock (_userCacheLock)
+                                        if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                            _userCache[jellyfinUserId] = (importedUser, readAt);
+                                    return true;
+                                });
                     }
 
                     return (importedUser, readAt);
@@ -479,11 +493,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // next request can retry immediately.
             if (cacheEnabled && importDefinite)
             {
-                lock (_userCacheLock)
-                {
-                    if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userCache[jellyfinUserId] = (null, readAt);
-                }
+                EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
+                                {
+                                    lock (_userCacheLock)
+                                        if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                            _userCache[jellyfinUserId] = (null, readAt);
+                                    return true;
+                                });
             }
 
             _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)} after checking all URLs.");
@@ -698,7 +714,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return null;
         }
 
-        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+        private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+            => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed ? Task.FromResult<string?>(null)
+                : EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Identity, epoch => GetJellyseerrUserIdCore(jellyfinUserId, epoch));
+
+        private async Task<string?> GetJellyseerrUserIdCore(string jellyfinUserId, long epoch)
         {
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return null;
             // Taken before anything is read (a clear after it fences the store below).
@@ -719,11 +739,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (!string.IsNullOrEmpty(jellyseerrUserId) && cacheEnabled)
             {
-                lock (_userIdCacheLock)
+                EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
                 {
-                    if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, readAt);
-                }
+                    lock (_userIdCacheLock)
+                        if (generation == Interlocked.Read(ref _userCacheGeneration))
+                            _userIdCache[jellyfinUserId] = (jellyseerrUserId, readAt);
+                    return true;
+                });
             }
 
             return jellyseerrUserId;
@@ -1487,15 +1509,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("jellyseerr/status")]
         [Authorize]
-        public async Task<IActionResult> GetJellyseerrStatus()
+        public Task<IActionResult> GetJellyseerrStatus() => SeerrActionResultAsync(GetJellyseerrStatusCore);
+
+        private async Task<IActionResult> GetJellyseerrStatusCore()
         {
             return Ok(SeerrStatusResponse(await IsSeerrReachableCached()));
+        }
+
+        private async Task<IActionResult> SeerrActionResultAsync(Func<Task<IActionResult>> work)
+        {
+            try { return await EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Diagnostics, _ => work()).ConfigureAwait(false); }
+            catch (BackendDisabledException ex) { return StatusCode(409, new { code = ex.Reason, error = true }); }
         }
 
         /// <summary>The <c>jellyseerr/status</c> response body.</summary>
         private static object SeerrStatusResponse(bool active) => new { active };
 
-        private async Task<bool> ProbeJellyseerrStatusAsync()
+        private Task<bool> ProbeJellyseerrStatusAsync()
+            => EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Diagnostics, _ => ProbeJellyseerrStatusCoreAsync());
+
+        private async Task<bool> ProbeJellyseerrStatusCoreAsync()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.GetJellyseerrApiKey()) || string.IsNullOrEmpty(config.JellyseerrUrls))
@@ -1700,7 +1733,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("jellyseerr/user-status")]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Authorize]
-        public async Task<IActionResult> GetJellyseerrUserStatus()
+        public Task<IActionResult> GetJellyseerrUserStatus() => SeerrActionResultAsync(GetJellyseerrUserStatusCore);
+
+        private async Task<IActionResult> GetJellyseerrUserStatusCore()
         {
             // report a typed `reason` so the frontend can display
             // a meaningful banner instead of silently hiding discovery sections.
@@ -1754,6 +1789,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// both return the same object.
         /// </summary>
         private static object? TryBuildSeerrUserStatusWithoutLookup(Configuration.PluginConfiguration? config, string? jellyfinUserId, bool isAdmin)
+        {
+            object? result = null;
+            var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
+            return EffectiveRequestsBackend.Shared.TryPublishSeerr(epoch, () => result = TryBuildSeerrUserStatusWithoutLookupCore(config, jellyfinUserId, isAdmin))
+                ? result : new { active = false, userFound = false, reason = "disabled" };
+        }
+
+        private static object? TryBuildSeerrUserStatusWithoutLookupCore(Configuration.PluginConfiguration? config, string? jellyfinUserId, bool isAdmin)
         {
             if (config == null || !config.JellyseerrEnabled ||
                 string.IsNullOrEmpty(config.GetJellyseerrApiKey()) ||
@@ -4440,6 +4483,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private object BuildBootstrapPrefetched(PluginConfiguration config, Guid userId, string authorizedUserId, bool isAdmin)
         {
+            var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
             object? spoilerBlurSeries = null;
             object? seerrUserStatus = null;
             object? seerrStatus = null;
@@ -4478,6 +4522,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            if (!EffectiveRequestsBackend.Shared.TryPublishSeerr(epoch, () => { }))
+            {
+                seerrUserStatus = null;
+                seerrStatus = null;
+            }
             return new
             {
                 SpoilerBlurSeries = spoilerBlurSeries,
@@ -10195,6 +10244,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> IdentifyUrl([FromQuery] string url)
         {
+            var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
+            var result = await IdentifyUrlCore(url).ConfigureAwait(false);
+            if (result is OkObjectResult { Value: not null } ok
+                && JsonSerializer.SerializeToElement(ok.Value).TryGetProperty("service", out var service)
+                && service.GetString() == "Seerr")
+            {
+                try { return EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () => result); }
+                catch (BackendDisabledException ex) { return StatusCode(409, new { code = ex.Reason }); }
+            }
+            return result;
+        }
+
+        private async Task<IActionResult> IdentifyUrlCore(string url)
+        {
             if (!IsAdminUser())
                 return Forbid();
 
@@ -10207,6 +10270,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var http = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             http.Timeout = TimeSpan.FromSeconds(5);
             var cleanUrl = url.TrimEnd('/');
+            var seerrEpoch = EffectiveRequestsBackend.Shared.Current.Epoch;
+            IActionResult SeerrIdentified()
+            {
+                try { return EffectiveRequestsBackend.Shared.PublishSeerr(seerrEpoch, () => Ok(new { reachable = true, service = "Seerr" })); }
+                catch (BackendDisabledException ex) { return StatusCode(409, new { code = ex.Reason }); }
+            }
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Diagnostics).Allowed
                 && SeerrIsolationTransportHandler.KnownSeerrAddress(new Uri(cleanUrl), JellyfinEnhanced.Instance?.Configuration))
                 return StatusCode(409, new { code = "backend_disabled" });
@@ -10268,7 +10337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var ct = resp.Content.Headers.ContentType?.MediaType ?? "";
                     if (ct.Contains("json"))
-                        return Ok(new { reachable = true, service = "Seerr" });
+                        return SeerrIdentified();
                 }
             }
             catch (HttpRequestException) { /* continue to next service probe */ }
@@ -10299,7 +10368,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             return Ok(new { reachable = true, service = "Bazarr" });
                         if (title.Contains("Jellyseerr", StringComparison.OrdinalIgnoreCase)
                             || title.Contains("Overseerr", StringComparison.OrdinalIgnoreCase))
-                            return Ok(new { reachable = true, service = "Seerr" });
+                            return SeerrIdentified();
                         if (title.Contains("Jellyfin", StringComparison.OrdinalIgnoreCase))
                             return Ok(new { reachable = true, service = "Jellyfin" });
                     }
@@ -10921,12 +10990,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private RequestedTitlesResult? _requestedTitleRead;
         private bool RequestedTitlesIncomplete => _requestedTitleRead is { Complete: false };
-        private object RequestedTitlesStatus => new { available = _requestedTitleRead?.Available ?? true, complete = !RequestedTitlesIncomplete, code = RequestedTitlesIncomplete ? "requests_unavailable" : null, message = RequestedTitlesIncomplete ? "Requests unavailable. Please retry." : null, retryable = RequestedTitlesIncomplete };
+        private bool RequestedTitlesAvailable => _requestedTitleRead?.Available ?? true;
+        private string? RequestedTitlesReason => RequestedTitlesIncomplete ? _requestedTitleRead?.Reason ?? "requests_unavailable" : null;
+        private object RequestedTitlesStatus => new { available = RequestedTitlesAvailable, complete = !RequestedTitlesIncomplete, reason = RequestedTitlesReason,
+            code = RequestedTitlesIncomplete ? "requests_unavailable" : null,
+            message = RequestedTitlesIncomplete ? RequestedTitlesAvailable ? "Some rows are still being checked. Please retry." : "Requests unavailable. Please retry." : null,
+            retryable = RequestedTitlesIncomplete };
         private IActionResult DownloadsResult(object result)
         {
             if (!RequestedTitlesIncomplete) return Ok(result);
             Response.Headers["Retry-After"] = "2";
-            return StatusCode(503, result);
+            return RequestedTitlesAvailable ? Ok(result) : StatusCode(503, result);
         }
 
         /// <summary>
@@ -11173,7 +11247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
                 return EffectiveRequestsBackend.IsStrictJe(config)
-                    ? DownloadsResult(new { items = new List<object>(), errors = new List<object>(), requests = RequestedTitlesStatus })
+                    ? DownloadsResult(new { items = new List<object>(), errors = new List<object>(), complete = !RequestedTitlesIncomplete, reason = RequestedTitlesReason, requests = RequestedTitlesStatus })
                     : Ok(new { items = new List<object>(), errors = new List<object>() });
 
             WarnIfArrInstancesCorrupt(config);
@@ -11210,7 +11284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 rawItems = QueueRows(askedProof, null);
 
             var items = FilterByAllowedRequests(rawItems, allowedRequests, x => x.Source, x => x.TmdbId);
-            return EffectiveRequestsBackend.IsStrictJe(config) ? DownloadsResult(new { items, errors, requests = RequestedTitlesStatus }) : Ok(new { items, errors });
+            return EffectiveRequestsBackend.IsStrictJe(config) ? DownloadsResult(new { items, errors, complete = !RequestedTitlesIncomplete, reason = RequestedTitlesReason, requests = RequestedTitlesStatus }) : Ok(new { items, errors });
         }
 
         // History is intentionally a bounded window, not a full archive browser — pagination
@@ -11254,7 +11328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
                 return EffectiveRequestsBackend.IsStrictJe(config)
-                    ? DownloadsResult(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>(), requests = RequestedTitlesStatus })
+                    ? DownloadsResult(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>(), complete = !RequestedTitlesIncomplete, reason = RequestedTitlesReason, requests = RequestedTitlesStatus })
                     : Ok(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>() });
 
             WarnIfArrInstancesCorrupt(config);
@@ -11296,7 +11370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var page = filtered.Skip(skip).Take(take).ToList();
 
             return EffectiveRequestsBackend.IsStrictJe(config)
-                ? DownloadsResult(new { items = page, totalPages, visible = true, errors, requests = RequestedTitlesStatus })
+                ? DownloadsResult(new { items = page, totalPages, visible = true, errors, complete = !RequestedTitlesIncomplete, reason = RequestedTitlesReason, requests = RequestedTitlesStatus })
                 : Ok(new { items = page, totalPages, visible = true, errors });
         }
 
@@ -12363,7 +12437,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public int? EpisodeNumber { get; set; }
         }
 
-        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey, long enrichmentGeneration, DateTime requestStart)
+        private Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey, long enrichmentGeneration, DateTime requestStart)
+            => EffectiveRequestsBackend.Shared.ReadSeerrAsync(SeerrUse.Metadata, epoch => EnrichWithTmdbDataCore(client, tmdbId, type, jellyseerrUrl, apiKey, enrichmentGeneration, requestStart, epoch));
+
+        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbDataCore(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey, long enrichmentGeneration, DateTime requestStart, long epoch)
         {
             // enrichmentGeneration and requestStart: taken by the request before it read the configuration that named
             // jellyseerrUrl and apiKey (a drop since then means they may be the old Seerr's).
@@ -12518,22 +12595,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         && string.IsNullOrEmpty(result.PosterUrl));
                 if (!isEmpty)
                 {
-                    lock (_tmdbEnrichmentCacheLock)
+                    EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () =>
                     {
-                        if (enrichmentGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _tmdbEnrichmentCache[cacheKey] = (result!, requestStart);
-
-                        if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
+                        lock (_tmdbEnrichmentCacheLock)
                         {
-                            var staleKeys = _tmdbEnrichmentCache
-                                .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > cacheTtl)
-                                .Select(kv => kv.Key)
-                                .ToList();
-                            foreach (var staleKey in staleKeys)
+                            if (enrichmentGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _tmdbEnrichmentCache[cacheKey] = (result!, requestStart);
+
+                            if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
                             {
-                                _tmdbEnrichmentCache.Remove(staleKey);
+                                var staleKeys = _tmdbEnrichmentCache
+                                    .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > cacheTtl)
+                                    .Select(kv => kv.Key)
+                                    .ToList();
+                                foreach (var staleKey in staleKeys)
+                                {
+                                    _tmdbEnrichmentCache.Remove(staleKey);
+                                }
                             }
                         }
-                    }
+                        return true;
+                    });
                 }
             }
             else
@@ -12573,8 +12654,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("proxy/avatar")]
         [Authorize]
-        public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
+        public Task<IActionResult> ProxyAvatar([FromQuery] string path) => SeerrActionResultAsync(() => ProxyAvatarCore(path));
+
+        private async Task<IActionResult> ProxyAvatarCore(string path)
         {
+            var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return StatusCode(409, new { code = "backend_disabled" });
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
@@ -12654,7 +12738,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // serve as an image.
                 avatarRequest.Headers.UserAgent.ParseAdd(Helpers.Jellyseerr.SeerrHttpHelper.UserAgent);
                 avatarRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("image/*"));
-                var response = await client.SendAsync(avatarRequest);
+                using var response = await client.SendAsync(avatarRequest);
                 if (!response.IsSuccessStatusCode)
                 {
                     return NotFound();
@@ -12684,7 +12768,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
                 // Store in server-side cache and evict expired entries periodically
-                _avatarCache[cacheKey] = (content, contentType, etag, readAt);
+                EffectiveRequestsBackend.Shared.PublishSeerr(epoch, () => _avatarCache[cacheKey] = (content, contentType, etag, readAt));
                 if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
                 {
                     foreach (var key in _avatarCache

@@ -290,6 +290,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public RequestBackendBinding Binding(Guid user, MutationInput input)
+            => EffectiveRequestsBackend.Shared.ReadSeerrCached(() => BindingCore(user, input), new RequestBackendBinding());
+
+        private RequestBackendBinding BindingCore(Guid user, MutationInput input)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return new RequestBackendBinding();
             var config = _config();
@@ -431,6 +434,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public bool RepresentsSeerrServer(string? source, MutationInput input, string url, string apiKey)
+            => EffectiveRequestsBackend.Shared.ReadSeerrCached(() => RepresentsSeerrServerCore(source, input, url, apiKey), false);
+
+        private bool RepresentsSeerrServerCore(string? source, MutationInput input, string url, string apiKey)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return false;
             if (source == null || TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int id
@@ -572,6 +578,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         /// <remarks>Seerr's 4K Radarr/Sonarr setting as last read from the Seerr configured now (within the last hour).</remarks>
         public bool? FourKServer(bool movie)
+            => EffectiveRequestsBackend.Shared.ReadSeerrCached(() => FourKServerCore(movie), (bool?)null);
+
+        private bool? FourKServerCore(bool movie)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();

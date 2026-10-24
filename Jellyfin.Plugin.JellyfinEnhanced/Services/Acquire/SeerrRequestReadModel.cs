@@ -256,6 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         // The Seerr the held list came from (null before a read), and the last identity worked out.
         private string? _source;
         private volatile SourceCache? _sourceCache;
+        private readonly EffectiveRequestsBackend _backend;
         private CancellationTokenSource? _loop;
         private Task? _loopTask;
         private readonly Requests.RequestOutboxEvents? _outboxEvents;
@@ -276,6 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
             _logger = logger;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
+            _backend = config == null ? EffectiveRequestsBackend.Shared : new EffectiveRequestsBackend(_config);
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _outboxEvents = outboxEvents;
             if (_outboxEvents != null) _outboxEvents.Confirmed += OnRequestConfirmed;
@@ -344,14 +346,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal string? CurrentSource => SourceOf(_config());
 
         /// <summary>Every request held, newest first.</summary>
-        public IReadOnlyList<SeerrRequestRecord> All => EffectiveRequestsBackend.AllowsSeerr(_config()) ? _snapshot.All : Array.Empty<SeerrRequestRecord>();
+        public IReadOnlyList<SeerrRequestRecord> All => _backend.ReadSeerrCached(() => _snapshot.All, Array.Empty<SeerrRequestRecord>());
 
         /// <summary>
         /// The identity of the Seerr the held requests came from (a short keyed hash of its addresses
         /// and API key; never the key), or null before the first read. Request ids mean something
         /// only together with it.
         /// </summary>
-        public string? Source => EffectiveRequestsBackend.AllowsSeerr(_config()) ? _snapshot.Source : null;
+        public string? Source => _backend.ReadSeerrCached(() => _snapshot.Source, (string?)null);
 
         /// <summary>
         /// The held requests together with the identity of the Seerr they came from and the lowest
@@ -363,9 +365,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             get
             {
-                if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return (null, Array.Empty<SeerrRequestRecord>(), null);
-                var snapshot = _snapshot;
-                return (snapshot.Source, snapshot.All, snapshot.Floor);
+                return _backend.ReadSeerrCached(() =>
+                {
+                    var snapshot = _snapshot;
+                    return (snapshot.Source, snapshot.All, snapshot.Floor);
+                }, ((string?)null, (IReadOnlyList<SeerrRequestRecord>)Array.Empty<SeerrRequestRecord>(), (int?)null));
             }
         }
 
@@ -404,14 +408,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The requests one Jellyfin user made (any state), newest first.</summary>
         public IReadOnlyList<SeerrRequestRecord> ForUser(Guid userId)
-            => EffectiveRequestsBackend.AllowsSeerr(_config()) && _snapshot.ByUser.TryGetValue(userId, out var list) ? list : Array.Empty<SeerrRequestRecord>();
+            => _backend.ReadSeerrCached(() => _snapshot.ByUser.TryGetValue(userId, out var list) ? list : Array.Empty<SeerrRequestRecord>(), (IReadOnlyList<SeerrRequestRecord>)Array.Empty<SeerrRequestRecord>());
 
         /// <summary>The requests for a title (movie or series key; a season or episode key counts as its title).</summary>
         public IReadOnlyList<SeerrRequestRecord> ForTitle(TitleKey titleKey)
-            => EffectiveRequestsBackend.AllowsSeerr(_config()) && _snapshot.ByKey.TryGetValue(titleKey.Title.ToString(), out var list) ? list : Array.Empty<SeerrRequestRecord>();
+            => _backend.ReadSeerrCached(() => _snapshot.ByKey.TryGetValue(titleKey.Title.ToString(), out var list) ? list : Array.Empty<SeerrRequestRecord>(), (IReadOnlyList<SeerrRequestRecord>)Array.Empty<SeerrRequestRecord>());
 
         /// <summary>Title details for a request's title, when read.</summary>
-        public SeerrTitleMeta? Meta(bool isMovie, int? tmdbId)
+        public SeerrTitleMeta? Meta(bool isMovie, int? tmdbId) => _backend.ReadSeerrCached(() => MetaCore(isMovie, tmdbId), (SeerrTitleMeta?)null);
+
+        private SeerrTitleMeta? MetaCore(bool isMovie, int? tmdbId)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config()) || tmdbId is not > 0) return null;
             lock (_lock) return _meta.TryGetValue((isMovie, tmdbId.Value), out var meta) ? meta : null;
@@ -512,14 +518,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Requested(TitleKey titleKey) => ForTitle(titleKey).Count > 0;
 
         /// <inheritdoc />
-        public bool AskedLatelyBy(TitleKey titleKey, Guid userId)
+        public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => _backend.ReadSeerrCached(() => AskedLatelyByCore(titleKey, userId), false);
+
+        private bool AskedLatelyByCore(TitleKey titleKey, Guid userId)
         {
             if (AskedBy(titleKey, userId)) return true;
             lock (_lock) return _goneOwners.TryGetValue((titleKey.Title.ToString(), userId), out var until) && _now() < until;
         }
 
         /// <inheritdoc />
-        public bool RequestedLately(TitleKey titleKey)
+        public bool RequestedLately(TitleKey titleKey) => _backend.ReadSeerrCached(() => RequestedLatelyCore(titleKey), false);
+
+        private bool RequestedLatelyCore(TitleKey titleKey)
         {
             if (Requested(titleKey)) return true;
             lock (_lock) return _goneTitles.TryGetValue(titleKey.Title.ToString(), out var until) && _now() < until;
@@ -751,6 +761,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public async Task<bool> RefreshAsync(CancellationToken cancellationToken)
         {
+            if (!IsActive(_config())) { if (!EffectiveRequestsBackend.AllowsSeerr(_config())) Clear(); return false; }
+            try { return await _backend.ReadSeerrAsync(SeerrUse.RequestRead, epoch => RefreshCoreAsync(cancellationToken, epoch)).ConfigureAwait(false); }
+            catch (BackendDisabledException) { Clear(); return false; }
+        }
+
+        private async Task<bool> RefreshCoreAsync(CancellationToken cancellationToken, long epoch)
+        {
             var config = _config();
             if (!IsActive(config)) { if (!EffectiveRequestsBackend.AllowsSeerr(config)) Clear(); return false; }
             await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -776,18 +793,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 string? lastError = null;
                 foreach (var url in Urls(config))
                 {
-                    var (outcome, error) = await ReadFromAsync(url, key, source, cancellationToken).ConfigureAwait(false);
+                    var (outcome, error) = await ReadFromAsync(url, key, source, cancellationToken, epoch).ConfigureAwait(false);
                     if (outcome == ReadOutcome.Ok)
                     {
-                        lock (_lock)
+                        _backend.PublishSeerr(epoch, () =>
                         {
-                            _lastRead = _now();
-                            _lastError = null;
-                            _lastAttemptFailed = false;
-                            _incompleteRuns = 0;
-                            _incompleteReason = null;
-                        }
-                        AnnounceState(loadedBefore, failedBefore, loaded: true, failed: false);
+                            lock (_lock)
+                            {
+                                _lastRead = _now();
+                                _lastError = null;
+                                _lastAttemptFailed = false;
+                                _incompleteRuns = 0;
+                                _incompleteReason = null;
+                            }
+                            AnnounceState(loadedBefore, failedBefore, loaded: true, failed: false);
+                            return true;
+                        });
                         return true;
                     }
                     if (outcome == ReadOutcome.Abandoned)
@@ -841,7 +862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             Abandoned,
         }
 
-        private async Task<(ReadOutcome Outcome, string? Error)> ReadFromAsync(string url, string apiKey, string source, CancellationToken ct)
+        private async Task<(ReadOutcome Outcome, string? Error)> ReadFromAsync(string url, string apiKey, string source, CancellationToken ct, long epoch)
         {
             var probe = await GetJsonAsync($"{url}/api/v1/request?take={ProbeSize}&skip=0&sort=modified&filter=all", apiKey, ct).ConfigureAwait(false);
             if (probe.Error != null) return (ReadOutcome.Failed, probe.Error);
@@ -893,38 +914,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                 }
             }
-            await ReadMetaAsync(url, apiKey, source, current, metaChanged, ct).ConfigureAwait(false);
+            await ReadMetaAsync(url, apiKey, source, current, metaChanged, ct, epoch).ConfigureAwait(false);
             if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
             if (read == null && metaChanged.Count == 0) return (ReadOutcome.Ok, null);
 
             var next = Snapshot.Build(current.Select(WithMetaIds), source, floor);
-            Snapshot old;
-            lock (_lock)
+            return _backend.PublishSeerr(epoch, () =>
             {
-                // Checked again under the lock Clear holds: a switch-off (or another Seerr) that cleared while this read
-                // ran isn't undone by publishing what it read.
-                if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
-                old = _snapshot;
-                // A list from another Seerr replaces the old one silently (Clear announced the old one going).
-                var sameSource = old.Source == null || old.Source == source;
-                if (sameSource) RememberGone(old, next);
-                _snapshot = next;
-                _source = source;
-                // Loaded from the moment the list is there: the change-feed announcement below wakes
-                // readers that check it.
-                _lastRead = _now();
-                if (read != null)
+                Snapshot old;
+                lock (_lock)
                 {
-                    _probeSignature = probeSignature;
-                    _lastFullRead = _now();
-                    _truncated = read.Truncated;
-                    _reportedTotal = read.Total;
+                    // Checked again under the lock Clear holds: a switch-off (or another Seerr) that cleared while this read
+                    // ran isn't undone by publishing what it read.
+                    if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
+                    old = _snapshot;
+                    // A list from another Seerr replaces the old one silently (Clear announced the old one going).
+                    var sameSource = old.Source == null || old.Source == source;
+                    if (sameSource) RememberGone(old, next);
+                    _snapshot = next;
+                    _source = source;
+                    // Loaded from the moment the list is there: the change-feed announcement below wakes
+                    // readers that check it.
+                    _lastRead = _now();
+                    if (read != null)
+                  {
+                        _probeSignature = probeSignature;
+                        _lastFullRead = _now();
+                        _truncated = read.Truncated;
+                        _reportedTotal = read.Total;
+                    }
                 }
-            }
-            // Another Seerr's list is another list even when both are empty (or the same size): the
-            // notification scan must see it to note the new server.
-            if (Announce(old, next, metaChanged) || old.All.Count != next.All.Count || old.Source != next.Source) Interlocked.Increment(ref _revision);
-            return (ReadOutcome.Ok, null);
+                // Another Seerr's list is another list even when both are empty (or the same size): the
+                // notification scan must see it to note the new server.
+                if (Announce(old, next, metaChanged) || old.All.Count != next.All.Count || old.Source != next.Source) Interlocked.Increment(ref _revision);
+                return (ReadOutcome.Ok, (string?)null);
+            });
         }
 
         /// <summary>A full read of Seerr's request list: the requests, or why it failed or isn't complete.</summary>
@@ -1038,7 +1062,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        private async Task ReadMetaAsync(string url, string apiKey, string source, IReadOnlyList<SeerrRequestRecord> records, List<(bool, int)> changed, CancellationToken ct)
+        private async Task ReadMetaAsync(string url, string apiKey, string source, IReadOnlyList<SeerrRequestRecord> records, List<(bool, int)> changed, CancellationToken ct, long epoch)
         {
             var wanted = records.Where(r => r.TmdbId > 0).Select(r => (r.IsMovie, r.TmdbId!.Value)).Distinct().ToList();
             List<(bool Movie, int Tmdb)> due;
@@ -1057,17 +1081,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // A title Seerr can't describe (removed from TMDB) is remembered as unnamed, not asked for again today.
                 var meta = read.Json is { } json ? ParseMeta(json, movie, now) : (read.NotFound ? new SeerrTitleMeta { ReadAt = now } : null);
                 if (meta == null) continue;
-                SeerrTitleMeta? before;
-                lock (_lock)
+                _backend.PublishSeerr(epoch, () =>
                 {
-                    // Another Seerr since this read began (Clear dropped its details): not kept.
-                    if (SourceOf(_config()) != source) return;
-                    if (_meta.Count >= MaxMeta) _meta.Clear();
-                    _meta.TryGetValue((movie, tmdb), out before);
-                    _meta[(movie, tmdb)] = meta;
-                }
-                // Nothing known before counts as "no details" (a title Seerr can't describe changes nothing shown).
-                if (!meta.SameAs(before ?? new SeerrTitleMeta())) changed.Add((movie, tmdb));
+                    SeerrTitleMeta? before;
+                    lock (_lock)
+                    {
+                        // Another Seerr since this read began (Clear dropped its details): not kept.
+                        if (SourceOf(_config()) != source) return false;
+                        if (_meta.Count >= MaxMeta) _meta.Clear();
+                        _meta.TryGetValue((movie, tmdb), out before);
+                        _meta[(movie, tmdb)] = meta;
+                    }
+                    // Nothing known before counts as "no details" (a title Seerr can't describe changes nothing shown).
+                    if (!meta.SameAs(before ?? new SeerrTitleMeta())) changed.Add((movie, tmdb));
+                    return true;
+                });
             }
         }
 
@@ -1094,6 +1122,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         private async Task<(JsonElement? Json, string? Error, bool NotFound)> GetJsonAsync(string uri, string apiKey, CancellationToken ct)
+        {
+            try { return await _backend.ReadSeerrAsync(SeerrUse.RequestRead, _ => GetJsonCoreAsync(uri, apiKey, ct)).ConfigureAwait(false); }
+            catch (BackendDisabledException) { return (null, "backend_disabled", false); }
+        }
+
+        private async Task<(JsonElement? Json, string? Error, bool NotFound)> GetJsonCoreAsync(string uri, string apiKey, CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return (null, "backend_disabled", false);
             Interlocked.Increment(ref _calls);

@@ -88,11 +88,11 @@ public class IntegrationBackendIsolationProjectionTests
         var projection = new RequestedTitlesProjection(r.Ledger, new TitleAliases(store, null), r.Policy, r.View);
         var controller = new RequestsBackendController(projection, r.View) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
         controller.HttpContext.User = TestCallers.Principal(r.Member, false);
-        var result = Assert.IsType<RequestedTitlesResult>(Assert.IsType<OkObjectResult>(await controller.RequestedTitles()).Value);
+        var result = Assert.IsType<RequestedTitlesEnvelope>(Assert.IsType<OkObjectResult>(await controller.RequestedTitles()).Value);
         Assert.Single(result.Titles);
         Assert.Equal("private, no-store", controller.Response.Headers.CacheControl);
         controller.HttpContext.User = TestCallers.Principal(r.Manager, false);
-        Assert.Empty(Assert.IsType<RequestedTitlesResult>(Assert.IsType<OkObjectResult>(await controller.RequestedTitles()).Value).Titles);
+        Assert.Empty(Assert.IsType<RequestedTitlesEnvelope>(Assert.IsType<OkObjectResult>(await controller.RequestedTitles()).Value).Titles);
         c.ArrBackendIsolationVersion = 2;
         Assert.Equal(503, Assert.IsType<ObjectResult>(await controller.RequestedTitles()).StatusCode);
         controller.HttpContext.User = TestCallers.Principal(Guid.NewGuid(), false);
@@ -337,11 +337,14 @@ public class IntegrationBackendIsolationProjectionTests
         }
         async Task<IActionResult> Read(JellyfinEnhancedController controller) => history ? await controller.GetDownloadHistory() : await controller.GetDownloadQueue();
         var firstController = Make();
-        var first = Assert.IsType<ObjectResult>(await Read(firstController));
-        Assert.Equal(503, first.StatusCode);
+        var first = Assert.IsType<OkObjectResult>(await Read(firstController));
+        Assert.Equal(200, first.StatusCode);
         Assert.Equal("2", firstController.Response.Headers.RetryAfter);
         var json = JsonSerializer.SerializeToElement(first.Value);
         Assert.Single(json.GetProperty("items").EnumerateArray());
+        Assert.False(json.GetProperty("complete").GetBoolean());
+        Assert.Equal("parental_evidence_pending", json.GetProperty("reason").GetString());
+        Assert.Equal("parental_evidence_pending", json.GetProperty("requests").GetProperty("reason").GetString());
         Assert.False(json.GetProperty("requests").GetProperty("complete").GetBoolean());
         Assert.True(json.GetProperty("requests").GetProperty("retryable").GetBoolean());
         Assert.Contains((603, "movie"), projection.ForUser(c, r.Member).Identities());
@@ -379,6 +382,27 @@ public class IntegrationBackendIsolationProjectionTests
         Assert.NotEqual("succeeded", job.State);
         Assert.True(job.Uncertain);
         Assert.Equal("backend_disabled", job.Reason);
+    }
+
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task FailedOwnershipReadStillReturns503WithNoRows(bool history)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        var c = lab.Config;
+        c.ArrBackendIsolationVersion = 1; c.ArrRequestBackend = "je";
+        c.DownloadsPageEnabled = c.ShowDownloadsInRequests = c.DownloadsShowHistory = c.DownloadsFilterByUserRequests = true;
+        c.DownloadsHistoryAdminOnly = false;
+        // A missing registered projection is an unavailable underlying read, not a partial success.
+        var controller = ApiAssetTests.Controller(lab.Arr.Plugin.Core, lab.Store);
+        controller.HttpContext.User = TestCallers.Principal(Guid.NewGuid(), false);
+        var result = Assert.IsType<ObjectResult>(history ? await controller.GetDownloadHistory() : await controller.GetDownloadQueue());
+        Assert.Equal(503, result.StatusCode);
+        var json = JsonSerializer.SerializeToElement(result.Value);
+        Assert.Empty(json.GetProperty("items").EnumerateArray());
+        Assert.False(json.GetProperty("complete").GetBoolean());
+        Assert.False(json.GetProperty("requests").GetProperty("available").GetBoolean());
+        Assert.Equal("requests_unavailable", json.GetProperty("reason").GetString());
     }
 
 }

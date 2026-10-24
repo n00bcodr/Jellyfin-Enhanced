@@ -242,14 +242,16 @@ public class ApiRequestsBackendGateTests
         finally { cache.Remove(id); }
     }
 
-    [Fact]
-    public async Task BufferedProxyCannotPublishCacheOrReturnProviderDataAfterAdoption()
+    [Theory]
+    [InlineData(0)][InlineData(1)]
+    public async Task BufferedProxyCannotPublishCacheOrReturnProviderDataAfterAdoption(int version)
     {
         using var f = new ApiPluginFixture();
         var c = f.Plugin.Configuration;
         c.JellyseerrEnabled = true; c.JellyseerrUrls = "http://seerr.test"; c.JellyseerrApiKey = "test";
         var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = Guid.NewGuid() };
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        c.ArrBackendIsolationVersion = version; c.ArrRequestBackend = "seerr";
         var cacheLock = typeof(JellyfinEnhancedController).GetField("_responseCacheLock", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_responseCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -273,8 +275,75 @@ public class ApiRequestsBackendGateTests
         var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
         await transition.WaitAsync(TimeSpan.FromSeconds(10));
         await holder!;
-        lock (cacheLock) Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.EndsWith(":/api/v1/movie/989988", StringComparison.Ordinal));
+        lock (cacheLock) Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.Contains("/api/v1/movie/989988", StringComparison.Ordinal));
         Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("je")][InlineData("seerr")][InlineData("status_only")][InlineData("unknown")]
+    public async Task LegacyBuilderAndRealHandlerAdmitUnchangedBytesAcrossConfigurationSave(string mode)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.ArrRequestBackend = mode; config.ArrBackendIsolationVersion = 0;
+        config.ArrIntegrationEnabled = config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = false;
+        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.test"; config.JellyseerrApiKey = "test";
+        using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Post, "http://seerr.test/api/v1/request", "test", "27", "{\"mediaId\":603}");
+        var body = await request.Content!.ReadAsStringAsync();
+        var expected = request.ToString() + body;
+        var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
+        var saved = JsonSerializer.Deserialize<PluginConfiguration>(JsonSerializer.Serialize(config))!;
+        saved.ArrPhase3Enabled = true;
+        f.Plugin.UpdateConfiguration(saved);
+        Assert.Equal(0, f.Plugin.Configuration.ArrBackendIsolationVersion);
+        Assert.NotEqual(epoch, EffectiveRequestsBackend.Shared.Current.Epoch);
+        string? actual = null;
+        using var trap = new Trap { OnSend = async (r, _) => { actual = r.ToString() + await r.Content!.ReadAsStringAsync(); return IntegrationTransport.Response(); } };
+        using var client = new HttpClient(new SeerrIsolationTransportHandler(EffectiveRequestsBackend.Shared, () => f.Plugin.Configuration) { InnerHandler = trap });
+        using var response = await client.SendAsync(request);
+        Assert.True(response.IsSuccessStatusCode);
+        Assert.Equal(expected, actual); Assert.Equal(1, trap.Calls);
+        using var stale = SeerrHttpHelper.BuildRequest(HttpMethod.Get, "http://seerr.test/api/v1/status", "test");
+        await EffectiveRequestsBackend.Shared.TransitionAsync(() => { f.Plugin.Configuration.ArrBackendIsolationVersion = 1; f.Plugin.Configuration.ArrRequestBackend = "je"; }, default);
+        await Assert.ThrowsAsync<BackendDisabledException>(() => client.SendAsync(stale));
+        Assert.Equal(1, trap.Calls);
+    }
+
+    [Theory]
+    [InlineData(0, false)][InlineData(1, false)][InlineData(0, true)][InlineData(1, true)]
+    public async Task StatusAndAccountResultsCannotPublishAfterBufferedResponseAndAdoption(int version, bool account)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.ArrRequestBackend = "seerr"; config.ArrBackendIsolationVersion = version;
+        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.test"; config.JellyseerrApiKey = "test";
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var buffered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        using var trap = new Trap { OnSend = (_, _) => Task.FromResult<HttpResponseMessage>(new PublicationBarrierResponse(buffered, release)
+        { Content = new StringContent(account ? JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N"), permissions = 2 } } }) : "{\"version\":\"1\"}", System.Text.Encoding.UTF8, "application/json") }) };
+        using var handler = new SeerrIsolationTransportHandler(EffectiveRequestsBackend.Shared, () => f.Plugin.Configuration) { InnerHandler = trap };
+        var factory = new Mock<IHttpClientFactory>(); factory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(() => new HttpClient(handler, false));
+        var controller = ApiAssetTests.Controller(f.Core, factory.Object, users.Object);
+        controller.HttpContext.User = TestCallers.Principal(user.Id, true);
+        var read = Task.Run(() => account ? controller.GetJellyseerrUserStatus() : controller.GetJellyseerrStatus());
+        await buffered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            await EffectiveRequestsBackend.Shared.TransitionAsync(() =>
+            {
+                config.ArrRequestBackend = "je"; config.ArrBackendIsolationVersion = 1;
+                JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+            }, default).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally { release.Set(); }
+        var result = await read.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+        var cacheName = account ? "_userCache" : "_seerrStatusCache";
+        var cache = typeof(JellyfinEnhancedController).GetField(cacheName, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
+        if (account) Assert.Empty((System.Collections.IDictionary)cache!); else Assert.Null(cache);
     }
 
     [Fact]

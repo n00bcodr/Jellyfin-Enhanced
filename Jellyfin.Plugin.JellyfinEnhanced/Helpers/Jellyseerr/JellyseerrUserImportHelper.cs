@@ -33,7 +33,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             public List<string> Errors { get; set; } = new();
         }
 
-        public static async Task<BulkImportResult> BulkImportAsync(
+        public static Task<BulkImportResult> BulkImportAsync(
             List<string> userIds,
             string[] urls,
             string apiKey,
@@ -41,6 +41,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             Logger logger,
             CancellationToken cancellationToken = default,
             Func<List<string>, List<string>?>? recheck = null)
+            => EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed
+                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.UserImport, cancellationToken,
+                    ct => BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, ct, recheck))
+                : BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, cancellationToken, recheck);
+
+        private static async Task<BulkImportResult> BulkImportCoreAsync(
+            List<string> userIds,
+            string[] urls,
+            string apiKey,
+            IHttpClientFactory httpClientFactory,
+            Logger logger,
+            CancellationToken cancellationToken,
+            Func<List<string>, List<string>?>? recheck)
         {
             var result = new BulkImportResult();
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed)
