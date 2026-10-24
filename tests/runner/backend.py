@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Build once with a verified identity, then run isolated complete backend partitions."""
+"""Build afresh on every invocation, then run isolated complete backend partitions."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import fcntl
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,95 +11,12 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-
-from msbuild_inputs import collect as msbuild_inputs
+from uuid import uuid4
 
 from partitions import partition, trx_cases, validate_manifest, validate_results
 
 ROOT = Path(__file__).resolve().parents[2]
 WITNESS = 'JE.Tests.IntegrationAcquisitionStampFeedTests.LifetimeExtensionReactivatesAStoredExpiredFactExactlyOnce'
-
-
-def hash_record(digest, name, content):
-    # Length prefixes keep different file-name/content boundaries distinct.
-    name = name.encode()
-    digest.update(len(name).to_bytes(8, 'big'))
-    digest.update(name)
-    digest.update(len(content).to_bytes(8, 'big'))
-    digest.update(content)
-
-
-def fingerprint(directory):
-    digest = hashlib.sha256()
-    for path in sorted(Path(directory).rglob('*')):
-        if path.is_file():
-            hash_record(digest, str(path.relative_to(directory)), path.read_bytes())
-    return digest.hexdigest()
-
-
-def source_control_identity():
-    if not (ROOT / '.git').exists():
-        return b'archive-without-source-control'
-    if not shutil.which('git'):
-        return None
-    values = []
-    for arguments in [['rev-parse', 'HEAD'], ['describe', '--always', '--dirty', '--tags'],
-                      ['config', '--get', 'remote.origin.url'], ['ls-files', '--stage']]:
-        result = subprocess.run(['git', '-C', str(ROOT), *arguments], capture_output=True)
-        if result.returncode and arguments[0] != 'config':
-            return None
-        values.append(result.stdout.hex())
-    return json.dumps(values).encode()
-
-
-def build_identity(target, properties, output_root=None, include_imports=True, diagnostics=None):
-    output_root = Path(output_root).resolve() if output_root is not None else (ROOT / 'artifacts').resolve()
-    imports = msbuild_inputs(ROOT, properties, output_root / 'build' / target / 'snapshot', diagnostics) if include_imports else []
-    if imports is None:
-        return None
-    digest = hashlib.sha256()
-    try:
-        for path in imports:
-            hash_record(digest, 'msbuild:' + str(path), path.read_bytes())
-    except OSError as error:
-        if diagnostics is not None:
-            diagnostics.append('Cannot hash evaluated input ' + str(path) + ': ' + str(error))
-        return None
-    # Include uncommitted/untracked effective inputs too. All non-output repo
-    # inputs are conservative dependencies, including resources and lockfiles.
-    excluded = {'bin', 'obj', '__pycache__'}
-    output_roots = {(ROOT / name).resolve() for name in ('.git', '.notes', 'node_modules', 'artifacts', 'tests/results')}
-    output_root = Path(output_root).resolve() if output_root is not None else (ROOT / 'artifacts').resolve()
-    output_roots.add(output_root)
-    def walk(directory, ancestors=frozenset()):
-        resolved = directory.resolve()
-        if resolved in output_roots:
-            return
-        if resolved in ancestors:
-            raise ValueError('Source directory symlink cycle prevents a complete build identity')
-        for entry in sorted(directory.iterdir()):
-            if entry.name in excluded or entry.resolve() in output_roots: continue
-            if entry.is_dir(): yield from walk(entry, ancestors | {resolved})
-            elif entry.is_file(): yield entry
-    try:
-        for path in walk(ROOT):
-            hash_record(digest, str(path.relative_to(ROOT)), path.read_bytes())
-        sdk = subprocess.check_output(['dotnet', '--info'], cwd=ROOT)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        if diagnostics is not None:
-            diagnostics.append('Cannot establish repository/SDK inputs: ' + str(error))
-        return None
-    # The absolute source path matters to CallerFilePath-based witnesses.
-    hash_record(digest, 'configuration', json.dumps([str(ROOT), str(output_root), target, properties, sorted(os.environ.items())]).encode())
-    hash_record(digest, 'sdk', sdk)
-    hash_record(digest, 'source-control', source_control_identity() or b'unverifiable-source-control')
-    pins = json.loads((ROOT / 'tests/backend/Support/jellyfin-api.json').read_text())
-    cache = Path(os.environ.get('JE_JELLYFIN_API_CACHE') or
-                 Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'jellyfin-enhanced/jellyfin-api')
-    pin = pins[target]
-    directory = cache / (pin['version'] + '-' + pin['image'].split('@sha256:')[1][:12])
-    hash_record(digest, 'pinned-assemblies', fingerprint(directory).encode())
-    return digest.hexdigest()
 
 
 def run(command, log, env=None):
@@ -112,45 +28,16 @@ def run(command, log, env=None):
     return dict(exit_code=code, seconds=time.monotonic() - started)
 
 
-def prepare_build(target, directory, reuse):
+def prepare_build(target, directory):
     properties = ['-c', 'Release', '-p:JellyfinTarget=' + target, '-p:RestoreLockedMode=true', '-m:4']
-    stamp = directory.parent / 'build-identity.json'
-    output_root = directory.parents[2]
-    if ROOT.resolve().is_relative_to(output_root.resolve()):
-        raise ValueError('Build output root must not contain repository inputs')
-    diagnostics = []
-    identity = build_identity(target, properties, output_root, True, diagnostics)
-    if identity is None:
-        print('Reuse disabled: ' + '; '.join(diagnostics or ['MSBuild input closure unavailable']), flush=True)
-    try:
-        previous = json.loads(stamp.read_text()) if stamp.exists() else {}
-    except (ValueError, OSError):
-        previous = {}
-    if reuse and identity is not None and source_control_identity() is not None and previous.get('identity') == identity and directory.is_dir() and previous.get('outputs') == fingerprint(directory):
-        print('Build identity and all output hashes match; reusing Release test build', flush=True)
-        return dict(reused=True, identity=identity, reuse_eligible=True, seconds=0.0)
-    stable_inputs = build_identity(target, properties, output_root, False)
-    stamp.unlink(missing_ok=True)
+    # No persisted identity or reuse decision: every invocation builds afresh.
+    (directory.parent / 'build-identity.json').unlink(missing_ok=True)
     shutil.rmtree(directory, ignore_errors=True)
-    result = run(['dotnet', 'build', 'tests/backend/JE.Tests.csproj', *properties, '--artifacts-path', directory], directory.parent / 'build.log')
-    if result['exit_code']: raise RuntimeError('Backend build failed')
-    after = build_identity(target, properties, output_root, True, diagnostics)
-    stable_after = build_identity(target, properties, output_root, False)
-    if stable_inputs is not None and stable_after is not None and stable_inputs != stable_after:
-        raise RuntimeError('Build inputs changed during build; refusing reuse')
-    # Restore may introduce generated NuGet imports on the first cold build.
-    # A changing/unproven closure permits this build, but cannot certify reuse.
-    eligible = identity is not None and identity == after
-    reason = None if eligible else '; '.join(dict.fromkeys(diagnostics)) or (
-        'MSBuild input closure unavailable' if identity is None or after is None else 'MSBuild input closure changed during build')
-    if eligible:
-        stamp.write_text(json.dumps(dict(identity=after, outputs=fingerprint(directory)), indent=2) + '\n')
-    else:
-        print('Reuse disabled: ' + reason, flush=True)
-    # An unproven fresh build gets a unique execution identity shared by its
-    # worker copies, never an identity eligible for cross-invocation reuse.
-    execution_identity = after or hashlib.sha256(os.urandom(32) + fingerprint(directory).encode()).hexdigest()
-    return dict(reused=False, identity=execution_identity, reuse_eligible=eligible, reuse_disabled_reason=reason, seconds=result['seconds'])
+    result = run(['dotnet', 'build', 'tests/backend/JE.Tests.csproj', *properties,
+                  '--artifacts-path', directory], directory.parent / 'build.log')
+    if result['exit_code']:
+        raise RuntimeError('Backend build failed')
+    return result
 
 
 def main():
@@ -159,7 +46,6 @@ def main():
     parser.add_argument('--results', type=Path, required=True)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--shards', type=int, choices=[1, 2, 3, 4], default=2)
-    parser.add_argument('--reuse-build', action='store_true')
     parser.add_argument('--preflight-witnesses', action='store_true')
     parser.add_argument('--durations', type=Path, help='Previous full TRX used only for partition weights')
     args = parser.parse_args()
@@ -181,7 +67,7 @@ def main():
                     weights[case['name']] = h * 3600 + m * 60 + s
             shutil.rmtree(results, ignore_errors=True)
             results.mkdir(parents=True)
-            receipt = prepare_build(args.target, args.build, args.reuse_build)
+            receipt = prepare_build(args.target, args.build)
             (results / 'build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
             assemblies = list((args.build / 'bin/JE.Tests').rglob('JE.Tests.dll'))
             if len(assemblies) != 1: raise ValueError('Expected one built backend test assembly')
@@ -196,7 +82,7 @@ def main():
             else:
                 manifest = partition(cases, args.shards, weights)
                 shards = manifest['shards']
-            manifest['identity'] = receipt['identity']
+            manifest['run_id'] = uuid4().hex
             manifest['build'] = receipt
             manifest_path = results / 'partitions.json'
             manifest_path.write_text(json.dumps(manifest, indent=2) + '\n')
@@ -222,8 +108,8 @@ def main():
                 if not witness:
                     command += ['--collect:XPlat Code Coverage', '--', 'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura,json']
                 result = run(command, destination / 'execution.log', env)
-                shard.update(result, identity=receipt['identity'])
-                # Mutable copies are not eligible build caches; release disk after collection.
+                shard.update(result, run_id=manifest['run_id'])
+                # Release each disposable worker copy after collection.
                 shutil.rmtree(build)
                 return result['exit_code']
             if args.preflight_witnesses:

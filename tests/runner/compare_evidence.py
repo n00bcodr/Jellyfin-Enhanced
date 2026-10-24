@@ -43,10 +43,18 @@ def compare_backend(before_trx, after_trx, before_coverage, after_coverage, befo
     def names(cases, root):
         return Counter((c['name'].replace(str(root), '<repository>') if root else c['name'], c['outcome']) for c in cases)
     a, b = union_reports(before_coverage), union_reports(after_coverage)
+    totals_a, totals_b = summary(a), summary(b)
+    cases_equal = bool(before) and names(before, before_root) == names(after, after_root)
+    inventory_equal = a.keys() == b.keys() and all(a[s].keys() == b[s].keys() for s in a)
+    denominators_equal = all(totals_a[k]['total'] == totals_b[k]['total'] for k in totals_a)
+    # Identical single-process runs can cover different internal paths. Require
+    # exact per-file point inventories and denominators; retain hits as evidence.
+    # Coverage floors and failed/incomplete shard rejection remain separate gates.
     return dict(cases_before=len(before), cases_after=len(after),
-                cases_equal=names(before, before_root) == names(after, after_root),
-                totals_before=summary(a), totals_after=summary(b),
-                inventory_equal=a.keys() == b.keys() and all(a[s].keys() == b[s].keys() for s in a),
+                cases_equal=cases_equal, denominators_equal=denominators_equal,
+                equivalent=cases_equal and inventory_equal and denominators_equal,
+                totals_before=totals_a, totals_after=totals_b,
+                inventory_equal=inventory_equal,
                 differing_hit_files=[s for s in sorted(a.keys() | b.keys())
                                      if {p: h > 0 for p, h in a.get(s, {}).items()} != {p: h > 0 for p, h in b.get(s, {}).items()}])
 

@@ -4,14 +4,14 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { instrumentSource } from './instrumentation.mjs';
 import coverage from 'istanbul-lib-coverage';
-import { repositoryRoot } from './discovery.mjs';
+import { repositoryRoot, speedProfile } from './discovery.mjs';
 import { served } from './served-scripts.mjs';
 
 export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 const collected = coverage.createCoverageMap({});
 if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
   mkdirSync(process.env.JE_COVERAGE_DIR, { recursive: true });
-  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}-${randomUUID()}.json`), JSON.stringify(collected));
+  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}${speedProfile ? '-' + randomUUID() : ''}.json`), JSON.stringify(collected));
 });
 
 /** Load real classic-script modules into a fresh browser realm; no network is permitted by default. */

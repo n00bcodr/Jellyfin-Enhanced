@@ -23,15 +23,15 @@ export function discoverTests(directory = frontendRoot) {
  * applies --test-timeout to each test file as a whole, newer Node to each test,
  * so the limit leaves room for the heaviest file on a slow runner.
  */
-// Only two files contain nested concurrent suites. At most eight Node workers
-// and 22 asynchronous cases can be active; the lane still supplies eight CPUs.
-const fileConcurrency = Number(process.env.JE_NODE_FILE_CONCURRENCY || 8);
-if (![1, 2, 3, 4, 5, 6, 7, 8].includes(fileConcurrency)) throw new Error('JE_NODE_FILE_CONCURRENCY must be 1–8');
-export const nestedConcurrency = Number(process.env.JE_NODE_NESTED_CONCURRENCY || 8);
-if (!Number.isInteger(nestedConcurrency) || nestedConcurrency < 1 || nestedConcurrency > 8 || fileConcurrency + Math.min(fileConcurrency, 2) * (nestedConcurrency - 1) > 22) {
+// Only the explicit speed profile bounds file workers and nested concurrency.
+export const speedProfile = process.env.JE_SPEED_PROFILE === '1';
+const fileConcurrency = speedProfile ? Number(process.env.JE_NODE_FILE_CONCURRENCY || 8) : 8;
+if (speedProfile && ![1, 2, 3, 4, 5, 6, 7, 8].includes(fileConcurrency)) throw new Error('JE_NODE_FILE_CONCURRENCY must be 1–8');
+export const nestedConcurrency = speedProfile ? Number(process.env.JE_NODE_NESTED_CONCURRENCY || 8) : 8;
+if (speedProfile && (!Number.isInteger(nestedConcurrency) || nestedConcurrency < 1 || nestedConcurrency > 8 || fileConcurrency + Math.min(fileConcurrency, 2) * (nestedConcurrency - 1) > 22)) {
   throw new Error('Node file workers and the two nested suites must fit the 22-case asynchronous budget');
 }
-export const testArguments = ['--test-timeout=120000', `--test-concurrency=${fileConcurrency}`];
+export const testArguments = ['--test-timeout=120000', ...(speedProfile ? [`--test-concurrency=${fileConcurrency}`] : [])];
 
 /** Dates and locale-formatted text must not depend on the machine running the tests. */
 export function testEnvironment(extra = {}) {

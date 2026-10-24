@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[3]
 class InstrumentationTests(unittest.TestCase):
     def test_immutable_text_and_independent_counters(self):
         result = subprocess.run(['node', 'tests/runner/fixtures/instrumentation-cache.mjs'],
-                                cwd=ROOT, capture_output=True, text=True, timeout=120)
+                                cwd=ROOT, env={**os.environ, 'JE_INSTRUMENT_CACHE': '1'},
+                                capture_output=True, text=True, timeout=120)
         self.assertEqual(0, result.returncode, result.stderr)
 
 

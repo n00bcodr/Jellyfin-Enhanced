@@ -94,13 +94,13 @@ def trx_cases(path):
 
 def validate_results(manifest, directory, allow_failures=False):
     validate_manifest(manifest, allow_single=True)
-    identity = manifest.get('identity', '')
-    if not re.fullmatch('[0-9a-f]{64}', identity):
-        raise ValueError('Missing source/build identity')
+    run_id = manifest.get('run_id', '')
+    if not re.fullmatch('[0-9a-f]{32}', run_id):
+        raise ValueError('Missing execution run ID')
     by_id = {c['id']: c for c in manifest['cases']}
     for shard in manifest['shards']:
-        if shard.get('identity') != identity:
-            raise ValueError('Source/build identity mismatch across partitions')
+        if shard.get('run_id') != run_id:
+            raise ValueError('Execution run ID mismatch across partitions')
         if 'exit_code' not in shard or (shard['exit_code'] != 0 and not allow_failures):
             raise ValueError(f"Shard {shard['id']} failed or never completed")
         reports = list((Path(directory) / shard['id']).glob('*.trx'))

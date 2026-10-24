@@ -7,16 +7,18 @@ import { createInstrumenter } from 'istanbul-lib-instrument';
 
 const require = createRequire(import.meta.url);
 const version = require('istanbul-lib-instrument/package.json').version;
-const dependencyIdentity = createHash('sha256').update(readFileSync(new URL('../../../package-lock.json', import.meta.url))).digest('hex');
+let dependencyIdentity;
 const memory = new Map();
 const options = Object.freeze({});
 
 /** The final served/transformed text includes locale and language-policy inputs. */
 export function instrumentSource(source, filename, instrumenterOptions = options) {
+  const enabled = process.env.JE_INSTRUMENT_CACHE === '1' || (process.env.JE_SPEED_PROFILE === '1' && process.env.JE_INSTRUMENT_CACHE !== '0');
+  if (!enabled) return createInstrumenter(instrumenterOptions).instrumentSync(source, filename);
+  dependencyIdentity ??= createHash('sha256').update(readFileSync(new URL('../../../package-lock.json', import.meta.url))).digest('hex');
   const identity = createHash('sha256').update(JSON.stringify([
     'je-instrumentation-v2', resolve(filename), version, dependencyIdentity, instrumenterOptions, source
   ])).digest('hex');
-  const enabled = process.env.JE_INSTRUMENT_CACHE !== '0';
   if (enabled && memory.has(identity)) return memory.get(identity);
   const folder = enabled && process.env.JE_INSTRUMENT_CACHE_DIR;
   const cached = folder && join(folder, identity + '.json');

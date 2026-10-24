@@ -4,7 +4,7 @@
 // added locale file run in node; this does the same from the files here, so tests run the script the browser gets.
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { repositoryRoot } from './discovery.mjs';
+import { repositoryRoot, speedProfile } from './discovery.mjs';
 
 const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 
@@ -18,8 +18,9 @@ export function shippedLocales(folder = resolve(jsRoot, 'locales')) {
 
 /** The translations script with the policy written in, as served; other scripts as they are. */
 export function served(path, source, { locales } = {}) {
+  if (!speedProfile && locales === undefined) locales = shippedLocales();
   if (path !== 'enhanced/translations.js') return source;
   const rule = JSON.parse(readFileSync(resolve(jsRoot, 'language-policy.json'), 'utf8'));
-  const policy = { space: rule.space, reserved: rule.reserved, tag: rule.tag, shipped: locales ?? shippedLocales() };
+  const policy = { space: rule.space, reserved: rule.reserved, tag: rule.tag, shipped: speedProfile ? (locales ?? shippedLocales()) : locales };
   return source.replace(MARKER, (_, indent) => `${indent}const LANGUAGE_POLICY = ${JSON.stringify(policy)};`);
 }

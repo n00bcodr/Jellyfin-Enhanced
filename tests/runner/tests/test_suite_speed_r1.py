@@ -14,42 +14,6 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(ROOT / 'tests/runner'))
-import backend
-
-
-@unittest.skipUnless(shutil.which('dotnet'), 'External import probe requires the .NET SDK')
-class ExternalImportTests(unittest.TestCase):
-    def test_imported_props_edit_changes_identity_and_rebuilds_real_output(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            parent = Path(temporary)
-            root = parent / 'repo'
-            project = root / 'tests/backend/JE.Tests.csproj'
-            project.parent.mkdir(parents=True)
-            support = project.parent / 'Support'
-            support.mkdir()
-            (support / 'jellyfin-api.json').write_text(json.dumps({'jf12': {
-                'version': 'fixture', 'image': 'fixture@sha256:' + 'a' * 64}}))
-            # Two effective imports outside ROOT, including a transitive one.
-            (parent / 'outer.targets').write_text('<Project><Import Project="value.props"/></Project>')
-            props = parent / 'value.props'
-            props.write_text('<Project><PropertyGroup><Marker>BEFORE</Marker></PropertyGroup></Project>')
-            project.write_text('''<Project>
-              <Import Project="../../../outer.targets"/>
-              <Target Name="Build"><MakeDir Directories="$(ArtifactsPath)"/>
-                <WriteLinesToFile File="$(ArtifactsPath)/marker.txt" Lines="$(Marker)" Overwrite="true"/>
-              </Target></Project>''')
-            build = root / 'artifacts/build/jf12/snapshot'
-            build.parent.mkdir(parents=True)
-            with patch.object(backend, 'ROOT', root):
-                first = backend.prepare_build('jf12', build, True)
-                self.assertFalse(first['reused'])
-                self.assertEqual('BEFORE', (build / 'marker.txt').read_text().strip())
-                self.assertTrue(backend.prepare_build('jf12', build, True)['reused'])
-                props.write_text('<Project><PropertyGroup><Marker>AFTER</Marker></PropertyGroup></Project>')
-                second = backend.prepare_build('jf12', build, True)
-                self.assertNotEqual(first['identity'], second['identity'])
-                self.assertFalse(second['reused'])
-                self.assertEqual('AFTER', (build / 'marker.txt').read_text().strip())
 
 
 class DefaultBackendContractTests(unittest.TestCase):
@@ -87,6 +51,7 @@ class DefaultBackendContractTests(unittest.TestCase):
             self.assertEqual('trx', test[test.index('--logger') + 1])
             self.assertIn('--collect:XPlat Code Coverage', test)
             self.assertNotIn('--no-build', test)
+            self.assertNotIn('-m:4', test)
             self.assertFalse(stale.is_file())
             self.assertFalse(stale_build.is_file())
             self.assertFalse((stale_build.parent.parent / 'build-identity.json').exists())
@@ -129,9 +94,10 @@ test('fixture GROUP', async () => {
 
     def execute(self, script, shards=None):
         env = {k: v for k, v in os.environ.items() if k not in (
-            'JE_FRONTEND_SHARDS', 'JE_FRONTEND_COVERAGE_ROOT', 'JE_NODE_FILE_CONCURRENCY', 'JE_NODE_NESTED_CONCURRENCY')}
+            'JE_SPEED_PROFILE', 'JE_FRONTEND_SHARDS', 'JE_FRONTEND_COVERAGE_ROOT', 'JE_NODE_FILE_CONCURRENCY', 'JE_NODE_NESTED_CONCURRENCY')}
         if shards is not None:
             env['JE_FRONTEND_SHARDS'] = str(shards)
+            env['JE_SPEED_PROFILE'] = '1'
         result = subprocess.run(['node', str(script)], env=env, capture_output=True, text=True, timeout=45)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         return result.stdout
@@ -144,6 +110,7 @@ test('fixture GROUP', async () => {
             self.execute(script)
             expected = json.loads((ROOT / 'tests/runner/fixtures/default-frontend-tree.json').read_text())
             self.assertEqual(expected, self.tree(out))
+            self.assertEqual(['frontend-coverage'], sorted(p.name for p in out.parent.iterdir()))
             original = json.loads((out / 'coverage-summary.json').read_text())
             self.assertEqual({'total', *(str(p) for p in (root / 'Jellyfin.Plugin.JellyfinEnhanced/js/core').glob('*.js'))}, set(original))
             self.assertEqual({'lines', 'statements', 'functions', 'branches', 'branchesTrue'}, set(original['total']))
@@ -179,9 +146,9 @@ test('fixture GROUP', async () => {
             sharded = self.execute(script, 2)
             self.assertEqual(summary, json.loads((out / 'coverage-summary.json').read_text()))
             import re
-            self.assertEqual(sorted(re.findall(r'^ok \d+ - (fixture \d+)$', default, re.M)),
-                             sorted(re.findall(r'^ok \d+ - (fixture \d+)$', sharded, re.M)))
-            self.assertEqual(2, len(re.findall(r'^ok \d+ - fixture \d+$', default, re.M)))
+            self.assertEqual(sorted(re.findall(r'^(?:ok \d+ - |✔ )(fixture \d+)(?:$| \()', default, re.M)),
+                             sorted(re.findall(r'^(?:ok \d+ - |✔ )(fixture \d+)(?:$| \()', sharded, re.M)))
+            self.assertEqual(2, len(re.findall(r'^(?:ok \d+ - |✔ )fixture \d+(?:$| \()', default, re.M)))
 
     def abort_sharded(self, script, out):
         import signal
@@ -189,7 +156,7 @@ test('fixture GROUP', async () => {
         runs = out.parent / '.frontend-coverage-runs'
         previous = set(runs.glob('run-*'))
         env = {**os.environ, 'JE_FRONTEND_SHARDS': '2', 'JE_ARTIFACT_ABORT': '1',
-               'JE_NODE_FILE_CONCURRENCY': '8', 'JE_NODE_NESTED_CONCURRENCY': '8'}
+               'JE_NODE_FILE_CONCURRENCY': '8', 'JE_NODE_NESTED_CONCURRENCY': '8', 'JE_SPEED_PROFILE': '1'}
         env.pop('JE_FRONTEND_COVERAGE_ROOT', None)
         child = subprocess.Popen(['node', str(script)], env=env, start_new_session=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -213,69 +180,6 @@ test('fixture GROUP', async () => {
     @staticmethod
     def tree(out):
         return sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file())
-
-
-class UnprovenImportTests(unittest.TestCase):
-    def test_unproven_closure_builds_every_time_and_never_publishes_a_reuse_stamp(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            build = Path(temporary) / 'build/jf12/snapshot'
-            build.parent.mkdir(parents=True)
-            def execute(command, log):
-                build.mkdir()
-                (build / 'marker').write_text('fresh')
-                return {'exit_code': 0, 'seconds': 0.01}
-            with patch.object(backend, 'build_identity', return_value=None), \
-                 patch.object(backend, 'run', side_effect=execute) as run:
-                first = backend.prepare_build('jf12', build, True)
-                second = backend.prepare_build('jf12', build, True)
-                self.assertFalse(first['reused'])
-                self.assertFalse(second['reused'])
-                self.assertFalse(first['reuse_eligible'])
-                self.assertNotEqual(first['identity'], second['identity'])
-                self.assertEqual(2, run.call_count)
-                self.assertFalse((build.parent / 'build-identity.json').exists())
-
-    def test_evaluation_failure_and_unknown_preprocessor_format_disable_reuse(self):
-        from msbuild_inputs import collect
-        with patch('msbuild_inputs.subprocess.check_output', side_effect=subprocess.CalledProcessError(1, 'msbuild')):
-            self.assertIsNone(collect(ROOT, ['-c', 'Release'], ROOT / 'artifacts/probe'))
-        with patch('msbuild_inputs.subprocess.check_output', return_value='<Project/>'):
-            self.assertIsNone(collect(ROOT, ['-c', 'Release'], ROOT / 'artifacts/probe'))
-
-    def test_referenced_project_implicit_ancestor_and_transitive_imports_are_evaluated(self):
-        import re
-        if not shutil.which('dotnet') or not re.search(r'^10\.', subprocess.check_output(['dotnet', '--list-sdks'], text=True), re.M):
-            self.skipTest('SDK import evaluation probe requires SDK 10')
-        from msbuild_inputs import collect
-        with tempfile.TemporaryDirectory() as temporary:
-            parent = Path(temporary)
-            root = parent / 'repo'
-            project = root / 'tests/backend/JE.Tests.csproj'
-            project.parent.mkdir(parents=True)
-            reference = parent / 'external/Reference.csproj'
-            reference.parent.mkdir()
-            reference.write_text('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework>'
-                                 '<NuGetLockFilePath>reference.lock.json</NuGetLockFilePath></PropertyGroup></Project>')
-            lock = reference.parent / 'reference.lock.json'
-            lock.write_text('{}')
-            project.write_text('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework>'
-                               '</PropertyGroup><ItemGroup><ProjectReference Include="../../../external/Reference.csproj"/>'
-                               '</ItemGroup></Project>')
-            props = parent / 'Directory.Build.props'
-            props.write_text('<Project><Import Project="extra.targets"/></Project>')
-            targets = parent / 'extra.targets'
-            targets.write_text('<Project/>')
-            version = subprocess.check_output(['dotnet', '--version'], text=True).strip()
-            global_json = parent / 'global.json'
-            global_json.write_text(json.dumps({'sdk': {'version': version}}))
-            paths = collect(root, ['-c', 'Release'], parent / 'output')
-            self.assertIsNotNone(paths)
-            self.assertTrue({project, reference, props, targets, lock, global_json} <= set(paths))
-            self.assertTrue(any(path.name == 'Sdk.props' for path in paths))
-            self.assertTrue(any(path.name == 'Sdk.targets' for path in paths))
-            # An evaluated missing lock cannot be treated as an empty dependency.
-            lock.unlink()
-            self.assertIsNone(collect(root, ['-c', 'Release'], parent / 'output'))
 
 
 class BackendArtifactTreeTests(unittest.TestCase):

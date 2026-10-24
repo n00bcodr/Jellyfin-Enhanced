@@ -20,10 +20,11 @@ def main():
     parser.add_argument("--target", choices=["jf10", "jf12", "all"], default="all")
     parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts" / "regression")
     parser.add_argument("--backend-shards", type=int, choices=[1, 2, 3, 4], default=int(os.environ.get("JE_BACKEND_SHARDS", "1")))
-    parser.add_argument("--reuse-build", action="store_true", help="Reuse only an identity-verified backend build")
+    parser.add_argument("--speed-profile", action="store_true", help="Opt into bounded workers, frontend text caching and fail-fast prerequisites")
     parser.add_argument("--preflight-witnesses", action="store_true", help="Stop incomplete on a known-failing backend witness")
     parser.add_argument("--backend-durations", type=Path, help="Previous complete TRX for shard balancing")
     args = parser.parse_args()
+    speed_profile = bool(args.speed_profile or args.backend_shards > 1 or args.preflight_witnesses or args.backend_durations)
     suites = {"fast": ["tooling", "backend", "frontend"], "all": ["tooling", "backend", "frontend", "browser", "poster", "host", "mutation", "history"]}.get(args.suite, [args.suite])
     artifacts = args.artifacts.resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -38,7 +39,8 @@ def main():
         log = artifacts / (name + ".log")
         with log.open("w") as output:
             try:
-                process = subprocess.Popen(list(map(str, command)), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+                process = subprocess.Popen(list(map(str, command)), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True,
+                                           **({"env": {**os.environ, "JE_SPEED_PROFILE": "1"}} if speed_profile else {}))
                 try:
                     for line in process.stdout:
                         output.write(line)
@@ -72,12 +74,13 @@ def main():
     def prerequisite_error(message):
         results.append({"name": "prerequisites", "status": "failed", "exit_code": 127, "error": message})
         (artifacts / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
-        incomplete(message)
+        if speed_profile:
+            incomplete(message)
         parser.error(message)
 
     required = set()
     if "tooling" in suites:
-        required.update(["node", "npm"])
+        required.update(["node", "npm"] if speed_profile else ["node"])
     if any(s in suites for s in ["backend", "host", "poster", "mutation", "history"]):
         required.add("dotnet")
     if any(s in suites for s in ["frontend", "browser", "visual", "poster", "mutation", "history", "host"]):
@@ -90,31 +93,34 @@ def main():
     if "npm" in required and not (ROOT / "node_modules").exists():
         prerequisite_error("Missing JavaScript dependencies. Run npm ci first.")
 
-    try:
-        check_preflight(ROOT, suites, targets, os.environ)
-    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
-        return incomplete("Prerequisite preflight failed: " + str(error))
+    if speed_profile:
+        try:
+            check_preflight(ROOT, suites, targets, os.environ)
+        except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
+            return incomplete("Prerequisite preflight failed: " + str(error))
 
     if args.suite in ["fast", "all"]:
-        if not execute("inventory", [sys.executable, "tests/inventory/generate.py", "--check"]):
+        ok = execute("inventory", [sys.executable, "tests/inventory/generate.py", "--check"])
+        if speed_profile and not ok:
             return incomplete("Inventory preflight failed")
     for suite in suites:
         if suite == "tooling":
-            if not execute("tooling", [sys.executable, "-m", "unittest", "discover", "-s", "tests/runner/tests", "-v"]):
+            ok = execute("tooling", [sys.executable, "-m", "unittest", "discover", "-s", "tests/runner/tests", "-v"])
+            if speed_profile and not ok:
                 return incomplete("Tooling preflight failed")
         elif suite == "backend":
             for target in targets:
                 results_path = artifacts / "backend" / target
-                # Fetch/validate all pinned host assemblies before any expensive build.
-                if not execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target]):
+                isolated = bool(args.backend_shards > 1 or args.preflight_witnesses or args.backend_durations)
+                if not isolated and results_path.exists():
+                    shutil.rmtree(results_path)
+                ok = execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target])
+                if speed_profile and not ok:
                     return incomplete("Pinned Jellyfin prerequisites failed")
-                isolated = args.backend_shards > 1 or args.reuse_build or args.preflight_witnesses or args.backend_durations
                 if isolated:
                     command = [sys.executable, "tests/runner/backend.py", "--target", target,
                                "--results", results_path, "--build", artifacts / "build" / target / "snapshot",
                                "--shards", args.backend_shards]
-                    if args.reuse_build:
-                        command.append("--reuse-build")
                     if args.preflight_witnesses:
                         command.append("--preflight-witnesses")
                     if args.backend_durations:
@@ -122,13 +128,13 @@ def main():
                 else:
                     # Preserve the ordinary command's TRX/collector schema and
                     # paths, including cleanup after an interrupted isolated run.
-                    shutil.rmtree(results_path, ignore_errors=True)
                     build_path = artifacts / "build" / target
                     shutil.rmtree(build_path / 'snapshot', ignore_errors=True)
                     for name in ('build-identity.json', 'build.log', 'build.lock'):
                         (build_path / name).unlink(missing_ok=True)
                     command = ["dotnet", "test", "tests/backend/JE.Tests.csproj", "-c", "Release",
-                               "-p:JellyfinTarget=" + target, "-p:RestoreLockedMode=true", "-m:4",
+                               "-p:JellyfinTarget=" + target, "-p:RestoreLockedMode=true",
+                               *(["-m:4"] if speed_profile else []),
                                "--artifacts-path", artifacts / "build" / target,
                                "--results-directory", results_path, "--logger", "trx", "--collect:XPlat Code Coverage"]
                 if execute("backend-" + target, command):
@@ -136,10 +142,10 @@ def main():
                     if args.backend_shards > 1:
                         coverage.extend(["--manifest", results_path / "partitions.json"])
                     execute("coverage-" + target, coverage)
-                else:
+                elif isolated:
                     status_path = results_path / 'status.json'
                     status = json.loads(status_path.read_text()) if status_path.exists() else {'status': 'incomplete'}
-                    if isolated and (status.get('status') == 'incomplete' or args.preflight_witnesses):
+                    if status.get('status') == 'incomplete' or args.preflight_witnesses:
                         return incomplete("Backend witness/preflight failed; full suite not completed")
         elif suite == "frontend":
             execute("frontend", ["npm", "run", "test:frontend:coverage"])
