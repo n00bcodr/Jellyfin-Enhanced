@@ -1,3 +1,4 @@
+import { nestedConcurrency } from '../helpers/discovery.mjs';
 // R15: native-card visibility has one writer. Every other path (button repaint, deliberate hide callbacks, Unhide
 // recovery, the disable path, the session reset) only requests a re-decision, and the one writer uses every rule.
 // Model: writer x retained node x ordinary scan; an observer checks every class change against the full rule set.
@@ -100,7 +101,7 @@ async function runCell(t,writer,rules){
 
 const rows=[];
 for(const [writer,spec] of Object.entries(WRITERS))for(const rules of spec.rules)rows.push({writer,rules,want:spec.want(rules)});
-describe('every visibility writer x retained node x ordinary scan',{concurrency:8},()=>{
+describe('every visibility writer x retained node x ordinary scan',{concurrency:nestedConcurrency},()=>{
  for(const {writer,rules,want} of rows)test(`${writer} x ${rules} -> ${want?'hidden':'visible'}`,async t=>{
   const r=await runCell(t,writer,rules);
   assert.deepEqual(r.violations,[],'no write disagrees with the full rule set, and a resolved marker records the applied effect');

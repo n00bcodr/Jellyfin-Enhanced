@@ -77,3 +77,11 @@ Run visual tests in the pinned Playwright Linux environment. Review the failed s
 Missing runtimes, dependencies, browser executables, or Docker access are failures, not skips. Check `dotnet --list-runtimes`, run `npm ci`, install the pinned Playwright browsers, or check `docker info` as appropriate. A host-startup failure should be investigated using the saved build/server logs. The host runner removes resources it created; it must never prune unrelated containers or networks.
 
 The test infrastructure uses synthetic data only. Do not substitute production credentials or a personal media library into fixtures.
+
+### Bounded suite execution
+
+`python3 tests/run.py fast --target jf12` retains the complete behavior and coverage gate.
+Optimizations can be measured independently:
+
+- `JE_INSTRUMENT_CACHE=0` disables immutable frontend instrumentation reuse. Cache entries contain source text, never browser realms or counters. `JE_INSTRUMENT_CACHE_DIR` selects a disposable shared text cache.
+- `JE_NODE_FILE_CONCURRENCY=1..8` bounds frontend file workers (default 8). The two nested generated suites retain eight asynchronous cases each by default; `JE_NODE_NESTED_CONCURRENCY=1..8` may lower this. The combined maximum is eight test-file workers and 22 asynchronous cases on the lane's eight CPUs. `JE_FRONTEND_SHARDS=1..4` partitions the complete sorted file inventory within that worker budget. Each run/shard retains its own raw coverage and log under `artifacts/frontend-coverage/runs/`. Reports enforce the existing floors against the complete production source inventory after union.
