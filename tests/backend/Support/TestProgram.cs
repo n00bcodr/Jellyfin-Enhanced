@@ -9,6 +9,7 @@ internal static class TestProgram
 {
     public static int Main(string[] args) => args switch
     {
+        ["--suite-manifest", var output] => SuiteManifest.Write(output),
         [LegacyCollageHost.ChildCommand, var output] => LegacyCollageHost.RunChild(output),
         _ => 2,
     };

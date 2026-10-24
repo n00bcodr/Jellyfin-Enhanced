@@ -18,6 +18,8 @@ def main():
     parser.add_argument("suite", choices=["fast", "tooling", "backend", "frontend", "browser", "visual", "host", "poster", "mutation", "history", "all"], nargs="?", default="fast")
     parser.add_argument("--target", choices=["jf10", "jf12", "all"], default="all")
     parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts" / "regression")
+    parser.add_argument("--backend-shards", type=int, choices=[1, 2, 3, 4], default=int(os.environ.get("JE_BACKEND_SHARDS", "1")))
+    parser.add_argument("--backend-durations", type=Path, help="Previous complete TRX for shard balancing")
     args = parser.parse_args()
     suites = {"fast": ["tooling", "backend", "frontend"], "all": ["tooling", "backend", "frontend", "browser", "poster", "host", "mutation", "history"]}.get(args.suite, [args.suite])
     artifacts = args.artifacts.resolve()
@@ -58,14 +60,21 @@ def main():
             raise SystemExit(130)
         return code == 0
 
+    def incomplete(message):
+        results.append({"name": "suite", "status": "incomplete", "exit_code": 1, "error": message})
+        (artifacts / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
+        print("INCOMPLETE: " + message, file=sys.stderr)
+        return 1
+
     def prerequisite_error(message):
         results.append({"name": "prerequisites", "status": "failed", "exit_code": 127, "error": message})
         (artifacts / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
+        incomplete(message)
         parser.error(message)
 
     required = set()
     if "tooling" in suites:
-        required.add("node")
+        required.update(["node", "npm"])
     if any(s in suites for s in ["backend", "host", "poster", "mutation", "history"]):
         required.add("dotnet")
     if any(s in suites for s in ["frontend", "browser", "visual", "poster", "mutation", "history", "host"]):
@@ -78,20 +87,35 @@ def main():
     if "npm" in required and not (ROOT / "node_modules").exists():
         prerequisite_error("Missing JavaScript dependencies. Run npm ci first.")
 
+
     if args.suite in ["fast", "all"]:
-        execute("inventory", [sys.executable, "tests/inventory/generate.py", "--check"])
+        if not execute("inventory", [sys.executable, "tests/inventory/generate.py", "--check"]):
+            return incomplete("Inventory preflight failed")
     for suite in suites:
         if suite == "tooling":
-            execute("tooling", [sys.executable, "-m", "unittest", "discover", "-s", "tests/runner/tests", "-v"])
+            if not execute("tooling", [sys.executable, "-m", "unittest", "discover", "-s", "tests/runner/tests", "-v"]):
+                return incomplete("Tooling preflight failed")
         elif suite == "backend":
             for target in targets:
                 results_path = artifacts / "backend" / target
-                if results_path.exists():
-                    shutil.rmtree(results_path)
-                # Jellyfin's own server assemblies (Jellyfin.Api.dll and those its calls go into) of the pinned release, for the user-action coverage tests (they fail without them).
-                execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target])
-                if execute("backend-" + target, ["dotnet", "test", "tests/backend/JE.Tests.csproj", "-c", "Release", "-p:JellyfinTarget=" + target, "-p:RestoreLockedMode=true", "--artifacts-path", artifacts / "build" / target, "--results-directory", results_path, "--logger", "trx", "--collect:XPlat Code Coverage"]):
-                    execute("coverage-" + target, [sys.executable, "tests/runner/coverage.py", results_path])
+                # Fetch/validate all pinned host assemblies before any expensive build.
+                if not execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target]):
+                    return incomplete("Pinned Jellyfin prerequisites failed")
+                command = [sys.executable, "tests/runner/backend.py", "--target", target,
+                           "--results", results_path, "--build", artifacts / "build" / target / "snapshot",
+                           "--shards", args.backend_shards]
+                if args.backend_durations:
+                    command.extend(["--durations", args.backend_durations.resolve()])
+                if execute("backend-" + target, command):
+                    coverage = [sys.executable, "tests/runner/coverage.py", results_path]
+                    if args.backend_shards > 1:
+                        coverage.extend(["--manifest", results_path / "partitions.json"])
+                    execute("coverage-" + target, coverage)
+                else:
+                    status_path = results_path / 'status.json'
+                    status = json.loads(status_path.read_text()) if status_path.exists() else {'status': 'incomplete'}
+                    if status.get('status') == 'incomplete':
+                        return incomplete("Backend witness/preflight failed; full suite not completed")
         elif suite == "frontend":
             execute("frontend", ["npm", "run", "test:frontend:coverage"])
         elif suite in ["browser", "visual"]:
