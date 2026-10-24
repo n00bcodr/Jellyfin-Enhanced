@@ -10,11 +10,13 @@ namespace JE.Tests;
 
 /// <summary>Manage Add must carry its choices through shared approval and durable dispatch.</summary>
 [Collection("Plugin singleton")]
-public class IntegrationArrAddChoicesTests
+public partial class IntegrationArrAddChoicesTests
 {
     private static IntegrationRequestLedgerTests.Rig Requests(IntegrationRequestBackendsTests.Lab lab)
     {
         var rig = new IntegrationRequestLedgerTests.Rig();
+        rig.Policy.Configuration.SonarrInstances = lab.Config.SonarrInstances;
+        rig.Policy.Configuration.RadarrInstances = lab.Config.RadarrInstances;
         rig.Policy.Adjust = (_, input, facts) =>
         {
             var instance = lab.Instance(TitleKey.Parse(input.Key)!.IsMovie ? "Radarr" : "Sonarr");
@@ -833,13 +835,13 @@ public class IntegrationArrAddChoicesTests
             cmd.Parameters.AddWithValue("$id", active.Id);
             return cmd.ExecuteNonQuery();
         });
+        LegacyRegistry(rig);
         rig.Reopen();
         var legacy = rig.Ledger.Job(active.Id)!;
-        Assert.Null(legacy.Authorization.ChoiceOwner);
-        Assert.Equal(0, legacy.Authorization.ChoiceVersion);
+        Assert.Equal((owner, 2L), (legacy.Authorization.ChoiceOwner, legacy.Authorization.ChoiceVersion));
         var conflict = Outcome(await Controller(lab, rig, third).Add(Sheet(lab, movie, 4, id: "legacy-conflict"), default));
         Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
-        Assert.Equal((owner, 1L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
+        Assert.Equal((owner, 2L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
     }
 
     [Theory]
@@ -862,17 +864,19 @@ public class IntegrationArrAddChoicesTests
             cmd.Parameters.AddWithValue("$id", job.Id);
             return cmd.ExecuteNonQuery();
         });
+        LegacyRegistry(rig);
+        rig.Reopen();
         job = rig.Ledger.Job(job.Id)!;
         Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
         Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, RequestBackendResult.Uncertain(job.WantId) with { Parked = true }, rig.Now));
         Assert.Equal(200, (await rig.Service.ApproveAsync(job.WantId, approver, null, default)).HttpStatus);
         rig.Reopen();
         var resumed = rig.Ledger.Job(job.Id)!;
-        Assert.Equal((approver, (Guid?)null, 0L), (resumed.Authorization.Approver, resumed.Authorization.ChoiceOwner, resumed.Authorization.ChoiceVersion));
+        Assert.Equal((approver, (Guid?)rig.Admin, 1L), (resumed.Authorization.Approver, resumed.Authorization.ChoiceOwner, resumed.Authorization.ChoiceVersion));
         await rig.Runner(lab.Direct).TickAsync(default);
         var conflict = Outcome(await Controller(lab, rig, third).Add(Sheet(lab, movie, 4, id: "legacy-resume-conflict"), default));
         Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
-        Assert.Equal((approver, 1L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
+        Assert.Equal((rig.Admin, 1L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
     }
     [Theory]
     [InlineData(false)]

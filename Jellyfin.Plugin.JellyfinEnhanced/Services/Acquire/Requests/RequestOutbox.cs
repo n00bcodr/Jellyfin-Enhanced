@@ -201,6 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         string? Guard()
                         {
                             if (job.Input.Fingerprint != job.Fingerprint || job.Input.Scope != job.Authorization.Scope || job.Input.Variant != job.Authorization.Variant) return "idempotency_conflict";
+                            if (_ledger.Choices.Check(job) is { } choiceRefusal) return choiceRefusal;
                             if (_ledger.Database.Generation != generation) return "configuration_changed";
                             RequestPolicyFacts? requester = null;
                             RequestPolicyFacts? approver = null;

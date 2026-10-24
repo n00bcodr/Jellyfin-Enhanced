@@ -179,6 +179,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                input.SeerrServerId != original.SeerrServerId || input.SeerrProfileId != original.SeerrProfileId ||
                input.SeerrRootFolder != original.SeerrRootFolder || input.SeerrOptions != original.SeerrOptions;
 
+        /// <summary>Whether scopes of the same title and edition overlap; add settings do not define scope.</summary>
+        internal static bool ScopesOverlap(MutationInput a, MutationInput b) => a.Overlaps(b);
+
+        /// <summary>A supplied add field differs; omitted fields inherit the stored title choice.</summary>
+        internal static bool ArrChoicesDiffer(int? profile, string? root, MutationInput proposed)
+            => proposed.ProfileId.HasValue && proposed.ProfileId != profile || proposed.RootFolder != null && proposed.RootFolder != root;
+
+        /// <summary>A supplied add field conflicts with an already selected field.</summary>
+        internal static bool ArrChoicesConflict(int? profile, string? root, MutationInput proposed)
+            => profile.HasValue && proposed.ProfileId.HasValue && proposed.ProfileId != profile ||
+                root != null && proposed.RootFolder != null && proposed.RootFolder != root;
+
+        /// <summary>A bound job snapshot has exactly the registry's profile and folder, including nulls.</summary>
+        internal static bool SameArrChoices(MutationInput input, int? profile, string? root)
+            => input.ProfileId == profile && input.RootFolder == root;
+
         /// <summary>What <paramref name="approved"/> changes about <paramref name="original"/>.</summary>
         /// <param name="approved">The input approved.</param>
         /// <param name="original">The request's input.</param>

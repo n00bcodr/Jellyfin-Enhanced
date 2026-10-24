@@ -136,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IRequestPolicy policy, DateTimeOffset now)
         {
+            TitleChoiceRegistry.Reconcile(c, t, group);
             var canonical = group[0];
             var aliases = group.Skip(1).ToList();
             // The aliases, each mapped straight to the canonical key (an earlier canonical key included).

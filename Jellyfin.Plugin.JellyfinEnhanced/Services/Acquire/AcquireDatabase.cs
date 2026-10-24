@@ -758,6 +758,8 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 if (UserVersion(connection) >= 6) ContentArrivalHistory.Ensure(connection);
                 // Phase 4f (D47): the Ready tables and the restore policy, on every supported start and after every restore.
                 if (UserVersion(connection) >= 8) Ready.ReadyTables.Ensure(connection);
+                if (existed && !extensionBackedUp && Requests.TitleChoiceRegistry.NeedsMigration(connection)) BackupBeforeMigration(connection, version);
+                Requests.TitleChoiceRegistry.Ensure(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);

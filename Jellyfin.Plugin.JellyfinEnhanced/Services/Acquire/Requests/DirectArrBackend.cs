@@ -126,12 +126,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return (null, BackendResults.Retry("backend_unavailable", "The instance's add settings could not be revalidated."));
             var system = await _store.GetSystemAsync(run.Instance, run.Ct).ConfigureAwait(false);
             IReadOnlyDictionary<int, string>? tags = null;
-            if (run.Instance.Defaults?.Tags is { Count: > 0 })
+            if ((run.Job.TitleChoiceSettings ?? run.Instance.Defaults)?.Tags is { Count: > 0 })
             {
                 var read = await run.Client.GetAsync<List<TagRow>>("tag", null, ArrCallClass.Read, run.Ct).ConfigureAwait(false);
                 if (read.Ok) tags = read.Value!.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().Label ?? string.Empty);
             }
-            var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder);
+            var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder, run.Job.TitleChoiceSettings);
             ChoiceNames(run, system.Value);
             // A refused add still audits the effective candidate, including a saved fallback.
             if ((run.Job.Input.ProfileId ?? run.Instance.Defaults?.QualityProfileId) is { } candidateProfile)
