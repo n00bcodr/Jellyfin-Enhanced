@@ -4,7 +4,7 @@ import {setImmediate as nextTurn} from 'node:timers/promises';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,{config={},api=async()=>({items:[]})}={}){
   const calls=[];const timers=new Map();let timerId=0;
-  const h=createHarness({html:'<main></main>',JE:{pluginConfig:{ActivityFeedEnabled:true,ActivityFeedShowWatched:true,ActivityFeedShowReviewed:true,...config},t:()=>'',core:{api:{plugin:async path=>{calls.push(path);return api(path);}}}},apiClient:{getImageUrl:(id,options)=>`http://jellyfin.test/Images/${id}/${options.type}`}});
+  const h=createHarness({html:'<main></main>',JE:{pluginConfig:{ActivityFeedEnabled:true,ActivityFeedShowWatched:true,ActivityFeedShowReviewed:true,...config},t:()=>'',core:{api:{plugin:async path=>{calls.push(path);return api(path);}},ui:{skeletonGridHtml:()=>''}}},apiClient:{getImageUrl:(id,options)=>`http://jellyfin.test/Images/${id}/${options.type}`}});
   h.window.setInterval=fn=>{timers.set(++timerId,fn);return timerId;};h.window.clearInterval=id=>timers.delete(id);
   t.after(()=>h.close());h.load('extras/activity-page.js');
   return {...h,calls,timers,host:h.document.querySelector('main'),P:h.JE.activityPage};
