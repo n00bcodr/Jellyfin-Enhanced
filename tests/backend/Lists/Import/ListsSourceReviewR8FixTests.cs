@@ -533,7 +533,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
             "lookup search" => 2,
             "metadata movie" => "2010-07-16",
             "metadata series" => 3,
-            _ => 2,
+            _ => 3, // metadata season: the shared control now includes every advertised episode
         }, read);
     }
 

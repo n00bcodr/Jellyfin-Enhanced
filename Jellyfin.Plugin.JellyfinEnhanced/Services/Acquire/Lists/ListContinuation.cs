@@ -29,6 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ListStore _store;
         private readonly Func<ListOutcome?> _current;
         private readonly long _restore;
+        private readonly ListMetadataEpoch _backend = ListMetadataEpoch.Capture();
         private ListOutcome? _refused;
 
         /// <summary>Starts a continuation for the calling flow (and everything it awaits).</summary>
@@ -58,7 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             lock (Lifecycle)
             {
-                _refused ??= _store.RestoreVersion != _restore ? NotFound() : _current();
+                _refused ??= _store.RestoreVersion != _restore ? NotFound()
+                    : !_backend.IsCurrent ? ListOutcome.Error(409, "configuration_changed", "The request backend changed. Try the list operation again.")
+                    : _current();
                 if (_refused != null)
                 {
                     throw new ListAccessLostException(_refused, "The list operation or its access changed.");

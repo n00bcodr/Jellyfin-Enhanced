@@ -441,6 +441,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ApplyResultDto"/>).</returns>
         public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, ListRequestKey? request, CancellationToken cancellationToken, ApplyHooks? hooks = null, bool recheckAccess = false, string kind = "apply")
         {
+            var readEpoch = ListMetadataEpoch.Capture();
             var skipped = new List<SkippedEntryDto>();
             var accepted = await ListContinuation.Await(() => PrevalidateAsync(access, entries, skipped, cancellationToken)).ConfigureAwait(false);
             accepted = await ListContinuation.Await(() => ExpandAsync(access, accepted, cancellationToken)).ConfigureAwait(false);
@@ -460,7 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 access = checkedNow.Access!;
                 var still = Revalidate(access, accepted, skipped, checkedNow.Blocked);
                 return await ListContinuation.Await(() => ApplyLockedAsync(access, still, skipped, position, expectedRev, checkedNow.Visibility!, hooks, cancellationToken)).ConfigureAwait(false);
-            })).ConfigureAwait(false);
+            }, readEpoch)).ConfigureAwait(false);
             if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
             {
                 // Seerr metadata (dates, ids, expected episodes) for the new placeholders, then a swap check, in the background.
@@ -580,10 +581,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 try
                 {
                     var metadata = await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListSwapService.CompletionMetadataMaxAge, today, budget.Token)).ConfigureAwait(false);
-                    if (metadata != null)
+                    if (metadata is { IsCurrent: true })
                     {
                         ListMetadataService.Apply(placeholder, metadata);
-                        if (!metadata.Partial)
+                        if (!metadata.Partial && DateTime.UtcNow - metadata.FetchedAtUtc <= ListSwapService.CompletionMetadataMaxAge)
                         {
                             lock (fresh)
                             {
@@ -639,9 +640,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 string? poster = null;
                 try
                 {
-                    poster = seerr
-                        ? (await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListMetadataService.CacheTtl, today, budget.Token)).ConfigureAwait(false))?.PosterPath
-                        : await ListContinuation.Await(() => _metadata.FetchTmdbPosterAsync(placeholder, budget.Token)).ConfigureAwait(false);
+                    if (seerr)
+                    {
+                        var metadata = await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListMetadataService.CacheTtl, today, budget.Token)).ConfigureAwait(false);
+                        poster = metadata is { IsCurrent: true } ? metadata.PosterPath : null;
+                    }
+                    else
+                    {
+                        poster = await ListContinuation.Await(() => _metadata.FetchTmdbPosterAsync(placeholder, budget.Token)).ConfigureAwait(false);
+                    }
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -1393,6 +1400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListViewDto"/>).</returns>
         public async Task<ListOutcome> PatchAsync(ListAccess access, string placeholderId, int rev, string? note, Placeholder? link, ListRequestKey? request, CancellationToken cancellationToken)
         {
+            var readEpoch = ListMetadataEpoch.Capture();
             if (link != null && HasTmdb(link) && await ListContinuation.Await(() => _access.IsTitleBlockedAsync(link.MediaType, link.TmdbId!.Value, access.User, cancellationToken)).ConfigureAwait(false))
             {
                 return ListOutcome.Error(403, "parental_block", "This title isn't available for your account.");
@@ -1518,7 +1526,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 var saved = _store.Save(doc);
                 return await ListContinuation.Await(() => ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken)).ConfigureAwait(false);
-            })).ConfigureAwait(false);
+            }, readEpoch)).ConfigureAwait(false);
             if (link != null && outcome.StatusCode < 300)
             {
                 _swap?.QueuePass(access.ListIdN, new[] { placeholderId }, MetadataMode.New);
@@ -2587,42 +2595,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return _store.Load(doc.ListId);
         }
 
-        private async Task<ListOutcome> RunLockedAsync(ListAccess access, string kind, ListRequestKey? request, CancellationToken cancellationToken, Func<Task<ListOutcome>> body)
+        private async Task<ListOutcome> RunLockedAsync(ListAccess access, string kind, ListRequestKey? request, CancellationToken cancellationToken, Func<Task<ListOutcome>> body, ListMetadataEpoch? readEpoch = null)
         {
-            using (await ListContinuation.Await(() => _store.LockAsync(access.ListIdN, cancellationToken)).ConfigureAwait(false))
+            // Standalone apply/link reads precede the lock. A create already has its enclosing continuation.
+            using var backend = readEpoch != null && ListContinuation.Current == null
+                ? new ListContinuation(_store, () => readEpoch.IsCurrent ? null
+                    : ListOutcome.Error(409, "configuration_changed", "The request backend changed. Try the list operation again."))
+                : null;
+            try
             {
-                ListOperation? operation = null;
-                if (request != null && _operations?.Available == true)
+                using (await ListContinuation.Await(() => _store.LockAsync(access.ListIdN, cancellationToken)).ConfigureAwait(false))
                 {
-                    var start = _operations.Begin(access.User.Id, access.ListIdN, request.RequestId, kind, request.Fingerprint, Now());
-                    if (start.Conflict)
+                    ListOperation? operation = null;
+                    if (request != null && _operations?.Available == true)
                     {
-                        return IdempotencyConflict();
+                        var start = _operations.Begin(access.User.Id, access.ListIdN, request.RequestId, kind, request.Fingerprint, Now());
+                        if (start.Conflict)
+                        {
+                            return IdempotencyConflict();
+                        }
+
+                        if (start.Replayed && start.Operation!.State == "completed")
+                        {
+                            return await ListContinuation.Await(() => ReplayAsync(access, start.Operation, cancellationToken)).ConfigureAwait(false);
+                        }
+
+                        operation = start.Operation;
                     }
 
-                    if (start.Replayed && start.Operation!.State == "completed")
+                    // F5: the list may have been deleted (and its document removed) since access was checked; writing now
+                    // would recreate an orphan document.
+                    if (_host.GetList(Guid.ParseExact(access.ListIdN, "N")) == null)
                     {
-                        return await ListContinuation.Await(() => ReplayAsync(access, start.Operation, cancellationToken)).ConfigureAwait(false);
+                        return ListOutcome.Error(404, "not_found", "List not found.");
                     }
 
-                    operation = start.Operation;
-                }
+                    var outcome = await ListContinuation.Await(() => body()).ConfigureAwait(false);
+                    if (operation != null)
+                    {
+                        // A failed operation stays retryable (the same request id runs it again); a finished one is replayed.
+                        _operations!.Finish(operation.Id, outcome.StatusCode < 300, outcome.StatusCode, outcome.Value is ApplyResultDto result ? ResultIdentity(result) : null, Now());
+                    }
 
-                // F5: the list may have been deleted (and its document removed) since access was checked; writing now
-                // would recreate an orphan document.
-                if (_host.GetList(Guid.ParseExact(access.ListIdN, "N")) == null)
-                {
-                    return ListOutcome.Error(404, "not_found", "List not found.");
+                    return outcome;
                 }
-
-                var outcome = await ListContinuation.Await(() => body()).ConfigureAwait(false);
-                if (operation != null)
-                {
-                    // A failed operation stays retryable (the same request id runs it again); a finished one is replayed.
-                    _operations!.Finish(operation.Id, outcome.StatusCode < 300, outcome.StatusCode, outcome.Value is ApplyResultDto result ? ResultIdentity(result) : null, Now());
-                }
-
-                return outcome;
+            }
+            catch (ListAccessLostException lost) when (backend?.Refused == true && lost.Outcome != null)
+            {
+                return lost.Outcome;
             }
         }
 

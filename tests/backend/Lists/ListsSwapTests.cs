@@ -1034,6 +1034,17 @@ public class ListsSwapTests
         var season = Season(121, 1);
         await Add(h, access, null, season);
         await h.Swap.DrainAsync(None);
+        // A previously saved document may predate the stricter completeness check. Preserve that legacy expected
+        // set here: a newly read undated season now stays unknown, and cannot create it in the first place.
+        using (await h.Store.LockAsync(access.ListIdN))
+        {
+            var legacy = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
+            var saved = legacy.Items.Single(p => p.Id == season.Id);
+            saved.Expected = Enumerable.Range(1, 8).Select(e => new PlaceholderEpisode { S = 1, E = e, AirDate = e <= 3 ? Past : null }).ToList();
+            saved.EpisodeTotal = 3;
+            h.Store.Save(legacy);
+        }
+
         var series = h.Host.AddSeries(tmdb: 121);
         foreach (var e in new[] { 1, 2, 3 })
         {

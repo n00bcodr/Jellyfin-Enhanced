@@ -815,6 +815,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListMetadataEpoch.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListOrder.cs",
       "category": "Services"
     },
@@ -11721,7 +11725,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 731,
+    "files": 732,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

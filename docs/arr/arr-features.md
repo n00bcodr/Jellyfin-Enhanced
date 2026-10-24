@@ -2052,6 +2052,10 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   Partial or unavailable metadata stays unknown and cannot prove completion. Whole-series requests use these same stored
   season expectations. A source previously linked through Seerr is inactive in JE mode: its existing members are kept
   until an editor explicitly relinks it through TMDB. JE list metadata, imports and sources never fall back to Seerr.
+  A season stays unknown when its details omit advertised episodes or air dates; those incomplete details cannot finish
+  its placeholder. Cached facts keep their original fetch time, so finishing a season still requires a recent check.
+  Switching the request backend discards in-flight list reads and stops list changes built from the previous backend;
+  retry the operation after the switch. Upcoming TV sources use TMDB's upcoming-premiere discovery filter in JE mode.
 
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 

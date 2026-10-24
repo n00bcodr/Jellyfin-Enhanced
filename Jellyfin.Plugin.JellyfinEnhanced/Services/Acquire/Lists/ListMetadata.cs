@@ -22,8 +22,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     public sealed class PlaceholderMetadata
     {
-        /// <summary>When the underlying Seerr data was fetched (UTC).</summary>
+        /// <summary>When the underlying provider data was fetched (UTC).</summary>
         public DateTime FetchedAtUtc { get; init; }
+
+        internal ListMetadataEpoch? ReadEpoch { get; set; }
+        internal bool IsCurrent => ReadEpoch?.IsCurrent != false;
 
         /// <summary>Release date per kind (movie release, series first air, season air, first listed episode); null = TBA.</summary>
         public string? ReleaseDate { get; init; }
@@ -180,11 +183,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return null;
             }
 
+            var epoch = ListMetadataEpoch.Capture();
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, new AnswerRequest(placeholder.TmdbId, "movie") { Kind = ResponseContract.MetadataMovie.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
-                return movie?.Read == null ? null : FromMovie(movie.Read, movie.FetchedAtUtc);
+                return movie?.Read == null ? null : Admit(FromMovie(movie.Read, movie.FetchedAtUtc));
             }
 
             var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, new AnswerRequest(placeholder.TmdbId, "tv") { Kind = ResponseContract.MetadataShow.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
@@ -199,7 +203,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId) { Kind = ResponseContract.MetadataSeason.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
-            return FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
+            return Admit(FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc));
+
+            PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
+            {
+                metadata.ReadEpoch = epoch;
+                return epoch.IsCurrent ? metadata : null;
+            }
         }
 
         /// <summary>
@@ -217,6 +227,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>True when anything changed.</returns>
         public static bool Apply(Placeholder placeholder, PlaceholderMetadata metadata)
         {
+            if (!metadata.IsCurrent) return false;
             var before = Signature(placeholder);
             if (!metadata.Partial || metadata.ReleaseDate != null)
             {
@@ -403,6 +414,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             }
 
                             expected.Sort((a, b) => a.E.CompareTo(b.E));
+                            // Independent valid resources can disagree: a shorter detail payload is not a smaller season.
+                            // No completion evidence without every advertised coordinate and a known air date.
+                            if (seasonInfo is not { EpisodeCount: > 0 } || expected.Count != seasonInfo.EpisodeCount
+                                || expected.Where((e, i) => e.E != i + 1 || e.AirDate == null).Any())
+                            {
+                                partial = true;
+                                expected = null;
+                            }
                         }
                     }
                     else
@@ -427,7 +446,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 expected = expected.Take(PlaceholderProgress.MaxExpected).ToList();
             }
 
-            var seasonFailed = partial;
+            var seasonFailed = season == null && placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes;
             if (tv.Verdict != ResponseVerdict.Valid)
             {
                 // Review round 7 (4c2-R7-3): a show answer that isn't Valid (a season list, an episode count, the status or
@@ -559,8 +578,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return null;
             }
 
+            var epoch = ListMetadataEpoch.Capture();
             var scope = Fingerprint(urls, apiKey);
-            var key = scope + apiPath;
+            var key = scope + apiPath + "|" + epoch.Generation;
             if (_cache.TryGetValue(key, out var cached))
             {
                 var ttl = cached.NotFoundFor ?? (maxAge < CacheTtl ? maxAge : CacheTtl);
@@ -600,7 +620,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 var entry = await ListContinuation.Await(() => shared.Task.WaitAsync(cancellationToken)).ConfigureAwait(false);
                 completed = true;
-                return entry == null || entry.NotFound ? null : entry;
+                return !epoch.IsCurrent || entry == null || entry.NotFound ? null : entry;
             }
             finally
             {
@@ -619,7 +639,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 try
                 {
-                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, fetch.Cancellation.Token).ConfigureAwait(false);
+                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, epoch, fetch.Cancellation.Token).ConfigureAwait(false);
+                    if (!epoch.IsCurrent) return null;
                     if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
                     {
                         if (_cache.Count >= MaxCacheEntries)
@@ -663,7 +684,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // When nothing better came of it, a read whose only failures were Seerr's 500 ("Unable to retrieve …", for unknown
         // ids but also when TMDB failed behind it) is remembered as unknown for a few minutes (never as an absence), and a
         // read no server answered at all pauses reads for a minute. Each request takes its own Seerr slot.
-        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, CancellationToken cancellationToken)
+        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, ListMetadataEpoch epoch, CancellationToken cancellationToken)
         {
             var answered = false;
             var only500 = true;
@@ -678,7 +699,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var url = baseUrl + apiPath;
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                    if (!SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    if (!epoch.IsCurrent || !SeerrAddresses.IsCurrent(baseUrl, apiKey))
                     {
                         only500 = false;
                         return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
@@ -712,6 +733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                     var json = await BoundedBody.ReadAsync(response, cts.Token).ConfigureAwait(false);
 
+                    if (!epoch.IsCurrent) return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     using var document = JsonDocument.Parse(json);
                     var answer = schema.Validate(asked, document.RootElement);
                     if (answer.Verdict == ResponseVerdict.Malformed)

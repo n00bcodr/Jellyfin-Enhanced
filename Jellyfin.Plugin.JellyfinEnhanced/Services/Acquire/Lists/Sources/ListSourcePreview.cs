@@ -96,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceOutcomes.ParseFailure(parseError);
             }
 
+            var epoch = ListMetadataEpoch.Capture();
             var options = new SourceFetchOptions
             {
                 AllowMdblistApi = request.UseMdblistApi && ListAccessService.IsAdmin(caller),
@@ -172,6 +173,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 // B3: the snapshot of what the reply carries, after every cap and filter.
                 var represented = result.Exact ? response.SnapshotKeys ?? new List<string>() : response.Entries.Select(e => e.SourceKey).OfType<string>().ToList();
                 response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
+            }
+
+            if (!epoch.IsCurrent)
+            {
+                return SourceOutcomes.FetchFailure(SourceFetchResult.Fail(source!, "configuration_changed", "The request backend changed while reading this source. Read it again."));
             }
 
             return ListOutcome.Ok(response);

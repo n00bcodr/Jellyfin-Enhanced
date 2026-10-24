@@ -404,7 +404,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return LookupAnswer.Transient;
             }
 
-            var key = Fingerprint(urls, apiKey) + "|" + cacheKey;
+            var epoch = ListMetadataEpoch.Capture();
+            var key = Fingerprint(urls, apiKey) + "|" + cacheKey + "|" + epoch.Generation;
             // A definitive answer is reused with its status, without waiting for the limiter (review round 5, 4c2-R5-4).
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
@@ -421,7 +422,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 {
                     if (ReferenceEquals(shared, mine))
                     {
-                        _ = RunSharedAsync(key, mine, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine));
+                        _ = RunSharedAsync(key, mine, epoch, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine, epoch));
                     }
 
                     break;
@@ -433,7 +434,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             try
             {
-                return await shared.Result.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var answer = await shared.Result.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return epoch.IsCurrent ? answer : LookupAnswer.Transient;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -446,7 +448,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        private async Task RunSharedAsync(string key, SharedLookup shared, Func<Task<LookupAnswer>> fetch)
+        private async Task RunSharedAsync(string key, SharedLookup shared, ListMetadataEpoch epoch, Func<Task<LookupAnswer>> fetch)
         {
             LookupAnswer answer;
             try
@@ -459,6 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 answer = LookupAnswer.Transient;
             }
 
+            if (!epoch.IsCurrent) answer = LookupAnswer.Transient;
             if (answer.Remembered)
             {
                 Remember(key, answer.Status, answer.Value);
@@ -475,12 +478,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // is held until that request has ended (its own timeout), whoever still waits for it. The first turn is queued like
         // the shared lookup (cancelled once every waiter is gone: an aborted request or the /resolve deadline); once admitted
         // the lookup runs to the end regardless (its result serves later joiners and the cache).
-        private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
+        private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared, ListMetadataEpoch epoch)
         {
             FallbackResult<LookupAnswer> read;
             try
             {
-                read = await SeerrFallback.ReadAsync<LookupAnswer>(urls, (baseUrl, i) => ReadAtAsync(baseUrl, i, apiKey, apiPath, context, parse, shared)).ConfigureAwait(false);
+                read = await SeerrFallback.ReadAsync<LookupAnswer>(urls, (baseUrl, i) => ReadAtAsync(baseUrl, i, apiKey, apiPath, context, parse, shared, epoch)).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -496,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         // One server's answer as the fallback table reads it.
-        private async Task<ServerAnswer<LookupAnswer>> ReadAtAsync(string baseUrl, int index, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
+        private async Task<ServerAnswer<LookupAnswer>> ReadAtAsync(string baseUrl, int index, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared, ListMetadataEpoch epoch)
         {
             IDisposable lease;
             if (index == 0)
@@ -522,7 +525,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     using var timeout = new CancellationTokenSource(CallTimeout);
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                    if (!SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    if (!epoch.IsCurrent || !SeerrAddresses.IsCurrent(baseUrl, apiKey))
                     {
                         return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
                     }
@@ -534,6 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     var json = response.IsSuccessStatusCode && SeerrHttpHelper.IsJsonContentType(response)
                         ? await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false)
                         : null;
+                    if (!epoch.IsCurrent) return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
                     if (json != null)
                     {
                         LookupAnswer answer;

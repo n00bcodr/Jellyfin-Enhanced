@@ -175,6 +175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>The outcome.</returns>
         public async Task<ImportResolveOutcome> ResolveAsync(IReadOnlyList<ImportEntryDto> entries, ImportResolveOptions options, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
+            var provider = Provider;
             var clock = Stopwatch.StartNew();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(options.Deadline);
@@ -189,7 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 Results = results.ToList(),
                 Complete = results.All(r => r.State != "transient"),
                 UpstreamCalls = options.Context.Calls,
-                MetadataProvider = Provider,
+                MetadataProvider = provider,
             };
 
             var pending = false;
@@ -217,6 +219,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _logger.Info($"[Lists] Resolved {entries.Count} import entries for {options.Context.Owner} in {clock.ElapsedMilliseconds} ms: "
                 + $"{response.Results.Count(r => r.Confidence == ImportScoring.Levels.High)} high, {response.Results.Count(r => r.State == "transient")} transient, {options.Context.Calls} {Provider} calls "
                 + $"(limiter since start: {total} calls, peak {peak} concurrent, at most {perSecond} started in any second).");
+            if (!epoch.IsCurrent)
+            {
+                response.Results = entries.Select((entry, index) => new ResolvedEntryDto
+                {
+                    Index = entry?.Index ?? index, State = "transient", Reasons = new List<string> { "transient" },
+                }).ToList();
+                response.Complete = false;
+                response.MetadataProvider = string.Empty;
+            }
+
             return new ImportResolveOutcome(response, pending);
         }
 

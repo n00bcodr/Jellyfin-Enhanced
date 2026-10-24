@@ -178,7 +178,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return unavailable;
             }
 
-            var cacheKey = source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
+            var epoch = ListMetadataEpoch.Capture();
+            var cacheKey = epoch.Generation + "|" + source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
             if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return cached.Result;
@@ -218,6 +219,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 {
                     _logger.Warning($"[Lists] Couldn't read the list {source.CanonicalUrl}: {UpstreamDiagnostics.Code(ex)}");
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
+                }
+
+                if (result.Ok && !epoch.IsCurrent)
+                {
+                    return SourceFetchResult.Fail(source, "configuration_changed", "The request backend changed while reading this source. Read it again.");
                 }
 
                 // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
@@ -523,7 +529,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
             else
             {
-                provider = hasKey && !tvUpcoming ? "tmdb" : "seerr";
+                provider = SeerrAddresses.IsJe(Config) || (hasKey && !tvUpcoming) ? "tmdb" : "seerr";
+            }
+
+            if (provider == "tmdb" && !hasKey)
+            {
+                return SourceFetchResult.Fail(source, "tmdb_key_required", "TMDB lists and charts need the TMDB API key in Jellyfin Enhanced's settings.");
             }
 
             if (provider == "seerr" && !seerrAllowed)
@@ -644,12 +655,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var path = source.Shape == "trending"
                         ? $"trending/{media}/{source.Part("period")}"
                         : $"{media}/{source.Part("chart").Replace('-', '_')}";
+                    var upcomingTv = media == "tv" && source.Shape == "chart" && source.Part("chart") == "upcoming";
+                    if (upcomingTv) path = "discover/tv";
+                    // TMDB has no tv/upcoming resource: use its native upcoming-premiere filter.
+                    var query = upcomingTv ? "&first_air_date.gte=" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                        + "&sort_by=first_air_date.asc&include_adult=false&include_null_first_air_dates=false" : string.Empty;
                     var defaultType = media == "all" ? null : media;
                     var read = new SourceRead();
                     var items = new List<SourceItem>();
                     for (var page = 1; ; page++)
                     {
-                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
+                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture) + query, key, options, cancellationToken).ConfigureAwait(false)
                             ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
                         using var doc = JsonDocument.Parse(json);
                         Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);

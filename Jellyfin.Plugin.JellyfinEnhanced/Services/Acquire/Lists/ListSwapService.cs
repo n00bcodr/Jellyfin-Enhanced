@@ -1959,6 +1959,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // the list lock.
         private bool TakeMetadata(string listIdN, string placeholderId, PlaceholderMetadata metadata)
         {
+            if (!metadata.IsCurrent) return false;
             var key = MatchKey(listIdN, placeholderId);
             if (_appliedMetadataAt.TryGetValue(key, out var newest) && metadata.FetchedAtUtc < newest)
             {
