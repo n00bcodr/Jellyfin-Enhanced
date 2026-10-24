@@ -58,7 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 if (!admission.Active) throw new InvalidOperationException("TMDB admission ended while waiting to send.");
-                var client = factory.CreateClient(clientName);
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(factory, clientName);
+                TmdbEgressHandler.Attach(request, admission);
                 beforeSend?.Invoke();
                 NativeDetails.MetadataTaskProbe.Emit(new(null, request.RequestUri.AbsolutePath, "transport", admission));
                 var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);

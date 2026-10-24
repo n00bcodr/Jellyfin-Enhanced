@@ -156,7 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             cts.CancelAfter(Timeout);
             try
             {
-                using var client = _http.CreateClient(NotifyEndpoints.ClientName);
+                using var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_http, NotifyEndpoints.ClientName);
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode) return SendResult.Sent;
                 var code = (int)response.StatusCode;

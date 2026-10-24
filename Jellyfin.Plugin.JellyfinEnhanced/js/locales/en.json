@@ -1,4 +1,5 @@
 {
+  "tmdb_admission_required": "TMDB hosts are checked through the metadata source; use the TMDB test instead",
     "toast_search": "{{icon:search}} Search",
     "toast_home": "{{icon:home}} Home",
     "toast_dashboard": "{{icon:dashboard}} Dashboard",

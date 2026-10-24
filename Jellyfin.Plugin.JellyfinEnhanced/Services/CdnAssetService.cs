@@ -385,7 +385,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     url = $"{src.BaseUrl}/{path}";
                 }
 
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = TimeSpan.FromSeconds(20);
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);

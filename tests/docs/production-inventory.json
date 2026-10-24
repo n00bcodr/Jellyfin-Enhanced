@@ -1467,6 +1467,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ImageMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ModeNativeDetailsSource.cs",
       "category": "Services"
     },
@@ -1828,6 +1832,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbCompanyTvDiscover.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbEgressHandler.cs",
       "category": "Services"
     },
     {
@@ -11749,7 +11757,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 738,
+    "files": 740,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

@@ -97,8 +97,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
         public static HttpClient CreateClient(IHttpClientFactory factory)
         {
-            try { return factory.CreateClient(NamedClient); }
-            catch { return factory.CreateClient(); }
+            try { return Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(factory, NamedClient); }
+            catch { return Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(factory); }
         }
 
         private const int MaxBodyBytes = 8 * 1024 * 1024;

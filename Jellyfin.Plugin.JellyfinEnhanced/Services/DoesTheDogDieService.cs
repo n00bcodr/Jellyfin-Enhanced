@@ -137,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetDoesTheDogDieApiKey();
             if (string.IsNullOrWhiteSpace(apiKey) || !CanCall()) return null;
 
-            var client = _httpClientFactory.CreateClient();
+            var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
             client.Timeout = RequestTimeout;
             using var request = new HttpRequestMessage(HttpMethod.Get, ApiBase + path);
             request.Headers.Add("X-API-KEY", apiKey);

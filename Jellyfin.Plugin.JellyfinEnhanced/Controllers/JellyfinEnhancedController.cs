@@ -10190,6 +10190,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(url))
                 return BadRequest(new { reachable = false, service = "unknown" });
 
+            if (Uri.TryCreate(url, UriKind.Absolute, out var target) && Services.TmdbEgressHandler.IsTmdb(target))
+                return IdentifyTmdbRefused(true);
+
             if (!IsAllowedUrl(url))
                 return BadRequest(new { reachable = false, service = "unknown" });
 
@@ -10224,6 +10227,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Ok(new { reachable = true, service = "arr" });
                 }
             }
+            catch (Services.TmdbEgressRefusedException) { return IdentifyTmdbRefused(); }
             catch (HttpRequestException) { /* continue to next service probe */ }
             catch (TaskCanceledException) { /* continue to next service probe */ }
 
@@ -10242,6 +10246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
             }
+            catch (Services.TmdbEgressRefusedException) { return IdentifyTmdbRefused(); }
             catch (HttpRequestException) { /* continue to next service probe */ }
             catch (TaskCanceledException) { /* continue to next service probe */ }
 
@@ -10256,6 +10261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return Ok(new { reachable = true, service = "Seerr" });
                 }
             }
+            catch (Services.TmdbEgressRefusedException) { return IdentifyTmdbRefused(); }
             catch (HttpRequestException) { /* continue to next service probe */ }
             catch (TaskCanceledException) { /* continue to next service probe */ }
 
@@ -10291,6 +10297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 return Ok(new { reachable = true, service = "unknown" });
             }
+            catch (Services.TmdbEgressRefusedException) { return IdentifyTmdbRefused(); }
             catch (HttpRequestException)
             {
                 return Ok(new { reachable = false, service = "unknown" });
@@ -10299,6 +10306,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return Ok(new { reachable = false, service = "unknown" });
             }
+        }
+
+                private IActionResult IdentifyTmdbRefused(bool count = false)
+        {
+            if (count) Services.TmdbEgressHandler.RecordRefusal("admin_url_probe");
+            return BadRequest(new { reachable = false, service = "unknown", outcome = "unavailable", reason = "tmdb_admission_required", code = "tmdb_admission_required",
+                message = Services.TmdbEgressRefusedException.SafeMessage });
         }
 
         // ==================== Arr links (served from ArrStateStore's library index) ====================
@@ -10551,7 +10565,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var url = instance.Url.TrimEnd('/');
                 // DefaultRequestHeaders mutations remain thread-unsafe for pooled instances,
                 // so the API key is set per-request via HttpRequestMessage below.
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = timeout;
 
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{url}{endpointPath}");

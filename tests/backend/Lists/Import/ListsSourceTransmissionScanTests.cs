@@ -131,7 +131,8 @@ public class ListsSourceTransmissionScanTests
             foreach (Match m in Regex.Matches(code, @"CreateClient\s*\(([^()]*)\)"))
             {
                 var name = m.Groups[1].Value.Trim();
-                if (name != "SourceHttp.ClientName" && name != "_httpClientFactory" && name != "SeerrHttpHelper.NamedClient")
+                if (name != "SourceHttp.ClientName" && name != "_httpClientFactory" && name != "SeerrHttpHelper.NamedClient"
+                    && name != "_httpClientFactory, SourceHttp.ClientName" && name != "_httpClientFactory, SeerrHttpHelper.NamedClient")
                 {
                     offences.Add(file + ": CreateClient(" + name + ")");
                 }
@@ -183,8 +184,8 @@ public class ListsSourceTransmissionScanTests
         }
 
         // The transports use the source transport and Seerr's named no-redirect client, nothing else.
-        Assert.Contains("CreateClient(SourceHttp.ClientName)", Body(code, "SendOnceAsync"), StringComparison.Ordinal);
-        Assert.Contains("CreateClient(SeerrHttpHelper.NamedClient)", Body(code, "SeerrOnceAsync"), StringComparison.Ordinal);
+        Assert.Contains("PluginHttp.CreateClient(_httpClientFactory, SourceHttp.ClientName)", Body(code, "SendOnceAsync"), StringComparison.Ordinal);
+        Assert.Contains("PluginHttp.CreateClient(_httpClientFactory, SeerrHttpHelper.NamedClient)", Body(code, "SeerrOnceAsync"), StringComparison.Ordinal);
     }
 
     [Fact]

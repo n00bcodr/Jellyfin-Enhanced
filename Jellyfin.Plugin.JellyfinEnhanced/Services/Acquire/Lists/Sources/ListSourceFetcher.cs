@@ -1644,7 +1644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var metadataText = metadataStatus == 200 || metadataStatus is >= 400 and < 500 ? await BoundedBody.ReadAsync(metadataResponse, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
                 return new HttpResult(metadataStatus, metadataText, RetryAfterOf(metadataResponse), HeadersOf(metadataResponse));
                 }
-                var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, SourceHttp.ClientName);
                 using var request = new HttpRequestMessage(transmission.Method, transmission.Url);
                 request.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
                 request.Headers.Accept.ParseAdd(transmission.Accept);
@@ -1707,7 +1707,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             timeout.CancelAfter(Timeout);
             try
             {
-                var client = _httpClientFactory.CreateClient(SeerrHttpHelper.NamedClient);
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, SeerrHttpHelper.NamedClient);
                 using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, transmission.Url, transmission.Credential ?? string.Empty);
                 GateOpen(transmission); // the final check: nothing awaited between it and the send
                 using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);

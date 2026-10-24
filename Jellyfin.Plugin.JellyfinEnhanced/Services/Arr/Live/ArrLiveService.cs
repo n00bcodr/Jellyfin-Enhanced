@@ -423,7 +423,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             {
                 var handler = ArrHttp.CreateHandler();
                 handler.AutomaticDecompression = System.Net.DecompressionMethods.None;
-                Interlocked.CompareExchange(ref _invoker, new HttpMessageInvoker(handler, disposeHandler: true), null);
+                Interlocked.CompareExchange(ref _invoker, new HttpMessageInvoker(new TmdbEgressHandler { InnerHandler = handler }, disposeHandler: true), null);
             }
             return ArrSignalRConnection.CreateConnector(_invoker!);
         }

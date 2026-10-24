@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+            serviceCollection.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Http.IHttpMessageHandlerBuilderFilter, TmdbEgressFilter>());
             // Build-target vs host-version check; logged at startup and surfaced
             // on the config page so a jf10 zip on a Jellyfin 12 host is not silent.
             serviceCollection.AddSingleton<HostCompatibilityService>();
@@ -38,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // request can leave through (the arr and Seerr clients below, and the default one Seerr falls back to). It
             // only acts on writes made in an automation context (AutomationTransportContext); everything else passes.
             serviceCollection.AddTransient<Services.Acquire.Automation.AutomationTransportHandler>();
-            serviceCollection.AddHttpClient(string.Empty)
+            serviceCollection.AddHttpClient(PluginHttp.DefaultClient)
                 .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>();
 
             // a named HttpClient with AllowAutoRedirect=false so
