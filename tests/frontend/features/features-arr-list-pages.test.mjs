@@ -1406,9 +1406,28 @@ test('r3 Q13: an unanswered Spoiler policy paints fully guarded after eight seco
   const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: { whenLoaded: () => held.promise, isLoadOk: () => true, isTmdbEnabled: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) }, views: () => [view([entry, movie], [entry.token, movie.token])], items: { [LIST]: PLAYLIST_ITEM } });
   await h.start();
   const { page, container } = h.playlistPage();
+  // Hold only the real policy deadline; setup and the DOM still use their normal timers.
+  // Assert the eight-second contract without spending most of the test budget asleep.
+  const setTimer = h.window.setTimeout.bind(h.window);
+  const clearTimer = h.window.clearTimeout.bind(h.window);
+  const deadlines = new Map();
+  let nextDeadline = -1;
+  h.window.setTimeout = (callback, ms, ...args) => {
+    if (ms !== 8000) return setTimer(callback, ms, ...args);
+    const id = nextDeadline--;
+    deadlines.set(id, () => callback(...args));
+    return id;
+  };
+  h.window.clearTimeout = id => {
+    if (!deadlines.delete(id)) clearTimer(id);
+  };
   await h.show(page);
   assert.equal(container.querySelectorAll('.je-list-row').length, 0);
-  await sleep(8150);
+  assert.equal(deadlines.size, 1, 'the unresolved policy schedules one 8000 ms deadline');
+  const [[id, expire]] = deadlines;
+  deadlines.delete(id);
+  expire();
+  await h.settle();
   assert.equal(container.querySelectorAll('.je-list-row').length, 2);
   assert.doesNotMatch(container.textContent, /SECRET|2001|1999/);
   const lp = h.JE.internals.arrListPages;
