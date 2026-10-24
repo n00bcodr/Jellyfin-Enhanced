@@ -313,3 +313,13 @@ test('a rule waits only for the item changes queued before it: later ones never 
  assert.equal(requests.filter(o=>o.type==='PUT').length,1,'the rule went out while the later change is still out');
  second.resolve();await settle();assert.ok(h.api.getHiddenData().items.two);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
 });
+
+test('an acknowledged save tells the page the server now answers with the saved rules',async t=>{
+ const acknowledgement=deferred(),saved=[];const h=setup(t,{patch:()=>acknowledgement.promise});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');
+ h.window.addEventListener('je-hidden-content-saved',()=>saved.push('saved'));
+ h.api.updateSettings({filterSearch:true});const flushing=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(saved,[],'nothing is announced before the server answers');
+ acknowledgement.resolve({success:true,revision:'r1'});await flushing;await new Promise(r=>setImmediate(r));
+ assert.deepEqual(saved,['saved']);
+});

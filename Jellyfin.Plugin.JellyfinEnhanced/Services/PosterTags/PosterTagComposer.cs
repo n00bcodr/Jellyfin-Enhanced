@@ -108,8 +108,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var composed = await PrivacyDelivery.DeliverAsync(user.Id, async () =>
             {
                 _data.SpoilerRevision(httpContext, user);
-                PrivacyReadSet.Current?.Library(item.Id);
-                PrivacyReadSet.Current?.Library(PrivacyIdentities.ExtraOwner(null, item));
+                // The item and its owner, as the host serves them now (the strip judges them; recorded here as well when it does not).
+                _data.Judge(item);
                 var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings).ConfigureAwait(false);
                 // Nothing drawn: nothing judged, under whatever policy is current.
                 if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);

@@ -101,7 +101,7 @@ public class PrivacyCommitAndDecisionTests
         PrivacyIdentities.Of(rig.Library.Object, episode);
         if (moved) episode.SeriesId = Guid.NewGuid();
         Assert.Equal(!moved, scope.Reads.Valid());
-        if (moved) Assert.Contains("not announced", scope.Reads.Failure);
+        if (moved) Assert.Contains("library change", scope.Reads.Failure);
     }
 
     [Theory]
@@ -109,17 +109,28 @@ public class PrivacyCommitAndDecisionTests
     [InlineData(true)]
     public void AMoveTheHostHasNotSavedYetFailsTheGate(bool moved)
     {
-        // The host changes an item in memory first, then saves the row and announces it: the judgment read the stored row.
+        // The host changes an item in memory first (stamping it), then saves the row and announces it. A judgment reads the
+        // host's view (the newer in-memory item), so a move already in memory is judged by its new show; one the host makes
+        // in memory after the judgment fails the gate before the row is saved.
         var library = new Mock<ILibraryManager>();
         var guarded = Guid.NewGuid();
         var row = new Episode { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid(), SeasonId = Guid.NewGuid(), ParentIndexNumber = 1, IndexNumber = 2, DateLastSaved = DateTime.UtcNow.AddMinutes(-5) };
         var memory = new Episode { Id = row.Id, SeriesId = moved ? guarded : row.SeriesId, SeasonId = row.SeasonId, ParentIndexNumber = 1, IndexNumber = 2, DateLastSaved = DateTime.UtcNow };
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => (q.ItemIds ?? []).Contains(row.Id) ? [row] : []);
         library.Setup(l => l.GetItemById(row.Id)).Returns(memory);
-        using var scope = PrivacyReadSet.Begin();
-        PrivacyIdentities.Resolve(library.Object, [row.Id]);
-        Assert.Equal(!moved, scope.Reads.Valid());
-        if (moved) Assert.Contains("not saved yet", scope.Reads.Failure);
+        using (var scope = PrivacyReadSet.Begin())
+        {
+            Assert.Equal(moved ? guarded : row.SeriesId, PrivacyIdentities.Resolve(library.Object, [row.Id])[row.Id].OwnerId);
+            Assert.True(scope.Reads.Valid(), scope.Reads.Failure);
+        }
+        using (var scope = PrivacyReadSet.Begin())
+        {
+            PrivacyIdentities.Resolve(library.Object, [row.Id]);
+            var next = new Episode { Id = row.Id, SeriesId = Guid.NewGuid(), SeasonId = row.SeasonId, ParentIndexNumber = 1, IndexNumber = 2, DateLastSaved = DateTime.UtcNow.AddMinutes(1) };
+            if (moved) library.Setup(l => l.GetItemById(row.Id)).Returns(next);
+            Assert.Equal(!moved, scope.Reads.Valid());
+            if (moved) Assert.Contains("library change", scope.Reads.Failure);
+        }
     }
 
     [Fact]
@@ -153,21 +164,21 @@ public class PrivacyCommitAndDecisionTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void AFirstSeenUpdateIsDecidedByTheFactsTheAnswerJudgedBy(bool recorded)
+    public void AFirstSeenUpdateIsDecidedByTheFactsTheAnswerJudgedBy(bool changed)
     {
         // After a start nothing is known; the host's first update of an item (a background task touching it) says nothing
-        // about whether it changed. An answer that recorded what it judged the item by compares that with the live item;
-        // one that only read the item's facts (no record of them) must count it as changed.
+        // about whether it changed. Every read records what the decision judged the item by, and that is compared with the
+        // live item: an update that changed none of it moves nothing, one that changed it (a new key) does.
         var library = new Mock<ILibraryManager>();
         var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "R25 first seen" };
         library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([movie]);
         PrivacyInputs.Observe(library.Object, null);
         using var scope = PrivacyReadSet.Begin();
-        if (recorded) PrivacyReads.Item(library.Object, movie.Id);
-        else scope.Reads.Library(movie.Id);
+        PrivacyReads.Item(library.Object, movie.Id);
+        if (changed) movie.SetProviderId(MetadataProvider.Tmdb, "4242");
         library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = movie, UpdateReason = ItemUpdateType.ImageUpdate });
-        Assert.Equal(recorded, scope.Reads.Valid());
+        Assert.Equal(!changed, scope.Reads.Valid());
     }
 
     [Fact]
@@ -264,9 +275,9 @@ public class PrivacyCommitAndDecisionTests
             rig.Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
                 (q.ItemIds ?? []).Select(id => rig.Items.GetValueOrDefault(id)).OfType<BaseItem>().ToList());
             using var scope = PrivacyReadSet.Begin();
-            try { PrivacyReads.SeasonEpisodes(season, rig.Users.Object.GetUserById(rig.Viewer)!).ToList(); } catch (Exception) { }
+            var read = PrivacyReads.SeasonWatchedOrUnknown(rig.Library.Object, rig.UserData.Object, rig.Users.Object.GetUserById(rig.Viewer)!, season);
             Assert.Contains(PrivacyReads.SpecialsInSeasons, scope.Reads.Named);
-            Assert.True(scope.Reads.HoldsWatched(rig.Viewer, season.Id));
+            Assert.True(read == null || scope.Reads.HoldsWatched(rig.Viewer, season.Id));
             hostConfig.DisplaySpecialsWithinSeasons = false;
             Assert.False(scope.Reads.Valid());
         }

@@ -2259,3 +2259,11 @@ Where the details action row would overflow, a compact row keeps the primary Pla
 An ask or cancellation whose acknowledgement is lost stays unconfirmed and retains its retry identity. A notification preference with an uncertain acknowledgement is read back once; a later edit or sign-in prevents the older read from replacing current preferences. Settings recovery uses accepted server state and can make one replacement read when a newer edit discards the first answer. Build-update checks share bounded evidence for the current server and discard confirmations from an ended session.
 
 When a title-copy check reaches its scan limit, pending notifications wait for a conclusive check instead of being dismissed. Retries retain the original event age and expiry limit.
+
+Hidden Content and Spoiler Guard use the library's current ownership and numbering for episode and season protection, including search hints and advanced episode categories. Native posters, bulk tags and tag-data answers share the resolved title identity.
+
+Changing accounts discards tags produced for the previous sign-in, including delayed lookups and stored renderer data. Changing privacy settings refreshes cards already on screen; a revoked tag batch resumes eligible visible cards automatically. Parent-art refreshes also replace the previously resized image.
+
+If a watched-state lookup fails, native poster tags keep Spoiler Guard protection and preserve the shared source data for other viewers.
+
+A privacy refresh updates the shared settings document as well as visible cards, so a later page reset or settings edit keeps changes made in another tab.

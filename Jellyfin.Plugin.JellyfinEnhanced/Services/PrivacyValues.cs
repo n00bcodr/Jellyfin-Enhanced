@@ -33,7 +33,10 @@ public sealed class PrivacyValueHost
     private readonly Dictionary<string, CultureDto?> _languages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _ratingEntries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, BaseItem?> _items = new();
-    private readonly Dictionary<Guid, IReadOnlyList<PersonInfo>> _people = new();
+    private readonly Dictionary<(Guid, TextMember), CapturedText> _text = new();
+    private readonly Dictionary<(Guid, VocabularyList, string), CapturedText> _vocabulary = new();
+    private readonly Dictionary<Guid, ReferenceValues> _references = new();
+    private readonly Dictionary<Guid, IReadOnlyList<PersonValue>> _people = new();
     private Dictionary<string, string>? _countries;
 
     /// <summary>Creates the host view for one projection.</summary>
@@ -158,17 +161,105 @@ public sealed class PrivacyValueHost
     public BaseItem? Item(Guid? id)
     {
         if (id is not { } key || key == Guid.Empty || Library == null) return null;
-        // An entity the projection reads is one of the answer's inputs (the attempt's read-set records it).
-        PrivacyReadSet.Current?.Library(key);
-        if (_items.TryGetValue(key, out var known)) return known;
+        // An entity the projection reads is one of the answer's inputs: read as the host serves it now, and its facts (or
+        // its absence) recorded in the attempt's read-set; a memo hit within the strip replays them.
+        if (_items.TryGetValue(key, out var known))
+        {
+            Consumed(key, known);
+            return known;
+        }
         BaseItem? item;
-        try { item = Library.GetItemById(key) ?? Library.GetItemById<BaseItem>(key); }
+        try { item = PrivacyHostView.Item(Library, key); }
         catch (Exception) { item = null; }
+        Consumed(key, item);
         return _items[key] = item;
     }
 
+    /// <summary>Reads several items a projection will take values from in one batch (each then answers from the memo).</summary>
+    public void Prefetch(IEnumerable<Guid> ids)
+    {
+        if (Library == null) return;
+        var wanted = ids.Where(id => id != Guid.Empty && !_items.ContainsKey(id)).Distinct().ToArray();
+        if (wanted.Length == 0) return;
+        Dictionary<Guid, BaseItem> found;
+        try { found = PrivacyHostView.Items(Library, wanted); }
+        catch (Exception) { return; }
+        foreach (var id in wanted) _items[id] = found.GetValueOrDefault(id);
+    }
+
+    /// <summary>
+    /// A text projection the accessor may capture. Computed sort names are read only when consumed.
+    /// </summary>
+    public enum TextMember { Name, SortName, OriginalTitle, OfficialRating }
+    /// <summary>The title-owned vocabulary lists used by scalar and name/id-pair projections.</summary>
+    public enum VocabularyList { Genres, Studios }
+    /// <summary>Canonical references and numbering consumed by a projection, separate from any carried DTO.</summary>
+    public sealed record ReferenceValues(bool Present, BaseItemKind Kind, Guid Series, Guid Season, int? Parent, int? Index, Guid? Channel);
+
+    /// <summary>Captures references once and replays their immutable proof at every reuse.</summary>
+    public ReferenceValues References(Guid id)
+    {
+        static ReferenceValues Read(BaseItem? item)
+        {
+            if (item == null) return new(false, default, Guid.Empty, Guid.Empty, null, null, null);
+            // Some host item kinds carry a channel reference, others have no such input.
+            var value = item.GetType().GetProperty("ChannelId")?.GetValue(item);
+            var channel = value is Guid guid ? guid : Guid.TryParse(value as string, out var parsed) ? parsed : (Guid?)null;
+            return new(true, item.GetBaseItemKind(), item switch { MediaBrowser.Controller.Entities.TV.Episode ep => ep.SeriesId, MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId, _ => Guid.Empty },
+                item is MediaBrowser.Controller.Entities.TV.Episode episode ? episode.SeasonId : Guid.Empty,
+                item.ParentIndexNumber, item.IndexNumber, channel);
+        }
+        var item = Item(id);
+        if (!_references.TryGetValue(id, out var captured)) _references[id] = captured = Read(item);
+        PrivacyReads.Query("projection-references:" + id.ToString("N"), Newtonsoft.Json.JsonConvert.SerializeObject(captured),
+            check => Newtonsoft.Json.JsonConvert.SerializeObject(Read(check.Item(id))));
+        return captured;
+    }
+    private sealed record CapturedText(bool Present, string? Value)
+    {
+        [Newtonsoft.Json.JsonIgnore]
+        public string Proof => Newtonsoft.Json.JsonConvert.SerializeObject(this);
+    }
+
+    /// <summary>Captures one consumed field, and replays the same immutable evidence on memo hits.</summary>
+    public string? Text(Guid? id, TextMember member)
+    {
+        if (id is not { } key || key == Guid.Empty) return null;
+        static CapturedText Read(BaseItem? item, TextMember field) => new(item != null, item == null ? null : field switch
+        {
+            TextMember.Name => item.Name, TextMember.SortName => item.SortName,
+            TextMember.OriginalTitle => item.OriginalTitle, TextMember.OfficialRating => item.OfficialRating,
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        });
+        var item = Item(key);
+        if (!_text.TryGetValue((key, member), out var captured)) _text[(key, member)] = captured = Read(item, member);
+        PrivacyReads.Query("text:" + key.ToString("N") + ":" + member, captured.Proof, check => Read(check.Item(key), member).Proof);
+        return captured.Value;
+    }
+
+    /// <summary>The actual membership/spelling consumed, rather than a fingerprint of unrelated list entries.</summary>
+    public string? Entry(Guid? id, VocabularyList list, string? candidate)
+    {
+        if (id is not { } key || key == Guid.Empty || candidate == null) return null;
+        static CapturedText Read(BaseItem? item, VocabularyList list, string candidate)
+            => new(item != null, EntryIn(item == null ? null : list == VocabularyList.Genres ? item.Genres : item.Studios, candidate));
+        var item = Item(key);
+        if (!_vocabulary.TryGetValue((key, list, candidate), out var captured))
+            _vocabulary[(key, list, candidate)] = captured = Read(item, list, candidate);
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidate)));
+        PrivacyReads.Query("vocabulary:" + key.ToString("N") + ":" + list + ":" + digest, captured.Proof,
+            check => Read(check.Item(key), list, candidate).Proof);
+        return captured.Value;
+    }
+
+    private void Consumed(Guid id, BaseItem? item)
+    {
+        var library = Library!;
+        PrivacyReads.Judged(library, id, item);
+    }
+
     /// <summary>Whether the library holds an entity of this kind with this id and exactly this name.</summary>
-    public bool Named<T>(Guid id, string? name) where T : BaseItem => name != null && Item(id) is T entity && string.Equals(entity.Name, name, StringComparison.Ordinal);
+    public bool Named<T>(Guid id, string? name) where T : BaseItem => name != null && Item(id) is T && string.Equals(Text(id, TextMember.Name), name, StringComparison.Ordinal);
 
     /// <summary>
     /// The title-level item a protected item's vocabulary (genres, studios, people) is copied from: an episode's or season's
@@ -189,19 +280,49 @@ public sealed class PrivacyValueHost
         return item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : item;
     }
 
+    /// <summary>The captured owning title's id, without lending a mutable entity to projection rules.</summary>
+    public Guid? TitleId(Guid id) => Title(id)?.Id;
+
+    /// <summary>The captured ownership rule, as a scalar projection input.</summary>
+    public bool IsExtra(Guid id) => Library != null && Item(id) is { } item && PrivacyIdentities.ExtraOwner(Library, item) != Guid.Empty;
+
+    /// <summary>The current ownership classifier's constructed extra label.</summary>
+    public string ExtraName(Guid id, BaseItemKind kind)
+        => Item(id) is { } item ? PrivacyValues.ExtraLabel(item, kind) : "Extra";
+
     /// <summary>The title's own entry for a name in one of its lists (as the title spells it), or null.</summary>
     public static string? EntryIn(IEnumerable<string>? list, string? name)
         => name == null ? null : list?.FirstOrDefault(entry => string.Equals(entry, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The title's own people (the library's people of that item), memoized.</summary>
-    public IReadOnlyList<PersonInfo> People(BaseItem title)
+    public sealed record PersonValue(string? Name, string? Role, string? Type);
+
+    public IReadOnlyList<PersonValue> People(BaseItem title)
     {
-        if (_people.TryGetValue(title.Id, out var known)) return known;
-        IReadOnlyList<PersonInfo> people;
-        try { people = Library?.GetPeople(title) ?? []; }
-        catch (Exception) { people = []; }
-        return _people[title.Id] = people;
+        static PersonValue Capture(PersonInfo person) => new(person.Name, person.Role, Convert.ToString(person.Type, CultureInfo.InvariantCulture));
+        if (!_people.TryGetValue(title.Id, out var people))
+        {
+            try { people = Array.AsReadOnly((Library?.GetPeople(title) ?? []).Select(Capture).ToArray()); }
+            catch (Exception) { people = []; }
+            _people[title.Id] = people;
+        }
+        // The names a protected item may keep are the title's own: a fact of the answer (memo hits included).
+        if (Library is { } library)
+        {
+            static string Names(IEnumerable<PersonValue> list) => Newtonsoft.Json.JsonConvert.SerializeObject(list);
+            PrivacyReads.Query("people:" + title.Id.ToString("N"), Names(people), check =>
+            {
+                try { return check.Item(title.Id) is { } live ? Names((library.GetPeople(live) ?? []).Select(Capture)) : null; }
+                catch (Exception) { return null; }
+            });
+        }
+        return people;
     }
+
+    /// <summary>A title-owned person's spelling, with the people query's complete proof replayed.</summary>
+    public string? PersonName(Guid? title, string? candidate)
+        => title is { } id && candidate != null && Item(id) is { } item
+            ? People(item).FirstOrDefault(p => string.Equals(p.Name, candidate, StringComparison.OrdinalIgnoreCase))?.Name : null;
 }
 
 /// <summary>
@@ -338,8 +459,8 @@ public static partial class PrivacyValues
 
         public PrivacyReveal Reveal { get; init; } = PrivacyReveal.None;
 
-        /// <summary>The protected item (kind, numbers, ids) the walk is projecting.</summary>
-        public BaseItemDto? Item { get; init; }
+        /// <summary>The protected subject captured at payload ingestion.</summary>
+        public Guid SubjectId { get; init; }
 
         /// <summary>An absent title the native details facade built from provider data (no library entity).</summary>
         public bool Synthetic { get; init; }
@@ -354,8 +475,45 @@ public static partial class PrivacyValues
     /// <summary>One member's rule: what the projection keeps of its value (null drops it).</summary>
     internal sealed record Rule(string Name, Func<object?, Scope, Context, object?> Apply);
 
-    /// <summary>The member being projected: its source object, declared type and position among its siblings.</summary>
-    internal readonly record struct Context(object Source, Type Declared, int Index);
+    internal sealed record ProjectionInputs
+    {
+        public Guid Id { get; init; }
+        public BaseItemKind Type { get; init; }
+        public Guid? SeriesId { get; init; }
+        public Guid? ChannelId { get; init; }
+        public int? ParentIndexNumber { get; init; }
+        public int? IndexNumber { get; init; }
+        public string? Language { get; init; }
+        public bool IsExternalUrl { get; init; }
+        public MediaBrowser.Model.MediaInfo.MediaProtocol Protocol { get; init; }
+        public long ChapterStart { get; init; } = long.MaxValue;
+        public string? VersionName { get; init; }
+    }
+    /// <summary>Pure rules receive captured scalar inputs, never the mutable source carrier.</summary>
+    internal readonly record struct Context(ProjectionInputs Input, Type Declared, int Index);
+
+    // The named raw-carrier ingestion adapter. Library references have live
+    // evidence; media primitives are the frozen payload validated by the table.
+    private static ProjectionInputs CaptureInputs(object source, Scope scope, int index)
+    {
+        if (source is BaseItemDto dto)
+        {
+            if (scope.Mode == Mode.Stub) return CaptureControlInputs(dto);
+            if (SyntheticId.HasNamespace(dto.Id)) return new() {Id=dto.Id,Type=dto.Type,SeriesId=dto.SeriesId,ChannelId=dto.ChannelId,ParentIndexNumber=dto.ParentIndexNumber,IndexNumber=dto.IndexNumber};
+            var refs=scope.Host.References(dto.Id);
+            return new() {Id=dto.Id,Type=refs.Present?refs.Kind:dto.Type,SeriesId=refs.Series==Guid.Empty?null:refs.Series,
+                ChannelId=refs.Channel,ParentIndexNumber=refs.Parent,IndexNumber=refs.Index};
+        }
+        return source switch
+        {
+            MediaStream stream => new() {Language=stream.Language,IsExternalUrl=stream.IsExternalUrl==true},
+            MediaSourceInfo media => new() {Protocol=media.Protocol,VersionName=media.Name==null || scope.Mode!=Mode.Stub && scope.Reveal.TitleFamily ? null : CaptureVersionLabel(media,scope,index)},
+            ChapterInfo chapter => new() {ChapterStart=chapter.StartPositionTicks},
+            SearchHint hint => new() {ChannelId=scope.Host.References(hint.Id).Channel},
+            BaseTimerInfoDto timer => new() {ChannelId=timer.ChannelId},
+            _ => new()
+        };
+    }
 
     // ---------------------------------------------------------------------------------------------------------------
     // Entry points.
@@ -366,15 +524,43 @@ public static partial class PrivacyValues
     /// neutral name.
     /// </summary>
     public static BaseItemDto Stub(BaseItemDto dto, PrivacyValueHost host)
-        => (BaseItemDto)Rebuild(dto, typeof(BaseItemDto), new Scope { Host = host, Mode = Mode.Stub, Item = dto }, 0)!;
+        => (BaseItemDto)RebuildCaptured(dto, typeof(BaseItemDto), new Scope { Host = host, Mode = Mode.Stub, SubjectId = dto.Id }, 0, CaptureControlInputs(dto))!;
+
+    // A control-only stub authorizes no title or reveal. Its host-required
+    // identifiers and numbers belong to the frozen native payload, so the safe
+    // fallback can be built without asking the library after final validation.
+    private static ProjectionInputs CaptureControlInputs(BaseItemDto dto)
+        => new() { Id=dto.Id, Type=dto.Type, SeriesId=dto.SeriesId, ChannelId=dto.ChannelId,
+            ParentIndexNumber=dto.ParentIndexNumber, IndexNumber=dto.IndexNumber };
 
     /// <summary>A guarded item as Spoiler Guard delivers it: a new item of the classified type, every value through its rule.</summary>
     public static BaseItemDto Guarded(BaseItemDto dto, PrivacyReveal reveal, PrivacyValueHost host)
-        => (BaseItemDto)Rebuild(dto, typeof(BaseItemDto), new Scope { Host = host, Mode = Mode.Guarded, Reveal = reveal, Item = dto, Synthetic = SyntheticId.HasNamespace(dto.Id) }, 0)!;
+    {
+        var synthetic = SyntheticId.HasNamespace(dto.Id);
+        var captured = synthetic ? dto : CaptureDto(dto, host);
+        return (BaseItemDto)Rebuild(captured, typeof(BaseItemDto), new Scope { Host = host, Mode = Mode.Guarded, Reveal = reveal, SubjectId = captured.Id, Synthetic = synthetic }, 0)!;
+    }
+
+    private static readonly MethodInfo CloneObject = typeof(object).GetMethod("MemberwiseClone", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    // Named payload-ingestion adapter: owns a shallow snapshot; the pure walk
+    // cannot borrow a different series/channel or numbering from a stale DTO.
+    private static BaseItemDto CaptureDto(BaseItemDto dto, PrivacyValueHost host)
+    {
+        var captured = (BaseItemDto)CloneObject.Invoke(dto, null)!;
+        var refs = host.References(dto.Id);
+        if (refs.Present) captured.Type = refs.Kind;
+        captured.SeriesId = refs.Series == Guid.Empty ? null : refs.Series;
+        captured.SeasonId = refs.Season == Guid.Empty ? null : refs.Season;
+        captured.ParentIndexNumber = refs.Parent;
+        captured.IndexNumber = refs.Index;
+        captured.ChannelId = refs.Channel;
+        return captured;
+    }
 
     /// <summary>A guarded item's media source (an opened item's playback info).</summary>
     public static MediaSourceInfo Source(MediaSourceInfo source, BaseItemKind kind, PrivacyReveal reveal, PrivacyValueHost host, int index)
-        => (MediaSourceInfo)Rebuild(source, typeof(MediaSourceInfo), new Scope { Host = host, Mode = Mode.Guarded, Reveal = reveal, Item = new BaseItemDto { Type = kind } }, index)!;
+        => (MediaSourceInfo)Rebuild(source, typeof(MediaSourceInfo), new Scope { Host = host, Mode = Mode.Guarded, Reveal = reveal }, index)!;
 
     /// <summary>A guarded item's image list entry (its route's image infos).</summary>
     public static ImageInfo Image(ImageInfo image, PrivacyReveal reveal, PrivacyValueHost host)
@@ -383,8 +569,13 @@ public static partial class PrivacyValues
     /// <summary>A search hint of a guarded item: its name and series constructed (<see cref="NameOf"/>), every other value through its rule.</summary>
     public static SearchHint Hint(SearchHint hint, PrivacyIdentity identity, PrivacyReveal reveal, PrivacyValueHost host)
     {
-        var name = NameOf(identity.Kind, identity.ItemId, hint.ParentIndexNumber, hint.IndexNumber, hint.Name, reveal, host);
-        return (SearchHint)Rebuild(hint, typeof(SearchHint), new Scope { Host = host, Mode = Mode.Row, Reveal = reveal, Name = name, Series = SeriesNameOf(identity, host) }, 0)!;
+        var captured = (SearchHint)CloneObject.Invoke(hint, null)!;
+        var refs = host.References(identity.ItemId);
+        captured.ParentIndexNumber = refs.Parent;
+        captured.IndexNumber = refs.Index;
+        captured.ChannelId = refs.Channel;
+        var name = NameOf(identity.Kind, identity.ItemId, refs.Parent, refs.Index, hint.Name, reveal, host);
+        return (SearchHint)Rebuild(captured, typeof(SearchHint), new Scope { Host = host, Mode = Mode.Row, Reveal = reveal, Name = name, Series = SeriesNameOf(identity, host) }, 0)!;
     }
 
     /// <summary>
@@ -410,16 +601,16 @@ public static partial class PrivacyValues
         var label = "an item";
         if (identity != null)
         {
-            var item = host.Item(identity.ItemId);
+            var item = host.References(identity.ItemId);
             label = identity.Kind switch
             {
-                BaseItemKind.Episode => item is MediaBrowser.Controller.Entities.TV.Episode episode
-                    ? Join(SeriesNameOf(identity, host) ?? episode.SeriesName, NameOf(BaseItemKind.Episode, episode.Id, episode.ParentIndexNumber, episode.IndexNumber, null, PrivacyReveal.None, host)!)
+                BaseItemKind.Episode => item.Present
+                    ? Join(SeriesNameOf(identity, host), NameOf(BaseItemKind.Episode, identity.ItemId, item.Parent, item.Index, null, PrivacyReveal.None, host)!)
                     : "an episode",
-                BaseItemKind.Season => item is MediaBrowser.Controller.Entities.TV.Season season
-                    ? Join(SeriesNameOf(identity, host), NameOf(BaseItemKind.Season, season.Id, null, season.IndexNumber, null, PrivacyReveal.None, host)!)
+                BaseItemKind.Season => item.Present
+                    ? Join(SeriesNameOf(identity, host), NameOf(BaseItemKind.Season, identity.ItemId, null, item.Index, null, PrivacyReveal.None, host)!)
                     : "a season",
-                _ => item != null ? NameOf(identity.Kind, identity.ItemId, null, null, null, PrivacyReveal.None, host) ?? "an item" : "an item",
+                _ => item.Present ? NameOf(identity.Kind, identity.ItemId, null, null, null, PrivacyReveal.None, host) ?? "an item" : "an item",
             };
         }
         var playing = type is "VideoPlayback" or "AudioPlayback";
@@ -445,23 +636,27 @@ public static partial class PrivacyValues
     /// <param name="known">The library item, when the caller already holds it (else the library is asked by id).</param>
     internal static string? NameOf(BaseItemKind kind, Guid id, int? parentIndex, int? index, string? original, PrivacyReveal reveal, PrivacyValueHost host, bool synthetic = false, BaseItem? known = null)
     {
-        if (Protects(kind)) return reveal.Title ? original : kind == BaseItemKind.Episode ? NeutralNames.Episode(parentIndex, index) : NeutralNames.Season(index);
-        var item = synthetic ? null : known ?? host.Item(id);
-        // An extra's own name is its file's or provider's text (a featurette's "…ending explained"): constructed from its
-        // extra type unless Spoiler Guard reveals the title family.
-        if (item is { } extra && PrivacyIdentities.ExtraOwner(host.Library, extra) != Guid.Empty)
-            return reveal.TitleFamily ? extra.Name : ExtraLabel(extra, kind);
-        if (item is { } entity)
+        if (Protects(kind))
         {
-            try { return entity.Name ?? kind.ToString(); }
-            catch (Exception) { return kind.ToString(); }
+            if (!synthetic && host.Library is { } library)
+            {
+                var numbers = PrivacyReads.Numbers(library, id);
+                (parentIndex, index) = (numbers.Parent, numbers.Index);
+            }
+            return reveal.Title ? original : kind == BaseItemKind.Episode ? NeutralNames.Episode(parentIndex, index) : NeutralNames.Season(index);
         }
+        // A caller's retained entity cannot skip the vocabulary accessor's
+        // live capture and complete proof (including memo hits).
+        if (!synthetic && host.IsExtra(id))
+            return reveal.TitleFamily ? host.Text(id, PrivacyValueHost.TextMember.Name) : host.ExtraName(id, kind);
+        if (!synthetic && host.References(id).Present)
+            return host.Text(id, PrivacyValueHost.TextMember.Name) ?? kind.ToString();
         return (synthetic ? original : null) ?? kind.ToString();
     }
 
     /// <summary>The series a protected episode or season belongs to, by the library's own name; null for any other kind.</summary>
     internal static string? SeriesNameOf(PrivacyIdentity identity, PrivacyValueHost host)
-        => identity.Kind is BaseItemKind.Episode or BaseItemKind.Season ? host.Item(identity.OwnerId)?.Name : null;
+        => identity.Kind is BaseItemKind.Episode or BaseItemKind.Season ? host.Text(identity.OwnerId, PrivacyValueHost.TextMember.Name) : null;
 
     /// <summary>
     /// A row naming a protected item (a hidden programme's timer or series timer, a protected item's activity entry): a new
@@ -487,6 +682,9 @@ public static partial class PrivacyValues
     }
 
     private static object? Rebuild(object value, Type known, Scope scope, int index)
+        => RebuildCaptured(value, known, scope, index, CaptureInputs(value, scope, index));
+
+    private static object? RebuildCaptured(object value, Type known, Scope scope, int index, ProjectionInputs inputs)
     {
         var copy = known.GetConstructor(Type.EmptyTypes) != null ? Activator.CreateInstance(known)! : RuntimeHelpers.GetUninitializedObject(known);
         foreach (var (property, rule) in Plan(known, scope.Mode))
@@ -494,7 +692,7 @@ public static partial class PrivacyValues
             var original = property.GetValue(value);
             // Shapes are host-required too: a collection the host sent stays a collection (empty when its values are
             // withheld), because the host's clients index it (RequiredHttpHeaders.length, MediaStreams.filter).
-            var kept = rule.Apply(original, scope, new Context(value, property.PropertyType, index)) ?? (original != null ? Empty(property.PropertyType) : null);
+            var kept = rule.Apply(original, scope, new Context(inputs, property.PropertyType, index)) ?? (original != null ? Empty(property.PropertyType) : null);
             if (kept == null && property.PropertyType.IsValueType && Nullable.GetUnderlyingType(property.PropertyType) == null) continue;
             property.SetValue(copy, kept);
         }
@@ -613,19 +811,23 @@ public static partial class PrivacyValues
     /// a movie or series is its own title): never the protected item's own names, which Jellyfin creates its genre, studio
     /// and person entities FROM (an entity's existence vouches for nothing).
     /// </summary>
-    private static BaseItem? TitleOf(Scope s) => s.Item is { } item ? s.Host.Title(item.Id) : null;
+    private static Guid? TitleOf(Scope s) => s.SubjectId != Guid.Empty ? s.Host.TitleId(s.SubjectId) : null;
 
     /// <summary>A name in the title's own list, as the title spells it (an absent title: the facade's own construction).</summary>
-    private static Rule TitleEntry(string list, Func<BaseItem, IEnumerable<string>?> entries)
-        => Vals("the title's own " + list + " entry (copied from the series / owner / title, never the protected item's)", (t, s, _) => s.Synthetic ? t : PrivacyValueHost.EntryIn(TitleOf(s) is { } title ? entries(title) : null, t));
+    private static Rule TitleEntry(string list, PrivacyValueHost.VocabularyList entries)
+        => Vals("the title's own " + list + " entry (copied from the series / owner / title, never the protected item's)", (t, s, _) => s.Synthetic ? t : s.Host.Entry(TitleOf(s), entries, t));
 
     /// <summary>Name/id pairs whose name is in the title's own list: the title's spelling, the host's id.</summary>
-    private static Rule TitlePairs(string list, Func<BaseItem, IEnumerable<string>?> entries) => new("the title's own " + list + " (copied from the series / owner / title)", (v, s, c) =>
+    private static Rule TitlePairs(string list, PrivacyValueHost.VocabularyList entries) => new("the title's own " + list + " (copied from the series / owner / title)", (v, s, c) =>
         v is IEnumerable<NameGuidPair> pairs
-            ? Typed(c.Declared, pairs.Where(p => p != null)
-                .Select(p => (Pair: p, Name: s.Synthetic ? p.Name : PrivacyValueHost.EntryIn(TitleOf(s) is { } title ? entries(title) : null, p.Name)))
-                .Where(p => p.Name != null).Select(p => new NameGuidPair { Name = p.Name, Id = p.Pair.Id }).ToArray())
+            ? Typed(c.Declared, CapturePairs(pairs)
+                .Select(p => (p.Id, Name: s.Synthetic ? p.Name : s.Host.Entry(TitleOf(s), entries, p.Name)))
+                .Where(p => p.Name != null).Select(p => new NameGuidPair { Name = p.Name, Id = p.Id }).ToArray())
             : null);
+
+    // Raw payload adapter: the pure vocabulary rule receives owned scalar pairs.
+    private static (Guid Id, string? Name)[] CapturePairs(IEnumerable<NameGuidPair> pairs)
+        => pairs.Where(p => p != null).Select(p => (p.Id, (string?)p.Name)).ToArray();
 
     /// <summary>A value only an absent title's facade constructs (a library item's own artist and album tags are not trusted).</summary>
     private static Rule FacadeOnly(Rule rule) => new("the facade's own (absent titles); a library item's dropped", (v, s, c) => s.Synthetic ? rule.Apply(v, s, c) : null);
@@ -676,18 +878,18 @@ public static partial class PrivacyValues
     /// A text the library vouches for: the named entity's own field (the item's own title for a kind Spoiler Guard does not
     /// rename, its series' name); for an absent title the facade's own construction; otherwise nothing.
     /// </summary>
-    private static string? Entity(Scope s, Guid? id, Func<BaseItem, string?> field, object? facade)
+    private static string? Entity(Scope s, Guid? id, PrivacyValueHost.TextMember field, object? facade)
     {
-        if (s.Host.Item(id) is not { } entity) return s.Synthetic ? facade as string : null;
+        if (s.Synthetic) return facade as string;
         // A computed entity field (a sort name built from the server's settings) that cannot be computed is left out.
-        try { return field(entity); }
+        try { return s.Host.Text(id, field); }
         catch (Exception) { return null; }
     }
 
     private static bool Protects(BaseItemKind kind) => kind is BaseItemKind.Episode or BaseItemKind.Season;
 
     /// <summary>Whether the projected item is an extra another title owns (a library item with an owner).</summary>
-    private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.Item(((BaseItemDto)c.Source).Id) is { } item && PrivacyIdentities.ExtraOwner(s.Host.Library, item) != Guid.Empty;
+    private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.IsExtra(c.Input.Id);
 
     /// <summary>An extra's constructed name: what kind of extra it is ("Trailer", "Theme video", "Behind the scenes").</summary>
     internal static string ExtraLabel(BaseItem extra, BaseItemKind kind) => PrivacyIdentities.ExtraKind(extra) switch
@@ -735,13 +937,13 @@ public static partial class PrivacyValues
         {
             ["Name"] = Construct("constructed: the stub's neutral name, else NameOf (an episode's or season's neutral name, an extra's kind (\"Trailer\"), a movie's or series' own title from the library, the original only where a switch reveals it)", (v, s, c) =>
             {
-                var item = (BaseItemDto)c.Source;
+                var item = c.Input;
                 return s.Mode == Mode.Stub ? PrivacyFieldClassification.HiddenName : NameOf(item.Type, item.Id, item.ParentIndexNumber, item.IndexNumber, v as string, s.Reveal, s.Host, s.Synthetic);
             }),
             ["SortName"] = Construct("episode/season: dropped unless revealed; an extra: dropped unless its title family is revealed; else the title's own sort name", (v, s, c) =>
-                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, ((BaseItemDto)c.Source).Id, e => e.SortName, v)),
+                Protects(c.Input.Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, c.Input.Id, PrivacyValueHost.TextMember.SortName, v)),
             ["OriginalTitle"] = Construct("episode/season: dropped unless revealed; an extra: dropped unless its title family is revealed; else the title's own original title", (v, s, c) =>
-                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, ((BaseItemDto)c.Source).Id, e => e.OriginalTitle, v)),
+                Protects(c.Input.Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, c.Input.Id, PrivacyValueHost.TextMember.OriginalTitle, v)),
             ["ForcedSortName"] = TitleFamily,
             ["EpisodeTitle"] = TitleFamily,
             ["Path"] = TitleFamily,
@@ -751,24 +953,24 @@ public static partial class PrivacyValues
             ["Overview"] = Construct("kept when revealed, else the placeholder (when there was one)", (v, s, _) => s.Reveal.Overview ? v : string.IsNullOrEmpty(v as string) ? null : s.Reveal.Placeholder),
             ["Taglines"] = Construct("kept when revealed, else empty", (v, s, _) => s.Reveal.Taglines ? v : v == null ? null : Array.Empty<string>()),
             ["Tags"] = Construct("kept when revealed, else empty", (v, s, _) => s.Reveal.Tags ? v : v == null ? null : Array.Empty<string>()),
-            ["SeriesName"] = Construct("the series entity's name", (v, s, c) => Entity(s, ((BaseItemDto)c.Source).SeriesId, e => e.Name, v)),
-            ["SeasonName"] = Construct("kept when revealed, else the neutral season name", (v, s, c) => v == null ? null : s.Reveal.Title ? v : NeutralNames.Season(((BaseItemDto)c.Source).ParentIndexNumber)),
+            ["SeriesName"] = Construct("the series entity's name", (v, s, c) => Entity(s, c.Input.SeriesId, PrivacyValueHost.TextMember.Name, v)),
+            ["SeasonName"] = Construct("kept when revealed, else the neutral season name", (v, s, c) => v == null ? null : s.Reveal.Title ? v : NeutralNames.Season(c.Input.ParentIndexNumber)),
             ["Album"] = FacadeOnly(Keep),
             ["AlbumArtist"] = FacadeOnly(Keep),
             ["AlbumArtists"] = FacadeOnly(Keep),
             ["Artists"] = FacadeOnly(Keep),
             ["ArtistItems"] = FacadeOnly(Keep),
-            ["SeriesStudio"] = Val("the title's own studio entry (copied from the series / owner / title)", (t, s, _) => s.Synthetic ? t : PrivacyValueHost.EntryIn(TitleOf(s)?.Studios, t)),
-            ["Genres"] = TitleEntry("genre", e => e.Genres),
-            ["GenreItems"] = TitlePairs("genres", e => e.Genres),
-            ["Studios"] = TitlePairs("studios", e => e.Studios),
+            ["SeriesStudio"] = Val("the title's own studio entry (copied from the series / owner / title)", (t, s, _) => s.Synthetic ? t : s.Host.Entry(TitleOf(s), PrivacyValueHost.VocabularyList.Studios, t)),
+            ["Genres"] = TitleEntry("genre", PrivacyValueHost.VocabularyList.Genres),
+            ["GenreItems"] = TitlePairs("genres", PrivacyValueHost.VocabularyList.Genres),
+            ["Studios"] = TitlePairs("studios", PrivacyValueHost.VocabularyList.Studios),
             ["People"] = Nested(typeof(BaseItemPerson)),
             ["Chapters"] = Nested(typeof(ChapterInfo)),
             ["MediaSources"] = Nested(typeof(MediaSourceInfo)),
             ["MediaStreams"] = Nested(typeof(MediaStream)),
             ["UserData"] = Nested(typeof(UserItemDataDto)),
             ["CurrentProgram"] = Drop,
-            ["ChannelName"] = Construct("the channel entity's name", (v, s, c) => Entity(s, ((BaseItemDto)c.Source).ChannelId, e => e.Name, v)),
+            ["ChannelName"] = Construct("the channel entity's name", (v, s, c) => Entity(s, c.Input.ChannelId, PrivacyValueHost.TextMember.Name, v)),
             ["CameraMake"] = Drop,
             ["CameraModel"] = Drop,
             ["Software"] = Drop,
@@ -814,7 +1016,7 @@ public static partial class PrivacyValues
             ["Comment"] = TitleFamily,
             ["Path"] = TitleFamily,
             ["Language"] = Val("the host's language list entry", (t, s, _) => s.Host.Language(t)),
-            ["LocalizedLanguage"] = Construct("the host's own display name of the language list entry (constructed)", (v, s, c) => v == null ? null : s.Host.LanguageName(((MediaStream)c.Source).Language)),
+            ["LocalizedLanguage"] = Construct("the host's own display name of the language list entry (constructed)", (v, s, c) => v == null ? null : s.Host.LanguageName(c.Input.Language)),
             ["LocalizedDefault"] = LabelOf("Default"),
             ["LocalizedExternal"] = LabelOf("External"),
             ["LocalizedForced"] = LabelOf("Forced"),
@@ -835,18 +1037,18 @@ public static partial class PrivacyValues
             ["CodecTimeBase"] = Str("rational", PrivacyTokens.Rational),
             ["NalLengthSize"] = Str("number", PrivacyTokens.Number),
             ["DeliveryUrl"] = Construct("rebuilt from the host's subtitle route template (named parameters, the host's file name \"Stream\", the caller's token); a raw external URL only when revealed", (v, s, c) =>
-                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : ((MediaStream)c.Source).IsExternalUrl == true ? null : PrivacyTokens.DeliveryUrl(v as string, s.Host.Caller)),
+                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : c.Input.IsExternalUrl == true ? null : PrivacyTokens.DeliveryUrl(v as string, s.Host.Caller)),
         },
         [typeof(MediaSourceInfo)] = new(StringComparer.Ordinal)
         {
             ["Name"] = Construct("kept when revealed, else a label from the version's validated video stream (\"1080p HEVC SDR\") or \"Version N\"", (v, s, c) =>
-                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : VersionLabel((MediaSourceInfo)c.Source, s, c.Index)),
+                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : c.Input.VersionName),
             ["Path"] = TitleFamily,
             // A remote source's Path is the URL a client direct-plays (jellyfin-web plays MediaSource.Path when it may):
             // withheld, the source is offered for the host's own stream route instead (Videos/{id}/stream, which the server
             // proxies), so the client never needs the remote URL and its file name.
             ["SupportsDirectPlay"] = Construct("kept for a file source; a remote source whose URL is withheld: false (the client streams it through the host's route)", (v, s, c) =>
-                v is true && ((MediaSourceInfo)c.Source).Protocol != MediaBrowser.Model.MediaInfo.MediaProtocol.File && !(s.Mode != Mode.Stub && s.Reveal.TitleFamily) ? false : v),
+                v is true && c.Input.Protocol != MediaBrowser.Model.MediaInfo.MediaProtocol.File && !(s.Mode != Mode.Stub && s.Reveal.TitleFamily) ? false : v),
             ["EncoderPath"] = Drop,
             ["OpenToken"] = Drop,
             ["RequiredHttpHeaders"] = Drop,
@@ -872,14 +1074,14 @@ public static partial class PrivacyValues
         [typeof(ChapterInfo)] = new(StringComparer.Ordinal)
         {
             ["Name"] = Construct("kept when revealed or already watched, else \"Chapter N\"", (v, s, c) =>
-                v == null ? null : s.Reveal.ChapterNames || Watched((ChapterInfo)c.Source, s) ? v : string.Create(CultureInfo.InvariantCulture, $"Chapter {c.Index + 1}")),
-            ["ImagePath"] = Construct("kept when revealed or already watched, else dropped", (v, s, c) => s.Reveal.TitleFamily || Watched((ChapterInfo)c.Source, s) ? v : null),
+                v == null ? null : s.Reveal.ChapterNames || Watched(c.Input.ChapterStart, s) ? v : string.Create(CultureInfo.InvariantCulture, $"Chapter {c.Index + 1}")),
+            ["ImagePath"] = Construct("kept when revealed or already watched, else dropped", (v, s, c) => s.Reveal.TitleFamily || Watched(c.Input.ChapterStart, s) ? v : null),
             ["ImageTag"] = Tag,
         },
         [typeof(BaseItemPerson)] = new(StringComparer.Ordinal)
         {
             ["Name"] = Val("the title's own person (copied from the series / owner / title; an episode's guest leaves)", (t, s, _) =>
-                s.Synthetic ? t : TitleOf(s) is { } title ? s.Host.People(title).FirstOrDefault(p => string.Equals(p.Name, t, StringComparison.OrdinalIgnoreCase))?.Name : null),
+                s.Synthetic ? t : s.Host.PersonName(TitleOf(s), t)),
             ["Role"] = TitleFamily,
             ["PrimaryImageTag"] = Tag,
             ["ImageBlurHashes"] = BlurHashes,
@@ -903,7 +1105,7 @@ public static partial class PrivacyValues
             ["Album"] = Drop,
             ["AlbumArtist"] = Drop,
             ["Artists"] = Drop,
-            ["ChannelName"] = Construct("the channel entity's name", (_, s, c) => Entity(s, ((SearchHint)c.Source).ChannelId, e => e.Name, null)),
+            ["ChannelName"] = Construct("the channel entity's name", (_, s, c) => Entity(s, c.Input.ChannelId, PrivacyValueHost.TextMember.Name, null)),
             ["Status"] = Val("the status list's entry", t => PrivacyTokens.OneOf(t, _statuses)),
             ["BackdropImageItemId"] = IdText,
             ["ThumbImageItemId"] = IdText,
@@ -930,7 +1132,7 @@ public static partial class PrivacyValues
         ["Name"] = Drop,
         ["Overview"] = Drop,
         ["ProgramInfo"] = Drop,
-        ["ChannelName"] = Construct("the channel entity's name", (_, s, c) => Entity(s, ((BaseTimerInfoDto)c.Source).ChannelId, e => e.Name, null)),
+        ["ChannelName"] = Construct("the channel entity's name", (_, s, c) => Entity(s, c.Input.ChannelId, PrivacyValueHost.TextMember.Name, null)),
         ["ServiceName"] = Drop,
         ["Id"] = IdText,
         ["ServerId"] = IdText,
@@ -952,10 +1154,10 @@ public static partial class PrivacyValues
     };
 
     /// <summary>Whether a chapter starts before the point the viewer has watched through (a movie's progressive strip).</summary>
-    private static bool Watched(ChapterInfo chapter, Scope s) => s.Reveal.WatchedThrough is { } through && chapter.StartPositionTicks < through;
+    private static bool Watched(long start, Scope s) => s.Reveal.WatchedThrough is { } through && start < through;
 
     /// <summary>A movie version's label, built from its own validated video stream ("1080p HEVC SDR"), or "Version N".</summary>
-    private static string VersionLabel(MediaSourceInfo source, Scope s, int index)
+    private static string CaptureVersionLabel(MediaSourceInfo source, Scope s, int index)
     {
         var video = source.MediaStreams?.FirstOrDefault(m => m is { Type: MediaStreamType.Video });
         var label = video != null && Rebuild(video, typeof(MediaStream), s, 0) is MediaStream rebuilt ? rebuilt.DisplayTitle : null;

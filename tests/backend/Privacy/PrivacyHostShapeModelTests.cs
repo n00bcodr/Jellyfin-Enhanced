@@ -10,6 +10,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Querying;
 using MediaBrowser.Model.Search;
@@ -137,6 +138,8 @@ public class PrivacyHostShapeModelTests
         public Mock<IUserManager> Users { get; } = new();
         /// <summary>The host's user-data store (its saves raise <c>UserDataSaved</c>).</summary>
         public Mock<IUserDataManager> UserData { get; } = new();
+        public Mock<MediaBrowser.Controller.Chapters.IChapterManager> Chapters { get; } = new();
+        private Dictionary<Guid, List<ChapterInfo>> ChapterTimelines { get; } = new();
         public SpoilerFieldStripFilter Strip { get; }
         public SpoilerPresentation Spoilers { get; }
         public Guid Admin { get; }
@@ -151,6 +154,7 @@ public class PrivacyHostShapeModelTests
             config.SpoilerStripSeriesOverview = true; config.SpoilerStripRatings = true; config.SpoilerStripReviews = true;
             Admin = G(Data.Roles["user:admin"]); Viewer = G(Data.Roles["user:viewer"]);
             BuildLibrary();
+            Chapters.Setup(c => c.GetChapters(It.IsAny<Guid>())).Returns((Guid id) => ChapterTimelines.GetValueOrDefault(id) ?? []);
             Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>()))
                 .Returns((InternalItemsQuery q) => (q.ItemIds ?? []).Select(id => Items.GetValueOrDefault(id)).OfType<BaseItem>().ToList());
             Library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => Items.GetValueOrDefault(id)!);
@@ -163,7 +167,7 @@ public class PrivacyHostShapeModelTests
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object, new SpoilerIdentityService(Users.Object, F.Core.Logger), F.Core.Logger);
             var resolver = new SpoilerUserResolver(F.Core.Manager, Library.Object, F.Core.Logger, identities);
             _next = new SpoilerNextUnwatchedService(Library.Object, Users.Object, data.Object, F.Core.Logger);
-            Strip = PrivacyTestHost.Create<SpoilerFieldStripFilter>(resolver, Library.Object, Users.Object, data.Object, _next, Localization);
+            Strip = PrivacyTestHost.Create<SpoilerFieldStripFilter>(resolver, Library.Object, Users.Object, data.Object, _next, Localization, Chapters.Object);
             Spoilers = new SpoilerPresentation(F.Core.Manager, Library.Object, Users.Object, data.Object);
         }
 
@@ -179,6 +183,8 @@ public class PrivacyHostShapeModelTests
                 switch (node)
                 {
                     case JsonObject o:
+                        if (Guid.TryParse(o["Id"]?.ToString(), out var chapterItem) && o["Chapters"] is JsonArray chapters)
+                            ChapterTimelines[chapterItem] = JsonSerializer.Deserialize<List<ChapterInfo>>(chapters.ToJsonString(), new JsonSerializerOptions { PropertyNameCaseInsensitive=true }) ?? [];
                         if (o["Id"]?.GetValueKind() == JsonValueKind.String && o["Type"]?.GetValueKind() == JsonValueKind.String
                             && Guid.TryParse(o["Id"]!.ToString(), out var id) && !kinds.ContainsKey(id)) kinds[id] = (o["Type"]!.ToString(), o);
                         foreach (var pair in o) Walk(pair.Value);

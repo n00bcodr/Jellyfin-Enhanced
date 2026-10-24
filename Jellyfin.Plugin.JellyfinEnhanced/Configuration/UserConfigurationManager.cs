@@ -17,6 +17,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         private readonly string _configBaseDir;
         private readonly Logger _logger;
+        // Instance scope binds these immutable fingerprints to this configuration
+        // store. File metadata and JE save epochs never establish equality.
+        private readonly object _policyMemoLock = new();
+        private readonly Dictionary<string, (byte[] Bytes, Lazy<string> Revision)> _policyMemo = new(StringComparer.Ordinal);
+        private long _policyMemoBytes;
+        private int _policyNormalizations;
+        internal int PolicyNormalizations => Volatile.Read(ref _policyNormalizations);
+        internal (int Entries, long Bytes) PolicyMemoSize { get { lock (_policyMemoLock) return (_policyMemo.Count, _policyMemoBytes); } }
+        private const int PolicyMemoEntries = 32;
+        private const int PolicyMemoByteLimit = 32 * 1024 * 1024;
 
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
@@ -61,14 +71,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
         public event Action? ReviewsChanged;
 
-        private static long _saveEpoch;
-
-        /// <summary>
-        /// Advances on every per-user file save: the byte boundary's check re-reads the policy files an answer read only
-        /// when a save happened since its last check.
-        /// </summary>
-        public static long SaveEpoch => Interlocked.Read(ref _saveEpoch);
-
         /// <summary>The per-user files that are verdict inputs (a viewer's privacy policies), with their document types.</summary>
         private static readonly System.Collections.Generic.Dictionary<string, Type> _privacyFiles = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -82,7 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>
         /// Records a read of a viewer's policy document (<paramref name="document"/> as the reader holds it, from the file or a
-        /// copy of it) in the current attempt's read-set: the gate re-reads the file and compares content.
+        /// copy of it) in the current attempt's read-set: every check of the answer reads the file again and compares content
+        /// (a document replaced by anything other than this plugin's save included).
         /// </summary>
         public void RecordPolicyRead(string userId, string fileName, object? document)
         {
@@ -95,16 +98,86 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             if (Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyReadSet.Current is not { } reads || !_privacyFiles.TryGetValue(fileName, out var type)) return;
             var user = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
-            reads.Revision("file:" + user + ":" + fileName.ToLowerInvariant(), revision, () => ContentRevision(ReadForRevision(user, fileName, type)));
+            var path = ResolveUserFile(user, fileName);
+            reads.Revision("file:" + user + ":" + fileName.ToLowerInvariant(), revision, () => ReadPolicyRevision(path, type));
         }
 
-        private object? ReadForRevision(string userId, string fileName, Type type)
+        private string ReadPolicyRevision(string path, Type type)
         {
-            var path = ResolveUserFile(userId, fileName);
-            if (!File.Exists(path)) return Activator.CreateInstance(type);
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json)) return Activator.CreateInstance(type);
-            return JsonConvert.DeserializeObject(json, type, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }) ?? Activator.CreateInstance(type);
+            FileStream file;
+            try { file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.SequentialScan); }
+            catch (FileNotFoundException) { return ContentRevision(Activator.CreateInstance(type)); }
+            catch (DirectoryNotFoundException) { return ContentRevision(Activator.CreateInstance(type)); }
+            using (file)
+            {
+                var key = path + "|" + type.AssemblyQualifiedName + "|normalized-v1";
+                (byte[] Bytes, Lazy<string> Revision) memo;
+                lock (_policyMemoLock) _policyMemo.TryGetValue(key, out memo);
+                // A bounded small read buffer avoids writing and clearing a
+                // policy-sized LOH array for every unchanged final comparison.
+                // Length only selects the comparison; every byte is read again.
+                if (memo.Bytes != null && file.Length == memo.Bytes.Length && MatchesPolicyBytes(file, memo.Bytes)) return memo.Revision.Value;
+                file.Position = 0;
+                var bytes = new byte[checked((int)file.Length)];
+                file.ReadExactly(bytes);
+                if (file.ReadByte() != -1) throw new InvalidDataException("Privacy policy changed while being read.");
+                Lazy<string> normalized;
+                lock (_policyMemoLock)
+                {
+                    // Another reader may have captured these same bytes while
+                    // this one was reading. Share one normalization per entry;
+                    // parsing runs outside the global lock, so another user's
+                    // cold policy cannot serialize all unchanged final checks.
+                    if (_policyMemo.TryGetValue(key, out var current) && bytes.AsSpan().SequenceEqual(current.Bytes)) normalized = current.Revision;
+                    else
+                    {
+                        normalized = new Lazy<string>(() => NormalizePolicy(bytes, type), LazyThreadSafetyMode.ExecutionAndPublication);
+                        if (_policyMemo.Remove(key, out var previous)) _policyMemoBytes -= previous.Bytes.Length;
+                        if (bytes.Length <= PolicyMemoByteLimit)
+                        {
+                            while (_policyMemo.Count >= PolicyMemoEntries || _policyMemoBytes + bytes.Length > PolicyMemoByteLimit)
+                            {
+                                var victim = _policyMemo.First();
+                                _policyMemo.Remove(victim.Key);
+                                _policyMemoBytes -= victim.Value.Bytes.Length;
+                            }
+                            _policyMemo.Add(key, (bytes, normalized));
+                            _policyMemoBytes += bytes.Length;
+                        }
+                    }
+                }
+                return normalized.Value;
+            }
+        }
+
+        private string NormalizePolicy(byte[] bytes, Type type)
+        {
+            using var stream = new MemoryStream(bytes, writable: false);
+            using var reader = new StreamReader(stream);
+            var json = reader.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("Privacy policy is empty.");
+            var document = JsonConvert.DeserializeObject(json, type, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore })
+                ?? throw new InvalidDataException("Privacy policy is literal null.");
+            var revision = ContentRevision(document);
+            Interlocked.Increment(ref _policyNormalizations);
+            return revision;
+        }
+
+        private static bool MatchesPolicyBytes(Stream file, byte[] expected)
+        {
+            var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(64 * 1024);
+            try
+            {
+                for (var offset = 0; offset < expected.Length;)
+                {
+                    var count = Math.Min(buffer.Length, expected.Length - offset);
+                    file.ReadExactly(buffer.AsSpan(0, count));
+                    if (!buffer.AsSpan(0, count).SequenceEqual(expected.AsSpan(offset, count))) return false;
+                    offset += count;
+                }
+                return file.ReadByte() == -1;
+            }
+            finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
         }
 
         public object GetUserFileLock(string userId, string fileName) => FileLock(userId, fileName);
@@ -657,6 +730,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     if (string.IsNullOrWhiteSpace(json))
                     {
                         _logger.Warning($"Configuration file '{fileName}' for user '{userId}' is empty. Returning default.");
+                        RecordPolicyUnavailable(userId, fileName);
                         return new T();
                     }
 
@@ -674,6 +748,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     if (settings == null)
                     {
                         _logger.Warning($"Deserialization of {fileName} resulted in null. Returning default.");
+                        RecordPolicyUnavailable(userId, fileName);
                         return new T();
                     }
 
@@ -683,12 +758,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 catch (Exception ex)
                 {
                     _logger.Error($"Error deserializing '{fileName}' for user '{userId}': {ex.Message}. Returning default configuration.");
+                    RecordPolicyUnavailable(userId, fileName);
                     return new T();
                 }
             }
 
             RecordPolicyRead(userId, fileName, null);
             return new T();
+        }
+
+        private void RecordPolicyUnavailable(string userId, string fileName)
+        {
+            if (Services.PrivacyReadSet.Current is not { } reads || !_privacyFiles.ContainsKey(fileName)) return;
+            var user = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+            reads.Fact("file:" + user + ":" + fileName.ToLowerInvariant(), "unavailable", _ => null);
         }
 
         // Strict read for RMW: existing empty/null/garbage is corruption; backs up to .corrupt-{ts} and throws.
@@ -880,7 +963,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 place();
                 Advance(path);
-                Interlocked.Increment(ref _saveEpoch);
             }
         }
 
@@ -975,7 +1057,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 VersionOf(userId, fileName).Mutate(() =>
                 {
                     File.Move(tempPath, configPath, overwrite: true);
-                    Interlocked.Increment(ref _saveEpoch);
                     // The revision moves on once the new document is what readers see (a reader that took the revision
                     // before then hands out the older one: refused, never allowed, by a whole write built on it).
                     Advance(configPath);
@@ -1081,7 +1162,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _allSettingsVersion.Mutate(() =>
                 {
                     File.Move(filePath, backupPath);
-                    Interlocked.Increment(ref _saveEpoch);
                 });
                 Advance(filePath);
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
@@ -1092,7 +1172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // Last resort: if the move failed, delete the unreadable file so
                 // the 503-per-request loop still breaks. The content is already
                 // unparseable, and the failure is logged above for forensics.
-                try { _allSettingsVersion.Mutate(() => { File.Delete(filePath); Interlocked.Increment(ref _saveEpoch); }); Advance(filePath); }
+                try { _allSettingsVersion.Mutate(() => { File.Delete(filePath); }); Advance(filePath); }
                 catch (Exception delEx)
                 {
                     _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");

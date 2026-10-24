@@ -278,7 +278,9 @@ test('every retry path sends through the bound-request primitive',()=>{
  // ONE primitive: the binding is checked by the transport itself, immediately before fetch().
  assert.equal((core.match(/function bindRequest\(/g)||[]).length,1);
  // (A write marks itself sent there, for its outcome: D46S2 audit S3.)
- assert.match(core,/assertSession\(\);\s*\n\s*if \(onSend\) onSend\(\);\s*\n\s*const response = await fetch\(url, options\);/);
+ // The synchronous observation begins after the send check; no await or
+ // unrelated work can be inserted before fetch.
+ assert.match(core,/assertSession\(\);\s*if \(onSend\) onSend\(\);\s*(?:\/\/[^\n]*\n\s*)*const observation = JE\.core\?\.revision\?\.begin\?\.\(\);\s*const response = await fetch\(url, options\);/);
 });
 
 // ---- D46 r18 (review round 17, D46-R17-3): the binding is part of request identity. De-duplication, caching and

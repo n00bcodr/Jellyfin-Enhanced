@@ -821,12 +821,17 @@ public class UserChangeSpoilerBoundaryTests
         plugin.Plugin.Configuration.SpoilerReplaceTitle = true;
         var viewer = Guid.NewGuid();
         var series = Guid.NewGuid();
-        var s1e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), ParentIndexNumber = 1, IndexNumber = 1, SeriesId = series };
-        var s2e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), ParentIndexNumber = 2, IndexNumber = 1, SeriesId = series };
+        var s1e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), Name = "Secret S1E1", ParentIndexNumber = 1, IndexNumber = 1, SeriesId = series };
+        var s2e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), Name = "Secret S2E1", ParentIndexNumber = 2, IndexNumber = 1, SeriesId = series };
         var current = UserChange.Read(viewer, "viewer", u => u.MaxParentalRatingScore = 10);
         var users = new Mock<IUserManager>();
         users.Setup(u => u.GetUserById(viewer)).Returns(() => current);
         var library = new Mock<ILibraryManager>();
+        // D46 resolves the carried DTO against the current canonical item;
+        // the DTO's own title and numbering are not library evidence.
+        library.Setup(l => l.GetItemById(s1e1.Id)).Returns(s1e1);
+        library.Setup(l => l.GetItemById(s2e1.Id)).Returns(s2e1);
+        library.Setup(l => l.GetItemById(series)).Returns(new MediaBrowser.Controller.Entities.TV.Series { Id = series });
         // S1E1 is rated above the viewer's limit: their query starts at S2E1.
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
             q.User?.MaxParentalRatingScore != null ? new BaseItem[] { s2e1 } : new BaseItem[] { s1e1 });
@@ -862,6 +867,8 @@ public class UserChangeSpoilerBoundaryTests
             Assert.Equal("Secret S2E1", await Title());
             current = UserChange.Read(viewer, "viewer");
             Assert.Equal("Season 2, Episode 1", await Title());
+            current = UserChange.Read(viewer, "viewer", u => u.MaxParentalRatingScore = 10);
+            Assert.Equal("Secret S2E1", await Title());
         }
         finally
         {

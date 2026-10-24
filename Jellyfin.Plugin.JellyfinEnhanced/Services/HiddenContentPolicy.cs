@@ -33,7 +33,8 @@ public sealed class HiddenContentPolicy
     public string Revision { get; }
 
     /// <summary>The input tick the rules' library ids were bound at (null: not bound).</summary>
-    private long? _boundAt;
+    /// <summary>What binding the rules' library ids consumed (each item, every owner hop, absences), replayed on reuse.</summary>
+    private PrivacyReadSet.Evidence? _bound;
 
     /// <summary>The content revision of the document the policy was built from (what a reader of a cached policy records).</summary>
     internal string DocumentRevision { get; }
@@ -85,11 +86,8 @@ public sealed class HiddenContentPolicy
         {
             // The request's policy is the document read earlier: the current attempt records that document's revision.
             if (hit._master || hit._remove) manager.RecordPolicyRevision(viewer.ToString("N"), "hidden-content.json", hit.DocumentRevision);
-            // ... and the library facts its rules were bound with, as of when they were read.
-            if (hit._boundAt is { } bound && PrivacyReadSet.Current is { } reads)
-            {
-                reads.Library(hit._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty), bound);
-            }
+            // ... and the library facts its rules were bound with: their complete proof.
+            if (hit._bound is { } bound) PrivacyReadSet.ReplayCurrent(bound);
             return hit;
         }
         if (config?.HiddenContentEnabled != true && config?.RemoveContinueWatchingEnabled != true) return Build(null, false);
@@ -99,8 +97,12 @@ public sealed class HiddenContentPolicy
                 config?.HiddenContentEnabled == true, config?.RemoveContinueWatchingEnabled == true);
         if (library != null && policy._titleItems.Count > 0)
         {
-            policy._boundAt = PrivacyInputs.Now;
-            policy.BindLibraryIds(library, policy._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty));
+            PrivacyReadSet.Capture(() =>
+            {
+                policy.BindLibraryIds(library, policy._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty));
+                return 0;
+            }, out var bound);
+            policy._bound = bound;
         }
         if (http != null) http.Items[cacheKey] = policy;
         return policy;

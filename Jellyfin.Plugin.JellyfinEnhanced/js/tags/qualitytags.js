@@ -91,6 +91,11 @@
     let jellyfinAudioPreferenceUserId = null;
     let jellyfinAudioPreferencePromise = null;
     let jellyfinAudioPreferencePromiseUserId = null;
+    let audioOwner = null;
+    let audioPendingOwner = null;
+    const tagAuthority = () => JE.tagPipeline?.captureAuthority?.() || JE.core?.api?.session?.() || { epoch: JE.session?.getEpoch?.() ?? 0 };
+    const currentTagAuthority = owner => !!owner && (JE.tagPipeline?.authorityHolds && 'identity' in owner
+        ? JE.tagPipeline.authorityHolds(owner) : owner.current?.() !== false && (!JE.session || JE.session.isCurrent(owner.epoch)));
 
     /**
      * Effective preferred audio language for the sound tag, or null for
@@ -106,7 +111,7 @@
         const lowered = choice.toLowerCase();
         if (lowered === 'none') return null;
         const currentUserId = window.ApiClient?.getCurrentUserId?.() || null;
-        const jellyfinPref = (currentUserId && currentUserId === jellyfinAudioPreferenceUserId)
+        const jellyfinPref = (currentUserId && currentUserId === jellyfinAudioPreferenceUserId && currentTagAuthority(audioOwner))
             ? jellyfinAudioPreference
             : null;
         if (lowered === 'auto') return jellyfinPref;
@@ -139,28 +144,31 @@
         if (!userId || !usesJellyfinAudioPreference()) return Promise.resolve();
         // Reuse a request already in flight for this user; one started for a
         // previous user (switch mid-flight) resolves as a no-op below.
-        if (jellyfinAudioPreferencePromise && jellyfinAudioPreferencePromiseUserId === userId) {
+        if (jellyfinAudioPreferencePromise && jellyfinAudioPreferencePromiseUserId === userId && currentTagAuthority(audioPendingOwner)) {
             return jellyfinAudioPreferencePromise;
         }
         // ApiClient.getCurrentUser() hands back a memoised copy that Jellyfin's
         // playback-settings page never refreshes, so a preference changed in
         // this session would stay stale until reload; getUser() always fetches.
+        const owner = tagAuthority();
         const request = Promise.resolve()
-            .then(() => ApiClient.getUser(userId))
+            .then(() => currentTagAuthority(owner) ? ApiClient.getUser(userId) : null)
             .then((user) => {
                 // A user switch while the request was in flight: the incoming
                 // user's own initialization loads its value.
-                if (window.ApiClient?.getCurrentUserId?.() !== userId) return;
+                if (window.ApiClient?.getCurrentUserId?.() !== userId || !currentTagAuthority(owner)) return;
                 jellyfinAudioPreference = (user?.Configuration?.AudioLanguagePreference || '').trim() || null;
                 jellyfinAudioPreferenceUserId = userId;
+                audioOwner = owner;
             })
             .catch((err) => {
                 console.warn(`${logPrefix} Could not read the Jellyfin audio language preference`, err);
                 // A user with nothing loaded yet counts as having no preference,
                 // so the tags render (and a later refresh is not held up).
-                if (window.ApiClient?.getCurrentUserId?.() === userId && jellyfinAudioPreferenceUserId !== userId) {
+                if (currentTagAuthority(owner) && window.ApiClient?.getCurrentUserId?.() === userId && jellyfinAudioPreferenceUserId !== userId) {
                     jellyfinAudioPreference = null;
                     jellyfinAudioPreferenceUserId = userId;
+                    audioOwner = owner;
                 }
             })
             .finally(() => {
@@ -171,6 +179,7 @@
             });
         jellyfinAudioPreferencePromise = request;
         jellyfinAudioPreferencePromiseUserId = userId;
+        audioPendingOwner = owner;
         return request;
     }
 
@@ -1022,15 +1031,16 @@
                 if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached && matchesAudioPreference(cached)) {
+                if (cached && ctx.authorityHolds(cached.authority) && matchesAudioPreference(cached)) {
                     if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
                 const audioLang = audioPreferenceKey();
+                const authority = ctx.captureAuthority();
                 const sd = entry.StreamData;
-                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, qualities: [] }); return; }
+                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { authority, audioLang, qualities: [] }); return; }
                 const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
-                serverQualityCache.set(itemId, { audioLang, qualities });
+                serverQualityCache.set(itemId, { authority, audioLang, qualities });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

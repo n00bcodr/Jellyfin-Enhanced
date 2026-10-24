@@ -172,7 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // rule every Spoiler Guard site uses: a movie by its id, a guarded collection or its TMDB key; a series, season
             // or episode by the owning series' id or key.
             var owned = kind is BaseItemKind.Season or BaseItemKind.Episode;
-            var (current, seriesKey) = !owned ? (Guid.Empty, null) : ReferenceEquals(series, Riders) ? Stored(e)
+            var (current, seriesKey) = !owned ? (Guid.Empty, null) : series is RiderPass pass ? Stored(e, pass.SeriesKeys, pass.Keyed)
                 : series != null && series.TryGetValue(key, out var known) ? known : EntrySeries(id, e);
             var owner = owned ? current : id;
             if (owner == Guid.Empty) return null;
@@ -199,11 +199,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Stored(e);
         }
 
-        /// <summary>An entry's stored series and that series' current key (its own stored key only when the series is gone).</summary>
-        private (Guid Series, string? Key) Stored(TagCacheEntry e)
+        /// <summary>
+        /// An entry's stored series and that series' current key (its own stored key only when the series is gone). Each
+        /// distinct series is read once per pass (<paramref name="keys"/>): a pass over a thousand episodes of one show reads
+        /// the show once, and its facts (or its absence) are recorded once.
+        /// </summary>
+        private (Guid Series, string? Key) Stored(TagCacheEntry e, Dictionary<Guid, string?>? keys = null, bool keyed = true)
         {
             var stored = Guid.TryParse(e.SeriesId, out var series) ? series : Guid.Empty;
-            return (stored, (stored != Guid.Empty ? PrivacyIdentities.TitleKey(PrivacyReads.Item(_libraryManager, stored)) : null) ?? HiddenContentPolicy.TitleIdentity("tv", e.SeriesTmdbId));
+            string? key = null;
+            if (stored != Guid.Empty && keyed)
+            {
+                if (keys == null || !keys.TryGetValue(stored, out key))
+                {
+                    key = PrivacyIdentities.TitleKey(PrivacyReads.Item(_libraryManager, stored));
+                    if (keys != null) keys[stored] = key;
+                }
+            }
+            return (stored, key ?? HiddenContentPolicy.TitleIdentity("tv", e.SeriesTmdbId));
         }
 
         /// <summary>Whether a viewer's Spoiler Guard state can guard a series (by id, provider key or a pending key).</summary>
@@ -234,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if ((tv && entry?.Type is "Episode" or "Season" || movies && entry?.Type == "Movie") && Guid.TryParse(key, out var id)) ids[id] = key;
             if (ids.Count == 0) return answer;
             var resolved = PrivacyIdentities.Resolve(_libraryManager, ids.Keys);
+            var stored = new Dictionary<Guid, string?>();
             foreach (var (id, key) in ids)
             {
                 var entry = items[key];
@@ -243,7 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
                 answer[key] = resolved.TryGetValue(id, out var identity) && identity.Kind is BaseItemKind.Episode or BaseItemKind.Season
-                    ? (identity.OwnerId, identity.TitleKey) : Stored(entry!);
+                    ? (identity.OwnerId, identity.TitleKey) : Stored(entry!, stored);
             }
             return answer;
         }
@@ -277,16 +291,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var (key, entry) in items)
             {
                 if (entry == null || IsTitleKind(entry.Type) || !Guid.TryParse(key, out var id)) continue;
-                // An entry already known not to be an extra needs no lookup; an extra is resolved again every time (its owner's
-                // verdict and watched state are the viewer's, and current).
-                if (_notExtras.ContainsKey(id)) continue;
+                // An entry already known not to be an extra needs no lookup (its remembered facts are replayed: compared with
+                // the live library at every check); an extra is resolved again every time (its owner's verdict and watched
+                // state are the viewer's, and current).
+                if (NotAnExtra(id)) continue;
                 ids.Add(id);
             }
             if (ids.Count == 0) return new Dictionary<string, PrivacyIdentity>(StringComparer.Ordinal);
-            // The memo is keyed on the library's ownership events (PrivacyInputs), not on the entry's content: an item whose
-            // owner changed while it was being resolved is not remembered from that resolution.
+            // The memo is dropped by the library's ownership events (PrivacyInputs) and by a check that finds its facts changed:
+            // an item whose owner changed while it was being resolved is not remembered from that resolution.
             var since = PrivacyInputs.Now;
-            var resolved = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager);
+            var chains = new Dictionary<Guid, List<(Guid Id, PrivacyFacts? Facts)>>();
+            var resolved = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager, null, chains);
             var owned = resolved.Where(p => p.Value.IsExtra).ToDictionary(p => p.Key.ToString("N"), p => p.Value, StringComparer.Ordinal);
             lock (_notExtras)
             {
@@ -296,13 +312,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_notExtras.Count > MaxKnownExtras) _notExtras.Clear();
                 // Only an item the library resolved, as no extra, is remembered as one: an unresolved id is never a negative.
                 foreach (var (id, identity) in resolved)
-                    if (!identity.IsExtra && !changed.Contains(id)) _notExtras[id] = 0;
+                    if (!identity.IsExtra && !changed.Contains(id) && chains.TryGetValue(id, out var chain) && chain.Count == 1 && chain[0].Facts is { } facts)
+                        _notExtras[id] = facts;
             }
             return owned;
         }
 
-        /// <summary>The library items known not to be extras, until a library ownership event for them (<see cref="Forget"/>).</summary>
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _notExtras = new();
+        /// <summary>
+        /// The library items known not to be extras, with the facts that judgment consumed (an item that names no owner), until
+        /// a library ownership event for them (<see cref="Forget"/>) or a check that finds those facts changed.
+        /// </summary>
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, PrivacyFacts> _notExtras = new();
+
+        /// <summary>
+        /// Whether <paramref name="id"/> is remembered as no extra: a hit replays the facts that judgment consumed into the
+        /// current answer (the negative is evidence the answer used, as the positive is).
+        /// </summary>
+        private bool NotAnExtra(Guid id)
+        {
+            if (!_notExtras.TryGetValue(id, out var facts)) return false;
+            if (PrivacyReadSet.Current is { } reads)
+            {
+                reads.Item(_libraryManager, id, facts);
+                reads.OnStale(id, () => { lock (_notExtras) _notExtras.TryRemove(id, out _); });
+            }
+            return true;
+        }
 
         private const int MaxKnownExtras = 500_000;
 
@@ -343,16 +378,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// an entry that may be an extra, whose owner only the batched lookup knows). Riders outside the set leave again
         /// (<see cref="StripTagCache"/> with the delta's cursor).
         /// </summary>
-        public bool MayBeGuarded(UserSpoilerBlur state, string key, TagCacheEntry? entry)
-            => entry != null && (GetGuardedKind(state, key, entry, Riders) != null
-                || !IsTitleKind(entry.Type) && !(Guid.TryParse(key, out var id) && _notExtras.ContainsKey(id)));
+        public bool MayBeGuarded(UserSpoilerBlur state, string key, TagCacheEntry? entry) => Riders(state)(key, entry!);
 
         /// <summary>
-        /// A delta's riders are chosen by their entries' stored series (a cheap per-entry test over the whole cache, with
-        /// no per-entry library lookup); the guarded set the answer is stripped by is then decided from the library's
-        /// current series.
+        /// The rider test of one delta (<see cref="MayBeGuarded"/>), sharing its reads: each distinct stored series is read
+        /// once for the whole pass, not once per entry.
         /// </summary>
-        private static readonly Dictionary<string, (Guid Series, string? Key)> Riders = new(StringComparer.Ordinal);
+        public Func<string, TagCacheEntry, bool> Riders(UserSpoilerBlur state)
+        {
+            // A show's key is read only when the viewer guards a show by its key (a guard by id needs no read).
+            var pass = new RiderPass { Keyed = state.ProviderTitles.Keys.Any(k => k.StartsWith("tv:", StringComparison.Ordinal))
+                || state.PendingTmdb.Keys.Any(k => k.StartsWith("tv:", StringComparison.Ordinal)) };
+            return (key, entry) => entry != null && (GetGuardedKind(state, key, entry, pass) != null
+                || !IsTitleKind(entry.Type) && !(Guid.TryParse(key, out var id) && NotAnExtra(id)));
+        }
+
+        /// <summary>
+        /// A delta's riders are chosen by their entries' stored series (a cheap per-entry test over the whole cache: one read
+        /// per distinct series); the guarded set the answer is stripped by is then decided from the library's current series.
+        /// </summary>
+        private sealed class RiderPass : Dictionary<string, (Guid Series, string? Key)>
+        {
+            public RiderPass() : base(StringComparer.Ordinal) { }
+
+            /// <summary>The key of each distinct stored series this pass read.</summary>
+            public Dictionary<Guid, string?> SeriesKeys { get; } = new();
+
+            /// <summary>Whether a show's key can decide its scope for this viewer (else a stored series is not read).</summary>
+            public bool Keyed { get; init; }
+        }
 
         /// <summary>Whether an extra is stripped for this viewer: its owner is guarded, and a movie's extra until the movie is watched.</summary>
         private bool ExtraGuarded(UserSpoilerBlur state, PrivacyIdentity identity)
@@ -369,23 +423,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IReadOnlyDictionary<string, (Guid Series, string? Key)>? series = null)
         {
             var spState = policy.State;
-            var stripRatingsEnabled = policy.StripRatings;
             // What the host vouches for, memoized for the whole strip (series ratings and genres, tables).
             var host = Host();
             var extras = owned ?? OwnedIdentities(items, user);
+            // Every episode and season entry by the series the library holds it under now (one batched lookup): the guarded
+            // set, the vocabulary and the age-rating source all use this reconciled owner.
+            series ??= EntrySeries(items, spState);
             // Kind per guarded key: the one derivation, reused by every pass below.
             var guardedKinds = GuardedSet(spState, items, extras, series);
             if (since is { } cursor)
                 foreach (var (key, entry) in items.ToList())
                     if (entry != null && entry.LastUpdated <= cursor && !guardedKinds.ContainsKey(key)) items.Remove(key);
 
-            // Played state is looked up in ONE bounded query instead of a
-            // UserData read per entry (with whole libraries guarded that
-            // was thousands of reads and seconds per cache load): collect
-            // the guarded episodes/movies, plus the episodes of guarded
-            // later seasons (S2+, same membership rules as the image and
-            // field filters via Season.GetEpisodes), then ask which of
-            // them this user has played.
+            // Played state is looked up in ONE bounded query instead of a UserData read per entry (with whole libraries
+            // guarded that was thousands of reads and seconds per cache load): the guarded episodes and movies; the set it
+            // answered is a fact of the answer (the same query at every check).
             var playedCandidates = new List<Guid>();
             var laterSeasons = new List<Season>();
             foreach (var (key, kind) in guardedKinds)
@@ -402,48 +454,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     laterSeasons.Add(laterSeason);
                 }
             }
-
-            // Season.GetEpisodes is a query per season. A full load can
-            // carry hundreds of guarded later seasons, so first find which
-            // shows the user has played anything of (by series id and by
-            // series presentation key, which GetEpisodes matches on) and
-            // skip seasons of untouched shows: they can't contain a
-            // watched episode.
-            var playedSeries = laterSeasons.Count > 16 ? LoadPlayedSeriesForTagStrip(user) : null;
-            var laterSeasonEpisodes = new Dictionary<Guid, List<Guid>?>();
-            foreach (var laterSeason in laterSeasons)
-            {
-                if (playedSeries != null
-                    && !playedSeries.Value.Ids.Contains(laterSeason.SeriesId)
-                    && (string.IsNullOrEmpty(laterSeason.SeriesPresentationUniqueKey) || !playedSeries.Value.Keys.Contains(laterSeason.SeriesPresentationUniqueKey))
-                    && (laterSeason.Series?.PresentationUniqueKey is not { Length: > 0 } currentKey || !playedSeries.Value.Keys.Contains(currentKey)))
-                {
-                    laterSeasonEpisodes[laterSeason.Id] = null;
-                    continue;
-                }
-                List<Guid>? episodeIds = null;
-                try
-                {
-                    episodeIds = PrivacyReads.SeasonEpisodes(laterSeason, user)
-                        .Where(ep => ep != null)
-                        .Select(ep => ep.Id)
-                        .ToList();
-                    playedCandidates.AddRange(episodeIds);
-                }
-                catch (Exception ex)
-                {
-                    _spoilerResolver.WarnRateLimited(
-                        "tagcache-season-probe:" + ex.GetType().FullName,
-                        $"Spoiler Guard tag-cache strip: season any-watched probe failed for {laterSeason.Id}: {ex.Message}");
-                    // Fail-CLOSED: null = treated as not watched, stripped.
-                }
-                laterSeasonEpisodes[laterSeason.Id] = episodeIds;
-            }
             var playedIds = LoadPlayedIdsForTagStrip(user, playedCandidates);
+            // Each guarded later season's watched evidence (any of the episodes the host lists in it played): a fact per
+            // season, the same value whether a season was probed or skipped by the played-series prefilter.
+            var seasonWatched = LaterSeasonsWatched(user, laterSeasons);
 
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
             var fingerprint = $"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+
+            // The owners whose vocabulary and age rating the strip copies, read in one batch (not once per owner).
+            host.Prefetch(guardedKinds.Keys.Select(k => series.TryGetValue(k, out var s) ? s.Series : Guid.Empty)
+                .Concat(guardedKinds.Where(p => p.Value == "Extra").Select(p => extras[p.Key].OwnerId)));
+
+            // The advanced reveal of each unwatched guarded episode, from the numbering the library holds for it now (the
+            // same per-item reveal its item answers, tag data and native poster tags get).
+            var reveals = EpisodeReveals(policy, user, guardedKinds.Where(p => p.Value == "Episode").Select(p => p.Key), playedIds);
 
             foreach (var kvp in items.ToList())
             {
@@ -455,34 +481,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (ExtraGuarded(spState, extras[kvp.Key])) items[kvp.Key] = StripEntryFields(entry, kind, policy, host, extras[kvp.Key].OwnerId);
                     continue;
                 }
-                var isEpisode = kind == "Episode";
-                var isSeason = kind == "Season";
-                var isMovie = kind == "Movie";
+                var episodic = kind is "Episode" or "Season";
+                Guid? owner = !episodic ? null : series.TryGetValue(kvp.Key, out var current) && current.Series != Guid.Empty ? current.Series : SeriesOf(entry);
 
                 // Episodes/movies: played skips the strip. Seasons: IndexNumber<=1
                 // OR any-episode-watched skips (mirrors SpoilerBlurImageFilter and
                 // SpoilerFieldStripFilter Season blur logic).
                 if (Guid.TryParse(kvp.Key, out var entryGuid))
                 {
-                    if (isEpisode || isMovie)
+                    if (kind is "Episode" or "Movie")
                     {
                         if (playedIds.Contains(entryGuid)) continue;
                     }
-                    else if (isSeason
+                    else if (kind == "Season"
                         && PrivacyReads.Item<BaseItem>(_libraryManager, entryGuid) is Season seasonItem)
                     {
                         var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
                         // S0/S1 posters always pass (their existence isn't a
                         // spoiler), as do seasons with any watched episode — "exempt".
-                        bool seasonExempt = sNum <= 1
-                            || (laterSeasonEpisodes.TryGetValue(seasonItem.Id, out var seasonEpisodeIds)
-                                && seasonEpisodeIds != null
-                                && seasonEpisodeIds.Exists(playedIds.Contains));
-                        if (seasonExempt)
+                        if (sNum <= 1 || seasonWatched.GetValueOrDefault(seasonItem.Id))
                         {
                             // The season itself is the viewer's entry point, but its entry carries values of its
                             // episodes (their audio languages, the first one's streams and name): those are validated.
-                            items[kvp.Key] = PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, stripRatingsEnabled, policy.SanitizeTitleStreams), SeriesOf(entry), host);
+                            items[kvp.Key] = PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, policy.StripRatings, policy.SanitizeTitleStreams), owner, host);
                             continue;
                         }
                     }
@@ -496,7 +517,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         $"Spoiler Guard tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
                 }
 
-                items[kvp.Key] = StripEntryFields(entry, kind, policy, host);
+                items[kvp.Key] = StripEntryFields(entry, kind, policy, host, owner, reveals.GetValueOrDefault(kvp.Key));
             }
 
             return fingerprint;
@@ -510,9 +531,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public TagCacheEntry StripEntry(SpoilerTagStripPolicy policy, JUser user, BaseItem item, TagCacheEntry entry, out bool stripped)
         {
             stripped = false;
-            var key = item.Id.ToString("N");
-            var kind = GetGuardedKind(policy.State, key, entry);
-            if (kind == null && !IsTitleKind(entry.Type) && PrivacyIdentities.Of(_libraryManager, item, user, _userDataManager) is var identity && ExtraGuarded(policy.State, identity))
+            // Native tags use the same captured live identity as tag-data.
+            // An unread default series tuple is not evidence about a movie key.
+            PrivacyIdentity identity;
+            try
+            {
+                identity = PrivacyIdentities.Of(_libraryManager, item, user, _userDataManager);
+            }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "postertags-played-probe:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag strip (native poster tags): identity/played-state lookup failed for {item.Id}: {ex.Message}");
+                // Re-capture canonical ownership without a watched exemption.
+                // Unavailable user data must strip, never expose shared source values.
+                identity = PrivacyIdentities.Of(_libraryManager, item);
+            }
+            Guid? owner = identity.Kind is BaseItemKind.Episode or BaseItemKind.Season ? identity.OwnerId : null;
+            var kind = IsTitleKind(identity.Kind.ToString()) && _spoilerResolver.InSpoilerScope(policy.State, identity) ? identity.Kind.ToString() : null;
+            if (kind == null && !IsTitleKind(entry.Type) && ExtraGuarded(policy.State, identity))
             {
                 // An extra of a guarded title (native poster tags): its owner's verdict, as in the tag cache and tag data.
                 stripped = true;
@@ -522,21 +559,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (kind is "Episode" or "Movie")
             {
-                // Same rule as the bulk IsPlayed query: played passes.
-                bool played;
-                try
-                {
-                    played = PrivacyReads.UserData(_userDataManager, user, item)?.Played == true;
-                }
-                catch (Exception ex)
-                {
-                    _spoilerResolver.WarnRateLimited(
-                        "postertags-played-probe:" + ex.GetType().FullName,
-                        $"Spoiler Guard tag strip (native poster tags): played-state lookup failed for {item.Id}: {ex.Message}");
-                    played = false; // fail-closed: strip
-                }
-
-                if (played) return entry;
+                // Reuse the typed identity's captured watched fact (also used
+                // for movie extras), rather than probing a second time.
+                if (identity.Played == true) return entry;
             }
             else if (kind == "Season" && PrivacyReads.Item<BaseItem>(_libraryManager, item.Id) is Season season)
             {
@@ -545,12 +570,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // Exempt itself, but the values it carries of its episodes are validated (as in the tag cache).
                     stripped = true;
-                    return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, policy.StripRatings, policy.SanitizeTitleStreams), SeriesOf(entry), Host());
+                    return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, policy.StripRatings, policy.SanitizeTitleStreams), owner, Host());
                 }
             }
 
             stripped = true;
-            return StripEntryFields(entry, kind, policy, Host());
+            // An unwatched episode keeps what its advanced category reveals (the same reveal as tag data and the tag cache).
+            var reveal = kind == "Episode" ? CategoryReveal(policy, user, item) : default;
+            return StripEntryFields(entry, kind, policy, Host(), owner, reveal);
         }
 
         /// <summary>
@@ -587,25 +614,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// search hints and the activity log get): nothing unless the administrator turned advanced mode on and the viewer
         /// kept it.
         /// </summary>
+        private PrivacyIdentity CaptureCategoryIdentity(BaseItem episode)
+            => PrivacyIdentities.Of(_libraryManager, PrivacyReads.Item(_libraryManager, episode.Id) ?? episode);
+
         public SpoilerCategoryReveal CategoryReveal(SpoilerTagStripPolicy policy, JUser user, BaseItem episode)
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
-            if (cfg?.SpoilerAdvancedMode != true || policy.State.Prefs?.UseAdvancedCategories == false || episode is not Episode) return default;
-            var series = PrivacyIdentities.Of(_libraryManager, episode).SeriesId;
+            if (cfg?.SpoilerAdvancedMode != true || policy.State.Prefs?.UseAdvancedCategories == false) return default;
+            var identity = CaptureCategoryIdentity(episode);
+            if (identity.Kind != Jellyfin.Data.Enums.BaseItemKind.Episode) return default;
+            var numbers = PrivacyReads.Numbers(_libraryManager, identity.ItemId);
+            return Reveal(policy, user, cfg, identity.SeriesId, identity.ItemId, numbers.Parent, numbers.Index);
+        }
+
+        private SpoilerCategoryReveal Reveal(SpoilerTagStripPolicy policy, JUser user, PluginConfiguration cfg, Guid series, Guid episode, int? parentIndex, int? index)
+        {
             var category = _nextUnwatched != null
-                ? _nextUnwatched.CategoryOf(user.Id, policy.State, cfg, series, episode.Id, episode.ParentIndexNumber, episode.IndexNumber)
-                : SpoilerNextUnwatchedService.Categorize(SpoilerNextUnwatchedService.ComputeNow(_libraryManager, user, series), episode.Id, episode.ParentIndexNumber, episode.IndexNumber);
+                ? _nextUnwatched.CategoryOf(user.Id, policy.State, cfg, series, episode, parentIndex, index)
+                : SpoilerNextUnwatchedService.Categorize(SpoilerNextUnwatchedService.ComputeNow(_libraryManager, user, series), episode, parentIndex, index);
             return SpoilerCategoryReveal.Of(category, cfg);
         }
 
         // TagCacheService stores ONE shared TagCacheEntry per item across ALL users: the construction table clones,
         // never mutates. An episode's or season's age rating is its series' when ratings are stripped (its own can
         // differ and Jellyfin never shows it); its vocabulary is its series', an extra's its owner's.
-        private static TagCacheEntry StripEntryFields(TagCacheEntry entry, string kind, SpoilerTagStripPolicy policy, PrivacyValueHost host, Guid? owner = null)
+        // An unwatched episode's advanced category reveal applies here exactly as in its item answers and tag data: a revealed
+        // rating stays (with its own age rating), a revealed title family keeps the title-bearing stream values. The
+        // vocabulary and age-rating source is the item's owner as the library holds it now (an episode's or season's
+        // current series), never the series a cached entry was built under.
+        private static TagCacheEntry StripEntryFields(TagCacheEntry entry, string kind, SpoilerTagStripPolicy policy, PrivacyValueHost host, Guid? owner = null,
+            SpoilerCategoryReveal reveal = default)
         {
             var episodic = kind is "Episode" or "Season";
-            return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(policy.StripGenres, policy.StripRatings, policy.SanitizeTitleStreams, policy.StripRatings && episodic ? SeriesOf(entry) : null),
-                episodic ? SeriesOf(entry) : owner, host);
+            var source = episodic ? owner ?? SeriesOf(entry) : owner;
+            var scores = policy.StripRatings && !reveal.Ratings;
+            var titles = policy.ReplaceTitle && !reveal.Title || policy.StripOverview && !reveal.Overview;
+            return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(policy.StripGenres, scores, titles, scores && episodic ? source : null), source, host);
+        }
+
+        /// <summary>
+        /// The advanced reveal of each unwatched guarded episode of a strip (by key), from the episodes as the library holds
+        /// them now (one batched read; their facts recorded): nothing without advanced mode, or for a viewer who opted out.
+        /// </summary>
+        private Dictionary<string, SpoilerCategoryReveal> EpisodeReveals(SpoilerTagStripPolicy policy, JUser user, IEnumerable<string> keys, HashSet<Guid> played)
+        {
+            var reveals = new Dictionary<string, SpoilerCategoryReveal>(StringComparer.Ordinal);
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (cfg?.SpoilerAdvancedMode != true || policy.State.Prefs?.UseAdvancedCategories == false) return reveals;
+            var ids = keys.Select(k => Guid.TryParse(k, out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty && !played.Contains(id)).ToArray();
+            foreach (var (id, item) in PrivacyReads.Items(_libraryManager, ids))
+                if (item is Episode episode)
+                    reveals[id.ToString("N")] = Reveal(policy, user, cfg, episode.SeriesId, episode.Id, episode.ParentIndexNumber, episode.IndexNumber);
+            return reveals;
         }
 
         /// <summary>The series an episode's or season's entry belongs to (its vocabulary's source).</summary>
@@ -615,25 +675,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // season stays stripped.
         private bool HasWatchedAnyEpisode(Season season, JUser user, string warnKeyPrefix)
         {
-            try
-            {
-                foreach (var ep in PrivacyReads.SeasonEpisodes(season, user))
-                {
-                    if (ep == null) continue;
-                    var ud = PrivacyReads.UserData(_userDataManager, user, ep);
-                    if (ud?.Played == true) return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                var label = warnKeyPrefix.StartsWith("tagdata", StringComparison.Ordinal)
-                    ? "Spoiler Guard tag-data"
-                    : "Spoiler Guard tag strip (native poster tags)";
-                _spoilerResolver.WarnRateLimited(
-                    warnKeyPrefix + ex.GetType().FullName,
-                    $"{label}: season any-watched probe failed for {season.Id}: {ex.Message}");
-            }
-
+            // The season's watched evidence (the host's listing of it and the viewer's watched state of each episode), one
+            // fact; a failed read is "nothing watched" and records nothing (the season stays stripped).
+            if (PrivacyReads.SeasonWatchedOrUnknown(_libraryManager, _userDataManager, user, season) is { } watched) return watched;
+            var label = warnKeyPrefix.StartsWith("tagdata", StringComparison.Ordinal)
+                ? "Spoiler Guard tag-data"
+                : "Spoiler Guard tag strip (native poster tags)";
+            _spoilerResolver.WarnRateLimited(warnKeyPrefix + "unreadable", $"{label}: season any-watched probe failed for {season.Id}");
             return false;
         }
 
@@ -645,32 +693,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private HashSet<Guid> LoadPlayedIdsForTagStrip(JUser user, List<Guid> candidateIds)
         {
-            var played = new HashSet<Guid>();
-            if (candidateIds.Count == 0) return played;
-            PrivacyReads.WatchedOf(user.Id, candidateIds);
+            if (candidateIds.Count == 0) return new HashSet<Guid>();
+            if (PrivacyReads.PlayedOf(_libraryManager, _userDataManager, user, candidateIds) is { } played) return played;
+            _spoilerResolver.WarnRateLimited(
+                "tagcache-played-probe:unreadable",
+                $"Spoiler Guard tag-cache strip: played-state query failed for {user.Id}");
+            return new HashSet<Guid>();
+        }
+
+        /// <summary>
+        /// Whether the viewer has played any episode the host lists in each guarded later season, by one batched played query
+        /// over their episodes; each season's answer is a fact compared with the same queries at every check. Season.GetEpisodes
+        /// is a query per season: a full load can carry hundreds of guarded later seasons, so above 16 the shows the viewer
+        /// has played nothing of (by series id and by presentation key, which GetEpisodes matches on) are skipped: they can't
+        /// contain a watched episode. Probed or skipped, a season's value is the same; the check uses the same rule. A
+        /// season that cannot be read is fail-CLOSED (not watched, stripped) and records nothing.
+        /// </summary>
+        private Dictionary<Guid, bool> LaterSeasonsWatched(JUser user, List<Season> seasons)
+        {
+            var answer = new Dictionary<Guid, bool>();
+            if (seasons.Count == 0) return answer;
+            PrivacyReads.HostSpecials();
+            var prefilter = seasons.Count > 16;
+            var playedSeries = prefilter ? LoadPlayedSeriesForTagStrip(user) : null;
+            var episodes = new Dictionary<Guid, List<Guid>>();
+            foreach (var season in seasons)
+                if (SeasonEpisodeIds(user, season, playedSeries) is { } ids) episodes[season.Id] = ids;
+            HashSet<Guid> played;
+            try { played = PlayedNow(user, episodes.Values.SelectMany(e => e)); }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited("tagcache-season-probe:" + ex.GetType().FullName, $"Spoiler Guard tag-cache strip: season played query failed for {user.Id}: {ex.Message}");
+                return answer;
+            }
+            var library = _libraryManager;
+            foreach (var (season, ids) in episodes)
+            {
+                var watched = ids.Exists(played.Contains);
+                answer[season] = watched;
+                PrivacyReads.Query("season-played:" + user.Id.ToString("N") + ":" + season.ToString("N"), watched ? "1" : "0", check =>
+                {
+                    if (PrivacyHostView.Item(library, season) is not Season live) return "0";
+                    var series = prefilter ? check.Memo("played-series:" + user.Id.ToString("N"), () => LoadPlayedSeriesForTagStrip(user)) : null;
+                    if (SeasonEpisodeIds(user, live, series) is not { } now) return null;
+                    return PlayedNow(user, now).Count > 0 ? "1" : "0";
+                });
+            }
+            return answer;
+        }
+
+        /// <summary>The episodes the host lists in a later season (empty for a show the played-series prefilter skips; null: unreadable).</summary>
+        private List<Guid>? SeasonEpisodeIds(JUser user, Season season, (HashSet<Guid> Ids, HashSet<string> Keys)? playedSeries)
+        {
+            if (playedSeries is { } touched
+                && !touched.Ids.Contains(season.SeriesId)
+                && (string.IsNullOrEmpty(season.SeriesPresentationUniqueKey) || !touched.Keys.Contains(season.SeriesPresentationUniqueKey))
+                && (season.Series?.PresentationUniqueKey is not { Length: > 0 } currentKey || !touched.Keys.Contains(currentKey)))
+                return new List<Guid>();
             try
             {
-                var asked = candidateIds.Distinct().ToArray();
-                foreach (var id in _libraryManager.GetItemIds(new InternalItemsQuery(user)
-                {
-                    ItemIds = asked,
-                    IsPlayed = true,
-                    GroupByPresentationUniqueKey = false,
-                }) ?? [])
-                {
-                    played.Add(id);
-                }
-                // What the query established is remembered: the first save after it that leaves an item's watched state as
-                // it was (a playback progress save) is not a watched change.
-                PrivacyReads.Established(_userDataManager, user.Id, asked, played);
+                return PrivacyReads.SeasonEpisodes(season, user).Where(ep => ep != null).Select(ep => ep.Id).ToList();
             }
             catch (Exception ex)
             {
                 _spoilerResolver.WarnRateLimited(
-                    "tagcache-played-probe:" + ex.GetType().FullName,
-                    $"Spoiler Guard tag-cache strip: played-state query failed for {user.Id}: {ex.Message}");
-                played.Clear();
+                    "tagcache-season-probe:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-cache strip: season any-watched probe failed for {season.Id}: {ex.Message}");
+                return null;
             }
+        }
+
+        /// <summary>Which of <paramref name="ids"/> the viewer has played, by the host's played query (unrecorded: callers record what they consume).</summary>
+        private HashSet<Guid> PlayedNow(JUser user, IEnumerable<Guid> ids)
+        {
+            var played = new HashSet<Guid>();
+            foreach (var batch in ids.Distinct().Chunk(PrivacyHostView.Batch))
+                foreach (var id in _libraryManager.GetItemIds(new InternalItemsQuery(user) { ItemIds = batch, IsPlayed = true, GroupByPresentationUniqueKey = false }) ?? [])
+                    played.Add(id);
             return played;
         }
 
@@ -687,7 +786,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var ids = new HashSet<Guid>();
                 var keys = new HashSet<string>(StringComparer.Ordinal);
                 var watched = new HashSet<Guid>();
-                PrivacyReads.WatchedAll(user.Id);
                 foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery(user)
                 {
                     IncludeItemTypes = new[] { BaseItemKind.Episode },
@@ -702,8 +800,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (ep.SeriesId != Guid.Empty) ids.Add(ep.SeriesId);
                     if (!string.IsNullOrEmpty(ep.SeriesPresentationUniqueKey)) keys.Add(ep.SeriesPresentationUniqueKey);
                 }
-                // A played-only query established that each episode it returned is watched.
-                PrivacyReads.Established(_userDataManager, user.Id, watched, watched);
                 return (ids, keys);
             }
             catch (Exception ex)

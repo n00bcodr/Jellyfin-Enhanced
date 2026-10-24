@@ -93,13 +93,12 @@ public static partial class PrivacyValues
         // is not a spoiler.
         if (strip.RatingFrom is { } source)
         {
-            var rating = host.Item(source)?.OfficialRating;
+            var rating = host.Text(source, PrivacyValueHost.TextMember.OfficialRating);
             e.OfficialRating = string.IsNullOrWhiteSpace(rating) ? null : rating;
         }
         if (title is { } owner && e.Genres != null)
         {
-            var genres = host.Item(owner)?.Genres;
-            e.Genres = e.Genres.Select(g => PrivacyValueHost.EntryIn(genres, g)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+            e.Genres = e.Genres.Select(g => host.Entry(owner, PrivacyValueHost.VocabularyList.Genres, g)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
         }
         static string? Digits(string? v) => v is { Length: > 0 and <= 20 } && v.All(char.IsAsciiDigit) ? v : null;
         e.TmdbId = Digits(e.TmdbId);
@@ -151,6 +150,29 @@ public static partial class PrivacyValues
     /// item is the library's own projection for the tag renderers.
     /// </summary>
     public static object TagData(BaseItem item, SpoilerTagDataStub stub, PrivacyTagDataRequest request, PrivacyValueHost host)
+        => CaptureTagAnswer(item, stub, request, host);
+
+    // Owned capture/comparison adapter. The fact is the selected answer's semantic
+    // payload, not a fingerprint of unrelated item or media metadata. Re-reading
+    // repeats selection, language resolution and fallbacks against the live item.
+    private static object CaptureTagAnswer(BaseItem supplied, SpoilerTagDataStub stub, PrivacyTagDataRequest request, PrivacyValueHost host)
+    {
+        var id = supplied.Id;
+        var item = host.Item(id) ?? supplied;
+        var answer = CaptureTagPayload(item, stub, request, host);
+        var proof = Newtonsoft.Json.JsonConvert.SerializeObject(answer);
+        PrivacyReads.Query("tag-payload:" + id.ToString("N") + ":" + stub + ":" + request.MediaSourceId, proof, check =>
+        {
+            if (check.Item(id) is not { } current) return null;
+            var fresh = new PrivacyValueHost(host.Library, host.Localization);
+            return Newtonsoft.Json.JsonConvert.SerializeObject(CaptureTagPayload(current, stub, request, fresh));
+        });
+        return answer;
+    }
+
+    // The sole raw tag-payload ingestion adapter. Returned anonymous records hold
+    // only selected scalar values and newly owned arrays/stream records.
+    private static object CaptureTagPayload(BaseItem item, SpoilerTagDataStub stub, PrivacyTagDataRequest request, PrivacyValueHost host)
     {
         var kind = item.GetBaseItemKind();
         var policy = request.Policy;
@@ -183,7 +205,7 @@ public static partial class PrivacyValues
                 _ => Guid.Empty,
             };
             if (series == Guid.Empty) return null;
-            var parent = host.Item(series)?.OfficialRating;
+            var parent = host.Text(series, PrivacyValueHost.TextMember.OfficialRating);
             return string.IsNullOrWhiteSpace(parent) ? null : parent;
         }
 
@@ -222,7 +244,7 @@ public static partial class PrivacyValues
             {
                 Id = item.Id,
                 Type = kind.ToString(),
-                Genres = stripGenres ? Array.Empty<string>() : (episode.Genres ?? Array.Empty<string>()),
+                Genres = stripGenres ? Array.Empty<string>() : (episode.Genres?.ToArray() ?? Array.Empty<string>()),
                 CommunityRating = stripRatings ? (float?)null : episode.CommunityRating,
                 CriticRating = stripRatings ? (float?)null : episode.CriticRating,
                 OfficialRating = host.Rating(Rating(episode, seriesOnly: stripRatings)),
@@ -234,7 +256,7 @@ public static partial class PrivacyValues
                 MediaSources = (List<object>?)null,
                 FirstEpisode = (object?)null,
                 // Aligned with the field-strip filter (which empties Tags).
-                Tags = stripGenres ? Array.Empty<string>() : (episode.Tags ?? Array.Empty<string>()),
+                Tags = stripGenres ? Array.Empty<string>() : (episode.Tags?.ToArray() ?? Array.Empty<string>()),
             };
         }
 
@@ -247,7 +269,7 @@ public static partial class PrivacyValues
             {
                 Id = item.Id,
                 Type = kind.ToString(),
-                Genres = stripGenres ? Array.Empty<string>() : (series.Genres ?? Array.Empty<string>()),
+                Genres = stripGenres ? Array.Empty<string>() : (series.Genres?.ToArray() ?? Array.Empty<string>()),
                 CommunityRating = stripRatings ? (float?)null : series.CommunityRating,
                 CriticRating = stripRatings ? (float?)null : series.CriticRating,
                 OfficialRating = host.Rating(Rating(series)),
@@ -260,7 +282,7 @@ public static partial class PrivacyValues
                 MediaStreams = (List<object>?)null,
                 MediaSources = (List<object>?)null,
                 FirstEpisode = (object?)null,
-                Tags = stripGenres ? Array.Empty<string>() : (series.Tags ?? Array.Empty<string>()),
+                Tags = stripGenres ? Array.Empty<string>() : (series.Tags?.ToArray() ?? Array.Empty<string>()),
             };
         }
 
@@ -272,7 +294,7 @@ public static partial class PrivacyValues
             {
                 Id = item.Id,
                 Type = kind.ToString(),
-                Genres = stripGenres ? Array.Empty<string>() : (item.Genres ?? Array.Empty<string>()),
+                Genres = stripGenres ? Array.Empty<string>() : (item.Genres?.ToArray() ?? Array.Empty<string>()),
                 CommunityRating = stripRatings ? (float?)null : item.CommunityRating,
                 CriticRating = stripRatings ? (float?)null : item.CriticRating,
                 OfficialRating = host.Rating(Rating(item)),
@@ -283,7 +305,7 @@ public static partial class PrivacyValues
                 MediaStreams = stripGenres ? null : StubStreams(item),
                 MediaSources = (List<object>?)null,
                 FirstEpisode = (object?)null,
-                Tags = stripGenres ? Array.Empty<string>() : (item.Tags ?? Array.Empty<string>()),
+                Tags = stripGenres ? Array.Empty<string>() : (item.Tags?.ToArray() ?? Array.Empty<string>()),
             };
         }
 
@@ -294,7 +316,7 @@ public static partial class PrivacyValues
             {
                 Id = item.Id,
                 Type = kind.ToString(),
-                Genres = stripGenres ? Array.Empty<string>() : (season.Genres ?? Array.Empty<string>()),
+                Genres = stripGenres ? Array.Empty<string>() : (season.Genres?.ToArray() ?? Array.Empty<string>()),
                 CommunityRating = stripRatings ? (float?)null : season.CommunityRating,
                 CriticRating = stripRatings ? (float?)null : season.CriticRating,
                 OfficialRating = host.Rating(Rating(season, seriesOnly: stripRatings)),
@@ -305,7 +327,7 @@ public static partial class PrivacyValues
                 MediaStreams = (List<object>?)null,
                 MediaSources = (List<object>?)null,
                 FirstEpisode = (object?)null,
-                Tags = stripGenres ? Array.Empty<string>() : (season.Tags ?? Array.Empty<string>()),
+                Tags = stripGenres ? Array.Empty<string>() : (season.Tags?.ToArray() ?? Array.Empty<string>()),
             };
         }
 
@@ -359,7 +381,7 @@ public static partial class PrivacyValues
             {
                 Id = firstEpisode.Id,
                 Type = firstEpisode.GetBaseItemKind().ToString(),
-                Genres = firstProtected && stripGenres ? Array.Empty<string>() : firstEpisode.Genres,
+                Genres = firstProtected && stripGenres ? Array.Empty<string>() : firstEpisode.Genres?.ToArray(),
                 NeedsStreamFetch = true,
             };
         }
@@ -368,12 +390,12 @@ public static partial class PrivacyValues
         {
             Id = item.Id,
             Type = kind.ToString(),
-            Genres = item.Genres,
+            Genres = item.Genres?.ToArray(),
             CommunityRating = item.CommunityRating,
             CriticRating = item.CriticRating,
             OfficialRating = Rating(item),
             SeriesId = item is MediaBrowser.Controller.Entities.TV.Episode ep ? ep.SeriesId : item is MediaBrowser.Controller.Entities.TV.Season sn ? sn.SeriesId : (Guid?)null,
-            ProviderIds = item.ProviderIds,
+            ProviderIds = item.ProviderIds?.ToDictionary(p => p.Key, p => p.Value),
             Name = item.Name,
             Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
             MediaStreams = streams,

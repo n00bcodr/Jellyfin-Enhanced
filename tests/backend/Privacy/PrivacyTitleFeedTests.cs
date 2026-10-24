@@ -78,13 +78,16 @@ public class PrivacyTitleFeedTests
     {
         var ids=Enumerable.Range(0,2001).Select(_=>Guid.NewGuid()).ToArray();
         var library=new Moq.Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        // The host's item cache (read without a lookup) holds none of them.
+        library.As<IPrivacyItemMemory>();
         library.Setup(l=>l.GetItemList(Moq.It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
             .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q)=>q.ItemIds.Select(id=>(MediaBrowser.Controller.Entities.BaseItem)new MediaBrowser.Controller.Entities.Movies.Movie { Id=id,ProviderIds=new Dictionary<string,string> { ["Tmdb"]="42" } }).ToList());
         var policy=HiddenContentPolicy.Build(new UserHiddenContent { Items=new() { ["movie:tmdb:42"]=new() { Type="Movie",TmdbId="42" } } });
         policy.BindLibraryIds(library.Object,ids);
         Assert.True(policy.IsHidden(null,ids[^1].ToString("N"),null,"library"));
-        Assert.Equal(2,library.Invocations.Count);
-        Assert.All(library.Invocations,call=>Assert.True(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length<=2000));
+        var lookups=library.Invocations.Where(call=>call.Method.DeclaringType==typeof(MediaBrowser.Controller.Library.ILibraryManager)).ToList();
+        Assert.Equal(2,lookups.Count);
+        Assert.All(lookups,call=>Assert.True(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length<=2000));
     }
 
 }

@@ -255,11 +255,13 @@ export const OWNER_SITES = {
 
 /**
  * Custom events (document, window or body) whose listeners change the DOM without a publication, each with the reason:
- * none is a write's answer (D46S2-R8-2: those are completions and go through JE.publication).
+ * State invalidations carry no action result or authority. An operation's
+ * answer is a completion and goes through JE.publication (D46S2-R8-2).
  */
 export const EVENT_LISTENERS = {
   'jellyseerr-more-info-opened': 'a window opening: the action bar and the status pill mount into it while it is shown (no write\'s answer)',
   'je-hidden-content-changed': 'the viewer\'s Hidden Content rules changed (a whole-document state with its own save): pages re-filter what they show',
+  'je-hidden-content-saved': 'the current-session settings document was acknowledged: discard earlier tag projections and read again under current privacy/session; carries no action result or owner authority',
   'je:user-data-loaded': 'the signed-in viewer\'s settings loaded: pages draw with them',
   'je-bookmarks-updated': 'the bookmarks library redraws after its own edits (no title action)',
   'je-spoiler-policy-changed': 'the viewer\'s Spoiler Guard policy changed: pages redraw what they blur (the window reopens under its owner, D46S2-R6-1)',

@@ -414,6 +414,7 @@ public class PrivacyReviewRound24Tests
             UserData = new UserItemDataDto { Key = "k", Played = false, PlaybackPositionTicks = position },
             Chapters = [new ChapterInfo { StartPositionTicks = 500, Name = "R25 chapter past the new resume point" }],
         };
+        rig.Chapters.Setup(c => c.GetChapters(movie.Id)).Returns(dto.Chapters);
         var result = new ResultExecutingContext(action, [], new ObjectResult(new QueryResult<BaseItemDto>([dto])), new object());
         gate.OnResultExecuting(result);
         Assert.Contains("R25 chapter past the new resume point", JsonSerializer.Serialize(Assert.IsAssignableFrom<ObjectResult>(result.Result).Value));

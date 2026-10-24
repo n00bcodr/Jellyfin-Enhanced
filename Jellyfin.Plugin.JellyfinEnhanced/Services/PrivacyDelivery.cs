@@ -31,13 +31,13 @@ internal enum PrivacyInputKind : byte
 }
 
 /// <summary>
-/// The item inputs of a privacy verdict, with revisions: a user's watched state and playback position, and the library's
-/// ownership facts (an item's owner and extra kind, its series and season, a season's number, its TMDB key, a collection's
-/// members, the item's presence). One process-wide log of their changes, each stamped with a tick; an attempt's read-set
-/// (<see cref="PrivacyReadSet"/>) holds the inputs it read and is invalid when a change after its mark moves one of them. A
-/// change is logged only when it changes a fact a verdict reads, compared with the fact as last known (remembered when an
-/// event or a judgment read it); a fact never known before is unknown, so its first change is logged. Memos of verdict
-/// inputs are invalidated by the same events (<see cref="LibraryChanged"/>, <see cref="CollectionChanged"/>).
+/// The host's announced changes of privacy inputs (a user's watched state and playback position, the library's ownership
+/// facts of an item, a collection's members), one process-wide log stamped with ticks. The log schedules refreshes: memos of
+/// verdict inputs drop what a change can move (<see cref="LibraryChanged"/>, <see cref="CollectionChanged"/>, the scope and
+/// library queries). It never decides an answer's validity: every input an answer consumed is a fact its read-set compares
+/// with the live source (<see cref="PrivacyReadSet.Valid"/>), so an announced refresh that changed no consumed value moves
+/// nothing, and a change the host has not announced yet is still seen. A change is logged only when it changes a fact a
+/// verdict reads, compared with the fact as last known; a fact never known before is unknown, so its first change is logged.
 /// </summary>
 public static class PrivacyInputs
 {
@@ -128,23 +128,6 @@ public static class PrivacyInputs
             foreach (var id in change.Items)
                 if (judged(id)) return true;
         }
-        return false;
-    }
-
-    /// <summary>Whether a change logged after <paramref name="since"/> moves an input <paramref name="reads"/> read.</summary>
-    internal static bool ChangedSince(long since, PrivacyReadSet reads) => ChangedSince(since, reads, out _);
-
-    /// <summary>As <see cref="ChangedSince(long, PrivacyReadSet)"/>, naming the change (diagnostics).</summary>
-    internal static bool ChangedSince(long since, PrivacyReadSet reads, out string? which)
-    {
-        which = null;
-        if (Since(since) is not { } changes) { which = "the input log no longer reaches back to the answer's start"; return true; }
-        foreach (var change in changes)
-            if (reads.Reads(change.Kind, change.User, change.Items, change.Tick))
-            {
-                which = change.Kind.ToString().ToLowerInvariant() + " change of " + string.Join(",", change.Items.Take(4).Select(i => i.ToString("N")));
-                return true;
-            }
         return false;
     }
 
@@ -352,7 +335,7 @@ public static class PrivacyInputs
 /// collection's members (on 10.11 an owner's extras too). What the input log remembers and what the gate compares with the
 /// host's live item.
 /// </summary>
-public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, Guid Season, int Index, int ParentIndex, string? Tmdb, int Members)
+public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, Guid Season, int Index, int ParentIndex, string? Tmdb, int Members, Jellyfin.Data.Enums.BaseItemKind Kind = default)
 {
     /// <summary>What a live lookup asks of each item (its provider ids; no images or people).</summary>
     internal static readonly MediaBrowser.Controller.Dto.DtoOptions Options = new(false) { Fields = new[] { MediaBrowser.Model.Querying.ItemFields.ProviderIds }, EnableImages = false };
@@ -371,7 +354,7 @@ public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, G
             // 10.11 records an owner's extras on the owner (and can attach one without saving the extra's own row).
             ^ (item.ExtraIds is { Length: > 0 } extras ? Hash(extras) : 0)
 #endif
-        );
+        , item.GetBaseItemKind());
 
     /// <summary>
     /// Whether <paramref name="other"/> names the same ownership (owner, extra kind, series, season, numbering, TMDB key):
@@ -387,7 +370,9 @@ public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, G
     internal static PrivacyFacts Live(ILibraryManager library, BaseItem item, PrivacyFacts judged, Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?> folders)
     {
         var facts = Of(item);
-        if (facts == judged || item.OwnerId != Guid.Empty || judged.Owner == Guid.Empty) return facts;
+        // A row that names no owner is given the owner the host lists it under (10.11), whatever the judgment saw: an extra
+        // judged ownerless that its owner's listing has taken in since is a change too.
+        if (item.OwnerId != Guid.Empty || item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season) return facts;
         return facts with { Owner = PrivacyIdentities.ExtraOwner(library, item, folders) };
     }
 
@@ -411,11 +396,11 @@ public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, G
 /// <summary>
 /// The one delivery gate of every protected answer (tag cache, tag data, poster tags, native item answers, search, activity,
 /// sessions, reviews and ratings, JE's JSON feeds, images): each attempt builds the answer inside its own read-set
-/// (<see cref="PrivacyReadSet"/>), which records every verdict input the build reads with its revision, and the gate, after
+/// (<see cref="PrivacyReadSet"/>), which records every fact the build consumes with how to read it again, and the gate, after
 /// the build's last blocking step, validates exactly that set. An answer whose set no longer holds is built again from
-/// scratch (a new set, the request's cached identities and policies discarded), a bounded number of times; one whose inputs
-/// keep changing is withheld. A delivered answer's set guards its bytes (<see cref="PrivacyResponseGuard"/>): every later
-/// write re-checks it.
+/// scratch (a new set, the request's cached identities and policies discarded, a memo whose fact changed dropped), a bounded
+/// number of times; one whose inputs keep changing is withheld. A delivered answer's set is checked again, completely, at its
+/// one commit point (<see cref="PrivacyResponseGuard"/>).
 /// </summary>
 public static class PrivacyDelivery
 {

@@ -28,29 +28,45 @@ public class PrivacyFieldFilterTests
         public Mock<ILibraryManager> Library { get; } = new();
         public Mock<IUserManager> Users { get; } = new();
         public Mock<IUserDataManager> Data { get; } = new();
+        public Mock<MediaBrowser.Controller.Chapters.IChapterManager> Chapters { get; } = new();
         private readonly SpoilerNextUnwatchedService next;
         private readonly SpoilerFieldStripFilter filter;
         public Fixture()
         {
             Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+            Users.Setup(u => u.GetUserById(User)).Returns(new Jellyfin.Database.Implementations.Entities.User("fixture", "default", "default") {Id=User});
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object,
                 new SpoilerIdentityService(Users.Object, Plugin.Core.Logger), Plugin.Core.Logger);
             var resolver = new SpoilerUserResolver(Plugin.Core.Manager, Library.Object, Plugin.Core.Logger, identities);
             next = new SpoilerNextUnwatchedService(Library.Object, Users.Object, Data.Object, Plugin.Core.Logger);
-            filter = new SpoilerFieldStripFilter(resolver, Library.Object, Users.Object, Data.Object, next);
+            filter = new SpoilerFieldStripFilter(resolver, Library.Object, Users.Object, Data.Object, next, chapters: Chapters.Object);
             var state = new UserSpoilerBlur();
             state.Series[Series.ToString("N")] = new();
             Save(state);
         }
         // The production save path drops the resolver's cached state itself (see the test below).
         public void Save(UserSpoilerBlur state) => Plugin.Core.Manager.SaveUserConfiguration(User.ToString("N"), "spoilerblur.json", state);
-        public BaseItemDto Episode(bool played = false) => new()
+        public BaseItemDto Episode(bool played = false)
         {
+            var dto = new BaseItemDto
+            {
             Id = Guid.NewGuid(), SeriesId = Series, Type = BaseItemKind.Episode,
             Name = "Secret ending", Overview = "Secret plot", OriginalTitle = "Secret original", Path = "/Secret.mkv",
             ParentIndexNumber = 2, IndexNumber = 3, UserData = new UserItemDataDto { Key = "test", Played = played },
             Tags = ["Secret tag"], CommunityRating = 9, CriticRating = 80, SortName = "Secret sort",
-        };
+            };
+            // The native answer and the host's canonical row describe the same
+            // fixture episode; numbering is no longer authorized by a DTO alone.
+            Library.Setup(l => l.GetItemById(dto.Id)).Returns(() => new MediaBrowser.Controller.Entities.TV.Episode
+            {
+                Id=dto.Id, SeriesId=dto.SeriesId ?? Guid.Empty, ParentIndexNumber=dto.ParentIndexNumber,
+                IndexNumber=dto.IndexNumber, Name=dto.Name,
+            });
+            Data.Setup(d => d.GetUserData(It.IsAny<Jellyfin.Database.Implementations.Entities.User>(),
+                It.Is<MediaBrowser.Controller.Entities.BaseItem>(item => item.Id == dto.Id)))
+                .Returns(() => new MediaBrowser.Controller.Entities.UserItemData {Key="fixture", Played=dto.UserData?.Played==true});
+            return dto;
+        }
         public async Task<object?> Invoke(object value, string controller = "Items", string action = "GetItems", Guid? user = null)
         {
             var http = new DefaultHttpContext();
@@ -156,6 +172,7 @@ public class PrivacyFieldFilterTests
             MediaSources = [new MediaSourceInfo { Name = "Director's Cut", Path = "/Secret.mkv" }] };
         // The movie's title is the library's own (Spoiler Guard does not hide movie titles).
         f.Library.Setup(l => l.GetItemById(id)).Returns(new MediaBrowser.Controller.Entities.Movies.Movie { Id = id, Name = "Movie name" });
+        f.Chapters.Setup(c => c.GetChapters(id)).Returns(movie.Chapters);
         movie = Assert.IsType<BaseItemDto>(await f.Invoke(movie));
         // A version's label is constructed from its validated values (free text from the file name never leaves).
         Assert.Equal("Movie name", movie.Name); Assert.Equal("Version 1", movie.MediaSources![0].Name); Assert.Null(movie.MediaSources[0].Path);

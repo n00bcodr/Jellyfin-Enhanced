@@ -147,6 +147,8 @@ public class PrivacyFieldClassificationTests
         var shot = PrivacyHostShapeModelTests.Data.Shots.Single(s => s.File == "UserLibrary.GetItem.r19-e3.json");
         var dto = Filled((BaseItemDto)PrivacyHostShapeModelTests.Value(shot));
         dto.ParentIndexNumber = season; dto.IndexNumber = episode; dto.UserData = null;
+        rig.Items[dto.Id].ParentIndexNumber = season;
+        rig.Items[dto.Id].IndexNumber = episode;
         var streams = dto.MediaStreams!.Length;
         var delivery = new ResultExecutingContext(PrivacyHostShapeModelTests.Context(shot, rig.Admin), new List<IFilterMetadata>(), new ObjectResult(dto), new object());
         rig.Gate().OnResultExecuting(delivery);

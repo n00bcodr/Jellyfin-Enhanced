@@ -4,12 +4,14 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using Moq;
 using Xunit;
 
 namespace JellyfinEnhanced.Tests;
 
+[Collection("Plugin singleton")]
 public class PrivacySpoilerStripTests
 {
     [Theory]
@@ -57,21 +59,27 @@ public class PrivacySpoilerStripTests
         Assert.Equal(source.Genres, result.Genres); Assert.Equal(source.CommunityRating, result.CommunityRating);
     }
 
-    [Fact]
-    public void FailedPlayedLookupFailsClosedAndPreservesOtherUsersSource()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedPlayedLookupFailsClosedAndPreservesOtherUsersSource(bool movie)
     {
         using var fixture = new JE.Tests.CoreFixture();
         var library = new Mock<ILibraryManager>(); var userData = new Mock<IUserDataManager>();
         var user = new User("test", "default", "default") { Id = Guid.NewGuid() };
-        var episode = new Episode { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid() };
-        userData.Setup(x => x.GetUserData(user, episode)).Throws(new IOException("fixture failure"));
+        var owner = Guid.NewGuid();
+        BaseItem item = movie ? new Movie { Id = owner } : new Episode { Id = Guid.NewGuid(), SeriesId = owner };
+        userData.Setup(x => x.GetUserData(user, item)).Throws(new IOException("fixture failure"));
         var resolver = new SpoilerUserResolver(fixture.Manager, library.Object, fixture.Logger, null!);
         var stripper = new SpoilerTagDataStripper(library.Object, userData.Object, resolver);
-        var state = new UserSpoilerBlur(); state.Series[episode.SeriesId.ToString("N")] = new();
+        var state = new UserSpoilerBlur();
+        if (movie) state.Movies[owner.ToString("N")] = new();
+        else state.Series[owner.ToString("N")] = new();
         var policy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = true }, state)!;
-        var source = Entry(episode.SeriesId);
-        Assert.Empty(stripper.StripEntry(policy, user, episode, source, out var stripped).Genres!);
+        var source = Entry(owner); source.Type = movie ? "Movie" : "Episode";
+        Assert.Empty(stripper.StripEntry(policy, user, item, source, out var stripped).Genres!);
         Assert.True(stripped); Assert.NotEmpty(source.Genres!);
+        userData.Verify(x => x.GetUserData(user, item), Times.Once);
     }
 
     [Theory]

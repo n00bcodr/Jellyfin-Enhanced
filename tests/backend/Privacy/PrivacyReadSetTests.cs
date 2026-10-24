@@ -21,31 +21,44 @@ public class PrivacyReadSetTests
 {
     private static PrivacyHostShapeModelTests.Rule Rule(string id) => PrivacyHostShapeModelTests.Rules.Single(r => r.Id == id);
 
-    /// <summary>
-    /// Instruments the rig's host: each item, item-list and user-data read made while an attempt runs must already be in
-    /// that attempt's read-set (the accessor records before it asks the host). Returns the reads that were not.
-    /// </summary>
-    private static List<string> Audit(PrivacyHostShapeModelTests.Rig rig)
+    /// <summary>The host reads an attempt made, each checked against that attempt's read-set once the attempt is done.</summary>
+    private sealed class Reads
     {
-        var outside = new List<string>();
-        void Check(string what, bool held) { if (!held) lock (outside) outside.Add(what); }
+        private readonly List<(PrivacyReadSet Set, string What, Func<PrivacyReadSet, bool> Held)> _seen = new();
+
+        public void Add(PrivacyReadSet set, string what, Func<PrivacyReadSet, bool> held) { lock (_seen) _seen.Add((set, what, held)); }
+
+        /// <summary>The reads whose value is not a fact of the attempt that made them.</summary>
+        public List<string> Outside() { lock (_seen) return _seen.Where(r => !r.Held(r.Set)).Select(r => r.What).ToList(); }
+
+        public void Clear() { lock (_seen) _seen.Clear(); }
+    }
+
+    /// <summary>
+    /// Instruments the rig's host: each item, item-list and user-data read made while an attempt runs must be a fact of that
+    /// attempt's read-set (the accessor records the value it read, with how to read it again). A query whose result is one
+    /// fact reads its parts unrecorded; the fact is the query's.
+    /// </summary>
+    private static Reads Audit(PrivacyHostShapeModelTests.Rig rig)
+    {
+        var seen = new Reads();
         rig.Library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) =>
         {
-            if (PrivacyReadSet.Current is { } reads) Check("item " + id, reads.HoldsLibrary(id));
+            if (PrivacyReadSet.Current is { } reads) seen.Add(reads, "item " + id, set => set.HoldsLibrary(id));
             return rig.Items.GetValueOrDefault(id)!;
         });
         rig.Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
         {
-            if (PrivacyReadSet.Current is { } reads) foreach (var id in q.ItemIds ?? []) Check("listed item " + id, reads.HoldsLibrary(id));
+            if (PrivacyReadSet.Current is { } reads) foreach (var id in q.ItemIds ?? []) seen.Add(reads, "listed item " + id, set => set.HoldsLibrary(id));
             return (q.ItemIds ?? []).Select(id => rig.Items.GetValueOrDefault(id)).OfType<BaseItem>().ToList();
         });
         rig.UserData.Setup(d => d.GetUserData(It.IsAny<Jellyfin.Database.Implementations.Entities.User>(), It.IsAny<BaseItem>()))
             .Returns((Jellyfin.Database.Implementations.Entities.User user, BaseItem item) =>
             {
-                if (PrivacyReadSet.Current is { } reads) Check("watched " + item.Id, reads.HoldsWatched(user.Id, item.Id));
+                if (PrivacyReadSet.Current is { } reads) seen.Add(reads, "watched " + item.Id, set => set.HoldsWatched(user.Id, item.Id));
                 return new UserItemData { Key = "k", Played = rig.Played.Contains((user.Id, item.Id)) };
             });
-        return outside;
+        return seen;
     }
 
     [Theory]
@@ -66,7 +79,8 @@ public class PrivacyReadSetTests
         var delivery = new ResultExecutingContext(context, [], new ObjectResult(PrivacyHostShapeModelTests.Value(shot)), new object());
         gate.OnResultExecuting(delivery);
         Assert.IsAssignableFrom<ObjectResult>(delivery.Result);
-        Assert.True(outside.Count == 0, "host reads outside the read-set: " + string.Join(", ", outside.Distinct().Take(20)));
+        var unrecorded = outside.Outside();
+        Assert.True(unrecorded.Count == 0, "host reads outside the read-set: " + string.Join(", ", unrecorded.Distinct().Take(20)));
     }
 
     [Fact]
@@ -85,7 +99,7 @@ public class PrivacyReadSetTests
             return item;
         });
         Assert.NotNull(planted);
-        Assert.Contains("item " + episode.Id, outside);
+        Assert.Contains("item " + episode.Id, outside.Outside());
         outside.Clear();
         // Through the accessor the same read is held, and the change withholds the stale answer.
         var accessed = PrivacyDelivery.Deliver(rig.Viewer, () =>
@@ -95,7 +109,7 @@ public class PrivacyReadSetTests
             rig.Library.Raise(l => l.ItemUpdated += null, rig.Library.Object, new ItemChangeEventArgs { Item = episode, UpdateReason = ItemUpdateType.MetadataImport });
             return item;
         });
-        Assert.Empty(outside);
+        Assert.Empty(outside.Outside());
         Assert.Null(accessed);
     }
 
@@ -106,14 +120,27 @@ public class PrivacyReadSetTests
         PrivacyInputs.Observe(null, data.Object);
         var user = new Jellyfin.Database.Implementations.Entities.User("progress", "default", "default") { Id = Guid.NewGuid() };
         var episode = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid() };
-        data.Setup(d => d.GetUserData(user, episode)).Returns(new UserItemData { Key = "k", Played = false, PlaybackPositionTicks = 10 });
-        void Save(bool played, long position) => data.Raise(d => d.UserDataSaved += null, data.Object, new UserDataSaveEventArgs
+        var stored = new UserItemData { Key = "k", Played = false, PlaybackPositionTicks = 10 };
+        data.Setup(d => d.GetUserData(user, It.IsAny<BaseItem>())).Returns(() => stored);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([episode]);
+        void Save(bool played, long position)
         {
-            UserId = user.Id, Item = episode, SaveReason = UserDataSaveReason.PlaybackProgress, UserData = new UserItemData { Key = "k", Played = played, PlaybackPositionTicks = position },
-        });
+            // The host's store holds the saved data, then announces it.
+            stored = new UserItemData { Key = "k", Played = played, PlaybackPositionTicks = position };
+            data.Raise(d => d.UserDataSaved += null, data.Object, new UserDataSaveEventArgs
+            {
+                UserId = user.Id, Item = episode, SaveReason = UserDataSaveReason.PlaybackProgress, UserData = stored,
+            });
+        }
         PrivacyReadSet watched, progress;
-        using (var scope = PrivacyReadSet.Begin()) { PrivacyReads.UserData(data.Object, user, episode); watched = scope.Reads; }
-        using (var scope = PrivacyReadSet.Begin()) { PrivacyReads.UserData(data.Object, user, episode, progress: true); progress = scope.Reads; }
+        using (var scope = PrivacyReadSet.Begin()) { PrivacyReads.Item(library.Object, episode.Id); PrivacyReads.UserData(data.Object, user, episode); watched = scope.Reads; }
+        using (var scope = PrivacyReadSet.Begin())
+        {
+            PrivacyReads.Item(library.Object, episode.Id);
+            PrivacyReads.UserData(data.Object, user, episode, "position", d => d?.PlaybackPositionTicks.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-");
+            progress = scope.Reads;
+        }
         Save(false, 20);
         Assert.True(watched.Valid(), "a progress save with the watched state unchanged moved a watched-state verdict");
         Assert.False(progress.Valid(), "a progress save did not move a decision that reads the position");

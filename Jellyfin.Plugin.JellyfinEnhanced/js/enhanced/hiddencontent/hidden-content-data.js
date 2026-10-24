@@ -790,6 +790,7 @@
         revisionPending = false;
         // Taken before the read: the rules as read are at least this new.
         const before = getHiddenData();
+        const documentHandle = JE.internals.userDocumentHandle?.('hidden-content.json', JE.core?.userWrite?.origin?.());
         /** @type {{epoch: number, current: () => boolean, promise: Promise<boolean>}} */
         const owner = { epoch, current: sameReader, promise: Promise.resolve(false) };
         owner.promise = (async () => {
@@ -797,8 +798,10 @@
             try {
                 let next = null;
                 let revision = null;
+                let documentRevision;
                 for (let attempt = 0; attempt < 3; attempt++) {
                     revision = knownRevision();
+                    documentRevision = documentHandle?.revision;
                     const read = await readRules();
                     if (!sameReader() || read === null) return false;
                     if (knownRevision() === revision) { next = read; break; }
@@ -809,7 +812,11 @@
                 retryAttempt = 0;
                 // Changed here meanwhile, or a save started: this tab's change wins; read again after it.
                 if (hiddenData !== before || internal.hasPendingSave?.() || ruleWrites.size > 0) { revisionPending = true; return false; }
+                // The shared store owns accepted server reads. Updating only
+                // this mirror leaves an old base for a reset or later edit.
+                if (documentHandle && !documentHandle.noteRead(next, documentRevision)) { revisionPending = true; return false; }
                 loadedRevision = revision;
+                if (documentHandle) return true; // its publication updated every view
                 if (JSON.stringify(next) === JSON.stringify(before)) return true;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.hiddenContent = next;

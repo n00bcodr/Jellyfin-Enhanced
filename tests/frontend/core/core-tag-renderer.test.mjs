@@ -24,14 +24,14 @@ test('tag position resolves user then administrator then fallback',t=>{
 test('tag cache rejects previous-owner data and clears hot/persistent state on user change',t=>{
  const h=setup(t,{TagCacheServerMode:false});const store=h.window.localStorage;store.setItem('test-v2',JSON.stringify({secret:{owner:'previous'}}));store.setItem('test-v2:identity-owner','s:previous');
  const ctx=h.register();assert.equal(ctx.getPersistent('secret'),undefined);ctx.setPersistent('new',{timestamp:Date.now()});ctx.hot.set('new',1);h.saved[0]();assert.ok(store.getItem('test-v2').includes('new'));
- h.changes.get('tag-cache-test')({serverId:'s',userId:'b'});assert.equal(ctx.getPersistent('new'),undefined);assert.equal(ctx.hot.size,0);assert.equal(store.getItem('test-v2'),null);assert.equal(store.getItem('test-v2:identity-owner'),'s:b');
+ const owner=store.getItem('test-v2:identity-owner');h.changes.get('tag-cache-test')({serverId:'s',userId:'b'});assert.equal(ctx.getPersistent('new'),undefined);assert.equal(ctx.hot.size,0);assert.equal(store.getItem('test-v2'),null);assert.notEqual(store.getItem('test-v2:identity-owner'),owner);
 });
 test('tag cache honors TTL pruning, legacy cleanup and server clear timestamp',t=>{
  const h=setup(t,{TagCacheServerMode:false,TagsCacheTtlDays:1});const store=h.window.localStorage;
  store.setItem('oldtest-v1','{}');store.setItem('oldtest','{}');store.setItem('oldtestTimestamp','1');store.setItem('test-v2:identity-owner','s:a');store.setItem('test-v2',JSON.stringify({old:{timestamp:0},fresh:{timestamp:Date.now()}}));
- const ctx=h.register();h.saved[0]();assert.equal(ctx.getPersistent('old'),undefined);assert.ok(ctx.getPersistent('fresh'));
+ const ctx=h.register();assert.equal(ctx.getPersistent('fresh'),undefined,'a legacy user-only marker cannot prove the producing session/privacy');ctx.setPersistent('old',{timestamp:0});ctx.setPersistent('fresh',{timestamp:Date.now()});h.saved[0]();assert.equal(ctx.getPersistent('old'),undefined);assert.ok(ctx.getPersistent('fresh'));
  for(const key of ['oldtest-v1','oldtest','oldtestTimestamp'])assert.equal(store.getItem(key),null,key);
- h.register();assert.ok(ctx.getPersistent('fresh'),'a plain re-register (page reload) keeps the cache');
+ h.register();assert.ok(ctx.getPersistent('fresh'),'a re-registration within the producing lifetime keeps the cache');
  h.JE.pluginConfig.ClearLocalStorageTimestamp=Date.now();h.register();assert.equal(ctx.getPersistent('fresh'),undefined);assert.equal(ctx.hot.size,0);
  assert.equal(store.getItem('test-v2'),null);assert.equal(store.getItem('test-v2Timestamp'),String(h.JE.pluginConfig.ClearLocalStorageTimestamp));
 });
@@ -42,11 +42,11 @@ test('legacy sweep keeps the current cache, timestamp and owner keys when they s
  const store=h.window.localStorage;store.setItem('JellyfinEnhanced-languageTagsCache','{}');store.setItem('languageTagsCache-x','{}');
  const ctx=h.register();ctx.setPersistent('fresh',{timestamp:Date.now()});h.saved[0]();
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache'),null);assert.equal(store.getItem('languageTagsCache-x'),null);
- assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
+ const owner=store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner');assert.ok(owner);
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2Timestamp'),'1000');
  h.register();assert.ok(ctx.getPersistent('fresh'),'reload must not drop the language cache');
  assert.ok(store.getItem('JellyfinEnhanced-languageTagsCache-v2').includes('fresh'));
- assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),owner);
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2Timestamp'),'1000');
 });
 test('tag search/admin exclusions apply to sibling render hosts',t=>{
@@ -79,4 +79,20 @@ for (const fault of ['accessor', 'enumeration', 'remove', 'timestamp quota']) te
  assert.equal(ctx.getPersistent('old'),undefined);assert.equal(ctx.hot.size,0,'invalidate memory before a failed mirror write');
  Object.defineProperty(h.window,'localStorage',descriptor);prototype.key=key;prototype.removeItem=remove;prototype.setItem=set;
  h.register();assert.equal(store.getItem('test-v2Timestamp'),'1000','next registration retries the mirror');
+});
+test('a deferred cache save and retained card cannot carry the previous live account before polling', t => {
+ const h=setup(t,{TagCacheServerMode:false});let user='user-a';
+ h.window.ApiClient.getCurrentUserId=()=>user;
+ const ctx=h.register(),renderer=h.renderers.get('test');
+ ctx.setPersistent('private-a',{timestamp:Date.now()});ctx.hot.set('private-a',1);
+ renderer.render(h.host,{});assert.equal(ctx.isTagged(h.host),true);
+ user='user-b'; // intentionally no session notification
+ h.saved[0]();
+ assert.equal(h.window.localStorage.getItem('test-v2'),null,'the delayed A save must not persist under B');
+ assert.equal(ctx.isTagged(h.host),false,'B must be able to replace A retained markup');
+ assert.equal(h.host.querySelector('.test-overlay'),null);
+ assert.equal(ctx.getPersistent('private-a'),undefined);assert.equal(ctx.hot.size,0);
+ ctx.setPersistent('safe-b',{timestamp:Date.now()});h.saved[0]();
+ assert.ok(h.window.localStorage.getItem('test-v2').includes('safe-b'));
+ h.register();assert.ok(ctx.getPersistent('safe-b'),'same producing B lifetime survives re-registration');
 });

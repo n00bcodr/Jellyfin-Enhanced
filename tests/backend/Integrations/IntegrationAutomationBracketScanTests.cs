@@ -633,9 +633,8 @@ public class IntegrationAutomationBracketScanTests
     // another source file, outside the bracket. The helper's destination is its parameter: the scan follows it to the
     // argument every caller passes (the person's settings path) and finds the write unbracketed.
     private const string Publisher = "\nnamespace Jellyfin.Plugin.JellyfinEnhanced.Configuration { internal static class SettingsPublisher { public static void Publish(string source, string destination) => System.IO.File.Move(source, destination, true); } }";
-    // (D46: the save epoch moves with the file, inside the same bracket.)
+    // The current document revision advances with the file, inside the same bracket.
     private const string BracketedMove = "VersionOf(userId, fileName).Mutate(() =>\n                {\n                    File.Move(tempPath, configPath, overwrite: true);\n"
-        + "                    Interlocked.Increment(ref _saveEpoch);\n"
         + "                    // The revision moves on once the new document is what readers see (a reader that took the revision\n"
         + "                    // before then hands out the older one: refused, never allowed, by a whole write built on it).\n"
         + "                    Advance(configPath);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });";
@@ -651,7 +650,7 @@ public class IntegrationAutomationBracketScanTests
     [Fact]
     public void ASettingsFilePublishedFromAnotherSourceFileOutsideTheBracketIsReported()
     {
-        var walk = Published("SettingsPublisher.Publish(tempPath, configPath);\n                Interlocked.Increment(ref _saveEpoch);\n                Moved?.Invoke(Normalized(userId), fileName);");
+        var walk = Published("SettingsPublisher.Publish(tempPath, configPath);\n                Advance(configPath);\n                Moved?.Invoke(Normalized(userId), fileName);");
         var errors = walk.Errors(Users);
         if (errors.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", errors));
         var problems = Unbracketed(walk);
@@ -662,7 +661,7 @@ public class IntegrationAutomationBracketScanTests
     [Fact]
     public void ASettingsFilePublishedFromAnotherSourceFileInsideTheBracketPasses()
     {
-        var walk = Published("VersionOf(userId, fileName).Mutate(() =>\n                {\n                    SettingsPublisher.Publish(tempPath, configPath);\n                    Interlocked.Increment(ref _saveEpoch);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });");
+        var walk = Published("VersionOf(userId, fileName).Mutate(() =>\n                {\n                    SettingsPublisher.Publish(tempPath, configPath);\n                    Advance(configPath);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });");
         var errors = walk.Errors(Users);
         if (errors.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", errors));
         Assert.Empty(Unbracketed(walk));

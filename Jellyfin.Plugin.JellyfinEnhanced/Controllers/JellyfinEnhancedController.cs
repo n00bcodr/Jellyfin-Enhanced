@@ -7027,6 +7027,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 healthy = events.Count == 0,
                 corruptionEvents = events,
+                // Admin diagnostics: whether the privacy checks read the host's item cache directly ("direct") or ask the
+                // host by id for each item ("lookup", a host whose cache is not reachable).
+                itemCache = isAdmin ? (Services.PrivacyItemMemory.Direct(_libraryManager) ? "direct" : "lookup") : null,
             });
         }
 
@@ -9409,7 +9412,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // revisions agree for an unchanged state.
             Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
                 since.HasValue && spPolicy != null
-                    ? (key, e) => _spoilerTagDataStripper.MayBeGuarded(spPolicy.State, key, e)
+                    ? _spoilerTagDataStripper.Riders(spPolicy.State)
                     : null;
             // Fingerprint of how this user's entries are filtered and stripped:
             // which cache entries their access excludes (from the same access
@@ -9528,10 +9531,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var (answer, _) = ComposeTagCache(user, since, jsonOptions);
             // The library facts the answer's verdicts depend on were recorded by the reads that took them (the entries'
-            // current series and keys, extras' owners, guarded seasons, collection members), with the facts they were judged
-            // by; an entry whose verdict no library fact decides (judged by its own id) records none. The owners of its
-            // extras are inputs too.
-            if (answer.Owners != null && Services.PrivacyReadSet.Current is { } reads) reads.Library(answer.Owners);
+            // current series and keys, extras and every owner hop, guarded seasons, collection membership), with the facts
+            // they were judged by; an entry whose verdict no library fact decides (judged by its own id) records none.
             return ComposeTagCacheBody(answer, jsonOptions);
         }
 
@@ -9723,7 +9724,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var results = Services.PrivacyDelivery.Deliver(user.Id, () =>
             {
                 var (projected, _, judged) = ProjectTagData(user, ids, mediaSourceId);
-                Services.PrivacyReadSet.Current?.Library(judged);
+                // Every item of the batch and its owner, as the host serves them now (present or absent): one batched read.
+                Services.PrivacyReads.Items(_libraryManager, judged);
                 return projected;
             }, HttpContext);
             if (results == null)

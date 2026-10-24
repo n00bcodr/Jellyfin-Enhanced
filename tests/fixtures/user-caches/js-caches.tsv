@@ -31,7 +31,6 @@ arr/ask/ask-core.js	openIds	state	client request ids of asks in flight (idempote
 arr/ask/ask-episodes.js	bannerSearched	state	outcome of the administrator's own Search press
 arr/ask/ask-episodes.js	busy	state	episodes with a Search press running
 arr/ask/ask-episodes.js	local	state	optimistic states after the person's own ask, until the server agrees
-arr/ask/ask-episodes.js	pendingFocus	state	the checked press's semantic focus origin and DOM neighbours; no server answer or reveal authority, dropped on page/session change or deliberate focus movement
 arr/ask/ask-episodes.js	searched	state	outcomes of the administrator's own Search presses, shown as chips
 arr/ask/ask-episodes.js	season	state	the open season sheet's own rows (read when it opens, under its generation; dropped when it closes)
 arr/ask/ask-sheet.js	current	state	the sheet being shown (its read is made on each open)
@@ -183,10 +182,10 @@ tags/qualitytags.js	jellyfinAudioPreferencePromiseUserId	own	whose preference th
 tags/qualitytags.js	jellyfinAudioPreferenceUserId	own	whose preference that is
 tags/tag-pipeline.js	deltaIds	state	ids changed by the last delta
 tags/tag-pipeline.js	fetchTimer	state	a timer
-tags/tag-pipeline.js	firstEpisodeCache	item	a series' first episode (Jellyfin's own item structure)
+tags/tag-pipeline.js	firstEpisodeCache	revisioned	viewer-projected first-episode promise; producing live account/auth, session lifetime and privacy authority checked at reuse and settlement
 tags/tag-pipeline.js	loadInFlight	uncached	the load in flight only
 tags/tag-pipeline.js	openStoreGate	state	the stored copy's write gate
-tags/tag-pipeline.js	parentSeriesCache	item	an episode's series (Jellyfin's own item structure)
+tags/tag-pipeline.js	parentSeriesCache	revisioned	viewer-projected parent-series promise; producing live account/auth, session lifetime and privacy authority checked at reuse and settlement
 tags/tag-pipeline.js	serverCache	revisioned	the tag data the server projected for the person: kept under the filter revision every tag answer carries (access + Spoiler Guard) and replaced when it moves
 tags/tag-pipeline.js	serverFilterRevision	revisioned	the filter revision the kept tag data was made under (from the server's answers)
 tags/tag-pipeline.js	storeGate	state	the stored copy's write gate
@@ -197,6 +196,11 @@ tags/userreviewtags.js	_failedUntil	state	back-off after a failed read
 tags/userreviewtags.js	_flushTimer	state	a timer
 tags/userreviewtags.js	_inFlight	uncached	reads in flight only
 tags/userreviewtags.js	_queue	uncached	lookups waiting for the next batch
-tags/userreviewtags.js	_reviewCache	revalidated	review averages by title: superseded by the ratings map every tag answer carries (an entry older than the latest map is dropped)
+tags/userreviewtags.js	_reviewCache	revalidated	viewer-projected review averages: producing authority checked before reuse/publication; superseded by each tag answer ratings map
 tags/userreviewtags.js	_reviewCacheAt	revalidated	when each average was read (compared with the latest tag answer's map)
+arr/ask/ask-episodes.js	pendingFocus	state	the checked press's semantic focus origin and DOM neighbours; no server answer or reveal authority, dropped on page/session change or deliberate focus movement
 jellyseerr/discovery/discovery-base.js	listOwner	state	client-paged render lifetime proof (session and access revision); checked after readiness and each slice before state or DOM effects
+tags/qualitytags.js	audioOwner	revalidated	producing live-account/session/privacy proof for the audio preference; checked against currentTagAuthority before reuse
+tags/qualitytags.js	audioPendingOwner	uncached	owner of one audio-preference lookup in flight; only matching currentTagAuthority may settle it
+tags/tag-pipeline.js	cacheAuthority	revisioned	producer proof for the retained server tag answer; checked with live account/auth/session and privacy revision before reuse or publication
+tags/userreviewtags.js	_chipOwners	revalidated	weak per-render-host producing authority; holds checks the live account/auth/session/privacy proof before retaining or updating review markup

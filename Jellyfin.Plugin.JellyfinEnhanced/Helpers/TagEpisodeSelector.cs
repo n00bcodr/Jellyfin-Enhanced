@@ -27,7 +27,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// </summary>
         public static BaseItem? GetFirstEpisode(ILibraryManager libraryManager, BaseItem container, User? user = null)
         {
-            return ScanEpisodes(libraryManager, container, user, HasAudioOrVideoStreams, stopAtFirstRegular: true);
+            // Selection is one semantic input, including a negative result. Its live
+            // comparison repeats ordering, regular/special preference, access and the
+            // usable-stream predicate rather than trusting a remembered entity.
+            var id = container.Id;
+            var selected = Services.PrivacyReadSet.Unrecorded(() =>
+                ScanEpisodes(libraryManager, container, user, HasAudioOrVideoStreams, stopAtFirstRegular: true));
+            Services.PrivacyReads.Query("tag-episode:" + (user?.Id.ToString("N") ?? "server") + ":" + id.ToString("N"),
+                selected?.Id.ToString("N") ?? "absent", check =>
+                {
+                    if (check.Item(id) is not { } live) return null;
+                    return ScanEpisodes(libraryManager, live, user, HasAudioOrVideoStreams, stopAtFirstRegular: true)?.Id.ToString("N") ?? "absent";
+                });
+            return selected;
         }
 
         /// <summary>

@@ -1399,16 +1399,27 @@ test('r3 grid: a revoked batch never repaints or queues its dirty cards in the n
   assert.equal(count, 1);
 });
 
-test('r3 Q13: an unanswered Spoiler policy paints fully guarded after eight seconds and ignores a late answer', { timeout: 11000 }, async t => {
+test('r3 Q13: an unanswered Spoiler policy paints fully guarded after eight seconds and ignores a late answer', async t => {
   const held = deferred();
   const entry = ph(P(1), { kind: 'episodes', mediaType: 'tv', seasonNumber: 2, episodes: [{ s: 2, e: 1, title: 'SECRET EPISODE', airDate: '2001-05-01' }], note: 'SECRET NOTE' });
   const movie = ph(P(2), { kind: 'movie', releaseDate: '1999-05-01', year: 1999, released: true });
   const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: { whenLoaded: () => held.promise, isLoadOk: () => true, isTmdbEnabled: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) }, views: () => [view([entry, movie], [entry.token, movie.token])], items: { [LIST]: PLAYLIST_ITEM } });
+  // Advance the actual registered policy deadline, without making coverage
+  // scheduling part of the eight-second contract. All other timers stay real.
+  const setTimer = h.window.setTimeout.bind(h.window), clearTimer = h.window.clearTimeout.bind(h.window);
+  const deadlines = new Map(); let nextTimer = -1;
+  h.window.setTimeout = (fn, delay, ...args) => {
+    if (delay !== 8000) return setTimer(fn, delay, ...args);
+    const id = nextTimer--; deadlines.set(id, () => fn.apply(h.window, args)); return id;
+  };
+  h.window.clearTimeout = id => { if (!deadlines.delete(id)) clearTimer(id); };
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
   assert.equal(container.querySelectorAll('.je-list-row').length, 0);
-  await sleep(8150);
+  assert.equal(deadlines.size, 1, 'the unanswered policy registers exactly one 8000 ms deadline');
+  const [timer, expire] = deadlines.entries().next().value; deadlines.delete(timer); expire();
+  await h.settle();
   assert.equal(container.querySelectorAll('.je-list-row').length, 2);
   assert.doesNotMatch(container.textContent, /SECRET|2001|1999/);
   const lp = h.JE.internals.arrListPages;

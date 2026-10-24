@@ -241,8 +241,39 @@
         const logPrefix = spec.logPrefix;
         const containerClass = spec.containerClass;
         const TAGGED_ATTR = spec.taggedAttr;
+        const taggedOwners = new WeakMap();
+        let cacheNonce = Math.random().toString(36) + Date.now().toString(36);
+
+        function captureAuthority() {
+            if (JE.tagPipeline?.captureAuthority) return JE.tagPipeline.captureAuthority();
+            return { identity: [typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId, ApiClient.getCurrentUserId?.(), ApiClient.accessToken?.()].join('|'), epoch: JE.session?.getEpoch?.() ?? 0 };
+        }
+        function current(authority) {
+            if (JE.tagPipeline?.authorityHolds) return JE.tagPipeline.authorityHolds(authority);
+            const now = captureAuthority();
+            return !!authority && authority.identity === now.identity && authority.epoch === now.epoch;
+        }
+        function ensureAuthority() {
+            if (current(state.authority)) return;
+            state.cache = {};
+            state.hot?.clear();
+            cacheNonce = Math.random().toString(36) + Date.now().toString(36);
+            state.authority = captureAuthority();
+            // A live switch can precede the session notification. Stamp the
+            // same new lifetime that will produce the next saved values, so a
+            // later registration keeps B's own cache and never revives A's.
+            if (spec.cache && state.localStorageEnabled) {
+                try {
+                    localStorage.removeItem(spec.cache.key);
+                    localStorage.setItem(`${spec.cache.key}:identity-owner`, cacheNonce);
+                } catch (e) {
+                    console.warn(`${logPrefix} cache clear on live authority change failed`, e);
+                }
+            }
+        }
 
         const state = {
+            authority: captureAuthority(),
             /** @type {Object<string, any>} persistent (localStorage-backed) cache */
             cache: {},
             /** @type {Map<string, any>|null} shared hot cache bucket */
@@ -318,6 +349,11 @@
         function isTagged(el) {
             const card = cardOf(el);
             if (!card) return false;
+            if (!current(taggedOwners.get(card))) {
+                card.dataset[TAGGED_ATTR] = '0';
+                el.querySelectorAll(`.${containerClass}`).forEach(node => node.remove());
+                return false;
+            }
             // Attribute first: the common case (this renderer hasn't tagged the
             // card yet) then costs a dataset read, not a subtree query.
             if (/** @type {HTMLElement} */ (card).dataset?.[TAGGED_ATTR] !== '1') return false;
@@ -334,7 +370,10 @@
          */
         function markTagged(el) {
             const card = cardOf(el);
-            if (card) /** @type {HTMLElement} */ (card).dataset[TAGGED_ATTR] = '1';
+            if (card) {
+                taggedOwners.set(card, captureAuthority());
+                /** @type {HTMLElement} */ (card).dataset[TAGGED_ATTR] = '1';
+            }
         }
 
         // ── localStorage cache ─────────────────────────────────────────
@@ -352,9 +391,9 @@
             if (!spec.cache || !state.localStorageEnabled) return;
             try {
                 const ownerKey = `${spec.cache.key}:identity-owner`;
-                const userId = JE.session?.getUserId()
-                    || (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || '';
-                const expected = `${JE.session?.getServerId() || ''}:${userId}`;
+                // A stored projection must prove its producing session and privacy
+                // lifetime. A prior page's legacy server:user marker cannot do so.
+                const expected = cacheNonce;
                 if (localStorage.getItem(ownerKey) !== expected) {
                     localStorage.removeItem(spec.cache.key);
                     localStorage.setItem(ownerKey, expected);
@@ -365,6 +404,7 @@
         }
 
         function loadCacheSettings() {
+            ensureAuthority();
             state.localStorageEnabled =
                 JE.pluginConfig?.TagCacheServerMode === false ||
                 JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
@@ -392,6 +432,7 @@
         /** Persist the cache to localStorage (registered with JE._cacheManager). */
         function saveCache() {
             if (!spec.cache || !state.localStorageEnabled) return;
+            if (!current(state.authority)) return;
             try {
                 if (spec.cache.pruneOnSave) {
                     const now = Date.now();
@@ -475,12 +516,14 @@
         // ── Context handed to spec callbacks ───────────────────────────
 
         const ctx = {
+            captureAuthority,
+            authorityHolds: current,
             name,
             logPrefix,
             containerClass,
             taggedAttr: TAGGED_ATTR,
             /** @returns {Map<string, any>|null} shared hot cache bucket */
-            get hot() { return state.hot; },
+            get hot() { ensureAuthority(); return state.hot; },
             /** @returns {number} cache TTL in ms */
             get cacheTtl() { return state.cacheTtl; },
             /** @returns {boolean} whether localStorage fallback is active */
@@ -489,13 +532,14 @@
              * @param {string} itemId
              * @returns {*} the persistent cache entry (raw, module-defined shape)
              */
-            getPersistent(itemId) { return state.cache[itemId]; },
+            getPersistent(itemId) { ensureAuthority(); return state.cache[itemId]; },
             /**
              * Store a persistent cache entry and schedule a save.
              * @param {string} itemId
              * @param {*} value
              */
             setPersistent(itemId, value) {
+                ensureAuthority();
                 state.cache[itemId] = value;
                 if (JE._cacheManager) JE._cacheManager.markDirty();
             },
@@ -541,12 +585,14 @@
         JE.session?.onUserChange(`tag-cache-${name}`, (change) => {
             state.cache = {};
             if (state.hot) state.hot.clear();
+            state.authority = captureAuthority();
+            cacheNonce = Math.random().toString(36) + Date.now().toString(36);
             if (!spec.cache) return;
             try {
                 localStorage.removeItem(spec.cache.key);
                 localStorage.setItem(
                     `${spec.cache.key}:identity-owner`,
-                    `${change.serverId || ''}:${change.userId || ''}`
+                    cacheNonce
                 );
             } catch (e) {
                 console.warn(`${logPrefix} cache clear on user switch failed`, e);
@@ -584,12 +630,12 @@
                 return;
             }
             JE.tagPipeline.registerRenderer(name, {
-                render: (el, item, extras) => p.render(ctx, el, item, extras),
+                render: (el, item, extras) => { ensureAuthority(); return p.render(ctx, el, item, extras); },
                 renderFromCache: p.renderFromCache
-                    ? (el, itemId) => p.renderFromCache(ctx, el, itemId)
+                    ? (el, itemId) => { ensureAuthority(); return p.renderFromCache(ctx, el, itemId); }
                     : undefined,
                 renderFromServerCache: p.renderFromServerCache
-                    ? (el, entry, itemId) => p.renderFromServerCache(ctx, el, entry, itemId)
+                    ? (el, entry, itemId) => { ensureAuthority(); return p.renderFromServerCache(ctx, el, entry, itemId); }
                     : undefined,
                 onServerCacheRefresh: p.onServerCacheRefresh
                     ? (updatedIds) => p.onServerCacheRefresh(ctx, updatedIds)

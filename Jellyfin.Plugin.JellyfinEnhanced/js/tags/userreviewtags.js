@@ -56,6 +56,20 @@
     let _flushTimer = null;
     /** @type {Set<AbortController>} */
     const _batchControllers = new Set();
+    const _chipOwners = new WeakMap();
+    let _memoAuthority = null;
+    function authority() {
+        return JE.tagPipeline?.captureAuthority?.() || { session: JE.core?.api?.session?.(), epoch: JE.session?.getEpoch?.() ?? 0 };
+    }
+    function holds(owner) {
+        if (!owner) return false;
+        if (JE.tagPipeline?.authorityHolds && 'identity' in owner) return JE.tagPipeline.authorityHolds(owner);
+        return owner.session?.current?.() !== false && (!JE.session || JE.session.isCurrent(owner.epoch));
+    }
+    function ensureAuthority() {
+        if (!holds(_memoAuthority)) resetReviewState();
+        return _memoAuthority;
+    }
 
     /**
      * Send every queued key in one request and settle each key's promise.
@@ -65,6 +79,7 @@
      * to undefined so nothing is rendered; the next render refetches.
      */
     async function flushQueue() {
+        const owner = ensureAuthority();
         if (_flushTimer !== null) {
             clearTimeout(_flushTimer);
             _flushTimer = null;
@@ -77,8 +92,7 @@
         // Ratings are filtered per viewer (hidden/disabled authors, self
         // reviews, admin moderation), so a batch that settles after a user
         // switch must not write into the new user's cache.
-        const epoch = JE.session ? JE.session.getEpoch() : 0;
-        const isCurrent = () => !JE.session || JE.session.isCurrent(epoch);
+        const isCurrent = () => holds(owner);
         const controller = new AbortController();
         _batchControllers.add(controller);
         const requestedAt = performance.now();
@@ -98,7 +112,7 @@
                 }
                 if (_inFlight.get(cacheKey) === entry.promise) _inFlight.delete(cacheKey);
             }
-            entry.resolve(value);
+            entry.resolve(isCurrent() ? value : undefined);
         };
 
         try {
@@ -136,7 +150,7 @@
 
     // Visibility is per viewer, so nothing cached or queued for the previous
     // user may be served to the next one.
-    JE.session?.onUserChange('user-review-tags', () => {
+    function resetReviewState() {
         for (const controller of _batchControllers) controller.abort();
         _batchControllers.clear();
         if (_flushTimer !== null) {
@@ -153,7 +167,9 @@
         _staleAllAt = -1;
         // Queued for the previous user: nothing to render.
         for (const entry of orphaned) entry.resolve(undefined);
-    });
+        _memoAuthority = authority();
+    }
+    JE.session?.onUserChange('user-review-tags', resetReviewState);
 
     /**
      * The server cache's review averages, when they are loaded and may be
@@ -204,6 +220,7 @@
      * @returns {number|null|undefined}
      */
     function peekUserRating(tmdbKey, mediaType) {
+        ensureAuthority();
         if (!JE.pluginConfig?.ShowUserReviews) return null;
         const cacheKey = `${mediaType}:${tmdbKey}`;
         if (hasFreshCached(cacheKey)) return _reviewCache.get(cacheKey);
@@ -222,6 +239,7 @@
      * @returns {Promise<number|null|undefined>}
      */
     async function fetchUserRating(tmdbKey, mediaType) {
+        const owner = ensureAuthority();
         if (!JE.pluginConfig?.ShowUserReviews) return null;
         const cacheKey = `${mediaType}:${tmdbKey}`;
         if (hasFreshCached(cacheKey)) return _reviewCache.get(cacheKey);
@@ -248,7 +266,7 @@
             } catch {
                 // Fall through to the batch path.
             }
-            if (JE.session && !JE.session.isCurrent(epoch)) return undefined;
+            if (!holds(owner) || JE.session && !JE.session.isCurrent(epoch)) return undefined;
             const map = usableRatingMap(cacheKey);
             if (map) return map.has(cacheKey) ? map.get(cacheKey) : null;
             // A batch may have settled or started this key while waiting.
@@ -463,6 +481,7 @@
         }
         const hosts = document.querySelectorAll('[data-je-review-key]');
         for (const host of hosts) {
+            if (!holds(_chipOwners.get(host))) { host.querySelectorAll('.je-userreview-tag').forEach(chip => chip.remove()); continue; }
             const key = host.dataset.jeReviewKey;
             if (keys && !keys.has(key)) continue;
             // Per-type / home-row scope: a card the rating renderer leaves
@@ -487,6 +506,7 @@
      * @param {object} [extras] - Pipeline extras (parentSeries, etc.).
      */
     JE.appendUserRatingToContainer = function(containerOrEl, item, extras) {
+        const owner = ensureAuthority();
         if (!JE.pluginConfig?.ShowUserReviews) return;
         if (!JE.pluginConfig?.ShowUserRatingOnPosters) return;
         if (!JE.currentSettings?.ratingTagsEnabled) return;
@@ -498,6 +518,7 @@
         // Remember the key on the card so a later change to the averages can
         // update this chip in place (see refreshChangedChips).
         containerOrEl.dataset.jeReviewKey = `${mediaType}:${tmdbKey}`;
+        _chipOwners.set(containerOrEl, owner);
         const known = peekUserRating(tmdbKey, mediaType);
         if (known !== undefined) {
             applyChip(containerOrEl, known, false);
@@ -505,7 +526,7 @@
         }
 
         fetchUserRating(tmdbKey, mediaType).then((rating) => {
-            if (rating === undefined) return; // lookup aborted — render nothing
+            if (rating === undefined || !holds(owner) || _chipOwners.get(containerOrEl) !== owner) return;
             // Averages that arrived while this lookup was out are newer than
             // its answer (and may already be on the chip): resolve again.
             const current = peekUserRating(tmdbKey, mediaType);
