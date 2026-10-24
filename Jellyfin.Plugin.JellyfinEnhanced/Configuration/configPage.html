@@ -2747,6 +2747,30 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Review Translation</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="reviewTranslationEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Review Translation</span></label></div>
+                            <div class="je-setting-description" data-desc-for="reviewTranslationEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Adds a Translate button to English TMDB and AniList reviews, translating them into the user's Jellyfin language.<br>Desktop Chrome and Edge translate on the device, with nothing sent anywhere, but only over HTTPS or localhost. Firefox, Safari, mobile browsers and the Jellyfin apps do not have a built-in translator.<br>Everyone else uses your own <a class="sectionTitle" href="https://libretranslate.com" target="_blank">LibreTranslate</a> instance, if you set one below. Only the review text is sent to it.<br>Translations are done live and are not stored. The button only shows for languages the browser or your instance offers.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="reviewTranslationUrl">LibreTranslate URL (optional)</label>
+                                <input id="reviewTranslationUrl" is="emby-input" type="text" autocomplete="off" placeholder="http://localhost:5000" class="je-api-input"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="reviewTranslationUrl">
+                                <div class="fieldDescription">Fallback for browsers without a built-in translator. Base address of the instance, without a trailing path.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="reviewTranslationApiKey">LibreTranslate API Key (optional)</label>
+                                <input id="reviewTranslationApiKey" is="emby-input" type="password" autocomplete="off" class="je-api-input"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="reviewTranslationApiKey">
+                                <div class="fieldDescription">Only needed when your instance requires a key.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">User Reviews</legend>
                         <div class="configSection">
                             <div class="je-info-banner-inline je-banner-managed">
@@ -6592,6 +6616,9 @@
                 if (config.MdblistApiKey && typeof checkMdblistStatus === 'function') checkMdblistStatus();
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#showAnilistReviews').checked = !!config.ShowAnilistReviews;
+                document.querySelector('#reviewTranslationEnabled').checked = !!config.ReviewTranslationEnabled;
+                document.querySelector('#reviewTranslationUrl').value = config.ReviewTranslationUrl || '';
+                document.querySelector('#reviewTranslationApiKey').value = config.ReviewTranslationApiKey || '';
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
@@ -7167,6 +7194,9 @@
             config.MdblistRatingsShowPercentSymbol = document.querySelector('#mdblistRatingsShowPercentSymbol').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ShowAnilistReviews = document.querySelector('#showAnilistReviews').checked;
+            config.ReviewTranslationEnabled = document.querySelector('#reviewTranslationEnabled').checked;
+            config.ReviewTranslationUrl = document.querySelector('#reviewTranslationUrl').value.trim();
+            config.ReviewTranslationApiKey = document.querySelector('#reviewTranslationApiKey').value.trim();
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
@@ -8692,6 +8722,7 @@
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', anyOf: ['showReviews', 'showUserReviews', 'showAnilistReviews'], label: 'Show TMDB Reviews" / "Enable User Written Reviews" / "Show AniList Reviews', children: ['reviewsExpandedByDefault'] },
+            { parent: 'reviewTranslationEnabled', label: 'Enable Review Translation', children: ['reviewTranslationUrl', 'reviewTranslationApiKey'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },

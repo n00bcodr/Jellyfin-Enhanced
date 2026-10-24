@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerTagDataStripper _spoilerTagDataStripper;
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
         private readonly Services.AnilistReviewsService _anilistReviewsService;
+        private readonly Services.ReviewTranslationService _reviewTranslationService;
         private readonly Services.MdblistService _mdblistService;
         private readonly Services.DoesTheDogDieService _doesTheDogDieService;
         private readonly Services.WhatsNewService _whatsNewService;
@@ -205,6 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerTagDataStripper spoilerTagDataStripper,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.AnilistReviewsService anilistReviewsService,
+            Services.ReviewTranslationService reviewTranslationService,
             Services.MdblistService mdblistService,
             Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
@@ -237,6 +239,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerTagDataStripper = spoilerTagDataStripper;
             _wikidataAwardsService = wikidataAwardsService;
             _anilistReviewsService = anilistReviewsService;
+            _reviewTranslationService = reviewTranslationService;
             _mdblistService = mdblistService;
             _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
@@ -3658,6 +3661,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
                 config.ShowAnilistReviews,
+                config.ReviewTranslationEnabled,
+                ReviewTranslationServer = config.ReviewTranslationEnabled && !string.IsNullOrWhiteSpace(config.ReviewTranslationUrl),
                 DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
@@ -4521,6 +4526,81 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to fetch AniList reviews. Error: {ex.Message}");
                 return StatusCode(502, "Failed to fetch AniList reviews.");
             }
+        }
+
+        /// <summary>Languages English reviews can be translated into on the configured LibreTranslate instance.</summary>
+        [HttpGet("translate/languages")]
+        [Authorize]
+        public async Task<IActionResult> GetTranslationLanguages(CancellationToken cancellationToken)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ReviewTranslationEnabled || string.IsNullOrWhiteSpace(config.ReviewTranslationUrl))
+            {
+                return StatusCode(503, "Review translation is not enabled.");
+            }
+
+            var baseUrl = config.ReviewTranslationUrl.Trim().TrimEnd('/');
+            if (!await Jellyfin.Plugin.JellyfinEnhanced.Helpers.ArrUrlGuard.IsAllowedUrlAsync(baseUrl, cancellationToken).ConfigureAwait(false))
+            {
+                return BadRequest("The translation URL is not allowed.");
+            }
+
+            try
+            {
+                return Ok(new { languages = await _reviewTranslationService.GetTargetLanguagesAsync(baseUrl, cancellationToken).ConfigureAwait(false) });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Error($"Failed to read translation languages. Error: {ex.Message}");
+                return StatusCode(502, "Failed to reach the translation service.");
+            }
+        }
+
+        /// <summary>Translates English review text into the target language, live.</summary>
+        [HttpPost("translate")]
+        [Authorize]
+        public async Task<IActionResult> TranslateReview([FromBody] TranslateRequest request, CancellationToken cancellationToken)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ReviewTranslationEnabled || string.IsNullOrWhiteSpace(config.ReviewTranslationUrl))
+            {
+                return StatusCode(503, "Review translation is not enabled.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request?.Text) || request.Text.Length > Services.ReviewTranslationService.MaxTextLength)
+            {
+                return BadRequest($"text must be between 1 and {Services.ReviewTranslationService.MaxTextLength} characters.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Target) || !System.Text.RegularExpressions.Regex.IsMatch(request.Target, "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$"))
+            {
+                return BadRequest("target must be a language code.");
+            }
+
+            var baseUrl = config.ReviewTranslationUrl.Trim().TrimEnd('/');
+            if (!await Jellyfin.Plugin.JellyfinEnhanced.Helpers.ArrUrlGuard.IsAllowedUrlAsync(baseUrl, cancellationToken).ConfigureAwait(false))
+            {
+                return BadRequest("The translation URL is not allowed.");
+            }
+
+            try
+            {
+                var translated = await _reviewTranslationService.TranslateAsync(
+                    baseUrl, config.ReviewTranslationApiKey ?? string.Empty, request.Text, request.Target, cancellationToken).ConfigureAwait(false);
+                return Ok(new { text = translated });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Error($"Failed to translate a review. Error: {ex.Message}");
+                return StatusCode(502, "Failed to translate the review.");
+            }
+        }
+
+        public class TranslateRequest
+        {
+            public string? Text { get; set; }
+
+            public string? Target { get; set; }
         }
 
         [HttpGet("awards/{mediaType}/{tmdbId}")]

@@ -77,6 +77,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowReviews = false;
             ShowUserReviews = false;
             ShowAnilistReviews = false;
+            ReviewTranslationEnabled = false;
+            ReviewTranslationUrl = "";
+            ReviewTranslationApiKey = "";
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
@@ -544,6 +547,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowReviews { get; set; }
         public bool ShowUserReviews { get; set; }
         public bool ShowAnilistReviews { get; set; }
+        public bool ReviewTranslationEnabled { get; set; }
+        public string ReviewTranslationUrl { get; set; }
+        public string ReviewTranslationApiKey { get; set; }
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;

@@ -511,6 +511,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewTranslationService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ScriptInjectionStartupFilter.cs",
       "category": "Services"
     },
@@ -2155,6 +2159,24 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/translate/languages",
+      "method": "GetTranslationLanguages",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/translate",
+      "method": "TranslateReview",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/awards/{mediaType}/{tmdbId}",
       "method": "GetAwards",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -3516,6 +3538,30 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReviewTranslationEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReviewTranslationUrl",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReviewTranslationApiKey",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7775,9 +7821,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 357,
-    "routes": 178,
-    "configuration_properties": 530,
+    "files": 358,
+    "routes": 180,
+    "configuration_properties": 533,
     "storage_references": 69,
     "scheduled_tasks": 13,
     "locales": 33

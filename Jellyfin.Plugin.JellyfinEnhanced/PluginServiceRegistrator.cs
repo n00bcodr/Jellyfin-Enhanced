@@ -70,6 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<AnilistReviewsService>();
+            serviceCollection.AddSingleton<ReviewTranslationService>();
             serviceCollection.AddSingleton<MdblistService>();
             serviceCollection.AddSingleton<DoesTheDogDieService>();
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and

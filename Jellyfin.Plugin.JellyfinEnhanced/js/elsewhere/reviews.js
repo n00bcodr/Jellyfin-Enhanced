@@ -315,6 +315,50 @@ ${r.Content}` : r.Content,
                 .replace(/<\/?[a-z][^>]*>/gi, '');
         }
 
+        /**
+         * Review text as plain prose, for translation: translators mangle
+         * markdown syntax and URLs, so links keep only their text and bare
+         * URLs and emphasis markers are dropped.
+         */
+        function toPlainText(text) {
+            return htmlToMarkdown(text)
+                .replace(/\[([^\]]+)\]\(https?:\/\/[^)\s]+\)/g, '$1')
+                .replace(/https?:\/\/[^\s<]+/g, '')
+                .replace(/(\*\*|__|~~|\*|`)/g, '')
+                .replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, '$1$2')
+                .replace(/[ \t]+/g, ' ')
+                .replace(/ ?\n ?/g, '\n')
+                .trim();
+        }
+
+        /** The links of a review, in order, to put back after it is translated. */
+        function extractLinks(text) {
+            const links = [];
+            htmlToMarkdown(text).replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (m, label, url) => { links.push({ label, url }); return m; });
+            return links;
+        }
+
+        /**
+         * Links each label inside the translated text. A label is found by its
+         * translation or by its original wording (titles and names usually stay
+         * untranslated, and a label translated alone can differ from the same
+         * words inside a sentence). Links with no match stay plain text.
+         */
+        function relink(text, links, labels) {
+            if (labels.length !== links.length) return text;
+            let out = text;
+            const linked = [];
+            links.forEach((link, i) => {
+                const lower = out.toLowerCase();
+                const label = [link.label, labels[i] || ''].map(l => l.trim().replace(/[[\]]/g, '')).find(l => l && lower.includes(l.toLowerCase()));
+                if (!label) return;
+                const at = lower.indexOf(label.toLowerCase());
+                linked.push(`[${out.substr(at, label.length)}](${link.url})`);
+                out = `${out.slice(0, at)}\u0001${linked.length - 1}\u0002${out.slice(at + label.length)}`;
+            });
+            return out.replace(/\u0001(\d+)\u0002/g, (m, n) => linked[n]);
+        }
+
         function parseMarkdown(text) {
             if (!text) return '';
 
@@ -473,7 +517,139 @@ ${r.Content}` : r.Content,
             textElement.innerHTML = parseMarkdown(previewContent) +
                 (isLongReview ? `<span class="tmdb-review-toggle">${JE.t('reviews_read_more')}</span>` : '');
 
+            attachTranslateButton(reviewCard, review.content || '');
             return reviewCard;
+        }
+
+        /**
+         * The language to translate English reviews into: the user's Jellyfin
+         * language, as the UI strings use. Null when it is English or unknown.
+         * The browser and LibreTranslate name Traditional Chinese differently.
+         * @returns {{server: string, browser: string}|null}
+         */
+        function getTranslationTargets() {
+            let lang = '';
+            try { lang = localStorage.getItem(`${ApiClient.getCurrentUserId()}-language`) || ''; } catch (e) { /* storage unavailable */ }
+            lang = lang || document.documentElement.lang || '';
+            const [base, region] = lang.split('-');
+            const code = (base || '').toLowerCase();
+            if (!code || code === 'en') return null;
+            const traditional = code === 'zh' && /^(tw|hk|mo)$/i.test(region || '');
+            return { server: traditional ? 'zt' : code, browser: traditional ? 'zh-Hant' : code };
+        }
+
+        let translationLanguages = null;
+        /** Target languages the configured LibreTranslate instance offers, fetched once per page load. */
+        function getTranslationLanguages() {
+            if (!translationLanguages) {
+                translationLanguages = JE.core.api.plugin('/translate/languages', { skipRetry: true })
+                    .then(res => res?.languages || [])
+                    .catch(() => []);
+            }
+            return translationLanguages;
+        }
+
+        /** Whether the browser's built-in translator can do English to the target (secure contexts only). */
+        async function browserCanTranslate(target) {
+            try {
+                if (!window.isSecureContext || typeof window.Translator === 'undefined') return false;
+                return (await window.Translator.availability({ sourceLanguage: 'en', targetLanguage: target })) !== 'unavailable';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        /** Translates line by line in the browser, so blank lines and paragraph breaks survive. */
+        async function translateInBrowser(text, target) {
+            const translator = await window.Translator.create({ sourceLanguage: 'en', targetLanguage: target });
+            try {
+                const lines = [];
+                for (const line of text.split('\n')) lines.push(line.trim() ? await translator.translate(line) : line);
+                return lines.join('\n');
+            } finally {
+                translator.destroy?.();
+            }
+        }
+
+        /**
+         * Adds a Translate / Show original toggle under an English review. It
+         * translates in the browser when the browser can, and through the
+         * admin's LibreTranslate otherwise; it is absent when neither offers
+         * the user's language.
+         */
+        function attachTranslateButton(card, original) {
+            if (!JE.pluginConfig?.ReviewTranslationEnabled || !original.trim()) return;
+            const targets = getTranslationTargets();
+            if (!targets) return;
+            Promise.all([
+                browserCanTranslate(targets.browser),
+                JE.pluginConfig.ReviewTranslationServer ? getTranslationLanguages().then(l => l.includes(targets.server)) : false
+            ]).then(([browserOk, serverOk]) => {
+                if (!browserOk && !serverOk) return;
+                const textElement = card.querySelector('.tmdb-review-text');
+                const button = document.createElement('span');
+                button.className = 'je-review-translate';
+                const icon = Object.assign(document.createElement('span'), { className: 'je-msym-rounded', textContent: 'translate' });
+                icon.setAttribute('aria-hidden', 'true');
+                const label = Object.assign(document.createElement('span'), { className: 'je-review-translate-label' });
+                button.append(icon, label);
+                const setLabel = (key) => { label.textContent = JE.t(key); };
+                setLabel('reviews_translate');
+                textElement.parentElement.appendChild(button);
+
+                const translateText = async (text) => {
+                    if (browserOk) {
+                        try {
+                            return await translateInBrowser(text, targets.browser);
+                        } catch (e) {
+                            if (!serverOk) throw e;
+                        }
+                    }
+                    return (await JE.core.api.plugin('/translate', { method: 'POST', body: { text, target: targets.server }, skipRetry: true })).text;
+                };
+
+                const translate = async () => {
+                    const body = await translateText(toPlainText(original));
+                    const links = extractLinks(original);
+                    if (!links.length) return body;
+                    const labels = await translateText(links.map(link => link.label.replace(/\s+/g, ' ')).join('\n'));
+                    return relink(body, links, labels.split('\n'));
+                };
+
+                const show = (full) => {
+                    const long = full.length > 350;
+                    const expanded = textElement.classList.contains('expanded');
+                    textElement.innerHTML = parseMarkdown(long && !expanded ? full.substring(0, 350) : full) +
+                        (long ? `<span class="tmdb-review-toggle">${JE.t(expanded ? 'reviews_read_less' : 'reviews_read_more')}</span>` : '');
+                };
+
+                let busy = false;
+                button.addEventListener('click', async () => {
+                    if (busy) return;
+                    if (card.dataset.showTranslated === '1') {
+                        card.dataset.showTranslated = '0';
+                        show(original);
+                        setLabel('reviews_translate');
+                        return;
+                    }
+                    if (card.dataset.translatedContent === undefined) {
+                        busy = true;
+                        setLabel('reviews_translating');
+                        try {
+                            card.dataset.translatedContent = await translate();
+                        } catch (e) {
+                            setLabel('reviews_translate');
+                            JE.toast(JE.t('reviews_translate_failed'));
+                            return;
+                        } finally {
+                            busy = false;
+                        }
+                    }
+                    card.dataset.showTranslated = '1';
+                    show(card.dataset.translatedContent);
+                    setLabel('reviews_show_original');
+                });
+            });
         }
 
         const STAR_POLYGON = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
@@ -870,9 +1046,9 @@ ${r.Content}` : r.Content,
                     if (e.target.classList.contains('tmdb-review-toggle')) {
                         const textElement = e.target.parentElement;
                         const card = textElement.closest('.tmdb-review-card');
-                        // Skip user and AniList review cards (they use dataset.fullContent)
-                        if (card.dataset.fullContent !== undefined) {
-                            const full = card.dataset.fullContent || '';
+                        // A translated review expands to its translation
+                        if (card.dataset.showTranslated === '1' || card.dataset.fullContent !== undefined) {
+                            const full = (card.dataset.showTranslated === '1' ? card.dataset.translatedContent : card.dataset.fullContent) || '';
                             if (textElement.classList.toggle('expanded')) {
                                 textElement.innerHTML = parseMarkdown(full) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
                             } else {
@@ -1099,6 +1275,9 @@ ${r.Content}` : r.Content,
                 /* emby-linkbutton gives links button padding, margin and weight, which breaks line spacing */
                 .tmdb-review-text a[is="emby-linkbutton"] { display: inline !important; padding: 0 !important; margin: 0 !important; min-width: 0 !important; font-weight: inherit !important; vertical-align: baseline !important; }
                 .tmdb-review-toggle { color: rgb(1, 180, 228); font-weight: bold; cursor: pointer; text-decoration: underline; margin-left: 0.3em; }
+                .je-review-translate { display: inline-flex; align-items: center; gap: 0.3em; margin-top: 0.5em; color: rgb(1, 180, 228); font-size: 0.9em; cursor: pointer; }
+                .je-review-translate .je-msym-rounded { font-size: 1.3em; }
+                .je-review-translate-label { text-decoration: underline; }
 
                 /* User avatar */
                 .je-user-avatar-wrapper { flex-shrink: 0; }

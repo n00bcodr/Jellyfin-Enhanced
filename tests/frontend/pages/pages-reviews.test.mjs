@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
 import {createHarness} from '../helpers/harness.mjs';
 
-async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],anilist={Reviews:[]},admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}}}={}) {
+async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],anilist={Reviews:[]},admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}},lang,plugin,browser}={}) {
   let hook;const calls=[];
   const h=createHarness({html:'<div id="itemDetailPage"><div class="mediaInfoItems"></div><div class="tagline"></div></div>',url:'http://jellyfin.test/web/index.html#!/details?id=item',apiClient:{getItem:async(_user,id)=>id==='series'?parent:item,getCurrentUser:async()=>({Id:'user-a',Policy:{IsAdministrator:admin}})},JE:{
     pluginConfig:{ShowReviews:true,TmdbEnabled:true,ShowUserReviews:true,...config},spoilerBlur,
@@ -11,9 +11,11 @@ async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},con
     t:key=>key,icon:()=>'<span>star</span>',IconName:{STAR:'star'},
     cdn:{url:(source,file)=>`/cdn/${source}/${file}`},
     helpers:{onViewPage:fn=>{hook=fn;return ()=>{};},createExternalLink:(href,{className})=>Object.assign(h.document.createElement('a'),{href,className})},
-    core:{api:{fetch:async url=>{calls.push(url);return url.includes('/anilist/reviews')?anilist:{results:tmdb};},plugin:async url=>{calls.push(url);return {reviews};}}}
+    core:{api:{fetch:async url=>{calls.push(url);return url.includes('/anilist/reviews')?anilist:{results:tmdb};},plugin:plugin?async(url,options)=>{calls.push(url);return plugin(url,options);}:async url=>{calls.push(url);return {reviews};}}}
   }});
   t.after(()=>h.close());
+  if(lang)h.document.documentElement.lang=lang;
+  if(browser)for(const [key,value] of Object.entries(browser))Object.defineProperty(h.window,key,{value,configurable:true});
   // Advance the page-visibility delay without sleeping; promises still resolve asynchronously.
   h.window.setTimeout=fn=>{queueMicrotask(fn);return 1;};
   h.load('elsewhere/reviews.js');h.JE.initializeReviewsScript();
@@ -155,11 +157,108 @@ test('successful review creation refreshes persisted content and edit prepopulat
   assert.equal(saved.length,2);assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'Updated version');
   assert.equal(h.document.querySelector('.je-review-form'),null);
 });
-test('review HTML becomes markup instead of showing as raw tags',async t=>{
+
+function translationPlugin(languages,{fail=false}={}){
+  const requests=[];
+  const plugin=async(url,options)=>{
+    if(url==='/translate/languages')return {languages};
+    if(url==='/translate'){requests.push(options.body);if(fail)throw Error('offline');return {text:'Hallo Welt'};}
+    return {reviews:[]};
+  };
+  return {plugin,requests};
+}
+const english=[{author:'Tm',content:'Hello world',url:'https://www.themoviedb.org/review/9'}];
+test('translate button swaps an English review to its translation and back',async t=>{
+  const {plugin,requests}=translationPlugin(['de']);
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true,ReviewTranslationServer:true},tmdb:english,lang:'de',plugin});await nextTurn();
+  const card=h.document.querySelector('.tmdb-review-card');const button=card.querySelector('.je-review-translate');
+  assert.equal(button.textContent,'translatereviews_translate');
+  button.click();await nextTurn();
+  assert.equal(JSON.stringify(requests),JSON.stringify([{text:'Hello world',target:'de'}]));
+  assert.equal(card.querySelector('.tmdb-review-text').textContent,'Hallo Welt');assert.equal(button.textContent,'translatereviews_show_original');
+  button.click();assert.equal(card.querySelector('.tmdb-review-text').textContent,'Hello world');
+  button.click();assert.equal(card.querySelector('.tmdb-review-text').textContent,'Hallo Welt');assert.equal(requests.length,1);
+});
+test('translate button is absent for English users, unsupported languages and when disabled',async t=>{
+  for(const {lang,languages,enabled} of [{lang:'en',languages:['de'],enabled:true},{lang:'fr',languages:['de'],enabled:true},{lang:'de',languages:['de'],enabled:false}]){
+    const {plugin}=translationPlugin(languages);
+    const h=await setup(t,{config:{ReviewTranslationEnabled:enabled,ReviewTranslationServer:true},tmdb:english,lang,plugin});await nextTurn();
+    assert.equal(h.document.querySelector('.je-review-translate'),null,`${lang} ${enabled}`);
+  }
+});
+test('translate button keeps the original and reports a failed translation',async t=>{
+  const {plugin}=translationPlugin(['de'],{fail:true});const toasts=[];
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true,ReviewTranslationServer:true},tmdb:english,lang:'de',plugin});await nextTurn();
+  h.JE.toast=message=>toasts.push(message);
+  const card=h.document.querySelector('.tmdb-review-card');const button=card.querySelector('.je-review-translate');
+  button.click();await nextTurn();
+  assert.deepEqual(toasts,['reviews_translate_failed']);assert.equal(card.querySelector('.tmdb-review-text').textContent,'Hello world');
+  assert.equal(button.textContent,'translatereviews_translate');
+});
+
+function fakeTranslator({fail=false,prefix='DE:',transform}={}){
+  const created=[];
+  return {created,browser:{isSecureContext:true,Translator:{
+    availability:async()=>'available',
+    create:async options=>{created.push(options);if(fail)throw Error('no model');return {translate:async text=>transform?transform(text):`${prefix}${text}`,destroy(){}};}
+  }}};
+}
+test('translate button uses the browser translator first, line by line, without calling the server',async t=>{
+  const {created,browser}=fakeTranslator();const {plugin,requests}=translationPlugin(['de']);
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true,ReviewTranslationServer:true},tmdb:[{author:'Tm',content:'One\n\nTwo'}],lang:'de',plugin,browser});await nextTurn();
+  const card=h.document.querySelector('.tmdb-review-card');card.querySelector('.je-review-translate').click();await nextTurn();
+  assert.equal(JSON.stringify(created),JSON.stringify([{sourceLanguage:'en',targetLanguage:'de'}]));
+  assert.equal(card.dataset.translatedContent,'DE:One\n\nDE:Two');assert.equal(requests.length,0);
+});
+test('translate button works from the browser alone when no server is configured',async t=>{
+  const {browser}=fakeTranslator();
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:english,lang:'de',browser});await nextTurn();
+  assert.ok(!h.calls.some(url=>url.includes('/translate')));
+  const card=h.document.querySelector('.tmdb-review-card');card.querySelector('.je-review-translate').click();await nextTurn();
+  assert.equal(card.querySelector('.tmdb-review-text').textContent,'DE:Hello world');
+});
+test('translate button falls back to the server when the browser translator fails',async t=>{
+  const {browser}=fakeTranslator({fail:true});const {plugin,requests}=translationPlugin(['de']);
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true,ReviewTranslationServer:true},tmdb:english,lang:'de',plugin,browser});await nextTurn();
+  const card=h.document.querySelector('.tmdb-review-card');card.querySelector('.je-review-translate').click();await nextTurn();
+  assert.equal(requests.length,1);assert.equal(card.querySelector('.tmdb-review-text').textContent,'Hallo Welt');
+});
+test('translate button needs a secure context for the browser translator',async t=>{
+  const {browser}=fakeTranslator();
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:english,lang:'de',browser:{...browser,isSecureContext:false}});await nextTurn();
+  assert.equal(h.document.querySelector('.je-review-translate'),null);
+});
+test('review HTML becomes markup instead of showing as raw tags, and translation receives clean markdown',async t=>{
   const html="I enjoyed <em>'The Mule'</em>. A <a href=\"https://x.test/a\" rel=\"nofollow\">real dude</a>!<br>Done <b>now</b>";
-  const h=await setup(t,{tmdb:[{author:'Tm',content:html}]});
+  const {browser}=fakeTranslator();const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:[{author:'Tm',content:html}],lang:'de',browser});await nextTurn();
   const text=h.document.querySelector('.tmdb-review-text');
   assert.ok(!text.textContent.includes('<'));assert.ok(!text.textContent.includes('rel='));
   assert.equal(text.querySelector('a').getAttribute('href'),'https://x.test/a');
   assert.ok(text.querySelector('em'));assert.ok(text.querySelector('strong'));
+  h.document.querySelector('.je-review-translate').click();await nextTurn();
+  assert.equal(h.document.querySelector('.tmdb-review-card').dataset.translatedContent,"DE:I enjoyed 'The Mule'. A [real dude](https://x.test/a)!\nDE:Done now");
+});
+test('translated review keeps its links where the label survives translation',async t=>{
+  const {browser}=fakeTranslator({prefix:''});
+  const html='A <a href="https://x.test/a">real dude</a> and <a href="https://x.test/b">Gone</a>.';
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:[{author:'Tm',content:html}],lang:'de',browser});await nextTurn();
+  const card=h.document.querySelector('.tmdb-review-card');card.querySelector('.je-review-translate').click();await nextTurn();
+  assert.equal(card.dataset.translatedContent,'A [real dude](https://x.test/a) and [Gone](https://x.test/b).');
+  assert.equal(card.querySelector('.tmdb-review-text a').getAttribute('href'),'https://x.test/a');
+});
+async function translateLinked(t,content,transform){
+  const {browser}=fakeTranslator({transform});
+  const h=await setup(t,{config:{ReviewTranslationEnabled:true},tmdb:[{author:'Tm',content}],lang:'de',browser});await nextTurn();
+  const card=h.document.querySelector('.tmdb-review-card');card.querySelector('.je-review-translate').click();await nextTurn();
+  return card.dataset.translatedContent;
+}
+test('translated review links a label by its translation',async t=>{
+  assert.equal(await translateLinked(t,'A <a href="https://x.test/a">real dude</a>.',text=>text.replaceAll('real dude','vrai mec')),'A [vrai mec](https://x.test/a).');
+});
+test('translated review links a label by its original wording when the label translates differently alone',async t=>{
+  assert.equal(await translateLinked(t,'See <a href="https://x.test/a">Gran Torino</a>.',text=>text==='Gran Torino'?'Autre':text),'See [Gran Torino](https://x.test/a).');
+});
+test('translated review leaves a link as plain text when neither wording is in the translation',async t=>{
+  const result=await translateLinked(t,'A <a href="https://x.test/a">real dude</a>.',text=>text==='real dude'?'type':'A mec.');
+  assert.equal(result,'A mec.');
 });
