@@ -13,6 +13,8 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+from msbuild_inputs import collect as msbuild_inputs
+
 from partitions import partition, trx_cases, validate_manifest, validate_results
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,8 +53,17 @@ def source_control_identity():
     return json.dumps(values).encode()
 
 
-def build_identity(target, properties, output_root=None):
+def build_identity(target, properties, output_root=None, include_imports=True):
+    output_root = Path(output_root).resolve() if output_root is not None else (ROOT / 'artifacts').resolve()
+    imports = msbuild_inputs(ROOT, properties, output_root / 'build' / target / 'snapshot') if include_imports else []
+    if imports is None:
+        return None
     digest = hashlib.sha256()
+    try:
+        for path in imports:
+            hash_record(digest, 'msbuild:' + str(path), path.read_bytes())
+    except OSError:
+        return None
     # Include uncommitted/untracked effective inputs too. All non-output repo
     # inputs are conservative dependencies, including resources and lockfiles.
     excluded = {'bin', 'obj', '__pycache__'}
@@ -105,17 +116,28 @@ def prepare_build(target, directory, reuse):
         previous = json.loads(stamp.read_text()) if stamp.exists() else {}
     except (ValueError, OSError):
         previous = {}
-    if reuse and source_control_identity() is not None and previous.get('identity') == identity and directory.is_dir() and previous.get('outputs') == fingerprint(directory):
+    if reuse and identity is not None and source_control_identity() is not None and previous.get('identity') == identity and directory.is_dir() and previous.get('outputs') == fingerprint(directory):
         print('Build identity and all output hashes match; reusing Release test build', flush=True)
-        return dict(reused=True, identity=identity, seconds=0.0)
+        return dict(reused=True, identity=identity, reuse_eligible=True, seconds=0.0)
+    stable_inputs = build_identity(target, properties, output_root, False)
     stamp.unlink(missing_ok=True)
     shutil.rmtree(directory, ignore_errors=True)
     result = run(['dotnet', 'build', 'tests/backend/JE.Tests.csproj', *properties, '--artifacts-path', directory], directory.parent / 'build.log')
     if result['exit_code']: raise RuntimeError('Backend build failed')
     after = build_identity(target, properties, output_root)
-    if identity != after: raise RuntimeError('Build inputs changed during build; refusing reuse')
-    stamp.write_text(json.dumps(dict(identity=identity, outputs=fingerprint(directory)), indent=2) + '\n')
-    return dict(reused=False, identity=identity, seconds=result['seconds'])
+    stable_after = build_identity(target, properties, output_root, False)
+    if stable_inputs is not None and stable_after is not None and stable_inputs != stable_after:
+        raise RuntimeError('Build inputs changed during build; refusing reuse')
+    # Restore may introduce generated NuGet imports on the first cold build.
+    # A changing/unproven closure permits this build, but cannot certify reuse.
+    if identity is not None and identity == after:
+        stamp.write_text(json.dumps(dict(identity=after, outputs=fingerprint(directory)), indent=2) + '\n')
+    else:
+        print('MSBuild input closure unavailable or changed during build; reuse disabled', flush=True)
+    # An unproven fresh build gets a unique execution identity shared by its
+    # worker copies, never an identity eligible for cross-invocation reuse.
+    execution_identity = after or hashlib.sha256(os.urandom(32) + fingerprint(directory).encode()).hexdigest()
+    return dict(reused=False, identity=execution_identity, reuse_eligible=identity is not None and identity == after, seconds=result['seconds'])
 
 
 def main():

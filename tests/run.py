@@ -108,15 +108,29 @@ def main():
                 # Fetch/validate all pinned host assemblies before any expensive build.
                 if not execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target]):
                     return incomplete("Pinned Jellyfin prerequisites failed")
-                command = [sys.executable, "tests/runner/backend.py", "--target", target,
-                           "--results", results_path, "--build", artifacts / "build" / target / "snapshot",
-                           "--shards", args.backend_shards]
-                if args.reuse_build:
-                    command.append("--reuse-build")
-                if args.preflight_witnesses:
-                    command.append("--preflight-witnesses")
-                if args.backend_durations:
-                    command.extend(["--durations", args.backend_durations.resolve()])
+                isolated = args.backend_shards > 1 or args.reuse_build or args.preflight_witnesses or args.backend_durations
+                if isolated:
+                    command = [sys.executable, "tests/runner/backend.py", "--target", target,
+                               "--results", results_path, "--build", artifacts / "build" / target / "snapshot",
+                               "--shards", args.backend_shards]
+                    if args.reuse_build:
+                        command.append("--reuse-build")
+                    if args.preflight_witnesses:
+                        command.append("--preflight-witnesses")
+                    if args.backend_durations:
+                        command.extend(["--durations", args.backend_durations.resolve()])
+                else:
+                    # Preserve the ordinary command's TRX/collector schema and
+                    # paths, including cleanup after an interrupted isolated run.
+                    shutil.rmtree(results_path, ignore_errors=True)
+                    build_path = artifacts / "build" / target
+                    shutil.rmtree(build_path / 'snapshot', ignore_errors=True)
+                    for name in ('build-identity.json', 'build.log', 'build.lock'):
+                        (build_path / name).unlink(missing_ok=True)
+                    command = ["dotnet", "test", "tests/backend/JE.Tests.csproj", "-c", "Release",
+                               "-p:JellyfinTarget=" + target, "-p:RestoreLockedMode=true", "-m:4",
+                               "--artifacts-path", artifacts / "build" / target,
+                               "--results-directory", results_path, "--logger", "trx", "--collect:XPlat Code Coverage"]
                 if execute("backend-" + target, command):
                     coverage = [sys.executable, "tests/runner/coverage.py", results_path]
                     if args.backend_shards > 1:
@@ -125,7 +139,7 @@ def main():
                 else:
                     status_path = results_path / 'status.json'
                     status = json.loads(status_path.read_text()) if status_path.exists() else {'status': 'incomplete'}
-                    if status.get('status') == 'incomplete' or args.preflight_witnesses:
+                    if isolated and (status.get('status') == 'incomplete' or args.preflight_witnesses):
                         return incomplete("Backend witness/preflight failed; full suite not completed")
         elif suite == "frontend":
             execute("frontend", ["npm", "run", "test:frontend:coverage"])

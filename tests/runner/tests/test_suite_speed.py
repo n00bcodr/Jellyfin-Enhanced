@@ -176,7 +176,7 @@ class BuildIdentityTests(unittest.TestCase):
                 (build / 'plugin.dll').write_bytes(b'output')
                 Path(log).write_text('build complete')
                 return {'exit_code': 0, 'seconds': 0.1}
-            with patch.object(backend, 'ROOT', root), patch.dict(os.environ, {'JE_JELLYFIN_API_CACHE': str(cache.parent)}), \
+            with patch.object(backend, 'msbuild_inputs', return_value=[]), patch.object(backend, 'ROOT', root), patch.dict(os.environ, {'JE_JELLYFIN_API_CACHE': str(cache.parent)}), \
                  patch.object(backend.subprocess, 'check_output', return_value=b'sdk'), patch.object(backend, 'run', side_effect=execute):
                 self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
                 self.assertTrue(backend.prepare_build('jf12', build, True)['reused'])
@@ -193,7 +193,7 @@ class BuildIdentityTests(unittest.TestCase):
             (root / 'tests/backend/Support/jellyfin-api.json').write_text(json.dumps({'jf12': pin, 'jf10': pin}))
             source = root / 'source.cs'; source.write_text('class A {}')
             resource = root / 'resource.json'; resource.write_text('{}')
-            with patch.object(backend, 'ROOT', root), patch.object(backend.subprocess, 'check_output', return_value=b'sdk1'):
+            with patch.object(backend, 'msbuild_inputs', return_value=[]), patch.object(backend, 'ROOT', root), patch.object(backend.subprocess, 'check_output', return_value=b'sdk1'):
                 first = backend.build_identity('jf12', ['Release'])
                 self.assertEqual(first, backend.build_identity('jf12', ['Release']))
                 self.assertNotEqual(first, backend.build_identity('jf10', ['Release']))

@@ -62,3 +62,31 @@ The source/build identities and every snapshot-output hash match across the pair
 Read-only VSTest discovery with the ordinary single-process method filter selects exactly all 27,876 names and leaves the reusable snapshot unchanged. The temporary measurement parser initially counted only namespace-prefixed names and missed 102 custom DisplayNames; an independent header-based parser reconciles the complete original listing exactly. Raw receipts are retained. All 47 tooling safeguards pass, including output corruption, source/resource/SDK/target/property changes, Git index changes, output/source separation and name/content framing collisions. The final witness pair's aggregate peak is 2.70 GiB. Neither invocation certifies the unexecuted full gate.
 
 Fail-fast prerequisite checks validate runtime/SDK, installed pinned JavaScript dependencies, lock agreement, worker budgets and pinned Jellyfin prerequisites before expensive work. Inventory/tooling/pin failures stop with an explicit nonzero **incomplete** status. `--preflight-witnesses` is opt-in: the measured cold/warm commands execute exactly the unchanged StampFeed fact, fail expected 3 / actual 2, and stop incomplete after 59.183 / 13.493s. This intentionally leaves the remaining behavior and coverage unexecuted; it does not replace a full join/deployment gate. The unchanged ordinary command continues to run the full corpus, and a complete failed backend still permits frontend diagnostics. No inherited failure is waived.
+
+Review fixes restore the ordinary invocation's artifact contract. With no backend
+optimization flags, `tests/run.py fast --target jf12` uses the original `dotnet test`
+entry point: TRX and collector attachments live directly under
+`artifacts/regression/backend/jf12`, and build output under
+`artifacts/regression/build/jf12/{bin,obj}`. Backend sharding, reuse, duration
+profiles, or witness preflight opt into the isolated snapshot/worker layout.
+Switching back to the ordinary path clears retained isolated sidecars and results.
+
+Ordinary frontend coverage again exports only the historical report tree, with
+fresh `artifacts/frontend-coverage/raw/*.json` maps and the original summary,
+HTML and LCOV schemas. Every invocation first removes the compatibility raw maps.
+Private run/shard counters and receipts live beside that tree in
+`artifacts/.frontend-coverage-runs/run-*`, so refreshing the compatibility tree
+cannot delete another invocation's counters. Sharded runs consume only their own
+raw maps; interrupted runs cannot contaminate the next report. Immutable text
+cache entries live separately in `artifacts/.frontend-instrumented`.
+
+Reuse now hashes MSBuild's preprocessed effective imports and evaluated project
+references recursively with the same build properties/artifacts path. This covers
+implicit ancestor props/targets, transitive external imports, referenced projects,
+SDK imports, applicable ancestor `global.json`/NuGet configuration and declared
+lock files. A missing import/lock, failed or unrecognized evaluation, multi-target
+project, or reference property override disables reuse; the fresh build still
+runs. A restore that changes the import closure cannot publish a reuse stamp on
+that invocation. An unchanged subsequent build can establish the stamp. Fresh
+unproven builds receive unique execution identities solely for partition receipts.
+Repository input changes during a build still fail incomplete.
