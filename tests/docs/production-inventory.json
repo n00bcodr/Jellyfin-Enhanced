@@ -183,6 +183,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsBackendController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
       "category": "Controllers"
     },
@@ -616,6 +620,26 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/JellyfinUserActions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/BackendChoice.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/EffectiveRequestsBackend.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/RequestedTitlesProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/SeerrIsolationActionFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/SeerrIsolationTransportHandler.cs",
       "category": "Services"
     },
     {
@@ -5787,6 +5811,13 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/requested-titles",
+      "method": "RequestedTitles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsBackendController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/hub",
       "method": "GetHub",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
@@ -9659,6 +9690,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
+      "class": "PluginConfiguration",
+      "name": "ArrBackendIsolationVersion",
+      "type": "int",
+      "initializer": "0",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
       "class": "JellyfinEnhancedUserSettings",
       "name": "AutoPauseEnabled",
       "type": "bool",
@@ -11721,9 +11760,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 731,
-    "routes": 311,
-    "configuration_properties": 661,
+    "files": 737,
+    "routes": 312,
+    "configuration_properties": 662,
     "storage_references": 106,
     "scheduled_tasks": 15,
     "locales": 33

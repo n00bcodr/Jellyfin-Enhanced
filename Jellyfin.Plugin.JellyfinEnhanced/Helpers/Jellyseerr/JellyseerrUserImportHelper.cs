@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -42,6 +43,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             Func<List<string>, List<string>?>? recheck = null)
         {
             var result = new BulkImportResult();
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed)
+            {
+                logger.Info("[RequestsBackend] Seerr import denied: backend_disabled");
+                result.Errors.Add("backend_disabled");
+                return result;
+            }
             var httpClient = SeerrHttpHelper.CreateClient(httpClientFactory);
             httpClient.Timeout = TimeSpan.FromSeconds(30);
 
@@ -80,6 +87,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
                     result.Imported = importedCount;
                     return result;
+                }
+                catch (BackendDisabledException ex)
+                {
+                    result.Errors.Add(ex.Reason);
+                    break;
                 }
                 catch (OperationCanceledException)
                 {

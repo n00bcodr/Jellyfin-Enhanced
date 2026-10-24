@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -105,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (_config() is not PluginConfiguration config) return;
                 if (!config.TriggerSeerrScanOnItemAdded) return;
-                if (!config.JellyseerrEnabled) return;
+                if (!EffectiveRequestsBackend.AllowsSeerr(config) || !config.JellyseerrEnabled) return;
 
                 // Seerr's recently-added scan only inspects movies and series (and crawls
                 // their seasons/episodes itself). Filtering on the parent kinds avoids
@@ -131,7 +132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void OnRequestConfirmed(RequestJob job)
         {
             var config = _config();
-            if (config is not { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true } || !SharedRequestFacts.LedgerAuthority(config)) return;
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config is not { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true } || !SharedRequestFacts.LedgerAuthority(config)) return;
             if (job.Authorization.Backend != "je" || TitleKey.Parse(job.Input.Key) is not { } key) return;
             Nudge(key.IsMovie ? RadarrScanJobId : SonarrScanJobId);
         }
@@ -154,7 +155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Nudge(string jobId, int count = 1)
         {
             var config = _config();
-            if (config == null || !config.JellyseerrEnabled) return;
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || !config.JellyseerrEnabled) return;
             var source = SourceOf(config);
             var debounce = TimeSpan.FromSeconds(ClampDebounceSeconds(config.SeerrScanDebounceSeconds));
             lock (_stateLock)
@@ -228,7 +229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // The automatic scan trigger is on (live configuration).
-        private bool On() => _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
+        private bool On() => EffectiveRequestsBackend.AllowsSeerr(_config()) && _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
 
         private async Task DispatchOwnerAsync(Owner owner, string source, int batch)
         {
@@ -239,6 +240,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // The switch was checked when the changes arrived, up to an hour ago: read it again here and right
                 // before each run; turned off since, the batch is dropped.
                 if (!On()) return;
+                if (!EffectiveRequestsBackend.AllowsSeerr(config))
+                {
+                    _logger.Info("[RequestsBackend] Seerr scan denied: backend_disabled");
+                    return;
+                }
                 var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))
@@ -339,6 +345,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return results;
                 }
 
+                if (!EffectiveRequestsBackend.AllowsSeerr(config))
+                {
+                    _logger.Info("[RequestsBackend] Seerr scan denied: backend_disabled");
+                    return results;
+                }
                 var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))

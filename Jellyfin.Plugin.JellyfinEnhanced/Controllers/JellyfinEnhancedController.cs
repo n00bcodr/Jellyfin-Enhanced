@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.IO;
@@ -205,6 +206,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // The server's Jellyfin view: the one availability rule's facts (the calendar's Available and Play).
         private readonly Services.Acquire.IArrJellyfinView? _arrView;
 
+        private readonly RequestedTitlesProjection? _requestedTitles;
+
         public JellyfinEnhancedController(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -241,8 +244,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.Arr.Live.IArrFeedAudience feedAudience,
             Services.Acquire.ArrInstanceLibraries instanceLibraries,
             Services.Acquire.TitleAliases titleAliases,
-            Services.Acquire.IArrJellyfinView arrView, Services.SpoilerPresentation? presentation = null)
+            Services.Acquire.IArrJellyfinView arrView, Services.SpoilerPresentation? presentation = null, RequestedTitlesProjection? requestedTitles = null)
         {
+            _requestedTitles = requestedTitles;
             _presentation = presentation;
             _arrView = arrView;
             _instanceLibraries = instanceLibraries;
@@ -359,6 +363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Taken before anything is read: the generation fences a store after a clear, the instant starts the lifetime.
             var generation = Interlocked.Read(ref _userCacheGeneration);
             var readAt = DateTime.UtcNow;
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return (null, readAt);
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
@@ -487,6 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed) return (null, true);
             var config = JellyfinEnhanced.Instance?.Configuration;
             var apiKey = config?.GetJellyseerrApiKey() ?? string.Empty;
 
@@ -673,6 +679,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private static string? TryGetCachedJellyseerrUserId(string jellyfinUserId)
         {
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return null;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config != null && (config.JellyseerrDisableCache || IsJellyseerrImportBlocked(jellyfinUserId, config)))
             {
@@ -693,6 +700,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return null;
             // Taken before anything is read (a clear after it fences the store below).
             var generation = Interlocked.Read(ref _userCacheGeneration);
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -1108,6 +1116,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<IActionResult> ProxyJellyseerrRequestCore(string apiPath, HttpMethod method, string? content, string? upstreamNotFound)
         {
+            if (EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Diagnostics) is { Allowed: false } denied)
+                return StatusCode(409, new { code = denied.Reason });
             // Propagate client disconnects (superseded search queries, page
             // navigations) to the upstream Seerr/TMDB call so we stop doing
             // work nobody will read. Only GETs are cancellable: POSTs (requests,
@@ -10187,6 +10197,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var http = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             http.Timeout = TimeSpan.FromSeconds(5);
             var cleanUrl = url.TrimEnd('/');
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Diagnostics).Allowed
+                && SeerrIsolationTransportHandler.KnownSeerrAddress(new Uri(cleanUrl), JellyfinEnhanced.Instance?.Configuration))
+                return StatusCode(409, new { code = "backend_disabled" });
 
             // Try Sonarr/Radarr (/api/v3/system/status)
             try
@@ -10236,7 +10249,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (HttpRequestException) { /* continue to next service probe */ }
             catch (TaskCanceledException) { /* continue to next service probe */ }
 
-            // Try Jellyseerr (/api/v1/status — returns JSON)
+            // Try Jellyseerr only when the selected backend permits it (Test is not an isolation exception).
+            if (EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Diagnostics).Allowed)
             try
             {
                 using var resp = await http.GetAsync($"{cleanUrl}/api/v1/status");
@@ -10907,6 +10921,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (IsAdminUser() || !config.DownloadsFilterByUserRequests)
                 return (false, null);
 
+            if (EffectiveRequestsBackend.IsStrictJe(config))
+            {
+                var user = ArrCaller.PersonId(User);
+                var projection = user is Guid id ? _requestedTitles?.ForUser(config, id) : null;
+                return projection is { Available: true, Complete: true }
+                    ? (projection.Titles.Count == 0, projection.Identities()) : (true, null);
+            }
+            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return (true, null);
+
             if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
                 return (true, null);
 
@@ -10947,6 +10970,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private Jellyfin.Database.Implementations.Entities.User? AskedProofCandidate(PluginConfiguration config, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
         {
             if (allowedRequests != null || IsAdminUser() || Services.Acquire.SeerrRequestReadModel.IsActive(config)) return null;
+            if (EffectiveRequestsBackend.IsStrictJe(config))
+                return ArrCaller.Human(User, _userManager) is { } jeUser && Services.Arr.Live.ArrFeedAudience.NeedsAskedProof(jeUser) ? jeUser : null;
+            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return null;
             if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
                 return null;
             return ArrCaller.Human(User, _userManager) is { } user && Services.Arr.Live.ArrFeedAudience.NeedsAskedProof(user) ? user : null;
@@ -10960,6 +10986,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private Task<IReadOnlySet<(int TmdbId, string MediaType)>?> GetAskedProofAsync(PluginConfiguration config, Jellyfin.Database.Implementations.Entities.User user)
         {
+            if (EffectiveRequestsBackend.IsStrictJe(config))
+            {
+                var projection = _requestedTitles?.ForUser(config, user.Id);
+                return Task.FromResult<IReadOnlySet<(int TmdbId, string MediaType)>?>(projection is { Available: true, Complete: true } ? projection.Identities() : null);
+            }
+            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return Task.FromResult<IReadOnlySet<(int TmdbId, string MediaType)>?>(null);
             var jellyfinUserId = user.Id.ToString();
             return SeerrAskedProofCache.Shared.GetAsync(jellyfinUserId + "|" + config.JellyseerrUrls.Trim(), async () =>
             {
@@ -12514,6 +12546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ProxyAvatar([FromQuery] string path)
         {
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return StatusCode(409, new { code = "backend_disabled" });
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
             {

@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -185,7 +186,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var admission = job.State == "maybe_sent" ? null : _automation?.Admission(job, want);
                 try
                 {
-                    if (hold != null)
+                    var effective = EffectiveRequestsBackend.EvaluateConfiguration(_policy.Configuration);
+                    if (job.Authorization.Backend == "seerr" && !effective.AllowSeerrTransport
+                        || effective.IsolationVersion != 0 && job.Authorization.Backend == "je" && !effective.AllowDirectRequests)
+                    {
+                        result = job.State == "maybe_sent" || job.Uncertain
+                            ? BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled")
+                            : BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
+                    }
+                    else if (hold != null)
                     {
                         result = hold.Park ? BackendResults.Hold(hold.Reason, hold.Message) : BackendResults.Later(hold.Reason, hold.Message, hold.Wait);
                     }
@@ -198,6 +207,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         }
                         string? Guard()
                         {
+                            var liveBackend = EffectiveRequestsBackend.EvaluateConfiguration(_policy.Configuration);
+                            if (job.Authorization.Backend == "seerr" && !liveBackend.AllowSeerrTransport
+                                || liveBackend.IsolationVersion != 0 && job.Authorization.Backend == "je" && !liveBackend.AllowDirectRequests)
+                                return "backend_disabled";
                             if (job.Input.Fingerprint != job.Fingerprint || job.Input.Scope != job.Authorization.Scope || job.Input.Variant != job.Authorization.Variant) return "idempotency_conflict";
                             if (_ledger.Database.Generation != generation) return "configuration_changed";
                             RequestPolicyFacts? requester = null;
@@ -258,7 +271,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
                             settledByRead = true;
                             // A hold after the write (Seerr has the request, not as chosen) stays held for a person.
-                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
+                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked && result.Outcome.Reason != "backend_disabled") result = RequestBackendResult.Uncertain(job.WantId);
                             else if (result.VerifiedNotSent && !result.Confirmed)
                                 result = result with { Retryable = true, Parked = false };
                         }
@@ -282,9 +295,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                             {
                                 // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
-                                result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
+                                result = job.Authorization.Backend == "seerr" && !EffectiveRequestsBackend.AllowsSeerr(_policy.Configuration)
+                                    ? BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled")
+                                    : await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
                                 settledByRead = true;
-                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
+                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked && result.Outcome.Reason != "backend_disabled") result = RequestBackendResult.Uncertain(job.WantId);
                             }
                         }
                     }

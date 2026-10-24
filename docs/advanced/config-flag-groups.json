@@ -1388,6 +1388,7 @@
     "ArrAutomationSeerrPostsPerDay": 20,
     "ArrAutomationShadowOverride": false,
     "ArrAutomationSourceFetchesPerHour": 60,
+    "ArrBackendIsolationVersion": 0,
     "ArrEmailEnabled": false,
     "ArrGroupQuotaPools": "",
     "ArrHouseholdContactName": "",

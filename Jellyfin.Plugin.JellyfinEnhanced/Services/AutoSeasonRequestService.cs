@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -75,7 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal bool LedgerMode(PluginConfiguration? config) => _recorder != null && AutoRequestRecorder.Active(config);
 
         private static bool SeerrConfigured(PluginConfiguration? config)
-            => config != null && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
+            => EffectiveRequestsBackend.AllowsSeerr(config) && config != null && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
 
         // Series details come from Seerr (TMDB data); in JE mode without Seerr, from TMDB itself.
         private bool TmdbDetails(PluginConfiguration? config)
@@ -115,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
 
-            var cacheKey = tmdbId;
+            var cacheKey = (EffectiveRequestsBackend.IsStrictJe(config) ? "je|" : "legacy|") + tmdbId;
             var cacheTtl = GetSeriesDetailsCacheTtl();
             var cacheEnabled = !config.JellyseerrDisableCache;
 
@@ -252,13 +253,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
         // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
         // ledger). Null: it may go.
-        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
+        private string? DirectStop() => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.RequestWrite).Allowed ? "backend_disabled" : _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
 
         // One check; null when the direct path stopped for phase 3 and the check has to start again.
         private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem episodeItem, Guid userId, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
+            if (EffectiveRequestsBackend.IsStrictJe(config) && !ledger) return AutoRequestOutcome.Noop("requests_off");
             if (config == null || !config.AutoSeasonRequestEnabled || (!ledger && !config.JellyseerrEnabled))
             {
                 return AutoRequestOutcome.Noop("disabled");
@@ -620,7 +622,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return (null, true);
             }
@@ -774,7 +776,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<(bool Sent, string? Stopped)> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Season-Request] Jellyseerr configuration is missing");
                 return (false, null);
@@ -844,7 +846,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }

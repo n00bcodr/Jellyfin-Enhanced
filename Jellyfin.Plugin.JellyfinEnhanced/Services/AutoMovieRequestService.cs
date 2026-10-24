@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -67,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal bool LedgerMode(PluginConfiguration? config) => _recorder != null && AutoRequestRecorder.Active(config);
 
         private static bool SeerrConfigured(PluginConfiguration config)
-            => config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
+            => EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
 
         private static string[] GetConfiguredUrls(string? urls)
         {
@@ -111,13 +112,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
         // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
         // ledger). Null: it may go.
-        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
+        private string? DirectStop() => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.RequestWrite).Allowed ? "backend_disabled" : _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
 
         // One check; null when the direct path stopped for phase 3 and the check has to start again.
         private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
+            if (EffectiveRequestsBackend.IsStrictJe(config) && !ledger) return AutoRequestOutcome.Noop("requests_off");
             if (config == null || !config.AutoMovieRequestEnabled || (!ledger && !config.JellyseerrEnabled))
             {
                 return AutoRequestOutcome.Noop("disabled");
@@ -387,7 +389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return new NextMovie(null, "not_configured", false);
             }
@@ -567,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }
@@ -730,7 +732,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Movie-Request] Jellyseerr configuration is missing");
                 return (false, null);
@@ -811,7 +813,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }

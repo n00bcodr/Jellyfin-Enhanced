@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -89,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True when the feature can act: on, with Seerr or the shared request facts to read requests from.
         private bool CanRun(PluginConfiguration? config)
-            => config is { AddRequestedMediaToWatchlist: true } && (config.JellyseerrEnabled || (_facts != null && SharedRequestFacts.Active(config)));
+            => config is { AddRequestedMediaToWatchlist: true } && ((EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled) || (_facts != null && SharedRequestFacts.Active(config)));
 
         // Handle library item added events to check if they match pending watchlist items.
         private void OnItemAdded(object? sender, ItemChangeEventArgs e) => ScheduleWatchlistCheck(e, "ItemAdded");
@@ -139,7 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var shared = _facts != null && SharedRequestFacts.Active(config);
-                if (!shared && !config.JellyseerrEnabled)
+                if (!shared && (!EffectiveRequestsBackend.AllowsSeerr(config) || !config.JellyseerrEnabled))
                 {
                     _logger.Debug("[Watchlist] JellyseerrEnabled is disabled");
                     return;
@@ -311,10 +312,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // be read; empty when Seerr doesn't know the title.
         private async Task<List<string?>?> SeerrTitleRequestersAsync(PluginConfiguration config, int tmdbId, string mediaType)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return null;
             var apiKey = config.GetJellyseerrApiKey();
             var urls = (config.JellyseerrUrls ?? string.Empty).Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(u => u.Trim().TrimEnd('/')).Where(u => u.Length > 0).ToList();
-            if (!config.JellyseerrEnabled || urls.Count == 0 || string.IsNullOrEmpty(apiKey)) return null;
+            if (!(EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled) || urls.Count == 0 || string.IsNullOrEmpty(apiKey)) return null;
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             foreach (var url in urls)
             {
@@ -413,6 +415,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Get ALL requests from Jellyseerr in a single API call
         private async Task<List<RequestItemWithUser>?> GetAllJellyseerrRequests(HttpClient httpClient, string jellyseerrUrl, string apiKey)
         {
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Watchlist).Allowed) return null;
             var cacheKey = jellyseerrUrl.TrimEnd('/');
             var cacheTtl = GetRequestsCacheTtl();
 

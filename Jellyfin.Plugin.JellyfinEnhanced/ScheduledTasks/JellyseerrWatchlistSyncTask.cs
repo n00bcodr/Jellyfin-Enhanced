@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -91,6 +92,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         internal async Task<SyncSummary?> RunAsync(IProgress<double>? progress, CancellationToken cancellationToken)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
+
+            if (!EffectiveRequestsBackend.AllowsSeerr(config))
+            {
+                _logger.Info("[RequestsBackend] Seerr task denied: backend_disabled");
+                progress?.Report(100);
+                return null;
+            }
 
             if (config == null || !config.SyncJellyseerrWatchlist || !config.JellyseerrEnabled)
             {

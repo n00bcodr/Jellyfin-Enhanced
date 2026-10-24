@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,7 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True when the feature can act: Seerr requests (phase 3 off) or the request ledger (phase 3 on).
         private bool CanRun(PluginConfiguration? config)
-            => config is { AutoSeasonRequestEnabled: true } && (config.JellyseerrEnabled || (_recorder != null && AutoRequestRecorder.Active(config)));
+            => config is { AutoSeasonRequestEnabled: true } && ((EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled) || (_recorder != null && AutoRequestRecorder.Active(config)));
 
         private readonly object _subscriptionLock = new();
         private bool _subscribed;

@@ -25,6 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
         Timeout,
         UrlNotAllowed,
         ConfigInvalid,
+        BackendDisabled,
     }
 
     // Message holds the technical text (URL, cf-ray, status) for admins/logs.
@@ -110,7 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             string? apiUserId = null,
             string? bodyJson = null)
         {
+            Services.Acquire.Backends.EffectiveRequestsBackend.Shared.DemandSeerr(Services.Acquire.Backends.SeerrUse.Diagnostics);
             var req = new HttpRequestMessage(method, url);
+            Services.Acquire.Backends.SeerrIsolationTransportHandler.Mark(req, Services.Acquire.Backends.SeerrUse.Diagnostics);
             req.Headers.UserAgent.ParseAdd(UserAgent);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             req.Headers.Add("X-Api-Key", apiKey);

@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -40,10 +41,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>True when the watchlist features read these facts: phase 3 on with JE or Seerr request handling.</summary>
         public static bool Active(PluginConfiguration? config)
-            => config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && config.ArrRequestBackend is "je" or "seerr";
+            => EffectiveRequestsBackend.IsStrictJe(config) || config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && config.ArrRequestBackend is "je" or "seerr";
 
         /// <summary>True when Jellyfin Enhanced handles requests (the ledger is the authority; Seerr isn't needed).</summary>
-        public static bool LedgerAuthority(PluginConfiguration? config) => Active(config) && config!.ArrRequestBackend == "je";
+        public static bool LedgerAuthority(PluginConfiguration? config) => EffectiveRequestsBackend.IsStrictJe(config) || Active(config) && config!.ArrRequestBackend == "je";
 
         private static bool Asked(RequestWant want) => want.Status is not ("cancelled" or "declined");
 

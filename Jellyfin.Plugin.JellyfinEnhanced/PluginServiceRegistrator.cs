@@ -560,6 +560,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 o.Filters.AddService<PosterTagImageFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
+            // E1: one live effective-backend owner, guarding shared, fallback and list transports.
+            serviceCollection.AddSingleton(Services.Acquire.Backends.EffectiveRequestsBackend.Shared);
+            serviceCollection.AddSingleton<Services.Acquire.Backends.IEffectiveRequestsBackend>(sp => sp.GetRequiredService<Services.Acquire.Backends.EffectiveRequestsBackend>());
+            serviceCollection.AddTransient<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            foreach (var name in new[] { string.Empty, Helpers.Jellyseerr.SeerrHttpHelper.NamedClient })
+                serviceCollection.AddHttpClient(name).AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            serviceCollection.AddHttpClient(string.Empty).ConfigurePrimaryHttpMessageHandler(() => new Services.Acquire.Backends.BackendFallbackTransport());
+            serviceCollection.AddSingleton<Services.Acquire.Backends.RequestedTitlesProjection>();
+            serviceCollection.AddSingleton<Services.Acquire.Backends.SeerrIsolationActionFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Backends.SeerrIsolationActionFilter>(int.MinValue + 100));
+            // End E1.
         }
     }
 }

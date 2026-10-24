@@ -1882,5 +1882,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 return new List<ArrInstance>();
             }
         }
+        // E1: explicit backend isolation. Missing on upgraded configurations means legacy semantics.
+        public int ArrBackendIsolationVersion { get; set; } = 0;
+        // End E1.
     }
 }

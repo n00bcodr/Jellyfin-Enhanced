@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -305,9 +306,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     return new SeerrReadModelState
                     {
                         Active = Active,
-                        LastReadAt = _lastRead,
-                        LastError = _lastError,
-                        Requests = _snapshot.All.Count,
+                        LastReadAt = EffectiveRequestsBackend.AllowsSeerr(_config()) ? _lastRead : null,
+                        LastError = EffectiveRequestsBackend.AllowsSeerr(_config()) ? _lastError : null,
+                        Requests = EffectiveRequestsBackend.AllowsSeerr(_config()) ? _snapshot.All.Count : 0,
                         Calls = Interlocked.Read(ref _calls),
                         Truncated = _truncated,
                         ReportedTotal = _reportedTotal,
@@ -322,7 +323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             get
             {
-                lock (_lock) return _lastRead != null;
+                lock (_lock) return EffectiveRequestsBackend.AllowsSeerr(_config()) && _lastRead != null;
             }
         }
 
@@ -335,7 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// can wait for the secrets store and its file: the automatic-write gate reads it before its decision).
         /// </summary>
         public static bool IsActive(PluginConfiguration? c, bool hasApiKey)
-            => c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, JellyseerrEnabled: true }
+            => EffectiveRequestsBackend.AllowsSeerr(c) && c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, JellyseerrEnabled: true }
                && !string.IsNullOrWhiteSpace(c.JellyseerrUrls)
                && hasApiKey;
 
@@ -343,14 +344,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal string? CurrentSource => SourceOf(_config());
 
         /// <summary>Every request held, newest first.</summary>
-        public IReadOnlyList<SeerrRequestRecord> All => _snapshot.All;
+        public IReadOnlyList<SeerrRequestRecord> All => EffectiveRequestsBackend.AllowsSeerr(_config()) ? _snapshot.All : Array.Empty<SeerrRequestRecord>();
 
         /// <summary>
         /// The identity of the Seerr the held requests came from (a short keyed hash of its addresses
         /// and API key; never the key), or null before the first read. Request ids mean something
         /// only together with it.
         /// </summary>
-        public string? Source => _snapshot.Source;
+        public string? Source => EffectiveRequestsBackend.AllowsSeerr(_config()) ? _snapshot.Source : null;
 
         /// <summary>
         /// The held requests together with the identity of the Seerr they came from and the lowest
@@ -362,6 +363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             get
             {
+                if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return (null, Array.Empty<SeerrRequestRecord>(), null);
                 var snapshot = _snapshot;
                 return (snapshot.Source, snapshot.All, snapshot.Floor);
             }
@@ -402,16 +404,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The requests one Jellyfin user made (any state), newest first.</summary>
         public IReadOnlyList<SeerrRequestRecord> ForUser(Guid userId)
-            => _snapshot.ByUser.TryGetValue(userId, out var list) ? list : Array.Empty<SeerrRequestRecord>();
+            => EffectiveRequestsBackend.AllowsSeerr(_config()) && _snapshot.ByUser.TryGetValue(userId, out var list) ? list : Array.Empty<SeerrRequestRecord>();
 
         /// <summary>The requests for a title (movie or series key; a season or episode key counts as its title).</summary>
         public IReadOnlyList<SeerrRequestRecord> ForTitle(TitleKey titleKey)
-            => _snapshot.ByKey.TryGetValue(titleKey.Title.ToString(), out var list) ? list : Array.Empty<SeerrRequestRecord>();
+            => EffectiveRequestsBackend.AllowsSeerr(_config()) && _snapshot.ByKey.TryGetValue(titleKey.Title.ToString(), out var list) ? list : Array.Empty<SeerrRequestRecord>();
 
         /// <summary>Title details for a request's title, when read.</summary>
         public SeerrTitleMeta? Meta(bool isMovie, int? tmdbId)
         {
-            if (tmdbId is not > 0) return null;
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config()) || tmdbId is not > 0) return null;
             lock (_lock) return _meta.TryGetValue((isMovie, tmdbId.Value), out var meta) ? meta : null;
         }
 
@@ -559,6 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public void RequestRefresh()
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { Clear(); return; }
             lock (_lock) _requestedAt ??= _now();
         }
 
@@ -568,6 +571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public void Touch()
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { Clear(); return; }
             lock (_lock) _watchedAt = _now();
         }
 
@@ -748,10 +752,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public async Task<bool> RefreshAsync(CancellationToken cancellationToken)
         {
             var config = _config();
-            if (!IsActive(config)) return false;
+            if (!IsActive(config)) { if (!EffectiveRequestsBackend.AllowsSeerr(config)) Clear(); return false; }
             await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (!IsActive(_config())) { Clear(); return false; }
                 var source = SourceOf(config)!;
                 string? held;
                 lock (_lock) held = _source;
@@ -1090,6 +1095,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private async Task<(JsonElement? Json, string? Error, bool NotFound)> GetJsonAsync(string uri, string apiKey, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return (null, "backend_disabled", false);
             Interlocked.Increment(ref _calls);
             try
             {
