@@ -310,6 +310,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <inheritdoc />
         public async Task<LookupResult<IReadOnlyList<TitleHit>>> SearchAsync(string query, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var normalized = string.Join(' ', (query ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
             if (normalized.Length == 0)
             {
@@ -323,12 +324,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 context,
                 json => ParseSearch(json, asked),
                 cancellationToken).ConfigureAwait(false);
-            return answer.Result<IReadOnlyList<TitleHit>>();
+            return epoch.Publish(() => answer.Result<IReadOnlyList<TitleHit>>(), () => LookupResult<IReadOnlyList<TitleHit>>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<TitleDetails>> GetDetailsAsync(string mediaType, int tmdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (mediaType is not ("movie" or "tv") || tmdbId <= 0)
             {
                 return LookupResult<TitleDetails>.NotFound;
@@ -341,12 +343,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 context,
                 json => ParseDetails(json, mediaType, tmdbId),
                 cancellationToken).ConfigureAwait(false);
-            return answer.Result<TitleDetails>();
+            return epoch.Publish(() => answer.Result<TitleDetails>(), () => LookupResult<TitleDetails>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<IReadOnlyList<EpisodeFacts>>> GetSeasonAsync(int tvTmdbId, int season, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (tvTmdbId <= 0 || season < 0)
             {
                 return LookupResult<IReadOnlyList<EpisodeFacts>>.NotFound;
@@ -359,12 +362,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 context,
                 json => ParseSeason(json, tvTmdbId, season),
                 cancellationToken).ConfigureAwait(false);
-            return answer.Result<IReadOnlyList<EpisodeFacts>>();
+            return epoch.Publish(() => answer.Result<IReadOnlyList<EpisodeFacts>>(), () => LookupResult<IReadOnlyList<EpisodeFacts>>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var key = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
             if (_tmdb == null || string.IsNullOrWhiteSpace(key) || !Regex.IsMatch(imdbId ?? string.Empty, "^tt[0-9]{5,10}$"))
             {
@@ -374,20 +378,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // Review round 5: a definitive answer is reused with its status without waiting for the limiter. Review round 6:
             // the request is the TMDB lookup's own (TmdbCall: its own turn at the limiter, TMDB's find answer read by the
             // same reader, so an answer that isn't a valid, empty list is never a remembered "not found").
-            var cacheKey = "tmdb-find|" + Fingerprint(new[] { "tmdb" }, key) + "|" + imdbId;
+            var cacheKey = "tmdb-find|" + Fingerprint(new[] { "tmdb" }, key) + "|" + imdbId + "|" + epoch.Generation;
             if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return new LookupResult<ImdbEpisodeFind>(cached.Status, cached.Value as ImdbEpisodeFind);
+                return epoch.Publish(() => new LookupResult<ImdbEpisodeFind>(cached.Status, cached.Value as ImdbEpisodeFind), () => LookupResult<ImdbEpisodeFind>.Transient);
             }
 
             var answer = await new TmdbCall(_tmdb, _limiter, _logger, context, key.Trim(), cancellationToken)
                 .GetAsync("find/" + imdbId, "?external_source=imdb_id", TmdbImportLookup.ReadEpisodeFind).ConfigureAwait(false);
-            if (answer.Remembered)
+            return epoch.Publish(() =>
             {
-                Remember(cacheKey, answer.Status, answer.Value);
-            }
-
-            return answer.Result<ImdbEpisodeFind>();
+                if (answer.Remembered) Remember(cacheKey, answer.Status, answer.Value);
+                return answer.Result<ImdbEpisodeFind>();
+            }, () => LookupResult<ImdbEpisodeFind>.Transient);
         }
 
         // ── Plumbing ─────────────────────────────────────────────────────────
@@ -399,16 +402,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             Func<string, LookupAnswer> parse,
             CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
                 return LookupAnswer.Transient;
             }
 
-            var key = Fingerprint(urls, apiKey) + "|" + cacheKey;
+            var key = Fingerprint(urls, apiKey) + "|" + cacheKey + "|" + epoch.Generation;
             // A definitive answer is reused with its status, without waiting for the limiter (review round 5, 4c2-R5-4).
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid);
+                return epoch.Publish(() => new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid), () => LookupAnswer.Transient);
             }
 
             // One shared call per key; E4: it follows its waiters' cancellation while it is still queued for the limiter.
@@ -421,7 +425,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 {
                     if (ReferenceEquals(shared, mine))
                     {
-                        _ = RunSharedAsync(key, mine, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine));
+                        _ = RunSharedAsync(key, mine, epoch, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine, epoch));
                     }
 
                     break;
@@ -433,7 +437,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             try
             {
-                return await shared.Result.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var answer = await shared.Result.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return epoch.Publish(() => answer, () => LookupAnswer.Transient);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -446,7 +451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        private async Task RunSharedAsync(string key, SharedLookup shared, Func<Task<LookupAnswer>> fetch)
+        private async Task RunSharedAsync(string key, SharedLookup shared, ListMetadataEpoch epoch, Func<Task<LookupAnswer>> fetch)
         {
             LookupAnswer answer;
             try
@@ -459,13 +464,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 answer = LookupAnswer.Transient;
             }
 
-            if (answer.Remembered)
+            epoch.Publish(() =>
             {
-                Remember(key, answer.Status, answer.Value);
-            }
-
+                if (answer.Remembered) Remember(key, answer.Status, answer.Value);
+                shared.Result.TrySetResult(answer);
+                return true;
+            }, () => shared.Result.TrySetResult(LookupAnswer.Transient));
             _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
-            shared.Result.TrySetResult(answer);
         }
 
         // Every configured server in order by THE fallback table (SeerrFallback, review round 9): a Valid answer is used; a
@@ -475,12 +480,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // is held until that request has ended (its own timeout), whoever still waits for it. The first turn is queued like
         // the shared lookup (cancelled once every waiter is gone: an aborted request or the /resolve deadline); once admitted
         // the lookup runs to the end regardless (its result serves later joiners and the cache).
-        private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
+        private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared, ListMetadataEpoch epoch)
         {
             FallbackResult<LookupAnswer> read;
             try
             {
-                read = await SeerrFallback.ReadAsync<LookupAnswer>(urls, (baseUrl, i) => ReadAtAsync(baseUrl, i, apiKey, apiPath, context, parse, shared)).ConfigureAwait(false);
+                read = await SeerrFallback.ReadAsync<LookupAnswer>(urls, (baseUrl, i) => ReadAtAsync(baseUrl, i, apiKey, apiPath, context, parse, shared, epoch)).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -496,7 +501,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         // One server's answer as the fallback table reads it.
-        private async Task<ServerAnswer<LookupAnswer>> ReadAtAsync(string baseUrl, int index, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
+        private async Task<ServerAnswer<LookupAnswer>> ReadAtAsync(string baseUrl, int index, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared, ListMetadataEpoch epoch)
         {
             IDisposable lease;
             if (index == 0)
@@ -522,6 +527,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     using var timeout = new CancellationTokenSource(CallTimeout);
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    if (!epoch.IsCurrent || !SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    {
+                        return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
+                    }
+
                     using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                     var status = (int)response.StatusCode;
                     // Review round 11 (4c2-R11-3): only a JSON success's body is read, by the one bounded reader; any other answer
@@ -529,6 +539,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     var json = response.IsSuccessStatusCode && SeerrHttpHelper.IsJsonContentType(response)
                         ? await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false)
                         : null;
+                    if (!epoch.IsCurrent) return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
                     if (json != null)
                     {
                         LookupAnswer answer;

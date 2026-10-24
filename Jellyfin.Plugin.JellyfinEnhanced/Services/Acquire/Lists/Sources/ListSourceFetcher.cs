@@ -171,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <inheritdoc />
         public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             // Provider switches and credentials are checked before the cache: a provider the admin just turned off stops
             // working at once, and nothing is sent to it.
             if (Unavailable(source, options) is { } unavailable)
@@ -178,10 +179,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return unavailable;
             }
 
-            var cacheKey = source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
+            var cacheKey = epoch.Generation + "|" + source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
             if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return cached.Result;
+                return epoch.Publish(() => cached.Result, Changed);
             }
 
             // F29: a person's fetches that miss the cache go upstream only a few at a time and a bounded number per window.
@@ -220,24 +221,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
                 }
 
-                // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
-                // read again next time, so a corrected source is seen at once.
-                if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
+                return epoch.Publish(() =>
                 {
-                    PruneCache(result.Items.Count);
-                    _cache[cacheKey] = (readAt + CacheTtl, result);
-                }
-                else if (!result.Ok)
-                {
-                    _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
-                }
+                    // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
+                    // read again next time, so a corrected source is seen at once.
+                    if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
+                    {
+                        PruneCache(result.Items.Count);
+                        _cache[cacheKey] = (readAt + CacheTtl, result);
+                    }
+                    else if (!result.Ok)
+                    {
+                        _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
+                    }
 
-                return result;
+                    return result;
+                }, () => result.Ok ? Changed() : result);
             }
             finally
             {
                 _gate.Release();
             }
+
+            SourceFetchResult Changed() => SourceFetchResult.Fail(source, "configuration_changed", "The request backend changed while reading this source. Read it again.");
         }
 
         // Switches and credentials of each provider (no request is made without them).
@@ -252,6 +258,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             if (!ListImportFlags.Provider(config, source.Kind))
             {
                 return SourceFetchResult.Fail(source, SourceFailures.ProviderDisabled, "Lists from this site are turned off on this server.");
+            }
+
+            if (options.Provider == "seerr" && SeerrAddresses.IsJe(config))
+            {
+                return SourceFetchResult.Fail(source, SourceFailures.ProviderPinned, SeerrAddresses.InactiveSourceMessage);
             }
 
             if (source.Kind == SourceKinds.Trakt && TraktKey.Length == 0)
@@ -518,7 +529,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
             else
             {
-                provider = hasKey && !tvUpcoming ? "tmdb" : "seerr";
+                provider = SeerrAddresses.IsJe(Config) || (hasKey && !tvUpcoming) ? "tmdb" : "seerr";
+            }
+
+            if (provider == "tmdb" && !hasKey)
+            {
+                return SourceFetchResult.Fail(source, "tmdb_key_required", "TMDB lists and charts need the TMDB API key in Jellyfin Enhanced's settings.");
             }
 
             if (provider == "seerr" && !seerrAllowed)
@@ -639,12 +655,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var path = source.Shape == "trending"
                         ? $"trending/{media}/{source.Part("period")}"
                         : $"{media}/{source.Part("chart").Replace('-', '_')}";
+                    var upcomingTv = media == "tv" && source.Shape == "chart" && source.Part("chart") == "upcoming";
+                    if (upcomingTv) path = "discover/tv";
+                    // TMDB has no tv/upcoming resource: use its native upcoming-premiere filter.
+                    var query = upcomingTv ? "&first_air_date.gte=" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                        + "&sort_by=first_air_date.asc&include_adult=false&include_null_first_air_dates=false" : string.Empty;
                     var defaultType = media == "all" ? null : media;
                     var read = new SourceRead();
                     var items = new List<SourceItem>();
                     for (var page = 1; ; page++)
                     {
-                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
+                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture) + query, key, options, cancellationToken).ConfigureAwait(false)
                             ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
                         using var doc = JsonDocument.Parse(json);
                         Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);

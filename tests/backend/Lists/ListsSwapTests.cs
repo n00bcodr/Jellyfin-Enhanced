@@ -288,7 +288,7 @@ public class ListsSwapTests
         Assert.Equal(new[] { E(e1), E(e2), P(season.Id), E(x) }, view.Order);
 
         // The last episode airs and arrives: complete on fresh metadata, the placeholder goes.
-        h.TvDetails[110492] = TvJson(110492, ended: false);
+        h.TvDetails[110492] = TvJson(110492, ended: false).Replace("\"episodeNumber\":2", "\"episodeNumber\":3", StringComparison.Ordinal);
         h.SeasonDetails[(110492, 1)] = SeasonJson(1, Past, Past, Past);
         var e3 = h.Host.AddEpisode(series, 1, 3);
         h.Swap.NotifyItemChanged(e3);
@@ -544,7 +544,8 @@ public class ListsSwapTests
         h.Swap.NotifyItemChanged(s1e2);
         h.Swap.NotifyItemChanged(s2e2);
         await h.Swap.DrainAsync(None);
-        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+        // Count-only legacy metadata cannot retire a season during this no-provider outage; explicit episodes finish.
+        Assert.Equal(season.Id, Assert.Single(h.Store.Load(access.ListIdN)!.Items).Id);
         Assert.Equal(new[] { $"collection:{FakeListHost.Short(s2e2)}" }, h.Host.Calls); // the Season item isn't added twice
     }
 
@@ -1034,6 +1035,17 @@ public class ListsSwapTests
         var season = Season(121, 1);
         await Add(h, access, null, season);
         await h.Swap.DrainAsync(None);
+        // A previously saved document may predate the stricter completeness check. Preserve that legacy expected
+        // set here: a newly read undated season now stays unknown, and cannot create it in the first place.
+        using (await h.Store.LockAsync(access.ListIdN))
+        {
+            var legacy = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
+            var saved = legacy.Items.Single(p => p.Id == season.Id);
+            saved.Expected = Enumerable.Range(1, 8).Select(e => new PlaceholderEpisode { S = 1, E = e, AirDate = e <= 3 ? Past : null }).ToList();
+            saved.EpisodeTotal = 3;
+            h.Store.Save(legacy);
+        }
+
         var series = h.Host.AddSeries(tmdb: 121);
         foreach (var e in new[] { 1, 2, 3 })
         {

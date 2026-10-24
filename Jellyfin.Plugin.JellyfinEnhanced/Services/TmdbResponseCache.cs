@@ -111,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public sealed record TmdbResponse(int StatusCode, string Content, string ETag)
         {
+            /// <summary>Underlying fetch time; unknown for legacy disk records. Cache hits never renew it.</summary>
+            public DateTime FetchedAtUtc { get; init; }
+
             public bool IsSuccess => StatusCode >= 200 && StatusCode <= 299;
         }
 
@@ -133,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public int S { get; set; }
             public string C { get; set; } = string.Empty;
             public long E { get; set; }
+            public long F { get; set; }
         }
 
         private sealed class DiskFormat
@@ -375,6 +379,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        // Current public season resources already seen for this title are part of a series reconciliation too.
+        // This is a read-only snapshot: it never renews freshness or publishes provider authority.
+        internal IReadOnlyList<int> CachedTvSeasons(int tmdbId, string apiKey)
+        {
+            lock (_lock)
+            {
+                var prefix = GetKeyHash(apiKey) + "|https://api.themoviedb.org/3/tv/" + tmdbId.ToString(CultureInfo.InvariantCulture) + "/season/";
+                return _entries.Values.Select(n => n.Value)
+                    .Where(e => e.Response.IsSuccess && e.ExpiresAt > _timeProvider.GetUtcNow() && e.Key.StartsWith(prefix, StringComparison.Ordinal))
+                    .Select(e => e.Key[prefix.Length..].Split('?')[0])
+                    .Select(v => int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1)
+                    .Where(n => n >= 0).Distinct().OrderBy(n => n).ToArray();
+            }
+        }
+
         /// <summary>
         /// Phase 4c2 (list imports): drops the cached answer for <c>{apiPath}{query}</c>, for a caller that found it
         /// unusable (malformed, or not a whole answer), so the next read asks TMDB again instead of keeping it for the TTL.
@@ -530,6 +549,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 try
                 {
                     split = SplitBundle(target, upstream.Result.Response.Content);
+                    foreach (var name in split.Keys.ToArray())
+                    {
+                        split[name] = split[name] with { FetchedAtUtc = upstream.Result.Response.FetchedAtUtc };
+                    }
                 }
                 catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or OverflowException)
                 {
@@ -722,7 +745,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var isJson = mediaType != null
                     && (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
                         || mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
-                return (new TmdbResponse((int)response.StatusCode, content, ComputeETag(content)), isJson);
+                return (new TmdbResponse((int)response.StatusCode, content, ComputeETag(content)) { FetchedAtUtc = _timeProvider.GetUtcNow().UtcDateTime }, isJson);
             }
             finally
             {
@@ -857,7 +880,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             continue;
                         }
 
-                        var response = new TmdbResponse(entry.S, entry.C, ComputeETag(entry.C));
+                        var response = new TmdbResponse(entry.S, entry.C, ComputeETag(entry.C))
+                        {
+                            FetchedAtUtc = entry.F > 0 && entry.F <= now.UtcDateTime.Ticks ? new DateTime(entry.F, DateTimeKind.Utc) : DateTime.MinValue,
+                        };
                         var size = (entry.K.Length + entry.C.Length + response.ETag.Length) * 2L + EntryOverheadBytes;
                         if (_totalBytes + size > MaxCacheBytes)
                         {
@@ -900,7 +926,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             if (entry.ExpiresAt > now)
                             {
-                                data.Entries.Add(new DiskEntry { K = entry.Key, S = entry.Response.StatusCode, C = entry.Response.Content, E = entry.ExpiresAt.ToUnixTimeMilliseconds() });
+                                data.Entries.Add(new DiskEntry { K = entry.Key, S = entry.Response.StatusCode, C = entry.Response.Content, E = entry.ExpiresAt.ToUnixTimeMilliseconds(), F = entry.Response.FetchedAtUtc.Ticks });
                             }
                         }
                     }

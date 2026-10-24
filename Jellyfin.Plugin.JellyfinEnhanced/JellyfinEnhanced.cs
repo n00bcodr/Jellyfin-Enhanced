@@ -385,6 +385,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override void SaveConfiguration(PluginConfiguration config)
         {
             ArgumentNullException.ThrowIfNull(config);
+            // Same transition owner as configuration replacement and list provider publication.
+            lock (AnalyticsCredentialLock)
             lock (_generationLock)
             {
                 var next = Math.Max(config.ConfigurationGeneration, _writtenGeneration) + 1;

@@ -395,6 +395,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/CompletionAuthority.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListDoc.cs",
       "category": "Model"
     },
@@ -703,6 +707,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/CompletionEvaluator.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs",
       "category": "Services"
     },
@@ -820,6 +828,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListMetadata.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListMetadataEpoch.cs",
       "category": "Services"
     },
     {
@@ -11781,7 +11793,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 736,
+    "files": 739,
     "routes": 311,
     "configuration_properties": 666,
     "storage_references": 106,

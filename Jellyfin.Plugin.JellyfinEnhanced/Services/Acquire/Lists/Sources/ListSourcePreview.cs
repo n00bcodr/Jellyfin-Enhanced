@@ -96,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceOutcomes.ParseFailure(parseError);
             }
 
+            var epoch = ListMetadataEpoch.Capture();
             var options = new SourceFetchOptions
             {
                 AllowMdblistApi = request.UseMdblistApi && ListAccessService.IsAdmin(caller),
@@ -174,7 +175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
             }
 
-            return ListOutcome.Ok(response);
+            return epoch.Publish(() => ListOutcome.Ok(response), () =>
+                SourceOutcomes.FetchFailure(SourceFetchResult.Fail(source!, "configuration_changed", "The request backend changed while reading this source. Read it again.")));
         }
 
         /// <summary>A fetched entry as an import entry (feed it to resolve; carries its source key).</summary>

@@ -14,6 +14,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     internal static class SeerrAddresses
     {
+        // Integration: replace this predicate with EffectiveRequestsBackend.IsStrictJe(config), and TryGet's
+        // admission with EffectiveRequestsBackend.AllowsSeerr(config), when the E1 backend gate is joined.
+        internal static bool IsJe(Configuration.PluginConfiguration? config) => config?.ArrRequestBackend == "je";
+
+        internal const string InactiveSourceMessage = "This source is inactive in JE mode because it is linked through Seerr. Existing list entries are kept. Relink it through TMDB to resume updates.";
+
         /// <summary>Seerr is on, with at least one address and an API key.</summary>
         /// <param name="urls">The addresses, in order.</param>
         /// <param name="apiKey">The API key.</param>
@@ -23,7 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var config = JellyfinEnhanced.Instance?.Configuration;
             urls = Array.Empty<string>();
             apiKey = string.Empty;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
+            if (config == null || IsJe(config) || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
             {
                 return false;
             }
@@ -32,6 +38,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             apiKey = config.GetJellyseerrApiKey();
             return urls.Length > 0;
         }
+
+        /// <summary>Rechecks the backend, address and credential immediately before each Seerr send.</summary>
+        internal static bool IsCurrent(string baseUrl, string apiKey) =>
+            TryGet(out var urls, out var currentKey) && string.Equals(apiKey, currentKey, StringComparison.Ordinal)
+            && urls.Contains(baseUrl, StringComparer.Ordinal);
 
         /// <summary>The address list of a configured value.</summary>
         /// <param name="value">The configured addresses (one per line).</param>

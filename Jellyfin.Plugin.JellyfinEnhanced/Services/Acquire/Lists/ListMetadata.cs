@@ -22,8 +22,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     public sealed class PlaceholderMetadata
     {
-        /// <summary>When the underlying Seerr data was fetched (UTC).</summary>
+        /// <summary>When the underlying provider data was fetched (UTC).</summary>
         public DateTime FetchedAtUtc { get; init; }
+
+        internal CompletionReconciliation? Completion { get; init; }
+        internal ListMetadataEpoch? ReadEpoch { get; set; }
+        internal bool IsCurrent => ReadEpoch?.IsCurrent != false;
 
         /// <summary>Release date per kind (movie release, series first air, season air, first listed episode); null = TBA.</summary>
         public string? ReleaseDate { get; init; }
@@ -175,6 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The metadata or null.</returns>
         public async Task<PlaceholderMetadata?> FetchAsync(Placeholder placeholder, TimeSpan maxAge, DateTime todayUtc, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || !IsAvailable)
             {
                 return null;
@@ -184,7 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, new AnswerRequest(placeholder.TmdbId, "movie") { Kind = ResponseContract.MetadataMovie.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
-                return movie?.Read == null ? null : FromMovie(movie.Read, movie.FetchedAtUtc);
+                return movie?.Read == null ? null : Admit(FromMovie(movie.Read, movie.FetchedAtUtc));
             }
 
             var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, new AnswerRequest(placeholder.TmdbId, "tv") { Kind = ResponseContract.MetadataShow.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
@@ -199,7 +204,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId) { Kind = ResponseContract.MetadataSeason.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
-            return FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
+            var fetchedAt = tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc;
+            Dictionary<int, ContractRead>? seriesSeasons = null;
+            if (placeholder.Kind == PlaceholderKinds.Series)
+            {
+                var probe = FromTv(placeholder, tv.Read, null, fetchedAt, todayUtc);
+                if (probe.Completion?.Reason != "series_rows_unavailable") return Admit(probe);
+                var cached = Array.Empty<int>();
+                if (TryGetSeerrConfig(out var urls, out var connection))
+                {
+                    var prefix = Fingerprint(urls, connection) + "/api/v1/tv/" + id + "/season/";
+                    var suffix = "|" + epoch.Generation.ToString(CultureInfo.InvariantCulture);
+                    cached = _cache.Where(p => p.Value.Read != null && p.Key.StartsWith(prefix, StringComparison.Ordinal) && p.Key.EndsWith(suffix, StringComparison.Ordinal))
+                        .Select(p => p.Key.Substring(prefix.Length, p.Key.Length - prefix.Length - suffix.Length))
+                        .Select(v => int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray();
+                }
+                var numbers = tv.Read.Rows("seasons").Select(s => s.Int("seasonNumber")).OfType<int>().Where(n => n >= 1)
+                    .Concat(cached).Distinct().OrderBy(n => n).ToArray();
+                if (numbers.Length <= 64)
+                {
+                    seriesSeasons = new Dictionary<int, ContractRead>();
+                    using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    budget.CancelAfter(TimeSpan.FromSeconds(30));
+                    try
+                    {
+                        foreach (var n in numbers)
+                        {
+                            if (!epoch.IsCurrent) return null;
+                            var part = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + n.ToString(CultureInfo.InvariantCulture),
+                                new AnswerRequest(Season: n, Show: placeholder.TmdbId) { Kind = ResponseContract.MetadataSeason.Name }, maxAge, budget.Token)).ConfigureAwait(false);
+                            if (part?.Read == null || part.Read.Verdict != ResponseVerdict.Valid) { seriesSeasons = null; break; }
+                            seriesSeasons[n] = part.Read;
+                            if (part.FetchedAtUtc < fetchedAt) fetchedAt = part.FetchedAtUtc;
+                        }
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { seriesSeasons = null; }
+                }
+            }
+            return Admit(FromTv(placeholder, tv.Read, season?.Read, fetchedAt, todayUtc, seriesSeasons));
+
+            PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
+            {
+                metadata.ReadEpoch = epoch;
+                return epoch.Publish<PlaceholderMetadata?>(() => metadata, () => null);
+            }
         }
 
         /// <summary>
@@ -216,6 +264,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="metadata">Fetched metadata.</param>
         /// <returns>True when anything changed.</returns>
         public static bool Apply(Placeholder placeholder, PlaceholderMetadata metadata)
+            => (metadata.ReadEpoch ?? ListMetadataEpoch.Capture()).Publish(() => ApplyCurrent(placeholder, metadata), () => false);
+
+        private static bool ApplyCurrent(Placeholder placeholder, PlaceholderMetadata metadata)
         {
             var before = Signature(placeholder);
             if (!metadata.Partial || metadata.ReleaseDate != null)
@@ -252,14 +303,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 placeholder.TvdbId = metadata.TvdbId;
             }
 
-            if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Series)
+            if (PlaceholderProgress.IsEpisodeFill(placeholder))
             {
-                if (metadata.Expected != null)
+                placeholder.CompletionAuthority = metadata.Partial ? null : metadata.Completion?.Authority;
+                placeholder.CompletionReason = metadata.Completion?.Reason ?? (placeholder.CompletionAuthority == null ? "reconciliation_required" : null);
+                // Retained only for reading legacy documents; never a positive authority source.
+                placeholder.ExpectedUncertain = metadata.Partial || placeholder.CompletionAuthority == null;
+                if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Series)
                 {
-                    placeholder.Expected = metadata.Expected;
+                    if (metadata.Expected != null) placeholder.Expected = metadata.Expected;
+                    placeholder.EpisodeTotal = metadata.EpisodeTotal ?? placeholder.EpisodeTotal;
                 }
-
-                placeholder.EpisodeTotal = metadata.EpisodeTotal ?? placeholder.EpisodeTotal;
             }
 
             // Partial metadata keeps the stale expected set: "ended" from the show details alone would let that stale
@@ -330,11 +384,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// TV details (and season details for season/episodes kinds) as their contracts read them
-        /// (<see cref="ResponseContract.MetadataShow"/>, <see cref="ResponseContract.MetadataSeason"/>; typed values only, review
-        /// round 8) into the metadata of a TV placeholder: release date per kind (C4), expected episodes (C3: season details
-        /// plus an announced next episode of that season; series: every episode of seasons ≥ 1 from the season episode counts,
-        /// aired up to the last aired regular episode, with the last aired episode's date as an "aired by" date), production
-        /// state (only Ended/Canceled count as finished) and aired count. A show answer that isn't Valid is partial (review
+        /// (<see cref="ResponseContract.MetadataShow"/>, <see cref="ResponseContract.MetadataSeason"/>; typed values only) into
+        /// display facts and a positive reconciliation from CompletionEvaluator. Undated named coordinates, contradictory
+        /// premieres/counts/dates, or missing chronology cannot grant authority. Series require detailed rows for every
+        /// declared regular season and reconcile any other cached season resources. Only Ended/Canceled count as finished. A show answer that isn't Valid is partial (review
         /// round 7: it never sets the expected episodes or clears a value); a season answer that isn't Valid is used like a
         /// failed season read.
         /// </summary>
@@ -343,8 +396,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="season">The read season details (season/episodes kinds), or null.</param>
         /// <param name="fetchedAtUtc">Oldest fetch time of the inputs.</param>
         /// <param name="todayUtc">Today (UTC).</param>
+        /// <param name="seriesSeasons">Validated detailed season resources for a series, or null.</param>
         /// <returns>Metadata.</returns>
-        internal static PlaceholderMetadata FromTv(Placeholder placeholder, ContractRead tv, ContractRead? season, DateTime fetchedAtUtc, DateTime todayUtc)
+        internal static PlaceholderMetadata FromTv(Placeholder placeholder, ContractRead tv, ContractRead? season, DateTime fetchedAtUtc, DateTime todayUtc, IReadOnlyDictionary<int, ContractRead>? seriesSeasons = null)
         {
             if (season != null && season.Verdict != ResponseVerdict.Valid)
             {
@@ -368,11 +422,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             List<PlaceholderEpisode>? expected = null;
             List<PlaceholderEpisode>? seasonEpisodes = null;
             var partial = false;
+            CompletionReconciliation? completion = null;
             switch (placeholder.Kind)
             {
                 case PlaceholderKinds.Series:
                     releaseDate = tv.Date("firstAirDate");
-                    expected = SeriesExpected(seasons, last, next, ended, todayUtc);
+                    var supplied = seriesSeasons ?? (season?.Int("seasonNumber") is int suppliedNumber
+                        ? new Dictionary<int, ContractRead> { [suppliedNumber] = season } : null);
+                    seasonEpisodes = supplied?.Where(p => p.Value.Verdict == ResponseVerdict.Valid)
+                        .SelectMany(p => SeasonEpisodes(p.Value, p.Key)).ToList();
+                    completion = Reconcile(seasonEpisodes);
+                    expected = CompletionEvaluator.DisplayEpisodes(completion.Authority);
+                    partial = expected == null;
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
@@ -394,16 +455,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     if (placeholder.Kind == PlaceholderKinds.Season)
                     {
                         releaseDate = seasonAir;
-                        if (seasonEpisodes != null)
-                        {
-                            expected = seasonEpisodes.Select(Copy).ToList();
-                            if (next != null && next.S == number && !expected.Any(e => e.E == next.E))
-                            {
-                                expected.Add(next);
-                            }
-
-                            expected.Sort((a, b) => a.E.CompareTo(b.E));
-                        }
+                        completion = Reconcile(seasonEpisodes);
+                        expected = CompletionEvaluator.DisplayEpisodes(completion.Authority);
+                        partial |= expected == null;
                     }
                     else
                     {
@@ -412,6 +466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         var first = placeholder.Episodes.OrderBy(e => e.E).FirstOrDefault();
                         var fresh = first == null ? null : seasonEpisodes?.FirstOrDefault(e => e.E == first.E);
                         releaseDate = (fresh != null ? fresh.AirDate : first?.AirDate) ?? seasonAir;
+                        completion = Reconcile(seasonEpisodes);
                     }
 
                     break;
@@ -424,10 +479,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (expected != null && expected.Count > PlaceholderProgress.MaxExpected)
             {
-                expected = expected.Take(PlaceholderProgress.MaxExpected).ToList();
+                expected = null;
+                partial = true;
             }
 
-            var seasonFailed = partial;
+            var seasonFailed = season == null && placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes;
             if (tv.Verdict != ResponseVerdict.Valid)
             {
                 // Review round 7 (4c2-R7-3): a show answer that isn't Valid (a season list, an episode count, the status or
@@ -436,6 +492,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 expected = null;
                 seasonEpisodes = null;
             }
+
+            CompletionReconciliation Reconcile(List<PlaceholderEpisode>? details) => CompletionEvaluator.Reconcile(
+                new CompletionEvidence(CompletionEvaluator.Scope(placeholder), placeholder.Kind, number,
+                    tv.Verdict == ResponseVerdict.Valid, inProduction, ended && tv.Bool("inProduction") == true,
+                    tv.Int("numberOfSeasons"), number.HasValue ? season?.Date("airDate") : null, seasons.Select(s => new CompletionSeason(s.Number, s.EpisodeCount, s.AirDate)).ToArray(),
+                    details, last, next, todayUtc, placeholder.Kind == PlaceholderKinds.Episodes
+                        ? placeholder.Episodes.Select(e => new EpisodeCoord(e.S, e.E)).ToArray() : null,
+                    seriesSeasons?.Select(p => new CompletionSeason(p.Key, p.Value.Rows("episodes").Count(), p.Value.Date("airDate"))).ToArray()
+                        ?? (season?.Int("seasonNumber") is int detailedNumber ? new[] { new CompletionSeason(detailedNumber, season.Rows("episodes").Count(), season.Date("airDate")) } : null)), DateTime.UtcNow);
 
             var tvdb = external?.Int("tvdbId");
             return new PlaceholderMetadata
@@ -446,6 +511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Overview = overview,
                 ImdbId = external?.Imdb("imdbId"),
                 TvdbId = tvdb is > 0 ? tvdb : null,
+                Completion = completion,
                 Expected = expected,
                 InProduction = inProduction,
                 EpisodeTotal = expected?.Count(e => PlaceholderProgress.IsAired(e, todayUtc)),
@@ -453,45 +519,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Partial = partial,
                 SeasonReadFailed = seasonFailed && seasons.Any(s => s.Number == number),
             };
-        }
-
-        // Series expected set from the per-season episode counts (no per-season calls): seasons ≥ 1, episodes 1..count.
-        // Aired = up to the last aired regular episode (with the last aired episode's date as an "aired by" date); the
-        // announced next episode keeps its own date; later ones are unaired (no date). Specials never set the watermark:
-        // when the last aired episode is one, the regular episodes before the next regular one have aired, or, without
-        // one, every episode of an ended show and of the seasons that have started. An ended show with no last-episode
-        // info counts as aired.
-        private static List<PlaceholderEpisode> SeriesExpected(List<SeasonInfo> seasons, PlaceholderEpisode? last, PlaceholderEpisode? next, bool ended, DateTime todayUtc)
-        {
-            var result = new List<PlaceholderEpisode>();
-            var lastRegular = last is { S: >= 1 } ? new EpisodeCoord(last.S, last.E) : (EpisodeCoord?)null;
-            var nextRegular = next is { S: >= 1 } ? new EpisodeCoord(next.S, next.E) : (EpisodeCoord?)null;
-            foreach (var season in seasons.Where(s => s.Number >= 1).OrderBy(s => s.Number))
-            {
-                var started = season.AirDate != null && ListRules.TryParseDate(season.AirDate, out var premiere) && premiere.Date <= todayUtc.Date;
-                for (var e = 1; e <= season.EpisodeCount && result.Count <= PlaceholderProgress.MaxExpected; e++)
-                {
-                    var coord = new EpisodeCoord(season.Number, e);
-                    string? airDate = null;
-                    if (lastRegular is EpisodeCoord watermark ? coord.CompareTo(watermark) <= 0
-                        : last != null && (nextRegular is EpisodeCoord upcoming ? coord.CompareTo(upcoming) < 0 : ended || started))
-                    {
-                        airDate = last!.AirDate;
-                    }
-                    else if (nextRegular == coord)
-                    {
-                        airDate = next!.AirDate;
-                    }
-                    else if (last == null && ended)
-                    {
-                        airDate = season.AirDate;
-                    }
-
-                    result.Add(new PlaceholderEpisode { S = coord.S, E = coord.E, AirDate = airDate });
-                }
-            }
-
-            return result;
         }
 
         // The season's episodes (the contract read every row: each has its episode number).
@@ -549,24 +576,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static string Signature(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
-            p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.InProduction, p.EpisodeTotal, p.Episodes,
+            p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.ExpectedUncertain, p.CompletionAuthority, p.CompletionReason, p.InProduction, p.EpisodeTotal, p.Episodes,
         });
 
         private async Task<CacheEntry?> GetAsync(string apiPath, AnswerRequest asked, TimeSpan maxAge, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
                 return null;
             }
-
             var scope = Fingerprint(urls, apiKey);
-            var key = scope + apiPath;
+            var key = scope + apiPath + "|" + epoch.Generation;
             if (_cache.TryGetValue(key, out var cached))
             {
                 var ttl = cached.NotFoundFor ?? (maxAge < CacheTtl ? maxAge : CacheTtl);
                 if (DateTime.UtcNow - cached.FetchedAtUtc < ttl)
                 {
-                    return cached.NotFound ? null : cached;
+                    return epoch.Publish(() => cached.NotFound ? null : cached, () => null);
                 }
             }
 
@@ -600,7 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 var entry = await ListContinuation.Await(() => shared.Task.WaitAsync(cancellationToken)).ConfigureAwait(false);
                 completed = true;
-                return entry == null || entry.NotFound ? null : entry;
+                return epoch.Publish(() => entry == null || entry.NotFound ? null : entry, () => null);
             }
             finally
             {
@@ -619,18 +646,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 try
                 {
-                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, fetch.Cancellation.Token).ConfigureAwait(false);
-                    if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
+                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, epoch, fetch.Cancellation.Token).ConfigureAwait(false);
+                    return epoch.Publish(() =>
                     {
-                        if (_cache.Count >= MaxCacheEntries)
+                        if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
                         {
-                            _cache.Clear();
+                            if (_cache.Count >= MaxCacheEntries) _cache.Clear();
+                            _cache[key] = fetched;
                         }
 
-                        _cache[key] = fetched;
-                    }
-
-                    return fetched;
+                        return fetched;
+                    }, () => null);
                 }
                 catch (OperationCanceledException) when (fetch.Cancellation.IsCancellationRequested)
                 {
@@ -663,7 +689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // When nothing better came of it, a read whose only failures were Seerr's 500 ("Unable to retrieve …", for unknown
         // ids but also when TMDB failed behind it) is remembered as unknown for a few minutes (never as an absence), and a
         // read no server answered at all pauses reads for a minute. Each request takes its own Seerr slot.
-        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, CancellationToken cancellationToken)
+        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, ListMetadataEpoch epoch, CancellationToken cancellationToken)
         {
             var answered = false;
             var only500 = true;
@@ -678,6 +704,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var url = baseUrl + apiPath;
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    if (!epoch.IsCurrent || !SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    {
+                        only500 = false;
+                        return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
+                    }
+
                     using var response = await BoundedBody.SendAsync(client, request, cts.Token).ConfigureAwait(false);
                     answered = true;
                     _unreachableUntil.TryRemove(scope, out _);
@@ -706,6 +738,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                     var json = await BoundedBody.ReadAsync(response, cts.Token).ConfigureAwait(false);
 
+                    if (!epoch.IsCurrent) return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     using var document = JsonDocument.Parse(json);
                     var answer = schema.Validate(asked, document.RootElement);
                     if (answer.Verdict == ResponseVerdict.Malformed)
@@ -770,8 +803,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The poster path or null.</returns>
-        public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken) =>
-            (await ListContinuation.Await(() => ReadTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false)).Poster;
+        public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
+        {
+            var epoch = ListMetadataEpoch.Capture();
+            var answer = await ListContinuation.Await(() => ReadTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false);
+            return epoch.Publish(() => answer.Poster, () => null);
+        }
 
         /// <summary>
         /// <see cref="FetchTmdbPosterAsync"/> that also says whether TMDB answered: Answered is true when TMDB read the
@@ -784,6 +821,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The poster path (or null) and whether TMDB answered.</returns>
         public async Task<(string? Poster, bool Answered)> ReadTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
+        {
+            var epoch = ListMetadataEpoch.Capture();
+            var answer = await ListContinuation.Await(() => ReadCurrentTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false);
+            return epoch.Publish(() => answer, () => ((string?)null, false));
+        }
+
+        private async Task<(string? Poster, bool Answered)> ReadCurrentTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
         {
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || string.IsNullOrWhiteSpace(apiKey))
@@ -825,10 +869,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // NotFound: TMDB answered 404 (no such title or season), as opposed to a failure that may pass.
         private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
             if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
             {
-                return (cached.Poster, true, false);
+                return epoch.Publish(() => (cached.Poster, true, false), () => ((string?)null, false, false));
             }
 
             // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
@@ -875,8 +920,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     _tmdbPosters.Clear();
                 }
 
-                _tmdbPosters[key] = (poster, readAt);
-                return (poster, true, false);
+                return epoch.Publish(() =>
+                {
+                    _tmdbPosters[key] = (poster, readAt);
+                    return (poster, true, false);
+                }, () => ((string?)null, false, false));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

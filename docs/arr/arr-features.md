@@ -2031,7 +2031,7 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
   as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
   people are pointed to an MDBList mirror or a CSV export.
-- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+- **Matching.** In JE mode, titles are looked up on TMDB with the server's key; local library identities still identify owned copies. A missing TMDB key leaves unresolved titles unknown. In Seerr mode, Seerr remains the fallback when no TMDB key is saved. Each match
   says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
   already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
   or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
@@ -2087,8 +2087,15 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
   redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
   details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
-- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
-  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
+- **Title details in JE mode.** With *Lists* enabled and the server's TMDB key saved, list entries get release dates,
+  expected episodes and production status directly from TMDB. No separate metadata opt-in or Seerr connection is needed.
+  Partial or unavailable metadata stays unknown and cannot prove completion. Whole-series requests use these same stored
+  season expectations. A source previously linked through Seerr is inactive in JE mode: its existing members are kept
+  until an editor explicitly relinks it through TMDB. JE list metadata, imports and sources never fall back to Seerr.
+  A season stays unknown when its details omit advertised episodes or air dates; those incomplete details cannot finish
+  its placeholder. Cached facts keep their original fetch time, so finishing a season still requires a recent check.
+  Switching the request backend discards in-flight list reads and stops list changes built from the previous backend;
+  retry the operation after the switch. Upcoming TV sources use TMDB's upcoming-premiere discovery filter in JE mode.
 
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 
@@ -2280,3 +2287,17 @@ Request-mode titles have a **More actions** menu on their details page, More Inf
 Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. On a phone it replaces only Jellyfin's button row: the poster, title and details stay exactly where Jellyfin puts them. The primary label is never cut short; on the narrowest screens Report moves into More, then the label wraps onto two lines. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. When a library title has progress, Resume stays in the row and **Play from beginning** is in the sheet's Watch group, as are Shuffle and Instant Mix where Jellyfin offers them. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus. Closing the sheet before choosing does nothing. Once you choose, the action carries on after the sheet closes (Open, Share's link or "copied" message), but moving to another page, switching user or turning the feature off stops it, even while its confirmation (Spoiler Guard, Hide, Report) is still open. The row's added controls are then rebuilt for the page and user now shown.
 
 **Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.
+
+List completion also cross-checks the show’s known last/next episode against its season counts and detailed episode rows. Contradictory or partial evidence keeps completion unknown, including after a refresh of previously known expectations. Dated future episodes retain their dates, and specials remain an explicit season scope.
+
+List completion uses a server verdict (`complete`, `incomplete`, or `unknown`) with a reason. Only reconciled show/season evidence grants positive authority; counts are retained display facts. Old list documents have unknown authority until a coherent refresh, and a metadata outage cannot retire season or series placeholders. Undated named episodes and started later seasons cannot disappear from completion obligations.
+
+Series reconciliation reads detailed rows for every declared regular season and any related season resources already cached for that title. Missing resources or inconsistent rows keep completion unknown. Newly chosen explicit episode scopes receive positive scope authority; older episode selections also require a coherent refresh.
+
+Every show and detail premiere is checked against episode dates, including a detail premiere when the show has no date. Conflicting dates keep completion unknown. An undated named episode remains required even when its detailed row has a future date; `completionReason` identifies the reconciliation rule that withheld authority.
+
+Completion is bound to the requested scope. A selected season needs full detail/coordinate evidence for its own episodes and every required episode filled. Other seasons must be consistent with all supplied counts, dates and coordinates, but do not need detail responses. An explicitly advertised future, empty trailing season therefore does not block an earlier completed season. A missing interior season, or an empty interior season followed by aired episodes in a later season, still keeps completion unknown.
+
+A whole-series verdict needs detail/coordinate coverage for every regular season from 1 through the highest bound supplied by any metadata source; advertised counts alone never supply that coverage. Advertising S1 and S3 cannot prove S2 exists or is complete, even when the declared season count is two. Missing selected episode coordinates or numbering gaps keep completion unknown; removed or renumbered episodes need corrected provider evidence. Series exclude specials; specials can be selected explicitly.
+
+A season's Complete authority cannot retire a series placeholder or provide a whole-series request scope. Changing identity or scope requires its own reconciliation. Complete reasons name the proven scope, for example `season 1 complete; series unknown: season 2 has no detail evidence`. Unknown reasons remain reconciliation rule ids, including `series_season_detail_uncovered` and `selected_season_detail_uncovered`. The series remains unproven until it receives a separate series reconciliation.
