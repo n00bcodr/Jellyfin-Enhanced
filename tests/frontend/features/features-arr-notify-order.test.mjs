@@ -101,3 +101,42 @@ test('R10-8: a change queued by the previous person is never sent after an accou
   assert.equal(b.ok, false);
   assert.equal(a.ok, false, 'an answer for the previous person is not this person\'s');
 });
+
+for (const scenario of ['stored', 'read-failed', 'newer-edit', 'account-switch']) {
+  test(`R13-8: uncertain notification preferences reconcile once without replacing ${scenario}`, async t => {
+    let stored = { ready: true, episodes: true };
+    let reads = 0;
+    let epoch = 1;
+    const resets = new Map();
+    const read = deferred();
+    const h = setup(t, async (path, options = {}) => {
+      if (options.method === 'PUT') {
+        stored = { ...stored, ...options.body };
+        if (options.body.ready === false) throw Object.assign(new Error('answer lost after commit'), { writeOutcome: 'uncertain', status: 502 });
+        return { prefs: structuredClone(stored) };
+      }
+      reads++;
+      const answer = { prefs: structuredClone(stored) };
+      if (reads === 2) {
+        if (scenario === 'read-failed') throw new Error('unavailable');
+        if (scenario === 'newer-edit' || scenario === 'account-switch') await read.promise;
+      }
+      return answer;
+    }, { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (name, fn) => resets.set(name, fn) });
+    await h.JE.arrNotify.loadPrefs();
+    const change = h.JE.internals.arrNotify.prefsCall('/acquire/notify/prefs', 'PUT', { ready: false });
+    if (scenario === 'newer-edit' || scenario === 'account-switch') {
+      await until(() => reads === 2);
+      if (scenario === 'newer-edit') await h.JE.internals.arrNotify.prefsCall('/acquire/notify/prefs', 'PUT', { ready: true, episodes: false });
+      else { epoch++; for (const fn of resets.values()) fn({ userId: 'b' }); }
+      read.resolve();
+    }
+    const result = await change;
+    assert.equal(result.code, 'unconfirmed', 'the lost write acknowledgement remains uncertain');
+    assert.equal(reads, 2, 'one fresh read after the uncertain write');
+    if (scenario === 'stored') assert.equal(h.JE.arrNotify.prefs.ready, false, 'the committed setting converges');
+    if (scenario === 'read-failed') assert.equal(h.JE.arrNotify.prefs.ready, true, 'no invented acknowledgement');
+    if (scenario === 'newer-edit') assert.deepEqual(JSON.parse(JSON.stringify(h.JE.arrNotify.prefs)), { ready: true, episodes: false });
+    if (scenario === 'account-switch') assert.equal(h.JE.arrNotify.prefs, null, 'old account read cannot publish');
+  });
+}

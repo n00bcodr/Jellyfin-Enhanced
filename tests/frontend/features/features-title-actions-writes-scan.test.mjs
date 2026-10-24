@@ -84,10 +84,10 @@ const PLANTED = {
     s => s.replace('function dispose() {', "function dispose() { JE.core.api.plugin('/x', { method: 'DELETE' });"), /title-actions-hosts\.js:\d+ write JE\.core\.api\.plugin \(DELETE/],
   'r5: the drawer wrapper no longer binding its callers': ['arr/manage/manage-drawer.js',
     s => s.replace('{ ...options, bound: state.action.bound(() => current === state && (!owner || owner())) }', '{ ...options }'), /manage-drawer\.js:\d+ write boundApi\(\) \(POST without bound\)/],
-  'r5: an unbound Seerr post()': ['jellyseerr/api.js', s => s.replace("const result = await post('/issue', body, submitted.bound());", "const result = await post('/issue', body);"), /api\.js:\d+ write post\(\)/],
-  'r5: the JE-mode Collection picker\'s asks without their binding': ['arr/ask/ask-seerr.js', s => s.replace('`), { bound });', '`));'), /ask-seerr\.js:\d+ write ask\(\)/],
-  'r5: a Search sent without its binding': ['arr/ask/ask-sheet.js', s => s.replace('instanceId, { bound: submitted.bound() })', 'instanceId)'), /ask-sheet\.js:\d+ write adminSearch\(\)/],
-  'r5: Remind without its binding': ['arr/notify/notify-core.js', s => s.replace(', bound: submitted.bound() });\n            return { ok: true, nextAt', ' });\n            return { ok: true, nextAt'), /notify-core\.js:\d+ write api\(\) \(POST without bound\) \/acquire\/remind/],
+  'r5: an unbound Seerr post()': ['jellyseerr/api.js', s => s.replace("const result = await post('/issue', body, submitted.bound(), origin);", "const result = await post('/issue', body);"), /api\.js:\d+ write post\(\)/],
+  'r5: the JE-mode Collection picker\'s asks without their binding': ['arr/ask/ask-seerr.js', s => s.replace('`), { bound, session: origin });', '`));'), /ask-seerr\.js:\d+ write ask\(\)/],
+  'r5: a Search sent without its binding': ['arr/ask/ask-sheet.js', s => s.replace('instanceId, { bound: submitted.bound(), session: origin })', 'instanceId)'), /ask-sheet\.js:\d+ write adminSearch\(\)/],
+  'r5: Remind without its binding': ['arr/notify/notify-core.js', s => s.replace(', bound: submitted.bound(), session: origin });\n            return { ok: true, nextAt', ' });\n            return { ok: true, nextAt'), /notify-core\.js:\d+ write api\(\) \(POST without bound\) \/acquire\/remind/],
   'r5: a site the scan stops seeing (count)': ['enhanced/spoilerguard/state.js', s => s.replace('return JE.core.api.plugin(path, options);', 'return Promise.resolve(path, options);'), /state\.js: \d+ transport sites, expected \d+/],
   // Play edge: a list placeholder's request sheet without its owner (r6's ask sheet then opens nothing).
   'play edge: the list request sheet without its owner': ['arr/lists/list-request.js',
@@ -106,7 +106,7 @@ const PLANTED = {
   'a native caller dropping its owner (Remove dialog from the hub)': ['arr/admin/admin-tabs.js',
     s => s.replace("        if (action === 'remove') removeDialog(target, busyId, opener, false, undefined, owner);", "        if (action === 'remove') removeDialog(target, busyId, opener, false);"), /admin-tabs\.js:\d+ removeDialog\(…\) without an owner/],
   'a forwarded owner dropped by its caller (Hide confirmation via a parameter)': ['enhanced/hiddencontent/hidden-content-buttons.js',
-    s => s.replace('await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner);', 'await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);'), /hidden-content-buttons\.js:\d+ handleScopedCardHide\(…\) without an owner/],
+    s => s.replace('await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner, origin);', 'await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);'), /hidden-content-buttons\.js:\d+ handleScopedCardHide\(…\) without an owner/],
   'an opener site the scan stops seeing (count)': ['jellyseerr/moreinfo/more-info-modal-actions-tv.js',
     s => s.replace("        // TV always shows season selection modal\n        if (JE.jellyseerrUI?.showSeasonSelectionModal) {\n            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(requestButton));", '        {'), /more-info-modal-actions-tv\.js: \d+ owner sites, expected \d+/],
   // r7 (D46S2-R7-1): a handler on a control the bar can press takes its owner from its press only.

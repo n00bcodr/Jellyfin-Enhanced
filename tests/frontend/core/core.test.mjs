@@ -84,7 +84,7 @@ test('server changes reset same-user identity; removed handlers stay removed', t
 test('authenticated requests resolve plugin paths, JSON bodies, and compatible headers', async t => {
   let request;
   const { JE } = setup(t, { fetch: async (...args) => { request = args; return jsonResponse({ ok: true }); } });
-  assert.deepEqual(plain(await JE.core.api.plugin('/preferences', { method: 'POST', body: { language: '日本語' } })), { ok: true });
+  assert.deepEqual(plain(await JE.core.api.plugin('/preferences', { method: 'POST', session: JE.core.userWrite.origin(), body: { language: '日本語' } })), { ok: true });
   assert.equal(request[0], 'http://jellyfin.test/JellyfinEnhanced/preferences');
   assert.equal(request[1].headers.Authorization, 'MediaBrowser Token="test-token"');
   assert.equal(request[1].headers['X-Jellyfin-User-Id'], 'user-a');
@@ -103,7 +103,7 @@ test('plain concurrent GETs deduplicate transport but isolate mutable results', 
 test('custom headers and writes do not accidentally share requests', async t => {
   let calls = 0; const { JE } = setup(t, { fetch: async () => { calls++; return jsonResponse({}); } });
   await Promise.all([JE.core.api.fetch('/x',{headers:{variant:'a'}}),JE.core.api.fetch('/x',{headers:{variant:'b'}}),
-    JE.core.api.fetch('/x',{method:'POST'}),JE.core.api.fetch('/x',{method:'POST'})]);
+    JE.core.api.fetch('/x',{method:'POST',session:JE.core.userWrite.origin()}),JE.core.api.fetch('/x',{method:'POST',session:JE.core.userWrite.origin()})]);
   assert.equal(calls,4);
 });
 
@@ -142,7 +142,7 @@ test('user switch cancels queued writes before they can use new credentials', as
   const { JE } = setup(t, { apiClient: { getCurrentUserId: () => user }, fetch: () => { calls++; return pending.promise; } });
   JE.core.api.manager.CONFIG.concurrency.maxConcurrent = 1;
   const running = JE.core.api.fetch('/one');
-  const queued = JE.core.api.fetch('/write',{method:'POST'});
+  const queued = JE.core.api.fetch('/write',{method:'POST',session:JE.core.userWrite.origin()});
   const rejected = assert.rejects(queued,{name:'AbortError'});
   user = 'b'; JE.session.checkNow('test'); await rejected;
   pending.resolve(jsonResponse({})); await assert.rejects(running,{name:'AbortError'}); assert.equal(calls,1);

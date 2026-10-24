@@ -828,3 +828,34 @@ test('a Manage drawer retry is never sent or shown after another account signs i
   assert.equal(reads, before, 'the retry is not sent for the new account');
   assert.ok(drawer.querySelector('.je-manage-stale'), 'nothing new is shown in the first account\'s drawer');
 });
+
+// int12 live smoke: from a dashboard page loaded directly (a reload on the plugin settings), Jellyfin's router answers
+// #/requests by swapping the whole layout, and the page the hub had just put into the dashboard's layout went with it:
+// a blank page. The router's own "not found" page for #/requests is the sign it has finished; the hub mounts again.
+test('#/requests from a dashboard page mounts again in the layout the router swaps in', async t => {
+  const h = setup(t, {
+    html: '<div class="dashboardLayout"><div class="mainAnimatedPages"><div class="mainAnimatedPage page" id="JellyfinEnhancedPage"></div></div></div>',
+    hash: '#/configurationpage?name=Jellyfin%20Enhanced',
+    responses: path => (path === '/acquire/hub' ? hubAnswer() : null)
+  });
+  // The dashboard layout comes first in the document, as it does when the dashboard is what loaded.
+  const layout = h.document.querySelector('.dashboardLayout');
+  h.document.body.prepend(layout);
+  h.JE.initializeArrStatus();
+  await wait(10);
+  h.window.location.hash = '#/requests';
+  await wait(10);
+  assert.ok(layout.contains(h.document.getElementById('je-requests-hub-page')), 'first put into the dashboard\'s layout');
+  // The router swaps the layout and shows its "not found" page.
+  layout.remove();
+  const fallback = h.document.createElement('div');
+  fallback.id = 'fallbackPage';
+  fallback.className = 'page mainAnimatedPage libraryPage';
+  h.document.querySelector('.mainAnimatedPages').appendChild(fallback);
+  fallback.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(page && page.isConnected && !page.classList.contains('hide'), 'the page is in the document again');
+  assert.deepEqual([...page.querySelectorAll('.je-hub-tab')].map(b => b.dataset.tab), ['mine', 'soon', 'ready']);
+  assert.equal(h.calls.filter(c => c.path === '/acquire/hub').length, 1, 'from the one read');
+});

@@ -388,8 +388,20 @@
             return { ok: true, body: res };
         } catch (err) {
             if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
-            // A lost answer: the change may be stored; said as such (the next read of the settings shows what holds).
-            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
+            // The server may have committed. Read once after queued writes settle, preserving the original owner and
+            // refusing a read overtaken by another edit. A read proves the current document, not this write's outcome.
+            if (JE.core.userWrite.outcome(err) === 'uncertain') {
+                await prefsQueue.settled();
+                if (identity === state.identity && JE.core.userWrite.isBound(binding) && !prefsQueue.pending) {
+                    const revision = prefsQueue.revision;
+                    try {
+                        const stored = await api('/acquire/notify/prefs', { timeoutMs: 10000 });
+                        if (identity === state.identity && JE.core.userWrite.isBound(binding)
+                            && revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(stored);
+                    } catch (_) { /* Keep uncertainty when the one reconciliation read is unavailable. */ }
+                }
+                return { ok: false, code: 'unconfirmed' };
+            }
             const code = err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed');
             return { ok: false, code, status: err?.status };
         }

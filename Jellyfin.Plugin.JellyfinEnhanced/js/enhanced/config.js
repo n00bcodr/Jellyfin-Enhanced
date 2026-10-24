@@ -651,9 +651,10 @@
         if (read && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision
             && newerRevision(state.serverRevision, readServerRevision) !== true) {
             takeDocument(state, holdDocument(fileName, read), true, readServerRevision);
+            publishDocument(state, previousPersisted, 'read');
+            return true;
         }
-        publishDocument(state, previousPersisted, 'read');
-        return true;
+        return false;
     };
 
     /**
@@ -830,7 +831,14 @@
         if (!state.reconciling) {
             let timer;
             const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), RECONCILE_TIMEOUT_MS); });
-            state.reconciling = Promise.race([JE.readUserSettings(state.fileName).catch(() => false), timeout])
+            const readCurrent = async () => {
+                if (await JE.readUserSettings(state.fileName)) return true;
+                // A newer edit can discard a successful fetch. Try once against its settled baseline; discarded bytes
+                // never count as storage proof or leave an older uncertain overlay indefinitely above known state.
+                if (!current() || state.pending.length) return false;
+                return JE.readUserSettings(state.fileName);
+            };
+            state.reconciling = Promise.race([readCurrent().catch(() => false), timeout])
                 .finally(() => { clearTimeout(timer); state.reconciling = undefined; });
         }
         state.reconciling.then(read => {

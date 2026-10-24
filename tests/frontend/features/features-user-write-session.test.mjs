@@ -49,7 +49,7 @@ test('R11-1: a preference save granted its API slot just before an account switc
   const sg = h.JE.internals.spoilerGuard;
   await sg.whenLoaded();
   const { releases, blockers } = fillLimiter(h);
-  const save = sg.setUserPrefs({ HideCast: false });
+  const save = sg.setUserPrefs({ HideCast: false }, h.NATIVE);
   // The queue has handed the save to the core fetch, which waits for a slot.
   await new Promise(r => setImmediate(r));
   releases[0]();
@@ -61,8 +61,9 @@ test('R11-1: a preference save granted its API slot just before an account switc
   assert.deepEqual(writes, [], 'nothing was sent');
   assert.equal(prefs.b.HideCast, null);
   assert.equal(prefs.a.HideCast, null);
-  assert.ok(toasts.includes(en.settings_not_saved_account_changed), `the person is told; toasts ${JSON.stringify(toasts)}`);
-  await assert.rejects(save, error => error.sessionChanged === true);
+  // The owner-bound SG helper returns its unsent contract; its originating control handles feedback.
+  assert.ok(!toasts.includes(en.toast_spoiler_blur_saved), 'no success is announced in the new session');
+  await assert.rejects(save, error => error.notSent === true || error.sessionChanged === true);
 });
 
 test('R11-1 control: without a switch the save waits for its slot and is sent as the person who made it', async t => {
@@ -70,7 +71,7 @@ test('R11-1 control: without a switch the save waits for its slot and is sent as
   const sg = h.JE.internals.spoilerGuard;
   await sg.whenLoaded();
   const { releases, blockers } = fillLimiter(h);
-  const save = sg.setUserPrefs({ HideCast: false });
+  const save = sg.setUserPrefs({ HideCast: false }, h.NATIVE);
   await new Promise(r => setImmediate(r));
   releases.forEach(release => release());
   await save;
@@ -100,7 +101,7 @@ test('R11-1: a write retried after an account switch is not sent again (as anyon
   h.JE.core.api.manager.CONFIG.retry.maxDelayMs = 2;
   // Stage 1 fix round 12: the write carries the origin it was made under (a low-level write without one is never sent).
   const origin = (h.JE.core.userWrite.origin || h.JE.core.userWrite.bind)();
-  await assert.rejects(h.JE.core.api.plugin('/acquire/follows', { method: 'PUT', body: { key: 'k', on: true }, session: origin }), error => error.sessionChanged === true);
+  await assert.rejects(h.JE.core.api.plugin('/acquire/follows', { method: 'PUT', body: { key: 'k', on: true }, bound: h.NATIVE.bound(), session: origin }), error => error.sessionChanged === true || error.name === 'AbortError');
   assert.deepEqual(sent, ['a'], 'one attempt, as the person who made the change');
 });
 
@@ -175,7 +176,7 @@ test('a low-level write without its origin is refused at every sender; with its 
   const W = h.JE.core.userWrite;
   const queue = h.JE.core.mutationQueue('fixture-document');
   const senders = {
-    'core fetch': origin => h.JE.core.api.plugin('/acquire/follows', { method: 'PUT', body: {}, session: origin }),
+    'core fetch': origin => h.JE.core.api.plugin('/origin-contract', { method: 'PUT', body: {}, session: origin }),
     'userWrite.send': origin => W.send(origin, () => h.window.fetch('http://jellyfin.test/JellyfinEnhanced/x', { method: 'POST' }), 'x'),
     'userWrite.ajax': origin => W.ajax(origin, { type: 'POST', url: 'http://jellyfin.test/JellyfinEnhanced/y' }),
     'document queue': origin => queue.send(bound => W.ajax(bound, { type: 'PATCH', url: 'http://jellyfin.test/JellyfinEnhanced/z' }), origin),

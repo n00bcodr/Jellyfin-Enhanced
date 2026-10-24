@@ -665,7 +665,10 @@ for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : '
   await h.show();
   await h.cards.flush(); // give the optimistic surface time to detach/observe before the failure
   saved.reject(refused('blocked save'));
-  await new Promise(resolve => h.window.setTimeout(resolve, 20));
+  await h.JE.internals.userDocumentSettled('settings.json');
+  // Rollback schedules its observer scan for the next timer turn. A fixed
+  // delay can expire before that scan on a busy runner.
+  await new Promise(resolve => h.window.setTimeout(resolve, 0));
   for (const io of h.observers) io.fn([...io.observed].map(target => ({ isIntersecting: true, target })));
   await h.cards.flush();
   assert.equal(h.JE.currentSettings.acquisitionBadges, hiding ? null : false);

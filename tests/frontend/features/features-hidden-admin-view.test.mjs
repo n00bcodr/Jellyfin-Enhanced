@@ -26,6 +26,7 @@ function rig(t) {
   Object.assign(state, {
     adminEditMode: true,
     selectedAdminUserId: 'ann',
+    adminItemsUserId: 'ann',
     adminItems: [{ _key: 'k1' }, { _key: 'k2' }],
     adminUsers: [{ userId: 'ann', count: 2 }, { userId: 'ben', count: 1 }]
   });

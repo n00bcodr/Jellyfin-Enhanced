@@ -38,7 +38,7 @@ test('hints from several kept answers share one handshake, asked and answered no
   const h = createHarness({ JE: { pageBuild: 'current', serverBuild: 'current', t: key => key }, fetch: s.fetch });
   t.after(() => h.close());
   loadCore(h);
-  await Promise.all([1, 2, 3].map(n => h.JE.core.api.plugin(`/awards/movie/${n}`, { cacheKey: `awards-${n}` })));
+  await Promise.all([1, 2, 3].map(n => h.JE.core.api.plugin(`/kept-answer/${n}`, { cacheKey: `awards-${n}` })));
   await settle();
   assert.equal(s.calls.handshakes.length, 1, 'one handshake for every hint meanwhile');
   assert.equal(s.calls.handshakes[0].cache, 'no-store');
@@ -50,9 +50,9 @@ test('a handshake that finds the page\'s own build refutes the hint: the kept an
   const h = createHarness({ JE: { pageBuild: 'current', serverBuild: 'current', t: key => key }, fetch: s.fetch });
   t.after(() => h.close());
   loadCore(h);
-  await h.JE.core.api.plugin('/awards/movie/1', { cacheKey: 'awards-1' });
+  await h.JE.core.api.plugin('/kept-answer/1', { cacheKey: 'awards-1' });
   await settle();
-  await h.JE.core.api.plugin('/awards/movie/2', { cacheKey: 'awards-2' });
+  await h.JE.core.api.plugin('/kept-answer/2', { cacheKey: 'awards-2' });
   await settle();
   assert.equal(s.calls.handshakes.length, 1);
   assert.equal(h.document.querySelector('.je-reload-notice'), null);
@@ -66,7 +66,7 @@ test('a failed handshake leaves the build unknown and is tried again only after 
   t.after(() => h.close());
   h.window.Date.now = () => now;
   loadCore(h);
-  const kept = async n => { await h.JE.core.api.plugin(`/awards/movie/${n}`, { cacheKey: `awards-${n}` }); await settle(); };
+  const kept = async n => { await h.JE.core.api.plugin(`/kept-answer/${n}`, { cacheKey: `awards-${n}` }); await settle(); };
   await kept(1);
   assert.equal(s.calls.handshakes.length, 1);
   assert.equal(h.document.querySelector('.je-reload-notice'), null, 'a failed handshake shows nothing');
@@ -88,7 +88,7 @@ test('a handshake answer without a build header is a failed handshake, never "th
   t.after(() => h.close());
   h.window.Date.now = () => now;
   loadCore(h);
-  const kept = async n => { await h.JE.core.api.plugin(`/awards/movie/${n}`, { cacheKey: `awards-${n}` }); await settle(); };
+  const kept = async n => { await h.JE.core.api.plugin(`/kept-answer/${n}`, { cacheKey: `awards-${n}` }); await settle(); };
   await kept(1);
   now += 31_000;
   named = 'newer';

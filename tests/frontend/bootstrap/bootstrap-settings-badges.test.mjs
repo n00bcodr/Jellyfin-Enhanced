@@ -302,7 +302,7 @@ for (const startedPending of [false, true]) test(`a GET cannot undo a save that 
   save.resolve();
   await new Promise(done => setImmediate(done));
   get.resolve({ acquisitionBadges: null });
-  assert.equal(await reading, true);
+  assert.equal(await reading, false, 'a fetched read discarded by the save fence is not accepted state');
   assert.equal(h.JE.currentSettings.acquisitionBadges, false);
   assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, 'off');
 });

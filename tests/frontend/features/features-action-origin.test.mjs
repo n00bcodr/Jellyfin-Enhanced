@@ -141,7 +141,7 @@ test('a Spoiler Guard "skip the confirmation" choice made before its initial rea
   const sg = h.JE.internals.spoilerGuard;
   const saves = [];
   const setUserPrefs = sg.setUserPrefs;
-  sg.setUserPrefs = (next, origin) => { saves.push({ user, origin: origin ? origin.userId : null }); return setUserPrefs(next, origin); };
+  sg.setUserPrefs = (next, owner, origin) => { saves.push({ user, origin: origin ? origin.userId : null }); return setUserPrefs(next, owner, origin); };
   sg.wireSettings({ help: h.document.body, resetAutoCloseTimer() {} });
   await aReached;
   const box = h.document.getElementById('sbPrefSkipDisableConfirm');
@@ -154,9 +154,11 @@ test('a Spoiler Guard "skip the confirmation" choice made before its initial rea
   await new Promise(r => setTimeout(r, 30));
   assert.deepEqual(writes, [], 'the choice was made by a, before the initial read; it cannot be rebound to b');
   assert.deepEqual(saves.filter(x => x.origin !== 'a'), [], "A's save never goes on as anyone else");
-  // Control: B's own choice, now, is saved as B.
-  box.checked = true;
-  box.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  // A's old panel is revoked. B acts on a fresh settings view, with a trusted change of its own.
+  const fresh = box.cloneNode(true); box.replaceWith(fresh);
+  sg.wireSettings({ help: h.document.body, resetAutoCloseTimer() {} });
+  fresh.checked = true;
+  h.trusted(fresh, new h.window.Event('change', { bubbles: true }));
   await new Promise(r => setTimeout(r, 30));
   assert.deepEqual(writes.map(w => w.user), ['b']);
 });

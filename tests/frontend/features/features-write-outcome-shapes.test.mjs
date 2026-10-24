@@ -47,7 +47,7 @@ test('an idempotent write may be retried after a lost answer, and then is stored
     if (attempts === 1) throw new TypeError('connection lost');
     return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
-  const answer = await h.JE.core.api.plugin('/acquire/follows', { method: 'PUT', body: { key: 'k', on: true }, session: originNow(h) });
+  const answer = await h.JE.core.api.plugin('/acquire/follows', { method: 'PUT', body: { key: 'k', on: true }, bound: h.NATIVE.bound(), session: originNow(h) });
   assert.equal(attempts, 2);
   assert.deepEqual(JSON.parse(JSON.stringify(answer)), { ok: true });
 });

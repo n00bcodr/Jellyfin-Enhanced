@@ -351,7 +351,7 @@ test('R8-3 (plant executed): nested destructuring of the transport, an unbound P
 
 test('control: the same unbound POST from a viewer\'s own click (native) → sent', async t => {
   const h = setup(t, { asks: false });
-  const node = plantHandler(h, 'native-post', 'const { core: { api } } = JE; api.plugin(\'/arr/x\', { method: \'POST\', body: {} }).catch(() => {});');
+  const node = plantHandler(h, 'native-post', 'const { core: { api } } = JE; api.plugin(\'/arr/x\', { method: \'POST\', body: {}, session: JE.core.userWrite.origin() }).catch(() => {});');
   node.click(); await delivered();
   assert.equal(h.sent('POST', '/arr/x').length, 1);
 });

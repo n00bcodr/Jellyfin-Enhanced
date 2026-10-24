@@ -18,15 +18,15 @@ test('R12-8 control: settings writes to a newer build must show the reload notic
   h.JE.pageBuild = 'old-build';
   h.JE.serverBuild = 'old-build';
   h.load('core/api-client.js');
-  const original = h.window.ApiClient.ajax;
-  h.window.ApiClient.ajax = async req => {
-    if (req.type === 'PATCH') {
+  const original = h.window.fetch;
+  h.window.fetch = async (url, init = {}) => {
+    if (init.method === 'PATCH') {
       const error = new Response(JSON.stringify({ code: 'revision_conflict' }), { status: 409, headers: { 'X-JE-Build': 'new-build' } });
-      throw error;
+      return error;
     }
-    return original(req);
+    return original(url, init);
   };
-  await assert.rejects(h.JE.updateSettings({ autoPauseEnabled: false }, { throwOnError: true }));
+  await assert.rejects(h.JE.updateSettings({ autoPauseEnabled: !h.JE.currentSettings.autoPauseEnabled }, { throwOnError: true }));
   assert.ok(h.document.querySelector('.je-reload-notice'), 'the new build header on an ajax refusal must be consumed');
 });
 

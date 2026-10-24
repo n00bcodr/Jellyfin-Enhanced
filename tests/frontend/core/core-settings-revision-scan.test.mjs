@@ -166,12 +166,16 @@ function notifyViolations(source) {
   const found = [];
   const { functions, calls } = shape(source);
   if (!/const prefsQueue = JE\.core\.mutationQueue\(/.test(source)) found.push('the notification preferences have no session queue');
-  const sends = calls.filter(c => c.callee === 'api' && c.name === 'prefsCall');
+  const sends = calls.filter(c => c.callee === 'api' && c.name === 'prefsCall'
+    && c.node.arguments[1]?.properties?.some(p => p.key?.name === 'method'));
   if (!sends.length || sends.some(c => !c.ancestors.some(a => a.type === 'CallExpression' && memberPath(a.callee) === 'prefsQueue.send'))) {
     found.push('a preference change sent outside the session queue');
   }
   const apply = calls.find(c => c.callee === 'applyPrefs' && c.name === 'loadPrefs');
   if (!apply || !guardedBy(source, 'prefsQueue.revision')(apply.node, apply.ancestors)) found.push('a preference read taken whatever changed meanwhile');
+  for (const recovery of calls.filter(c => c.callee === 'applyPrefs' && c.name === 'prefsCall' && c.node.arguments[0]?.name === 'stored')) {
+    if (!guardedBy(source, 'prefsQueue.revision')(recovery.node, recovery.ancestors)) found.push('a preference recovery taken whatever changed meanwhile');
+  }
   if (!functions.get('prefsCall')) found.push('prefsCall is missing');
   return found;
 }
@@ -255,6 +259,8 @@ const CHANGE_PLANTS = [
     'const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);', 'const res = await api(path, { method, body });'],
   ['notifications: a read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
     'if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);', 'applyPrefs(body);'],
+  ['notifications: a recovery read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
+    'if (identity === state.identity && JE.core.userWrite.isBound(binding)\n                            && revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(stored);', 'applyPrefs(stored);'],
   ['page: a value the server holds taken without moving the revision on', 'configPage.html',
     '            if (_jeSent) _jeSent[field] = value;\n            _jeConfigRevision++;', '            if (_jeSent) _jeSent[field] = value;'],
   ['page: a configuration read drawn whatever changed meanwhile', 'configPage.html',

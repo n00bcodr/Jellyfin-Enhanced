@@ -13,7 +13,7 @@ function setup(t, { get = async () => ({}), post = async () => ({ id: 7 }), conf
     requestManager: { clearCacheMatching: key => invalidated.push(key) },
     // Stage 1 fix round 12: every request carries the origin of the action (taken when the person acted); it is recorded
     // apart from the request's options.
-    core: { api: { fetch: (url, options) => get(url, options), plugin: (url, options) => { const { session, ...rest } = options || {}; calls.push([url, plain(rest)]); origins.push(session); return post(url, options); } } }
+    core: { api: { fetch: (url, options) => get(url, options), plugin: (url, options) => { const { session, ...rest } = options || {}; if (options?.bound && !options.bound.current()) return Promise.reject(new h.window.DOMException('Ended request owner', 'AbortError')); calls.push([url, plain(rest)]); origins.push(session); return post(url, options); } } }
   }});
   t.after(() => h.close());
   h.load('core/mutation-queue.js');
@@ -447,7 +447,7 @@ test('a collection request stops at an account switch: the next title is never r
   let posts = 0;
   const h = requestModals(t, { post: async () => { if (++posts === 1) await held; return { id: 7 }; } });
   h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: 'One' }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
-  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga');
+  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga', null, { operation: h.NATIVE });
   const saving = h.save();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.calls.length, 1, 'the first title is out');

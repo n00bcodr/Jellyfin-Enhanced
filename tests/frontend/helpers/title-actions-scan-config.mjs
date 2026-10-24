@@ -5,6 +5,7 @@ import { scanTransport, scanOwners, scanPublications } from './bundle-scan.mjs';
 
 /** Modules the action bar cannot reach, each with the reason (anything not listed is in scope). */
 export const EXCLUDED_MODULES = {
+  'core/mutation-queue.js': 'the low-level origin-bound transport; core-user-write and core-origin scans enforce its send boundary and every caller',
   'core/api-client.js': 'implements the transport entry points: its own fetch calls are the transport; every caller\'s call is the site',
   'arr/admin/admin-tabs.js': null, // in scope (removeDialog and its helpers); the hub-only functions are excused by site below
   'arr/ask/ask-actions.js': 'the details page\'s smart actions under the status block (Get Season N, Get 4K, Search): outside the action row, never pressed by the bar',
@@ -69,6 +70,7 @@ export const EXCLUDED_SITES = {
 
 /** Every forwarder the scan finds is pinned: how its member calls are recognised ('local': only its bare calls). */
 export const FORWARDERS = {
+  'core/mutation-queue.js::ajax': 'local',
   'arr/ask/ask-core.js::call': 'local',
   'arr/ask/ask-core.js::ask': /(^|\.)arrAsk\.ask$/,
   'arr/ask/ask-core.js::cancel': /(^|\.)arrAsk\.cancel$/,
@@ -102,23 +104,23 @@ export const SITES = {
   'arr/ask/ask-episodes.js': 6, 'arr/ask/ask-seerr.js': 1, 'arr/ask/ask-sheet.js': 5,
   'arr/calendar/calendar-page-data.js': 4, 'arr/hub/hub-discover.js': 1, 'arr/hub/hub-mine-ledger.js': 2,
   'arr/hub/hub-page.js': 1, 'arr/live/arr-live.js': 2, 'arr/manage/manage-drawer.js': 1,
-  'arr/notify/notify-core.js': 9, 'arr/requests/requests-page-data.js': 6,
+  'arr/notify/notify-core.js': 10, 'arr/requests/requests-page-data.js': 6,
   'arr/requests/requests-page-render-cards.js': 1, 'arr/status/status-arrival.js': 2, 'arr/status/status-core.js': 2,
-  'awards/awards.js': 3, 'core/api-client.js': 3, 'core/navigation.js': 1, 'elsewhere/elsewhere.js': 6,
+  'awards/awards.js': 3, 'core/api-client.js': 4, 'core/mutation-queue.js': 1, 'core/navigation.js': 1, 'elsewhere/elsewhere.js': 6,
   'elsewhere/reviews.js': 12, 'enhanced/bookmarks/bookmarks-library-items.js': 3,
   'enhanced/bookmarks/bookmarks-library-replacements.js': 2, 'enhanced/bookmarks/bookmarks.js': 3,
-  'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 7, 'enhanced/config.js': 4,
+  'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 4, 'enhanced/config.js': 4,
   'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 3,
   'enhanced/hiddencontent/hidden-content-buttons.js': 4, 'enhanced/hiddencontent/hidden-content-data.js': 2,
   'enhanced/hiddencontent/hidden-content-filter.js': 2, 'enhanced/hiddencontent/hidden-content-page-admin.js': 1,
-  'enhanced/hiddencontent/hidden-content-save.js': 4, 'enhanced/homeremoval/features-remove-home.js': 2,
+  'enhanced/hiddencontent/hidden-content-save.js': 4, 'enhanced/homeremoval/features-remove-home.js': 3,
   'enhanced/itemdetails/features-details-media-info.js': 7, 'enhanced/itemdetails/features-details-page.js': 3,
   'enhanced/itemdetails/features-release-dates.js': 3, 'enhanced/native-tabs.js': 1,
   'enhanced/player/auto-skip.js': 2, 'enhanced/player/osd-rating.js': 2, 'enhanced/player/pausescreen.js': 3,
   'enhanced/player/playback-rating-badge.js': 2, 'enhanced/player/playback.js': 4,
   'enhanced/settingspanel/ui-panel-language.js': 3, 'enhanced/settingspanel/ui-panel-settings.js': 4,
   'enhanced/settingspanel/ui-release-notes.js': 1,
-  'enhanced/spoilerguard/state.js': 4, 'enhanced/spoilerguard/watched-refresh.js': 6, 'enhanced/translations.js': 8,
+  'enhanced/spoilerguard/state.js': 5, 'enhanced/spoilerguard/watched-refresh.js': 6, 'enhanced/translations.js': 8,
   'extras/active-streams.js': 2, 'extras/activity-page.js': 2, 'extras/plugin-icons.js': 1, 'jellyseerr/api.js': 33,
   'jellyseerr/discovery/collection-discovery.js': 1, 'jellyseerr/discovery/discovery-filter-utils.js': 1,
   'jellyseerr/discovery/genre-discovery.js': 1, 'jellyseerr/discovery/network-discovery.js': 1,

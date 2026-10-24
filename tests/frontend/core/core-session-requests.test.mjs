@@ -27,7 +27,7 @@ test(`released ${method} retains submitting identity (${mode})`,async t=>{
  const signal=new h.window.AbortController().signal;
  const remove=signal.removeEventListener.bind(signal);
  signal.removeEventListener=(...a)=>{remove(...a);if(mode!=='same')h.switchUser(mode);};
- const pending=h.JE.core.api.plugin('/queued',{method,signal});
+ const pending=h.JE.core.api.plugin('/queued',{method,signal,session:h.JE.core.userWrite.origin()});
  const outcome=pending.then(v=>({v}),e=>({e}));
  gates[0].resolve();await busy[0];const result=await outcome;
  gates.slice(1).forEach(g=>g.resolve());await Promise.all(busy);
@@ -37,13 +37,13 @@ test(`released ${method} retains submitting identity (${mode})`,async t=>{
 for(const method of ['GET','POST'])test(`queued ${method} cancels on session switch`,async t=>{
  let calls=0;const h=setup(t,async()=>{calls++;return jsonResponse({});});
  const gates=Array.from({length:4},deferred),busy=gates.map(g=>h.JE.core.api.manager.withConcurrencyLimit(()=>g.promise));
- const pending=h.JE.core.api.plugin('/queued',{method});const rejected=assert.rejects(pending,{name:'AbortError'});
+ const pending=h.JE.core.api.plugin('/queued',{method,session:h.JE.core.userWrite.origin()});const rejected=assert.rejects(pending,{name:'AbortError'});
  h.switchUser();await rejected;gates.forEach(g=>g.resolve());await Promise.all(busy);assert.equal(calls,0);
 });
 for(const method of ['GET','POST','DELETE'])for(const mode of ['both','server','token'])test(`in-flight ${method} cannot retry after a ${mode} switch`,async t=>{
  const first=deferred(),sent=[];const h=setup(t,(u,o)=>{sent.push(o);return sent.length===1?first.promise:Promise.resolve(jsonResponse({}));});
  h.JE.core.api.manager.CONFIG.retry.baseDelayMs=1;
- const pending=h.JE.core.api.plugin('/retry',{method});const outcome=pending.then(v=>({v}),e=>({e}));
+ const pending=h.JE.core.api.plugin('/retry',{method,session:h.JE.core.userWrite.origin()});const outcome=pending.then(v=>({v}),e=>({e}));
  h.switchUser(mode);first.resolve(jsonResponse({},503));const result=await outcome;
  assert.equal(result.e?.name,'AbortError');assert.equal(sent.length,1,'only the original A request reaches transport');
 });
@@ -89,7 +89,8 @@ test('JE write helpers all enter the core transport',()=>{
  // core transport ("session-bound client modules" rule). Exactly these files; anything new still fails.
  // 4c2's list import transport (own fetch, bound per operation to its session like list-api.js) joins them.
  const pendingRebuild=['arr/adminusers/admin-users-api.js','arr/lists/list-api.js','arr/lists/list-grid.js','arr/lists/list-import.js'];
- const bypass=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')).flatMap(f=>nonCoreWrites(readFileSync(f,'utf8'),f.slice(jsRoot.length+1)));
+ // The origin transport is audited by core-user-write-scan and core-origin-scan at its synchronous send boundary.
+ const bypass=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')&&!f.endsWith('/core/mutation-queue.js')).flatMap(f=>nonCoreWrites(readFileSync(f,'utf8'),f.slice(jsRoot.length+1)));
  assert.deepEqual(bypass.filter(s=>!pendingRebuild.includes(s.split(':')[0])),[]);
  assert.deepEqual([...new Set(bypass.map(s=>s.split(':')[0]))].sort(),pendingRebuild,'drop an entry once the rebuild binds it');
  const readers=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')).filter(f=>/JE\.requestManager\.(?:fetchWithRetry|deduplicatedFetch|withConcurrencyLimit)\(/.test(readFileSync(f,'utf8')));
@@ -103,7 +104,7 @@ test('the settings saver retains its unavailable-ApiClient failure contract',asy
 });
 for(const status of [200,201,400,409,503])test(`status-preserving plugin requests keep HTTP ${status} without retry`,async t=>{
  let calls=0;const h=setup(t,async()=>{calls++;return jsonResponse({outcome:'honest'},status);});
- const answer=await h.JE.core.api.pluginResponse('/acquire/requests',{method:'POST',body:{key:'movie:tmdb:42'}});
+ const answer=await h.JE.core.api.pluginResponse('/acquire/requests',{method:'POST',body:{key:'movie:tmdb:42'},bound:h.JE.captureSubmitted(h.NATIVE).bound(),session:h.JE.core.userWrite.origin()});
  assert.equal(answer.status,status);assert.equal(answer.body.outcome,'honest');assert.equal(calls,1);
 });
 test('status-preserving requests tolerate empty and malformed HTTP bodies',async t=>{
@@ -117,7 +118,7 @@ test('status-preserving writes use the same released-slot session fence',async t
  const gates=Array.from({length:4},deferred),busy=gates.map(g=>h.JE.core.api.manager.withConcurrencyLimit(()=>g.promise));
  const signal=new h.window.AbortController().signal,remove=signal.removeEventListener.bind(signal);
  signal.removeEventListener=(...a)=>{remove(...a);h.switchUser();};
- const pending=h.JE.core.api.pluginResponse('/acquire/requests',{method:'POST',signal});
+ const pending=h.JE.core.api.pluginResponse('/acquire/requests',{method:'POST',signal,bound:h.JE.captureSubmitted(h.NATIVE).bound(),session:h.JE.core.userWrite.origin()});
  const rejected=assert.rejects(pending,{name:'AbortError'});gates[0].resolve();await rejected;
  gates.slice(1).forEach(g=>g.resolve());await Promise.all(busy);assert.equal(calls,0);
 });
@@ -125,14 +126,14 @@ test('status-preserving writes use the same released-slot session fence',async t
 for(const method of ['GET','POST']) for(const mode of ['identity','epoch','server','token'])
 test(`late ${method} response rejects changed submission ${mode}`,async t=>{
  const response=deferred();const h=setup(t,()=>response.promise);
- const pending=h.JE.core.api.plugin('/late',{method,skipRetry:true,cacheKey:'late'});const outcome=pending.then(value=>({value}),error=>({error}));
+ const pending=h.JE.core.api.plugin('/late',{method,skipRetry:true,cacheKey:'late',session:h.JE.core.userWrite.origin()});const outcome=pending.then(value=>({value}),error=>({error}));
  h.switchUser(mode);response.resolve(jsonResponse({owner:'a'}));
  assert.equal((await outcome).error?.name,'AbortError');assert.equal(h.JE.core.api.manager.getCached('late'),null);
 });
 for(const responseMode of ['json','status']) for(const mode of ['identity','epoch','server','token','same'])
 test(`${responseMode} body publication retains submission ${mode}`,async t=>{
  const body=deferred(),started=deferred();const h=setup(t,async()=>({ok:true,status:200,text(){started.resolve();return body.promise;}}));
- const pending=h.JE.core.api.plugin('/body',{method:responseMode==='status'?'POST':'GET',responseMode,skipRetry:true});const outcome=pending.then(value=>({value}),error=>({error}));
+ const pending=h.JE.core.api.plugin('/body',{method:responseMode==='status'?'POST':'GET',responseMode,skipRetry:true,session:h.JE.core.userWrite.origin()});const outcome=pending.then(value=>({value}),error=>({error}));
  await started.promise;if(mode!=='same')h.switchUser(mode);body.resolve('{"owner":"a"}');
  const result=await outcome;if(mode==='same')assert.equal((responseMode==='status'?result.value.body:result.value).owner,'a');else assert.equal(result.error?.name,'AbortError');
 });
@@ -140,7 +141,7 @@ for(const responseMode of ['json','status'])
 test(`${responseMode} publication after timeout cleanup rejects the outgoing session`,async t=>{
  const h=setup(t,async()=>jsonResponse({owner:'a'}));const signal=new h.window.AbortController().signal;
  const remove=signal.removeEventListener.bind(signal);signal.removeEventListener=(...args)=>{remove(...args);h.switchUser();};
- const outcome=h.JE.core.api.plugin('/publication',{responseMode,method:'POST',signal,timeoutMs:1000}).then(value=>({value}),error=>({error}));
+ const outcome=h.JE.core.api.plugin('/publication',{responseMode,method:'POST',signal,timeoutMs:1000,bound:h.JE.captureSubmitted(h.NATIVE).bound(),session:h.JE.core.userWrite.origin()}).then(value=>({value}),error=>({error}));
  assert.equal((await outcome).error?.name,'AbortError');
 });
 
@@ -151,7 +152,7 @@ for(const mode of ['identity','server','token'])test(`unobserved ${mode} transit
 });
 for(const responseMode of ['json','status'])test(`${responseMode} rejected body under a stale session is AbortError`,async t=>{
  const body=deferred(),started=deferred();const h=setup(t,async()=>({ok:true,status:200,text(){started.resolve();return body.promise;}}));
- const outcome=h.JE.core.api.plugin('/body-error',{responseMode,method:'POST',skipRetry:true}).then(value=>({value}),error=>({error}));
+ const outcome=h.JE.core.api.plugin('/body-error',{responseMode,method:'POST',skipRetry:true,session:h.JE.core.userWrite.origin()}).then(value=>({value}),error=>({error}));
  await started.promise;h.switchUser();body.reject(new TypeError('Failed to fetch'));assert.equal((await outcome).error?.name,'AbortError');
 });
 test('public authHeaders keeps its no-argument contract for the read-only change feed',t=>{

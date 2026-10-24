@@ -19,6 +19,7 @@ function page(t, serverBuild) {
     fetch: async () => {
       const response = jsonResponse({ ok: true });
       if (serverBuild) response.headers.set('X-JE-Build', serverBuild);
+      response.headers.set('Cache-Control', 'no-store');
       return response;
     }
   });
@@ -48,8 +49,7 @@ test('R10-10 control: answers from the page\'s own build (or naming none) show n
 test('R10-10: after a bootstrap named one build, an answer naming another shows the notice', async t => {
   const docs = { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: { Bookmarks: {} }, Elsewhere: {}, HiddenContent: { Items: {}, Settings: {} } };
   const h = await tab(t, settingsServer(docs), {
-    extra: ['core/api-client.js'],
-    fetch: async () => { const response = jsonResponse({ ok: true }); response.headers.set('X-JE-Build', '1.2.4'); return response; }
+    fetch: async () => { const response = jsonResponse({ ok: true }); response.headers.set('X-JE-Build', '1.2.4'); response.headers.set('Cache-Control', 'no-store'); return response; }
   });
   assert.equal(h.JE.serverBuild, '1.2.3', 'the bootstrap\'s build is the one the page booted against');
   assert.equal(notice(h).length, 0);
@@ -63,7 +63,7 @@ test('R10-10: after a bootstrap named one build, an answer naming another shows 
 test('R11-10: a cached earlier bundle booted against a newer bootstrap asks for a reload', async t => {
   const docs = { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: { Bookmarks: {} }, Elsewhere: {}, HiddenContent: { Items: {}, Settings: {} } };
   // The page's script tag (and so its cached scripts) is build 1.2.3; the server answers 1.2.4.
-  const h = await tab(t, settingsServer(docs), { build: '1.2.4', extra: ['core/api-client.js'] });
+  const h = await tab(t, settingsServer(docs), { build: '1.2.4' });
   assert.equal(h.document.querySelector('script[plugin]').getAttribute('version'), '1.2.3');
   assert.equal(h.JE.pageBuild, '1.2.3');
   assert.equal(h.JE.serverBuild, '1.2.4');

@@ -46,8 +46,8 @@ for (const kind of ['movie', 'seasons']) test(`a Seerr ${kind} request waiting f
   const rules = deferred();
   r.api.evaluateOverrideRules = () => rules.promise;
   const asked = kind === 'movie'
-    ? r.api.requestMedia(42, 'movie', {}, false, { originalLanguage: 'ja' })
-    : r.api.requestTvSeasons(42, [1], {}, { originalLanguage: 'ja' });
+    ? r.api.requestMedia(42, 'movie', {}, false, { originalLanguage: 'ja' }, null, { bound: r.h.NATIVE.bound() })
+    : r.api.requestTvSeasons(42, [1], {}, { originalLanguage: 'ja' }, false, null, { bound: r.h.NATIVE.bound() });
   r.switchTo('b');
   rules.resolve({ serverId: 2 });
   await asked.catch(() => {});
@@ -57,27 +57,27 @@ for (const kind of ['movie', 'seasons']) test(`a Seerr ${kind} request waiting f
   assert.deepEqual(r.usage, []);
   // A fresh gesture after the switch is B's own and goes out.
   r.api.evaluateOverrideRules = async () => null;
-  await r.api.requestMedia(43, 'movie');
+  await r.api.requestMedia(43, 'movie', {}, false, null, null, { bound: r.h.NATIVE.bound() });
   assert.deepEqual(r.posts.map(p => p.who), ['b']);
 });
 
 test('an issue report waiting for its media id read is never sent as the next person', async t => {
   const r = rig(t);
   const release = r.hold('read');
-  const reported = r.api.reportIssue(42, 'movie', 1, 'no sound');
+  const reported = r.api.reportIssue(42, 'movie', 1, 'no sound', 0, 0, r.h.NATIVE);
   r.switchTo('b');
   release();
   await reported.catch(() => {});
   await settle();
   assert.deepEqual(r.posts, []);
-  await r.api.reportIssue(42, 'movie', 1, 'no sound');
+  await r.api.reportIssue(42, 'movie', 1, 'no sound', 0, 0, r.h.NATIVE);
   assert.deepEqual(r.posts.map(p => p.who), ['b']);
 });
 
 test("a request answered after the switch is A's: nothing is invalidated, announced or counted for B", async t => {
   const r = rig(t);
   const release = r.hold('post');
-  const asked = r.api.requestMedia(42, 'movie');
+  const asked = r.api.requestMedia(42, 'movie', {}, false, null, null, { bound: r.h.NATIVE.bound() });
   await new Promise(resolve => setImmediate(resolve));
   r.switchTo('b');
   release();
@@ -92,7 +92,7 @@ test('a Seerr request handed a stale origin is never re-bound to the next person
   const r = rig(t);
   const origin = r.h.JE.core.userWrite.origin();
   r.switchTo('b');
-  await r.api.requestMedia(42, 'movie', {}, false, null, null, origin).catch(() => {});
+  await r.api.requestMedia(42, 'movie', {}, false, null, null, { origin, bound: r.h.NATIVE.bound() }).catch(() => {});
   await r.api.reportIssue(42, 'movie', 1, 'no sound', 0, 0, origin).catch(() => {});
   await settle();
   assert.deepEqual(r.posts, []);

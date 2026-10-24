@@ -57,7 +57,7 @@ for(const host of ['group card','group item','standard card'])for(const mode of 
  let user='a',epoch=1,server='one',token='token-a';const writes=[],timers=[];
  const h=createHarness({JE:{t:k=>k,session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange(){}},hiddenContent:{getAllHiddenItems:()=>[{type:'Movie',itemId:'x',name:'Title'}],createItemCard:()=>{const c=h.document.createElement('div');c.innerHTML='<button class="je-hidden-item-unhide"></button>';return c;}}},apiClient:{getCurrentUserId:()=>user,serverId:()=>server,accessToken:()=>token}});
  t.after(()=>h.close());h.load('enhanced/hiddencontent/hidden-content-page-state.js');const api=h.JE.internals.hiddenContentPage;
- Object.assign(api,{showUnhideConfirmation:(m,fn)=>fn(),handleUnhide:key=>writes.push({key,user}),handleUnhideMany(){},applyAdminThemeVars(){},maybeInitAdminFilter(){},createPageContainer(){}});
+ Object.assign(api,{adminActionScope:()=>({origin:h.JE.core.userWrite.origin(),uid:null,token:api.state.adminLoadToken}),showUnhideConfirmation:(m,fn)=>fn(),handleUnhide:key=>writes.push({key,user}),handleUnhideMany(){},applyAdminThemeVars(){},maybeInitAdminFilter(){},createPageContainer(){}});
  h.load('enhanced/hiddencontent/hidden-content-page-cards.js');h.load('enhanced/hiddencontent/hidden-content-page-render.js');
  h.window.setTimeout=fn=>{timers.push(fn);return timers.length;};
  const hostEl=h.document.createElement('div');h.document.body.appendChild(hostEl);

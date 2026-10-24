@@ -205,6 +205,20 @@
     }
 
     /**
+     * Puts the shown page back after the router took it away. Coming from a dashboard page, the router answers
+     * #/requests by swapping the whole layout (its "not found" page shows once it has), and the page show() had put
+     * into the dashboard's layout went with it.
+     * @returns {void}
+     */
+    function remount() {
+        const page = pageContainer();
+        page.classList.remove('hide');
+        page.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'custom', isRestored: false, options: {} } }));
+        claimChrome();
+        render();
+    }
+
+    /**
      * Jellyfin's own router has no #/requests and renders its "Page not found" page for it when the
      * URL is set directly (deep link, typed address): hidden while this page is shown (body class),
      * and the header title / document title say "Requests" once the router has finished.
@@ -747,7 +761,9 @@
         const off = JE.core?.navigation?.onNavigate?.(handleNavigation);
         if (lifecycle && off) lifecycle.track(off);
         document.addEventListener('viewshow', (e) => {
-            if (state.visible && e.target && e.target.id !== PAGE_ID && !isRoute()) hide();
+            if (!state.visible || !e.target || e.target.id === PAGE_ID) return;
+            if (!isRoute()) hide();
+            else if (!document.getElementById(PAGE_ID)) remount();
         });
         // Hiding or unhiding something (here or on another page) shows at once.
         window.addEventListener('je-hidden-content-changed', () => {

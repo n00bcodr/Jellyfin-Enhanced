@@ -212,14 +212,14 @@ test('natively (no operation) the same writes carry the viewer\'s session bindin
 // ---- Source scan: no operation-owned write bypasses the primitive (the behaviour is tested above). ----
 
 const WRITES = {
-  'jellyseerr/api.js': [/async function post\(path, body, bound\)[\s\S]*?JE\.core\.api\.plugin\(`\/jellyseerr\$\{path\}`, \{ method: 'POST', body, skipRetry: true, bound \}\)/,
-    /post\('\/issue', body, submitted\.bound\(\)\)/, /post\('\/request', body, bound\)/],
-  'arr/ask/ask-core.js': [/call\('\/acquire\/requests', \{ method: 'POST', body: options\?\.expect \? \{ clientRequestId, input, expect: options\.expect \} : \{ clientRequestId, input \}, signal: options\?\.signal, bound: options\?\.bound \}\)/],
-  'arr/ask/ask-sheet.js': [/JE\.arrAsk\.ask\(input, \{ bound: state\.submitted\.bound\(\) \}\)/],
+  'jellyseerr/api.js': [/async function post\(path, body, bound, origin\)[\s\S]*?JE\.core\.api\.plugin\(`\/jellyseerr\$\{path\}`, \{ method: 'POST', body, skipRetry: true, bound, session: origin \}\)/,
+    /post\('\/issue', body, submitted\.bound\(\), origin\)/, /post\('\/request', body, bound, origin\)/],
+  'arr/ask/ask-core.js': [/call\('\/acquire\/requests', \{ method: 'POST', body: options\?\.expect \? \{ clientRequestId, input, expect: options\.expect \} : \{ clientRequestId, input \}, signal: options\?\.signal, bound: options\?\.bound, session: origin \}\)/],
+  'arr/ask/ask-sheet.js': [/JE\.arrAsk\.ask\(input, \{ bound: state\.submitted\.bound\(\), session: state\.origin \}\)/],
   'arr/manage/manage-drawer.js': [/JE\.core\.api\.plugin\(path, \{ \.\.\.options, bound: state\.action\.bound\(/],
-  'arr/notify/notify-core.js': [/api\('\/acquire\/follows', \{ method: 'PUT', body: \{ key, on \}, bound: submitted\.bound\(\) \}\)/],
-  'enhanced/hiddencontent/hidden-content-data.js': [/JE\.core\.api\.ajax\(\{ type: hidden \? 'PUT' : 'DELETE', dataType: 'json', bound: submitted\.operationBound\(\)/],
-  'enhanced/spoilerguard/state.js': [/const bound = submitted\.bound\(\);[\s\S]*?request\(path, \{ \.\.\.options, bound \}\)/],
+  'arr/notify/notify-core.js': [/api\('\/acquire\/follows', \{ method: 'PUT', body: \{ key, on \}, bound: submitted\.bound\(\), session: origin \}\)/],
+  'enhanced/hiddencontent/hidden-content-data.js': [/JE\.core\.api\.ajax\(\{ type: hidden \? 'PUT' : 'DELETE', dataType: 'json', session: origin, bound: submitted\.operationBound\(\)/],
+  'enhanced/spoilerguard/state.js': [/const bound = submitted\.bound\(\);[\s\S]*?request\(path, \{ \.\.\.options, bound, session: origin \}\)/],
 };
 test('source scan: every operation-owned write passes its operation to the transport', () => {
   for (const [file, patterns] of Object.entries(WRITES)) {
@@ -231,7 +231,7 @@ test('source scan: every operation-owned write passes its operation to the trans
   assert.equal((sheet.match(/JE\.arrAsk\.ask\(/g) || []).length, (sheet.match(/JE\.arrAsk\.ask\([^;]*bound:/g) || []).length, 'every ask in the sheet is bound');
   const seerr = readFileSync(resolve(jsRoot, 'jellyseerr/api.js'), 'utf8');
   assert.equal((seerr.match(/method: 'POST'/g) || []).length, 1, 'jellyseerr/api.js POSTs only through post()');
-  assert.equal((seerr.match(/await post\(/g) || []).length, (seerr.match(/await post\([^)]*, (submitted\.bound\(\)|bound)\)/g) || []).length, 'every Seerr write is bound');
+  assert.equal((seerr.match(/await post\(/g) || []).length, (seerr.match(/await post\([^)]*, (submitted\.bound\(\)|bound), origin\)/g) || []).length, 'every Seerr write is bound');
   const drawer = readFileSync(resolve(jsRoot, 'arr/manage/manage-drawer.js'), 'utf8');
   assert.equal((drawer.match(/JE\.core\.api\.(plugin|ajax|fetch|pluginResponse)\(/g) || []).length, 1, 'the drawer reaches the transport only through boundApi');
 });

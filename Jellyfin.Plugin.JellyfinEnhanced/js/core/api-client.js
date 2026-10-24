@@ -1348,12 +1348,25 @@
     // shared by every hint that arrives meanwhile; only the handshake's answer shows the notice. A handshake that fails
     // leaves it unknown: the next hint may try again, no sooner than a growing delay (30 s, doubling to 10 minutes).
     let reloadNotice = null;
-    /** @type {Promise<void>|null} */
-    let confirming = null;
-    // The hint a handshake found to be a kept copy (the server runs this page's build): not confirmed again.
-    let refutedHint = '';
-    let failedConfirmations = 0;
-    let nextConfirmationAt = 0;
+    let buildOwner = null;
+    let buildProbe = 0;
+
+    /** Evidence and in-flight work belong to one live server/session, including same-account reauthentication. */
+    function currentBuildOwner() {
+        JE.session?.checkNow?.('build-proof');
+        const epoch = JE.session?.getEpoch?.();
+        const server = typeof ApiClient === 'undefined' ? null
+            : typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const endpoint = typeof ApiClient !== 'undefined' ? ApiClient.getUrl('/JellyfinEnhanced/version') : '';
+        if (!buildOwner || buildOwner.epoch !== epoch || buildOwner.server !== server || buildOwner.endpoint !== endpoint) {
+            const sameServer = buildOwner && buildOwner.server === server && buildOwner.endpoint === endpoint;
+            const mismatch = sameServer && buildOwner.mismatch;
+            if (!sameServer) { reloadNotice?.remove(); reloadNotice = null; }
+            buildOwner = { epoch, server, endpoint, confirming: null, refuted: new Map(), mismatch: !!mismatch,
+                failed: 0, nextAt: 0 };
+        }
+        return buildOwner;
+    }
 
     /** The build this page compares with: its own, else the first the server named. */
     const ownBuild = () => (typeof JE.pageBuild === 'string' && JE.pageBuild ? JE.pageBuild : JE.serverBuild);
@@ -1393,10 +1406,12 @@
          * @param {*} serverBuild - The server's build, as named in such an answer.
          * @returns {boolean} True when they differ (the reload notice is shown).
          */
-        check(serverBuild) {
+        check(serverBuild, owner = currentBuildOwner()) {
+            if (owner !== currentBuildOwner()) return false;
             if (typeof serverBuild !== 'string' || !serverBuild) return false;
             if (!JE.serverBuild) JE.serverBuild = serverBuild;
             if (serverBuild === ownBuild()) return false;
+            owner.mismatch = true;
             showReloadNotice();
             return true;
         },
@@ -1409,7 +1424,9 @@
         hint(named) {
             if (typeof named !== 'string' || !named) return undefined;
             const own = ownBuild();
-            if (!own || named === own || named === refutedHint) return undefined;
+            const owner = currentBuildOwner();
+            const refutedAt = owner.refuted.get(named);
+            if (!own || named === own || owner.mismatch || (refutedAt !== undefined && Date.now() - refutedAt < 300000)) return undefined;
             return build.confirm(named);
         },
         /**
@@ -1419,24 +1436,38 @@
          * @returns {Promise<void>}
          */
         confirm(hinted) {
-            if (confirming) return confirming;
-            if (Date.now() < nextConfirmationAt || typeof fetch !== 'function' || typeof ApiClient === 'undefined') return Promise.resolve();
+            const owner = currentBuildOwner();
+            if (owner.confirming) return owner.confirming;
+            if (owner.mismatch || Date.now() < owner.nextAt || typeof fetch !== 'function' || typeof ApiClient === 'undefined') return Promise.resolve();
+            const endpoint = owner.endpoint + '?jeBuildProbe=' + Date.now() + '-' + (++buildProbe);
             const run = (async () => {
                 try {
-                    const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'), { cache: 'no-store', headers: { 'Accept': 'text/plain' } });
+                    const response = await fetch(endpoint, { cache: 'no-store', headers: { 'Accept': 'text/plain' } });
+                    if (owner !== currentBuildOwner()) return;
                     const named = response?.headers?.get?.('X-JE-Build');
-                    if (!named) throw new Error('the handshake named no build');
-                    failedConfirmations = 0;
-                    nextConfirmationAt = 0;
-                    if (!build.check(named) && hinted) refutedHint = hinted;
+                    const control = String(response?.headers?.get?.('Cache-Control') || '').toLowerCase();
+                    const age = Number(response?.headers?.get?.('Age') || 0);
+                    if (!response?.ok || response.status === 304 || !named || age > 0
+                        || !/(^|[,\s])no-store([,\s]|$)/.test(control)
+                        || (response.url && new URL(response.url, endpoint).href !== new URL(endpoint).href)) {
+                        throw new Error('the handshake did not provide fresh same-server build proof');
+                    }
+                    owner.failed = 0;
+                    owner.nextAt = 0;
+                    if (!build.check(named, owner) && hinted) {
+                        owner.refuted.delete(hinted);
+                        owner.refuted.set(hinted, Date.now());
+                        while (owner.refuted.size > 32) owner.refuted.delete(owner.refuted.keys().next().value);
+                    }
                 } catch (error) {
-                    failedConfirmations++;
-                    nextConfirmationAt = Date.now() + Math.min(600000, 30000 * Math.pow(2, failedConfirmations - 1));
+                    if (owner !== currentBuildOwner()) return;
+                    owner.failed++;
+                    owner.nextAt = Date.now() + Math.min(600000, 30000 * Math.pow(2, owner.failed - 1));
                     console.debug(`${logPrefix} build handshake failed; the server's build stays unknown for now.`, error?.message || error);
                 }
             })();
-            const guarded = run.finally(() => { if (confirming === guarded) confirming = null; });
-            confirming = guarded;
+            const guarded = run.finally(() => { if (owner.confirming === guarded) owner.confirming = null; });
+            owner.confirming = guarded;
             return guarded;
         },
         /**
@@ -1451,7 +1482,9 @@
                 const named = response?.headers?.get?.('X-JE-Build');
                 if (!named) return;
                 const control = String(response?.headers?.get?.('Cache-Control') || '').toLowerCase();
-                if (options.fresh === true || /(^|[,\s])no-store([,\s]|$)/.test(control)) build.check(named);
+                const aged = Number(response?.headers?.get?.('Age') || 0) > 0;
+                if (!aged && !/max-age\s*=\s*[1-9]/.test(control)
+                    && (options.fresh === true || /(^|[,\s])no-store([,\s]|$)/.test(control))) build.check(named);
                 else void build.hint(named);
             } catch { /* An answer without readable headers names no build. */ }
         }
