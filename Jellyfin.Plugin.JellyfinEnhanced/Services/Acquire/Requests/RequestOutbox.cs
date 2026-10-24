@@ -311,19 +311,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
                 // The same wait again (still no Seerr account, a season still not listed): one audit row for it, not one per check.
                 if (completed && RequestLedger.RepeatsWait(job, result)) continue;
+                var choices = AddChoices(job, result);
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
-                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message,
-                    Details = AddChoices(job, result) });
+                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = AddChoiceMessage(result.Outcome.Message, choices, job.Authorization.ChoiceVersion),
+                    Details = choices });
             }
+        }
+        // Admin Audit renders Message. Keep the display summary on the audit row only; request
+        // receipts retain household wording, and only these allowlisted add facts are appended.
+        private static string AddChoiceMessage(string message, IReadOnlyDictionary<string, string>? choices, long version)
+        {
+            if (choices == null) return message;
+            var parts = new List<string>();
+            if (choices.TryGetValue("instanceName", out var instance)) parts.Add("Instance: " + instance);
+            if (choices.TryGetValue("qualityProfileId", out var profile))
+                parts.Add("Profile: " + profile + (choices.TryGetValue("qualityProfileName", out var name) ? " (" + name + ")" : ""));
+            if (!choices.ContainsKey("qualityProfileId")) parts.Add("Profile: missing");
+            parts.Add("Root: " + (choices.TryGetValue("rootFolder", out var root) ? root : "missing"));
+            if (version > 1) parts.Add("Choice override version: " + version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return message + " " + string.Join("; ", parts) + ".";
         }
         private static IReadOnlyDictionary<string, string>? AddChoices(RequestJob job, RequestBackendResult result)
         {
-            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null) return null;
+            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null && result.Outcome.Reason != "invalid_defaults") return null;
             var details = new Dictionary<string, string>();
             if (job.Input.ProfileId is { } profile) details["qualityProfileId"] = profile.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (job.Input.RootFolder is { } root) details["rootFolder"] = root;
             if (result.AddChoiceDetails != null)
-                foreach (var name in new[] { "instanceName", "qualityProfileName", "rootFolderName" })
+                foreach (var name in new[] { "instanceName", "qualityProfileId", "qualityProfileName", "rootFolder", "rootFolderName" })
                     if (result.AddChoiceDetails.TryGetValue(name, out var value)) details[name] = value;
             return details;
         }

@@ -1541,6 +1541,11 @@ Approved requests go out through the request handling the administrator chose: s
 
 Administrators' **Manage › Add to {instance}** adds a title to the chosen instance as their own request routed there, so it shares the outgoing queue, read-back, change feed, and audit. It is offered only in Jellyfin Enhanced mode; adding to a 4K instance needs the phase-3 4K switch for that kind of title. See the [API reference](../advanced/api.md#requests-and-approvals-phase-3).
 
+A queued title has one owner and version for its add profile and root folder. Another administrator's different choices return `409 choice_conflict` with the current owner, version and values; identical choices are idempotent. Sonarr settings apply to the whole series, including disjoint season or episode requests. Season/episode selection and each request's charge remain separate. An explicitly confirmed `overrideChoiceVersion` can replace the observed version while every affected job is known unsent; a stale version is refused. The original administrator can still correct an overlapping known-unsent request. Sending, uncertain and sent work cannot be changed through Add, even with confirmation. The latest choice stamp is retained across cancellations so an older confirmation cannot become valid again. Overrides retain an audit record, and Admin → Audit shows the dispatched profile id/name, root and instance in its result message.
+
+Dispatch refreshes the selected instance's system facts before each new-title add, even when the sheet's cached options are still fresh. A removed profile or root is held as `invalid_choice`; an unavailable refresh retries without adding. This closes reuse of the sheet's cached profile/root list at dispatch; the arr can still change externally between its response and the write.
+
+
 ### Moving requests from Seerr
 
 When you switch **Request handling** from Seerr to Jellyfin Enhanced, Jellyfin Enhanced can take over the requests

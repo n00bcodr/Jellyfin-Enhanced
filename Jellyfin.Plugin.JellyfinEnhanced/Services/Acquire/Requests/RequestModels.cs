@@ -258,7 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
     /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
     /// </summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null);
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null, long? OverrideChoiceVersion = null);
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);
     /// <summary>A decline explanation shown to the requester as plain text.</summary>
@@ -285,7 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0);
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>
@@ -294,6 +294,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
         string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
+    /// <summary>The current title-wide add choice, exposed only to an administrator submitting routing.</summary>
+    public sealed record RequestChoice(
+        [property: JsonPropertyName("owner")] Guid Owner,
+        [property: JsonPropertyName("version")] long Version,
+        [property: JsonPropertyName("profileId")] int? ProfileId,
+        [property: JsonPropertyName("rootFolder")] string? RootFolder);
     /// <summary>The request API outcome contract; messages are safe household wording.</summary>
     public sealed record RequestOutcome
     {
@@ -319,6 +325,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// (<c>rule_review</c>): the conditions and their family-safe facts. Null when the rules said nothing.
         /// </summary>
         [JsonPropertyName("rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HouseholdRuleVerdict? Rules { get; init; }
+        /// <summary>Administrator-only current title add settings when a choice conflicts.</summary>
+        [JsonPropertyName("choice"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestChoice? Choice { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
         /// <summary>Constructs a success result.</summary>

@@ -23,10 +23,10 @@ public class IntegrationArrAddChoicesTests
         return rig;
     }
 
-    private static ArrAddController Controller(IntegrationRequestBackendsTests.Lab lab, IntegrationRequestLedgerTests.Rig rig)
+    private static ArrAddController Controller(IntegrationRequestBackendsTests.Lab lab, IntegrationRequestLedgerTests.Rig rig, Guid? actor = null)
         => new(new ArrAddService(lab.Store, lab.Arr.Factory, rig.Service, () => lab.Config))
         {
-            ControllerContext = new() { HttpContext = new DefaultHttpContext { User = TestCallers.Principal(rig.Admin, true) } },
+            ControllerContext = new() { HttpContext = new DefaultHttpContext { User = TestCallers.Principal(actor ?? rig.Admin, true) } },
         };
 
     private static RequestOutcome Outcome(IActionResult result)
@@ -389,4 +389,331 @@ public class IntegrationArrAddChoicesTests
         if (!movie) Assert.Equal(new[] { 1 }, Monitored(Assert.Single(host.Series)));
         Assert.Equal("sent", rig.Ledger.Find(owner.RequestId!)!.Status);
     }
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task AnotherAdministratorCannotReplaceQueuedOrRetryChoices(bool movie, bool retry)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var other = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        if (retry)
+        {
+            host.FailWith = 503;
+            await rig.Runner(lab.Direct).TickAsync(default);
+            host.FailWith = 0;
+        }
+        var before = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        var charge = Charges(rig, first.RequestId!);
+        var conflict = Outcome(await Controller(lab, rig, other).Add(Sheet(lab, movie, id: "second-admin"), default));
+        Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
+        var after = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        Assert.Equal((before.Id, before.State, before.Input.Canonical, before.Authorization), (after.Id, after.State, after.Input.Canonical, after.Authorization));
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        var identical = Outcome(await Controller(lab, rig, other).Add(Sheet(lab, movie, 4, id: "same-choice"), default));
+        Assert.InRange(identical.HttpStatus, 200, 201);
+        rig.Reopen();
+        rig.Now = rig.Now.AddHours(1);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie, 4);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DisjointScopesCannotAcknowledgeUnusedSeriesChoices(bool secondAdmin, bool episodes)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, false);
+        host.EpisodeList[75565] = new[] { (1, 1), (2, 1) };
+        var actor = secondAdmin ? rig.Add("Admin") : rig.Admin;
+        RequestOutcome first;
+        if (episodes)
+            first = Outcome(await rig.Controller(rig.Admin).Create(new("episode-first", Input(false) with { Scope = "episodes", Seasons = Array.Empty<int>(), Episodes = new[] { new RequestEpisode(1, 1) }, InstanceId = lab.Instance("Sonarr").Id, ProfileId = 4, RootFolder = "/selected" }), default));
+        else first = Outcome(await Controller(lab, rig).Add(Sheet(lab, false, 4), default));
+        var charge = Charges(rig, first.RequestId!);
+        var second = Sheet(lab, false, id: "disjoint");
+        second.Seasons = new[] { 2 };
+        var conflict = Outcome(await Controller(lab, rig, actor).Add(second, default));
+        Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        Assert.Single(rig.Ledger.ForTitle(Input(false).Key));
+        second.ProfileId = 4;
+        var accepted = Outcome(await Controller(lab, rig, actor).Add(second, default));
+        Assert.InRange(accepted.HttpStatus, 200, 201);
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        var jobs = rig.Ledger.ForTitle(Input(false).Key).SelectMany(w => rig.Ledger.ForWant(w.Id)).ToArray();
+        Assert.Equal(2, jobs.Length);
+        Assert.All(jobs, j => Assert.Equal(4, j.Input.ProfileId));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        if (episodes)
+        {
+            var posted = JsonNode.Parse(Assert.Single(host.Writes, w => w.Method == "POST" && w.Path == "/api/v3/series").Body)!;
+            Assert.Equal((4, "/selected"), ((int)posted["qualityProfileId"]!, (string)posted["rootFolderPath"]!));
+            Assert.True((bool)host.Episodes.Single(e => (int)e["seasonNumber"]! == 1)["monitored"]!);
+            Assert.Contains(2, Monitored(Assert.Single(host.Series)));
+        }
+        else Added(host, false, 4);
+        Assert.All(jobs, j => Assert.Equal("succeeded", rig.Ledger.ForWant(j.WantId).Single().State));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AuditMessageExposesChoicesToTheExistingAdminRenderer(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, movie);
+        Outcome(await Controller(lab, rig).Add(Sheet(lab, movie), default));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        var entry = Assert.Single(rig.Audit.ReadRecent(10), e => e.Action == "request.dispatch");
+        Assert.Contains("5 (Ultra-HD)", entry.Message);
+        Assert.Contains("/selected", entry.Message);
+        Assert.Contains(lab.Instance(movie ? "Radarr" : "Sonarr").Name, entry.Message);
+        if (Environment.GetEnvironmentVariable("JE_ARRADD_AUDIT_RECEIPT") is { } path)
+            File.WriteAllText(path + (movie ? "-movie.json" : "-series.json"), System.Text.Json.JsonSerializer.Serialize(entry, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public async Task ExplicitOverrideIsVersionedAuditedAndPreservesEveryScopeCharge(bool movie, bool disjoint)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var other = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        var original = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        var charge = Charges(rig, first.RequestId!);
+        var second = Sheet(lab, movie, id: "override");
+        if (disjoint) second.Seasons = new[] { 2 };
+        var refused = Outcome(await Controller(lab, rig, other).Add(second, default));
+        var choice = Assert.IsType<RequestChoice>(refused.Choice);
+        Assert.Equal((rig.Admin, 1L, (int?)4, "/selected"), (choice.Owner, choice.Version, choice.ProfileId, choice.RootFolder));
+        second.OverrideChoiceVersion = choice.Version;
+        var accepted = Outcome(await Controller(lab, rig, other).Add(second, default));
+        Assert.InRange(accepted.HttpStatus, 200, 201);
+        var replacement = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        Assert.Equal((other, 2L, (int?)5, "/selected"), (replacement.Authorization.ChoiceOwner, replacement.Authorization.ChoiceVersion, replacement.Input.ProfileId, replacement.Input.RootFolder));
+        Assert.Equal(original.Input.Seasons, replacement.Input.Seasons);
+        Assert.Equal(original.Input.Episodes, replacement.Input.Episodes);
+        Assert.Equal(original.Authorization.Requester, replacement.Authorization.Requester);
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        Assert.False(rig.Ledger.Claim(original, rig.Db.Generation, rig.Now));
+        Assert.True(rig.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT COUNT(*) FROM request_audit WHERE action='choice_override'"; return (long)cmd.ExecuteScalar()! > 0; }));
+        var stale = Sheet(lab, movie, 4, id: "stale-override");
+        stale.OverrideChoiceVersion = choice.Version;
+        Assert.Equal("choice_conflict", Outcome(await Controller(lab, rig).Add(stale, default)).Reason);
+        rig.Reopen();
+        var jobs = rig.Ledger.ForTitle(Input(movie).Key).SelectMany(w => rig.Ledger.ForWant(w.Id)).Where(j => j.State == "queued").ToArray();
+        Assert.Equal(disjoint ? 2 : 1, jobs.Length);
+        Assert.All(jobs, j => Assert.Equal((other, 2L, (int?)5), (j.Authorization.ChoiceOwner, j.Authorization.ChoiceVersion, j.Input.ProfileId)));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie);
+        var audit = Assert.Single(rig.Audit.ReadRecent(20), e => e.Id == replacement.Id);
+        Assert.Contains("5 (Ultra-HD)", audit.Message);
+        Assert.Contains("/selected", audit.Message);
+        Assert.Contains("Choice override version: 2", audit.Message);
+        if (disjoint) Assert.Equal(new[] { 1, 2 }, Monitored(Assert.Single(host.Series)));
+    }
+
+    [Theory]
+    [InlineData(true, "profile")]
+    [InlineData(false, "profile")]
+    [InlineData(true, "root")]
+    [InlineData(false, "root")]
+    [InlineData(true, "defaults")]
+    [InlineData(false, "defaults")]
+    public async Task DispatchRevalidatesInsideTheSheetsFreshCacheAndAuditsRefusals(bool movie, string removal)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        RequestOutcome accepted;
+        if (removal == "defaults")
+            accepted = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, null, null), default));
+        else
+        {
+            accepted = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie), default));
+            Assert.NotNull(lab.Store.PeekSystem(Sheet(lab, movie).InstanceId!));
+            // Deliberately retain the fresh options snapshot; no test refresh and no clock advance.
+            if (removal == "profile") host.Profiles.RemoveAll(p => (int)p["id"]! == 5);
+            else host.RootFolders.RemoveAll(r => (string?)r["path"] == "/selected");
+        }
+        await rig.Runner(lab.Direct).TickAsync(default);
+        var job = Assert.Single(rig.Ledger.ForWant(accepted.RequestId!));
+        Assert.Equal(("parked", removal == "defaults" ? "invalid_defaults" : "invalid_choice"), (job.State, job.Reason));
+        Assert.Empty(host.Writes);
+        var audit = Assert.Single(rig.Audit.ReadRecent(10), e => e.Action == "request.dispatch");
+        Assert.Contains("Profile:", audit.Message);
+        Assert.Contains("Root:", audit.Message);
+        if (removal != "defaults")
+        {
+            Assert.Contains("5 (Ultra-HD)", audit.Message);
+            Assert.Contains("/selected", audit.Message);
+        }
+        else Assert.Contains("missing", audit.Message);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ConcurrentAdministratorsHaveOneWinnerBeforeDispatch(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var other = rig.Add("Admin");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopped = 0;
+        rig.Policy.Before = async (actor, _) =>
+        {
+            if (actor == other && Interlocked.Exchange(ref stopped, 1) == 0)
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        };
+        var delayed = Controller(lab, rig, other).Add(Sheet(lab, movie, id: "delayed-admin"), default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(201, Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default)).HttpStatus);
+        release.SetResult();
+        Assert.Equal("choice_conflict", Outcome(await delayed).Reason);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie, 4);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DisjointChangesCannotOverrideSettingsAfterClaimOrSend(bool sent)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, false);
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, false, 4), default));
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        if (sent) await rig.Runner(lab.Direct).TickAsync(default);
+        else Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        var second = Sheet(lab, false, id: "late-season");
+        second.Seasons = new[] { 2 };
+        second.OverrideChoiceVersion = 1;
+        Assert.Equal(sent ? "request_changed" : "request_in_flight", Outcome(await Controller(lab, rig).Add(second, default)).Reason);
+        Assert.Single(rig.Ledger.ForTitle(Input(false).Key));
+        Assert.Equal(4, Assert.Single(rig.Ledger.ForWant(first.RequestId!)).Input.ProfileId);
+    }
+
+    [Fact]
+    public async Task EditedApprovalCannotBypassTheTitleOwnerForADisjointViewerRequest()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, false);
+        var other = rig.Add("Admin");
+        var secondScope = Input(false) with { Seasons = new[] { 2 } };
+        var pending = Outcome(await rig.Controller(rig.Kid).Create(new("viewer-season-two", secondScope), default));
+        Assert.Equal("pending", rig.Ledger.Find(pending.RequestId!)!.Status);
+        Outcome(await Controller(lab, rig).Add(Sheet(lab, false, 4), default));
+        var charge = Charges(rig, pending.RequestId!);
+        var edited = secondScope with { InstanceId = lab.Instance("Sonarr").Id, ProfileId = 5, RootFolder = "/selected" };
+        var refused = await rig.Service.ApproveAsync(pending.RequestId!, other, new(edited), default);
+        Assert.Equal("choice_conflict", refused.Reason);
+        Assert.Equal(charge, Charges(rig, pending.RequestId!));
+        Assert.Equal("pending", rig.Ledger.Find(pending.RequestId!)!.Status);
+        Assert.Empty(rig.Ledger.ForWant(pending.RequestId!));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, false, 4);
+    }
+
+    [Fact]
+    public async Task FillingAnUnsetFieldKeepsTheOtherExplicitChoice()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, true);
+        var other = rig.Add("Admin");
+        var partial = Input(true) with { InstanceId = lab.Instance("Radarr").Id, ProfileId = 4 };
+        var first = Outcome(await rig.Controller(rig.Admin).Create(new("partial-choice", partial), default));
+        var charge = Charges(rig, first.RequestId!);
+        Assert.Equal(201, Outcome(await Controller(lab, rig, other).Add(Sheet(lab, true, 4), default)).HttpStatus);
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        Assert.Equal((4, "/selected"), (job.Input.ProfileId, job.Input.RootFolder));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, true, 4);
+    }
+
+    [Theory]
+    [InlineData("same")]
+    [InlineData("other")]
+    [InlineData("manager")]
+    public async Task UneditedApprovalCannotRestoreAnOlderDisjointChoice(string actorKind)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, false);
+        var held = Input(false) with { Seasons = new[] { 2 }, InstanceId = lab.Instance("Sonarr").Id, ProfileId = 4, RootFolder = "/selected" };
+        var pending = await rig.Service.CreateAsync(rig.Admin, new("held-choice", held), default, new RequestOrigin("interactive") { RequireApproval = true });
+        Assert.Equal("pending", rig.Ledger.Find(pending.RequestId!)!.Status);
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, false), default));
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        var actor = actorKind == "same" ? rig.Admin : actorKind == "other" ? rig.Add("Admin") : rig.Manager;
+        var refused = await rig.Service.ApproveAsync(pending.RequestId!, actor, null, default);
+        Assert.Equal("choice_conflict", refused.Reason);
+        Assert.Equal("pending", rig.Ledger.Find(pending.RequestId!)!.Status);
+        Assert.Empty(rig.Ledger.ForWant(pending.RequestId!));
+        Assert.Equal(job.Input.Canonical, Assert.Single(rig.Ledger.ForWant(first.RequestId!)).Input.Canonical);
+        if (actorKind == "manager") Assert.Null(refused.Choice);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AutomaticOriginsCannotUseTheSameAdminCorrectionToBypassReconciliation(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, movie);
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie), default));
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        var changed = Input(movie) with { InstanceId = Sheet(lab, movie).InstanceId, ProfileId = 4, RootFolder = "/selected" };
+        var refused = await rig.Service.CreateAsync(rig.Admin, new("automatic-choice", changed), default, new RequestOrigin("automation"));
+        Assert.Equal("choice_conflict", refused.Reason);
+        Assert.Equal(job.Input.Canonical, Assert.Single(rig.Ledger.ForWant(first.RequestId!)).Input.Canonical);
+    }
+
+    [Fact]
+    public async Task CancellingNewerWorkDoesNotReviveAnOlderOverrideVersion()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, true);
+        var other = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, true, 4), default));
+        var changed = Sheet(lab, true, id: "new-owner");
+        changed.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, other).Add(changed, default)).HttpStatus, 200, 201);
+        Assert.Equal(200, rig.Service.Close(first.RequestId!, rig.Admin, null).HttpStatus);
+        var stale = Sheet(lab, true, 4, id: "after-cancellation");
+        stale.OverrideChoiceVersion = 1;
+        var conflict = Outcome(await Controller(lab, rig).Add(stale, default));
+        Assert.Equal("choice_conflict", conflict.Reason);
+        Assert.Equal(2, conflict.Choice!.Version);
+        stale.OverrideChoiceVersion = 2;
+        var accepted = Outcome(await Controller(lab, rig).Add(stale, default));
+        Assert.InRange(accepted.HttpStatus, 200, 201);
+        Assert.Equal(3, Assert.Single(rig.Ledger.ForWant(accepted.RequestId!)).Authorization.ChoiceVersion);
+    }
+
 }
