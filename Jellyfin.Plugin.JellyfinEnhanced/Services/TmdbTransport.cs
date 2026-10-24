@@ -26,13 +26,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 catch (Exception) { /* The original waiter observes its outcome; ownership still drains every read. */ }
             }
         }
-        internal MetadataAdmission(string owner)
+        internal MetadataAdmission(string owner, bool images = false)
         {
             Owner = owner;
+            Images = images;
             _previous = Ambient.Value;
             Ambient.Value = this;
         }
         internal string Owner { get; }
+        internal bool Images { get; }
         internal bool Active => Volatile.Read(ref _ended) == 0;
         internal static MetadataAdmission? Current => Ambient.Value is { Active: true } value ? value : null;
         internal static MetadataAdmission Required => Current ?? throw new InvalidOperationException("TMDB metadata has no live admission.");
@@ -47,7 +49,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             ArgumentNullException.ThrowIfNull(admission);
             if (!admission.Active) throw new InvalidOperationException("TMDB admission ended before transmission.");
-            if (request.RequestUri is not { Scheme: "https", Host: "api.themoviedb.org", Port: 443 })
+            if (request.RequestUri is not { Scheme: "https", Port: 443 } uri
+                || uri.Host != (admission.Images ? "image.tmdb.org" : "api.themoviedb.org"))
                 throw new InvalidOperationException("TMDB transport requires its fixed upstream host.");
             await admission.Sends.WaitAsync(ct).ConfigureAwait(false);
             var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

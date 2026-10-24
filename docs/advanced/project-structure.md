@@ -872,15 +872,32 @@ An unowned JE raw read fails with 503 rather than creating external work.
 | `ListMetadataService.TmdbPosterAsync` | Existing 4-place list poster semaphore; same source client, bounded body and continuation behavior |
 | `AutonomousMetadataAdmission.Automation` | 2 running server-wide; background playback and rule-fact revalidation metadata |
 | `AutonomousMetadataAdmission.Legacy` | 4 running server-wide; retained non-JE metadata; never a fallback for an unowned JE viewer |
+| `ImageMetadataAdmission` | Separate image pool: 8 outstanding per viewer; 16 running + 32 queued server-wide; queue wait at most 2 seconds, then optional image refusal/placeholder |
 
 Autonomous pool acquisition has a finite 30-second wait. These concurrency bounds are not
-a global TMDB requests-per-second promise. Binary image bodies retain their separate artwork
-owner; artwork metadata and all retries use the TMDB transport. Required native/evidence
+a global TMDB requests-per-second promise. Image CDN bodies also use this transport, under
+the separate image owner; metadata capacity and image capacity cannot consume one another.
+The transport accepts only HTTPS on the fixed API host for metadata and the fixed image host
+for image admissions. The image facade remains the privacy consumer: signed grants, parental
+evidence, Hidden Content and Spoiler Guard are checked before fetching and at delivery.
+Cached public bytes and joins cost no new place; cancellation cannot release a shared fetch
+early. Image admission/queue refusal keeps the existing optional placeholder contract and is
+never cached as image absence. Required native/evidence
 failures stay retryable and distinct from verified parental refusal. Existing optional rails
 and status contracts remain unchanged. Seerr-mode source selection is retained.
 
 `TmdbTransportArchitectureTests` scans all production HTTP send/client/request sites by
-Roslyn symbols. Reviewed non-TMDB helpers have body-pinned exceptions in
+fully qualified Roslyn symbols (containing type and full signature), retaining every body.
+Reviewed non-TMDB helpers have exact-symbol, body-pinned exceptions in
 `tests/fixtures/tmdb-nonmetadata-http.tsv`; any new or changed site requires host review.
-Admission construction is allowed only in the documented owners. Direct-TMDB and rogue-admission
-plants exercise both rejection rules. This replaces the starter-enumeration architecture test.
+Admission construction is allowed only in the exact documented owner symbols. API/image-host
+senders, same-name sender overloads and foreign classes named like an owner are covered by
+compiled plant controls. Every HTTP sink is scanned regardless of literal host spelling, so
+image aliases and dynamically built URLs receive the same review. The fixture contains only
+genuinely non-TMDB traffic. This replaces the starter-enumeration architecture test.
+
+Local metadata saturation returns a typed `503` (`outcome: unavailable`, `reason: metadata_busy`,
+`certainty: Failed`) with safe page retry text and `Retry-After: 1` on company proxy and
+acquire/search. Discovery refuses before publishing/caching when parental preparation cannot
+acquire admission; retrying the same query after drain rechecks evidence. A verified parental
+denial remains separate from unavailable evidence.

@@ -329,7 +329,7 @@ MetadataCallLimiter.Queues._byOwner	both	independent	owner	waiting metadata call
 MetadataCallLimiter.Queues._rotation	both	independent	owner	waiting metadata calls per owner (a fair queue), not an answer	write:own-state
 NativeClientPolicy._parsed	both	independent	configuration	parsed client names, per stored configuration value
 NativeDetailsArtwork._bytes	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
-NativeDetailsArtwork._inFlight	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
+ImageMetadataAdmission._tasks	jf12	independent	artwork path	public image completion tasks; bounded admission retains ownership through queue and body; facade validates every grant	write:own-state
 NativeDetailsFacadeFilter.BodyProperties	jf12	independent	assembly / type	code and reflection metadata read once
 NativeDetailsLibrary._cache	jf12	keyed	viewer | native-details revision | title | part	NativeDetailsLibrary.Cached~viewerRevision
 NativeDetailsLibrary._without	jf12	independent	provider set	whether the library holds copies without some provider ids (the whole library, no user), under the library revision
@@ -519,3 +519,4 @@ WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's
 WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WrittenStateCache._entries	both	independent	key	the written-state helper's own storage: its ledger refuses and stops serving every entry read before an invalidation	write:own-state
+ImageMetadataAdmission._viewers	jf12	independent	viewer id	outstanding image admission counts only; no access verdict; entries removed on completion	write:own-state

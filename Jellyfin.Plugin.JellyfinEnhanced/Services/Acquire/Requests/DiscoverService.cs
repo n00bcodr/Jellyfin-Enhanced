@@ -286,6 +286,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (prepared == null) return null;
                 }
                 var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
+                // A capacity refusal is unknown evidence, never a parental denial or a cacheable empty page.
+                if (metadataViewer.Refused) return null;
                 // Publication: no await from here on.
                 var nowHidden = Hidden(viewer.UserId);
                 if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now)

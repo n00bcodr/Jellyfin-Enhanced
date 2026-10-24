@@ -111,6 +111,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public sealed record TmdbResponse(int StatusCode, string Content, string ETag)
         {
+            /// <summary>Local admission refusal, distinct from an upstream status/body.</summary>
+            public bool AdmissionBusy { get; init; }
             public bool IsSuccess => StatusCode >= 200 && StatusCode <= 299;
         }
 
@@ -216,7 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return (hit, value!);
                     },
                     () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh),
-                    new TmdbResponse(503, "{}", string.Empty), cancellationToken);
+                    new TmdbResponse(503, "{}", string.Empty) { AdmissionBusy = true }, cancellationToken);
             }
 
             if (Services.MetadataAdmission.Current == null)

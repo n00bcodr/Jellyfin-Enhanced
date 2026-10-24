@@ -4649,6 +4649,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return Content(projected, "application/json");
                 }
 
+                if (response.AdmissionBusy)
+                {
+                    Response.Headers["Cache-Control"] = "private, no-store";
+                    Response.Headers["Retry-After"] = "1";
+                    return StatusCode(503, Services.Acquire.Requests.RequestOutcome.MetadataBusy());
+                }
                 return StatusCode(response.StatusCode, response.Content);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)

@@ -32,7 +32,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             internal Guid UserId { get; } = userId;
             internal bool Refused => Volatile.Read(ref _refused) != 0;
             internal void Refuse() => Interlocked.Exchange(ref _refused, 1);
-            public void Dispose() => Viewer.Value = previous;
+            public void Dispose()
+            {
+                if (Refused && previous?.UserId == UserId) previous.Refuse();
+                Viewer.Value = previous;
+            }
         }
 
         private readonly object _lock = new();
