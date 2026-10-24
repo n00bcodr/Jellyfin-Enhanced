@@ -22,13 +22,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     internal sealed record CompletionSeason(int Number, int EpisodeCount, string? AirDate);
     internal sealed record CompletionEvidence(string Scope, string Kind, int? Season, bool ShowValid, bool? InProduction,
         bool ProductionContradiction, int? DeclaredSeasonCount, string? DetailPremiere, IReadOnlyList<CompletionSeason> Seasons, IReadOnlyList<PlaceholderEpisode>? Details,
-        PlaceholderEpisode? Last, PlaceholderEpisode? Next, DateTime Today, IReadOnlyList<EpisodeCoord>? ExplicitScope = null, IReadOnlyList<CompletionSeason>? DetailSeasons = null);
+        PlaceholderEpisode? Last, PlaceholderEpisode? Next, DateTime Today, IReadOnlyList<EpisodeCoord>? ExplicitScope = null, IReadOnlyList<CompletionSeason>? DetailSeasons = null, string SpecialsPolicy = "regular_series_selected_season");
     internal sealed record CompletionReconciliation(CompletionAuthority? Authority, string? Reason);
 
     /// <summary>The only owner of evidence reconciliation, persisted positive authority and completion decisions.</summary>
     public static class CompletionEvaluator
     {
-        internal const int EvidenceVersion = 2;
+        internal const int EvidenceVersion = 3;
 
         internal static string Scope(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
@@ -36,96 +36,178 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             p.Kind == PlaceholderKinds.Episodes ? p.Episodes.Select(e => new EpisodeCoord(e.S, e.E)).OrderBy(c => c).ToArray() : null,
         });
 
+        // Each rule declares exact evidence paths. The reflection gate recursively inventories the model, including
+        // nested season/episode/coordinate properties, so adding a field requires an explicit reconciliation policy.
+        internal sealed record AgreementRule(string Id, IReadOnlyList<string> Fields, Func<Agreement, bool> Agrees);
+
+        internal static IReadOnlyList<AgreementRule> Rules { get; } = new AgreementRule[]
+        {
+            new("scope_binding_unknown", new[] { "Scope", "Kind", "Season", "ExplicitScope[].S", "ExplicitScope[].E" },
+                c => ScopeAgrees(c.E)),
+            new("specials_policy_invalid", new[] { "SpecialsPolicy", "Kind", "Season", "Seasons[].Number", "Details[].S" },
+                c => c.E.SpecialsPolicy == "regular_series_selected_season"),
+            new("show_evidence_unavailable", new[] { "ShowValid", "InProduction" },
+                c => c.E.ShowValid && c.E.InProduction.HasValue),
+            new("production_contradiction", new[] { "ProductionContradiction", "InProduction" },
+                c => !c.E.ProductionContradiction),
+            new("evaluation_date_invalid", new[] { "Today" }, c => c.E.Today != default),
+            new("evidence_date_unparseable", new[] { "Today", "DetailPremiere", "Seasons[].AirDate", "DetailSeasons[].AirDate", "Details[].AirDate", "Last.AirDate", "Next.AirDate" },
+                c => c.Dates.All(d => d == null || ListRules.TryParseDate(d, out _))),
+            // Titles are bounded display data, never positive airing evidence. Contracts/Clip enforce the same bound.
+            new("episode_title_invalid", new[] { "Details[].Title", "Last.Title", "Next.Title" },
+                c => c.Rows.Concat(c.Named).All(e => e.Title == null || e.Title.Length <= ListRules.MaxTitle)),
+            new("season_bounds_unknown", new[] { "Kind", "Season", "Seasons[].Number", "Seasons[].EpisodeCount" },
+                c => c.E.Seasons != null && c.Selected.Count > 0 && c.Seasons.All(s => s.Number >= 0 && s.EpisodeCount >= 0)
+                    && c.Seasons.Select(s => s.Number).Distinct().Count() == c.Seasons.Count
+                    && c.Selected.All(s => s.EpisodeCount > 0) && c.Selected.Sum(s => (long)s.EpisodeCount) < PlaceholderProgress.MaxExpected),
+            new("show_season_count_contradiction", new[] { "DeclaredSeasonCount", "Seasons[].Number" },
+                c => c.E.DeclaredSeasonCount == null || c.E.DeclaredSeasonCount == c.Seasons.Count(s => s.Number >= 1)),
+            // Keep the existing probe reason: the adapter uses it to fetch the regular-season resources.
+            new("series_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
+                c => !c.Series || c.E.Details != null),
+            new("season_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
+                c => c.Series || c.E.Details != null),
+            new("detail_season_count_contradiction", new[] { "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S" },
+                c => c.DetailSeasons.Select(s => s.Number).Distinct().Count() == c.DetailSeasons.Count
+                    && c.DetailSeasons.All(d => c.Seasons.Any(s => s.Number == d.Number && d.EpisodeCount >= 0 && d.EpisodeCount <= s.EpisodeCount)
+                        && c.RawRows.Count(e => e.S == d.Number) == d.EpisodeCount)),
+            new("season_premiere_contradiction", new[] { "Season", "DetailPremiere", "Seasons[].AirDate", "Seasons[].Number", "DetailSeasons[].AirDate", "DetailSeasons[].Number" },
+                c => c.Seasons.All(s => c.Premieres(s.Number).Where(d => d != null).Distinct().Count() <= 1)
+                    && (c.E.DetailPremiere == null || c.E.Season.HasValue && c.Seasons.Any(s => s.Number == c.E.Season))),
+            new("row_count_contradiction", new[] { "Seasons[].Number", "Seasons[].EpisodeCount", "Details[].S", "Details[].E" },
+                c => c.Rows.All(e => c.Exists(e))),
+            new("duplicate_episode_coordinate", new[] { "Details[].S", "Details[].E" },
+                c => c.Rows.Select(Coord).Distinct().Count() == c.Rows.Count),
+            new("season_rows_incomplete", new[] { "Kind", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "Details[].S", "Details[].E" },
+                c => c.Selected.All(s => c.Rows.Count(e => e.S == s.Number) == s.EpisodeCount
+                    && c.Rows.Where(e => e.S == s.Number).Select(e => e.E).OrderBy(e => e).SequenceEqual(Enumerable.Range(1, Math.Clamp(s.EpisodeCount, 0, PlaceholderProgress.MaxExpected))))),
+            new("coordinate_count_contradiction", new[] { "Seasons[].Number", "Seasons[].EpisodeCount", "Last.S", "Last.E", "Next.S", "Next.E" },
+                c => c.Named.All(c.Exists)),
+            new("last_next_order_contradiction", new[] { "Last.S", "Last.E", "Next.S", "Next.E" },
+                c => !c.RegularPair || Coord(c.E.Last!).CompareTo(Coord(c.E.Next!)) < 0),
+            new("last_aired_in_future", new[] { "Today", "Last.S", "Last.E", "Last.AirDate", "Details[].S", "Details[].E", "Details[].AirDate" },
+                c => c.E.Last == null || (c.E.Last.AirDate == null || Aired(c.E.Last, c.E.Today))
+                    && c.Rows.Where(e => Coord(e) == Coord(c.E.Last)).All(e => e.AirDate == null || Aired(e, c.E.Today))),
+            new("known_aired_watermark_contradiction", new[] { "Today", "Last.S", "Next.S", "Next.AirDate" },
+                c => !c.RegularPair || !Aired(c.E.Next!, c.E.Today)),
+            new("coordinate_date_contradiction", new[] { "Kind", "Season", "Last.S", "Last.E", "Last.AirDate", "Next.S", "Next.E", "Next.AirDate", "Details[].S", "Details[].E", "Details[].AirDate" },
+                c => c.Named.All(n => (!c.Relevant(n) || c.Rows.Any(e => Coord(e) == Coord(n)))
+                    && c.Rows.Where(e => Coord(e) == Coord(n)).All(e => n.AirDate == null || n.AirDate == e.AirDate))),
+            new("last_next_date_contradiction", new[] { "Last.AirDate", "Next.AirDate", "Details[].S", "Details[].E", "Details[].AirDate" },
+                c => c.DateOf(c.E.Last) == null || c.DateOf(c.E.Next) == null || string.CompareOrdinal(c.DateOf(c.E.Last), c.DateOf(c.E.Next)) <= 0),
+            new("episode_after_last_aired", new[] { "Today", "Last.S", "Last.E", "Last.AirDate", "Seasons[].AirDate", "DetailSeasons[].AirDate", "DetailPremiere", "Details[].AirDate", "Details[].S", "Details[].E" },
+                c => c.DateOf(c.E.Last) is not string lastDate || !c.AllPremieres.Any(d => IsPast(d, c.E.Today) && string.CompareOrdinal(d, lastDate) > 0)
+                    && !c.Rows.Any(e => Aired(e, c.E.Today) && string.CompareOrdinal(e.AirDate, lastDate) > 0)),
+            new("aired_watermark_contradiction", new[] { "Today", "Last.S", "Last.E", "Details[].S", "Details[].E", "Details[].AirDate" },
+                c => !c.Rows.Any(e => c.AtOrBeforeLast(e) && e.AirDate != null && !Aired(e, c.E.Today))),
+            new("episode_row_date_order_contradiction", new[] { "Details[].S", "Details[].E", "Details[].AirDate" },
+                c => c.Rows.Where(e => e.AirDate != null).GroupBy(e => e.S).All(g =>
+                    g.OrderBy(e => e.E).Zip(g.OrderBy(e => e.E).Skip(1), (a, b) => a.E == b.E || string.CompareOrdinal(a.AirDate, b.AirDate) <= 0).All(agrees => agrees))),
+            new("premiere_rows_contradiction", new[] { "Today", "Season", "DetailPremiere", "Seasons[].Number", "Seasons[].AirDate", "DetailSeasons[].Number", "DetailSeasons[].AirDate", "Details[].S", "Details[].E", "Details[].AirDate", "Last.S", "Last.E" },
+                c => c.Seasons.All(s => c.Premieres(s.Number).Where(d => d != null).All(d =>
+                    c.Rows.Where(e => e.S == s.Number).All(e =>
+                        !(Aired(e, c.E.Today) && string.CompareOrdinal(d, e.AirDate) > 0)
+                        && !(e.E == 1 && e.AirDate != null && d != e.AirDate)
+                        && !(c.KnownAired(e) && !IsPast(d, c.E.Today)))))),
+            new("premiere_coordinate_contradiction", new[] { "Today", "Season", "DetailPremiere", "Seasons[].Number", "Seasons[].AirDate", "DetailSeasons[].Number", "DetailSeasons[].AirDate", "Last.S", "Last.E", "Last.AirDate", "Next.S", "Next.E", "Next.AirDate" },
+                c => c.Named.All(n => c.Premieres(n.S).Where(d => d != null).All(d =>
+                    (n.AirDate == null || string.CompareOrdinal(d, n.AirDate) <= 0 && (n.E != 1 || d == n.AirDate))
+                    && (n != c.E.Last || IsPast(d, c.E.Today))))),
+            new("season_start_unproven", new[] { "Kind", "Season", "Today", "DetailPremiere", "Seasons[].Number", "Seasons[].AirDate", "DetailSeasons[].Number", "DetailSeasons[].AirDate", "Details[].S", "Details[].E", "Details[].AirDate", "Last.S", "Last.E", "Last.AirDate", "Next.S", "Next.E", "Next.AirDate" },
+                c => c.Selected.All(s => c.Premieres(s.Number).Any(d => d != null)
+                    || c.Rows.Any(e => e.S == s.Number && (e.AirDate == null || c.KnownAired(e))))),
+            new("explicit_scope_unproven", new[] { "Kind", "Season", "ExplicitScope[].S", "ExplicitScope[].E", "Details[].S", "Details[].E" },
+                c => c.E.Kind == PlaceholderKinds.Episodes
+                    ? c.E.ExplicitScope is { Count: > 0 } chosen && chosen.Count <= ListRules.MaxEpisodes
+                        && chosen.Distinct().Count() == chosen.Count && chosen.All(x => x.S == c.E.Season && c.Rows.Any(e => Coord(e) == x))
+                    : c.E.ExplicitScope == null),
+        };
+
+        // A rule may be evaluated even when an earlier rule failed. These projections therefore never assume that
+        // identities, counts, dates or resource coverage have already been validated by another predicate.
+        internal sealed class Agreement
+        {
+            internal Agreement(CompletionEvidence evidence)
+            {
+                E = evidence;
+                Seasons = evidence.Seasons ?? Array.Empty<CompletionSeason>();
+                DetailSeasons = evidence.DetailSeasons ?? Array.Empty<CompletionSeason>();
+                RawRows = evidence.Details ?? Array.Empty<PlaceholderEpisode>();
+                // A named next coordinate can supply the final missing row (the established coherent next control).
+                // DetailSeasons counts observed detail rows, not a second advertised show total; validate that count
+                // against RawRows, then validate the union against the show's advertised episode count.
+                Rows = evidence.Details != null && evidence.Next != null && Relevant(evidence.Next)
+                    && RawRows.All(e => Coord(e) != Coord(evidence.Next)) ? RawRows.Append(evidence.Next).ToArray() : RawRows;
+                Selected = Seasons.Where(s => Series ? s.Number >= 1 : s.Number == E.Season).ToArray();
+                Named = new[] { E.Last, E.Next }.OfType<PlaceholderEpisode>().ToArray();
+            }
+
+            internal CompletionEvidence E { get; }
+            internal bool Series => E.Kind == PlaceholderKinds.Series;
+            internal bool RegularPair => E.Last is { S: >= 1 } && E.Next is { S: >= 1 };
+            internal IReadOnlyList<CompletionSeason> Seasons { get; }
+            internal IReadOnlyList<CompletionSeason> DetailSeasons { get; }
+            internal IReadOnlyList<CompletionSeason> Selected { get; }
+            internal IReadOnlyList<PlaceholderEpisode> RawRows { get; }
+            internal IReadOnlyList<PlaceholderEpisode> Rows { get; }
+            internal IReadOnlyList<PlaceholderEpisode> Named { get; }
+            internal IEnumerable<string?> AllPremieres => Seasons.Select(s => s.AirDate).Concat(DetailSeasons.Select(s => s.AirDate)).Append(E.DetailPremiere);
+            internal IEnumerable<string?> Dates => AllPremieres.Concat(Rows.Concat(Named).Select(e => e.AirDate));
+            internal bool Relevant(PlaceholderEpisode e) => Series ? e.S >= 1 : e.S == E.Season;
+            internal bool Exists(PlaceholderEpisode e) => Seasons.Any(s => s.Number == e.S && e.E >= 1 && e.E <= s.EpisodeCount);
+            internal IEnumerable<string?> Premieres(int s) => Seasons.Where(x => x.Number == s).Select(x => x.AirDate)
+                .Concat(DetailSeasons.Where(x => x.Number == s).Select(x => x.AirDate)).Append(E.Season == s ? E.DetailPremiere : null);
+            internal string? DateOf(PlaceholderEpisode? e) => e?.AirDate ?? (e == null ? null : Rows.FirstOrDefault(r => Coord(r) == Coord(e))?.AirDate);
+
+            // Required named coordinates are independent of the nullable/future date of their detailed row. KnownAired
+            // is the persisted obligation bit as well as positive airing evidence; neither a future row nor Read can erase it.
+            internal bool AtOrBeforeLast(PlaceholderEpisode e) => E.Last != null
+                && (e.S == E.Last.S && e.E <= E.Last.E || E.Last.S >= 1 && e.S >= 1 && Coord(e).CompareTo(Coord(E.Last)) <= 0);
+            internal bool KnownAired(PlaceholderEpisode e) => Aired(e, E.Today)
+                || AtOrBeforeLast(e)
+                || Named.Any(n => Coord(n) == Coord(e) && (n == E.Last || n.AirDate == null))
+                || e.E == 1 && Premieres(e.S).Any(d => IsPast(d, E.Today));
+        }
+
+        internal static IReadOnlyList<string> Disagreements(CompletionEvidence evidence)
+        {
+            var agreement = new Agreement(evidence);
+            // Materialize the whole table, rather than stopping at the first mismatch. Tests count every fired rule.
+            return Rules.Where(rule => !rule.Agrees(agreement)).Select(rule => rule.Id).ToArray();
+        }
+
         internal static CompletionReconciliation Reconcile(CompletionEvidence evidence, DateTime reconciledAt)
         {
-            CompletionReconciliation Unknown(string reason) => new(null, reason);
-            if (!evidence.ShowValid || evidence.InProduction == null) return Unknown("show_evidence_unavailable");
-            if (evidence.ProductionContradiction) return Unknown("production_contradiction");
-            var series = evidence.Kind == PlaceholderKinds.Series;
-            var seasons = evidence.Seasons.Where(s => series ? s.Number >= 1 : s.Number == evidence.Season).OrderBy(s => s.Number).ToList();
-            if (seasons.Count == 0 || seasons.Any(s => s.EpisodeCount <= 0)
-                || seasons.Sum(s => (long)s.EpisodeCount) >= PlaceholderProgress.MaxExpected) return Unknown("season_bounds_unknown");
-            if (evidence.DeclaredSeasonCount is int declared && declared != evidence.Seasons.Count(s => s.Number >= 1))
-                return Unknown("show_season_count_contradiction");
-            if (!series && evidence.DetailPremiere != null && seasons[0].AirDate != null && evidence.DetailPremiere != seasons[0].AirDate)
-                return Unknown("season_premiere_contradiction");
-            bool Relevant(PlaceholderEpisode e) => series ? e.S >= 1 : e.S == evidence.Season;
-            var last = evidence.Last;
-            var next = evidence.Next;
-            foreach (var known in new[] { last, next }.OfType<PlaceholderEpisode>())
-            {
-                var info = evidence.Seasons.FirstOrDefault(s => s.Number == known.S);
-                if (info == null || known.E < 1 || known.E > info.EpisodeCount) return Unknown("coordinate_count_contradiction");
-            }
-            var sameOrder = last != null && next != null && last.S >= 1 && next.S >= 1;
-            if (sameOrder && Coord(last!).CompareTo(Coord(next!)) >= 0) return Unknown("last_next_order_contradiction");
-            if (last?.AirDate != null && !Aired(last, evidence.Today)) return Unknown("last_aired_in_future");
-            if (sameOrder && Aired(next!, evidence.Today)) return Unknown("known_aired_watermark_contradiction");
-            if (last?.AirDate != null && next?.AirDate != null && string.CompareOrdinal(last.AirDate, next.AirDate) > 0)
-                return Unknown("last_next_date_contradiction");
-            if (last?.AirDate != null && evidence.Seasons.Any(s => IsPast(s.AirDate, evidence.Today) && string.CompareOrdinal(s.AirDate, last.AirDate) > 0))
-                return Unknown("premiere_after_last_aired");
-            foreach (var detail in evidence.DetailSeasons ?? Array.Empty<CompletionSeason>())
-            {
-                var info = evidence.Seasons.FirstOrDefault(s => s.Number == detail.Number);
-                if (info == null || detail.AirDate != null && info.AirDate != null && detail.AirDate != info.AirDate)
-                    return Unknown("season_premiere_contradiction");
-            }
-            if (evidence.Details == null) return Unknown(series ? "series_rows_unavailable" : "season_rows_unavailable");
-            var rows = evidence.Details.Select(Copy).ToList();
-            foreach (var row in rows)
-            {
-                var info = evidence.Seasons.FirstOrDefault(s => s.Number == row.S);
-                if (info == null || row.E < 1 || row.E > info.EpisodeCount) return Unknown("row_count_contradiction");
-            }
-            if (rows.GroupBy(Coord).Any(g => g.Count() != 1)) return Unknown("duplicate_episode_coordinate");
-            if (next != null && Relevant(next) && rows.All(e => Coord(e) != Coord(next))) rows.Add(Copy(next));
-            var expected = rows.Where(Relevant).OrderBy(e => e.S).ThenBy(e => e.E).ToList();
-            foreach (var info in seasons)
-            {
-                var group = expected.Where(e => e.S == info.Number).ToList();
-                if (group.Count != info.EpisodeCount || group.Where((e, i) => e.E != i + 1).Any()) return Unknown("season_rows_incomplete");
-            }
-            foreach (var known in new[] { last, next }.OfType<PlaceholderEpisode>())
-            {
-                var row = rows.FirstOrDefault(e => Coord(e) == Coord(known));
-                if (row == null && Relevant(known) || row != null && known.AirDate != null && row.AirDate != known.AirDate)
-                    return Unknown("coordinate_date_contradiction");
-                if (ReferenceEquals(known, last) && row?.AirDate != null && !Aired(row, evidence.Today))
-                    return Unknown("last_aired_in_future");
-            }
-            var lastDate = last?.AirDate ?? (last == null ? null : rows.FirstOrDefault(e => Coord(e) == Coord(last))?.AirDate);
-            if (lastDate != null && (evidence.Seasons.Any(s => IsPast(s.AirDate, evidence.Today) && string.CompareOrdinal(s.AirDate, lastDate) > 0)
-                || rows.Any(e => Aired(e, evidence.Today) && string.CompareOrdinal(e.AirDate, lastDate) > 0)))
-                return Unknown("episode_after_last_aired");
-            if (last is { S: >= 1 } && rows.Any(e => e.S >= 1 && (Coord(e).CompareTo(Coord(last)) <= 0 && e.AirDate != null && !Aired(e, evidence.Today))))
-                return Unknown("aired_watermark_contradiction");
-            bool KnownAired(PlaceholderEpisode e) => Aired(e, evidence.Today)
-                || last is { S: >= 1 } && e.S >= 1 && Coord(e).CompareTo(Coord(last)) <= 0
-                || last != null && Coord(e) == Coord(last)
-                || e.E == 1 && IsPast(seasons.First(s => s.Number == e.S).AirDate, evidence.Today);
-            foreach (var info in seasons)
-            {
-                if (info.AirDate != null && !IsPast(info.AirDate, evidence.Today) && expected.Any(e => e.S == info.Number && KnownAired(e)))
-                    return Unknown("future_premiere_has_aired_episodes");
-                if (IsPast(info.AirDate, evidence.Today) && expected.First(e => e.S == info.Number && e.E == 1).AirDate is string premiereDate
-                    && !IsPast(premiereDate, evidence.Today)) return Unknown("premiere_rows_contradiction");
-            }
+            var failures = Disagreements(evidence);
+            if (failures.Count > 0) return new(null, failures[0]);
+            var agreement = new Agreement(evidence);
+            var expected = agreement.Rows.Where(agreement.Relevant).OrderBy(e => e.S).ThenBy(e => e.E).ToArray();
             var explicitScope = evidence.Kind == PlaceholderKinds.Episodes;
-            if (explicitScope)
-            {
-                var chosen = evidence.ExplicitScope;
-                if (chosen == null || chosen.Count == 0 || chosen.Any(c => !expected.Any(e => Coord(e) == c)))
-                    return Unknown("explicit_scope_unproven");
-                expected = expected.Where(e => chosen.Contains(Coord(e))).ToList();
-            }
-            var canComplete = explicitScope || (series ? evidence.InProduction == false : evidence.InProduction == false || expected.All(KnownAired));
+            if (explicitScope) expected = expected.Where(e => evidence.ExplicitScope!.Contains(Coord(e))).ToArray();
+            var canComplete = explicitScope || (agreement.Series ? evidence.InProduction == false : evidence.InProduction == false || expected.All(agreement.KnownAired));
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(evidence))));
             return new(new CompletionAuthority
             {
                 EvidenceVersion = EvidenceVersion, Fingerprint = fingerprint, ReconciledAt = reconciledAt,
-                Scope = evidence.Scope, Episodes = expected.Select(e => new CompletionEpisode(e.S, e.E, e.AirDate, e.Title, KnownAired(e))).ToArray(), CanComplete = canComplete,
+                Scope = evidence.Scope, Episodes = expected.Select(e => new CompletionEpisode(e.S, e.E, e.AirDate, e.Title, agreement.KnownAired(e))).ToArray(), CanComplete = canComplete,
             }, null);
+        }
+
+        private static bool ScopeAgrees(CompletionEvidence e)
+        {
+            if (e.Kind is not (PlaceholderKinds.Series or PlaceholderKinds.Season or PlaceholderKinds.Episodes)
+                || (e.Kind == PlaceholderKinds.Series ? e.Season != null : e.Season is not >= 0)) return false;
+            try
+            {
+                using var scope = JsonDocument.Parse(e.Scope ?? string.Empty);
+                var a = scope.RootElement;
+                return a.ValueKind == JsonValueKind.Array && a.GetArrayLength() == 6 && a[0].GetString() == e.Kind
+                    && (e.Season == null ? a[4].ValueKind == JsonValueKind.Null : a[4].TryGetInt32(out var s) && s == e.Season)
+                    && (e.Kind != PlaceholderKinds.Episodes || a[5].ValueKind == JsonValueKind.Array
+                        && (JsonSerializer.Deserialize<EpisodeCoord[]>(a[5].GetRawText()) ?? Array.Empty<EpisodeCoord>())
+                            .OrderBy(x => x).SequenceEqual((e.ExplicitScope ?? Array.Empty<EpisodeCoord>()).OrderBy(x => x)));
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException) { return false; }
         }
 
         /// <summary>Read a verdict using positive reconciliation authority and current library fills only.</summary>
@@ -191,6 +273,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static bool IsPast(string? date, DateTime today) => date != null && ListRules.TryParseDate(date, out var d) && d.Date <= today.Date;
         private static bool Aired(PlaceholderEpisode e, DateTime today) => IsPast(e.AirDate, today);
         private static EpisodeCoord Coord(PlaceholderEpisode e) => new(e.S, e.E);
-        private static PlaceholderEpisode Copy(PlaceholderEpisode e) => new() { S = e.S, E = e.E, AirDate = e.AirDate, Title = e.Title };
     }
 }

@@ -2252,3 +2252,5 @@ List completion also cross-checks the show’s known last/next episode against i
 List completion uses a server verdict (`complete`, `incomplete`, or `unknown`) with a reason. Only reconciled show/season evidence grants positive authority; counts are retained display facts. Old list documents have unknown authority until a coherent refresh, and a metadata outage cannot retire season or series placeholders. Undated named episodes and started later seasons cannot disappear from completion obligations.
 
 Series reconciliation reads detailed rows for every declared regular season and any related season resources already cached for that title. Missing resources or inconsistent rows keep completion unknown. Newly chosen explicit episode scopes receive positive scope authority; older episode selections also require a coherent refresh.
+
+Every show and detail premiere is checked against episode dates, including a detail premiere when the show has no date. Conflicting dates keep completion unknown. An undated named episode remains required even when its detailed row has a future date; `completionReason` identifies the reconciliation rule that withheld authority.

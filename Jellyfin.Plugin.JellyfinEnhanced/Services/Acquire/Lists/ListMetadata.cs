@@ -455,12 +455,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     if (placeholder.Kind == PlaceholderKinds.Season)
                     {
                         releaseDate = seasonAir;
-                        if (seasonEpisodes != null)
-                        {
-                            completion = Reconcile(seasonEpisodes);
-                            expected = CompletionEvaluator.DisplayEpisodes(completion.Authority);
-                            partial |= expected == null;
-                        }
+                        completion = Reconcile(seasonEpisodes);
+                        expected = CompletionEvaluator.DisplayEpisodes(completion.Authority);
+                        partial |= expected == null;
                     }
                     else
                     {
@@ -499,7 +496,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CompletionReconciliation Reconcile(List<PlaceholderEpisode>? details) => CompletionEvaluator.Reconcile(
                 new CompletionEvidence(CompletionEvaluator.Scope(placeholder), placeholder.Kind, number,
                     tv.Verdict == ResponseVerdict.Valid, inProduction, ended && tv.Bool("inProduction") == true,
-                    tv.Int("numberOfSeasons"), season?.Date("airDate"), seasons.Select(s => new CompletionSeason(s.Number, s.EpisodeCount, s.AirDate)).ToArray(),
+                    tv.Int("numberOfSeasons"), number.HasValue ? season?.Date("airDate") : null, seasons.Select(s => new CompletionSeason(s.Number, s.EpisodeCount, s.AirDate)).ToArray(),
                     details, last, next, todayUtc, placeholder.Kind == PlaceholderKinds.Episodes
                         ? placeholder.Episodes.Select(e => new EpisodeCoord(e.S, e.E)).ToArray() : null,
                     seriesSeasons?.Select(p => new CompletionSeason(p.Key, p.Value.Rows("episodes").Count(), p.Value.Date("airDate"))).ToArray()
