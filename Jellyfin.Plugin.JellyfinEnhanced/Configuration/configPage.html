@@ -4662,7 +4662,7 @@
 
             function jeUpdateDirtyIndicator() {
                 _jeDirtyQueued = false;
-                if (saveDock) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
+                if (saveDock && form.isConnected) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
             }
 
             /** One update per burst of edits (each keystroke and each node of a redrawn list would otherwise recompute). */
@@ -4677,7 +4677,19 @@
             // Structural edits (a card or row added or removed) fire neither. The indicator only toggles a class on the dock,
             // which this observer doesn't watch, so it never triggers itself.
             new MutationObserver(jeQueueDirtyIndicator).observe(form, { childList: true, subtree: true });
-            setInterval(jeQueueDirtyIndicator, 1000);
+            // The once-a-second check runs while the page is in the document: Jellyfin removes the page when the
+            // administrator leaves it (a tick would read the gone form), and a page shown again starts it again.
+            let _jeDirtyTicks = 0;
+            function jeWatchDirty() {
+                if (_jeDirtyTicks) return;
+                _jeDirtyTicks = setInterval(function() {
+                    if (form.isConnected) { jeQueueDirtyIndicator(); return; }
+                    clearInterval(_jeDirtyTicks);
+                    _jeDirtyTicks = 0;
+                }, 1000);
+            }
+            jeWatchDirty();
+            page.addEventListener('pageshow', jeWatchDirty);
 
             // Leaving warns while the form holds unsaved changes, and while a save is still out (its changes aren't stored
             // until it is answered; the marker compares the form with that save meanwhile, so it alone can't tell).

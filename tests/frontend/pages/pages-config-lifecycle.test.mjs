@@ -102,3 +102,34 @@ test('R10-11: a failed save keeps the warning', async t => {
   assert.ok(dirty(p));
   assert.ok(leaving(p));
 });
+
+// int12 live smoke: the once-a-second unsaved-changes check outlived the page. Once Jellyfin removed the page (the
+// administrator went to another page), each tick read the gone form's fields and threw, once a second until a reload.
+test('leaving the page stops its unsaved-changes check', async t => {
+  const p = open(t);
+  await p.pageshow();
+  p.choose('#ToastDuration', '1600');
+  await p.flush();
+  assert.ok(dirty(p));
+  p.$('#JellyfinEnhancedPage').remove();
+  await new Promise(r => p.window.setTimeout(r, 2300));
+  await p.flush();
+  assert.deepEqual(p.errors.map(String), [], 'no tick runs against the removed page');
+});
+
+test('a page shown again checks for unsaved changes again', async t => {
+  const p = open(t);
+  await p.pageshow();
+  const page = p.$('#JellyfinEnhancedPage');
+  const parent = page.parentNode;
+  page.remove();
+  await new Promise(r => p.window.setTimeout(r, 1300));
+  parent.appendChild(page);
+  await p.pageshow();
+  // A value set without an input or change event (a script's own fill) is only seen by the tick.
+  p.$('#ToastDuration').value = '1700';
+  await new Promise(r => p.window.setTimeout(r, 1300));
+  await p.flush();
+  assert.ok(dirty(p), 'the tick runs again');
+  assert.deepEqual(p.errors.map(String), []);
+});
