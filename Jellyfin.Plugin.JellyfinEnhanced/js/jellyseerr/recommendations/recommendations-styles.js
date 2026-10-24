@@ -65,6 +65,10 @@
       }
       .je-recommendations-section .emby-scroller {
         scrollbar-width: none;
+        /* Jellyfin defines emby-scroller lazily, so after a reload straight onto
+           the standalone page nothing makes the row scrollable. */
+        overflow-x: auto;
+        overflow-y: hidden;
       }
       .je-recommendations-section .emby-scroller::-webkit-scrollbar {
         display: none;
