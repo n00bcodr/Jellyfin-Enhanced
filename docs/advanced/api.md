@@ -1754,7 +1754,7 @@ and that source ready) and `Source` (`tmdb` or `seerr`).
 |---|---|---|
 | GET | `acquire/status/item/{pageId}` | The page's status by key, as for a library item; adds `openItemId` once a copy the caller can open plays (as above). An empty list when the caller may not open the page |
 | GET | `acquire/requests/season/{pageId}` | A season page's rows: every episode's metadata and the caller's request state; 404 when the caller may not open it |
-| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
+| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 503 `details_unavailable` with `Retry-After: 1` when JE-mode provider-id lookup is busy or unavailable; 403 for API keys or with the setting off |
 | GET | `native-details/person/{tmdbId}/filmography` | The filmography on a person's own page, filtered for the caller on the server: a library copy they can open carries its Jellyfin id, a title the library hides from them is left out, a title not in the library is listed only when its page would open for them. No Seerr account needed in Jellyfin Enhanced request mode. 404 when refused or unknown, 503 when Seerr can't answer, 504 while parental checks still run, 429 (`Retry-After`) when the list isn't cached and the caller has started too many new reads or already has 8 running or waiting (or the server has too many queued); 403 for API keys or with the setting off |
 | GET | `native-details/discover/{type}/{source}/{feedId}` | `type` `movie` or `tv`; `source` `genre`, `studio`, `network`, `company` or `keyword`; query `page`, `sortBy`. One page of a genre, studio, network or tag (TMDB keyword) discovery feed (`company`: a studio's own series, from TMDB), filtered and limited for the caller like the filmography; `totalPages` is the upstream count, so a page with every title left out isn't the end. Library pages' discovery rows use these for callers without a Seerr account |
 | GET | `native-details/title/{type}/{tmdbId}`, `native-details/title/{type}/{tmdbId}/ratings` | `type` `movie` or `tv`. A title's public details (Seerr's per-account `mediaInfo` replaced by the caller's own: `{status: 5, jellyfinMediaId}` for a library copy they can open, else Seerr's public state of an absent title) or its ratings (`null` when it has none), for its native page's extras and for Seerr's details window of a caller without a Seerr account, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode). Also answered with native pages off while requests run in Jellyfin Enhanced mode; ratings are limited like the feeds |
@@ -1765,6 +1765,11 @@ and that source ready) and `Source` (`tmdb` or `seerr`).
 The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of
 the same per-account budget as these lists: a read nobody has made yet waits up to 3 seconds for room, then answers
 429 with `Retry-After: 2`. Jellyfin Enhanced's browser code waits at least that long before it asks again.
+In JE mode, this includes genre, recommendation and logo metadata, and the provider-id lookup used by the navigator.
+Status/season resolution also retains the effective viewer: a busy page lookup waits for the same short interval,
+then reports metadata unavailable (the status route returns its usual empty status). New distinct reads are bounded
+at eight per viewer and 48 server-wide; cached/running paths are shared for free, and busy refusals are not cached.
+
 
 #### Lists (phase 4)
 

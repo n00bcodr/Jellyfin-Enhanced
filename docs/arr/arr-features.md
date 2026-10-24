@@ -1279,6 +1279,11 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     Blocked Tags is still refused titles that aren't in the library while Seerr is off, because their tags can't be
     checked yet without Seerr.
 
+In JE mode, new native metadata reads (including status/season page resolution, related titles and logos) share a
+limit of eight outstanding reads per viewer and 48 across the server. Cached or already-running reads are shared
+without taking another place. Page reads wait briefly for capacity; if it stays busy, details are unavailable until
+you retry. Status reads return no status while that lookup is unavailable. Refusals are not cached.
+
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 
 ### Discover and search (JE mode)
