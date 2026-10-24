@@ -44,9 +44,9 @@ public class ListsMetadataTests
         Assert.Null(meta.Expected);
         Assert.Null(meta.EpisodeTotal);
         // The announced next episode can close the set when it coherently accounts for every advertised coordinate.
-        // The count-zero S3 has no positive coverage under range closure; omit it from this coherent control.
+        // Keep the unselected empty S3: an explicit future premiere is consistent with the selected S2.
         var coherentShow = Json(Peacemaker.Replace("\"seasonNumber\":2,\"episodeCount\":3", "\"seasonNumber\":2,\"episodeCount\":2", StringComparison.Ordinal)
-            .Replace(",{\"seasonNumber\":3,\"episodeCount\":0,\"airDate\":null}", "", StringComparison.Ordinal));
+            .Replace("\"seasonNumber\":3,\"episodeCount\":0,\"airDate\":null", "\"seasonNumber\":3,\"episodeCount\":0,\"airDate\":\"2099-01-01\"", StringComparison.Ordinal));
         var coherent = ListMetadataService.FromTv(season, coherentShow, Json(Season2), Today, Today);
         Assert.False(coherent.Partial);
         Assert.Equal(new[] { (2, 1, "2025-08-21"), (2, 2, "2026-10-23") }, coherent.Expected!.Select(e => (e.S, e.E, e.AirDate!)));

@@ -34,6 +34,9 @@ public class ListsC1R4TotalityTests(ITestOutputHelper output)
             Seasons = new[] { new CompletionSeason(3, 2, Past) },
             DetailSeasons = new[] { new CompletionSeason(3, 2, Past) },
             Details = new[] { Ep(3, 1, Past), Ep(3, 2, Later) }, Last = Ep(3, 2, Later) });
+        yield return ("series_season_detail_uncovered", Coherent("series") with { DeclaredSeasonCount = 2,
+            Seasons = Coherent("series").Seasons.Append(new CompletionSeason(2, 2, null)).ToArray() });
+        yield return ("selected_season_detail_uncovered", b with { Details = Array.Empty<PlaceholderEpisode>(), Last = null });
         yield return ("episode_range_uncovered", b with { Details = new[] { Ep(1, 1, Past) } });
         yield return ("scope_binding_unknown", b with { Scope = "" });
 #if !C1_R4_BASELINE

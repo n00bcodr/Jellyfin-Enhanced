@@ -64,13 +64,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 c => c.E.DeclaredSeasonCount == null || c.E.DeclaredSeasonCount >= 0
                     && c.E.DeclaredSeasonCount == c.Seasons.Count(s => s.Number >= 1)
                     && c.E.DeclaredSeasonCount >= c.MaxReferencedSeason),
-            new("season_range_uncovered", new[] { "DeclaredSeasonCount", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S" },
+            new("season_range_uncovered", new[] { "Kind", "Today", "Seasons[].AirDate", "DeclaredSeasonCount", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S" },
                 c => c.MaxSeason < PlaceholderProgress.MaxExpected && c.PositiveSeasons.Count(s => s >= 1 && s <= c.MaxSeason) == c.MaxSeason),
             // Keep the existing probe reason: the adapter uses it to fetch the regular-season resources.
             new("series_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
                 c => !c.Series || c.E.Details != null),
             new("season_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
                 c => c.Series || c.E.Details != null),
+            // Scope is explicit: unselected advertised counts establish consistency/presence only. Series
+            // needs detail or named coordinates throughout 1..N; selected seasons need their own coordinates.
+            // Keep these after the unavailable-row probes so adapters still know when to fetch detail resources.
+            new("series_season_detail_uncovered", new[] { "Kind", "DeclaredSeasonCount", "Season", "Seasons[].Number", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S" },
+                c => !c.Series || c.DetailCoveredSeasons.Count(s => s >= 1 && s <= c.MaxSeason) == c.MaxSeason),
+            new("selected_season_detail_uncovered", new[] { "Kind", "Season", "Details[].S", "Details[].E", "Next.S", "Next.E" },
+                c => c.Series || c.E.Season.HasValue && c.RowCoordinates.TryGetValue(c.E.Season.Value, out var rows) && rows.Count > 0),
             new("episode_range_uncovered", new[] { "Kind", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S", "ExplicitScope[].E" },
                 c => c.EpisodeBounds.All(p => (c.Series ? p.Key < 1 : p.Key != c.E.Season)
                     || p.Value > 0 && p.Value < PlaceholderProgress.MaxExpected
@@ -158,8 +165,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 MaxSeason = Math.Max(MaxReferencedSeason, E.DeclaredSeasonCount ?? 0);
                 // For an unselected season, an advertised positive episode count proves its existence;
                 // selected scopes additionally require the complete row/coordinate closure below.
-                PositiveSeasons = Seasons.Where(s => s.EpisodeCount > 0).Select(s => s.Number)
+                var maxOccupiedSeason = RawRows.Concat(Named).Where(e => e.E > 0).Select(e => e.S)
+                    .Concat(Seasons.Concat(DetailSeasons).Where(s => s.EpisodeCount > 0).Select(s => s.Number)).Append(E.Season ?? 0).Max();
+                PositiveSeasons = Seasons.Where(s => s.EpisodeCount > 0
+                        // An explicitly announced empty future season is present, not an unexplained gap.
+                        // This exception is for an earlier selected scope only; series/selected rows stay unproven.
+                        || !Series && s.Number > maxOccupiedSeason && s.EpisodeCount == 0
+                            && s.AirDate != null && ListRules.TryParseDate(s.AirDate, out var premiere) && premiere.Date > E.Today.Date).Select(s => s.Number)
                     .Concat(DetailSeasons.Where(s => s.EpisodeCount > 0).Select(s => s.Number))
+                    .Concat(RawRows.Concat(Named).Where(e => e.E > 0).Select(e => e.S)).ToHashSet();
+                DetailCoveredSeasons = DetailSeasons.Where(s => s.EpisodeCount > 0).Select(s => s.Number)
                     .Concat(RawRows.Concat(Named).Where(e => e.E > 0).Select(e => e.S)).ToHashSet();
                 EpisodeBounds = Seasons.Concat(DetailSeasons).Select(s => (S: s.Number, E: s.EpisodeCount))
                     .Concat(RawRows.Concat(Named).Select(e => (e.S, e.E))).Concat(explicitRows.Select(e => (e.S, e.E)))
@@ -170,6 +185,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             internal int MaxReferencedSeason { get; }
             internal int MaxSeason { get; }
             internal HashSet<int> PositiveSeasons { get; }
+            internal HashSet<int> DetailCoveredSeasons { get; }
+            // Find the first missing regular season in O(S log S), without enumerating an untrusted upper bound.
+            internal int FirstSeasonWithoutDetail
+            {
+                get
+                {
+                    var next = 1;
+                    foreach (var s in RowCoordinates.Where(p => p.Value.Count > 0 && EpisodeBounds.TryGetValue(p.Key, out var bound)
+                        && p.Value.Count == bound && p.Value.All(e => e >= 1 && e <= bound))
+                        .Select(p => p.Key).Where(s => s >= 1 && s <= MaxSeason).OrderBy(s => s))
+                    {
+                        if (s != next) break;
+                        next++;
+                    }
+                    return next <= MaxSeason ? next : 0;
+                }
+            }
             internal IReadOnlyDictionary<int, int> EpisodeBounds { get; }
             internal IReadOnlyDictionary<int, HashSet<int>> RowCoordinates { get; }
             internal CompletionEvidence E { get; }
@@ -219,7 +251,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return new(new CompletionAuthority
             {
                 EvidenceVersion = EvidenceVersion, Fingerprint = fingerprint, ReconciledAt = reconciledAt,
-                Scope = evidence.Scope, Episodes = expected.Select(e => new CompletionEpisode(e.S, e.E, e.AirDate, e.Title, agreement.KnownAired(e))).ToArray(), CanComplete = canComplete,
+                Scope = evidence.Scope,
+                SeriesCoverageReason = !agreement.Series && agreement.FirstSeasonWithoutDetail is > 0 and var missingSeason
+                    ? $"series unknown: season {missingSeason} has no {(agreement.RawRows.Any(e => e.S == missingSeason) ? "full " : string.Empty)}detail evidence" : null,
+                Episodes = expected.Select(e => new CompletionEpisode(e.S, e.E, e.AirDate, e.Title, agreement.KnownAired(e))).ToArray(), CanComplete = canComplete,
             }, null);
         }
 
@@ -265,8 +300,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var filled = PlaceholderProgress.FilledCoords(p);
             var missing = required.Where(c => !filled.Contains(c)).ToArray();
             return new CompletionVerdict(canComplete && required.Length > 0 && missing.Length == 0 ? "complete" : "incomplete",
-                !canComplete ? "still_in_production_or_unaired" : required.Length == 0 ? "no_aired_obligations" : missing.Length > 0 ? "missing_episodes" : null,
+                !canComplete ? "still_in_production_or_unaired" : required.Length == 0 ? "no_aired_obligations" : missing.Length > 0 ? "missing_episodes" : CompleteReason(p, a),
                 missing, a?.EvidenceVersion, a?.Fingerprint, a?.ReconciledAt, a?.Origin);
+        }
+
+        // Reasons describe the authority's exact scope; a positive season reason never asserts series completion.
+        private static string CompleteReason(Placeholder p, CompletionAuthority? a)
+        {
+            var scope = p.Kind == PlaceholderKinds.Series ? "series"
+                : p.Kind == PlaceholderKinds.Episodes ? $"season {p.SeasonNumber} episodes" : $"season {p.SeasonNumber}";
+            return scope + " complete" + (a?.SeriesCoverageReason is string note ? "; " + note : string.Empty);
         }
 
         /// <summary>Reconciled regular seasons for derived acquisition; empty when the verdict is Unknown.</summary>

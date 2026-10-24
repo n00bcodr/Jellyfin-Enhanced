@@ -30,6 +30,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("reconciledAt")] public DateTime ReconciledAt { get; init; }
         /// <summary>Identity and explicit scope to which this proof applies.</summary>
         [JsonPropertyName("scope")] public string Scope { get; init; } = string.Empty;
+        /// <summary>Descriptive series coverage limit for a narrower scope; never grants broader authority.</summary>
+        [JsonPropertyName("seriesCoverageReason")] public string? SeriesCoverageReason { get; init; }
         /// <summary>Reconciled episode coordinates, with independent positive airing evidence.</summary>
         [JsonPropertyName("episodes")] public IReadOnlyList<CompletionEpisode> Episodes { get; init; } = Array.Empty<CompletionEpisode>();
         /// <summary>Whether terminal status or a fully aired season permits retirement.</summary>

@@ -11,7 +11,7 @@ public class ListsC1R5HiddenTruthTests(ITestOutputHelper output)
     private static readonly DateTime Today = new(2026, 10, 24);
     // Truth exists before any view. No oracle reconstructs it from CompletionEvidence.
     private sealed record TrueEpisode(int S, int E, string Date);
-    private sealed record Truth(int Seasons, TrueEpisode[] Episodes, bool InProduction);
+    private sealed record Truth(int Seasons, TrueEpisode[] Episodes, bool InProduction, int? FutureEmptySeason = null);
     private sealed record View(Truth Truth, CompletionEvidence Evidence, HashSet<EpisodeCoord> Statements,
         HashSet<EpisodeCoord> Fills, int Mutation);
     private static EpisodeCoord Coord(TrueEpisode e) => new(e.S, e.E);
@@ -30,12 +30,13 @@ public class ListsC1R5HiddenTruthTests(ITestOutputHelper output)
         return new(n, episodes.ToArray(), production);
     }
 
-    private static View Derive(Truth truth, Random random, int mutation, string kind)
+    private static View Derive(Truth truth, Random random, int mutation, string kind, int? selectedSeason = null)
     {
-        var selected = kind == "series" ? (int?)null : random.Next(4) == 0 ? 0 : random.Next(1, truth.Seasons + 1);
+        var selected = kind == "series" ? (int?)null : selectedSeason ?? (random.Next(4) == 0 ? 0 : random.Next(1, truth.Seasons + 1));
         var p = new Placeholder { MediaType = "tv", Kind = kind, TmdbId = 1399, SeasonNumber = selected };
         bool InScope(int s) => kind == "series" ? s > 0 : s == selected;
         var advertised = truth.Episodes.GroupBy(e => e.S).Select(g => new CompletionSeason(g.Key, g.Count(), g.First().Date)).ToArray();
+        if (truth.FutureEmptySeason is int planned) advertised = advertised.Append(new CompletionSeason(planned, 0, "2099-01-01")).ToArray();
         var rows = truth.Episodes.Where(e => InScope(e.S)).Select(Row).ToArray();
         var resources = advertised.Where(s => InScope(s.Number)).ToArray();
         var last = Row(truth.Episodes.Last(e => e.S > 0 && string.CompareOrdinal(e.Date, "2026-10-24") <= 0));
@@ -118,6 +119,7 @@ public class ListsC1R5HiddenTruthTests(ITestOutputHelper output)
     {
         var facts = new Dictionary<string, string> { ["seasons"] = truth.Seasons.ToString(), ["production"] = truth.InProduction.ToString() };
         foreach (var season in truth.Episodes.GroupBy(e => e.S)) facts[$"count:{season.Key}"] = season.Count().ToString();
+        if (truth.FutureEmptySeason is int planned) { facts[$"count:{planned}"] = "0"; facts[$"date:{planned}:1"] = "2099-01-01"; }
         foreach (var episode in truth.Episodes)
         {
             facts[$"episode:{episode.S}:{episode.E}"] = "exists";
@@ -168,6 +170,80 @@ public class ListsC1R5HiddenTruthTests(ITestOutputHelper output)
         output.WriteLine($"seed={Seed} cases={Cases} complete={complete} truthDenials={omissions} violations={violations.Count} first={string.Join(',', violations.Take(20))}");
         Assert.True(complete > 100);
         Assert.True(violations.Count == 0, $"Hidden truth violations={violations.Count}; first={string.Join(',', violations.Take(20))}");
+    }
+
+
+    [Fact]
+    public void RandomSeasonSubsetsAndSeriesUseTheirOwnHiddenTruthOracles()
+    {
+        const int truths = 2400;
+        var random = new Random(Seed + 6);
+        var cases = 0; var complete = 0; var violations = 0; var countOnlySeriesComplete = 0;
+        var countOnlySeasonComplete = 0; var reasonViolations = 0;
+        for (var i = 0; i < truths; i++)
+        {
+            var truth = MakeTruth(random);
+            var selected = Enumerable.Range(0, truth.Seasons + 1).Where(_ => random.Next(2) == 0).ToArray();
+            if (selected.Length == 0) selected = new[] { random.Next(1, truth.Seasons + 1) };
+            // The persisted season scope is singular. A subset is a conjunction of independent season verdicts,
+            // never a synthetic series grant. Every truth also gets an independently evaluated full series view.
+            foreach (var s in selected.Cast<int?>().Prepend(null))
+            {
+                var view = Derive(truth, random, i % 24, s.HasValue ? "season" : "series", s);
+                var verdict = Evaluate(view);
+                cases++;
+                if (verdict.IsComplete) { complete++; if (!Oracle(view)) violations++; }
+            }
+            // Exact review shape generalized to each truth: leave only S1 details, counts for every other season.
+            if (truth.Seasons < 2) continue;
+            var series = Derive(truth, random, 0, "series");
+            var e = series.Evidence with
+            {
+                Details = series.Evidence.Details!.Where(r => r.S == 1).ToArray(),
+                DetailSeasons = series.Evidence.DetailSeasons!.Where(r => r.Number == 1).ToArray(),
+            };
+            var statements = e.Details.Select(r => new EpisodeCoord(r.S, r.E)).ToHashSet();
+            // Last is real unselected truth, so retain it as a fact; it cannot supply a missing whole season.
+            var allStatements = statements.Append(new EpisodeCoord(e.Last!.S, e.Last.E)).ToHashSet();
+            var seriesView = series with { Evidence = e, Statements = allStatements };
+            Assert.False(Oracle(seriesView));
+            var seriesVerdict = Evaluate(seriesView);
+            if (seriesVerdict.IsComplete) { countOnlySeriesComplete++; violations++; }
+            var season = Derive(truth, random, 0, "season", 1);
+            Assert.True(Oracle(season)); // No detail obligation for unselected seasons; all emitted facts are true.
+            var verdict1 = Evaluate(season);
+            Assert.True(verdict1.IsComplete);
+            countOnlySeasonComplete++;
+            if (verdict1.Reason?.StartsWith("season 1 complete; series unknown:", StringComparison.Ordinal) != true) reasonViolations++;
+        }
+        output.WriteLine($"scopeSeed={Seed + 6} truths={truths} cases={cases} complete={complete} truthViolations={violations} countOnlySeriesComplete={countOnlySeriesComplete} countOnlySeasonComplete={countOnlySeasonComplete} scopedReasonViolations={reasonViolations}");
+        Assert.True(complete > 100);
+        Assert.Equal(0, violations);
+        Assert.Equal(0, countOnlySeriesComplete);
+        Assert.True(countOnlySeasonComplete > 1000);
+        Assert.Equal(0, reasonViolations);
+    }
+
+    [Fact]
+    public void CoherentFutureEmptySeasonsHaveNoSelectedSeasonFalseNegatives()
+    {
+        var random = new Random(Seed + 7);
+        var complete = 0;
+        const int controls = 600;
+        for (var i = 0; i < controls; i++)
+        {
+            var t = MakeTruth(random);
+            var truth = t with { Seasons = t.Seasons + 1, FutureEmptySeason = t.Seasons + 1, InProduction = true };
+            var selected = random.Next(1, t.Seasons + 1);
+            var season = Derive(truth, random, 0, "season", selected);
+            Assert.True(Oracle(season));
+            if (Evaluate(season).IsComplete) complete++;
+            var series = Derive(truth, random, 0, "series");
+            Assert.False(Oracle(series));
+            Assert.False(Evaluate(series).IsComplete);
+        }
+        output.WriteLine($"futureEmptySeed={Seed + 7} controls={controls} selectedComplete={complete} falseNegatives={controls - complete} seriesComplete=0");
+        Assert.Equal(controls, complete);
     }
 
     [Fact]
