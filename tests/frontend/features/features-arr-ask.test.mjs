@@ -228,6 +228,36 @@ test('a retry after a lost answer reuses the clientRequestId; a definitive answe
   assert.notEqual(h.posts[4].body.clientRequestId, h.posts[5].body.clientRequestId);
 });
 
+// Integration je12 (RBS1-R13-5): an answer that proves no outcome never reads as a definite failure, nor as "asked" without its
+// body: a server error after the ask went out (5xx but 503, and 408) or a success whose body couldn't be read is unconfirmed,
+// the id is kept (asking again is the same ask) and the title's status is read again.
+test('an ask answered 502 after it went out, or a success without its body, is unconfirmed (never failed, never asked)', async t => {
+  let mode = '502';
+  const h = setup(t, {
+    server: {
+      post: () => mode === '502' ? { status: 502, body: { message: 'gateway lost the upstream answer' } }
+        : mode === 'empty' ? { status: 201, body: null }
+          : mode === '503' ? { status: 503, body: { outcome: 'unavailable', reason: 'database_unavailable' } }
+            : { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', requestId: 'b'.repeat(32) } }
+    }
+  });
+  const A = h.JE.arrAsk;
+  const changes = [];
+  A.onChange(c => changes.push(c.type));
+  const input = A.movieInput('movie:tmdb:42');
+  const lost = await A.ask(input);
+  assert.equal(lost.state, 'unconfirmed');
+  assert.ok(!/Asked/.test(A.describe(lost).text), 'never says it was asked');
+  mode = 'empty';
+  assert.equal((await A.ask({ ...input })).state, 'unconfirmed', 'a 201 whose body could not be read proves nothing');
+  mode = '503';
+  assert.equal((await A.ask({ ...input })).state, 'unavailable', 'a 503 is refused before processing: a definite answer');
+  mode = 'ok';
+  assert.equal((await A.ask({ ...input })).state, 'asked');
+  assert.equal(new Set(h.posts.map(p => p.body.clientRequestId)).size, 1, 'the same ask kept its id through the uncertain answers');
+  same(changes, ['unconfirmed', 'unconfirmed', 'ask']);
+});
+
 test('rows mode: JE draws native-looking rows for missing episodes Jellyfin has no row for, in order, and no banner', async t => {
   const h = setup(t);
   await h.open();

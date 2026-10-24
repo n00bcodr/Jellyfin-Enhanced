@@ -369,16 +369,15 @@
                 return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId: null, clientRequestId, stale: true };
             }
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
-            if (JE.core.userWrite.outcome(err) === 'uncertain') {
-                // Sent, and its answer was lost: it may be recorded. The id is kept (asking again is the same ask, never a
-                // second one) and the title's status is read again to say what the server holds.
-                const result = { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId: null, clientRequestId };
-                meState = null;
-                checks.clear();
-                emit({ type: 'unconfirmed', key: input.key, input, result });
-                return result;
-            }
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return unconfirmedAsk(input, clientRequestId, 0);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };
+        }
+        // An answer that proves no outcome (RBS1-R13-5): a server error after the ask went out, or a success whose body
+        // couldn't be read, may have recorded it: unconfirmed, never a definite failure and never "asked" without its body.
+        if (answerUncertain(answer)) {
+            // Its session ended meanwhile: nothing is published into the next person's page.
+            if (!JE.core.userWrite.isBound(origin)) return { ok: false, status: answer.status, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId: null, clientRequestId, stale: true };
+            return unconfirmedAsk(input, clientRequestId, answer.status);
         }
         // A server error may or may not have recorded the ask: keep the id so a retry is the same ask.
         if (answer.status < 500) openIds.delete(print);
@@ -389,6 +388,35 @@
             checks.clear();
             emit({ type: 'ask', key: input.key, input, result });
         }
+        return result;
+    }
+
+    /**
+     * Whether a write's HTTP answer proves no outcome (RBS1-R13-5): a 5xx other than 503 (refused before processing) or a
+     * 408 after the attempt went out (it may have been stored), or a success other than 202 whose body couldn't be read
+     * (what the server decided is unknown).
+     * @param {{status: number, body: *}} answer Status-mode answer.
+     * @returns {boolean} Uncertain.
+     */
+    function answerUncertain(answer) {
+        const status = Number(answer?.status) || 0;
+        if (status === 408 || (status >= 500 && status !== 503)) return true;
+        return status >= 200 && status < 300 && status !== 202 && (answer.body == null || typeof answer.body !== 'object');
+    }
+
+    /**
+     * An ask that was sent and may be recorded but whose outcome is unknown: the id is kept (asking again is the same ask,
+     * never a second one) and the title's status is read again to say what the server holds.
+     * @param {Object} input Mutation input.
+     * @param {string} clientRequestId Its id.
+     * @param {number} status The answer's status (0: none).
+     * @returns {Object} Result (state 'unconfirmed').
+     */
+    function unconfirmedAsk(input, clientRequestId, status) {
+        const result = { ok: false, status, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId: null, clientRequestId };
+        meState = null;
+        checks.clear();
+        emit({ type: 'unconfirmed', key: input.key, input, result });
         return result;
     }
 
@@ -411,9 +439,11 @@
             if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId };
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
         }
-        const result = interpret(answer.status, answer.body);
         // The answer belongs to the cancel's session: nothing is published into the next person's page.
-        if (!JE.core.userWrite.isBound(origin)) return { ...result, stale: true };
+        if (!JE.core.userWrite.isBound(origin)) return { ...interpret(answer.status, answer.body), stale: true };
+        // An answer that proves no outcome (RBS1-R13-5): the cancel may have been made; said as such, never as a failure.
+        if (answerUncertain(answer)) return { ok: false, status: answer.status, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId };
+        const result = interpret(answer.status, answer.body);
         if (result.ok) {
             result.state = 'cancelled';
             emit({ type: 'cancel', requestId, result });

@@ -49,11 +49,19 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     throw error;
   });
   // Request-surface fixtures provide raw HTTP responses; preserve the core status/body contract.
+  // Integration je12: as the core transport does, a write goes out through JE.core.userWrite.send with its origin (the
+  // caller's `session`, else its owner binding's session) when that module is loaded, so a failed attempt is classified
+  // (unsent / refused / uncertain) and a write without an origin is refused.
   JE.core.api.pluginResponse = JE.core.api.pluginResponse || (async (path, options = {}) => {
-    const response = await window.fetch(window.ApiClient.getUrl('/JellyfinEnhanced' + path), {
-      method: options.method || 'GET', signal: options.signal,
+    const method = options.method || 'GET';
+    const transmit = () => window.fetch(window.ApiClient.getUrl('/JellyfinEnhanced' + path), {
+      method, signal: options.signal,
       body: options.body === undefined ? undefined : JSON.stringify(options.body)
     });
+    const write = !/^(GET|HEAD)$/i.test(method) && options.readOnly !== true && !!JE.core.userWrite;
+    const bound = options.bound?.session;
+    const origin = options.session || (bound?.userId ? { epoch: bound.epoch, userId: bound.userId } : null);
+    const response = await (write ? JE.core.userWrite.send(origin, transmit, path) : transmit());
     let body = null;
     try { const text = await response.text(); body = text ? JSON.parse(text) : null; } catch (_) { /* malformed fixture body */ }
     return { status: response.status, body };
