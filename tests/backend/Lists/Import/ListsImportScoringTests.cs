@@ -235,7 +235,7 @@ public class ListsImportScoringTests
     }
 
     /// <summary>A clock that only moves when told to; due timers fire synchronously inside <see cref="AdvanceTo"/>.</summary>
-    private sealed class ManualClock : TimeProvider
+    internal sealed class ManualClock : TimeProvider
     {
         private readonly object _lock = new();
         private readonly List<ManualTimer> _timers = new();
