@@ -492,7 +492,7 @@
         // the highlight may follow in the same task, hence the extra tick.
         tabsElem.addEventListener('tabchange', function (e) {
             var picked = parseInt(e.detail?.selectedTabIndex, 10);
-            setTimeout(function () { clearStraySelection(tabsElem, picked); }, 0);
+            setTimeout(function () { clearStraySelection(tabsElem, picked); syncBackdrop(); }, 0);
         });
     }
 
@@ -630,12 +630,72 @@
         }
     }
 
+    var backdropUrl = null;
+    var backdropLoading = false;
+    var backdropWatched = false;
+
+    /**
+     * Jellyfin only paints a backdrop for tabs it knows. Reaching one of our
+     * pages by an in-app tab switch leaves the container bare (a reload happens
+     * to get Home's), which the pages' dimming overlay then shows as flat grey.
+     * While one of our pages is the active tab, borrow a random library
+     * backdrop; take it away again once it no longer is.
+     */
+    function syncBackdrop() {
+        var bg = document.querySelector('.backgroundContainer');
+        var holder = document.querySelector('.backdropContainer');
+        if (!bg || !holder) return;
+        var mine = holder.querySelector('.je-backdrop');
+        var onOurPage = !!document.querySelector('#indexPage .tabContent.is-active :is(.jellyfinenhanced, .sections.bookmarks)');
+        if (!onOurPage || !isOnHomePage()) {
+            if (mine) {
+                mine.remove();
+                // Only drop the class if no Jellyfin backdrop took over meanwhile.
+                var other = Array.prototype.some.call(holder.querySelectorAll('.backdropImage'),
+                    function (el) { return el.style.backgroundImage; });
+                if (!other) bg.classList.remove('withBackdrop');
+            }
+            return;
+        }
+        // Jellyfin clears the backdrop on every tab change, leaving our element
+        // behind with its image gone, so withBackdrop alone says whether it shows.
+        if (!backdropWatched) {
+            backdropWatched = true;
+            new MutationObserver(syncBackdrop).observe(bg, { attributes: true, attributeFilter: ['class'] });
+        }
+        if (bg.classList.contains('withBackdrop')) return;
+        var apply = function () {
+            if (bg.classList.contains('withBackdrop')) return;
+            holder.querySelector('.je-backdrop')?.remove();
+            var el = document.createElement('div');
+            el.className = 'backdropImage displayingBackdropImage je-backdrop';
+            // displayingBackdropImage's z-index would lift it over the page's dimming overlay.
+            el.style.zIndex = 'auto';
+            el.style.backgroundImage = 'url("' + backdropUrl + '")';
+            holder.appendChild(el);
+            bg.classList.add('withBackdrop');
+        };
+        if (backdropUrl) { apply(); return; }
+        if (backdropLoading) return;
+        backdropLoading = true;
+        ApiClient.getItems(ApiClient.getCurrentUserId(), {
+            SortBy: 'Random', Limit: 1, Recursive: true, IncludeItemTypes: 'Movie,Series', ImageTypes: 'Backdrop'
+        }).then(function (res) {
+            var item = res?.Items?.[0];
+            var tag = item?.BackdropImageTags?.[0];
+            if (!tag) return;
+            backdropUrl = ApiClient.getImageUrl(item.Id, { type: 'Backdrop', tag: tag, maxWidth: 1920, quality: 70 });
+            syncBackdrop();
+        }).catch(function () { }).then(function () { backdropLoading = false; });
+    }
+
     function scheduleInject() {
         if (injectPending) return;
         injectPending = true;
         JE.core.dom.afterNextPaint(function () {
             injectPending = false;
             ensureInjected();
+            syncBackdrop();
         });
     }
 
