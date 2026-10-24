@@ -107,6 +107,7 @@ ChronolistsPage.Columns._movies	both	independent	one page	one Chronolists page's
 ChronolistsPage.Columns._names	both	independent	one page	one Chronolists page's parsed columns (a provider's public list), dropped with the parse	write:per-call
 ChronolistsPage.Columns._seasonIndex	both	independent	one page	one Chronolists page's parsed columns (a provider's public list), dropped with the parse	write:per-call
 ChronolistsPage.Columns._seasonKeys	both	independent	one page	one Chronolists page's parsed columns (a provider's public list), dropped with the parse	write:per-call
+ClientReloadNotice._inFlight	both	independent	device	the one reload notice being sent to a device (its id, removed when that send ended), delivery bookkeeping, not an answer about access	write:own-state
 ClientReloadNotice._pending	both	independent	device	reload notices waiting for a device's session (person, text, when): delivered only to that person's session	write:own-state
 ClientReloadNotice._told	both	independent	device	when a device was last told to reload (rate limit of a notice), not an answer about access
 ClientReloadNotice._watched	both	independent	session manager	which session managers are listened to (subscriptions), not an answer
@@ -116,6 +117,8 @@ CompletedIdentity.Completion._completed	both	independent	one review	one import r
 CompositeImageCache._inFlight	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
 CompositeImageCache._lruEntries	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
 CompositeImageCache._lruOrder	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+ConfigurationEffects.Instance	both	independent	process	the hosted configuration-effects owner (a reference, not an answer)	write:disposal
+ConfigurationEffects._waiters	both	independent	pass	confirmations waiting for a reconcile pass of the configuration (the owner's own work), not an answer about a user	write:own-state
 ConfigurationPatchResult.Applied	both	independent	one patch	one configuration patch's result lists	write:per-call
 ConfigurationPatchResult.Ignored	both	independent	one patch	one configuration patch's result lists	write:per-call
 ConfigurationPatchResult.Skipped	both	independent	one patch	one configuration patch's result lists	write:per-call
@@ -156,6 +159,8 @@ JellyfinBridge._running	both	independent	path / item	library refresh bookkeeping
 JellyfinBridge._twinFiles	both	independent	path / item	library refresh bookkeeping: not per user; files being handled, removed when done (under _lock)	write:own-state
 JellyfinBridge._waiting	both	independent	path / item	library refresh bookkeeping: not per user
 JellyfinBridge._work	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinEnhanced.Instance	both	independent	process	the plugin instance (a reference, not an answer)	write:disposal
+JellyfinEnhanced._buildIdentity	both	independent	process	the running assembly's identity (version and module id), the same for everyone
 JellyfinEnhancedController.ReviewVisibilityContext.Authors	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 JellyfinEnhancedController._avatarCache	both	independent	Seerr avatar URL	public avatar bytes; keyed by the Seerr URL and avatar path: after a settings save a late fetch from the old Seerr files under the old URL	write:self-keyed
 JellyfinEnhancedController._loggedCorruptArrConfig	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
@@ -498,6 +503,7 @@ UsageEventCounterService._counters	both	independent	log or rate-limit key	log de
 UserAccessCache._entries	both	independent	key / (user, scope)	the access-stamp helper's own storage; the access-stamp helper's own storage: its ledger refuses and stops serving every entry begun before an invalidation	write:own-state
 UserAuthority.Attributed	both	independent	fact / person	the version counters the stamps are made of
 UserAuthorityFields.RowReads	both	independent	assembly / type	code and reflection metadata read once
+UserConfigurationManager._left	both	independent	path	each per-user file's state at JE's last counted write (exists, length, write time), so an outside change spends a revision; JE's own write bookkeeping, not an answer	write:own-state
 UserConfigurationManager._presenceWarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 UserConfigurationManager._userFileLocks	both	independent	lock key	locks (and their holder counts)
 UserConfigurationManager._writes	both	independent	path	per-file write counts that make document revisions (JE's own write bookkeeping), not an answer
