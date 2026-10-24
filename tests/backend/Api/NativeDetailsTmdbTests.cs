@@ -326,7 +326,7 @@ public partial class ApiNativeDetailsTests
     [Fact]
     public async Task TheParentalTagRefusalWithoutSeerrStaysInJellyfinEnhancedMode()
     {
-        // SEERR-OFF-2 is separate work (A2): a viewer with tag rules is still refused absent titles while Seerr is off.
+        // A2 join: missing verified tag evidence withholds the title as retryable unavailable; it is not a permanent policy refusal.
         using var net = new TmdbNet();
         var owned = new List<IDisposable>();
         using var rig = ModeRig(net, owned);
@@ -335,8 +335,9 @@ public partial class ApiNativeDetailsTests
             JeModeWithTmdb(rig, seerrConfigured: false);
             var tagged = rig.Person(linked: false);
             tagged.SetPreference(PreferenceKind.BlockedTags, new[] { "horror" });
-            Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", Me(tagged), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result));
-            Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(tagged, true, 693134, CancellationToken.None)).Outcome);
+            var withheld = await Call(rig, "UserLibrary", "GetItem", Me(tagged), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) });
+            Assert.Equal(503, Assert.IsType<Microsoft.AspNetCore.Mvc.StatusCodeResult>(withheld.Result).StatusCode);
+            Assert.Equal(FeedOutcome.Unavailable, (await rig.Feeds.TitleAsync(tagged, true, 693134, CancellationToken.None)).Outcome);
             var plain = rig.Person(linked: false);
             Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(plain), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result));
             Assert.Empty(rig.SeerrReads);

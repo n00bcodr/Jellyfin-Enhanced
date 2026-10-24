@@ -378,7 +378,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
-            serviceCollection.AddSingleton<SeerrParentalFilter>();
+            serviceCollection.AddSingleton(sp => new SeerrParentalFilter(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Library.IUserManager>(),
+                sp.GetRequiredService<MediaBrowser.Model.Globalization.ILocalizationManager>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Configuration.IServerConfigurationManager>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.NativeDetails.ViewerMetadataAdmission>(),
+                sp.GetService<TitleParentalEvidenceProvider>()));
+            // A2 — backend-neutral parental evidence; policy and caching stay in the shared gate.
+            serviceCollection.AddSingleton<TitleParentalEvidenceProvider>();
+            // End A2.
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

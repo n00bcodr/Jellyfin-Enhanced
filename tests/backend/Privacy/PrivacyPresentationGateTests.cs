@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using System.Text.Json.Nodes;
 
@@ -14,6 +15,77 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class PrivacyPresentationGateTests
 {
+    [Fact]
+    public async Task ReprojectingTheFinalAnswerRetainsOtherDecisionsReadSets()
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid(); f.Plugin.Configuration.HiddenContentEnabled = true;
+        var library = Mock.Of<ILibraryManager>();
+        var spoilers = new SpoilerPresentation(f.Core.Manager, library, Mock.Of<IUserManager>(), Mock.Of<IUserDataManager>());
+        var http = new DefaultHttpContext(); http.Request.Method = "GET"; http.Request.Path = "/JellyfinEnhanced/tmdb/discover/movie";
+        http.User = TestCallers.Principal(user, false);
+        using var transport = new System.IO.MemoryStream(); http.Response.Body = transport;
+        using (var scope = PrivacyReadSet.Begin())
+        {
+            HiddenContentPolicy.Load(f.Core.Manager, user);
+            PrivacyResponseGuard.Install(http, scope.Reads);
+        }
+        f.Core.Manager.SaveUserConfiguration(user.ToString("N"), "hidden-content.json", new UserHiddenContent
+        {
+            Settings = new() { FilterDiscovery = true },
+            Items = new() { ["movie:tmdb:42"] = new() { Type = "Movie", TmdbId = "42" } },
+        });
+        var delivery = new ResultExecutingContext(EndpointRouting.Bind(http), [],
+            new ContentResult { Content = """{"results":[{"id":42,"media_type":"movie","title":"Hidden"}]}""", ContentType = "application/json" }, new object());
+        new TitlePresentationResultFilter(f.Core.Manager, spoilers, library, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), null!).OnResultExecuting(delivery);
+        var services = new ServiceCollection(); services.AddLogging(); services.AddControllers();
+        using var provider = services.BuildServiceProvider();
+        http.RequestServices = provider;
+        await delivery.Result.ExecuteResultAsync(delivery);
+        await PrivacyResponseGuard.CommitAsync(http);
+        Assert.Equal(503, http.Response.StatusCode);
+        Assert.Empty(transport.ToArray());
+    }
+
+    [Theory]
+    [InlineData("acquire/discover")]
+    [InlineData("acquire/search")]
+    public void PartialEvidenceResponseKeepsItsStatusAndRetryHeadersThroughBothResultFilters(string path)
+    {
+        using var f = new ApiPluginFixture(); var user = Guid.NewGuid();
+        f.Plugin.Configuration.HiddenContentEnabled = true; f.Plugin.Configuration.SpoilerBlurEnabled = true;
+        f.Plugin.Configuration.SpoilerStripOverview = true;
+        f.Core.Manager.SaveUserConfiguration(user.ToString("N"), "hidden-content.json", new UserHiddenContent
+        {
+            Settings = new() { FilterSearch = true, FilterDiscovery = true },
+            Items = new() { ["movie:tmdb:42"] = new() { Type = "Movie", TmdbId = "42" } },
+        });
+        f.Core.Manager.SaveUserConfiguration(user.ToString("N"), "spoilerblur.json", new UserSpoilerBlur { PendingTmdb = new() { ["movie:43"] = new() } });
+        var library = Mock.Of<ILibraryManager>();
+        var spoilers = new SpoilerPresentation(f.Core.Manager, library, Mock.Of<IUserManager>(), Mock.Of<IUserDataManager>());
+        var http = new DefaultHttpContext(); http.Request.Method = "GET"; http.Request.Path = "/JellyfinEnhanced/" + path;
+        http.User = JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(user);
+        http.Request.Headers.IfNoneMatch = "*"; http.Response.Headers.ETag = "stale"; http.Response.Headers.RetryAfter = "5";
+        var result = new ContentResult
+        {
+            StatusCode = 200, ContentType = "application/json; charset=utf-8",
+            Content = """{"outcome":"partial","reason":"evidence_unavailable","answer":{"complete":false,"verification":"partial","retryAfterSeconds":5,"results":[{"key":"movie:tmdb:42","title":"hidden"},{"key":"movie:tmdb:43","overview":"secret"}]}}""",
+        };
+        http.Response.Headers.CacheControl = "private, no-store";
+        var context = new ResultExecutingContext(EndpointRouting.Bind(http), new List<IFilterMetadata>(), result, new object());
+        new Jellyfin.Plugin.JellyfinEnhanced.Helpers.RequestOutcomeFilterAttribute().OnResultExecuting(context);
+        new TitlePresentationResultFilter(f.Core.Manager, spoilers, library, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), null!).OnResultExecuting(context);
+        var partial = Assert.IsType<ContentResult>(context.Result);
+        Assert.Equal(200, partial.StatusCode); Assert.Equal("private, no-store", http.Response.Headers.CacheControl);
+        Assert.Equal("5", http.Response.Headers.RetryAfter); Assert.False(http.Response.Headers.ContainsKey("ETag"));
+        Assert.DoesNotContain("hidden", partial.Content); Assert.DoesNotContain("secret", partial.Content);
+        var answer = JsonNode.Parse(partial.Content!)!["answer"]!;
+        Assert.NotNull(answer["complete"]);
+        Assert.False(answer["complete"]!.GetValue<bool>()); Assert.Single(answer["results"]!.AsArray());
+        Assert.Equal("partial", answer["verification"]!.GetValue<string>());
+        Assert.Equal(5, answer["retryAfterSeconds"]!.GetValue<int>());
+    }
+
     [Theory]
     [InlineData("native-details/title/tv/83867/ratings", false)]
     [InlineData("native-details/title/tv/83867/ratings", true)]

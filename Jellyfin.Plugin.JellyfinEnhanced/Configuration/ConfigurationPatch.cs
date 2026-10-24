@@ -165,7 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     throw new ConfigurationPatchException(name, $"{name} needs a value.");
                 }
 
-                property.SetValue(target, read);
+                Services.EvidenceRevision.AssignConfigurationValue(target, property, read);
                 result.Applied.Add(name);
             }
 

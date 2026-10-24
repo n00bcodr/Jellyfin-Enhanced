@@ -181,9 +181,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
-            var evidence = await _parental.CheckAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
-            if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
-            if (!evidence.Value) return Access.Refused;
+            // A2 owned-copy exemption: keep the following library and exact season/episode visibility checks.
+            if (!_parental.MayOpenLocal(mediaType, title.TmdbId, viewer.Id.ToString("N"))
+                && !await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false))
+            {
+                // A known hidden native copy is a refusal even when public parental facts remain unavailable.
+                if (!LibraryVisible(viewer, title) || Physical(viewer, title).Hides(title)) return Access.Refused;
+                return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config)
+                    && _parental.AbsentVerdict(mediaType, title.TmdbId, viewer.Id.ToString("N")) == null ? Access.Unknown : Access.Refused;
+            }
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 

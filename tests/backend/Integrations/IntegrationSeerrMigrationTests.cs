@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using Microsoft.AspNetCore.Http;
@@ -17,6 +18,7 @@ namespace JE.Tests;
 /// the import and a crash before the switch each end with every request imported once; the source id
 /// survives a key rotation but not an address change; rollback by batch keeps wants touched since.
 /// </summary>
+[Collection("Plugin singleton")]
 public class IntegrationSeerrMigrationTests
 {
     private const long Request = (long)JellyseerrPermission.REQUEST;
@@ -56,6 +58,28 @@ public class IntegrationSeerrMigrationTests
             => await Service.CommitAsync(R.Admin, digest ?? (await Service.PreviewAsync(CancellationToken.None)).Digest, confirm, CancellationToken.None);
         public long Count(string sql) => R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = sql; return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture); });
         public void Dispose() { Seerr.Dispose(); R.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task R5MigrationSwitchAndFailedSaveRollbackShareTheEvidenceWriter(bool failSave)
+    {
+        using var m = new Mig();
+        using var token = EvidenceRevision.TryAcquire(() => true);
+        Assert.NotNull(token);
+        m.SaveHook = () => { if (failSave) throw new IOException("save failed"); };
+        var writer = Task.Run(() => (bool)typeof(SeerrMigration).GetMethod("Switch", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(m.Service, new object?[] { "je", null })!);
+        try
+        {
+            Assert.True(SpinWait.SpinUntil(() => EvidenceRevision.Advancing, 1000));
+            Assert.Equal("seerr", m.R.Policy.Configuration.ArrRequestBackend);
+            Assert.False(writer.IsCompleted);
+        }
+        finally { token!.Dispose(); }
+        Assert.Equal(!failSave, await writer.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(failSave ? "seerr" : "je", m.R.Policy.Configuration.ArrRequestBackend);
+        Assert.False(EvidenceRevision.Advancing);
     }
 
     /// <summary>

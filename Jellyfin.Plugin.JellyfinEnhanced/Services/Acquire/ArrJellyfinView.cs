@@ -245,6 +245,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
         }
 
+        /// <summary>
+        /// Reads the physical native identity used by parental evidence: an absolute file or series-folder path,
+        /// not a virtual item. This preserves the local-evidence contract, including disc metadata; it does not
+        /// inspect video sources or confer user access. The caller must still verify identity and native entitlement.
+        /// </summary>
+        internal static JfItemRef LocalEvidenceItem(BaseItem item) => new()
+        {
+            ItemId = item.Id,
+            Kind = item is Movie ? "movie" : "series",
+            Path = item.Path,
+            Virtual = item.IsVirtualItem,
+            Placeholder = string.IsNullOrWhiteSpace(item.Path) || !Path.IsPathFullyQualified(item.Path),
+        };
+
         /// <inheritdoc />
         /// <remarks>
         /// Complete only on established exhaustion: every query read to its short page. Every other stop leaves rows or

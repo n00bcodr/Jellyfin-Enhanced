@@ -14,7 +14,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// <param name="Library">Jellyfin's library revision (items added, changed, removed: visibility included).</param>
     /// <param name="Hidden">What Hidden Content hides from them, as a stamp ("-": the route doesn't read it).</param>
     /// <param name="Edition">The edition settings (<see cref="EditionAvailability.SemanticRevision"/>).</param>
-    internal sealed record ResponseStamp(Guid User, bool Admin, string Policy, long Library, string Hidden, string Edition);
+    /// <param name="Evidence">The parental evidence source, configuration, country and decision revision.</param>
+    internal sealed record ResponseStamp(Guid User, bool Admin, string Policy, long Library, string Hidden, string Edition, string Evidence, long EvidenceGeneration);
+
+    /// <summary>The shared publication fence for decisions derived from a captured parental evidence revision.</summary>
+    internal sealed class EvidencePublication
+    {
+        private readonly Func<string> _current;
+        internal EvidencePublication(Func<string> current, Guid? viewer = null, string? revision = null)
+            : this(current, viewer, revision, null) { }
+
+        internal EvidencePublication(Func<string> current, Guid? viewer, string? revision, long? generation)
+        {
+            _current = current;
+            Generation = generation ?? EvidenceRevision.EvidenceGeneration;
+            Revision = EvidenceRevision.Snapshot(() => revision ?? current());
+            Viewer = viewer;
+        }
+
+        internal Guid? Viewer { get; }
+
+        internal string Revision { get; }
+        internal long Generation { get; }
+        internal bool Current => Generation == EvidenceRevision.EvidenceGeneration && EvidenceRevision.Snapshot(() => Matches(Revision, _current))
+            && Generation == EvidenceRevision.EvidenceGeneration && !EvidenceRevision.Advancing;
+        internal EvidencePublication NextMessage() => new(_current, Viewer);
+        internal static bool Matches(string revision, Func<string> current) => revision == current();
+
+        // The callback must be synchronous: a caller cannot carry an admission across another await.
+        internal T? Publish<T>(Func<T> project) where T : class
+        {
+            if (!Current) return null;
+            var answer = project();
+            return Current ? answer : null;
+        }
+    }
 
     /// <summary>
     /// The one response gate of the routes that return copy facts (discover, search, season rows and absent-season rows; the
@@ -30,14 +64,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     {
         private readonly IArrJellyfinView _view;
         private readonly Func<PluginConfiguration?> _config;
+        private readonly Func<string> _evidence;
 
         /// <summary>The gate over a Jellyfin view and the settings.</summary>
         /// <param name="view">Jellyfin.</param>
         /// <param name="config">Settings.</param>
-        public ResponseGate(IArrJellyfinView view, Func<PluginConfiguration?> config)
+        /// <param name="evidence">Current parental evidence revision, when the response depends on absent-title decisions.</param>
+        public ResponseGate(IArrJellyfinView view, Func<PluginConfiguration?> config, Func<string>? evidence = null)
         {
             _view = view;
             _config = config;
+            _evidence = evidence ?? (() => "-");
         }
 
         /// <summary>How many times a response is prepared again for a changed viewer before it fails closed.</summary>
@@ -47,7 +84,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <param name="viewer">The viewer.</param>
         /// <param name="hidden">What Hidden Content hides from them ("-": not read by the route).</param>
         public ResponseStamp Take(StatusViewer viewer, string hidden = "-")
-            => new(viewer.UserId, viewer.IsAdmin, viewer.PolicyRevision, _view.Revision, hidden, EditionAvailability.SemanticRevision(_config()));
+            => new(viewer.UserId, viewer.IsAdmin, viewer.PolicyRevision, _view.Revision, hidden, EditionAvailability.SemanticRevision(_config()), _evidence(), EvidenceRevision.EvidenceGeneration);
+
+        /// <summary>The exact evidence dependency used to prepare this answer, handed to its HTTP commit owner.</summary>
+        public EvidencePublication Publication(ResponseStamp prepared) => new(_evidence, prepared.User, prepared.Evidence, prepared.EvidenceGeneration);
+
+        /// <summary>Whether the captured evidence still holds.</summary>
+        public bool EvidenceCurrent(ResponseStamp prepared) => prepared.EvidenceGeneration == EvidenceRevision.EvidenceGeneration && EvidencePublication.Matches(prepared.Evidence, _evidence) && !EvidenceRevision.Advancing;
 
         /// <summary>
         /// The viewer as Jellyfin has them now, when nothing <paramref name="prepared"/> was taken under changed (the library
@@ -62,6 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var stamp = Take(now, hidden);
             return stamp.Admin == prepared.Admin && string.Equals(stamp.Policy, prepared.Policy, StringComparison.Ordinal)
                 && string.Equals(stamp.Hidden, prepared.Hidden, StringComparison.Ordinal) && string.Equals(stamp.Edition, prepared.Edition, StringComparison.Ordinal)
+                && EvidenceCurrent(prepared)
                 && (rereadsLibrary || stamp.Library == prepared.Library) ? now : null;
         }
 

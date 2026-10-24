@@ -1439,6 +1439,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/EvidenceRevision.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs",
       "category": "Services"
     },
@@ -1828,6 +1832,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitleFeedProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitleParentalEvidence.cs",
       "category": "Services"
     },
     {
@@ -11797,7 +11805,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 740,
+    "files": 742,
     "routes": 311,
     "configuration_properties": 666,
     "storage_references": 106,

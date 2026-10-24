@@ -22,19 +22,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _revision = revision;
         }
 
-        internal sealed record Policy(StatusViewer Viewer, string Revision);
+        internal sealed record Policy(StatusViewer Viewer, string Revision, long EvidenceGeneration);
 
         internal Policy? Read()
         {
             var viewer = _view.Viewer(_user);
-            return viewer == null ? null : new Policy(viewer, viewer.PolicyRevision + "|" + _revision(viewer));
+            return viewer == null ? null : new Policy(viewer, viewer.PolicyRevision + "|" + _revision(viewer), EvidenceRevision.EvidenceGeneration);
         }
 
         internal T Publish<T>(Policy prepared, Func<StatusViewer, T> project)
         {
             var current = Read();
-            if (current == null || current.Revision != prepared.Revision) throw new Changed();
-            return project(current.Viewer);
+            if (current == null || current.Revision != prepared.Revision || current.EvidenceGeneration != prepared.EvidenceGeneration) throw new Changed();
+            var answer = project(current.Viewer);
+            if (prepared.EvidenceGeneration != EvidenceRevision.EvidenceGeneration || !EvidencePublication.Matches(prepared.Revision, () => Read()?.Revision ?? string.Empty)) throw new Changed();
+            return answer;
         }
 
         internal sealed class Changed : Exception { }

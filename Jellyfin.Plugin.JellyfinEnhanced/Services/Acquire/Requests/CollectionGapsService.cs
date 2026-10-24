@@ -146,7 +146,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 () => HomeFlags.CollectionGaps(policy.Configuration),
                 (user, keys) => Refusals(policy, user, keys),
                 () => requests.Enabled,
-                () => MutationInput.Hash(JsonSerializer.Serialize(policy.Configuration)))
+                () => MutationInput.Hash(JsonSerializer.Serialize(policy.Configuration)) + "|" + parental.EvidenceRevision)
         {
         }
 

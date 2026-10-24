@@ -80,7 +80,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private IActionResult Send(StatusViewer viewer, DiscoverAnswer? answer, string reason)
         {
             if (answer == null) return Reply(RequestOutcome.Refused("discover_unavailable", 503, "unavailable"));
+            if (answer.Publication is { } publication) Services.PrivacyResponseGuard.Publication(HttpContext, publication);
             answer = _discover.Present(viewer, answer);
+            if (!answer.Complete)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                Response.Headers["Retry-After"] = answer.RetryAfterSeconds!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                // As with complete pages, serialize this contract here: the controller's result filter
+                // reserves error ObjectResults for model-binding refusals and would replace this body.
+                return new ContentResult
+                {
+                    StatusCode = 200, ContentType = "application/json; charset=utf-8",
+                    Content = JsonSerializer.Serialize(new { outcome = "partial", reason = "evidence_unavailable", certainty = "Unknown", message = "Some results couldn't be checked. Try again shortly.", answer }),
+                };
+            }
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason, certainty = "Succeeded", message = "Discover", answer });
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(viewer.UserId.ToString("N") + "|").Concat(bytes).ToArray()), 0, 16) + "\"";
             Response.Headers["Cache-Control"] = "private, no-cache";

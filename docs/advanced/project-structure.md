@@ -4,6 +4,15 @@ Use this map to find the files responsible for a feature before changing it. Jel
 
 The server owns configuration, persistence, integration proxies and response filters. The client adds controls and pages to Jellyfin Web.
 
+`Services/TitleParentalEvidence.cs` selects captured TMDB or Seerr parental evidence from the request backend,
+and reads authoritative native rating/tag facts. `Services/SeerrParentalFilter.cs` remains the shared policy
+gate and bounded signature cache; JE mode uses the existing `TmdbResponseCache` and never falls back to Seerr.
+`Services/PrivacyResponseGuard.cs` owns HTTP publication: it holds every plugin/native-facade answer,
+records the effective principal or signed-artwork grant viewer before evidence reads, and checks the
+captured evidence before result execution and at header commit. Discover hands it the final revision
+used to build its complete or safe-partial answer. `TitlePresentationGate` delegates HTTP evidence
+admission and withholding to this owner while retaining privacy projection.
+
 Unless a repository-root path is stated, source paths below are relative to `Jellyfin.Plugin.JellyfinEnhanced/`. Leading slashes denote HTTP routes.
 
 For endpoint details, see the [API reference](api.md). For setup and placement, see [Settings Overview](../getting-started/settings-overview.md) and [JE Pages & Tabs](../getting-started/pages-and-tabs.md).
@@ -856,3 +865,21 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 `Services/Acquire/Lists/ListMetadataEpoch.cs` owns list provider publication against configuration commits; `ListMetadata.cs` gathers validated provider evidence for `CompletionEvaluator`; `PlaceholderProgress` reads its verdict. Stored `expectedUncertain` is a legacy denial input only.
 
 `Services/Acquire/Lists/CompletionEvaluator.cs` owns the explicit completion verdict, reconciliation of all available show/season evidence, and derived scope. `Model/ListPlaceholders/CompletionAuthority.cs` persists versioned positive evidence (fingerprint, reconciliation time, identity/scope and obligations); missing legacy authority means Unknown. The completion architecture test inventories raw display/storage/placement readers by member and prevents new expectation-based completion consumers. Reconciliation runs a declarative agreement-rule table; a recursive reflection test requires a rule for every evidence field. Seeded adversarial inputs assert coverage of every rule, and field perturbations must deny previously Complete controls. Provider authority version 4 invalidates grants from earlier reconciliation rules. Range-closure rules reconcile ordinals from every source and require positive coverage of every intervening regular season and contiguous selected episode coordinates. A separate seeded hidden-truth generator derives lossy source views from true episodes and checks exact truth coverage without reimplementing the evaluator.
+
+
+Parental evidence publication uses `Services/EvidenceRevision.cs`: the HTTP owner's final evidence check
+and token admission are atomic with closing writer admission. A title-bearing response retains its token
+through `OnCompleted`, abort, exception or disposal. All plugin configuration saves/replacements/restores,
+secret-store source changes and migration switches enter `EvidenceRevision.Advance` before mutation.
+The pinned host's country replacement is bracketed by its pre/post events (the post event is queued);
+an abandoned update has bounded cleanup. A three-second drain limit keeps settings usable on a hung
+client and logs the outstanding count. Configuration/restore/adoption acknowledgements are explicitly
+independent of title evidence while retaining body ownership. Unhandled MVC errors discard held title
+bytes and restore the original response-body feature for host error handling.
+
+
+`EvidenceRevision` owns the startup-nonce-seeded 64-bit `EvidenceGeneration`. Each `Advance` moves it even when input
+values return to their original contents. `EvidencePublication`, response/preparation stamps, captured evidence providers,
+signature and serialized decision caches retain that generation. The IL writer-inventory architecture test checks direct
+and reflected evidence-input stores, construction and callbacks entering `Advance`, with a planted unowned writer control.
+Secrets recovery enters the same owner before its mutation lock; snapshot validation cannot initiate recovery.

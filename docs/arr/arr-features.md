@@ -171,6 +171,35 @@ Keep a configuration backup if you may need to restore an earlier setup.
 
     An unreadable instance list does not fall back to legacy fields; see [instance recovery](troubleshooting-support.md#connection-errors-and-instance-recovery).
 
+## Parental controls for titles outside your library
+
+With request handling set to **Jellyfin Enhanced**, parental checks use TMDB directly through JE's configured
+TMDB connection. Seerr can be disabled and its connection removed. The same checks cover discovery, search,
+requests, list placeholders and absent-title status visibility.
+
+Ratings come from the server's metadata country. Allowed Tags match complete TMDB keyword names;
+Blocked Tags match keyword or genre names. Matches ignore letter case, retain punctuation, and a blocked
+match wins over an allowed one. An arbitrary custom Allowed Tag will not match a genre or an arr management
+tag. For an existing physical Jellyfin title, its own tags and custom/official rating are the local authority;
+normal library access checks still apply. Native facts supplement verified TMDB adult evidence, since Jellyfin
+has no separate adult flag. Conflicting local copies remain unverified.
+
+Restricted people see only verified, rated absent titles within their limits. Adult titles are hidden.
+An unavailable or incomplete metadata response stays unverified and hidden until it can be checked;
+a verified rating or tag refusal remains a refusal. An empty ratings container, a certification only for another
+country, or a certification Jellyfin cannot score also stays unverified, even when Block unrated is off.
+A physical title Jellyfin currently lets the person open keeps that native entitlement for title and season
+metadata, including request-sheet season choices and Elsewhere providers. The stricter absent-title evidence
+requirement does not block an openable unrated copy. Hidden copies confer no exception.
+People without parental restrictions need no additional lookup.
+
+Discover/search return HTTP 200 with verified-safe cards when the list read succeeds. If title verification is
+incomplete, `complete=false` and `reason=evidence_unavailable` signal that results are still being checked.
+Unknown titles stay hidden; partial pages are not cached as complete. A failed list read returns HTTP 503. Evidence preparation has one two-second budget including queued checks; already-started shared
+lookups can finish and warm the cache for a retry. This budget does not cover the initial TMDB list read or
+other request work. Changing the metadata country, backend or evidence connection invalidates prepared
+Discover/search decisions and serialized status responses.
+
 ## ARR Tags
 
 Copy Sonarr and Radarr tags into Jellyfin metadata, then display them as clickable links on detail pages. Clicking a tag opens Jellyfin's list of items carrying that full prefixed tag.

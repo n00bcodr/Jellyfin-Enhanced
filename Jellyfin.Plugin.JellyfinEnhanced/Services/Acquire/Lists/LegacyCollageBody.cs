@@ -175,6 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             try
             {
                 executed = await next().ConfigureAwait(false);
+                // A final-result guard may hold JSON or a file inside this projection. Drain that inner result before
+                // projecting the complete body; the outer response guard still owns the real transport commit.
+                await PrivacyResponseGuard.CompleteProjectionAsync(http).ConfigureAwait(false);
                 // Whatever is still in the pipe writer reaches the held body.
                 await feature.CompleteAsync().ConfigureAwait(false);
             }

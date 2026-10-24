@@ -10,19 +10,20 @@
 # not an answer's lifetime (a schedule, a back-off; round 5: an answer lives from when its read began, and a fence is
 # sampled before the inputs it covers are read); note:<text> explains a keyed row's disposition. See
 # tests/backend/README.md.
+# Bridge metadata readiness: import and hydration state, independent of each viewer's access.
 AcquireDatabase._shared	both	independent	process	the shared database service (a reference, not an answer); cleared only when the database is disposed	write:disposal
 AcquisitionStampFeeder._pending	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); the feeder's own work queue (an entry leaves when it is handled)	write:own-state
 AcquisitionStampFeeder._removed	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); removals waiting for the next round, consumed by it	write:own-state
 AcquisitionStampFeeder._upgradesDone	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); the round's own bookkeeping, reset when the store's generation moves	write:own-state
-AcquisitionStampResolver.FourKIndex.ByKey	both	independent	title key	library structure (4K copies by title); each viewer's access to a copy is checked at read
 AcquisitionStampResolver._access	both	stamped	(user, item)	can the viewer open the item: held-user mode (the user is read through the version-stamped user cache); invalidated by library changes
 AcquisitionStampResolver._fourK	both	independent	library	4K copies in the library, for anyone: whether the viewer can open one is asked per poster (_access)
 AcquisitionStampResolver._fourKChanges	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); pending change keys, consumed by the round (under _fourKGate)	write:own-state
-AcquisitionStampStore.NotificationBatch._owner	both	independent	batch	the store service the batch writes back to (a reference); one batch's link to its store, dropped when the batch ends	write:per-call
+AcquisitionStampResolver.FourKIndex.ByKey	both	independent	title key	library structure (4K copies by title); each viewer's access to a copy is checked at read
 AcquisitionStampStore._deleted	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampStore._expired	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampStore._index	both	independent	item / person	the stamp store's facts index, rebuilt on write: JE's own data; what the viewer may open is checked per poster; built from the database under _gate (Current) and dropped under _gate (Reload): a build that read before a write either finishes before the drop or starts after it; each serve also checks the database generation	write:locked=_gate
 AcquisitionStampStore._pendingNotifications	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); pending change notifications, handed on when the batch completes	write:own-state
+AcquisitionStampStore.NotificationBatch._owner	both	independent	batch	the store service the batch writes back to (a reference); one batch's link to its store, dropped when the batch ends	write:per-call
 ArrActionRunner._recent	both	independent	action idempotency key	in-flight arr action de-duplication (an admin action), not a cached answer
 ArrAdminHubController.DeniedSeen	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 ArrChangeFeed._revisions	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
@@ -36,15 +37,15 @@ ArrCopyRead._maskedQueue	both	independent	one status read	one status read's mask
 ArrCopyRead._maskedSeries	both	independent	one status read	one status read's masked arr facts for its viewer (computed once per read, dropped with it)	write:per-call
 ArrCopyRead._unvouched	both	independent	one status read	one status read's masked arr facts for its viewer (computed once per read, dropped with it)	write:per-call
 ArrEpisodesSnapshot._byNumber	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrFeedAudience.EpisodeNumberSet._ranges	both	independent	per value	part of a computed value (episode numbers), not a cache
 ArrFeedAudience._cache	both	keyed	(user, title, instance) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)	write:evicts;snapshot:ArrFeedAudience.Visible=ArrCaller.Find;note:cleared only when over its bound (entries carry the stamp they were decided under)
 ArrFeedAudience._registryStamp	both	independent	arr registry	alias inputs of the configured arr instances (configuration)
 ArrFeedAudience._seasons	both	keyed	(user, tvdb, season) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)	write:evicts;snapshot:ArrFeedAudience.Visible=ArrCaller.Find;note:cleared only when over its bound
 ArrFeedAudience._series	both	keyed	(user, tvdb) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)	write:evicts;snapshot:ArrFeedAudience.Visible=ArrCaller.Find;note:cleared only when over its bound
+ArrFeedAudience.EpisodeNumberSet._ranges	both	independent	per value	part of a computed value (episode numbers), not a cache
 ArrFeedLimits._perUser	both	independent	user	how many long-polls each user holds open now (a concurrency limit), not an answer about access
-ArrInstanceLibraries.State.Cache	both	independent	(instance, path)	arr root folder → Jellyfin library mapping: not per user
 ArrInstanceLibraries._libraries	both	independent	arr instance	library folders per arr instance (configuration + library layout)
 ArrInstanceLibraries._state	both	independent	arr instance	the instance-to-library map's last build (configuration + library layout)
+ArrInstanceLibraries.State.Cache	both	independent	(instance, path)	arr root folder → Jellyfin library mapping: not per user
 ArrInstanceRegistry._cache	both	independent	configuration	parsed arr instances, per stored configuration value
 ArrJellyfinView._boundLogged	both	independent	title	log de-duplication of copy-lookup bounds: decides nothing a viewer sees
 ArrLibrarySnapshot._moviesById	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
@@ -54,24 +55,24 @@ ArrLibrarySnapshot._seriesById	both	independent	arr ids / snapshot	what the arr 
 ArrLibrarySnapshot._seriesByImdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrLibrarySnapshot._seriesByTmdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrLibrarySnapshot._seriesByTvdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrLiveRouter.Pending.Titles	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); a queue drained by its runner	write:own-state
 ArrLiveRouter._counters	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveRouter._pending	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveRouter.Pending.Titles	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); a queue drained by its runner	write:own-state
 ArrLiveService._connections	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); live connections: removing one is stopping it	write:own-state
 ArrLiveService._libraryResyncAt	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)	deadline:when the next library resync of the instance may run (a schedule, set when the last one ran), not the lifetime of an answer
 ArrLiveService._libraryResyncDeferred	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveService._searches	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); per-connection search bookkeeping, dropped with the connection	write:own-state
 ArrSnapshotSlot._error	both	independent	arr instance	the last fetch error of an arr read
 ArrSnapshotSlot._patchesDuringRefresh	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; live patches buffered during a refresh, consumed when it ends (under _lock)	write:own-state
+ArrStateStore._backgroundTasks	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore._routes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore._states	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; one state per configured instance, dropped when the instance stops being usable (rebuilt from its client when used again)	write:own-state
 ArrStateStore.CalendarRangeCache._entries	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer	deadline:FinishedAt times the retry after a FAILED read (from when it ended); an answer lives from At, taken when its read starts
+ArrStateStore.InstanceState._episodes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.InstanceState.ConfirmedDepartures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; departures waiting for the next queue snapshot, consumed by it	write:own-state
 ArrStateStore.InstanceState.Departures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.InstanceState.Seen	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.InstanceState.TitleStamps	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrStateStore.InstanceState._episodes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrStateStore._backgroundTasks	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrStateStore._routes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
-ArrStateStore._states	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; one state per configured instance, dropped when the instance stops being usable (rebuilt from its client when used again)	write:own-state
 ArrStatusCache._lru	both	keyed	same entries as _map (LRU order)	ArrStatusService.CacheKey~PolicyRevision	write:self-keyed;snapshot:ArrStatusService.Current=IArrJellyfinView.Viewer;snapshot:ArrStatusService.GatedAsync=IArrJellyfinView.Viewer;note:Clear on a configuration save only frees memory: every key holds the viewer's policy revision, the facts, view, request and library revisions and the configuration it was composed under, so a body composed before the save is filed under a key no later request asks for
 ArrStatusCache._map	both	keyed	user | policy revision | route | what	ArrStatusService.CacheKey~PolicyRevision	write:self-keyed;snapshot:ArrStatusService.Current=IArrJellyfinView.Viewer;snapshot:ArrStatusService.GatedAsync=IArrJellyfinView.Viewer;note:see _lru: the key carries every input a save changes
 ArrStatusService.Gathered.CheckedEpisodes	both	independent	one press check	one press check's episode lists read from the arrs (D53 edition round 21), never shown and dropped with the check	write:per-call
@@ -89,14 +90,18 @@ ArrWebhookProvisioner._gates	both	independent	arr instance / change key	the arr 
 ArrWebhookReceiver._failuresPerSource	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 ArrWebhookReceiver._perInstance	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 ArrWebhookReceiver._stats	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+AutomationSendGuard.JobAdmission._active	both	independent	job	automation job admission (the frozen 4a check decides per send); one job's admission	write:per-call
+AutomationSendGuard.JobAdmission._reserved	both	independent	job	automation job admission (the frozen 4a check decides per send); one job's admission	write:per-call
 AutoMovieRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
 AutoMovieRequestService._requestedMovies	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer; what was auto-requested (send de-duplication); clearing it is a reset of that record, not a copy of stored data	write:own-state
 AutoSeasonRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
 AutoSeasonRequestService._requestedSeasons	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer	deadline:when JE asked for the season (send de-duplication for an hour from the ask), not the lifetime of an answer
 AutoSeasonRequestService._seriesDetailsCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 AutoSeasonRequestService._seriesDetailsInFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
-AutomationSendGuard.JobAdmission._active	both	independent	job	automation job admission (the frozen 4a check decides per send); one job's admission	write:per-call
-AutomationSendGuard.JobAdmission._reserved	both	independent	job	automation job admission (the frozen 4a check decides per send); one job's admission	write:per-call
+BridgeImportReadiness._byItem	both	independent	Jellyfin item id	the import readiness gate's item index, shared by every viewer; Attach and Forget change the gate's own state under _lock, not an access answer	write:own-state
+BridgeImportReadiness._byPath	both	independent	physical path / import generation	the import readiness gate's current generations, shared by every viewer; Begin, Drop, Release and Prune change its own state under _lock	write:own-state
+BridgeImportReadiness._done	both	independent	import generation	the latest 50 completed imports for diagnostics, not viewer access; Release appends a completion and evicts the oldest under _lock	write:own-state
+BridgeImportReadiness.Entry.Items	both	independent	import generation	the Jellyfin item ids attached to one import; visibility is checked by each consumer for its viewer; the list is dropped with its entry	write:own-state
 BuildAttestation.DllHash	both	independent	none / asset	build, asset and rendering state: the same for everyone
 CdnAssetService._hot	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 CdnAssetService._negativeCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown); a miss marker removed when the asset is found (and expiring by itself); public assets	write:evicts
@@ -129,9 +134,9 @@ DoesTheDogDieService._inFlight	both	independent	URL / external id	public metadat
 EpisodeCoverage._seasons	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 EpisodeEditions._coverage	both	independent	one lookup	one lookup's episode coverage across the copies that viewer can open (computed for that lookup, dropped with it)	write:per-call
 FactVersions._versions	both	independent	fact / person	the version counters the stamps are made of
-FeedScheduler.Viewer.Waiting	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 FeedScheduler._turns	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer
 FeedScheduler._viewers	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer; whose turn it is: a viewer leaves when their last read ends (under _lock)	write:own-state
+FeedScheduler.Viewer.Waiting	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 GroupQuotaPolicy._parsed	both	independent	configuration	parsed group pools, per stored JSON value (membership is decided per request)
 HiddenContentPolicy._items	both	independent	one policy	one person's Hidden Content rules as read for one request (D46: read strictly, once per request, under the document's lock); the policy object is dropped with the request	write:per-call
 HiddenContentPolicy._libraryKeys	both	independent	one policy	one person's Hidden Content rules as read for one request (D46: read strictly, once per request, under the document's lock); the policy object is dropped with the request	write:per-call
@@ -145,8 +150,11 @@ ImageBlurService._cache	both	independent	item image + intensity	blurred bytes of
 ImportPhysicalProjection._reads	both	independent	one review	one import review's library reads for its viewer (the review's own read of the person), dropped with the review	write:per-call
 ImportPhysicalProjection._viewer	both	independent	one review	the person one import review is for, as that request read them; the projection is dropped with the review	write:per-call
 InvalidationLedger._epoch	both	independent	(record)	the ticket protocol's own invalidation records and floor, swapped whole by identity
-JellyfinBridge.QueuedRefresh.Paths	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+JellyfinBridge._creating	both	independent	physical folder path	in-flight child-folder creation guards, not viewer access; CreateNewFolder removes its guard in finally under _lock	write:own-state
 JellyfinBridge._historyLoads	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._hydrationAsked	both	independent	Jellyfin item id	hydration scheduling and retry coalescing, not viewer access; asks and expired or refused asks update the scheduler's own state under _lock	write:own-state
+JellyfinBridge._hydrationJobs	both	independent	physical path / import generation	in-flight hydration guards, not viewer access; completion or failure removes the job under _lock	write:own-state
+JellyfinBridge._imports	both	independent	physical path / import generation	current imported generations and title identities, not viewer access; BeginImport, EndImport and Publish change the import ledger's own state under _lock	write:own-state
 JellyfinBridge._missing	both	independent	path / item	library refresh bookkeeping: not per user; every drop bumps _missingGeneration before it under _lock, and a list is served only under the generation it was read under (a read from before a refresh is never served)	write:fenced=_missingGeneration
 JellyfinBridge._pending	both	independent	path / item	library refresh bookkeeping: not per user; cleared when the bridge stops	write:disposal
 JellyfinBridge._recent	both	independent	path / item	library refresh bookkeeping: not per user
@@ -155,7 +163,8 @@ JellyfinBridge._running	both	independent	path / item	library refresh bookkeeping
 JellyfinBridge._twinFiles	both	independent	path / item	library refresh bookkeeping: not per user; files being handled, removed when done (under _lock)	write:own-state
 JellyfinBridge._waiting	both	independent	path / item	library refresh bookkeeping: not per user
 JellyfinBridge._work	both	independent	path / item	library refresh bookkeeping: not per user
-JellyfinEnhancedController.ReviewVisibilityContext.Authors	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+JellyfinBridge.QueuedRefresh.Paths	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+JellyfinEnhanced._evidencePreservingConfiguration	both	independent	one synchronous configuration update	thread-local configuration identity used only to pair a synchronous evidence-preserving update with its nested save; restored in finally, never a viewer access answer	write:per-call
 JellyfinEnhancedController._avatarCache	both	independent	Seerr avatar URL	public avatar bytes; keyed by the Seerr URL and avatar path: after a settings save a late fetch from the old Seerr files under the old URL	write:self-keyed
 JellyfinEnhancedController._loggedCorruptArrConfig	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 JellyfinEnhancedController._pollLogDedup	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
@@ -165,52 +174,9 @@ JellyfinEnhancedController._tmdbEnrichmentInFlight	both	independent	URL / extern
 JellyfinEnhancedController._userCache	both	independent	Jellyfin user id	the person's Seerr account (Seerr's own permissions), not Jellyfin access; ClearUserCaches bumps _userCacheGeneration under _userCacheLock before clearing; every store compares it under that lock	write:fenced=_userCacheGeneration
 JellyfinEnhancedController._userCacheGeneration	both	independent	none	the generation counter of _userCache
 JellyfinEnhancedController._userIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access); the generation is bumped before the clear (under _userIdCacheLock); every store compares it under that lock	write:fenced=_userCacheGeneration
+JellyfinEnhancedController.ReviewVisibilityContext.Authors	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 JellyfinReadySessionHost._playback	both	independent	device	when a device last played (whether a Ready message may interrupt it), not an answer about access	write:own-state
 JellyfinUserActions.Assemblies	both	independent	assembly / type	code and reflection metadata read once
-JellyfinUserActions.CodeSet.Contained	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Addressed	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Elements	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Escapes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Indirect	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Invokes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Locals	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Returns	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Sites	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow.Stores	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow._snapshots	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Flow._stack	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Gaps	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Lineage.BaseArgs	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Lineage.Bases	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Lineage.Interfaces	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Lineage.Own	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Members.Impls	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Members.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Members.TypeAttributes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Node.Calls	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Outside.Forwarded	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Outside.Members	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Outside.Types	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Outsides	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Addresses	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Arrays	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Fields	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Prov.Results	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Reached	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Src.Fields	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Src.Lost	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Src.Nodes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Summary.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.TypeInfo.Interfaces	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.TypeInfo.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Within.ArgProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Within.ElementProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Within.Escaped	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Within.EscapedAddresses	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet.Within.LocalProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._actions	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._addressTaken	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._assemblyFiles	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
@@ -225,8 +191,8 @@ JellyfinUserActions.CodeSet._folders	both	independent	assembly / type	code and r
 JellyfinUserActions.CodeSet._forwarded	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._frameworkSlots	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._gaps	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
-JellyfinUserActions.CodeSet._implIndex	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._implementers	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet._implIndex	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._implsOfBody	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._incomplete	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._invokes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
@@ -265,6 +231,50 @@ JellyfinUserActions.CodeSet._typesByName	both	independent	assembly / type	code a
 JellyfinUserActions.CodeSet._unresolved	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._upDone	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 JellyfinUserActions.CodeSet._visibleTo	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Contained	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow._snapshots	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow._stack	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Addressed	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Elements	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Escapes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Indirect	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Invokes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Locals	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Returns	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Sites	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Flow.Stores	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Gaps	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Lineage.BaseArgs	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Lineage.Bases	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Lineage.Interfaces	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Lineage.Own	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Members.Impls	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Members.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Members.TypeAttributes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Node.Calls	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Outside.Forwarded	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Outside.Members	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Outside.Types	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Outsides	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Addresses	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Arrays	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Fields	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Prov.Results	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Reached	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Src.Fields	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Src.Lost	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Src.Nodes	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Summary.Args	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.TypeInfo.Interfaces	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.TypeInfo.Methods	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Within.ArgProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Within.ElementProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Within.Escaped	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Within.EscapedAddresses	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
+JellyfinUserActions.CodeSet.Within.LocalProv	both	independent	assembly / type	code and reflection metadata read once; one walk's working set, dropped when it ends	write:per-call
 LanguageFlagRules.FlagInfo.AllLanguages	both	independent	none / asset	build, asset and rendering state: the same for everyone
 LanguageFlagRules.Memo	both	independent	none / asset	build, asset and rendering state: the same for everyone
 LanguageTags.Loaded	both	independent	none / asset	build, asset and rendering state: the same for everyone
@@ -277,28 +287,28 @@ LegacyCollageProjection.Member.Child	both	independent	one projection	one legacy-
 LegacyCollageProjection.Node.Falsified	both	independent	one projection	one legacy-collage byte projection's parse state, dropped with it	write:per-call
 LegacyCollageProjection.Node.Members	both	independent	one projection	one legacy-collage byte projection's parse state, dropped with it	write:per-call
 LegacyCollageProjection.Node.Removed	both	independent	one projection	one legacy-collage byte projection's parse state, dropped with it	write:per-call
-LegacyCollageTiles.State.History	both	independent	record	JE's own record of the collage tiles closed PR #936 wrote (files on disk), the same for every viewer
-LegacyCollageTiles.State.Tiles	both	independent	record	JE's own record of the collage tiles closed PR #936 wrote (files on disk), the same for every viewer
 LegacyCollageTiles._record	both	independent	record	JE's own record of the collage tiles closed PR #936 wrote (files on disk), the same for every viewer	write:locked=_lock
 LegacyCollageTiles._warned	both	independent	log key	log de-duplication: decides nothing a viewer sees
+LegacyCollageTiles.State.History	both	independent	record	JE's own record of the collage tiles closed PR #936 wrote (files on disk), the same for every viewer
+LegacyCollageTiles.State.Tiles	both	independent	record	JE's own record of the collage tiles closed PR #936 wrote (files on disk), the same for every viewer
 LegacyCollageView._images	both	independent	one view	one request's legacy-collage judgements (built for one answer, dropped with it)	write:per-call
 LegacyCollageView._judgements	both	independent	one view	one request's legacy-collage judgements (built for one answer, dropped with it)	write:per-call
 LegacyCollageView._kinds	both	independent	one view	one request's legacy-collage judgements (built for one answer, dropped with it)	write:per-call
 LegacyCollageView._listing	both	independent	one view	one request's legacy-collage judgements (built for one answer, dropped with it)	write:per-call
 LegacyCollageView._markers	both	independent	one view	one request's legacy-collage judgements (built for one answer, dropped with it)	write:per-call
 LegacyCollageWithhold._listings	both	independent	folder	a marker folder's listing reused while its modification time is unchanged (JE's own files, the same for every viewer)
-ListImportResolver.CallAdmission._owner	both	independent	one call	one admitted call's link to its resolver (a reference)	write:per-call
 ListImportResolver._activeCalls	both	independent	user	how many review calls each person has running (admission), not an answer about access	write:own-state
+ListImportResolver.CallAdmission._owner	both	independent	one call	one admitted call's link to its resolver (a reference)	write:per-call
 ListMetadataService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 ListMetadataService._inflight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 ListMetadataService._tmdbPosters	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 ListMetadataService._unreachableUntil	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)	deadline:a back-off after Seerr didn't answer (from the failure), not the lifetime of an answer
 ListService._createLocks	both	independent	lock key	locks (and their holder counts)
 ListService._destinationLocks	both	independent	lock key	locks (and their holder counts)
-ListSourceFetcher.CallerBudget.Recent	both	independent	user	per-person fetch budgets (rate limits), not an answer about access	write:own-state
-ListSourceFetcher.PageDrift._rows	both	independent	one read	one paged read's drift check, dropped with the read	write:per-call
 ListSourceFetcher._cache	both	independent	list URL | provider | credentials	a provider's public list as read (the same for every caller); the viewer's rules apply at review; kept from when the read began	write:evicts
 ListSourceFetcher._callers	both	independent	user	per-person fetch budgets (rate limits), not an answer about access	write:own-state
+ListSourceFetcher.CallerBudget.Recent	both	independent	user	per-person fetch budgets (rate limits), not an answer about access	write:own-state
+ListSourceFetcher.PageDrift._rows	both	independent	one read	one paged read's drift check, dropped with the read	write:per-call
 ListSourcePreview.GroupLibrary._seasons	both	independent	one review	one review's library answers for its people (the review's own reads), dropped with it	write:per-call
 ListSourcePreview.GroupLibrary._shows	both	independent	one review	one review's library answers for its people (the review's own reads), dropped with it	write:per-call
 ListStore._absent	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request; per-list generation (_generations) bumped under _cacheLock by every save and delete; a cold read publishes only if its list's generation is unchanged (under _cacheLock)	write:fenced=GenerationUnlocked
@@ -331,10 +341,10 @@ NativeDetailsArtwork._inFlight	jf12	independent	artwork path	image bytes; every 
 NativeDetailsFacadeFilter.BodyProperties	jf12	independent	assembly / type	code and reflection metadata read once
 NativeDetailsLibrary._cache	jf12	keyed	viewer | native-details revision | title | part	NativeDetailsLibrary.Cached~viewerRevision
 NativeDetailsLibrary._without	jf12	independent	provider set	whether the library holds copies without some provider ids (the whole library, no user), under the library revision
-NativeDetailsLinks.ViewerLinks._viewer	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 NativeDetailsLinks._names	jf12	independent	name / TMDB person	library genre, studio and person records (any viewer)
 NativeDetailsLinks._people	jf12	independent	name / TMDB person	library genre, studio and person records (any viewer)
 NativeDetailsLinks._visible	jf12	keyed	viewer | native-details revision | kind | name (or open | item)	NativeDetailsLinks.Finds~viewerRevision,NativeDetailsLinks.Opens~viewerRevision
+NativeDetailsLinks.ViewerLinks._viewer	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 NativeDetailsPolicy._epochs	jf12	independent	user	sign-out epochs: the revocation state itself, not a cached answer
 NativeDetailsPolicy._revisions	jf12	stamped	viewer	artwork-grant revision: fingerprint + own version; Revoke (sign-out) invalidates the viewer
 NativeDetailsPolicy._roots	jf12	independent	none	the library roots (not per user)
@@ -351,9 +361,9 @@ PlaybackTriggerChannel._pending	both	independent	trigger key	playback auto-reque
 PlaybackTriggerGate._entries	both	independent	trigger key	playback auto-request triggers and their cool-down; cool-down state: completing a trigger is the state change	write:own-state
 PosterTagAssets._flags	both	independent	none / asset	build, asset and rendering state: the same for everyone; cleared when disposed	write:disposal
 PosterTagComposer._renderer	both	independent	none / asset	build, asset and rendering state: the same for everyone
-PosterTagDataProvider.ContentHashes	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
 PosterTagDataProvider._building	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
 PosterTagDataProvider._memo	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn; an item change bumps _memoGeneration and drops under _memoLock; a store compares the generation taken before its read under that lock	write:fenced=_memoGeneration
+PosterTagDataProvider.ContentHashes	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
 PosterTagImageFilter.WarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 PosterTagRenderer._engine	both	independent	none / asset	build, asset and rendering state: the same for everyone
 PosterTagReviewRatings._index	both	independent	review key	every review by key, rebuilt on review writes; which authors the viewer sees is decided per request (held author users); a review change bumps _generation before the drop; an index is served only while its own generation is current	write:fenced=_generation
@@ -369,25 +379,26 @@ PosterTagUserCache._cache	both	stamped	user	the user itself (held mode; no such 
 PosterTagVariantToken._secret	both	independent	none / asset	build, asset and rendering state: the same for everyone
 PrivacyAnswerGraph._members	both	independent	type	reflection over answer types (which members can carry a title), the same for every viewer
 PrivacyAnswerGraph._reaches	both	independent	type	reflection over answer types (which members can carry a title), the same for every viewer
+PrivacyIdentities._members	both	independent	collection	a collection's members (library structure, the same for every viewer); recorded in each answer's read-set; kept only when no library change of the collection happened while it was read	write:locked=_membersLock
 PrivacyIdentities.RequestIdentities.Facts	both	independent	request	one request's resolved identities and the facts they were judged by (D46): dropped with the request (and before every rebuild)	write:per-call
 PrivacyIdentities.RequestIdentities.Known	both	independent	request	one request's resolved identities and the facts they were judged by (D46): dropped with the request (and before every rebuild)	write:per-call
-PrivacyIdentities._members	both	independent	collection	a collection's members (library structure, the same for every viewer); recorded in each answer's read-set; kept only when no library change of the collection happened while it was read	write:locked=_membersLock
-PrivacyInputs.Memory.Facts	both	independent	item	library ownership facts as the host last announced them (D46's input log): the same for every viewer; decides which logged change moves an answer, never an answer itself	write:evicts
-PrivacyInputs.Memory.Watch	both	independent	(user, item)	the watched state as the host last announced it (D46's input log): classifies a save as a watched or a progress change; never an answer	write:evicts
 PrivacyInputs._memory	both	independent	host store	one input-log memory per host store instance (a reference), not an answer
 PrivacyInputs._observed	both	independent	host store	which host stores the input log listens to (subscriptions), not an answer
+PrivacyInputs.Memory.Facts	both	independent	item	library ownership facts as the host last announced them (D46's input log): the same for every viewer; decides which logged change moves an answer, never an answer itself	write:evicts
+PrivacyInputs.Memory.Watch	both	independent	(user, item)	the watched state as the host last announced it (D46's input log): classifies a save as a watched or a progress change; never an answer	write:evicts
+PrivacyRatingTables._cache	both	independent	host localization	the host's parental rating tables per localization manager (a reference), the same for every viewer
 PrivacyRatingTables.Any	both	independent	host localization	the host's parental rating tables (configuration), the same for every viewer
 PrivacyRatingTables.ByCountry	both	independent	host localization	the host's parental rating tables (configuration), the same for every viewer
-PrivacyRatingTables._cache	both	independent	host localization	the host's parental rating tables per localization manager (a reference), the same for every viewer
 PrivacyReadSet._facts	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
 PrivacyReadSet._library	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
 PrivacyReadSet._progress	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
 PrivacyReadSet._revisions	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
 PrivacyReadSet._scopes	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
 PrivacyReadSet._watched	both	independent	one answer attempt	one answer attempt's read-set (D46): the inputs it read, validated by its own delivery gate; dropped with the attempt	write:per-call
-PrivacyResponseGuard.GuardedBody._held	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
 PrivacyResponseGuard._body	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
 PrivacyResponseGuard._reads	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
+PrivacyResponseGuard._transportBody	both	independent	one response	one response's outer transport body and held bytes, never shared across requests; its delivery guard commits or withholds the response using the current read-sets and evidence generation	write:per-call
+PrivacyResponseGuard.GuardedBody._held	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
 PrivacySurfaceRegistry._carries	both	independent	type	whether a runtime type can carry a title (reflection), the same for every viewer
 PrivacyValueHost._countries	both	independent	one projection	one projection's host lookups (D46 value walk): built for one answer and dropped with it	write:per-call
 PrivacyValueHost._items	both	independent	one projection	one projection's host lookups (D46 value walk): built for one answer and dropped with it	write:per-call
@@ -406,9 +417,9 @@ RequestIdentityService._singleUser	both	ticketed	server	the server's single-user
 RequestIdentityService._warnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 RequestPolicy.Typical	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 RequestSearchService._last	both	independent	search slot	search rate limit; search claims: releasing or expiring one is the state change	write:own-state
-RequestTitleLocks.Entry.Users	both	independent	lock key	locks (and their holder counts)
-RequestTitleLocks._entries	both	independent	lock key	locks (and their holder counts)
 RequestsHubService._hidden	both	independent	service	a service reference set once at start-up (not an answer)
+RequestTitleLocks._entries	both	independent	lock key	locks (and their holder counts)
+RequestTitleLocks.Entry.Users	both	independent	lock key	locks (and their holder counts)
 ResolveMemo.Episodes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 ResolveMemo.Movies	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 ResolveMemo.Series	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
@@ -418,9 +429,9 @@ SecretsMigration.Report.Missing	both	independent	per call	an object made for one
 SecretsMigration.Report.Moved	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SecretsMigration.Report.NeedsReentry	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SecretsMigration.Report.Notes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Work._slots	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SecretsMigration.Work.Extra	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SecretsMigration.Work.Prune	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
-SecretsMigration.Work._slots	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SecretsStore._pending	both	independent	secret name	secrets
 SecretsStore._values	both	independent	secret name	secrets
 SeerrAskedProofCache._entries	both	independent	user | Seerr address	the titles the person asked for in Seerr (Seerr data); Clear bumps _generation before dropping the entries; a read writes its answer (Run) into its own entry only when the generation it began under is unchanged, and an entry made after a Clear (GetAsync's empty slot) holds nothing until such a read	write:fenced=_generation
@@ -435,16 +446,17 @@ SeerrNativeDetailsSource._cache	jf12	independent	Seerr path	Seerr's public title
 SeerrNativeDetailsSource._inFlight	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrNativeDetailsSource._linked	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrParentalFilter._certCache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrParentalFilter._countryWriters	both	independent	server configuration object identity	server configuration event-pairing leases for the evidence writer, not viewer access answers; stores and removals share the table lock and each completed write releases its own lease	write:locked=_countryWriters
 SeerrParentalFilter._inFlight	both	independent	title	legacy Seerr-mode evidence tasks only; JE evidence uses ViewerMetadataAdmission; shared facts, viewer policy applied at read
 SeerrParentalFilter._tagFetchFailedAt	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read; failure markers dropped when expired	write:evicts
-SeerrRequestReadModel.FullRead.Records	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
-SeerrRequestReadModel.Snapshot.ById	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
-SeerrRequestReadModel.Snapshot.ByKey	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
-SeerrRequestReadModel.Snapshot.ByUser	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrRequestReadModel._goneOwners	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrRequestReadModel._goneTitles	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrRequestReadModel._meta	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data); Clear drops it under _lock after the source changed; a store re-checks the source under _lock	write:locked=_lock
 SeerrRequestReadModel._snapshot	both	independent	title / request	Seerr's requests as last read (JE's own Seerr data; per-viewer visibility is checked where it is shown); Clear resets it under _lock after the source changed; a publish re-checks the source under _lock	write:locked=_lock
+SeerrRequestReadModel.FullRead.Records	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SeerrRequestReadModel.Snapshot.ById	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel.Snapshot.ByKey	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel.Snapshot.ByUser	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrScanTriggerService._owners	both	independent	(source, job)	scan trigger ownership; cleared when disposed	write:disposal
 SourceListFacts.FirstDate	both	independent	one list	one source list's facts (public), dropped with the read	write:per-call
 SourceListFacts.SeasonEpisodes	both	independent	one list	one source list's facts (public), dropped with the read	write:per-call
@@ -475,12 +487,12 @@ SpoilerUserResolver._providerTitles	both	independent	item	an item's typed TMDB k
 SpoilerUserResolver._userStateCache	both	ticketed	user	the person's Spoiler Guard state file (JE data), on the ticket protocol: a read that began before the write's invalidation is never kept
 SpoilerUserResolver._warnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 TagCachePendingChanges._pending	both	independent	item	pending library changes for the tag cache; a queue drained by the tag cache	write:own-state
-TagCacheService.Instance	both	independent	process	the service itself (a reference, not an answer); reset when the service is disposed	write:disposal
-TagCacheService.UserAccess.Ids	both	independent	per value	part of the value _userAccessCache (stamped) holds
 TagCacheService._cache	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache); the tag cache's own published entries (the store itself, persisted from here): a removal is the change, counted by _mutationEpoch	write:own-state
 TagCacheService._languageIdentities	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache)
 TagCacheService._serializedItems	both	keyed	cache version, timestamp, epoch, access digest	TagCacheService.TryGetSerializedItems~accessRevision	write:self-keyed;note:each copy is matched on the cache version, timestamp, mutation epoch and access digest it was serialized under
 TagCacheService._userAccessCache	both	stamped	user	accessible-id set: fingerprint + own version; user events, library changes and disable invalidate all
+TagCacheService.Instance	both	independent	process	the service itself (a reference, not an answer); reset when the service is disposed	write:disposal
+TagCacheService.UserAccess.Ids	both	independent	per value	part of the value _userAccessCache (stamped) holds
 TagStyleCatalog.AgeList	both	independent	none / asset	build, asset and rendering state: the same for everyone
 TagStyleCatalog.QualityList	both	independent	none / asset	build, asset and rendering state: the same for everyone
 TitleFacts.Checked	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
@@ -488,8 +500,8 @@ TitleFacts.Copies	both	independent	per call	one status computation's working set
 TitleFacts.Stale	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
 TitleFacts.Unreadable	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
 TitlePresentationResultFilter._warnedUnclassified	both	independent	log key	log de-duplication: decides nothing a viewer sees
-TmdbImportLookup.HitRows._hits	both	independent	one lookup	one lookup's result rows, dropped with it	write:per-call
 TmdbImportLookup._cache	both	independent	query	public metadata lookups (TMDB), the same for every caller; the viewer's rules apply at review	write:evicts
+TmdbImportLookup.HitRows._hits	both	independent	one lookup	one lookup's result rows, dropped with it	write:per-call
 TmdbNativeDetailsSource._cache	jf12	independent	TMDB path / query	TMDB's public metadata and provider-id aliases (TitleAliases.Of), identical for every viewer; NativeDetailsPolicy and the page/feed readers apply the viewer's access, parental, Hidden Content and Spoiler Guard rules before publishing
 TmdbResponseCache._entries	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown); LRU and expiry eviction (RemoveNode, under _lock)	write:evicts
 TmdbResponseCache._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
@@ -517,12 +529,3 @@ WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's
 WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WrittenStateCache._entries	both	independent	key	the written-state helper's own storage: its ledger refuses and stops serving every entry read before an invalidation	write:own-state
-# Bridge metadata readiness: import and hydration state, independent of each viewer's access.
-BridgeImportReadiness.Entry.Items	both	independent	import generation	the Jellyfin item ids attached to one import; visibility is checked by each consumer for its viewer; the list is dropped with its entry	write:own-state
-BridgeImportReadiness._byItem	both	independent	Jellyfin item id	the import readiness gate's item index, shared by every viewer; Attach and Forget change the gate's own state under _lock, not an access answer	write:own-state
-BridgeImportReadiness._byPath	both	independent	physical path / import generation	the import readiness gate's current generations, shared by every viewer; Begin, Drop, Release and Prune change its own state under _lock	write:own-state
-BridgeImportReadiness._done	both	independent	import generation	the latest 50 completed imports for diagnostics, not viewer access; Release appends a completion and evicts the oldest under _lock	write:own-state
-JellyfinBridge._creating	both	independent	physical folder path	in-flight child-folder creation guards, not viewer access; CreateNewFolder removes its guard in finally under _lock	write:own-state
-JellyfinBridge._hydrationAsked	both	independent	Jellyfin item id	hydration scheduling and retry coalescing, not viewer access; asks and expired or refused asks update the scheduler's own state under _lock	write:own-state
-JellyfinBridge._hydrationJobs	both	independent	physical path / import generation	in-flight hydration guards, not viewer access; completion or failure removes the job under _lock	write:own-state
-JellyfinBridge._imports	both	independent	physical path / import generation	current imported generations and title identities, not viewer access; BeginImport, EndImport and Publish change the import ledger's own state under _lock	write:own-state

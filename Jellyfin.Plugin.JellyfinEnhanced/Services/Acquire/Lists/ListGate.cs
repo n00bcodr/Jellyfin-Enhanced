@@ -375,6 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return null;
                 }
 
+                var publication = _access.CapturePublication();
                 var visibility = known != null && known.Matches(_access.ParentalStamp(current.User))
                     ? known
                     : await ListContinuation.Await(() => VisibilityAsync(items, current.User, cancellationToken)).ConfigureAwait(false);
@@ -385,7 +386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (visibility.Matches(_access.ParentalStamp(final.User)))
                 {
-                    return build(new ListGrant(final, visibility, Policy(final.User)));
+                    return publication.Publish(() => build(new ListGrant(final, visibility, Policy(final.User))));
                 }
 
                 known = null;

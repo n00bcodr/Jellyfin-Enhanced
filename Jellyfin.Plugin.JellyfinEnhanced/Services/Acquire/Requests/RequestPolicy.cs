@@ -63,6 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         /// <summary>Current household configuration.</summary>
         PluginConfiguration Configuration { get; }
+        /// <summary>The evidence revision used by visibility decisions; evidence-free implementations use a constant.</summary>
+        string EvidenceRevision => "-";
         /// <summary>Loads required rating and backend identity facts, bounded by cancellation.</summary>
         Task PrepareAsync(Guid userId, MutationInput input, CancellationToken ct);
         /// <summary>Refreshes backend identity and quota without looking up title ratings.</summary>
@@ -257,13 +259,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             return facts! with { Refusal = "authorization_changed", CanCreate = false, CanApprove = false, Can4k = false, Visible = false };
         }
+        /// <summary>Current parental evidence source, configuration and region revision.</summary>
+        public string EvidenceRevision => _parental?.EvidenceRevision ?? "-";
+
         /// <inheritdoc />
         public string AuthorizationStamp(Guid user, MutationInput input)
         {
             var viewer = _view.Viewer(user);
             var native = viewer?.Handle is User account ? JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(account)) : string.Empty;
             var generations = string.Join("|", _store.Registry.All().Select(i => _clients.ConnectionGeneration(i.Id)));
-            return MutationInput.Hash(JsonSerializer.Serialize(Configuration) + "|" + viewer?.PolicyRevision + "|" + native + "|" + _view.Revision + "|" + _libraries.Revision + "|" + generations + "|" + _backend.Binding(user, input));
+            return MutationInput.Hash(JsonSerializer.Serialize(Configuration) + "|" + viewer?.PolicyRevision + "|" + native + "|" + _view.Revision + "|" + _libraries.Revision + "|" + generations + "|" + _backend.Binding(user, input) + "|" + EvidenceRevision);
         }
         private bool NativeScopeAllowed(MutationInput input, JfCopy copy, StatusViewer viewer)
         {

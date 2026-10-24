@@ -97,6 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var epoch = ListMetadataEpoch.Capture();
+            var publication = _access.CapturePublication();
             var options = new SourceFetchOptions
             {
                 AllowMdblistApi = request.UseMdblistApi && ListAccessService.IsAdmin(caller),
@@ -175,7 +176,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
             }
 
-            return epoch.Publish(() => ListOutcome.Ok(response), () =>
+            return epoch.Publish(() => !publication.Current
+                ? new ListOutcome { StatusCode = 504, RetryAfterSeconds = 2, Value = new ListErrorDto { Code = "parental_pending", Message = "Checking titles against your parental controls; try again in a moment." } }
+                : ListOutcome.Ok(response), () =>
                 SourceOutcomes.FetchFailure(SourceFetchResult.Fail(source!, "configuration_changed", "The request backend changed while reading this source. Read it again.")));
         }
 

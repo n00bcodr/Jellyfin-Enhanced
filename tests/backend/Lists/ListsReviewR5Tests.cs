@@ -130,7 +130,7 @@ public class ListsReviewR5Tests
     public async Task ASeasonPosterReadThatFailsIsNotAnsweredWithTheShowsPoster()
     {
         using var h = new ListsHarness();
-        h.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.Advance(() => h.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key");
         h.Tmdb["/3/tv/170"] = "{\"id\":170,\"poster_path\":\"/show.jpg\"}";
         h.Tmdb["/3/tv/171"] = "{\"id\":171,\"poster_path\":null}";
         h.Tmdb["/3/tv/170/season/1"] = "{\"season_number\":1,\"poster_path\":null}";
@@ -147,14 +147,14 @@ public class ListsReviewR5Tests
         Assert.Equal(((string?)null, false), await h.Metadata.ReadTmdbPosterAsync(Season(171, 2), None));
 
         // The swap's maintenance pass leaves the client's unverified poster alone while the season read fails.
-        h.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
+        Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.Advance(() => h.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty);
         var editor = h.NewUser("editor");
         var playlist = h.Host.AddPlaylist(editor);
         var access = h.AccessFor(playlist, editor);
         var season = Season(170, 2);
         Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { season }, null, null, null, None));
         Assert.True(Stored(h, access.ListIdN, season.Id)!.PosterUnverified);
-        h.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.Advance(() => h.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key");
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.Maintenance, None);
         var kept = Stored(h, access.ListIdN, season.Id)!;
         Assert.Equal(("/client.jpg", (bool?)true), (kept.PosterPath, kept.PosterUnverified));

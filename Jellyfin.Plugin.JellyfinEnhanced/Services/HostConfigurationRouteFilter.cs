@@ -47,6 +47,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <inheritdoc />
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
+            // The pinned host's legacy startup endpoint mutates MetadataCountryCode in place, before SaveConfiguration;
+            // it does not raise ConfigurationUpdating. Keep its whole action inside the same evidence writer barrier.
+            if (context.ActionDescriptor is ControllerActionDescriptor { ControllerName: "Startup", ActionName: "UpdateInitialConfiguration" }
+                && HttpMethods.IsPost(context.HttpContext.Request.Method))
+            {
+                using var writer = EvidenceRevision.Advance(_logger);
+                await next().ConfigureAwait(false);
+                return;
+            }
+
             if (!IsJeConfigurationSave(context))
             {
                 await next().ConfigureAwait(false);

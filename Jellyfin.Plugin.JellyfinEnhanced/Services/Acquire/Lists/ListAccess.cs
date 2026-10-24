@@ -156,6 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The current access, or null.</returns>
         public ListAccess? Current(ListAccess access) => Gate.Current(access);
 
+        /// <summary>Captures the common evidence boundary before asynchronous list preparation.</summary>
+        internal EvidencePublication CapturePublication() => _parentalFilter.CapturePublication();
+
         /// <summary>
         /// The parental limits a visibility was checked with, as text: equal stamps decide the same placeholders
         /// (<see cref="PlaceholderVisibility.Matches"/>). "-" for a user nothing is hidden from.
@@ -178,7 +181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 policy.BlockUnratedMovies ? "m" : string.Empty,
                 policy.BlockUnratedSeries ? "s" : string.Empty,
                 Tags(policy.BlockedTags),
-                Tags(policy.AllowedTags));
+                Tags(policy.AllowedTags),
+                CapturePublication().Revision);
         }
 
         /// <summary>
@@ -388,6 +392,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return hidden;
             }
 
+            var publication = CapturePublication();
             var userIdN = user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ParentalBudget);
@@ -413,6 +418,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             await ListContinuation.Await(() => Task.WhenAll(checks)).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!publication.Current)
+            {
+                foreach (var placeholder in placeholders) { hidden.Add(placeholder.Id); unverified?.Add(placeholder.Id); }
+            }
             return hidden;
 
             async Task CheckAsync(Placeholder placeholder)

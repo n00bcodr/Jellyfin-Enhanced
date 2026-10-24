@@ -672,6 +672,12 @@ Discover and the search row need request handling set to Jellyfin Enhanced and a
 Seerr's (Seerr's **Show search results** setting no longer adds a second row), and Seerr's request buttons open
 Jellyfin Enhanced's request sheet.
 
+Parental rating and tag checks in JE mode use the same TMDB key, with Seerr completely disabled. Ratings use
+Jellyfin's metadata country. Missing metadata remains hidden for restricted people and can be retried later;
+it does not grant permission to request a title. Changing the metadata country or evidence connection also
+invalidates cached Discover/search and status decisions. Existing openable library copies keep Jellyfin's
+native entitlement for title/season metadata, including unrated copies. No extra parental-filter switch is needed.
+
 ### Everywhere and gentle automation (phase 4)
 
 `ArrPhase4Enabled` (off) needs the integration and phase 1 switches; each phase-4 feature has its own switch under it.

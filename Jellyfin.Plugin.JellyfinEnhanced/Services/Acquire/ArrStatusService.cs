@@ -50,6 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly ArrChangeFeed? _feed;
         private readonly TitleAliases _aliases;
         private readonly ArrInstanceLibraries _libraries;
+        private readonly ResponseGate _responseGate;
         private readonly Requests.ISeerrRequestSettings? _seerr;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
@@ -72,6 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _feed = feed;
             _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
+            _responseGate = new ResponseGate(view, _config, () => _libraries.Parental?.EvidenceRevision ?? "-");
             _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
             // Edition availability credits only what a finished lookup found (Ready and fulfilment never ride on a guess).
             Editions = new EditionAvailability(view, _config, (key, viewer) => CopiesOf(key, viewer).Display);
@@ -622,17 +624,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal async Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
         {
             var title = key.Title;
-            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
-            var request = _requests.ForPart(title, fourK, seasons, episodes, viewer);
-            // Seerr's word on that edition being available, composed as the Requests page composes its row (with no 4K
-            // instance in Jellyfin Enhanced it is all there is to go by for a 4K copy).
-            var availability = _requests.AvailabilityForPart(title, fourK, seasons, episodes, viewer);
-            var scope = new RequestScope(seasons, fourK, request, availability?.Available == true, availability?.AvailableAt, availability?.JellyfinItemId, episodes);
-            var cacheKey = CacheKey(viewer, "part", title + "@" + scope + "|" + (request == null ? string.Empty : JsonSerializer.Serialize(request)), gather.Revision);
-            if (Cache.Get(cacheKey) is { } hit) return hit;
-            var composed = Compose(viewer, gather, title, detail: false, scope);
-            var status = composed == null ? null : Scoped(viewer, gather, composed, scope).Status;
-            return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
+            return await GatedAsync(viewer,
+                v => GatherAsync(v, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken),
+                (now, gather) => PartBody(now, gather),
+                refused => Nothing(refused, "part")).ConfigureAwait(false);
+
+            StatusBody PartBody(StatusViewer viewer, Gathered gather)
+            {
+                var request = _requests.ForPart(title, fourK, seasons, episodes, viewer);
+                // Seerr's word on that edition being available, composed as the Requests page composes its row (with no 4K
+                // instance in Jellyfin Enhanced it is all there is to go by for a 4K copy).
+                var availability = _requests.AvailabilityForPart(title, fourK, seasons, episodes, viewer);
+                var scope = new RequestScope(seasons, fourK, request, availability?.Available == true, availability?.AvailableAt, availability?.JellyfinItemId, episodes);
+                var cacheKey = CacheKey(viewer, "part", title + "@" + scope + "|" + (request == null ? string.Empty : JsonSerializer.Serialize(request)), gather.Revision);
+                if (Cache.Get(cacheKey) is { } hit) return hit;
+                var composed = Compose(viewer, gather, title, detail: false, scope);
+                var status = composed == null ? null : Scoped(viewer, gather, composed, scope).Status;
+                return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
+            }
         }
 
         /// <summary>The whole seasons the viewer asked for themselves, for a series page (null when none).</summary>
@@ -1084,12 +1093,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var titles = keys.Select(k => k.Title).Distinct().ToList();
             // As in GatedAsync: a page composed from a lookup that reached its bound is answered, never cached.
             using var bound = CopyLookupBound.Track();
+            var stamp = _responseGate.Take(viewer);
             var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
-            if (Current(viewer) is not { } now) throw new ViewerChangedException();
+            if (Current(viewer) is not { } now || !_responseGate.EvidenceCurrent(stamp)) throw new ViewerChangedException();
             return responseGate != null ? responseGate(Respond) : Respond();
 
             StatusBody Respond()
             {
+                if (!_responseGate.EvidenceCurrent(stamp)) throw new ViewerChangedException();
                 IEnumerable<RequestScope?> ScopesOf(TitleKey t)
                 {
                     if (editions == null) return new[] { scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null };
@@ -1103,6 +1114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     var final = presentation?.Invoke();
                     var bytes = final == null ? raw : System.Text.Encoding.UTF8.GetBytes(final.Project(System.Text.Encoding.UTF8.GetString(raw), "requests", null, "requests-hub"));
+                    if (!_responseGate.EvidenceCurrent(stamp)) throw new ViewerChangedException();
                     // A snapshot captured before Gather/build cannot populate a cache after its policy changed.
                     return insert && (final == null || final.Revision == presentationRevision) ? Cache.Put(cacheKey, bytes)
                         : new StatusBody(bytes, ArrStatusCache.ETagFor(final == null || final.Revision == presentationRevision ? cacheKey : cacheKey + "|" + final.Revision, bytes));
@@ -1451,8 +1463,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var prepared = viewer;
             for (var attempt = 0; attempt < GateAttempts; attempt++)
             {
+                var stamp = _responseGate.Take(prepared);
                 var facts = await prepare(prepared).ConfigureAwait(false);
-                if (Current(prepared) is { } now) return answer(now, facts);
+                if (Current(prepared) is { } now && _responseGate.EvidenceCurrent(stamp))
+                {
+                    var result = answer(now, facts);
+                    if (_responseGate.EvidenceCurrent(stamp)) return result;
+                }
                 if (!again || _view.Viewer(prepared.UserId) is not { } changed) break;
                 prepared = changed;
             }
@@ -1530,12 +1547,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 "|",
                 viewer.UserId.ToString("N", CultureInfo.InvariantCulture),
                 viewer.PolicyRevision,
+                EvidenceRevision.EvidenceGeneration.ToString(CultureInfo.InvariantCulture),
                 route,
                 what,
                 factsRevision,
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
                 _libraries.Revision,
+                _responseGate.Take(viewer).Evidence,
                 EditionAvailability.SemanticRevision(config),
                 (config?.ArrRequestBackend ?? "seerr") + "#" + (config?.ArrPhase3Enabled == true ? "3" : "0") + "#" + (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),

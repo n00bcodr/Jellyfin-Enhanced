@@ -248,6 +248,12 @@ public partial class ApiNativeDetailsTests
         public NativeDetailsFeeds Feeds { get; private set; } = null!;
         public Mock<MediaBrowser.Controller.Drawing.IImageProcessor> ImageTags { get; } = new();
         public string Rating { get; set; } = "PG-13";
+        public bool R4JeTransport { get; set; }
+        public bool R4IncludePublicationFilter { get; set; }
+        public void R4Country(string country) => EvidenceRevision.Advance(() => _server.Object.Configuration.MetadataCountryCode = country);
+        public TitlePresentationResultFilter R4PublicationFilter() => new(Plugin.Core.Manager,
+            new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()),
+            Library.Object, _host.Object, _strip, parental: _parental);
         private readonly string? _stateDir;
         private Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
         public SeerrParentalFilter Parental => _parental;
@@ -306,8 +312,14 @@ public partial class ApiNativeDetailsTests
             {
                 if (req.RequestUri!.Host != "api.themoviedb.org") lock (SeerrReads) SeerrReads.Add(req.RequestUri.Host + req.RequestUri.AbsolutePath);
                 if (RatingGate is { } gate) await gate.Task;
+                if (R4JeTransport) return IntegrationTransport.Response(IntegrationParentalEvidenceTests.Movie(693134, "G"));
                 return IntegrationTransport.Response(JsonSerializer.Serialize(new
                 {
+                    // The joined JE gate validates TMDB identity/adult evidence as well as the regional rating.
+                    id = int.TryParse(req.RequestUri.Segments.Last().TrimEnd('/'), out var tmdbId) ? tmdbId : 693134,
+                    adult = false,
+                    release_dates = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
+                    content_ratings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
                     releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
                     contentRatings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
                     keywords = Array.Empty<object>(), genres = Array.Empty<object>(),
@@ -380,6 +392,8 @@ public partial class ApiNativeDetailsTests
         var descriptor = new ControllerActionDescriptor { ControllerName = controller, ActionName = action };
         var context = new ActionContext(http, new RouteData(), descriptor);
         var filters = new List<IFilterMetadata>();
+        var publication = rig.R4IncludePublicationFilter ? rig.R4PublicationFilter() : null;
+        publication?.OnResourceExecuting(new ResourceExecutingContext(context, filters, new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>()));
         var executing = new ActionExecutingContext(context, filters, args, new object());
         var calls = 0;
         await rig.Filter.OnActionExecutionAsync(executing, () =>
@@ -387,6 +401,12 @@ public partial class ApiNativeDetailsTests
             calls++;
             return Task.FromResult(new ActionExecutedContext(context, filters, new object()) { Result = new OkResult() });
         });
+        if (publication != null && executing.Result != null)
+        {
+            var final = new ResultExecutingContext(context, filters, executing.Result, new object());
+            publication.OnResultExecuting(final);
+            executing.Result = final.Result;
+        }
         return new Run(executing.Result, calls, args, http);
     }
 
@@ -728,6 +748,79 @@ public partial class ApiNativeDetailsTests
         var parent = await Call(rig, "Items", "GetItemsByUserIdLegacy", Me(viewer), new() { ["parentId"] = syn });
         Assert.Equal(0, parent.NextCalls);
         Assert.Empty(Value<QueryResult<BaseItemDto>>(parent.Result).Items);
+    }
+
+    [Theory]
+    [InlineData("GET", false)] [InlineData("GET", true)]
+    [InlineData("HEAD", false)] [InlineData("HEAD", true)]
+    public async Task R4AnonymousArtworkMustNotPublishAcrossEvidenceRevision(string method, bool revoke)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        rig.R4JeTransport = true;
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 10;
+        var movie = Id(SyntheticId.Movie(693134));
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Call(rig, "Image", "GetItemImage", null, new()
+        {
+            ["itemId"] = movie, ["imageType"] = ImageType.Primary,
+            ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300,
+        }, method);
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke) rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke)
+        {
+            Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), default));
+            Assert.False(result.Result is FileContentResult, "Anonymous grant request returned original artwork after evidence was revoked during its fetch.");
+        }
+        else Assert.IsType<FileContentResult>(result.Result);
+    }
+
+    [Theory]
+    [InlineData("GET", false)] [InlineData("GET", true)]
+    [InlineData("HEAD", false)] [InlineData("HEAD", true)]
+    public async Task R4ArtworkGrantViewerOverridesUnrestrictedHttpPrincipal(string method, bool revoke)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        rig.R4JeTransport = true;
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 10;
+        var movie = Id(SyntheticId.Movie(693134));
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var principal = rig.Person();
+        principal.SetPermission(PermissionKind.IsAdministrator, true);
+        var pending = Call(rig, "Image", "GetItemImage", Me(principal), new()
+        {
+            ["itemId"] = movie, ["imageType"] = ImageType.Primary,
+            ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300,
+        }, method);
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke) rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        var guard = PrivacyResponseGuard.Find(result.Http);
+        var dependency = guard == null ? null : typeof(PrivacyResponseGuard).GetField("_evidence", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(guard);
+        Assert.NotNull(dependency);
+        Assert.Equal(viewer.Id, dependency.GetType().GetProperty("Viewer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(dependency));
+
+        if (revoke)
+        {
+            Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), default));
+            Assert.False(result.Result is FileContentResult, "Anonymous grant request returned original artwork after evidence was revoked during its fetch.");
+        }
+        else Assert.IsType<FileContentResult>(result.Result);
     }
 
     [Fact]

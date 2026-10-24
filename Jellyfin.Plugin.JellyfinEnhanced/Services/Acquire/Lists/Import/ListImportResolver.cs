@@ -177,6 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         {
             var epoch = ListMetadataEpoch.Capture();
             var provider = Provider;
+            var publication = _access.CapturePublication();
             var clock = Stopwatch.StartNew();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(options.Deadline);
@@ -219,7 +220,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _logger.Info($"[Lists] Resolved {entries.Count} import entries for {options.Context.Owner} in {clock.ElapsedMilliseconds} ms: "
                 + $"{response.Results.Count(r => r.Confidence == ImportScoring.Levels.High)} high, {response.Results.Count(r => r.State == "transient")} transient, {options.Context.Calls} {Provider} calls "
                 + $"(limiter since start: {total} calls, peak {peak} concurrent, at most {perSecond} started in any second).");
-            return epoch.Publish(() => new ImportResolveOutcome(response, pending), () =>
+            return epoch.Publish(() =>
+            {
+                if (!publication.Current)
+                {
+                    response.Results.Clear();
+                    response.Complete = false;
+                    return new ImportResolveOutcome(response, true);
+                }
+                return new ImportResolveOutcome(response, pending);
+            }, () =>
             {
                 response.Results = entries.Select((entry, index) => new ResolvedEntryDto
                 {
