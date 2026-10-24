@@ -31,16 +31,20 @@ def main():
             if package is None:
                 raise ValueError('Production plugin is missing from coverage report')
             measured = {kind: round(float(package.attrib[kind + '-rate']) * 100, 4) for kind in ('line', 'branch')}
-            totals = {kind: {'covered': root.get(('lines' if kind == 'line' else 'branches') + '-covered'), 'total': root.get(('lines' if kind == 'line' else 'branches') + '-valid')}
-                      for kind in ('line', 'branch')}
     except (ValueError, KeyError, OSError, ET.ParseError) as error:
         parser.error(str(error))
     # Below the measured values recorded in tests/docs/validation.md for both targets.
     # Raise the floors as coverage improves; never lower them to accept a loss.
     floors = {'line': 47.0, 'branch': 35.0}
     report = {'measured_percent': measured, 'minimum_percent': floors,
-              'source': str(source), 'totals': totals, 'exclusions': [],
+              'source': str(source), 'exclusions': [],
               'passed': all(measured[kind] >= floor for kind, floor in floors.items())}
+    # Default artifacts keep the pre-tier schema; speedup diagnostics are additive.
+    sidecar = args.results / 'coverage-summary.totals.json'
+    if args.manifest and len(manifest['shards']) > 1:
+        sidecar.write_text(json.dumps(totals, indent=2) + '\n')
+    else:
+        sidecar.unlink(missing_ok=True)
     (args.results / 'coverage-summary.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
     return 0 if report['passed'] else 1

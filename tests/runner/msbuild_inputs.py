@@ -1,4 +1,4 @@
-"""Obtain effective imports and project references from MSBuild, fail closed.
+"""Obtain evaluated file inputs across the MSBuild project closure, fail closed.
 
 Preprocessing is MSBuild's flattened evaluation, including implicit SDK imports.
 Its delimited source markers identify the files actually imported; inactive
@@ -34,13 +34,20 @@ def preprocessed_paths(text, project):
     return paths
 
 
-def collect(root, properties, build_directory):
+# Each key must be present even when that item list is empty. MSBuild supplies
+# absolute FullPath metadata, including for linked files outside the checkout.
+FILE_ITEMS = ('Compile', 'EmbeddedResource', 'AdditionalFiles', 'Analyzer', 'EditorConfigFiles')
+ITEMS = ('ProjectReference', *FILE_ITEMS, 'Content', 'None', 'Reference', 'PackageReference')
+
+
+def collect(root, properties, build_directory, diagnostics=None):
     """Return the proven transitive file closure, or None when evaluation fails.
 
     This runner builds a single target/configuration. Reference property overrides
     and multi-target projects require a graph evaluator; reject those rather than
     silently evaluating a different configuration. Fresh builds remain available.
     """
+    project = root / 'tests/backend/JE.Tests.csproj'
     try:
         arguments = []
         index = 0
@@ -68,7 +75,28 @@ def collect(root, properties, build_directory):
             paths.update(preprocessed_paths(flattened, project))
             data = json.loads(evaluate([
                 '-getProperty:MSBuildProjectFullPath,TargetFrameworks,NuGetLockFilePath,RestorePackagesWithLockFile',
-                '-getItem:ProjectReference']))
+                '-getItem:' + ','.join(ITEMS)]))
+            items = data['Items']
+            for kind in ITEMS:
+                if not isinstance(items[kind], list) or any(not isinstance(item, dict) for item in items[kind]):
+                    raise ValueError('Cannot enumerate evaluated item kind ' + kind)
+            def item_path(item):
+                path = Path(item['FullPath'])
+                if not path.is_absolute():
+                    raise ValueError('Evaluated input is not absolute: ' + str(path))
+                return path.resolve()
+            project_files = set()
+            for kind in FILE_ITEMS:
+                project_files.update(item_path(item) for item in items[kind])
+            for kind in ('Content', 'None'):
+                for item in items[kind]:
+                    if item.get('CopyToOutputDirectory', '').lower() not in ('', 'never'):
+                        project_files.add(item_path(item))
+            for item in items['Reference']:
+                if item.get('HintPath'):
+                    hint = Path(item['HintPath'].replace('\\', '/'))
+                    project_files.add((project.parent / hint).resolve())
+            paths.update(project_files)
             evaluated = data['Properties']
             if Path(evaluated['MSBuildProjectFullPath']).resolve() != project or evaluated['TargetFrameworks']:
                 raise ValueError('Unsupported or ambiguous project evaluation')
@@ -80,11 +108,26 @@ def collect(root, properties, build_directory):
                 paths.add(lock_path.resolve())
             elif evaluated['RestorePackagesWithLockFile'].lower() == 'true':
                 paths.add(project.parent / 'packages.lock.json')
-            for reference in data['Items']['ProjectReference']:
+            # Existing default locks are restore inputs even when the property
+            # is not explicitly enabled (NuGet uses a present lock by default).
+            default_lock = project.parent / 'packages.lock.json'
+            if default_lock.exists():
+                paths.add(default_lock.resolve())
+            for reference in items['ProjectReference']:
                 if any(reference.get(name) for name in ('AdditionalProperties', 'GlobalPropertiesToRemove',
                        'SetConfiguration', 'SetPlatform', 'SetTargetFramework', 'UndefineProperties')):
                     raise ValueError('Project reference overrides require graph evaluation')
-                pending.append(Path(reference['FullPath']).resolve())
+                pending.append(item_path(reference))
+            # Roslyn discovers .editorconfig/.globalconfig above Compile paths,
+            # including linked sources. Include ancestors conservatively as well
+            # as MSBuild's evaluated EditorConfigFiles (which includes existing
+            # GlobalAnalyzerConfigFiles, not its nonexistent candidate paths).
+            for file in project_files | {project}:
+                for directory in file.parents:
+                    for name in ('.editorconfig', '.globalconfig'):
+                        candidate = directory / name
+                        if candidate.exists():
+                            paths.add(candidate.resolve())
             # SDK selection and NuGet configuration can live above the checkout.
             # Import discovery itself comes exclusively from MSBuild, not a glob.
             for directory in (project.parent, *project.parents, root, *root.parents):
@@ -92,9 +135,14 @@ def collect(root, properties, build_directory):
                     candidate = directory / name
                     if candidate.is_file():
                         paths.add(candidate.resolve())
-        # A missing declared lock file is not a proven restore input closure.
-        if not all(path.is_file() for path in paths):
-            return None
+        # Listed inputs must be real readable files, never silently discarded.
+        for path in paths:
+            if not path.is_file():
+                raise ValueError('Evaluated input is missing or not a file: ' + str(path))
+            with path.open('rb') as source:
+                source.read(1)
         return sorted(paths)
-    except (OSError, ValueError, KeyError, IndexError, TypeError, ET.ParseError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError, ET.ParseError, subprocess.SubprocessError) as error:
+        if diagnostics is not None:
+            diagnostics.append('MSBuild evaluated input closure unavailable for ' + str(project) + ': ' + str(error))
         return None

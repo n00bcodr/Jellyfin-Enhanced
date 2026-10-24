@@ -90,3 +90,22 @@ runs. A restore that changes the import closure cannot publish a reuse stamp on
 that invocation. An unchanged subsequent build can establish the stamp. Fresh
 unproven builds receive unique execution identities solely for partition receipts.
 Repository input changes during a build still fail incomplete.
+
+Default artifacts keep the pre-tier schema; speedup outputs are additive files.
+In particular, backend `coverage-summary.json` retains exactly the fields emitted
+by the actual pre-tier validator at `b1a9ee65f` (frozen in
+`tests/fixtures/suite-speed/backend-default-summary.json`). It has no `totals`
+field. Only a validated multi-shard invocation writes the additional
+`coverage-summary.totals.json`; an ordinary validation removes a retained sidecar.
+
+Reuse identities also include evaluated file inputs for every project in the
+transitive `ProjectReference` closure: Compile, EmbeddedResource, AdditionalFiles,
+Analyzer, copied Content/None, Reference HintPaths, restore locks and evaluated
+EditorConfigFiles plus ancestor `.editorconfig`/`.globalconfig`. Absolute paths
+and contents participate even outside the checkout. Imports still come from
+MSBuild preprocessing, including effective Directory.Build props/targets.
+Missing item-kind enumeration, unreadable/missing inputs or failed evaluation
+disables reuse and stamp publication; the build receipt, partition manifest and
+log retain the reason. These are evaluated inputs, not a promise to discover
+arbitrary external dependencies read by custom build tools. Cold restore and
+output-hash verification retain their existing conservative protocol.

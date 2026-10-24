@@ -53,16 +53,18 @@ def source_control_identity():
     return json.dumps(values).encode()
 
 
-def build_identity(target, properties, output_root=None, include_imports=True):
+def build_identity(target, properties, output_root=None, include_imports=True, diagnostics=None):
     output_root = Path(output_root).resolve() if output_root is not None else (ROOT / 'artifacts').resolve()
-    imports = msbuild_inputs(ROOT, properties, output_root / 'build' / target / 'snapshot') if include_imports else []
+    imports = msbuild_inputs(ROOT, properties, output_root / 'build' / target / 'snapshot', diagnostics) if include_imports else []
     if imports is None:
         return None
     digest = hashlib.sha256()
     try:
         for path in imports:
             hash_record(digest, 'msbuild:' + str(path), path.read_bytes())
-    except OSError:
+    except OSError as error:
+        if diagnostics is not None:
+            diagnostics.append('Cannot hash evaluated input ' + str(path) + ': ' + str(error))
         return None
     # Include uncommitted/untracked effective inputs too. All non-output repo
     # inputs are conservative dependencies, including resources and lockfiles.
@@ -80,9 +82,14 @@ def build_identity(target, properties, output_root=None, include_imports=True):
             if entry.name in excluded or entry.resolve() in output_roots: continue
             if entry.is_dir(): yield from walk(entry, ancestors | {resolved})
             elif entry.is_file(): yield entry
-    for path in walk(ROOT):
-        hash_record(digest, str(path.relative_to(ROOT)), path.read_bytes())
-    sdk = subprocess.check_output(['dotnet', '--info'], cwd=ROOT)
+    try:
+        for path in walk(ROOT):
+            hash_record(digest, str(path.relative_to(ROOT)), path.read_bytes())
+        sdk = subprocess.check_output(['dotnet', '--info'], cwd=ROOT)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if diagnostics is not None:
+            diagnostics.append('Cannot establish repository/SDK inputs: ' + str(error))
+        return None
     # The absolute source path matters to CallerFilePath-based witnesses.
     hash_record(digest, 'configuration', json.dumps([str(ROOT), str(output_root), target, properties, sorted(os.environ.items())]).encode())
     hash_record(digest, 'sdk', sdk)
@@ -111,7 +118,10 @@ def prepare_build(target, directory, reuse):
     output_root = directory.parents[2]
     if ROOT.resolve().is_relative_to(output_root.resolve()):
         raise ValueError('Build output root must not contain repository inputs')
-    identity = build_identity(target, properties, output_root)
+    diagnostics = []
+    identity = build_identity(target, properties, output_root, True, diagnostics)
+    if identity is None:
+        print('Reuse disabled: ' + '; '.join(diagnostics or ['MSBuild input closure unavailable']), flush=True)
     try:
         previous = json.loads(stamp.read_text()) if stamp.exists() else {}
     except (ValueError, OSError):
@@ -124,20 +134,23 @@ def prepare_build(target, directory, reuse):
     shutil.rmtree(directory, ignore_errors=True)
     result = run(['dotnet', 'build', 'tests/backend/JE.Tests.csproj', *properties, '--artifacts-path', directory], directory.parent / 'build.log')
     if result['exit_code']: raise RuntimeError('Backend build failed')
-    after = build_identity(target, properties, output_root)
+    after = build_identity(target, properties, output_root, True, diagnostics)
     stable_after = build_identity(target, properties, output_root, False)
     if stable_inputs is not None and stable_after is not None and stable_inputs != stable_after:
         raise RuntimeError('Build inputs changed during build; refusing reuse')
     # Restore may introduce generated NuGet imports on the first cold build.
     # A changing/unproven closure permits this build, but cannot certify reuse.
-    if identity is not None and identity == after:
+    eligible = identity is not None and identity == after
+    reason = None if eligible else '; '.join(dict.fromkeys(diagnostics)) or (
+        'MSBuild input closure unavailable' if identity is None or after is None else 'MSBuild input closure changed during build')
+    if eligible:
         stamp.write_text(json.dumps(dict(identity=after, outputs=fingerprint(directory)), indent=2) + '\n')
     else:
-        print('MSBuild input closure unavailable or changed during build; reuse disabled', flush=True)
+        print('Reuse disabled: ' + reason, flush=True)
     # An unproven fresh build gets a unique execution identity shared by its
     # worker copies, never an identity eligible for cross-invocation reuse.
     execution_identity = after or hashlib.sha256(os.urandom(32) + fingerprint(directory).encode()).hexdigest()
-    return dict(reused=False, identity=execution_identity, reuse_eligible=identity is not None and identity == after, seconds=result['seconds'])
+    return dict(reused=False, identity=execution_identity, reuse_eligible=eligible, reuse_disabled_reason=reason, seconds=result['seconds'])
 
 
 def main():
@@ -184,6 +197,7 @@ def main():
                 manifest = partition(cases, args.shards, weights)
                 shards = manifest['shards']
             manifest['identity'] = receipt['identity']
+            manifest['build'] = receipt
             manifest_path = results / 'partitions.json'
             manifest_path.write_text(json.dumps(manifest, indent=2) + '\n')
             def worker(shard, witness=False):
