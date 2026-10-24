@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
             _path = path;
             _warn = warn ?? (_ => { });
             _now = now ?? (() => DateTimeOffset.UtcNow);
-            Version.Mutate(() => _values = Load());
+            EvidenceRevision.Advance(() => Version.Mutate(() => _values = Load()));
         }
 
         /// <summary>The store's default location for a Jellyfin installation.</summary>
