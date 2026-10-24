@@ -411,9 +411,15 @@
     if (stopTitleTracking) stopTitleTracking();
     stopTitleTracking = trackStickyBar(heading);
 
-    const loading = document.createElement('div');
-    loading.className = 'je-recommendations-loading je-pad-left je-pad-right';
-    loading.textContent = JE.t('recommendations_loading');
+    const loading = JE.core.ui.createSkeletonRows([
+      ...P.ROWS.map(row => JE.t(row.titleKey)),
+      JE.t('recommendations_movie_genres'),
+      JE.t('recommendations_tv_genres'),
+      JE.t('recommendations_studios'),
+      JE.t('recommendations_networks'),
+    ]);
+    loading.className = 'je-pad-left je-pad-right';
+    loading.setAttribute('aria-label', JE.t('recommendations_loading'));
     container.appendChild(loading);
 
     let rows;

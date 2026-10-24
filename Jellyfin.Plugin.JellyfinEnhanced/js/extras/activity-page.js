@@ -414,6 +414,7 @@
 
         const body = document.createElement('div');
         body.className = 'je-activity-section-body';
+        body.innerHTML = JE.core.ui.skeletonGridHtml(2, { minWidth: '100%', height: '3.5em' });
         section.appendChild(body);
 
         parent.appendChild(section);

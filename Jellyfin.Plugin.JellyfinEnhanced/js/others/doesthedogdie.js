@@ -190,7 +190,8 @@
             const search = el('input');
             search.type = 'text';
             search.placeholder = JE.t('ddd_picker_search');
-            const list = el('div', 'je-ddd-list', JE.t('ddd_picker_loading'));
+            const list = el('div', 'je-ddd-list');
+            list.innerHTML = JE.core.ui.skeletonGridHtml(6, { minWidth: '100%', height: '2em', label: JE.t('ddd_picker_loading') });
             const cancel = el('button', null, JE.t('elsewhere_settings_cancel'));
             const save = el('button', 'je-ddd-save', JE.t('elsewhere_settings_save'));
             cancel.type = save.type = 'button';

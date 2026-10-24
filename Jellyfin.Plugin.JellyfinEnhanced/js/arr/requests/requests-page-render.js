@@ -50,7 +50,7 @@
           `;
 
       if (state.isLoading && state.requests.length === 0) {
-        html += `<div class="je-loading">...</div>`;
+        html += JE.core.ui.skeletonGridHtml(6);
       } else if (state.requests.length === 0) {
         html += `
                     <div class="je-empty-state">
@@ -115,7 +115,7 @@
       `;
 
       if (state.isLoading && state.issues.length === 0) {
-        html += `<div class="je-loading">...</div>`;
+        html += JE.core.ui.skeletonGridHtml(6);
       } else if (state.issuesError) {
         html += `
           <div class="je-empty-state">
@@ -162,7 +162,7 @@
       html += `<h2><span class="je-msym-rounded je-section-icon" aria-hidden="true">history</span>${labelHistory}</h2>`;
 
       if (state.isLoading && state.history.length === 0) {
-        html += `<div class="je-loading">...</div>`;
+        html += JE.core.ui.skeletonGridHtml(6);
       } else if (state.history.length === 0) {
         const labelNoHistory = (JE.t && JE.t('requests_no_history_found')) || 'No history found';
         html += `
@@ -232,7 +232,7 @@
     `;
 
     if (state.isLoading && state.downloads.length === 0) {
-      html += `<div class="je-loading">...</div>`;
+      html += JE.core.ui.skeletonGridHtml(6);
     } else if (state.downloads.length === 0) {
       const labelNoActiveDownloads = (JE.t && JE.t('requests_no_active_downloads')) || 'No active downloads';
       html += `

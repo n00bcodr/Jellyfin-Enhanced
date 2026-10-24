@@ -279,11 +279,78 @@
         return document.documentElement.classList.contains('layout-tv');
     }
 
+    function ensureSkeletonCss() {
+        if (document.getElementById('je-skeleton-css')) return;
+        injectCss('je-skeleton-css', `
+            .je-skeleton-row { overflow: hidden; }
+            .je-skeleton-bar { width: 12em; height: 1.4em; border-radius: 6px; margin-bottom: 0.5em; }
+            .je-skeleton-cards { display: flex; padding-top: 0.95em; }
+            .je-skeleton-cards > .card { flex: 0 0 auto; }
+            .je-skeleton-card { border-radius: 8px; }
+            .je-skeleton-text { height: 1.2em; width: 70%; margin: 0.4em auto 0; border-radius: 4px; }
+            .je-skeleton-grid { display: grid; gap: 1em; grid-template-columns: repeat(auto-fill, minmax(var(--je-skeleton-min, 340px), 1fr)); }
+            .je-skeleton-block { height: var(--je-skeleton-height, 7em); border-radius: 6px; }
+            .je-skeleton-bar, .je-skeleton-card, .je-skeleton-text, .je-skeleton-block {
+                background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0.06) 75%);
+                background-size: 200% 100%;
+                animation: je-skeleton-shimmer 1.4s ease-in-out infinite;
+            }
+            @keyframes je-skeleton-shimmer {
+                from { background-position: 200% 0; }
+                to { background-position: -200% 0; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .je-skeleton-bar, .je-skeleton-card, .je-skeleton-text, .je-skeleton-block { animation: none; }
+            }
+        `);
+    }
+
+    /**
+     * Shimmering placeholder rows of portrait cards, for content that loads
+     * as titled card rows. Titles are known up front, so they show as real
+     * headings; a null title shows a placeholder bar.
+     * @param {Array<string|null>} titles - One entry per row
+     * @param {number} [cards=10] - Placeholder cards per row
+     * @returns {HTMLElement} A status element to append, then remove once loaded
+     */
+    function createSkeletonRows(titles, cards = 10) {
+        ensureSkeletonCss();
+        const el = document.createElement('div');
+        el.setAttribute('role', 'status');
+        // Jellyfin's own card classes, so width, margins and the 2:3 poster
+        // follow the same breakpoints as the real cards.
+        const card = '<div class="card overflowPortraitCard"><div class="cardBox cardBox-bottompadded">' +
+            '<div class="cardScalable"><div class="cardPadder cardPadder-overflowPortrait je-skeleton-card"></div></div>' +
+            '<div class="je-skeleton-text"></div><div class="je-skeleton-text" style="width:45%"></div></div></div>';
+        el.innerHTML = titles.map(title =>
+            '<div class="verticalSection je-skeleton-row">' +
+            (title ? `<h2 class="sectionTitle sectionTitle-cards">${escapeHtml(title)}</h2>` : '<div class="je-skeleton-bar"></div>') +
+            '<div class="je-skeleton-cards">' + card.repeat(cards) + '</div></div>'
+        ).join('');
+        return el;
+    }
+
+    /**
+     * Shimmering placeholder blocks in a responsive grid, as an HTML string
+     * for renderers that build markup. A full-width minWidth gives a list.
+     * @param {number} count - Number of blocks
+     * @param {{minWidth?: string, height?: string, label?: string}} [opts]
+     * @returns {string} Markup for a status element
+     */
+    function skeletonGridHtml(count, opts = {}) {
+        ensureSkeletonCss();
+        const { minWidth = '340px', height = '7em', label = '' } = opts;
+        return `<div class="je-skeleton-grid" role="status" aria-label="${escapeHtml(label)}" style="--je-skeleton-min:${minWidth};--je-skeleton-height:${height}">` +
+            '<div class="je-skeleton-block"></div>'.repeat(count) + '</div>';
+    }
+
     JE.core.ui = {
         escapeHtml,
         toast,
         injectCss,
         removeCss,
+        createSkeletonRows,
+        skeletonGridHtml,
         addTouchTapListener,
         addDelegatedTouchTapListener,
         isTvLayout

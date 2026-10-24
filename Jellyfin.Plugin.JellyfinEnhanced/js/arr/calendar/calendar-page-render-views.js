@@ -457,7 +457,7 @@
         </div>
       </div>
 
-      ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
+      ${state.isLoading ? window.JellyfinEnhanced.core.ui.skeletonGridHtml(7, { minWidth: "9em", height: "6em", label: window.JellyfinEnhanced.t("calendar_loading") }) : ""}
 
         <div class="je-calendar-layout">
           <div class="je-calendar-main">

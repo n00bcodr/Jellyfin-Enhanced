@@ -371,7 +371,7 @@
         emptyDiv.addEventListener('click', () => onAdminUserChange(state.selectedAdminUserId));
       } else if (viewingOther && !adminReady) {
         // Another user's items are still loading — show a loading hint rather than "empty".
-        emptyDiv.textContent = JE.t('hidden_content_admin_loading');
+        emptyDiv.innerHTML = JE.core.ui.skeletonGridHtml(4, { minWidth: '100%', height: '3em', label: JE.t('hidden_content_admin_loading') });
       } else {
         emptyDiv.textContent = JE.t('hidden_content_manage_empty');
       }
