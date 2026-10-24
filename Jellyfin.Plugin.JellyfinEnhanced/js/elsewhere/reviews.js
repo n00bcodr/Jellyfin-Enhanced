@@ -1096,6 +1096,8 @@ ${r.Content}` : r.Content,
                 .tmdb-review-text hr { border: none; border-top: 1px solid rgba(255, 255, 255, 0.2); margin: 1em 0; }
                 .tmdb-review-text a { color: rgb(1, 180, 228); text-decoration: underline; }
                 .tmdb-review-text a:hover { color: rgb(50, 200, 250); }
+                /* emby-linkbutton gives links button padding, margin and weight, which breaks line spacing */
+                .tmdb-review-text a[is="emby-linkbutton"] { display: inline !important; padding: 0 !important; margin: 0 !important; min-width: 0 !important; font-weight: inherit !important; vertical-align: baseline !important; }
                 .tmdb-review-toggle { color: rgb(1, 180, 228); font-weight: bold; cursor: pointer; text-decoration: underline; margin-left: 0.3em; }
 
                 /* User avatar */
