@@ -250,6 +250,7 @@ public partial class ApiNativeDetailsTests
         public string Rating { get; set; } = "PG-13";
         private readonly string? _stateDir;
         private Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
+        public SeerrParentalFilter Parental => _parental;
         private readonly Func<Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter> _newParental;
         private readonly Mock<MediaBrowser.Controller.IServerApplicationHost> _host = new();
         private readonly Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager> _server = new();
@@ -274,7 +275,7 @@ public partial class ApiNativeDetailsTests
         /// A rig; with <paramref name="stateDir"/> the grant key and session epochs are kept there (restart
         /// tests); <paramref name="parentalBudget"/> is how long a list waits for its rating lookups.
         /// </summary>
-        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null, Func<Rig, INativeDetailsSource>? source = null)
+        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null, Func<Rig, INativeDetailsSource>? source = null, ViewerMetadataAdmission? admission = null)
         {
             _stateDir = stateDir;
             var c = Plugin.Plugin.Configuration;
@@ -318,8 +319,8 @@ public partial class ApiNativeDetailsTests
             localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
             _server.SetupGet(s => s.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration { MetadataCountryCode = "US" });
             _newParental = () => parentalBudget is { } budget
-                ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget)
-                : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger);
+                ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget, admission)
+                : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, admission);
             _parental = _newParental();
             _host.SetupGet(h => h.SystemId).Returns(Server);
             // Spoiler Guard as registered (its own library lookups are for collections and watched state only).

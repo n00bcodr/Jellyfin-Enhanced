@@ -145,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var stamp = _gate.Take(viewer);
                 if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
                 var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
-                var meta = await PrepareAsync(key, season, tmdbId, language, ct).ConfigureAwait(false);
+                var meta = await PrepareAsync(viewer.UserId, key, season, tmdbId, language, ct).ConfigureAwait(false);
                 // Publication: no await from here on.
                 if (_gate.Current(stamp, rereadsLibrary: true) is { } now)
                 {
@@ -185,7 +185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct)
         {
             var stamp = _gate.Take(viewer);
-            var meta = await PrepareAsync(page.ScopeKey, season, page.TmdbId, language, ct).ConfigureAwait(false);
+            var meta = await PrepareAsync(viewer.UserId, page.ScopeKey, season, page.TmdbId, language, ct).ConfigureAwait(false);
             // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer and the library as
             // they were before the metadata read: none when either changed meanwhile (the page asks again).
             if (_gate.Current(stamp) is not { } now) return null;
@@ -205,11 +205,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>The metadata of a season's episodes (TMDB) and the policy's disk facts of both editions, read ahead of publication.</summary>
-        private async Task<Dictionary<int, SeasonRowEpisode>> PrepareAsync(TitleKey key, int season, int? tmdbId, string? language, CancellationToken ct)
+        private async Task<Dictionary<int, SeasonRowEpisode>> PrepareAsync(Guid viewer, TitleKey key, int season, int? tmdbId, string? language, CancellationToken ct)
         {
             var meta = new Dictionary<int, SeasonRowEpisode>();
             if (tmdbId is int id && id > 0)
             {
+                using var metadataViewer = NativeDetails.ViewerMetadataAdmission.ForViewer(viewer);
                 var json = await _tmdbSeason(id, season, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
                 foreach (var episode in ParseSeason(json)) meta[episode.Episode] = episode;
             }

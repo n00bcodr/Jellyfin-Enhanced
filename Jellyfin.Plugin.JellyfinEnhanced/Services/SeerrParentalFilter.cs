@@ -12,6 +12,7 @@ using Jellyfin.Data;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Globalization;
@@ -67,11 +68,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ILocalizationManager _localization;
         private readonly IServerConfigurationManager _serverConfig;
         private readonly Logger _logger;
+        private readonly ViewerMetadataAdmission _admission;
 
         // One outbound fan-out limit for list responses across the whole server,
-        // not per response: a handful of restricted users opening big lists must
-        // not multiply it. Single-title checks (a detail page, a request POST) are
-        // one coalesced lookup each and bypass it.
+        // not per response. In JE mode all list and single-title evidence tasks also
+        // pass the common viewer/server admission factory before they are created.
         private readonly SemaphoreSlim _throttle = new(MaxConcurrentFetches);
 
         /// <summary>
@@ -103,13 +104,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IUserManager userManager,
             ILocalizationManager localization,
             IServerConfigurationManager serverConfig,
-            Logger logger)
+            Logger logger,
+            ViewerMetadataAdmission? admission = null)
         {
             _httpClientFactory = httpClientFactory;
             _userManager = userManager;
             _localization = localization;
             _serverConfig = serverConfig;
             _logger = logger;
+            _admission = admission ?? new ViewerMetadataAdmission();
             _overallBudget = DefaultOverallBudget;
         }
 
@@ -120,8 +123,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ILocalizationManager localization,
             IServerConfigurationManager serverConfig,
             Logger logger,
-            TimeSpan overallBudget)
-            : this(httpClientFactory, userManager, localization, serverConfig, logger)
+            TimeSpan overallBudget,
+            ViewerMetadataAdmission? admission = null)
+            : this(httpClientFactory, userManager, localization, serverConfig, logger, admission)
         {
             _overallBudget = overallBudget;
         }
@@ -251,23 +255,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     case Category.List:
                         // Similar / recommendations of a blocked title expose nothing of it.
                         if (plan.ParentId > 0 && plan.MediaType != null
-                            && await IsTitleBlockedAsync(plan.MediaType, plan.ParentId, policy, requestAborted).ConfigureAwait(false))
+                            && await IsTitleBlockedAsync(plan.MediaType, plan.ParentId, policy, Guid.Parse(jellyfinUserId!), requestAborted).ConfigureAwait(false))
                         {
                             return new Result(true, json);
                         }
 
-                        var (filtered, retryLater) = await FilterListAsync(json, plan, policy, requestAborted).ConfigureAwait(false);
+                        var (filtered, retryLater) = await FilterListAsync(json, plan, policy, Guid.Parse(jellyfinUserId!), requestAborted).ConfigureAwait(false);
                         return new Result(false, filtered, retryLater);
 
                     case Category.Detail:
                         return new Result(IsDetailBodyBlocked(json, plan.MediaType!, policy), json);
 
                     case Category.SubResource:
-                        return new Result(await IsTitleBlockedAsync(plan.MediaType!, plan.ParentId, policy, requestAborted).ConfigureAwait(false), json);
+                        return new Result(await IsTitleBlockedAsync(plan.MediaType!, plan.ParentId, policy, Guid.Parse(jellyfinUserId!), requestAborted).ConfigureAwait(false), json);
 
                     case Category.NestedDetail:
                         // e.g. /api/v1/issue/{id}: the title sits under `media`.
-                        return new Result(await IsNestedMediaBlockedAsync(json, policy, requestAborted).ConfigureAwait(false), json);
+                        return new Result(await IsNestedMediaBlockedAsync(json, policy, Guid.Parse(jellyfinUserId!), requestAborted).ConfigureAwait(false), json);
 
                     default:
                         return new Result(false, json);
@@ -304,7 +308,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                return await IsTitleBlockedAsync(type, tmdbId, policy, requestAborted).ConfigureAwait(false);
+                return await IsTitleBlockedAsync(type, tmdbId, policy, Guid.Parse(jellyfinUserId!), requestAborted).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -501,18 +505,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
+            => await CheckAbsentAsync(mediaType, tmdbId, userId, ct).ConfigureAwait(false) == true;
+
+        /// <summary>False is a policy refusal; null is unavailable evidence, including refused admission.</summary>
+        public Task<bool?> CheckAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
         {
-            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
-            return await MaySeeAbsentAsync(mediaType, tmdbId, policy, ct).ConfigureAwait(false);
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return Task.FromResult<bool?>(true);
+            return CheckAbsentAsync(mediaType, tmdbId, policy, Guid.Parse(userId), ct);
         }
 
-        /// <summary>Bounded absent-title check under a policy already resolved; lookup failures and unrated titles refuse.</summary>
-        /// <param name="mediaType">"movie" or "tv".</param>
-        /// <param name="tmdbId">TMDB id.</param>
-        /// <param name="policy">The person's policy.</param>
-        /// <param name="ct">Cancellation.</param>
-        /// <returns>Whether the person may see it.</returns>
+        /// <summary>Compatibility policy-only reads share a conservative bounded owner.</summary>
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
+            => await CheckAbsentAsync(mediaType, tmdbId, policy, Guid.Empty, ct).ConfigureAwait(false) == true;
+
+        /// <summary>Evidence-provider join: a captured policy must retain its effective viewer for admission.</summary>
+        public async Task<bool?> CheckAbsentAsync(string mediaType, int tmdbId, Policy policy, Guid viewer, CancellationToken ct)
         {
             if (!policy.IsRestricted) return true;
             if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
@@ -520,10 +527,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(8));
-                await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
-                return MaySeeAbsent(mediaType, tmdbId, policy, out _);
+                var signature = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, viewer, timeout.Token).ConfigureAwait(false);
+                return signature == null ? null : MaySeeAbsent(mediaType, tmdbId, policy, out _);
             }
-            catch (Exception) { return false; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception) { return null; }
         }
 
         private static bool HasSeerr() => JellyfinEnhanced.Instance?.Configuration is { JellyseerrEnabled: true } c && !string.IsNullOrWhiteSpace(c.JellyseerrUrls) && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
@@ -601,7 +609,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return !IsAllowed(resolved, mediaType, policy);
         }
 
-        private async Task<bool> IsNestedMediaBlockedAsync(string json, Policy policy, CancellationToken requestAborted)
+        private async Task<bool> IsNestedMediaBlockedAsync(string json, Policy policy, Guid viewer, CancellationToken requestAborted)
         {
             try
             {
@@ -619,7 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return true; // a title we cannot identify cannot be verified
                 }
 
-                return await IsTitleBlockedAsync(mediaType, tmdbId, policy, requestAborted).ConfigureAwait(false);
+                return await IsTitleBlockedAsync(mediaType, tmdbId, policy, viewer, requestAborted).ConfigureAwait(false);
             }
             catch (JsonException)
             {
@@ -627,7 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<bool> IsTitleBlockedAsync(string mediaType, int tmdbId, Policy policy, CancellationToken requestAborted = default)
+        private async Task<bool> IsTitleBlockedAsync(string mediaType, int tmdbId, Policy policy, Guid viewer, CancellationToken requestAborted = default)
         {
             if (tmdbId <= 0)
             {
@@ -636,13 +644,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(_overallBudget);
-            var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
+            var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, viewer, cts.Token).ConfigureAwait(false);
             return !IsAllowed(resolved, mediaType, policy);
         }
 
         // ── List filtering ───────────────────────────────────────────────────
 
-        private async Task<(string Body, bool RetryLater)> FilterListAsync(string json, EndpointPlan plan, Policy policy, CancellationToken requestAborted)
+        private async Task<(string Body, bool RetryLater)> FilterListAsync(string json, EndpointPlan plan, Policy policy, Guid viewer, CancellationToken requestAborted)
         {
             if (JsonNode.Parse(json) is not JsonObject root)
             {
@@ -656,7 +664,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var region = Region();
-            var (scores, pending) = await ResolveScoresAsync(arrays, plan, region, policy.HasTagRules, requestAborted).ConfigureAwait(false);
+            var (scores, pending) = await ResolveScoresAsync(arrays, plan, region, policy.HasTagRules, viewer, requestAborted).ConfigureAwait(false);
             // A discover/search page whose titles could not all be verified in time
             // is not an empty page: the lookups keep running, so tell the caller to
             // have the client come back for it rather than rendering the gaps as
@@ -709,6 +717,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             EndpointPlan plan,
             string region,
             bool needTags,
+            Guid viewer,
             CancellationToken requestAborted)
         {
             var keys = new Dictionary<string, (string MediaType, int TmdbId)>(StringComparer.Ordinal);
@@ -795,7 +804,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 try
                 {
-                    var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, CancellationToken.None).ConfigureAwait(false);
+                    var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, viewer, CancellationToken.None).ConfigureAwait(false);
                     return (kvp.Key, score);
                 }
                 finally
@@ -822,7 +831,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Counted after the wait rather than only in the catch: when the budget
             // fires, the queued waiters complete (as dropped) before WhenAll sees the
             // cancellation, so WhenAll can finish normally with rows never looked up.
-            var pending = tasks.Count(t => !t.IsCompletedSuccessfully) + droppedFromQueue;
+            var pending = tasks.Count(t => !t.IsCompletedSuccessfully
+                || (JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetailsPolicy.JeBackend(config)
+                    && t.Result.Item2 == null && !TryGetFreshSignature(t.Result.Key, needTags, out _))) + droppedFromQueue;
             if (pending > 0)
             {
                 _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {_overallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
@@ -954,7 +965,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
-        private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+        private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, Guid viewer, CancellationToken ct)
         {
             var key = CacheKey(mediaType, tmdbId, region);
             if (TryGetFreshSignature(key, needTags, out var fresh))
@@ -966,8 +977,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // each caller bounds only its own wait, so one request's budget can't
             // cancel a fetch another request depends on.
             var inFlightKey = needTags ? key + "|tags" : key;
+            if (JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetailsPolicy.JeBackend(config))
+            {
+                return await _admission.Read<Signature?>("parental:" + inFlightKey, viewer,
+                    () => (TryGetFreshSignature(key, needTags, out var hit), hit),
+                    () => FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
+                    null, ct).ConfigureAwait(false);
+            }
+
             var lazy = _inFlight.GetOrAdd(inFlightKey, _ => new Lazy<Task<Signature?>>(
-                () => FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
+                () => FetchLegacyAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
             try
@@ -986,59 +1005,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        private async Task<Signature?> FetchLegacyAndCacheAsync(string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
+        {
+            try { return await FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags).ConfigureAwait(false); }
+            finally { _inFlight.TryRemove(inFlightKey, out _); }
+        }
+
         private async Task<Signature?> FetchAndCacheAsync(string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
         {
+            JsonElement? detail = null;
+            var hasTagData = false;
             try
             {
-                JsonElement? detail = null;
-                var hasTagData = false;
-                try
-                {
-                    using var cts = new CancellationTokenSource(PerFetchTimeout);
-                    (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    // Timeouts and transport faults count as "could not verify" too.
-                    _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId}: {ex.Message}");
-                }
-
-                var now = DateTime.UtcNow;
-                var ttl = CacheTtl();
-                if (detail == null)
-                {
-                    if (needTags)
-                    {
-                        _tagFetchFailedAt[key] = now;
-                    }
-
-                    // Negative entry (retried after NegativeCacheTtl) — unless a fresh
-                    // positive entry exists, which a failed *tag* upgrade must not erase:
-                    // rating-only users would otherwise lose a title Seerr merely
-                    // failed to answer for a moment.
-                    _certCache.AddOrUpdate(
-                        key,
-                        _ => (null, true, now),
-                        (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < ttl
-                            ? current
-                            : (null, true, now));
-                    TrimCache();
-                    return null;
-                }
-
-                var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
-                if (hasTagData)
-                {
-                    _tagFetchFailedAt.TryRemove(key, out _);
-                }
-
-                StoreSignature(key, resolved, now, ttl);
-                return resolved;
+                using var cts = new CancellationTokenSource(PerFetchTimeout);
+                (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
             }
-            finally
+            catch (Exception ex)
             {
-                _inFlight.TryRemove(inFlightKey, out _);
+                // Timeouts and transport faults count as "could not verify" too.
+                _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId}: {ex.Message}");
             }
+
+            var now = DateTime.UtcNow;
+            var ttl = CacheTtl();
+            if (detail == null)
+            {
+                if (needTags)
+                {
+                    _tagFetchFailedAt[key] = now;
+                }
+
+                // Negative entry (retried after NegativeCacheTtl) — unless a fresh
+                // positive entry exists, which a failed *tag* upgrade must not erase:
+                // rating-only users would otherwise lose a title Seerr merely
+                // failed to answer for a moment.
+                _certCache.AddOrUpdate(
+                    key,
+                    _ => (null, true, now),
+                    (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < ttl
+                        ? current
+                        : (null, true, now));
+                TrimCache();
+                return null;
+            }
+
+            var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
+            if (hasTagData)
+            {
+                _tagFetchFailedAt.TryRemove(key, out _);
+            }
+
+            StoreSignature(key, resolved, now, ttl);
+            return resolved;
         }
 
         private int _trimCounter;
@@ -1160,6 +1178,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            if (NativeDetailsPolicy.JeBackend(config)) return (null, false);
+
             var fromSeerr = await FetchDetailFromSeerrAsync(mediaType, tmdbId, config, ct).ConfigureAwait(false);
             // "Has tag data" means the body carries a keyword container, not merely
             // that the call succeeded: an empty set from a body without one would
@@ -1175,6 +1195,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var httpClient = _httpClientFactory.CreateClient();
                 httpClient.Timeout = PerFetchTimeout;
+                MetadataTaskProbe.External(mediaType + "/" + tmdbId + "/" + subResource);
                 using var response = await httpClient.GetAsync(requestUri, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {

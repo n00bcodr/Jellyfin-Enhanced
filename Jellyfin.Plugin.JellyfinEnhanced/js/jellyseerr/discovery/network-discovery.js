@@ -229,17 +229,26 @@
      * @returns {Promise<{tvId: number|null, movieId: number|null, tvSource: 'network'|'company', title: string}|null>}
      */
     async function resolveFeeds({ id: studioId, signal }) {
+        // Jellyfin Enhanced is the request backend (A1): its native feeds, or no row; Seerr's status and
+        // account are never asked for (D88).
+        const je = JE.discoveryFilter.jeFeeds?.() ?? null;
+        if (je === false) return null;
+
         const studioInfoPromise = getStudioInfo(studioId, signal);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+        const statusPromise = je ? null : JE.jellyseerrAPI?.checkUserStatus();
 
         const [studioInfo, status] = await Promise.all([studioInfoPromise, statusPromise]);
 
         if (signal.aborted) return null;
 
-        if (!status?.active || !studioInfo?.name) return null;
-        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
-        const nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
-        if (status.userFound === false && !nativeFeeds && !syntheticStudio(studioId)) return null;
+        if (!studioInfo?.name) return null;
+        let nativeFeeds = !!je;
+        if (!je) {
+            if (!status?.active) return null;
+            // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+            nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
+            if (status.userFound === false && !nativeFeeds && !syntheticStudio(studioId)) return null;
+        }
 
         // TV network IDs are different from company IDs in TMDB
         // Always use name lookup for TV networks

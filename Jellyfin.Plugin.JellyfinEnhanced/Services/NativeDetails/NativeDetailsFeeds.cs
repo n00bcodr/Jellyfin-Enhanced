@@ -108,11 +108,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
             var access = await ViewerAsync(_policy.SeeLinkedPageAsync(viewer, SyntheticId.Person(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
-            // The credits first: their read is the one admitted against the viewer's budget, so a
-            // viewer naming person after person can't make the person reads go upstream unbounded.
+            // Both credits and person details retain the effective viewer for metadata admission.
             var credits = await _source.PersonCreditsAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (credits.Data is not { } data) return Failed(credits);
-            var person = await _source.PersonAsync(tmdb, ct).ConfigureAwait(false);
+            var person = await _source.PersonAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (person.Data is not { } details) return Failed(person);
             if (!NativeDetailsPolicy.PersonAllowed(viewer, details)) return new FeedAnswer(FeedOutcome.Refused, null);
             var path = "/api/v1/person/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/combined_credits";
@@ -422,7 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             var access = await ViewerAsync(_policy.ViewerAccessAsync(viewer, ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
-            var answer = await _source.GenresAsync(movie, ct).ConfigureAwait(false);
+            var answer = await _source.GenresAsync(movie, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             var genres = new JsonArray();
             if (data.ValueKind == JsonValueKind.Array)

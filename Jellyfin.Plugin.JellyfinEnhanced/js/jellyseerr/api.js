@@ -1015,11 +1015,14 @@
         const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
         const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            // A viewer Seerr won't answer for (known from their user status): while Jellyfin Enhanced handles
-            // requests, the rows from its public route (judged for them on the server); otherwise none.
-            if (api.knownAccountRefusal()) {
+            // Jellyfin Enhanced the request backend (A1; public config NativeAbsentDetails.Source "tmdb", request switches
+            // on or off, Seerr settings kept or not): its public route, chosen before any Seerr account (D88). Otherwise a
+            // viewer Seerr won't answer for (known from their user status): while Jellyfin Enhanced handles requests, the
+            // rows from its public route (judged for them on the server); otherwise none.
+            const jeDetails = JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+            if (jeDetails || api.knownAccountRefusal()) {
                 const none = { results: [], page: 1, totalPages: 0, totalResults: 0 };
-                if (JE.internals?.arrAskSeerr?.jeMode?.() !== true) return none;
+                if (!jeDetails && JE.internals?.arrAskSeerr?.jeMode?.() !== true) return none;
                 try {
                     return await api.fetchPublic(`/title/${mediaType === 'movie' ? 'movie' : 'tv'}/${tmdbId}/related/${relation}?page=${page}`, options);
                 } catch (error) {

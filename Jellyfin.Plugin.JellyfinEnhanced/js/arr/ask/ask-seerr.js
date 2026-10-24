@@ -31,6 +31,16 @@
     }
 
     /**
+     * True when Jellyfin Enhanced is the request backend (A1; public config NativeAbsentDetails.Source "tmdb"), whatever
+     * the request switches say: a collection's details come from its public route then, never Seerr (D88), with the
+     * request controls gated apart ({@link jeMode}).
+     * @returns {boolean} JE details.
+     */
+    function jeDetails() {
+        return JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+    }
+
+    /**
      * The JE request sheet's title for a Seerr/TMDB item.
      * @param {'movie'|'tv'} mediaType Media type.
      * @param {number|string} tmdbId TMDB id.
@@ -188,6 +198,8 @@
         const caps = await JE.arrAsk.me();
         if (!newest()) return;
         if (!JE.arrAsk.canAsk(caps, 'movie')) {
+            // Asking is not theirs, looking is (A1): the collection to look at, when Jellyfin Enhanced has its details.
+            if (jeDetails()) return collectionView(collectionId, collectionName, { operation: submitted.owner }, newest);
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return;
         }
@@ -312,6 +324,93 @@
     }
 
     /**
+     * A collection's movies to look at, from Jellyfin Enhanced's public collection (TMDB when it is the request backend,
+     * so Seerr may be off completely; A1): each movie opens its own page (the library's copy, or its native page), and
+     * nothing is asked for. For a viewer who can't ask, or while JE's request controls are off.
+     * @param {number|string} collectionId TMDB collection id.
+     * @param {string} collectionName Name shown until the details say it.
+     * @param {{operation: Object|Node|Event}} options The owner (as for the request window).
+     * @param {() => boolean} [newest] The opening's newest-check, when it is already taken.
+     * @returns {Promise<void>}
+     */
+    async function collectionView(collectionId, collectionName, options, newest) {
+        const submitted = JE.captureSubmitted(options?.operation);
+        const isNewest = newest || pickerOpening(submitted);
+        const id = Number.parseInt(String(collectionId ?? ''), 10);
+        const modal = JE.jellyseerrModal;
+        const fetchPublic = JE.jellyseerrAPI?.fetchPublic;
+        const t = (key, params) => (JE.arrAsk?.tr ? JE.arrAsk.tr(key, params) : JE.t(key, params));
+        const toast = (text) => (JE.arrAsk?.toast ? JE.arrAsk.toast(text) : JE.toast?.(text, 4000));
+        if (!Number.isInteger(id) || id <= 0 || typeof modal?.create !== 'function' || typeof fetchPublic !== 'function') {
+            toast(t('jellyseerr_toast_collection_fetch_failed'));
+            return;
+        }
+        let details = null;
+        try {
+            details = await fetchPublic(`/collection/${id}`);
+        } catch {
+            details = null;
+        }
+        if (!isNewest()) return;
+        if (!details) {
+            toast(t('jellyseerr_toast_collection_fetch_failed'));
+            return;
+        }
+        const parts = (Array.isArray(details.parts) ? details.parts : []).filter(p => Number.isInteger(p?.id) && p.id > 0);
+        if (!parts.length) {
+            toast(t('jellyseerr_toast_no_movies_in_collection'));
+            return;
+        }
+        const esc = typeof JE.escapeHtml === 'function' ? JE.escapeHtml : (v) => String(v ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+        const today = new Date().toISOString().slice(0, 10);
+        const libraryId = (movie) => {
+            const copy = String(movie.mediaInfo?.jellyfinMediaId || '');
+            return /^[0-9a-f]{32}$/i.test(copy) ? copy : '';
+        };
+        const rows = parts.map((movie) => {
+            const here = movie.mediaInfo?.status === 5;
+            const out = released(movie, today);
+            const date = String(movie.releaseDate || '');
+            const year = /^\d{4}/.test(date) ? date.slice(0, 4) : '';
+            const name = String(movie.title || movie.name || '');
+            const poster = typeof movie.posterPath === 'string' && /^\/[A-Za-z0-9_.-]{1,80}$/.test(movie.posterPath)
+                ? `<img src="https://image.tmdb.org/t/p/w92${esc(movie.posterPath)}" alt="" class="jellyseerr-collection-movie-poster">` : '<div></div>';
+            return `<button type="button" class="jellyseerr-collection-movie-row je-arr-collection-view-row" data-tmdb-id="${esc(movie.id)}" data-library-id="${esc(libraryId(movie))}" aria-label="${esc(name)}">
+                ${poster}
+                <div class="jellyseerr-collection-movie-details"><div class="title">${esc(name)}</div><div class="year">${esc(year)}</div></div>
+                ${here ? `<div class="jellyseerr-season-status jellyseerr-season-status-available">${esc(t('jellyseerr_btn_available'))}</div>`
+                    : !out ? `<div class="jellyseerr-season-status je-arr-collection-not-out">${esc(t('arr_collection_not_out'))}</div>` : '<div></div>'}
+            </button>`;
+        }).join('');
+        // The rows' styles are JE's (injected with the request controls, which may be off here).
+        JE.internals?.arrAskStyles?.ensure?.();
+        const instance = modal.create({
+            title: t('jellyseerr_card_badge_collection'),
+            subtitle: String(details.name || collectionName || ''),
+            bodyHtml: `<div class="jellyseerr-collection-list je-arr-collection-view" style="max-height: 600px; overflow-y: auto;">${rows}</div>`,
+            backdropPath: details.backdropPath || details.backdrop_path,
+            closeOnly: true,
+            closeText: t('arr_ask_close'),
+            operation: submitted.owner,
+            onSave: () => {}
+        });
+        instance?.modalElement?.querySelector?.('.je-arr-collection-view')?.addEventListener('click', (e) => {
+            const row = e.target instanceof Element ? e.target.closest('.je-arr-collection-view-row') : null;
+            if (!row) return;
+            e.preventDefault();
+            const owner = JE.ownerOf(e);
+            const copy = row.getAttribute('data-library-id');
+            const tmdbId = Number.parseInt(row.getAttribute('data-tmdb-id') || '', 10);
+            // The library's copy opens itself; any other movie its own page (or, without native pages, its details window).
+            const opened = copy
+                ? (JE.effectOwner(owner, 'a title page') && typeof JE.titleDetails?.openItem === 'function' ? (JE.titleDetails.openItem(copy), true) : false)
+                : !!JE.titleDetails?.show?.(tmdbId, 'movie', undefined, owner);
+            if (opened) instance.close?.();
+        });
+        instance?.show?.();
+    }
+
+    /**
      * Capture-phase clicks: a Seerr request button, a 4K menu item or a Home Screen Sections request button opens
      * the JE sheet for its title in JE mode (their own handlers don't run). Anything else passes through.
      * @param {MouseEvent} e Click.
@@ -421,8 +520,11 @@
         }
         if (typeof showCollection === 'function') {
             ui.showCollectionRequestModal = function (collectionId, collectionName, item, options) {
-                if (!jeMode()) return showCollection.apply(this, arguments);
-                return collectionAsk(collectionId, collectionName, options);
+                if (jeMode()) return collectionAsk(collectionId, collectionName, options);
+                // Jellyfin Enhanced the backend with its request controls off (A1): the collection to look at from its
+                // public route; Seerr's window (Seerr's details) never opens for it.
+                if (jeDetails()) return collectionView(collectionId, collectionName, options);
+                return showCollection.apply(this, arguments);
             };
         }
         if (typeof advanced === 'function') {
@@ -447,5 +549,5 @@
     initialize();
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskSeerr = { jeMode, titleOf, openSheet, onClick, install, state, capTicks, released };
+    JE.internals.arrAskSeerr = { jeMode, jeDetails, collectionView, titleOf, openSheet, onClick, install, state, capTicks, released };
 })(window.JellyfinEnhanced);

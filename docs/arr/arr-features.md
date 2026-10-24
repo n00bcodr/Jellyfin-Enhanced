@@ -1301,6 +1301,24 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     Hidden Content, Spoiler Guard, the library's own hidden copies and the parental limit. A person with Allowed or
     Blocked Tags is still refused titles that aren't in the library while Seerr is off, because their tags can't be
     checked yet without Seerr.
+    The discovery rows follow the same rule: the *More from …* row of a genre, studio, network or tag page (the
+    library's own pages and the ones these pages link to), a person's filmography row, and the *Recommended* and
+    *Similar* rows under a library title come from Jellyfin Enhanced's TMDB reads, chosen before anything is asked of
+    Seerr, so they show with Seerr off and never read through a Seerr account someone still has linked. The genre,
+    studio, network, tag and person rows need native pages on (without them those rows are left out in this mode); the
+    *Recommended* and *Similar* rows don't. A library collection page's Seerr row is left out; its missing movies are
+    the *Missing from this collection* block's. A movie's collection **View** lists the collection's movies from TMDB
+    as well: with the request controls on, people who can ask get the request picker; with them off, or for someone
+    who can't ask (a Watcher), it is a list to look at, where each movie opens its own page. While the request controls
+    are off, the cards in these rows offer no **Request** button.
+
+In JE mode, new native metadata and parental-evidence reads (including status/season resolution, artwork revalidation,
+collections, related titles and logos) share a
+limit of eight outstanding reads per viewer and 48 across the server. Cached or already-running reads are shared
+without taking another place. Page reads wait briefly for capacity; if it stays busy, details are unavailable until
+you retry. Unavailable parental evidence also gives the page a retryable unavailable answer; it never
+permits the title. Status reads retain their empty-status contract while a lookup is unavailable.
+Admission refusals are not cached, and abandoning a page does not free its still-running read's place.
 
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 

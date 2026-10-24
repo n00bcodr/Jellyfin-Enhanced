@@ -435,7 +435,7 @@ SeerrNativeDetailsSource._cache	jf12	independent	Seerr path	Seerr's public title
 SeerrNativeDetailsSource._inFlight	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrNativeDetailsSource._linked	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrParentalFilter._certCache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
-SeerrParentalFilter._inFlight	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrParentalFilter._inFlight	both	independent	title	legacy Seerr-mode evidence tasks only; JE evidence uses ViewerMetadataAdmission; shared facts, viewer policy applied at read
 SeerrParentalFilter._tagFetchFailedAt	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read; failure markers dropped when expired	write:evicts
 SeerrRequestReadModel.FullRead.Records	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SeerrRequestReadModel.Snapshot.ById	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
@@ -491,7 +491,6 @@ TitlePresentationResultFilter._warnedUnclassified	both	independent	log key	log d
 TmdbImportLookup.HitRows._hits	both	independent	one lookup	one lookup's result rows, dropped with it	write:per-call
 TmdbImportLookup._cache	both	independent	query	public metadata lookups (TMDB), the same for every caller; the viewer's rules apply at review	write:evicts
 TmdbNativeDetailsSource._cache	jf12	independent	TMDB path / query	TMDB's public metadata and provider-id aliases (TitleAliases.Of), identical for every viewer; NativeDetailsPolicy and the page/feed readers apply the viewer's access, parental, Hidden Content and Spoiler Guard rules before publishing
-TmdbNativeDetailsSource._inFlight	jf12	independent	TMDB path / query	coalesced reads of the same public TMDB metadata, with no viewer access decision in the shared answer; viewer ids only govern admission budgets, and NativeDetailsPolicy and the page/feed readers check each viewer before publishing
 TmdbResponseCache._entries	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown); LRU and expiry eviction (RemoveNode, under _lock)	write:evicts
 TmdbResponseCache._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 TmdbResponseCache._lru	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown); the eviction order of _entries, evicted with it (RemoveNode, under _lock)	write:evicts
@@ -511,6 +510,7 @@ UserSpoilerBlur._pendingTmdb	both	independent	per value	fields of the person's S
 UserSpoilerBlur._providerTitles	both	independent	document	part of one person's spoilerblur.json document as read (the document itself, not a cache)
 UserSpoilerBlur._series	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
 ViewerBudget._budgets	jf12	independent	viewer	a rate limit per viewer
+ViewerMetadataAdmission._tasks	both	independent	metadata path	public metadata tasks; effective viewer controls admission only; single atomic owner removes each task when its read ends	write:own-state
 WatchlistMonitor._deferred	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping; deferred items, consumed when processed	write:own-state
 WatchlistMonitor._requestsCache	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
 WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping

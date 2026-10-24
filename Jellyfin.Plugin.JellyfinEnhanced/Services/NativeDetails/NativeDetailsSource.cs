@@ -102,6 +102,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary><see cref="NetworkAsync(int, CancellationToken)"/> out of the viewer's feed budget.</summary>
         Task<SourceAnswer> NetworkAsync(int tmdb, Guid viewer, CancellationToken ct) => NetworkAsync(tmdb, ct);
 
+        /// <summary><see cref="GenresAsync(bool, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<SourceAnswer> GenresAsync(bool movie, Guid viewer, CancellationToken ct) => GenresAsync(movie, ct);
+
+        /// <summary><see cref="RecommendationsAsync(bool, int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => RecommendationsAsync(movie, tmdb, ct);
+
+        /// <summary><see cref="LogoPathAsync(bool, int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<string?> LogoPathAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => LogoPathAsync(movie, tmdb, ct);
+
         /// <summary>
         /// Seerr's ratings of a title (movies: RT and IMDb combined; series: RT), or why there are none
         /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).

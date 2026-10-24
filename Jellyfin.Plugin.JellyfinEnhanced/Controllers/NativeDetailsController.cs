@@ -31,14 +31,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IServerApplicationHost _host;
         private readonly TitleAliases _aliases;
         private readonly TmdbResponseCache _tmdb;
+        private readonly TmdbNativeDetailsSource _nativeTmdb;
 
         /// <summary>Creates the controller.</summary>
-        public NativeDetailsController(ArrStatusService status, IServerApplicationHost host, TitleAliases aliases, TmdbResponseCache tmdb)
+        public NativeDetailsController(ArrStatusService status, IServerApplicationHost host, TitleAliases aliases, TmdbResponseCache tmdb, TmdbNativeDetailsSource nativeTmdb)
         {
             _status = status;
             _host = host;
             _aliases = aliases;
             _tmdb = tmdb;
+            _nativeTmdb = nativeTmdb;
         }
 
         /// <summary>
@@ -90,7 +92,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             tmdb ??= title.Provider == "tmdb" ? title.NumericId : null;
             tmdb ??= _aliases.Of(title).FirstOrDefault(k => k.Provider == "tmdb" && k.IsMovie == title.IsMovie)?.NumericId;
-            tmdb ??= await TmdbOfAsync(title, ct).ConfigureAwait(false);
+            if (tmdb == null)
+            {
+                var found = await TmdbOfAsync(title, viewer.UserId, ct).ConfigureAwait(false);
+                if (found.Unavailable)
+                {
+                    Response.Headers["Retry-After"] = "1";
+                    return StatusCode(503, new { code = "details_unavailable" });
+                }
+
+                tmdb = found.Id;
+            }
             if (tmdb is not int t || t <= 0) return NotFound(new { code = "not_found" });
             var synthetic = title.IsMovie ? SyntheticId.Movie(t)
                 : season is int sn && episode is int en ? SyntheticId.EpisodeOf(t, sn, en)
@@ -99,34 +111,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { id = synthetic.Format(serverId) });
         }
 
-        /// <summary>The TMDB id of a title known by another provider (TMDB's find, with JE's TMDB key), or null.</summary>
-        private async Task<int?> TmdbOfAsync(TitleKey title, CancellationToken ct)
+        /// <summary>The first public TMDB identity of the requested media kind, or none.</summary>
+        private static int? FindId(JsonElement data, bool movie)
         {
-            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
-            var source = title.Provider switch { "tvdb" => "tvdb_id", "imdb" => "imdb_id", _ => null };
-            if (source == null || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(title.Id)) return null;
-            if (title.Provider == "tvdb" && title.NumericId == null) return null;
-            if (title.Provider == "imdb" && !System.Text.RegularExpressions.Regex.IsMatch(title.Id, "^tt[0-9]{1,10}$")) return null;
-            try
+            if (!data.TryGetProperty(movie ? "movie_results" : "tv_results", out var results) || results.ValueKind != JsonValueKind.Array) return null;
+            foreach (var result in results.EnumerateArray())
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromSeconds(8));
-                var response = await _tmdb.GetAsync("find/" + Uri.EscapeDataString(title.Id), "?external_source=" + source, apiKey, timeout.Token).ConfigureAwait(false);
-                if (!response.IsSuccess) return null;
-                using var doc = JsonDocument.Parse(response.Content);
-                var list = title.IsMovie ? "movie_results" : "tv_results";
-                if (!doc.RootElement.TryGetProperty(list, out var results) || results.ValueKind != JsonValueKind.Array) return null;
-                foreach (var r in results.EnumerateArray())
-                {
-                    if (r.TryGetProperty("id", out var idEl) && idEl.TryGetInt32(out var found) && found > 0) return found;
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-            {
-                return null;
+                if (result.TryGetProperty("id", out var id) && id.TryGetInt32(out var found) && found > 0) return found;
             }
 
             return null;
+        }
+
+        /// <summary>The TMDB id of a title known by another provider (TMDB's find, with JE's TMDB key), or null.</summary>
+        private async Task<(int? Id, bool Unavailable)> TmdbOfAsync(TitleKey title, Guid viewer, CancellationToken ct)
+        {
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
+            var source = title.Provider switch { "tvdb" => "tvdb_id", "imdb" => "imdb_id", _ => null };
+            if (source == null || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(title.Id)) return (null, false);
+            if (title.Provider == "tvdb" && title.NumericId == null) return (null, false);
+            if (title.Provider == "imdb" && !System.Text.RegularExpressions.Regex.IsMatch(title.Id, "^tt[0-9]{1,10}$")) return (null, false);
+            try
+            {
+                // JE identity reads retain the effective HTTP viewer and the native metadata limits.
+                // Seerr mode keeps its existing TMDB identity fallback.
+                if (NativeDetailsPolicy.JeBackend(JellyfinEnhanced.Instance!.Configuration))
+                {
+                    var answer = await _nativeTmdb.FindAsync(title, viewer, ct).ConfigureAwait(false);
+                    return (answer.Data is { } data ? FindId(data, title.IsMovie) : null, answer.Data == null && !answer.NotFound);
+                }
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                var response = await _tmdb.GetAsync("find/" + Uri.EscapeDataString(title.Id), "?external_source=" + source, apiKey, timeout.Token).ConfigureAwait(false);
+                if (!response.IsSuccess) return (null, false);
+                using var doc = JsonDocument.Parse(response.Content);
+                return (FindId(doc.RootElement, title.IsMovie), false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                return (null, false);
+            }
         }
     }
 }

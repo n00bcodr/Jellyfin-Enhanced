@@ -61,7 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             if (page.IsMovie)
             {
-                var movie = await _source.MovieAsync(page.TmdbId, ct).ConfigureAwait(false);
+                var movie = await _source.MovieAsync(page.TmdbId, viewerId, ct).ConfigureAwait(false);
                 if (movie.Data == null) return movie.NotFound ? AbsentPageResult.Refused : AbsentPageResult.Unavailable;
                 return Found(new AbsentTitle
                 {
@@ -72,7 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 });
             }
 
-            var answer = await _source.SeriesAsync(page.TmdbId, ct).ConfigureAwait(false);
+            var answer = await _source.SeriesAsync(page.TmdbId, viewerId, ct).ConfigureAwait(false);
             if (answer.Data is not { } series) return answer.NotFound ? AbsentPageResult.Refused : AbsentPageResult.Unavailable;
             var key = SeriesKey(series, page.TmdbId);
             var seriesPage = page.SeriesId.ToGuid(serverId);
@@ -93,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 case SyntheticKind.Season:
                 case SyntheticKind.Episode:
                     if (!seasons.Any(s => s.Season == page.Season)) return AbsentPageResult.Refused;
-                    var season = await _source.SeasonAsync(page.TmdbId, page.Season, ct).ConfigureAwait(false);
+                    var season = await _source.SeasonAsync(page.TmdbId, page.Season, viewerId, ct).ConfigureAwait(false);
                     if (season.Data is not { } data) return season.NotFound ? AbsentPageResult.Refused : AbsentPageResult.Unavailable;
                     var episodes = EpisodesOf(data, page.TmdbId, page.Season, serverId).Where(e => !physical.HiddenEpisodes.Contains(e.Episode)).ToList();
                     if (page.Kind == SyntheticKind.Episode && !episodes.Any(e => e.Episode == page.Episode)) return AbsentPageResult.Refused;

@@ -165,19 +165,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private Timer? _debounceSaveTimer;
         private volatile bool _disposed;
 
-        public TmdbResponseCache(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
-            : this(httpClientFactory, TimeProvider.System)
+        public TmdbResponseCache(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger, NativeDetails.ViewerMetadataAdmission? admission = null)
+            : this(httpClientFactory, TimeProvider.System, admission)
         {
             _logger = logger;
             _diskPath = Path.Combine(applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tmdb-cache.json");
             LoadFromDisk();
         }
 
-        internal TmdbResponseCache(IHttpClientFactory httpClientFactory, TimeProvider timeProvider)
+        internal TmdbResponseCache(IHttpClientFactory httpClientFactory, TimeProvider timeProvider, NativeDetails.ViewerMetadataAdmission? admission = null)
         {
+            MetadataAdmission = admission ?? new NativeDetails.ViewerMetadataAdmission();
             _httpClientFactory = httpClientFactory;
             _timeProvider = timeProvider;
         }
+
+        internal NativeDetails.ViewerMetadataAdmission MetadataAdmission { get; }
 
         /// <summary>
         /// Returns the TMDB response for <c>https://api.themoviedb.org/3/{apiPath}{query}</c>,
@@ -195,6 +198,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
+            // Raw collection/season readers retain the effective viewer before their delegate runs.
+            // Native/evidence reads already have an owner: their nested raw task remains under it.
+            if (NativeDetails.ViewerMetadataAdmission.EffectiveViewer is { } viewer
+                && !NativeDetails.MetadataTaskProbe.HasOwner
+                && JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetails.NativeDetailsPolicy.JeBackend(config))
+            {
+                string identity;
+                lock (_lock) identity = "raw:" + GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query);
+                return MetadataAdmission.Read(identity, viewer,
+                    () =>
+                    {
+                        TmdbResponse value = null!;
+                        var hit = !refresh && !bundle && TryGetCached(apiPath, query, apiKey, out value);
+                        return (hit, value!);
+                    },
+                    () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh),
+                    new TmdbResponse(503, "{}", string.Empty), cancellationToken);
+            }
+
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (target.HasValue)
             {
@@ -269,6 +291,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            if (bundleMembers != null || owner != null) NativeDetails.MetadataTaskProbe.External(apiPath);
+
             if (bundleMembers != null)
             {
                 var bundleUrl = UpstreamUrl(target!.Value.TitlePath, "?append_to_response=" + string.Join(",", BundleMemberNames(target.Value.MediaType).Where(m => m != null)));
@@ -333,6 +357,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else
             {
+                NativeDetails.MetadataTaskProbe.External(apiPath);
                 _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, lease);
             }
 
