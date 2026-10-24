@@ -300,11 +300,26 @@ ${r.Content}` : r.Content,
          * @param {string} text - Raw markdown text from TMDB reviews.
          * @returns {string} HTML string safe for innerHTML assignment.
          */
+        /**
+         * TMDB reviews are a mix of markdown and HTML (<em>, <a href>, <br>).
+         * Turns the HTML into the markdown parseMarkdown understands and drops
+         * any other tag, so tags never show up as text.
+         */
+        function htmlToMarkdown(text) {
+            return String(text)
+                .replace(/<a\s[^>]*?href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
+                .replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, '**$2**')
+                .replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, '*$2*')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+                .replace(/<\/?[a-z][^>]*>/gi, '');
+        }
+
         function parseMarkdown(text) {
             if (!text) return '';
 
             // Escape HTML first
-            let html = escapeHtml(text);
+            let html = escapeHtml(htmlToMarkdown(text));
 
             // Parse markdown elements
             // Bold (**text** or __text__)

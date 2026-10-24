@@ -155,3 +155,11 @@ test('successful review creation refreshes persisted content and edit prepopulat
   assert.equal(saved.length,2);assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'Updated version');
   assert.equal(h.document.querySelector('.je-review-form'),null);
 });
+test('review HTML becomes markup instead of showing as raw tags',async t=>{
+  const html="I enjoyed <em>'The Mule'</em>. A <a href=\"https://x.test/a\" rel=\"nofollow\">real dude</a>!<br>Done <b>now</b>";
+  const h=await setup(t,{tmdb:[{author:'Tm',content:html}]});
+  const text=h.document.querySelector('.tmdb-review-text');
+  assert.ok(!text.textContent.includes('<'));assert.ok(!text.textContent.includes('rel='));
+  assert.equal(text.querySelector('a').getAttribute('href'),'https://x.test/a');
+  assert.ok(text.querySelector('em'));assert.ok(text.querySelector('strong'));
+});
