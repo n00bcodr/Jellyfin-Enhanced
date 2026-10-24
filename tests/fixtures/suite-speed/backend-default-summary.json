@@ -1,0 +1,16 @@
+{
+  "_comment": "Captured by executing the actual tests/runner/coverage.py from pre-tier commit b1a9ee65f7a0d3e9c0244e1606d3fb8a4e7555bb on an 80% line / 60% branch Cobertura fixture; only source path normalized.",
+  "summary": {
+    "measured_percent": {
+      "line": 80.0,
+      "branch": 60.0
+    },
+    "minimum_percent": {
+      "line": 47.0,
+      "branch": 35.0
+    },
+    "source": "<coverage-report>",
+    "exclusions": [],
+    "passed": true
+  }
+}

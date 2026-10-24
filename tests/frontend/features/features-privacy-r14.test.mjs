@@ -1,3 +1,4 @@
+import { nestedConcurrency } from '../helpers/discovery.mjs';
 // R14: a native verdict's resolved marker is written only together with its applied effect.
 // The interleaving model is generated from a table: decision path x async boundary x disturbance.
 import test, {describe} from 'node:test';
@@ -122,7 +123,7 @@ for(const rows of [false,true])test(`a ${rows?'list row':'card'} detached before
 // The generated model. Each cell: retained node, real production trigger, disturbance at the boundary, ordinary scans.
 const rows=[];
 for(const path of Object.keys(PATHS))for(const boundary of BOUNDARIES)for(const kind of DISTURBANCES)rows.push({path,boundary,kind,want:expected(path,kind)});
-describe('generated marker/effect interleavings',{concurrency:8},()=>{
+describe('generated marker/effect interleavings',{concurrency:nestedConcurrency},()=>{
  for(const {path,boundary,kind,want} of rows)test(`${path} x ${boundary} x ${kind} -> ${want?'hidden':'visible'}`,async t=>{
   const {r}=await runCell(t,path,boundary,kind);
   assert.equal(r.node.isConnected,true,'exact retained node is attached');
