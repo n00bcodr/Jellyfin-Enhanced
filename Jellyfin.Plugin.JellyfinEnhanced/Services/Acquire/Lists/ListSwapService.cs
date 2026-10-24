@@ -697,7 +697,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (placeholder != null && PlaceholderProgress.IsEpisodeFill(placeholder) && PlaceholderProgress.IsComplete(placeholder, context.Today))
                 {
                     // C3: a stored "ended" can be an older reading (or a show revived since), so seasons and series retire on
-                    // fresh metadata; only without Seerr, where nothing could ever confirm it, does the stored state decide.
+                    // fresh metadata; only without an available metadata provider does the stored state decide.
                     var confirmed = placeholder.Kind == PlaceholderKinds.Episodes || fresh.Contains(placeholderId)
                         || (placeholder.InProduction == false && !MetadataAvailable);
                     // The library already contradicts the metadata (an episode the expected set doesn't know as aired was
@@ -1770,7 +1770,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (!MetadataAvailable)
             {
-                // Without Seerr only posters can be read (from TMDB with JE's key): the ones UseServerPostersAsync
+                // Without full metadata only posters can be read (from TMDB with JE's key): the ones UseServerPostersAsync
                 // couldn't read in its interactive budget, or left empty while no poster source was configured.
                 if ((mode & (MetadataMode.New | MetadataMode.Maintenance)) != 0 && PostersAvailable)
                 {

@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 {
     /// <summary>
     /// The list core's metadata (<see cref="IListMetadataSource"/>) read from TMDB with Jellyfin Enhanced's own key, for
-    /// households without Seerr (JE mode; behind <see cref="ListImportFlags.JeMetadata"/>). It reads the same three
+    /// JE households (enabled with lists by <see cref="ListImportFlags.JeMetadata"/>). It reads the same three
     /// resources the Seerr reader does (<c>movie/{id}</c>, <c>tv/{id}</c> with external ids, <c>tv/{id}/season/{n}</c>)
     /// through the shared <see cref="TmdbResponseCache"/> and turns them into <see cref="PlaceholderMetadata"/> with the
     /// list core's own transformations (<see cref="ListMetadataService.FromMovie"/>/<see cref="ListMetadataService.FromTv"/>,
@@ -199,8 +199,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
     /// <summary>
     /// The list core's metadata source as registered (the 4c1 seam, <see cref="IListMetadataSource"/>): Seerr exactly as
-    /// before whenever Seerr is set up; otherwise, with <see cref="ListImportFlags.JeMetadata"/> on and a TMDB key saved,
-    /// TMDB (<see cref="TmdbListMetadataSource"/>). With neither, metadata is unavailable (custom entries and exact source
+    /// before in Seerr mode whenever Seerr is set up; JE mode always selects
+    /// TMDB (<see cref="TmdbListMetadataSource"/>), enabled with lists and a saved TMDB key. With neither, metadata is unavailable (custom entries and exact source
     /// metadata still work; nothing is invented). Posters keep coming from the existing reader (JE's TMDB key).
     /// </summary>
     public sealed class ListMetadataSources : IListMetadataSource

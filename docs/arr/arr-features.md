@@ -1991,7 +1991,7 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
   as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
   people are pointed to an MDBList mirror or a CSV export.
-- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+- **Matching.** In JE mode, titles are looked up on TMDB with the server's key; local library identities still identify owned copies. A missing TMDB key leaves unresolved titles unknown. In Seerr mode, Seerr remains the fallback when no TMDB key is saved. Each match
   says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
   already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
   or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
@@ -2047,8 +2047,11 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
   redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
   details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
-- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
-  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
+- **Title details in JE mode.** With *Lists* enabled and the server's TMDB key saved, list entries get release dates,
+  expected episodes and production status directly from TMDB. No separate metadata opt-in or Seerr connection is needed.
+  Partial or unavailable metadata stays unknown and cannot prove completion. Whole-series requests use these same stored
+  season expectations. A source previously linked through Seerr is inactive in JE mode: its existing members are kept
+  until an editor explicitly relinks it through TMDB. JE list metadata, imports and sources never fall back to Seerr.
 
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 

@@ -2422,20 +2422,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // list, so they are shown only to callers who see every entry; others get the state, codes and timestamps.
         private static ListSourceDto SourceView(ListSource source, bool fullDetail)
         {
-            var last = source.LastSync;
+            // Project the dormant pin immediately; preserve the document's members, provider and consent for a
+            // deliberate relink or backend change. This never turns a failed source read into an empty snapshot.
+            var inactive = source.Provider == "seerr" && SeerrAddresses.IsJe(JellyfinEnhanced.Instance?.Configuration);
+            var last = inactive ? new SourceSyncSummary { State = "paused", Code = Sources.SourceFailures.ProviderPinned } : source.LastSync;
             var countFree = last?.State is "failed" or "paused" && last.Code != "apply_failed";
             return new ListSourceDto
             {
                 Kind = source.Kind,
                 Url = source.Url,
                 Title = source.Title,
-                SyncEnabled = source.SyncEnabled,
+                SyncEnabled = !inactive && source.SyncEnabled,
                 RemoveDropped = source.RemoveDropped,
                 LastSyncAt = source.LastSyncAt,
-                LastSyncResult = fullDetail || countFree ? source.LastSyncResult : null,
-                PausedReason = source.PausedReason,
+                LastSyncResult = inactive ? SeerrAddresses.InactiveSourceMessage : fullDetail || countFree ? source.LastSyncResult : null,
+                PausedReason = inactive ? SeerrAddresses.InactiveSourceMessage : source.PausedReason,
                 LastSync = fullDetail || last == null ? last : new SourceSyncSummary { State = last.State, Code = last.Code, Truncated = last.Truncated, Partial = last.Partial },
-                PausedCode = source.PausedCode,
+                PausedCode = inactive ? Sources.SourceFailures.ProviderPinned : source.PausedCode,
                 CountsHidden = fullDetail ? null : true,
             };
         }

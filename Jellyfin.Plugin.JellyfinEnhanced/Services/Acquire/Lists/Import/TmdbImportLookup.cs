@@ -539,7 +539,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
     /// <summary>
     /// The import title lookup in use (the metadata adapter for imports): TMDB with Jellyfin Enhanced's key when one is
-    /// saved (works without Seerr), otherwise Seerr when it is set up (the allowed, labelled fallback; responses name the
+    /// saved (works without Seerr), otherwise Seerr only outside JE mode when it is set up (the allowed, labelled fallback; responses name the
     /// provider). Decided per call from the configuration, never switched mid-call.
     /// </summary>
     public sealed class MetadataImportLookup : IImportLookup
@@ -556,10 +556,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _seerr = seerr;
         }
 
-        private IImportLookup Current => _tmdb.IsConfigured ? _tmdb : _seerr;
+        private IImportLookup Current => SeerrAddresses.IsJe(JellyfinEnhanced.Instance?.Configuration) || _tmdb.IsConfigured ? _tmdb : _seerr;
 
         /// <inheritdoc />
-        public bool IsConfigured => _tmdb.IsConfigured || _seerr.IsConfigured;
+        public bool IsConfigured => Current.IsConfigured;
 
         /// <inheritdoc />
         public string Provider => _tmdb.IsConfigured ? "tmdb" : _seerr.IsConfigured ? "seerr" : string.Empty;

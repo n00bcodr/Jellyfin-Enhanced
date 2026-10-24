@@ -254,6 +254,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceFetchResult.Fail(source, SourceFailures.ProviderDisabled, "Lists from this site are turned off on this server.");
             }
 
+            if (options.Provider == "seerr" && SeerrAddresses.IsJe(config))
+            {
+                return SourceFetchResult.Fail(source, SourceFailures.ProviderPinned, SeerrAddresses.InactiveSourceMessage);
+            }
+
             if (source.Kind == SourceKinds.Trakt && TraktKey.Length == 0)
             {
                 return SourceFetchResult.Fail(source, SourceFailures.TraktNotConfigured, "Trakt lists need a Trakt client ID in Jellyfin Enhanced's settings.");

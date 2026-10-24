@@ -522,6 +522,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     using var timeout = new CancellationTokenSource(CallTimeout);
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    if (!SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    {
+                        return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
+                    }
+
                     using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                     var status = (int)response.StatusCode;
                     // Review round 11 (4c2-R11-3): only a JSON success's body is read, by the one bounded reader; any other answer

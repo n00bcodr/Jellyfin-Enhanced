@@ -678,6 +678,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var url = baseUrl + apiPath;
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    if (!SeerrAddresses.IsCurrent(baseUrl, apiKey))
+                    {
+                        only500 = false;
+                        return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
+                    }
+
                     using var response = await BoundedBody.SendAsync(client, request, cts.Token).ConfigureAwait(false);
                     answered = true;
                     _unreachableUntil.TryRemove(scope, out _);
