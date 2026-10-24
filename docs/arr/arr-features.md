@@ -2248,3 +2248,7 @@ Where the details action row would overflow, a compact row keeps the primary Pla
 **Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.
 
 List completion also cross-checks the show’s known last/next episode against its season counts and detailed episode rows. Contradictory or partial evidence keeps completion unknown, including after a refresh of previously known expectations. Dated future episodes retain their dates, and specials remain an explicit season scope.
+
+List completion uses a server verdict (`complete`, `incomplete`, or `unknown`) with a reason. Only reconciled show/season evidence grants positive authority; counts are retained display facts. Old list documents have unknown authority until a coherent refresh, and a metadata outage cannot retire season or series placeholders. Undated named episodes and started later seasons cannot disappear from completion obligations.
+
+Series reconciliation reads detailed rows for every declared regular season and any related season resources already cached for that title. Missing resources or inconsistent rows keep completion unknown. Newly chosen explicit episode scopes receive positive scope authority; older episode selections also require a coherent refresh.

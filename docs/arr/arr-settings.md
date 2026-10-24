@@ -991,3 +991,5 @@ Save captures every changed section when pressed. Edits made while it runs, incl
 For a person who has never opened JE settings, the first administrator display save uses the same initial defaults as their own first access and leaves personal consents unset. Resetting settings also honours the configured watch-progress defaults while retaining each person's consent choices.
 
 When metadata sources disagree about the expected episodes, a refresh retains prior display facts but withdraws completion authority until a coherent full response arrives. Retrying after a request-backend change reads under the current configuration.
+
+A coherent metadata refresh is required before an older list can complete or supply an automatically derived whole-series request scope. Partial or contradictory evidence withdraws completion authority while keeping the previous display counts. The list projection supplies `completion` and `completionReason` independently of those counts.

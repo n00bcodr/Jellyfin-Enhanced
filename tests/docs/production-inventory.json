@@ -395,6 +395,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/CompletionAuthority.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListDoc.cs",
       "category": "Model"
     },
@@ -692,6 +696,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollageRenderer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/CompletionEvaluator.cs",
       "category": "Services"
     },
     {
@@ -11725,7 +11733,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 732,
+    "files": 734,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

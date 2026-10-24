@@ -690,10 +690,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == placeholderId);
                 if (placeholder != null && PlaceholderProgress.IsEpisodeFill(placeholder) && PlaceholderProgress.IsComplete(placeholder, context.Today))
                 {
-                    // C3: a stored "ended" can be an older reading (or a show revived since), so seasons and series retire on
-                    // fresh metadata; only without an available metadata provider does the stored state decide.
-                    var confirmed = placeholder.Kind == PlaceholderKinds.Episodes || fresh.Contains(placeholderId)
-                        || (placeholder.InProduction == false && !MetadataAvailable);
+                    // Positive authority still needs a fresh confirmation. An outage cannot retire retained scopes.
+                    var confirmed = CompletionEvaluator.Read(placeholder, context.Today).IndependentScope || fresh.Contains(placeholderId);
                     // The library already contradicts the metadata (an episode the expected set doesn't know as aired was
                     // filled), which a cached read can't see: read it again first. Retire on the Force pass, or when
                     // MayForce refuses, so a numbering mismatch never pins the placeholder.
@@ -1784,12 +1782,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 TimeSpan? age = null;
                 void Want(TimeSpan value) => age = age.HasValue && age.Value < value ? age : value;
-                if ((mode & MetadataMode.Completion) != 0 && p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Series)
+                if ((mode & MetadataMode.Completion) != 0 && PlaceholderProgress.IsEpisodeFill(p)
+                    && !CompletionEvaluator.Read(p, today).IndependentScope)
                 {
                     Want(CompletionMetadataMaxAge);
                 }
 
-                if ((mode & MetadataMode.Force) != 0 && p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Series)
+                if ((mode & MetadataMode.Force) != 0 && PlaceholderProgress.IsEpisodeFill(p))
                 {
                     Want(TimeSpan.Zero);
                 }

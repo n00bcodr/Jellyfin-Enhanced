@@ -298,6 +298,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 EpisodeTotal = episodeTotal,
                 Note = note.Length == 0 ? null : note,
             };
+            if (kind == PlaceholderKinds.Episodes)
+                placeholder.CompletionAuthority = CompletionEvaluator.DeclareEpisodes(placeholder, DateTime.UtcNow);
             return true;
         }
 
@@ -378,17 +380,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     input = new MutationInput { Key = key.ToString(), Scope = "seasons", Variant = variant, Seasons = new[] { season } };
                     break;
                 case PlaceholderKinds.Episodes when placeholder.SeasonNumber is int season && placeholder.Episodes.Count > 0:
+                    if (!PlaceholderProgress.HasCompleteExpected(placeholder)) return null;
                     input = new MutationInput
                     {
                         Key = key.ToString(),
                         Scope = "episodes",
                         Variant = variant,
-                        Episodes = placeholder.Episodes.Where(e => e.E >= 1).Select(e => new RequestEpisode(season, e.E)).ToArray(),
+                        Episodes = CompletionEvaluator.ScopeEpisodes(placeholder).Select(e => new RequestEpisode(e.S, e.E)).ToArray(),
                     };
                     break;
                 case PlaceholderKinds.Series:
                     if (seriesSeasons == null && !PlaceholderProgress.HasCompleteExpected(placeholder)) return null;
-                    var seasons = (seriesSeasons ?? placeholder.Expected.Select(e => e.S).ToList()).Where(s => s >= 1).Distinct().OrderBy(s => s).ToArray();
+                    var seasons = (seriesSeasons ?? CompletionEvaluator.ScopeSeasons(placeholder)).Where(s => s >= 1).Distinct().OrderBy(s => s).ToArray();
                     if (seasons.Length == 0)
                     {
                         return null;

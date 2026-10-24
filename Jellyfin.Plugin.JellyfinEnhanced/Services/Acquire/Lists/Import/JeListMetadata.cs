@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -80,7 +82,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var fetchedAt = tv.Value.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.Value.FetchedAtUtc : season!.Value.FetchedAtUtc;
-            return Admit(ListMetadataService.FromTv(placeholder, tv.Value.Read, season?.Read, fetchedAt, todayUtc));
+            Dictionary<int, ContractRead>? seriesSeasons = null;
+            if (placeholder.Kind == PlaceholderKinds.Series)
+            {
+                var probe = ListMetadataService.FromTv(placeholder, tv.Value.Read, null, fetchedAt, todayUtc);
+                if (probe.Completion?.Reason != "series_rows_unavailable") return Admit(probe);
+                var numbers = tv.Value.Read.Rows("seasons").Select(s => s.Int("seasonNumber")).OfType<int>().Where(n => n >= 1)
+                    .Concat(_tmdb.CachedTvSeasons(placeholder.TmdbId.Value, Key)).Distinct().OrderBy(n => n).ToArray();
+                if (numbers.Length <= 64)
+                {
+                    seriesSeasons = new Dictionary<int, ContractRead>();
+                    using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    budget.CancelAfter(TimeSpan.FromSeconds(30));
+                    try
+                    {
+                        foreach (var n in numbers)
+                        {
+                            if (!epoch.IsCurrent) return null;
+                            var part = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + n.ToString(CultureInfo.InvariantCulture), string.Empty,
+                                ResponseContract.MetadataSeason, new AnswerRequest(Season: n, Show: placeholder.TmdbId), fresh, budget.Token)).ConfigureAwait(false);
+                            if (part == null || part.Value.Read.Verdict != ResponseVerdict.Valid) { seriesSeasons = null; break; }
+                            seriesSeasons[n] = part.Value.Read;
+                            if (part.Value.FetchedAtUtc < fetchedAt) fetchedAt = part.Value.FetchedAtUtc;
+                        }
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { seriesSeasons = null; }
+                }
+            }
+            return Admit(ListMetadataService.FromTv(placeholder, tv.Value.Read, season?.Read, fetchedAt, todayUtc, seriesSeasons));
 
             PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
             {

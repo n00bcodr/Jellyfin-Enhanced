@@ -130,6 +130,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// the expected set from the title's metadata (season/series; includes an announced next episode); 0 = not known yet.
         /// </summary>
         [JsonPropertyName("expectedCount")] public int ExpectedCount { get; set; }
+        /// <summary>Explicit server verdict: complete, incomplete or unknown; counts carry no completion authority.</summary>
+        [JsonPropertyName("completion")] public string Completion { get; set; } = "unknown";
+        /// <summary>Reason the scope is not complete, when known.</summary>
+        [JsonPropertyName("completionReason")] public string? CompletionReason { get; set; }
         /// <summary>How many of those have aired (air date today or earlier, UTC): the "m" of "n of m aired".</summary>
         [JsonPropertyName("airedCount")] public int AiredCount { get; set; }
         /// <summary>TV: whether the show is still in production (null = unknown). A season/series placeholder stays until finished.</summary>

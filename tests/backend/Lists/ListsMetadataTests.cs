@@ -53,12 +53,10 @@ public class ListsMetadataTests
         var series = Ph("{\"kind\":\"series\",\"tmdbId\":110492,\"title\":\"Peacemaker\"}");
         var whole = ListMetadataService.FromTv(series, Json(Peacemaker), null, Today, Today);
         Assert.Equal("2022-01-13", whole.ReleaseDate);
-        // Seasons ≥ 1 from the episode counts; aired up to the last aired episode, then the dated next one, then unknown.
-        Assert.Equal(
-            new[] { (1, 1, true), (1, 2, true), (2, 1, true), (2, 2, false), (2, 3, false) },
-            whole.Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
-        Assert.Equal("2026-10-23", whole.Expected![3].AirDate);
-        Assert.Equal(3, whole.EpisodeTotal);
+        // The aggregate has unknown later chronology and an unannounced count-zero season: no positive authority.
+        Assert.True(whole.Partial);
+        Assert.Null(whole.Expected);
+        Assert.Null(whole.EpisodeTotal);
 
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":110492,\"seasonNumber\":2,\"title\":\"Peacemaker\",\"episodes\":[{\"s\":2,\"e\":1}]}");
         var listed = ListMetadataService.FromTv(episodes, Json(Peacemaker), Json(Season2), Today, Today);
@@ -181,7 +179,10 @@ public class ListsMetadataTests
 
         // A failed season read changes nothing.
         var partial = ListMetadataService.FromTv(episodes, Json(Peacemaker), null, Today, Today);
-        Assert.False(ListMetadataService.Apply(episodes, partial));
+        ListMetadataService.Apply(episodes, partial); // the new uncertainty reason may change; retained display facts do not
+        Assert.Equal("2025-08-21", episodes.Episodes[0].AirDate);
+        Assert.Null(episodes.Episodes[1].AirDate);
+        Assert.False(PlaceholderProgress.IsComplete(episodes, Today));
     }
 
     [Fact]

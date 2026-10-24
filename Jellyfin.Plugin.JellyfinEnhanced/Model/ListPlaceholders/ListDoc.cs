@@ -223,6 +223,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool ExpectedUncertain { get; set; }
 
+        /// <summary>Positive reconciliation authority; absence, including every legacy document, means Unknown.</summary>
+        [JsonPropertyName("completionAuthority")]
+        public CompletionAuthority? CompletionAuthority { get; set; }
+
+        /// <summary>Why the latest reconciliation could not grant authority; retained facts are display only.</summary>
+        [JsonPropertyName("completionReason")]
+        public string? CompletionReason { get; set; }
+
         /// <summary>Season/series: whether the season/show is still in production (maintained by later phases).</summary>
         [JsonPropertyName("inProduction")]
         public bool? InProduction { get; set; }

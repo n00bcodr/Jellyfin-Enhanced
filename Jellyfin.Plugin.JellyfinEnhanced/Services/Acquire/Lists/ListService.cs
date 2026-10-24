@@ -537,7 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var complete = PlaceholderProgress.IsComplete(placeholder, today)
-                    && (placeholder.Kind == PlaceholderKinds.Episodes || placeholder.InProduction == false || fresh.Contains(placeholder.Id));
+                    && (CompletionEvaluator.Read(placeholder, today).IndependentScope || fresh.Contains(placeholder.Id));
 
                 // Playlists: the placeholder goes where its first missing episode belongs in episode order, so a watch
                 // order that starts with episodes the library lacks starts with the placeholder (S1E1–E7 missing, S1E8+
@@ -1481,6 +1481,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     placeholder.EpisodeTotal = link.EpisodeTotal;
                     placeholder.Expected = link.Expected;
                     placeholder.ExpectedUncertain = link.ExpectedUncertain;
+                    placeholder.CompletionAuthority = link.CompletionAuthority;
+                    placeholder.CompletionReason = link.CompletionReason;
                     placeholder.Filled = new List<FilledEpisode>();
                     placeholder.InProduction = link.InProduction;
                     if (link.Note != null && note == null)
@@ -2401,6 +2403,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     TitleKey = key?.ToString(),
                     Edition = ListRules.EditionOf(placeholder),
                     Status = StatusFor(placeholder, key, statuses),
+                    Completion = CompletionEvaluator.Read(placeholder, today).State,
+                    CompletionReason = CompletionEvaluator.Read(placeholder, today).Reason,
                     ExpectedCount = PlaceholderProgress.ExpectedCount(placeholder),
                     AiredCount = PlaceholderProgress.AiredCount(placeholder, today),
                     InProduction = placeholder.InProduction,

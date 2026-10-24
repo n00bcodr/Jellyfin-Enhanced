@@ -379,6 +379,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        // Current public season resources already seen for this title are part of a series reconciliation too.
+        // This is a read-only snapshot: it never renews freshness or publishes provider authority.
+        internal IReadOnlyList<int> CachedTvSeasons(int tmdbId, string apiKey)
+        {
+            lock (_lock)
+            {
+                var prefix = GetKeyHash(apiKey) + "|https://api.themoviedb.org/3/tv/" + tmdbId.ToString(CultureInfo.InvariantCulture) + "/season/";
+                return _entries.Values.Select(n => n.Value)
+                    .Where(e => e.Response.IsSuccess && e.ExpiresAt > _timeProvider.GetUtcNow() && e.Key.StartsWith(prefix, StringComparison.Ordinal))
+                    .Select(e => e.Key[prefix.Length..].Split('?')[0])
+                    .Select(v => int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1)
+                    .Where(n => n >= 0).Distinct().OrderBy(n => n).ToArray();
+            }
+        }
+
         /// <summary>
         /// Phase 4c2 (list imports): drops the cached answer for <c>{apiPath}{query}</c>, for a caller that found it
         /// unusable (malformed, or not a whole answer), so the next read asks TMDB again instead of keeping it for the TTL.

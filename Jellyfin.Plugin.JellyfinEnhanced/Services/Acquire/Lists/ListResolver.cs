@@ -150,51 +150,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>Whether retained expectations still carry completion/automatic scope authority.</summary>
         /// <param name="placeholder">The stored entry.</param>
         /// <returns>False after a partial refresh or without a bounded expected set.</returns>
-        public static bool HasCompleteExpected(Placeholder placeholder) => !placeholder.ExpectedUncertain
-            && placeholder.Expected.Count > 0 && placeholder.Expected.Count < MaxExpected;
+        public static bool HasCompleteExpected(Placeholder placeholder) => CompletionEvaluator.Read(placeholder, DateTime.UtcNow).State != "unknown";
 
-        /// <summary>The completion rule (see the class remarks). Movies and custom entries never "complete" here.</summary>
-        /// <param name="placeholder">Placeholder.</param>
-        /// <param name="todayUtc">Today (UTC).</param>
-        /// <returns>Whether the placeholder can be retired.</returns>
-        public static bool IsComplete(Placeholder placeholder, DateTime todayUtc)
-        {
-            var filled = FilledCoords(placeholder);
-            switch (placeholder.Kind)
-            {
-                case PlaceholderKinds.Episodes:
-                    return placeholder.Episodes.Count > 0 && placeholder.Episodes.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
-                case PlaceholderKinds.Season:
-                {
-                    if (!HasCompleteExpected(placeholder) || placeholder.InProduction == null)
-                    {
-                        return false;
-                    }
-
-                    var allAired = placeholder.Expected.All(e => IsAired(e, todayUtc));
-                    var finished = allAired || placeholder.InProduction == false;
-                    var lastAired = placeholder.Expected.Where(e => IsAired(e, todayUtc)).Select(e => e.E).DefaultIfEmpty(0).Max();
-                    var required = placeholder.InProduction == false
-                        ? placeholder.Expected.Where(e => IsAired(e, todayUtc) || (e.AirDate == null && e.E < lastAired)).ToList()
-                        : placeholder.Expected;
-                    return finished && required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
-                }
-
-                case PlaceholderKinds.Series:
-                {
-                    if (placeholder.InProduction != false || !HasCompleteExpected(placeholder))
-                    {
-                        return false;
-                    }
-
-                    var required = placeholder.Expected.Where(e => e.S >= 1 && IsAired(e, todayUtc)).ToList();
-                    return required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
-                }
-
-                default:
-                    return false;
-            }
-        }
+        /// <summary>The explicit evaluator verdict is the only retirement authority.</summary>
+        /// <param name="placeholder">Stored entry.</param>
+        /// <param name="todayUtc">Today in UTC.</param>
+        /// <returns>Whether the reconciled verdict is Complete.</returns>
+        public static bool IsComplete(Placeholder placeholder, DateTime todayUtc) => CompletionEvaluator.Read(placeholder, todayUtc).IsComplete;
 
         /// <summary>
         /// The first episode, in episode order, that a TV placeholder still stands for: a listed (episodes) or expected
