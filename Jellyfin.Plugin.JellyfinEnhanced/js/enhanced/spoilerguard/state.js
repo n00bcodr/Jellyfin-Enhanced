@@ -341,13 +341,9 @@
 
     /** True when the mirrors can answer for this title: a loaded state, or an accepted write since. */
     internal.isKnownForKind = function(kind, id) {
-        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
-        origin = JE.core.userWrite.originOf(origin);
         return loadOk || confirmed.has(`${kind === 'movie' || kind === 'collection' ? kind : 'series'}:${internal.normalizeId(id)}`);
     };
     internal.isTmdbKnown = function(mediaType, tmdbId) {
-        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
-        origin = JE.core.userWrite.originOf(origin);
         return loadOk || confirmed.has(`tmdb:${internal.pendingKey(mediaType, tmdbId)}`);
     };
 

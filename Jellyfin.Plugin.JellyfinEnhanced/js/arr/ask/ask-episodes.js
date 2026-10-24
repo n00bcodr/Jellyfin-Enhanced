@@ -990,6 +990,9 @@
         if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
+        // Capabilities are read for this session: a sign-out (and someone else's sign-in) before they arrive drops the Search
+        // (with the click's origin checked too).
+        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
         if (!current() || JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
@@ -1059,6 +1062,7 @@
         const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
         affected.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
+        const started = JE.arrAsk.epoch();
         let result = null;
         try {
             const caps = await JE.arrAsk.me();
@@ -1571,6 +1575,7 @@
         const numbers = eps.map(ep => ep.episode);
         if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
         const key = eps.length === 1 ? eps[0].key : status.key;
+        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
         if (!current() || JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
