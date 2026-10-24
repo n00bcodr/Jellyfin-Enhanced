@@ -80,8 +80,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
-                foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
-                    await _policy.PrepareAsync(pending.UserId, pending.Input.WithArrChoices(input), ct).ConfigureAwait(false);
+                foreach (var pending in _ledger.ForTitle(input.Key).Where(w => !w.Follower && (w.Status == "pending" || input.HasArrRouting && w.Status is "queued" or "sent" or "stale") && w.Input.Variant == input.Variant))
+                {
+                    var shared = pending.Input.WithArrChoices(input);
+                    await _policy.PrepareAsync(pending.UserId, shared, ct).ConfigureAwait(false);
+                    await _policy.PrepareAsync(user, shared, ct).ConfigureAwait(false);
+                }
             }
             string? target = null;
             if (press != null)

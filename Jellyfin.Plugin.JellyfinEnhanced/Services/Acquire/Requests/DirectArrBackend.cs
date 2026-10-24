@@ -83,7 +83,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Target(job, key, out var hold) is not { } target) return hold!;
             var (instance, client) = target;
             var run = new Run(job, instance, client, key, finalGuard, admission, ct);
-            return key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
+            ChoiceNames(run, _store.PeekSystem(instance.Id));
+            var result = key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
+            return result with { AddChoiceDetails = run.AddChoiceDetails };
         }
 
         /// <inheritdoc />
@@ -108,7 +110,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.");
         }
 
-        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct);
+        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
+        {
+            public Dictionary<string, string> AddChoiceDetails { get; } = new();
+        }
 
         // The add settings, checked against a current system snapshot. Only an add needs them: merges are
         // field-scoped monitoring edits that never send a profile, folder or tag.
@@ -122,8 +127,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (read.Ok) tags = read.Value!.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().Label ?? string.Empty);
             }
             var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder);
+            ChoiceNames(run, system.Value);
             if (check.Defaults != null) return (check.Defaults, null);
-            return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold("invalid_defaults", check.Message));
+            return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold(check.Reason!, check.Message));
+        }
+
+        private static void ChoiceNames(Run run, ArrSystemSnapshot? system)
+        {
+            run.AddChoiceDetails["instanceName"] = run.Instance.Name;
+            if (run.Job.Input.ProfileId is { } profile && system?.QualityProfiles.FirstOrDefault(p => p.Id == profile) is { } named)
+                run.AddChoiceDetails["qualityProfileName"] = named.Name;
+            // Arr root folders are identified/displayed by path in the shared snapshot.
+            if (run.Job.Input.RootFolder is { } root)
+                run.AddChoiceDetails["rootFolderName"] = system?.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.SamePath(r.Path, root))?.Path ?? root;
         }
 
         /// <summary>The opaque tag on every title Jellyfin Enhanced adds to Sonarr or Radarr (never a person's name).</summary>
@@ -732,7 +748,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var defaults = error.Validation.Any(v => v.Property is "QualityProfileId" or "RootFolderPath" or "Path" or "Tags");
                     return partial
                         ? BackendResults.Maybe(job.WantId, $"{instance.Name} refused part of the change: {error.Message}")
-                        : BackendResults.Failed(defaults ? "invalid_defaults" : "instance_rejected", $"{instance.Name} refused the add: {error.Message}");
+                        : BackendResults.Failed(defaults ? "invalid_choice" : "instance_rejected", $"{instance.Name} refused the add: {error.Message}");
                 case ArrErrorKind.NotFound:
                     return BackendResults.Hold("service_down", $"{instance.Name} answered 'not found'; check its URL base.");
                 default:

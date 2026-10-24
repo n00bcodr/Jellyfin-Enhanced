@@ -250,7 +250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var system = await ArrAddRules.FreshSystemAsync(_store, instance, ct).ConfigureAwait(false);
                 var check = ArrAddRules.Check(instance, system, await TagsAsync(instance, ct).ConfigureAwait(false), body.ProfileId, body.RootFolder);
                 if (check.Defaults == null)
-                    return RequestOutcome.Refused(check.Reason == "defaults_unverified" ? "defaults_unverified" : "invalid_defaults", check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
+                    return RequestOutcome.Refused(check.Reason!, check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
             }
             var input = new MutationInput
             {

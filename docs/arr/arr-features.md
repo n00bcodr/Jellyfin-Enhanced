@@ -680,7 +680,10 @@ Administrators can see why a title is where it is, and fix it, without leaving J
       space) and, for a series, the seasons to monitor. Only the instance's saved add defaults are preselected; nothing
       else is picked for you. You can choose a profile and folder even when the instance has no saved add defaults.
       **Add** records the add as your request routed to that instance (or approves a matching pending request with
-      your choices), so it goes through the
+      your choices). A matching queued or retrying request that has not been sent is reauthorized with those choices,
+      keeping its original requester, scope and charge. If it is already sending or sent, different choices receive a
+      conflict explaining that they could not be applied; check the title in Manage before changing its profile or folder.
+      The add goes through the
       same outgoing queue as every request (one key per sheet, re-check, read-back, audit), and the sheet follows it until
       the instance confirms it ("Added to Radarr 4K…") or says why it is held;
     - a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
@@ -1149,8 +1152,9 @@ ask fetch the episodes that are missing, one tap each.
     has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be
     imported into: the title's own folder when Sonarr/Radarr already has the title (also when an administrator names
     another root folder: Sonarr/Radarr keeps a title it has in its folder), otherwise the root folder named or the
-    instance's default root folder for adding titles (with no default root set, a new add isn't measured; it waits for
-    the defaults anyway). So a full default root doesn't pause asks for a series whose folder is on a roomy drive, and a
+    instance's default root folder for adding titles. An explicit root takes precedence and an omitted root falls back
+    to the default; the effective settings are validated against the instance. With neither an explicit root nor a default root,
+    a new add isn't measured and waits for a root to be chosen. So a full default root doesn't pause asks for a series whose folder is on a roomy drive, and a
     series whose own folder's drive is full is paused even when the default root has room. In Seerr mode (Seerr picks the
     server and folder) only the root folder named or JE's default root folder is measured, as before. This applies to
     every role. Lists of titles answer title by title the same way: a Discover or search card says *Paused: storage full*
@@ -1405,11 +1409,14 @@ Approved requests go out through the request handling the administrator chose: s
       Radarr for standard requests, the default (else first) *4K* one for 4K requests. A 4K request never goes to a
       standard instance; with no usable 4K instance it can't be asked for. An instance set to Anime or Other is never
       picked for a request (it can still be chosen by an administrator when approving with edits or in Manage › Add to).
-    - **Add defaults.** A title the instance doesn't have yet is added with the instance's saved quality profile, root
-      folder and tags (and Radarr's minimum availability or Sonarr's series type), set per instance on the settings page
-      (*When Jellyfin Enhanced adds a title*). They are checked against the instance's current profile and folder list
-      right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`;
-      administrators see such a held request on the title as "Stuck · needs a look in Requests", not as waiting for an OK);
+    - **Add defaults.** For a title the instance doesn't have yet, the administrator's explicit quality profile and root folder choices take precedence;
+      each omitted field falls back to the instance's saved add defaults (*When Jellyfin Enhanced adds a title* on the settings page).
+      The effective settings are validated against the instance's current profile and folder list right before sending.
+      Tags, Radarr's minimum availability and Sonarr's series type come from saved defaults.
+      If a required profile or folder has neither an explicit choice nor a default, the request waits for an administrator (`invalid_defaults`);
+      an invalid or removed choice is `invalid_choice`, with a message naming the quality profile, root folder or tags to fix
+      (the Manage Add sheet displays that message). Saved values are checked by the same rule. For a held request,
+      administrators see such a held request on the title as "Stuck · needs a look in Requests", not as waiting for an OK;
       if the list can't be read just now it is tried again later. Nothing is guessed (for example "the first profile").
       It also gets the tag `je-requested` (created on the instance the first time it is needed; it never names a person),
       so you can tell in Sonarr/Radarr which titles Jellyfin Enhanced added. If the tag can't be created the title is
@@ -1522,7 +1529,8 @@ Approved requests go out through the request handling the administrator chose: s
 
     | Reason | Meaning | Fix |
     |---|---|---|
-    | `invalid_defaults` | The add has no profile/folder choice or defaults, or a selected value is no longer valid | Choose valid values in Manage › Add to, or set instance defaults and approve again |
+    | `invalid_defaults` | A required profile/folder has neither an explicit choice nor a saved default | Choose values in Manage › Add to, or set instance defaults and approve again |
+    | `invalid_choice` | An explicit or saved profile/folder, or saved tag, is no longer usable | The message names the field; choose a current value and approve again |
     | `instance_changed` | The instance was disabled, changed role, or its address/key changed | Approve again (with edits) |
     | `not_aired` | Sonarr doesn't list the season or episode yet | Nothing: the series is refreshed and the request checked again every 6 hours (only a request that already wrote part of its change waits for an approval) |
     | `title_not_found` | The instance (or Seerr) doesn't know the title by its id | Check the title; add it in the app |

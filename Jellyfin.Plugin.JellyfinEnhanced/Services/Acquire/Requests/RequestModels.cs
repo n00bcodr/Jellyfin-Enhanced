@@ -328,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             Outcome = outcome, Reason = reason, HttpStatus = status,
             Certainty = status == 503 ? ArrActionStatus.Failed : ArrActionStatus.Rejected,
-            Message = status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
+            Message = reason == "invalid_choice" ? "The selected quality profile or root folder is no longer usable. Choose current values in Manage → Add to." : status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
         };
     }
     /// <summary>

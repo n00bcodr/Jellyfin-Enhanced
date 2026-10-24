@@ -542,14 +542,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // send the shared scope to Seerr's defaults and leave the chosen destination unused).
             if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
-                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
-                    .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
+                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant))
+                    .Where(w => !w.Follower && Active(w) && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) &&
+                        (w.Status == "pending" ? w.Input.Extra(new[] { normalized }) == null : w.Input.Overlaps(normalized) && normalized.HasArrRouting && facts.Backend == "je")))
                 {
                     // Manage Add may authorize a viewer's pending ask instead of creating its own job. Its
                     // explicit profile/root must therefore become that approval's input, while the viewer
                     // keeps their own scope and charge. ApproveCore persists the edits in the want and job.
                     var edits = normalized.HasArrRouting ? pending.Input.WithArrChoices(normalized) : null;
-                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now);
+                    // Coverage ignores add settings. Reconcile them with the actual owner before acknowledging
+                    // a follower/duplicate. ApproveCore alone owns authorization, replacement and persistence.
+                    if (pending.Status != "pending" && edits?.Fingerprint == pending.Input.Fingerprint) continue;
+                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now, reconcileArrChoices: pending.Status != "pending");
+                    if (approved.HttpStatus >= 400 && edits != null)
+                        return approved with { Message = approved.Reason is "request_in_flight" or "request_changed"
+                            ? "These add choices could not be applied: the shared request is already sending or sent. Check the title in Manage before changing its profile or folder."
+                            : approved.Message };
                     if (approved.HttpStatus != 200) continue;
                 }
             }
@@ -808,7 +816,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
         // resumeHeld: an explicit approval may resume work held after part of it was written; an approver's matching ask
         // (an implicit approval) leaves such work alone.
-        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false)
+        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false, bool reconcileArrChoices = false)
         {
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
@@ -823,7 +831,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
             if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
             if (approver.Role != "Admin" && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
-            if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
+            // Manage Add can reauthorize the known-unsent owner without moving its scope or charge.
+            // It cannot reopen sent work; normal approval retains its pending-only contract.
+            if (want.Status != "pending" && !(reconcileArrChoices && want.Status == "queued" && edits != null && requester.Backend == "je")) return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
@@ -834,6 +844,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // where it was; and what went out never moves, whatever the approval is.
             var verdict = RequestDestination.Approval(want.Input, want.TargetKey, input, TargetKey(requester), edits != null, jobs, resumeHeld);
             if (verdict.Refusal != null) return RequestOutcome.Refused(verdict.Refusal, 409);
+            if (reconcileArrChoices)
+            {
+                // Replace identities rather than editing a row an outbox worker may already have read.
+                // The claim and this transaction serialize: either the old claim wins (refused above),
+                // or that stale snapshot can no longer claim the cancelled job. Move only the reservation
+                // link; its owner, cost, charge time/order and scope remain exactly as charged.
+                var unsent = Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id));
+                if (unsent.Count == 0) return RequestOutcome.Refused("request_changed", 409);
+                foreach (var job in unsent)
+                {
+                    var replacement = job.Input.WithArrChoices(input);
+                    var next = AddJob(c, t, id, replacement, Authorize(requester, approver, replacement, true), now, linkReservation: false);
+                    Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed',updated_at=$at WHERE id=$j", ("$at", Ms(now)), ("$j", job.Id));
+                    Exec(c, t, "UPDATE reservations SET job_id=$next WHERE job_id=$old", ("$next", next), ("$old", job.Id));
+                }
+                Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,reason='queued_outage',updated_at=$at WHERE id=$id",
+                    ("$input", input.Canonical), ("$owned", want.OwnedInput?.WithArrChoices(input).Canonical), ("$at", Ms(now)), ("$id", id));
+                var authorization = Authorize(requester, approver, input, true);
+                Approval(c, t, want, actor, "approve", null, edits, authorization, now);
+                Record(c, t, id, null, actor, "approve", "accepted", "queued_outage", input.Key, now);
+                return RequestOutcome.Accepted(id, "queued_outage", 200);
+            }
             var restamp = verdict.Reconfirms;
             if (targetChanged)
                 foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => !RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))))
@@ -967,7 +999,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // keep it. Anything else (no such person, the feature off, authority changing, not seeing it) refuses a withdrawal.
         private static readonly IReadOnlySet<string> RoutingRefusals = new HashSet<string>(StringComparer.Ordinal)
         {
-            "invalid_instance", "instance_changed", "invalid_defaults", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
+            "invalid_instance", "instance_changed", "invalid_defaults", "invalid_choice", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
             "seerr_advanced_required", "backend_unavailable", "low_disk",
         };
         /// <summary>

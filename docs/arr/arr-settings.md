@@ -605,7 +605,8 @@ same controls appear on those pages (see [Titles that aren't in the library](arr
     request for a title the instance doesn't have yet waits for an administrator when neither the request nor the
     instance supplies a valid profile and folder. Manage › Add to preselects saved defaults; you can also choose the
     profile and folder in the sheet without saving instance defaults. These choices are kept when the add approves
-    a viewer's pending request and when the outgoing queue retries it.
+    a viewer's pending request, joins a known-unsent queued or retrying request, and when the outgoing queue retries it.
+    Different choices cannot alter a request already sending or sent; the sheet reports a conflict and asks you to check Manage.
 
 **Move requests from Seerr...** checks and then moves Seerr's pending and in-progress requests into Jellyfin Enhanced
 and switches `ArrRequestBackend` to `je` (see [Moving requests from Seerr](arr-features.md#moving-requests-from-seerr)).

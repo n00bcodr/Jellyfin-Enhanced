@@ -26,6 +26,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
     public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)
     {
+        /// <summary>Allowlisted add-choice names resolved by the direct backend; never configuration or credentials.</summary>
+        public IReadOnlyDictionary<string, string>? AddChoiceDetails { get; init; }
         /// <summary>A refusal at the final send; the job is parked for human review.</summary>
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);
         /// <summary>An uncertain send; the reservation remains until a scoped fresh read resolves it.</summary>
@@ -310,8 +312,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // The same wait again (still no Seerr account, a season still not listed): one audit row for it, not one per check.
                 if (completed && RequestLedger.RepeatsWait(job, result)) continue;
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
-                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message });
+                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message,
+                    Details = AddChoices(job, result) });
             }
+        }
+        private static IReadOnlyDictionary<string, string>? AddChoices(RequestJob job, RequestBackendResult result)
+        {
+            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null) return null;
+            var details = new Dictionary<string, string>();
+            if (job.Input.ProfileId is { } profile) details["qualityProfileId"] = profile.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (job.Input.RootFolder is { } root) details["rootFolder"] = root;
+            if (result.AddChoiceDetails != null)
+                foreach (var name in new[] { "instanceName", "qualityProfileName", "rootFolderName" })
+                    if (result.AddChoiceDetails.TryGetValue(name, out var value)) details[name] = value;
+            return details;
         }
         // Finishes noted merges whose work settled (RequestLedger.SettleMerges); lists showing them are told.
         private void Settle()
