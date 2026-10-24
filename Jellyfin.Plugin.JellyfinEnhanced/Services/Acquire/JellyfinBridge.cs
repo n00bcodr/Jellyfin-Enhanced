@@ -1370,15 +1370,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Asks Jellyfin for one hydration of an item (<see cref="IJellyfinLibraryAccess.QueueHydration"/>), once per item per
-        /// <see cref="HydrationAttemptTimeout"/> whichever job asks. Returns when it was asked (now, or by the earlier ask
-        /// still running), or null when Jellyfin refused it.
+        /// <see cref="HydrationAttemptTimeout"/> whichever job asks, unless the earlier ask has ended: the item was refreshed
+        /// since (<paramref name="refreshed"/>, its last refresh stamp), so a next round is really asked. Returns when it was
+        /// asked (now, or by the earlier ask still running), or null when Jellyfin refused it.
         /// </summary>
-        private DateTime? AskHydration(Guid itemId, HydrationScope scope, string label)
+        private DateTime? AskHydration(Guid itemId, HydrationScope scope, string label, DateTime? refreshed = null)
         {
             var now = DateTime.UtcNow;
             lock (_lock)
             {
-                if (_hydrationAsked.TryGetValue(itemId, out var earlier) && now - earlier.At < HydrationAttemptTimeout) return earlier.At;
+                if (_hydrationAsked.TryGetValue(itemId, out var earlier) && now - earlier.At < HydrationAttemptTimeout && !(refreshed >= earlier.At)) return earlier.At;
                 if (_hydrationAsked.Count >= 500)
                 {
                     foreach (var old in _hydrationAsked.Where(kv => now - kv.Value.At >= HydrationAttemptTimeout).Select(kv => kv.Key).ToList()) _hydrationAsked.Remove(old);
@@ -1571,9 +1572,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     asked.Clear();
                     var seriesMissing = judged.Missing.Any(m => m.StartsWith("series ", StringComparison.Ordinal));
                     // The series' own title, overview and poster: its own metadata only (its other episodes are left as they are).
-                    if (seriesMissing && facts.Series != null && AskHydration(facts.SeriesId, HydrationScope.ItemOnly, "the series of " + file) is DateTime s1) asked.Add((facts.SeriesId, s1));
+                    if (seriesMissing && facts.Series != null && AskHydration(facts.SeriesId, HydrationScope.ItemOnly, "the series of " + file, facts.Series.LastRefreshed) is DateTime s1) asked.Add((facts.SeriesId, s1));
                     var ownMissing = judged.Missing.Concat(judged.SoftMissing).Any(m => !m.StartsWith("series ", StringComparison.Ordinal));
-                    if (ownMissing && AskHydration(facts.Id, HydrationScope.Item, file) is DateTime s2) asked.Add((facts.Id, s2));
+                    if (ownMissing && AskHydration(facts.Id, HydrationScope.Item, file, facts.LastRefreshed) is DateTime s2) asked.Add((facts.Id, s2));
                     rounds++;
                     roundAt = watch.Elapsed;
                 }

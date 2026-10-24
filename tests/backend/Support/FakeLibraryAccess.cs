@@ -355,7 +355,7 @@ internal sealed class FakeLibraryAccess : IJellyfinLibraryAccess
     private void Fill(Guid id, string path, string kind)
     {
         if (!Metas.TryGetValue(id, out var m)) Metas[id] = m = new Meta();
-        if (!m.Locked) m.Name = "Canonical " + Stem(path);
+        if (!m.Locked && !ProviderLacks.Contains("title")) m.Name = "Canonical " + Stem(path);
         m.Overview = !ProviderLacks.Contains("overview");
         m.Primary = !ProviderLacks.Contains(kind == "episode" ? "episode image" : "poster");
         m.Backdrop = !ProviderLacks.Contains("backdrop");

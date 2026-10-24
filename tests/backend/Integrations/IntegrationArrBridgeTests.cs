@@ -1271,6 +1271,27 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
+    public async Task EveryRoundOfAProviderThatFindsNothingIsReallyAskedForThenItIsShownWithWhatIsMissing()
+    {
+        // Live on 12.2 (remote fetchers off): each hydration ends at once without a failure (Jellyfin stamps the item) yet
+        // finds nothing. The next round, due after the backoff, must ask Jellyfin again even though the previous ask is
+        // younger than the attempt timeout (before: the second round was swallowed by the per-item ask window).
+        using var rig = new Rig();
+        rig.Bridge.HydrationAttemptTimeout = TimeSpan.FromSeconds(5);
+        var radarr = rig.Instance("RadarrZ");
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        var item = rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+        foreach (var lack in new[] { "title", "overview", "poster", "backdrop" }) rig.Library.ProviderLacks.Add(lack);
+        var released = new TaskCompletionSource<ImportReadyRelease>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Bridge.Readiness.Released += r => released.TrySetResult(r);
+        await rig.Bridge.ScanNowAsync(radarr, AlmanacArr, default);
+        var done = await released.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(3, rig.Library.Hydrations.Count(h => h.Item == item.Id));
+        Assert.False(done.Verified);
+        Assert.Contains("metadata pending", done.Reason);
+    }
+
+    [Fact]
     public async Task AnEpisodeIntoAnExistingSeasonIsHydratedAloneNeverItsSeriesOrTheRoot()
     {
         using var rig = new Rig();
