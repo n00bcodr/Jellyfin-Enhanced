@@ -2905,7 +2905,7 @@ public class NativeDetailsSourceTests
         var artwork = new NativeDetailsArtwork(images);
         using (var cts = new CancellationTokenSource())
         {
-            var waiting = artwork.FetchAsync("/poster.jpg", "w300", cts.Token);
+            var waiting = artwork.FetchAsync("/poster.jpg", "w300", Guid.NewGuid(), cts.Token);
             cts.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
         }

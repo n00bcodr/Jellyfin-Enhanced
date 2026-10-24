@@ -343,6 +343,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("choice"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestChoice? Choice { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
+        /// <summary>Safe retryable local metadata-capacity refusal.</summary>
+        public static RequestOutcome MetadataBusy() => Refused("metadata_busy", 503, "unavailable") with
+        { Message = "This page can't be loaded right now. Try again in a moment." };
+
         /// <summary>Constructs a success result.</summary>
         public static RequestOutcome Accepted(string id, string reason, int status = 201) => new() { RequestId = id, Reason = reason, HttpStatus = status };
         /// <summary>Constructs a refusal, conflict, or retryable failure.</summary>

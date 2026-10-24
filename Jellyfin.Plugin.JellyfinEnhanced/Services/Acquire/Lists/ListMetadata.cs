@@ -878,6 +878,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
             using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
+            using var metadataAdmission = new MetadataAdmission("list-posters");
             // The poster lives from when its read began.
             var readAt = DateTime.UtcNow;
             try
@@ -885,12 +886,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cts.CancelAfter(Timeout);
                 // The source transport (no redirects, public addresses only), like every TMDB read of the lists subsystem.
-                var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
                 var url = "https://api.themoviedb.org/3/" + apiPath + "?api_key=" + Uri.EscapeDataString(apiKey);
                 // Review round 11 (4c2-R11-3): sent with its body unread, which only the one bounded reader reads (a success's
                 // and a 404's alike): an answer over the cap is a failed read, never a poster.
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                using var response = await ListContinuation.Await(() => BoundedBody.SendAsync(client, request, cts.Token)).ConfigureAwait(false);
+                using var response = await ListContinuation.Await(() => TmdbTransport.GetAsync(_httpClientFactory, url, metadataAdmission, cts.Token, SourceHttp.ClientName)).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     // Review round 10 (ProviderAbsence.Tmdb): "no such title or season" only from TMDB's own 404 (its error

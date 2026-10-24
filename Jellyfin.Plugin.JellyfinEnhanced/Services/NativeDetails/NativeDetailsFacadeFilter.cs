@@ -662,7 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var size = NativeDetailsArtwork.SizeFor(grant.Type, width);
             // One viewer can't make the server fetch without bound: images not cached yet come out of their budget.
             if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
-            var image = await _artwork.FetchAsync(grant.Path, size, ct).ConfigureAwait(false);
+            var image = await _artwork.FetchAsync(grant.Path, size, grant.Viewer, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
             // The one delivery gate after the fetch (the last await): the artwork is projected under the viewer's policy
             // revisions (an absent title has no watched state or owner of its own) and leaves only when they still hold.

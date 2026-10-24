@@ -1407,6 +1407,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutonomousMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs",
       "category": "Services"
     },
@@ -1487,6 +1491,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ImageMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ModeNativeDetailsSource.cs",
       "category": "Services"
     },
@@ -1556,6 +1564,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerMetadataScopeFilter.cs",
       "category": "Services"
     },
     {
@@ -1852,6 +1864,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbTransport.cs",
       "category": "Services"
     },
     {
@@ -11805,7 +11821,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 742,
+    "files": 746,
     "routes": 311,
     "configuration_properties": 666,
     "storage_references": 106,

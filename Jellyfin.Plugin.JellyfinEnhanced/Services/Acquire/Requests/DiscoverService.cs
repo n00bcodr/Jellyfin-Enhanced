@@ -253,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static Func<string, int, StatusViewer, CancellationToken, Task<bool?>> ParentalCheck(SeerrParentalFilter parental)
             => (kind, id, viewer, ct) => viewer.Handle is not User person
                 ? Task.FromResult<bool?>(null)
-                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.AbsentVerdictAsync(kind, id, policy, ct) : Task.FromResult<bool?>(true);
+                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.CheckAbsentAsync(kind, id, policy, viewer.UserId, ct) : Task.FromResult<bool?>(true);
 
         /// <summary>Hidden Content's per-user file.</summary>
         internal const string HiddenContentFile = "hidden-content.json";
@@ -291,6 +291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<DiscoverAnswer?> PublishAsync(StatusViewer viewer, string what, bool search, Func<StatusViewer, HiddenTitles, EvidenceDeadline, Task<Prepared?>> prepare, CancellationToken ct)
         {
+            using var metadataViewer = NativeDetails.ViewerMetadataAdmission.ForViewer(viewer.UserId);
             // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
             using var bound = CopyLookupBound.Track();
             using var budget = new EvidenceDeadline(ct);
@@ -310,6 +311,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 lastRead = prepared;
                 var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
+                // A capacity refusal is unknown evidence, never a parental denial or a cacheable empty page.
+                if (metadataViewer.Refused) return null;
                 // Publication: no await from here on.
                 var nowHidden = Hidden(viewer.UserId);
                 if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now)

@@ -172,6 +172,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task<RuleFactSet> ReadAsync(TitleKey title, CancellationToken ct)
         {
+            // Also called by automatic request evaluation outside an authenticated MVC response.
+            if (MetadataAdmission.Current == null && NativeDetails.ViewerMetadataAdmission.EffectiveViewer == null)
+                return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation,
+                    () => ReadAsync(title, ct)).ConfigureAwait(false);
+
             var now = _now();
             if (await _tmdbId(title, ct).ConfigureAwait(false) is not int id || id <= 0) return new RuleFactSet(null, null, null, null, null, now);
             var media = title.IsMovie ? "movie" : "tv";

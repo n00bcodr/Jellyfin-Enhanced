@@ -75,9 +75,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly IHttpClientFactory _http;
         private readonly ViewerBudget _budget;
         private readonly Func<DateTime> _now;
-        private readonly SemaphoreSlim _fetchGate = new(8);
+        private readonly ImageMetadataAdmission _images = new();
         private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At)> _bytes = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, Lazy<Task<(byte[] Bytes, string ContentType)?>>> _inFlight = new(StringComparer.Ordinal);
         private long _cachedBytes;
 
         /// <summary>Creates the artwork service with a key in memory.</summary>
@@ -237,45 +236,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="size">A TMDB size from <see cref="SizeFor"/>.</param>
         /// <param name="ct">Cancellation for this caller.</param>
         /// <returns>The bytes and content type, or null.</returns>
-        public async Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, CancellationToken ct)
+        public Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, CancellationToken ct)
+            => FetchAsync(path, size, ViewerMetadataAdmission.EffectiveViewer ?? Guid.Empty, ct);
+
+        /// <summary>Fetches public bytes under a separate, bounded image owner; privacy remains the facade's responsibility.</summary>
+        /// <param name="path">A safe TMDB path.</param>
+        /// <param name="size">A supported width.</param>
+        /// <param name="viewer">The validated grant's viewer.</param>
+        /// <param name="ct">Cancels this wait, not the shared operation.</param>
+        /// <returns>Bytes, or null for bounded admission/queue refusal and upstream failure.</returns>
+        public Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, Guid viewer, CancellationToken ct)
         {
-            if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture))) return null;
-            var key = size + path;
-            if (_bytes.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.At < CacheTtl) return (hit.Bytes, hit.ContentType);
-            // The shared fetch removes its own entry when it ends, whether or not anyone still waits.
-            return await _inFlight.GetOrAdd(key, k => Shared(k, size, path)).Value.WaitAsync(ct).ConfigureAwait(false);
+            if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture)))
+                return Task.FromResult<(byte[] Bytes, string ContentType)?>(null);
+            return _images.Read(size + path, viewer,
+                () => _bytes.TryGetValue(size + path, out var hit) && _now() - hit.At < CacheTtl
+                    ? ((byte[] Bytes, string ContentType)?)(hit.Bytes, hit.ContentType) : null,
+                () => FetchUpstreamAsync(size + path, path, size), ct);
         }
 
-        /// <summary>Upstream fetches still running (for tests: none may outlive its fetch).</summary>
-        internal int InFlightCount => _inFlight.Count;
-
-        private Lazy<Task<(byte[] Bytes, string ContentType)?>> Shared(string key, string size, string path)
-        {
-            Lazy<Task<(byte[] Bytes, string ContentType)?>>? lazy = null;
-            lazy = new Lazy<Task<(byte[] Bytes, string ContentType)?>>(async () =>
-            {
-                try
-                {
-                    return await FetchUpstreamAsync(key, size, path).ConfigureAwait(false);
-                }
-                finally
-                {
-                    _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<(byte[] Bytes, string ContentType)?>>>(key, lazy!));
-                }
-            });
-            return lazy;
-        }
+        /// <summary>Admitted image operations, including queued work (tests).</summary>
+        internal int InFlightCount => _images.Count;
 
         private async Task<(byte[] Bytes, string ContentType)?> FetchUpstreamAsync(string key, string size, string path)
         {
-            await _fetchGate.WaitAsync().ConfigureAwait(false);
             try
             {
                 Interlocked.Increment(ref _upstreamFetches);
                 using var timeout = new CancellationTokenSource(FetchTimeout);
-                var client = _http.CreateClient();
-                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("https://image.tmdb.org/t/p/" + size + path));
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                using var response = await TmdbTransport.GetAsync(_http, "https://image.tmdb.org/t/p/" + size + path, MetadataAdmission.Required, timeout.Token).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) return null;
                 var type = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
                 if (type is not ("image/jpeg" or "image/png" or "image/webp")) return null;
@@ -297,10 +286,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             catch (Exception)
             {
                 return null;
-            }
-            finally
-            {
-                _fetchGate.Release();
             }
         }
 

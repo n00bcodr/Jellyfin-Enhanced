@@ -148,6 +148,8 @@ HiddenContentResponseFilter._warnedShapeMismatchAt	both	independent	log or rate-
 HomeArrivals._known	both	independent	content / item	when library content arrived: not per user
 HouseholdRuleFacts._cache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
 ImageBlurService._cache	both	independent	item image + intensity	blurred bytes of an image: whether a viewer gets them is decided per request
+ImageMetadataAdmission._tasks	jf12	independent	artwork path	public image completion tasks; bounded admission retains ownership through queue and body; facade validates every grant	write:own-state
+ImageMetadataAdmission._viewers	jf12	independent	viewer id	outstanding image admission counts only; no access verdict; entries removed on completion	write:own-state
 ImportPhysicalProjection._reads	both	independent	one review	one import review's library reads for its viewer (the review's own read of the person), dropped with the review	write:per-call
 ImportPhysicalProjection._viewer	both	independent	one review	the person one import review is for, as that request read them; the projection is dropped with the review	write:per-call
 InvalidationLedger._epoch	both	independent	(record)	the ticket protocol's own invalidation records and floor, swapped whole by identity
@@ -334,11 +336,11 @@ MdblistService._accounts	both	independent	API key fingerprint	MDBList account qu
 MdblistService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 MdblistService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 MdblistService._retryUntil	both	independent	title	when a failed MDBList lookup may be asked again (a back-off), not an answer	deadline:a back-off after a failed lookup (when to ask again), not an answer's lifetime
+MetadataAdmission._reads	both	independent	admitted operation	public metadata completion tasks retained only by their live admission; no access verdicts; drained before capacity release	write:own-state
 MetadataCallLimiter.Queues._byOwner	both	independent	owner	waiting metadata calls per owner (a fair queue), not an answer	write:own-state
 MetadataCallLimiter.Queues._rotation	both	independent	owner	waiting metadata calls per owner (a fair queue), not an answer	write:own-state
 NativeClientPolicy._parsed	both	independent	configuration	parsed client names, per stored configuration value
 NativeDetailsArtwork._bytes	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
-NativeDetailsArtwork._inFlight	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
 NativeDetailsFacadeFilter.BodyProperties	jf12	independent	assembly / type	code and reflection metadata read once
 NativeDetailsLibrary._cache	jf12	keyed	viewer | native-details revision | title | part	NativeDetailsLibrary.Cached~viewerRevision
 NativeDetailsLibrary._without	jf12	independent	provider set	whether the library holds copies without some provider ids (the whole library, no user), under the library revision

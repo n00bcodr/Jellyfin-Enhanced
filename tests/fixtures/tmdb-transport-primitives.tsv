@@ -1,0 +1,2 @@
+# Exact-symbol/body pin for the generic bounded send primitive; caller send sites are always scanned.
+Services/Acquire/Lists/BoundedBody.cs::SendAsync|M:Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.BoundedBody.SendAsync(System.Net.Http.HttpClient,System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)	7893E98A43F2F7253D53F47F9DA7261B2C186075E94D59CE35270A93CDC38163	Generic bounded HTTP primitive beneath TmdbTransport and reviewed non-TMDB owners; not an independent TMDB admission source

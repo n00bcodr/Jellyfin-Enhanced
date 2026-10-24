@@ -114,6 +114,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             /// <summary>Underlying fetch time; unknown for legacy disk records. Cache hits never renew it.</summary>
             public DateTime FetchedAtUtc { get; init; }
 
+            /// <summary>Local admission refusal, distinct from an upstream status/body.</summary>
+            public bool AdmissionBusy { get; init; }
             public bool IsSuccess => StatusCode >= 200 && StatusCode <= 299;
         }
 
@@ -198,11 +200,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
+            // Public cached facts and existing owned reads cost no new place, for every owner.
+            var joinTarget = bundle ? ResolveBundleTarget(apiPath, query) : null;
+            if (!refresh && Joined(apiKey, UpstreamUrl(joinTarget?.CanonicalPath ?? apiPath,
+                joinTarget.HasValue ? string.Empty : query), out var joined))
+                return joined.WaitAsync(cancellationToken);
+
             // Raw collection/season readers retain the effective viewer before their delegate runs.
             // Native/evidence reads already have an owner: their nested raw task remains under it.
-            if (NativeDetails.ViewerMetadataAdmission.EffectiveViewer is { } viewer
-                && !NativeDetails.MetadataTaskProbe.HasOwner
-                && JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetails.NativeDetailsPolicy.JeBackend(config))
+            if (Services.MetadataAdmission.Current == null && NativeDetails.ViewerMetadataAdmission.EffectiveViewer is { } viewer)
             {
                 string identity;
                 lock (_lock) identity = "raw:" + GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query);
@@ -210,11 +216,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     () =>
                     {
                         TmdbResponse value = null!;
-                        var hit = !refresh && !bundle && TryGetCached(apiPath, query, apiKey, out value);
+                        var cachedTarget = bundle ? ResolveBundleTarget(apiPath, query) : null;
+                        var hit = !refresh && TryGetCached(cachedTarget?.CanonicalPath ?? apiPath,
+                            cachedTarget.HasValue ? string.Empty : query, apiKey, out value);
                         return (hit, value!);
                     },
                     () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh),
-                    new TmdbResponse(503, "{}", string.Empty), cancellationToken);
+                    new TmdbResponse(503, "{}", string.Empty) { AdmissionBusy = true }, cancellationToken);
+            }
+
+            if (Services.MetadataAdmission.Current == null)
+            {
+                if (JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetails.NativeDetailsPolicy.JeBackend(config))
+                    return Task.FromResult(new TmdbResponse(503, "{}", string.Empty));
+                return AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Legacy,
+                    () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh), cancellationToken).WaitAsync(cancellationToken);
             }
 
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
@@ -291,6 +307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            Services.MetadataAdmission.Required.Retain(shared);
             if (bundleMembers != null || owner != null) NativeDetails.MetadataTaskProbe.External(apiPath);
 
             if (bundleMembers != null)
@@ -328,6 +345,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return await joined.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            if (Services.MetadataAdmission.Current == null)
+                return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.ListImport,
+                    () => GetAdmittedAsync(apiPath, query, apiKey, admit, cancellationToken), cancellationToken).WaitAsync(cancellationToken).ConfigureAwait(false);
+
             var lease = await admit(cancellationToken).ConfigureAwait(false);
             Task<TmdbResponse> shared;
             TaskCompletionSource<TmdbResponse>? owner = null;
@@ -351,6 +372,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            Services.MetadataAdmission.Required.Retain(shared);
             if (owner == null)
             {
                 lease.Dispose(); // answered meanwhile: no request of ours
@@ -624,14 +646,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            var fallbackAnswers = new Dictionary<BundleMember, TaskCompletionSource<TmdbResponse>>();
             foreach (var member in members)
             {
                 if (refetch.Contains(member))
                 {
                     var memberPath = member.Name.Length == 0 ? target.TitlePath : target.TitlePath + "/" + member.Name;
-                    _ = FetchAsync(member.Key, AppendApiKey(UpstreamUrl(memberPath, string.Empty), apiKey), LookupTtl, member.Owner);
+                    var fallback = new TaskCompletionSource<TmdbResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    fallbackAnswers.Add(member, fallback);
+                    await FetchAsync(member.Key, AppendApiKey(UpstreamUrl(memberPath, string.Empty), apiKey), LookupTtl, fallback);
                 }
-                else if (split != null && split.TryGetValue(member.Name, out var part))
+            }
+
+            foreach (var member in members)
+            {
+                if (fallbackAnswers.TryGetValue(member, out var fallback))
+                {
+                    try { member.Owner.TrySetResult(await fallback.Task.ConfigureAwait(false)); }
+                    catch (OperationCanceledException) { member.Owner.TrySetCanceled(); }
+                    catch (Exception ex) { member.Owner.TrySetException(ex); _ = member.Owner.Task.Exception; }
+                    continue;
+                }
+                if (split != null && split.TryGetValue(member.Name, out var part))
                 {
                     member.Owner.TrySetResult(part);
                 }
@@ -754,17 +790,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _upstreamSlots.WaitAsync(timeout.Token).ConfigureAwait(false);
             try
             {
-                var httpClient = _httpClientFactory.CreateClient();
-                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri)
-                {
-                    // TMDB speaks HTTP/2; parallel lookups then share one
-                    // connection instead of each opening (and handshaking) its own.
-                    Version = HttpVersion.Version20,
-                    VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
-                };
-                // Phase 4c2 (review round 11, 4c2-R11-3): the lists' one bounded reader (headers first, then at most its cap of
-                // the body, a success's or an error's; over it: ResponseTooLargeException, an HttpRequestException as before).
-                using var response = await BoundedBody.SendAsync(httpClient, request, timeout.Token).ConfigureAwait(false);
+                using var response = await TmdbTransport.GetAsync(_httpClientFactory, requestUri,
+                    Services.MetadataAdmission.Required, timeout.Token, http2: true).ConfigureAwait(false);
                 var content = await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false);
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
                 var isJson = mediaType != null

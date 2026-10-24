@@ -504,9 +504,10 @@ public partial class ApiNativeDetailsTests
         using var net = new TmdbNet();
         using var plugin = new ApiPluginFixture();
         plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        var metadataViewer = Guid.NewGuid();
         using var cache = new TmdbResponseCache(net.Transport, TimeProvider.System);
         var source = new TmdbNativeDetailsSource(cache, null, plugin.Core.Logger);
-        var movie = (await source.MovieAsync(693134, CancellationToken.None)).Data!.Value;
+        var movie = (await source.MovieAsync(693134, metadataViewer, CancellationToken.None)).Data!.Value;
         Assert.Equal("Dune: Part Two", movie.GetProperty("title").GetString());
         Assert.Equal("2024-02-27", movie.GetProperty("releaseDate").GetString());
         Assert.Equal("/poster.jpg", movie.GetProperty("posterPath").GetString());
@@ -518,7 +519,7 @@ public partial class ApiNativeDetailsTests
         Assert.False(movie.TryGetProperty("mediaInfo", out _));
         // Repeated reads are one upstream call (the source's own cache, then TMDB's shared one).
         var calls = net.Paths.Count;
-        await source.MovieAsync(693134, CancellationToken.None);
+        await source.MovieAsync(693134, metadataViewer, CancellationToken.None);
         await source.MovieAsync(693134, Guid.NewGuid(), CancellationToken.None);
         Assert.Equal(calls, net.Paths.Count);
         Assert.Equal(0, source.InFlightCount);
@@ -541,9 +542,9 @@ public partial class ApiNativeDetailsTests
         Assert.Equal(0, dtos.Series(SyntheticId.Series(5), s, null).ChildCount);
 
         // TMDB's 404 is "no such title"; an outage or no key is "can't answer now" (never Seerr).
-        Assert.True((await source.SeriesAsync(4040, CancellationToken.None)).NotFound);
+        Assert.True((await source.SeriesAsync(4040, metadataViewer, CancellationToken.None)).NotFound);
         net.Down = true;
-        var down = await source.PersonAsync(4141, CancellationToken.None);
+        var down = await source.PersonAsync(4141, metadataViewer, CancellationToken.None);
         Assert.False(down.NotFound);
         Assert.Null(down.Data);
         plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
@@ -560,13 +561,14 @@ public partial class ApiNativeDetailsTests
         plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
         using var net = new IntegrationTransport((req, _) => Task.FromResult(IntegrationTransport.Response(
             """{"id":777,"name":"Unlinked","seasons":[{"season_number":1,"episode_count":2}],"external_ids":{"tvdb_id":null,"imdb_id":null}}""")));
+        var metadataViewer = Guid.NewGuid();
         using var cache = new TmdbResponseCache(net, TimeProvider.System);
         // What the arr libraries hold for the series (TitleAliases.Of in production: memory only).
         IReadOnlyList<TitleKey> Aliases(TitleKey key) => key.ToString() == "tv:tmdb:777"
             ? new[] { TitleKey.Parse("tv:tvdb:4242")!, TitleKey.Parse("tv:imdb:tt0000777")! }
             : Array.Empty<TitleKey>();
         var source = new TmdbNativeDetailsSource(cache, Aliases, plugin.Core.Logger, () => "test-tmdb", () => DateTime.UtcNow);
-        var series = (await source.SeriesAsync(777, CancellationToken.None)).Data!.Value;
+        var series = (await source.SeriesAsync(777, metadataViewer, CancellationToken.None)).Data!.Value;
         Assert.Equal(4242, series.GetProperty("externalIds").GetProperty("tvdbId").GetInt32());
         Assert.Equal("tt0000777", series.GetProperty("externalIds").GetProperty("imdbId").GetString());
         Assert.Equal("tv:tvdb:4242", NativeDetailsPages.SeriesKey(series, 777).ToString());

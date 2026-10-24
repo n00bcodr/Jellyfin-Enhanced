@@ -411,7 +411,7 @@ public class UserCacheOneSnapshotTests
         var (parental, transport) = Parental(arr, _ => current);
         using var _transport = transport;
         // The rating is known (read once for the kid).
-        Assert.False(await parental.MaySeeAbsentAsync("movie", 102, SeerrParentalFilter.PolicyFor(limited), default));
+        Assert.False(await parental.CheckAbsentAsync("movie", 102, SeerrParentalFilter.PolicyFor(limited), viewer.UserId, default));
         using var store = arr.Store();
         var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         // The status answer is keyed by the viewer read at the start (limit 5); the limit is widened meanwhile.
