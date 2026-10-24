@@ -156,6 +156,7 @@ JellyfinBridge._running	both	independent	path / item	library refresh bookkeeping
 JellyfinBridge._twinFiles	both	independent	path / item	library refresh bookkeeping: not per user; files being handled, removed when done (under _lock)	write:own-state
 JellyfinBridge._waiting	both	independent	path / item	library refresh bookkeeping: not per user
 JellyfinBridge._work	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinEnhanced._evidencePreservingConfiguration	both	independent	one synchronous configuration update	thread-local configuration identity used only to pair a synchronous evidence-preserving update with its nested save; restored in finally, never a viewer access answer	write:per-call
 JellyfinEnhancedController.ReviewVisibilityContext.Authors	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 JellyfinEnhancedController._avatarCache	both	independent	Seerr avatar URL	public avatar bytes; keyed by the Seerr URL and avatar path: after a settings save a late fetch from the old Seerr files under the old URL	write:self-keyed
 JellyfinEnhancedController._loggedCorruptArrConfig	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
@@ -389,6 +390,7 @@ PrivacyReadSet._watched	both	independent	one answer attempt	one answer attempt's
 PrivacyResponseGuard.GuardedBody._held	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
 PrivacyResponseGuard._body	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
 PrivacyResponseGuard._reads	both	independent	one response	one response's held bytes and the read-sets that guard them (D46): committed or withheld at that response's end	write:per-call
+PrivacyResponseGuard._transportBody	both	independent	one response	one response's outer transport body and held bytes, never shared across requests; its delivery guard commits or withholds the response using the current read-sets and evidence generation	write:per-call
 PrivacySurfaceRegistry._carries	both	independent	type	whether a runtime type can carry a title (reflection), the same for every viewer
 PrivacyValueHost._countries	both	independent	one projection	one projection's host lookups (D46 value walk): built for one answer and dropped with it	write:per-call
 PrivacyValueHost._items	both	independent	one projection	one projection's host lookups (D46 value walk): built for one answer and dropped with it	write:per-call
@@ -436,6 +438,7 @@ SeerrNativeDetailsSource._cache	jf12	independent	Seerr path	Seerr's public title
 SeerrNativeDetailsSource._inFlight	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrNativeDetailsSource._linked	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
 SeerrParentalFilter._certCache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrParentalFilter._countryWriters	both	independent	server configuration object identity	server configuration event-pairing leases for the evidence writer, not viewer access answers; stores and removals share the table lock and each completed write releases its own lease	write:locked=_countryWriters
 SeerrParentalFilter._inFlight	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
 SeerrParentalFilter._tagFetchFailedAt	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read; failure markers dropped when expired	write:evicts
 SeerrRequestReadModel.FullRead.Records	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends

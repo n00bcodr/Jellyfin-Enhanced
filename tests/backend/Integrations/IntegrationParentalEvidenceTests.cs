@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
@@ -23,6 +25,58 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class IntegrationParentalEvidenceTests
 {
+    [Theory]
+    [InlineData("MayOpenLocal")]
+    [InlineData("TryReadLocal")]
+    public void LocalEvidenceDecisionsUseTheAvailabilityOwner(string method)
+    {
+        var source = Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "Services", "TitleParentalEvidence.cs");
+        var body = CSharpSyntaxTree.ParseText(File.ReadAllText(source)).GetRoot().DescendantNodes()
+            .OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.ValueText == method);
+        var reads = body.DescendantNodes().OfType<MemberAccessExpressionSyntax>().ToArray();
+        Assert.DoesNotContain(reads, r => r.Name.Identifier.ValueText is "IsVirtualItem" or "IsPlaceHolder" or "Playable");
+        Assert.Contains(body.DescendantNodes().OfType<InvocationExpressionSyntax>(),
+            call => call.Expression.ToString() == "EditionAvailability.Plays");
+    }
+
+    [Theory]
+    [InlineData("movie", "/movies/a.mkv", false, "603", true)]
+    [InlineData("movie", "/movies/a.disc", false, "603", true)]
+    [InlineData("tv", "/shows/a", false, "603", true)]
+    [InlineData("movie", "/movies/a.mkv", true, "603", false)]
+    [InlineData("tv", "/shows/a", true, "603", false)]
+    [InlineData("movie", "relative/a.mkv", false, "603", false)]
+    [InlineData("tv", "relative/a", false, "603", false)]
+    [InlineData("movie", "", false, "603", false)]
+    [InlineData("movie", " ", false, "603", false)]
+    [InlineData("tv", null, false, "603", false)]
+    [InlineData("movie", "/movies/a.mkv", false, "604", false)]
+    public void LocalEvidenceProjectionPreservesPhysicalIdentityAndUserEntitlement(string kind, string? path, bool virtualItem, string providerId, bool physical)
+    {
+        using var plugin = new ApiPluginFixture();
+        plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        var user = FakeListHost.MakeUser("Member");
+        BaseItem item = kind == "movie" ? new Movie() : new MediaBrowser.Controller.Entities.TV.Series();
+        item.Id = Guid.NewGuid(); item.Path = path; item.IsVirtualItem = virtualItem;
+        item.CustomRating = "G"; item.Tags = new[] { "local!" }; item.ProviderIds["Tmdb"] = providerId;
+        var library = new Mock<ILibraryManager>();
+        library.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem> { item });
+        library.Setup(m => m.GetItemById<BaseItem>(item.Id, user)).Returns(item);
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("Local facts must not use transport"));
+        using var tmdb = new TmdbResponseCache(transport, TimeProvider.System);
+        var provider = new TitleParentalEvidenceProvider(transport, tmdb, library.Object);
+        Assert.Equal(physical, provider.MayOpenLocal(kind, 603, user));
+        Assert.Equal(physical, provider.TryReadLocal(kind, 603, "US", out var evidence));
+        if (physical) { Assert.Equal("G", evidence!.Certification); Assert.Equal(new[] { "local!" }, evidence.Keywords); }
+        else Assert.Null(evidence);
+        // User-neutral evidence does not confer entitlement after Jellyfin refuses the scoped item read.
+        library.Setup(m => m.GetItemById<BaseItem>(item.Id, user)).Returns((BaseItem?)null);
+        Assert.False(provider.MayOpenLocal(kind, 603, user));
+        Assert.Equal(physical, provider.TryReadLocal(kind, 603, "US", out _));
+        Assert.False(provider.MayOpenLocal(kind, 603, null));
+        Assert.Equal(0, transport.Calls);
+    }
+
     [Fact]
     public async Task JeWithoutSeerrResolvesAllowedTagsThroughTheSharedGate()
     {

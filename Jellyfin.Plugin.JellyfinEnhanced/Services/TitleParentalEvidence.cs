@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 
@@ -108,8 +109,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     HasAnyProviderId = new Dictionary<string, string> { ["Tmdb"] = id },
                     Recursive = true, IsVirtualItem = false, Limit = 33,
                 });
-                return items.Take(32).Any(item => !item.IsVirtualItem && !string.IsNullOrWhiteSpace(item.Path)
-                    && Path.IsPathFullyQualified(item.Path) && item.ProviderIds.TryGetValue("Tmdb", out var actual) && actual == id
+                return items.Take(32).Any(item => EditionAvailability.Plays(ArrJellyfinView.LocalEvidenceItem(item))
+                    && item.ProviderIds.TryGetValue("Tmdb", out var actual) && actual == id
                     && _library.GetItemById<BaseItem>(item.Id, user) != null);
             }
             catch (Exception) { return false; }
@@ -136,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             });
             if (items.Count == 0) return false;
             if (items.Count > 32) return true;
-            var physical = items.Where(i => !i.IsVirtualItem && !string.IsNullOrWhiteSpace(i.Path) && Path.IsPathFullyQualified(i.Path)
+            var physical = items.Where(i => EditionAvailability.Plays(ArrJellyfinView.LocalEvidenceItem(i))
                 && i.ProviderIds.TryGetValue("Tmdb", out var id) && id == tmdbId.ToString(CultureInfo.InvariantCulture)).ToArray();
             if (physical.Length == 0) return false;
             var facts = physical.Select(i => new TitleParentalEvidence(
