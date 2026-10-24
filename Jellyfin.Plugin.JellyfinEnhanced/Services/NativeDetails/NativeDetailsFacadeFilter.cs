@@ -632,7 +632,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return new NotFoundResult();
             if (page.IsTitle)
             {
-                if (!await _policy.MayListAbsentAsync(viewer, page, ct).ConfigureAwait(false)) return new NotFoundResult();
+                var access = await _policy.ListAbsentAccessAsync(viewer, page, ct).ConfigureAwait(false);
+                if (access == NativeDetailsPolicy.Access.Unknown) return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+                if (access != NativeDetailsPolicy.Access.Allowed) return new NotFoundResult();
             }
             else if (page.Kind == SyntheticKind.Person)
             {

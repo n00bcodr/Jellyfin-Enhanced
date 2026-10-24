@@ -1289,10 +1289,13 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     who can't ask (a Watcher), it is a list to look at, where each movie opens its own page. While the request controls
     are off, the cards in these rows offer no **Request** button.
 
-In JE mode, new native metadata reads (including status/season page resolution, related titles and logos) share a
+In JE mode, new native metadata and parental-evidence reads (including status/season resolution, artwork revalidation,
+collections, related titles and logos) share a
 limit of eight outstanding reads per viewer and 48 across the server. Cached or already-running reads are shared
 without taking another place. Page reads wait briefly for capacity; if it stays busy, details are unavailable until
-you retry. Status reads return no status while that lookup is unavailable. Refusals are not cached.
+you retry. Unavailable parental evidence also gives the page a retryable unavailable answer; it never
+permits the title. Status reads retain their empty-status contract while a lookup is unavailable.
+Admission refusals are not cached, and abandoning a page does not free its still-running read's place.
 
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 

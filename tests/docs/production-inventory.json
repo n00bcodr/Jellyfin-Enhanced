@@ -1531,6 +1531,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -11733,7 +11737,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 734,
+    "files": 735,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

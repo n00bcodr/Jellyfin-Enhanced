@@ -1768,7 +1768,16 @@ the same per-account budget as these lists: a read nobody has made yet waits up 
 In JE mode, this includes genre, recommendation and logo metadata, and the provider-id lookup used by the navigator.
 Status/season resolution also retains the effective viewer: a busy page lookup waits for the same short interval,
 then reports metadata unavailable (the status route returns its usual empty status). New distinct reads are bounded
-at eight per viewer and 48 server-wide; cached/running paths are shared for free, and busy refusals are not cached.
+at eight per viewer and 48 server-wide through one task factory, including parental certification evidence
+before page/status resolution, collection filtering and artwork revalidation. Cached/running paths are shared for
+free; admission refusals are not cached. Missing parental evidence yields retryable unavailable details (`503`),
+while a verified parental refusal remains `404`. Artwork revalidation also returns `503` for unavailable evidence.
+Library collection gaps return `503 metadata_unavailable` with `Retry-After: 1` when admission refuses any
+required collection/evidence read, so a partial list is never acknowledged as complete.
+The status route retains its successful empty status; optional Similar/episode rails retain their empty-answer
+contracts. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
+until it ends, even if its waiter cancels. Raw TMDB cache reads have their own 30-second upstream timeout
+(including any raw-cache slot wait); admission/page waiting and the finite server queue are separate waits.
 
 
 #### Lists (phase 4)

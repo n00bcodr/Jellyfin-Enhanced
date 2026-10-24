@@ -499,11 +499,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // (synthetic ids are then refused; every other request passes straight through).
             // ---- A1: the pages' metadata source is the request mode's, picked on every call: TMDB in Jellyfin Enhanced
             // mode (never Seerr), Seerr in every other mode exactly as before.
+            serviceCollection.AddSingleton<Services.NativeDetails.ViewerMetadataAdmission>();
             serviceCollection.AddSingleton<Services.NativeDetails.SeerrNativeDetailsSource>();
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.TmdbNativeDetailsSource(
                 sp.GetRequiredService<TmdbResponseCache>(),
                 sp.GetRequiredService<Services.Acquire.TitleAliases>(),
-                sp.GetRequiredService<Logger>()));
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.NativeDetails.ViewerMetadataAdmission>()));
             serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.ModeNativeDetailsSource>();
             // ---- end A1 ----
             serviceCollection.AddSingleton(sp =>

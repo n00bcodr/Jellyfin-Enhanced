@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             /// <summary>Refused (answered like a hidden item).</summary>
             Refused,
 
-            /// <summary>Can't be told right now (Seerr unreachable): retryable, the page falls back once.</summary>
+            /// <summary>Cannot be verified now (metadata/evidence unavailable or busy): retryable.</summary>
             Unknown,
         }
 
@@ -181,7 +181,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
-            if (!await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
+            var evidence = await _parental.CheckAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
+            if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
+            if (!evidence.Value) return Access.Refused;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 
@@ -464,11 +466,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="ct">Cancellation.</param>
         /// <returns>True when the title may be shown.</returns>
         public async Task<bool> MayListAbsentAsync(User viewer, SyntheticId title, CancellationToken ct)
+            => await ListAbsentAccessAsync(viewer, title, ct).ConfigureAwait(false) == Access.Allowed;
+
+        /// <summary>Artwork revalidation keeps transient evidence/admission failure distinct from refusal.</summary>
+        public async Task<Access> ListAbsentAccessAsync(User viewer, SyntheticId title, CancellationToken ct)
         {
-            if (MayListAbsent(viewer, title)) return true;
-            if (!title.IsTitle) return false;
-            if (!await _parental.MaySeeAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return false;
-            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+            if (MayListAbsent(viewer, title)) return Access.Allowed;
+            if (!title.IsTitle) return Access.Refused;
+            var evidence = await _parental.CheckAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
+            if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
+            if (!evidence.Value) return Access.Refused;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 
         /// <summary>

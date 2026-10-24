@@ -6,14 +6,44 @@ namespace JE.Tests;
 
 public partial class ApiNativeDetailsTests
 {
+    [Fact]
+    public async Task TmdbAdmissionRestrictedEightyColdPagesBoundParentalTasksBeforeNativeReads()
+    {
+        await using var rig = new AdmissionRig();
+        var viewer = rig.Rig.Person(linked: false);
+        viewer.MaxParentalRatingScore = 16;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Rig.RatingGate = gate;
+        var reads = Enumerable.Range(1, 80).Select(i => rig.Read(viewer.Id, SyntheticId.Movie(760000 + i))).ToArray();
+        try
+        {
+            // Observe the real evidence task factory, not concurrent HTTP sends (which may have another cap).
+            var parental = typeof(Rig).GetField("_parental", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(rig.Rig)!;
+            var tasks = typeof(SeerrParentalFilter).GetField("_inFlight", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(parental)!;
+            var total = typeof(TmdbNativeDetailsSource).GetProperty("MetadataTaskCount", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.Equal(8, total == null ? (int)tasks.GetType().GetProperty("Count")!.GetValue(tasks)! : (int)total.GetValue(rig.Source)!);
+            Assert.Equal(72, reads.Count(t => t.IsCompletedSuccessfully && t.Result.Outcome == AbsentLookup.Unavailable));
+        }
+        finally
+        {
+            gate.TrySetResult();
+            rig.Release();
+            await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        Assert.Equal(8, reads.Count(t => t.Result.Outcome == AbsentLookup.Found));
+        Assert.Equal(AbsentLookup.Found, (await rig.Read(viewer.Id, SyntheticId.Movie(760080))).Outcome);
+    }
+
     /// <summary>Real page/policy/source readers with a held TMDB transport; disposal always drains owned reads.</summary>
     private sealed class AdmissionRig : IAsyncDisposable
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly IntegrationTransport _net;
         private readonly TmdbResponseCache _cache;
+        public TmdbResponseCache Cache => _cache;
         private readonly List<Task> _reads = new();
         public Rig Rig { get; }
+        public ViewerMetadataAdmission Admission { get; } = new();
         public TmdbNativeDetailsSource Source { get; }
         public NativeDetailsPages Pages { get; }
         public bool Hold { get; set; } = true;
@@ -36,13 +66,13 @@ public partial class ApiNativeDetailsTests
                     : path.Contains("/tv/", StringComparison.Ordinal) ? TmdbSeries : TmdbMovie;
                 return IntegrationTransport.Response(body);
             });
-            _cache = new TmdbResponseCache(_net, TimeProvider.System);
+            _cache = new TmdbResponseCache(_net, TimeProvider.System, Admission);
             TmdbNativeDetailsSource? source = null;
             Rig = new Rig(source: r =>
             {
-                source = new TmdbNativeDetailsSource(_cache, null, r.Plugin.Core.Logger) { PageReadWait = TimeSpan.Zero };
+                source = new TmdbNativeDetailsSource(_cache, null, r.Plugin.Core.Logger, Admission) { PageReadWait = TimeSpan.Zero };
                 return new ModeNativeDetailsSource(r.Source, source, () => true);
-            });
+            }, admission: Admission);
             Source = source!;
             JeModeWithTmdb(Rig, false);
             Pages = new NativeDetailsPages(Rig.Callers.Users.Object, Host(), Rig.Used, Rig.Policy);

@@ -29,30 +29,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private const int MaxEntries = 400;
         private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan FailureTtl = TimeSpan.FromSeconds(30);
-        private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(10);
 
         private readonly TmdbResponseCache _tmdb;
         private readonly Func<TitleKey, IReadOnlyList<TitleKey>>? _aliases;
         private readonly Logger _logger;
         private readonly Func<string?> _key;
         private readonly ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlight = new(StringComparer.Ordinal);
+        private readonly ViewerMetadataAdmission _admission;
         private readonly ViewerBudget _feedBudget;
-        private readonly FeedScheduler _feeds = new(SeerrNativeDetailsSource.FeedConcurrency, SeerrNativeDetailsSource.FeedQueue, SeerrNativeDetailsSource.FeedPerViewer);
 
         /// <summary>Creates the source.</summary>
         /// <param name="tmdb">The shared TMDB cache (its own upstream bound and disk copy).</param>
         /// <param name="aliases">The ids the arr libraries and the library know a title by (null: TMDB's own only).</param>
         /// <param name="logger">Logger.</param>
-        public TmdbNativeDetailsSource(TmdbResponseCache tmdb, TitleAliases? aliases, Logger logger)
-            : this(tmdb, aliases == null ? null : aliases.Of, logger, () => JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey(), () => DateTime.UtcNow)
+        /// <param name="admission">The server singleton shared with parental evidence.</param>
+        public TmdbNativeDetailsSource(TmdbResponseCache tmdb, TitleAliases? aliases, Logger logger, ViewerMetadataAdmission? admission = null)
+            : this(tmdb, aliases == null ? null : aliases.Of, logger, () => JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey(), () => DateTime.UtcNow, admission)
         {
         }
 
         /// <summary>Creates the source with its alias lookup, key reader and clock (tests).</summary>
-        internal TmdbNativeDetailsSource(TmdbResponseCache tmdb, Func<TitleKey, IReadOnlyList<TitleKey>>? aliases, Logger logger, Func<string?> key, Func<DateTime> now)
+        internal TmdbNativeDetailsSource(TmdbResponseCache tmdb, Func<TitleKey, IReadOnlyList<TitleKey>>? aliases, Logger logger, Func<string?> key, Func<DateTime> now, ViewerMetadataAdmission? admission = null)
         {
             _tmdb = tmdb;
+            _admission = admission ?? tmdb.MetadataAdmission;
             _aliases = aliases;
             _logger = logger;
             _key = key;
@@ -63,7 +63,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         internal TimeSpan PageReadWait { get; set; } = TimeSpan.FromSeconds(3);
 
         /// <summary>Upstream reads still running (for tests: none may outlive its read).</summary>
-        internal int InFlightCount => _inFlight.Count;
+        internal int InFlightCount => _admission.Count("native:");
+
+        internal int MetadataTaskCount => _admission.Count();
 
         // Compatibility reads without a viewer share one bounded owner. All HTTP readers pass the
         // effective viewer explicitly; no new distinct source task can bypass FeedAsync admission.
@@ -304,8 +306,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (string.IsNullOrWhiteSpace(key)) return SourceAnswer.Unavailable;
             try
             {
-                using var timeout = new CancellationTokenSource(FetchTimeout);
-                var response = await _tmdb.GetAsync(path, query, key, timeout.Token).ConfigureAwait(false);
+                // The raw cache owns a 30-second timeout. Keep this admission until its task
+                // actually ends; cancelling a cache waiter would leave its work unowned.
+                var response = await _tmdb.GetAsync(path, query, key, CancellationToken.None).ConfigureAwait(false);
                 if (!response.IsSuccess) return response.StatusCode == 404 ? SourceAnswer.Missing : SourceAnswer.Unavailable;
                 using var doc = JsonDocument.Parse(response.Content);
                 if (doc.RootElement.ValueKind != JsonValueKind.Object) return SourceAnswer.Unavailable;
@@ -349,62 +352,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
         {
-            if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            if (_inFlight.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
-            if (!_feeds.TryAdmit(viewer)) return Joined(path, ct) ?? Task.FromResult(SourceAnswer.Throttled);
-            if (!_feedBudget.Take(viewer))
-            {
-                _feeds.Leave(viewer, false);
-                return Joined(path, ct) ?? Task.FromResult(SourceAnswer.Throttled);
-            }
-
-            var mine = Shared(path, async () =>
-            {
-                var ran = false;
-                try
-                {
-                    await _feeds.TurnAsync(viewer).ConfigureAwait(false);
-                    ran = true;
-                    return await fetch().ConfigureAwait(false);
-                }
-                finally
-                {
-                    _feeds.Leave(viewer, ran);
-                }
-            });
-            var shared = _inFlight.GetOrAdd(path, mine);
-            if (!ReferenceEquals(shared, mine))
-            {
-                // Another caller started the same read a moment ago: join it, nothing was started.
-                _feeds.Leave(viewer, false);
-                _feedBudget.Refund(viewer);
-            }
-
-            return shared.Value.WaitAsync(ct);
-        }
-
-        private Task<SourceAnswer>? Joined(string path, CancellationToken ct)
-        {
-            if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            return _inFlight.TryGetValue(path, out var running) ? running.Value.WaitAsync(ct) : null;
-        }
-
-        /// <summary>One upstream read shared by every caller of a path; it stores its answer and removes its own entry when it ends.</summary>
-        private Lazy<Task<SourceAnswer>> Shared(string path, Func<Task<SourceAnswer>> fetch)
-        {
-            Lazy<Task<SourceAnswer>>? lazy = null;
-            lazy = new Lazy<Task<SourceAnswer>>(async () =>
-            {
-                try
-                {
-                    return Store(path, await fetch().ConfigureAwait(false));
-                }
-                finally
-                {
-                    _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<SourceAnswer>>>(path, lazy!));
-                }
-            });
-            return lazy;
+            return _admission.Read("native:" + path, viewer,
+                () => (TryCached(path, out var hit), hit),
+                async () => Store(path, await fetch().ConfigureAwait(false)),
+                SourceAnswer.Throttled, ct, _feedBudget);
         }
 
         private SourceAnswer Store(string path, SourceAnswer value)
