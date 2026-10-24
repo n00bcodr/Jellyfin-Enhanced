@@ -37,8 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
         private readonly object _movieCacheLock = new();
-        private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
-        private readonly object _userIdCacheLock = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -93,7 +92,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Checks a movie to determine if the next movie in collection should be requested.
         // Event-driven entry point called (from the recipe worker) when a user starts watching a movie.
         // The outcome is typed: a failed TMDB or Seerr lookup is a PreparationFailed, never "not in a collection".
-        public async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
+        public Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => CheckMovieForCollectionRequestAsyncFactsCore(movieItem, userId, token), ct);
+
+        private async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsyncFactsCore(BaseItem movieItem, Guid userId, CancellationToken ct = default)
         {
             // Everything this check writes is the recipe's: the transport checks each write against the gate (D41).
             using var automation = AutomationTransportContext.Enter(_gate, AutomationWrite.LegacySeerr(Recipe, _recorder != null));
@@ -388,7 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (moved requests stay pending in Seerr), so the ledger decides whether to record, merge or refuse.
         private Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger))
                 : GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger);
 
         private async Task<NextMovie> GetNextMovieInCollectionAsyncCore(int collectionId, string currentTmdbId, bool ledger)
@@ -573,7 +575,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets the quality profile of a movie from its existing Jellyseerr request
         private Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetOriginalMovieQualityProfileAsyncCore(tmdbId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetOriginalMovieQualityProfileAsyncCore(tmdbId))
                 : GetOriginalMovieQualityProfileAsyncCore(tmdbId);
 
         private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsyncCore(string tmdbId)
@@ -741,7 +743,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // sent). Neither: it failed.
         private Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings))
                 : RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings);
 
         private async Task<(bool Sent, string? Stopped)> RequestMovieCore(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings)
@@ -827,7 +829,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets the Jellyseerr user ID for a Jellyfin user
         private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
                 : GetJellyseerrUserIdCore(jellyfinUserId);
 
         private async Task<string?> GetJellyseerrUserIdCore(string jellyfinUserId)
@@ -840,7 +842,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var normalizedJellyfinUserId = NormalizeUserId(jellyfinUserId);
 
-            lock (_userIdCacheLock)
+            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
             {
                 if (_jellyseerrUserIdCache.TryGetValue(normalizedJellyfinUserId, out var cached) &&
                     DateTime.UtcNow - cached.CachedAt < GetJellyseerrUserIdCacheTtl())
@@ -884,7 +886,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         if (normalizedJellyseerrId == normalizedJellyfinUserId)
                                         {
                                             var jellyseerrUserId = id.GetInt32().ToString();
-                                            lock (_userIdCacheLock)
+                                            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                                             {
                                                 _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, readAt);
                                             }

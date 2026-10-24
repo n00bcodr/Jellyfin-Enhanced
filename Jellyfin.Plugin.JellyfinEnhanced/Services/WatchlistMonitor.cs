@@ -38,12 +38,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly UserConfigurationManager _userConfigurationManager;
         private readonly Logger _logger;
-        private readonly Dictionary<string, (List<RequestItemWithUser> Items, DateTime CachedAt)> _requestsCache = new();
-        private readonly object _requestsCacheLock = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(List<RequestItemWithUser> Items, DateTime CachedAt)> _requestsCache = new();
         private readonly object _subscriptionLock = new();
         private bool _subscribed;
         // A read in flight and when it began (what it answers lives from then, also for the requests that joined it).
-        private readonly ConcurrentDictionary<string, (Task<List<RequestItemWithUser>?> Task, DateTime StartedAt)> _requestsInFlight = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(Task<List<RequestItemWithUser>?> Task, DateTime StartedAt)> _requestsInFlight = new();
 
         public WatchlistMonitor(
             ILibraryManager libraryManager,
@@ -112,7 +111,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
 
         // Process an item from library events to check if it matches any Jellyseerr requests.
-        private async Task ProcessItemForWatchlist(ItemChangeEventArgs e, string eventType)
+        private Task ProcessItemForWatchlist(ItemChangeEventArgs e, string eventType)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => ProcessItemForWatchlistFactsCore(e, eventType), CancellationToken.None);
+
+        private async Task ProcessItemForWatchlistFactsCore(ItemChangeEventArgs e, string eventType)
         {
             try
             {
@@ -287,7 +289,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // later, never treated as "nobody asked". When Seerr simply holds more requests than its read model
         // keeps, waiting can't help: the title's own request list from Seerr answers instead. Returns false
         // when deferred.
-        internal async Task<bool> ProcessFromSharedFactsAsync(BaseItem item, int tmdbId, string mediaType, PluginConfiguration config, int attempt)
+        internal Task<bool> ProcessFromSharedFactsAsync(BaseItem item, int tmdbId, string mediaType, PluginConfiguration config, int attempt)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => ProcessFromSharedFactsAsyncFactsCore(item, tmdbId, mediaType, config, attempt), CancellationToken.None);
+
+        private async Task<bool> ProcessFromSharedFactsAsyncFactsCore(BaseItem item, int tmdbId, string mediaType, PluginConfiguration config, int attempt)
         {
             var key = SharedRequestFacts.KeyOf(mediaType == "movie", tmdbId, item.ProviderIds.GetValueOrDefault("Tvdb"), item.ProviderIds.GetValueOrDefault("Imdb"));
             if (key == null || _facts == null) return true;
@@ -387,7 +392,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal int Deferred => _deferred.Count;
 
         // Checks every deferred item again (timer, or tests directly); one pass at a time.
-        internal async Task RecheckDeferredAsync()
+        internal Task RecheckDeferredAsync()
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => RecheckDeferredAsyncFactsCore(), CancellationToken.None);
+
+        private async Task RecheckDeferredAsyncFactsCore()
         {
             if (Interlocked.Exchange(ref _recheckRunning, 1) == 1) return;
             try
@@ -426,7 +434,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var cacheKey = jellyseerrUrl.TrimEnd('/');
             var cacheTtl = GetRequestsCacheTtl();
 
-            lock (_requestsCacheLock)
+            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
             {
                 if (_requestsCache.TryGetValue(cacheKey, out var cached) &&
                     DateTime.UtcNow - cached.CachedAt < cacheTtl)
@@ -488,7 +496,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var items = await flight.Task;
                 if (items != null)
                 {
-                    lock (_requestsCacheLock)
+                    using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                     {
                         _requestsCache[cacheKey] = (items, flight.StartedAt);
                     }

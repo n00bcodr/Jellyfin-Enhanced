@@ -73,8 +73,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
             // (Seerr's requests, read in the background by the read model) and the per-user status service.
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
-            serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
-            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.AddSingleton<Services.Acquire.SeerrFacts>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrFacts>());
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
@@ -141,7 +141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 3c: collection gaps (what the caller has of a collection, what is missing).
             serviceCollection.AddSingleton<Services.Acquire.Requests.CollectionGapsService>();
             // Seerr to JE authority transfer (admin dry run, complete-or-nothing import, rollback by batch).
-            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigrationReader>();
+
             // Holds JE's own Seerr request writes (proxy, Requests page, outbox) off while a move runs.
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrRequestWriteFence>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigration>();

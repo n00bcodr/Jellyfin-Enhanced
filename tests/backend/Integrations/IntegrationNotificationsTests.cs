@@ -87,7 +87,7 @@ public class IntegrationNotificationsTests
         public ArrStateStore Store { get; }
         // Like Jellyfin, any copy, episode or season can be resolved (the dispatcher re-checks them).
         public FakeJellyfinView View { get; } = new() { ResolveAnyItem = true };
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Status { get; }
         public ArrChangeFeed Feed { get; } = new();
         public FakeUsers Users { get; } = new();
@@ -140,7 +140,7 @@ public class IntegrationNotificationsTests
             Radarr.Movies.Add(FakeArr.Movie(2, 693134, "Dune Part Two", hasFile: false));
             Sonarr.Series.Add(FakeArr.SeriesRow(5, 371980, "Severance"));
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Config, () => Arr.Now, Feed, new ArrInstanceLibraries(Store, Library, () => Arr.Now));
             Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20) };
             Hub = new ArrAdminHubService(Store, Bridge, Requests, null, null, () => Config, () => Arr.Now);

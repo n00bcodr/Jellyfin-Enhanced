@@ -76,8 +76,8 @@ public class ApiBackendPublicationRound2Tests
         using var handler = new SeerrIsolationTransportHandler(EffectiveRequestsBackend.Shared, () => f.Plugin.Configuration) { InnerHandler = trap };
         var factory = new Mock<IHttpClientFactory>(); factory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(() => new HttpClient(handler, false));
         var controller = ApiAssetTests.Controller(f.Core, factory.Object);
-        using var reader = new SeerrRequestReadModel(factory.Object, new ArrChangeFeed(), f.Core.Logger, new RequestOutboxEvents());
-        object owner = path == "reader" ? reader : controller;
+        using var reader = new SeerrFacts(factory.Object, new ArrChangeFeed(), f.Core.Logger, new RequestOutboxEvents());
+        object owner = path == "reader" ? typeof(SeerrFacts).GetField("_model", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(reader)! : controller;
         var name = path switch { "reader" => "GetJsonAsync", "enrichment" => "EnrichWithTmdbData", _ => "ProbeJellyseerrStatusAsync" };
         using var client = factory.Object.CreateClient("");
         object?[] args = path switch
@@ -151,7 +151,7 @@ public class ApiBackendPublicationRound2Tests
         var config = f.Plugin.Configuration;
         config.ArrRequestBackend = "seerr"; config.JellyseerrEnabled = config.JellyseerrShowReportButton = config.ActiveStreamsEnabled = true;
         config.JellyseerrUrls = "http://seerr.test"; config.JellyseerrApiKey = "test";
-        typeof(JellyfinEnhancedController).GetField("_seerrStatusCache", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, ((bool, DateTime)?)(true, DateTime.UtcNow));
+        ((System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_seerrStatusCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!)["status"] = (true, DateTime.UtcNow);
         var sessions = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
         sessions.SetupGet(x => x.Sessions).Returns(() =>
         {
@@ -207,7 +207,7 @@ public class ApiBackendPublicationRound2Tests
         using var transport = new IntegrationTransport((r, _) => Task.FromResult<HttpResponseMessage>(r.RequestUri!.AbsolutePath == "/api/v1/user"
             ? new BarrierResponse(parsed, release) { Content = new StringContent("{\"pageInfo\":{\"results\":0},\"results\":[]}", Encoding.UTF8, "application/json") }
             : IntegrationTransport.Response(r.RequestUri!.AbsolutePath == "/api/v1/settings/main" ? "{\"defaultPermissions\":0}" : "{\"pageInfo\":{\"results\":0},\"results\":[]}")));
-        var read = Task.Run(() => new SeerrMigrationReader(transport).ReadAsync(config, default));
+        var read = Task.Run(() => new SeerrFacts(transport).ReadAsync(config, default));
         await parsed.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try { await EffectiveRequestsBackend.Shared.TransitionAsync(() => { config.ArrRequestBackend = "je"; config.ArrBackendIsolationVersion = 1; }, default).WaitAsync(TimeSpan.FromSeconds(5)); }
         finally { release.Set(); }

@@ -142,7 +142,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// </summary>
         /// <param name="cancellationToken">Stops between items.</param>
         /// <returns>A task.</returns>
-        internal async Task TickAsync(CancellationToken cancellationToken)
+        internal Task TickAsync(CancellationToken cancellationToken)
+            => SeerrFacts.BackgroundAsync(token => TickAsyncFactsCore(token), cancellationToken);
+
+        private async Task TickAsyncFactsCore(CancellationToken cancellationToken)
         {
             await _round.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -253,6 +256,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="now">Now (UTC).</param>
         /// <returns>The outcome.</returns>
         internal Outcome Judge(Guid itemId, DateTime now)
+            => SeerrFacts.Process(() => JudgeFactsCore(itemId, now));
+
+        private Outcome JudgeFactsCore(Guid itemId, DateTime now)
         {
             var generation = _store.Generation;
             if (_library.Item(itemId) is not { IsVideo: true, Virtual: false } item || item.Keys.Count == 0) return Outcome.Skipped;

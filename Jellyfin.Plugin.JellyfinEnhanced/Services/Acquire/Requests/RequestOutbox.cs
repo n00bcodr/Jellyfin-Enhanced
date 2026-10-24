@@ -318,7 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = false;
                 if (job.Authorization.Backend != "seerr" || !result.Confirmed) completed = _ledger.Complete(job, generation, result, _now());
-                else if (!EffectiveRequestsBackend.Shared.TryPublishSeerr(backendEpoch, () => completed = _ledger.Complete(job, generation, result, _now())))
+                else if (!Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.TryPublishSeerr(backendEpoch, () => completed = _ledger.Complete(job, generation, result, _now())))
                 {
                     result = BackendResults.Maybe(job.WantId, "The original backend changed; delivery remains unconfirmed.", "backend_disabled");
                     completed = _ledger.Complete(job, generation, result, _now());

@@ -190,7 +190,7 @@ public class ApiRequestsBackendGateTests
         await Wiring.Make<JellyfinToSeerrWatchlistSyncTask>(parts).ExecuteAsync(new Progress<double>(), default);
         var result = await JellyseerrUserImportHelper.BulkImportAsync(new() { Guid.NewGuid().ToString("N") }, new[] { "http://first.test" }, "test", transport, f.Core.Logger);
         Assert.Contains("backend_disabled", result.Errors);
-        using var model = new SeerrRequestReadModel(transport, new ArrChangeFeed(), null, () => c, () => DateTimeOffset.UtcNow);
+        using var model = new SeerrFacts(transport, new ArrChangeFeed(), null, () => c, () => DateTimeOffset.UtcNow);
         model.Touch(); model.RequestRefresh();
         Assert.False(model.Active); Assert.Null(model.WatchedAt); Assert.Null(model.RequestedAt);
         Assert.False(await model.RefreshAsync(default));
@@ -227,7 +227,7 @@ public class ApiRequestsBackendGateTests
         using var f = new ApiPluginFixture();
         var c = f.Plugin.Configuration; c.ArrRequestBackend = "je";
         var type = typeof(JellyfinEnhancedController);
-        var cache = (Dictionary<string, (string, DateTime)>)type.GetField("_userIdCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+        var cache = (System.Collections.IDictionary)type.GetField("_userIdCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
         var id = Guid.NewGuid().ToString("N"); cache[id] = ("7", DateTime.UtcNow);
         var read = type.GetMethod("TryGetCachedJellyseerrUserId", BindingFlags.NonPublic | BindingFlags.Static)!;
         try
@@ -252,18 +252,13 @@ public class ApiRequestsBackendGateTests
         var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = Guid.NewGuid() };
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         c.ArrBackendIsolationVersion = version; c.ArrRequestBackend = "seerr";
-        var cacheLock = typeof(JellyfinEnhancedController).GetField("_responseCacheLock", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_responseCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();
-        Task? holder = null;
-        using var transport = new IntegrationTransport(async (request, _) =>
-        {
-            if (request.RequestUri!.AbsolutePath == "/api/v1/user") return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N"), permissions = 2 } } }));
-            holder = Task.Run(() => { lock (cacheLock) { blocked.TrySetResult(); if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException(); } });
-            await blocked.Task;
-            return IntegrationTransport.Response("{\"id\":989988,\"title\":\"old-provider-publication-sentinel\"}");
-        });
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult<HttpResponseMessage>(
+            request.RequestUri!.AbsolutePath == "/api/v1/user"
+                ? IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N"), permissions = 2 } } }))
+                : new PublicationBarrierResponse(blocked, release) { Content = new StringContent("{\"id\":989988,\"title\":\"old-provider-publication-sentinel\"}", System.Text.Encoding.UTF8, "application/json") }));
         var parental = new SeerrParentalFilter(transport, users.Object, Mock.Of<MediaBrowser.Model.Globalization.ILocalizationManager>(), Mock.Of<MediaBrowser.Controller.Configuration.IServerConfigurationManager>(), f.Core.Logger);
         var controller = ApiAssetTests.Controller(f.Core, transport, users.Object, parental);
         controller.HttpContext.User = TestCallers.Principal(user.Id, true);
@@ -274,8 +269,7 @@ public class ApiRequestsBackendGateTests
         release.Set();
         var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
         await transition.WaitAsync(TimeSpan.FromSeconds(10));
-        await holder!;
-        lock (cacheLock) Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.Contains("/api/v1/movie/989988", StringComparison.Ordinal));
+        Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.Contains("/api/v1/movie/989988", StringComparison.Ordinal));
         Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
     }
 
@@ -343,7 +337,7 @@ public class ApiRequestsBackendGateTests
         Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
         var cacheName = account ? "_userCache" : "_seerrStatusCache";
         var cache = typeof(JellyfinEnhancedController).GetField(cacheName, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
-        if (account) Assert.Empty((System.Collections.IDictionary)cache!); else Assert.Null(cache);
+        Assert.Empty((System.Collections.IDictionary)cache!);
     }
 
     [Fact]

@@ -352,7 +352,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
         }
 
-        private async Task<string> ReconcileLockedAsync(Guid user, CancellationToken cancellationToken)
+        private Task<string> ReconcileLockedAsync(Guid user, CancellationToken cancellationToken)
+            => SeerrFacts.BackgroundAsync(token => ReconcileLockedAsyncFactsCore(user, token), cancellationToken);
+
+        private async Task<string> ReconcileLockedAsyncFactsCore(Guid user, CancellationToken cancellationToken)
         {
             var generation = _store.Generation;
             var b = _store.Binding(_server, user);

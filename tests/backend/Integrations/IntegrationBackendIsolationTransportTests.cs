@@ -26,6 +26,7 @@ public class IntegrationBackendIsolationTransportTests
 {
     private static async Task Call(object owner, string method, params object?[] args)
     {
+        if (owner is SeerrFacts) owner = owner.GetType().GetField(method == "Get" ? "_migration" : "_model", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
         var type = owner as Type ?? owner.GetType();
         var member = type.GetMethod(method, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)!;
         Assert.NotNull(member);
@@ -90,12 +91,12 @@ public class IntegrationBackendIsolationTransportTests
         using var monitor = new WatchlistMonitor(library, users, data, transport, f.Core.Manager, f.Core.Logger);
         await Call(monitor, "SeerrTitleRequestersAsync", c, 603, "movie");
         await Call(monitor, "GetAllJellyseerrRequests", http, "http://seerr.test", "test");
-        using var model = new SeerrRequestReadModel(transport, null, null, () => c, () => DateTimeOffset.UtcNow);
+        using var model = new SeerrFacts(transport, null, null, () => c, () => DateTimeOffset.UtcNow);
         await Call(model, "GetJsonAsync", "http://seerr.test/api/v1/request", "test", CancellationToken.None);
         var backend = new SeerrBackend(transport, model, null, () => c, () => DateTimeOffset.UtcNow);
         await Call(backend, "RawAsync", HttpMethod.Get, "http://seerr.test/api/v1/request", "test", null, null, TimeSpan.FromSeconds(5), CancellationToken.None);
         await Call(backend, "RawAsync", HttpMethod.Post, "http://seerr.test/api/v1/request", "test", 7, "{}", TimeSpan.FromSeconds(5), CancellationToken.None);
-        await Call(new SeerrMigrationReader(transport), "Get", http, "http://seerr.test/api/v1/request", "test", CancellationToken.None);
+        await Call(new SeerrFacts(transport), "Get", http, "http://seerr.test/api/v1/request", "test", CancellationToken.None);
         await Call(typeof(HouseholdRulesService), "SeerrAsync", transport, CancellationToken.None);
         var native = new SeerrNativeDetailsSource(transport, null!, f.Core.Logger);
         await Call(native, "FetchAsync", "/api/v1/movie/603", CancellationToken.None);

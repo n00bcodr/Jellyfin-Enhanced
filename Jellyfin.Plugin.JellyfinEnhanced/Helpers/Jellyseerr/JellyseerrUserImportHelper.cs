@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             CancellationToken cancellationToken = default,
             Func<List<string>, List<string>?>? recheck = null)
             => EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.UserImport, cancellationToken,
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.UserImport, cancellationToken,
                     ct => BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, ct, recheck))
                 : BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, cancellationToken, recheck);
 

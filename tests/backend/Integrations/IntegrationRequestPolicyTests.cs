@@ -219,7 +219,7 @@ public class IntegrationRequestParentalTests
             user.MaxParentalRatingScore = 10;
             Assert.Single(JsonDocument.Parse(service.List(kid.UserId, false).Json).RootElement.GetProperty("items").EnumerateArray());
         }
-        using var seerrFacts = new SeerrRequestReadModel(transport, new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerrFacts = new SeerrFacts(transport, new ArrChangeFeed(), null, () => config, () => arr.Now);
         var authority = new LedgerRequestFacts(ledger, seerrFacts, aliases);
         Assert.Equal(allowed, authority.Requested(TitleKey.Parse("movie:tmdb:603")!));
         Assert.Equal(allowed, authority.AskedBy(TitleKey.Parse("movie:tmdb:603")!, kid.UserId));
@@ -305,7 +305,7 @@ public class IntegrationLedgerSentFactsTests
         rig.Now = rig.Now.AddMinutes(3);
         await rig.Runner().TickAsync(CancellationToken.None);
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
         var sentAt = rig.Ledger.ForTitle("tv:tvdb:78874").Single(w => w.UserId == rig.Member).UpdatedAt.UtcDateTime;
         Assert.Equal(new[] { new RequestSentPart(false, 1, 4, sentAt) }, facts.Sent.ToArray());
@@ -329,7 +329,7 @@ public class IntegrationLedgerSentFactsTests
         rig.Now = rig.Now.AddMinutes(3);
         await rig.Runner().TickAsync(CancellationToken.None);
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         var series = TitleKey.Parse("tv:tvdb:78874")!;
         var member = rig.View.Users[rig.Member];
         var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null));
@@ -363,7 +363,7 @@ public class IntegrationLedgerSentFactsTests
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je";
         using var rig = new IntegrationRequestLedgerTests.Rig();
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         RequestFacts Facts() => new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
         var sentAt = rig.Now;
 

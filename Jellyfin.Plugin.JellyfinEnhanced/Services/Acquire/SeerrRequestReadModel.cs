@@ -165,7 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public int? ReportedTotal { get; init; }
 
         /// <summary>Most requests read (<see cref="SeerrRequestReadModel.MaxRequests"/>).</summary>
-        public int ReadLimit { get; init; } = SeerrRequestReadModel.MaxRequests;
+        public int ReadLimit { get; init; } = SeerrFacts.MaxRequests;
 
         /// <summary>
         /// Why the latest full read was not used (Seerr's list changed while it was read, a page came
@@ -193,7 +193,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// (<see cref="Source"/>): pointing Jellyfin Enhanced at another Seerr forgets the old list at
     /// once, so another server's request ids are never taken for the old one's.
     /// </summary>
-    public sealed class SeerrRequestReadModel : IArrRequestFacts, IHostedService, IDisposable
+    public sealed partial class SeerrFacts
+    {
+    private sealed class SeerrRequestReadModel : IArrRequestFacts, IHostedService, IDisposable
     {
         /// <summary>Most requests read.</summary>
         public const int MaxRequests = 3000;
@@ -257,6 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private string? _source;
         private volatile SourceCache? _sourceCache;
         private readonly EffectiveRequestsBackend _backend;
+        internal long? FactsEpoch { get; private set; }
         private CancellationTokenSource? _loop;
         private Task? _loopTask;
         private readonly Requests.RequestOutboxEvents? _outboxEvents;
@@ -271,13 +274,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>A read model with explicit configuration and clock (tests).</summary>
-        internal SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed? feed, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, Requests.RequestOutboxEvents? outboxEvents = null)
+        internal SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed? feed, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, Requests.RequestOutboxEvents? outboxEvents = null, EffectiveRequestsBackend? owner = null)
         {
             _http = httpClientFactory;
             _feed = feed;
             _logger = logger;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
-            _backend = config == null ? EffectiveRequestsBackend.Shared : new EffectiveRequestsBackend(_config);
+            _backend = owner ?? (config == null ? EffectiveRequestsBackend.Shared : new EffectiveRequestsBackend(_config));
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _outboxEvents = outboxEvents;
             if (_outboxEvents != null) _outboxEvents.Confirmed += OnRequestConfirmed;
@@ -778,7 +781,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 string? held;
                 lock (_lock) held = _source;
                 // Another Seerr than the one the held list came from: forget it first.
-                if (held != null && held != source) Clear(sourceChanged: true);
+                var expiredEpoch = FactsEpoch.HasValue && !_backend.CheckSeerr(SeerrUse.RequestRead, FactsEpoch).Allowed;
+                if (expiredEpoch)
+                {
+                    Clear(sourceChanged: true);
+                    lock (_lock) { _goneTitles.Clear(); _goneOwners.Clear(); }
+                }
+                else if (held != null && held != source) Clear(sourceChanged: true);
+                _backend.PublishSeerr(epoch, () => { lock (_lock) FactsEpoch = epoch; return true; });
                 var now = _now();
                 bool loadedBefore, failedBefore;
                 lock (_lock)
@@ -932,6 +942,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var sameSource = old.Source == null || old.Source == source;
                     if (sameSource) RememberGone(old, next);
                     _snapshot = next;
+                    FactsEpoch = epoch;
                     _source = source;
                     // Loaded from the moment the list is there: the change-feed announcement below wakes
                     // readers that check it.
@@ -1326,5 +1337,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return snapshot;
             }
         }
+    }
     }
 }

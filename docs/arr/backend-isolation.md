@@ -55,3 +55,16 @@ The backend selector, public capability mapper and atomic adoption workflow are 
 work. Until that workflow lands, the isolation version is a server integration setting; the configuration
 page does not expose an adoption control. Provider and client owners must consume the effective backend
 contract before the complete JE experience can be declared independent of Seerr.
+
+`SeerrFacts` is the only data accessor. Its request model, migration reader, legacy ownership reader
+and lazy ownership cache are private nested types. Consumers cannot inject a raw reader or access its
+snapshots. Cache handles retain each answer's admission epoch and check it on every hit; account,
+status, proxy, avatar, enrichment, prepared account/server facts and background request caches all use
+this boundary. Direct TMDB season reads in strict JE retain their own local cache.
+
+Every MVC answer records whether it consumed Seerr facts, including cached ownership proof. The final
+answer checks those dependencies after subsequent arr or policy awaits. Thus Downloads and History
+stay usable with local JE ownership, while an answer that consumed the previous Seerr epoch returns
+409 with `configuration_changed` or `backend_disabled` and no stale rows. Composed status, hub,
+Manage, interest and notification reads use the same publication owner outside MVC too. A production
+assembly architecture test rejects references to raw Seerr readers outside the accessor.

@@ -142,7 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var cached = _source;
             if (cached != null && cached.Urls == config.JellyseerrUrls) return cached.Source;
-            var source = SeerrMigrationReader.AddressFingerprint(config);
+            var source = SeerrFacts.AddressFingerprint(config);
             _source = new SourceCache(config.JellyseerrUrls, source);
             return source;
         }
@@ -231,7 +231,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The automatic scan trigger is on (live configuration).
         private bool On() => EffectiveRequestsBackend.AllowsSeerr(_config()) && _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
 
-        private async Task DispatchOwnerAsync(Owner owner, string source, int batch)
+        private Task DispatchOwnerAsync(Owner owner, string source, int batch)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => DispatchOwnerAsyncFactsCore(owner, source, batch), CancellationToken.None);
+
+        private async Task DispatchOwnerAsyncFactsCore(Owner owner, string source, int batch)
         {
             var requeue = false;
             try
@@ -307,7 +310,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // job (or an older Seerr without the flag) counts as not running, as before.
         private Task<bool?> IsRunningAsync(string url, string apiKey, string jobId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => IsRunningAsyncCore(url, apiKey, jobId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => IsRunningAsyncCore(url, apiKey, jobId))
                 : IsRunningAsyncCore(url, apiKey, jobId);
 
         private async Task<bool?> IsRunningAsyncCore(string url, string apiKey, string jobId)
@@ -339,7 +342,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return DispatchAsync(0);
         }
 
-        private async Task<IReadOnlyList<DispatchResult>> DispatchAsync(int batchSize)
+        private Task<IReadOnlyList<DispatchResult>> DispatchAsync(int batchSize)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => DispatchAsyncFactsCore(batchSize), CancellationToken.None);
+
+        private async Task<IReadOnlyList<DispatchResult>> DispatchAsyncFactsCore(int batchSize)
         {
             var results = new List<DispatchResult>();
             try
@@ -389,7 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private Task<DispatchResult> PostScanTrigger(string url, string apiKey, string jobId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => PostScanTriggerCore(url, apiKey, jobId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => PostScanTriggerCore(url, apiKey, jobId))
                 : PostScanTriggerCore(url, apiKey, jobId);
 
         private async Task<DispatchResult> PostScanTriggerCore(string url, string apiKey, string jobId)

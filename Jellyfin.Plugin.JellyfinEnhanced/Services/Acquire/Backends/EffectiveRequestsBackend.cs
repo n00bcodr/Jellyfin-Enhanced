@@ -15,7 +15,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         BackendDecision CheckSeerr(SeerrUse use, long? expectedEpoch = null);
         BackendDecision CheckDirectRequest(long? expectedEpoch = null);
         void DemandSeerr(SeerrUse use, long? expectedEpoch = null);
-        T PublishSeerr<T>(long epoch, Func<T> result);
     }
 
     /// <summary>
@@ -41,7 +40,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         private TaskCompletionSource? _drained;
 
         /// <summary>Creates an owner over a live configuration source (also used by tests).</summary>
-        public EffectiveRequestsBackend(Func<PluginConfiguration?> config) { _config = config; }
+        public EffectiveRequestsBackend(Func<PluginConfiguration?> config) { _config = config; Facts = new(this); }
+        internal SeerrFacts.Access Facts { get; }
+        // Only synchronous cache read/invalidation blocks use this; no awaited work holds the gate.
+        internal FactLock LockFacts()
+        {
+            Monitor.Enter(_gate);
+            return new FactLock(_gate);
+        }
+        internal sealed class FactLock(object gate) : IDisposable
+        {
+            public void Dispose() => Monitor.Exit(gate);
+        }
+
 
         /// <summary>The pure evaluator, usable by compatibility entry points without DI or I/O.</summary>
         public static EffectiveBackendSnapshot EvaluateConfiguration(PluginConfiguration? config)
@@ -102,6 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             var decision = CheckSeerr(use, expectedEpoch);
             if (!decision.Allowed) LogDenial(use, producer, decision.Reason!);
             decision.Demand();
+            Facts.Include(decision.Epoch);
         }
         private void LogDenial(SeerrUse use, string producer, string reason)
         {
@@ -131,47 +143,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             }
         }
         /// <summary>Commits a returned provider result only while its captured backend still owns publication.</summary>
-        public bool TryPublishSeerr(long epoch, Action effect)
+        internal bool TryPublishSeerr(long epoch, Action effect)
         {
-            lock (_gate)
-            {
-                if (!CheckSeerr(SeerrUse.RequestRead, epoch).Allowed) return false;
-                return PublishSeerr(epoch, () => { effect(); return true; });
-            }
+            try { return Facts.Publish(epoch, () => { effect(); return true; }); }
+            catch (BackendDisabledException) { return false; }
         }
         /// <summary>The single fence for cached facts, local effects and returned provider results.</summary>
-        public T PublishSeerr<T>(long epoch, Func<T> result)
+        internal T PublishSeerr<T>(long epoch, Func<T> result) => Facts.Publish(epoch, result);
+
+        internal T CommitSeerr<T>(long epoch, Func<T> result)
         {
             lock (_gate)
             {
                 CheckSeerr(SeerrUse.RequestRead, epoch).Demand();
-                return result();
+                var value = result();
+                CheckSeerr(SeerrUse.RequestRead, epoch).Demand();
+                return value;
             }
         }
         /// <summary>Publishes synchronous cached facts, or their inactive shape, at the same fence.</summary>
-        public T ReadSeerrCached<T>(Func<T> read, T inactive)
-        {
-            lock (_gate)
-            {
-                var admission = CheckSeerr(SeerrUse.RequestRead);
-                return admission.Allowed ? PublishSeerr(admission.Epoch, read) : inactive;
-            }
-        }
-        /// <summary>Checks a read again after all processing, without keeping an HTTP-body lease alive.</summary>
-        public async Task<T> ReadSeerrAsync<T>(SeerrUse use, Func<long, Task<T>> work)
-        {
-            var admission = CheckSeerr(use);
-            admission.Demand();
-            var result = await work(admission.Epoch).ConfigureAwait(false);
-            return PublishSeerr(admission.Epoch, () => result);
-        }
+        internal T ReadSeerrCached<T>(Func<T> read, T inactive) => Facts.Cached(read, inactive);
+        /// <summary>Reads through the same accessor that owns cache and composed-result publication.</summary>
+        internal Task<T> ReadSeerrAsync<T>(SeerrUse use, Func<long, Task<T>> work) => Facts.ReadAsync(use, work);
         /// <summary>Keeps provider parsing and its returned facts in the admitted epoch, beyond HTTP buffering.</summary>
-        public async Task<T> RunSeerrAsync<T>(SeerrUse use, CancellationToken ct, Func<CancellationToken, Task<T>> work)
-        {
-            using var operation = AdmitSeerr(use, ct);
-            var result = await work(operation.Token).ConfigureAwait(false);
-            return operation.Publish(() => result);
-        }
+        internal Task<T> RunSeerrAsync<T>(SeerrUse use, CancellationToken ct, Func<CancellationToken, Task<T>> work)
+            => Facts.RunAsync(use, ct, work);
         /// <summary>
         /// Fences admissions, cancels and drains old sends, then calls the central writer's atomic commit.
         /// Cancellation/failure keeps the prior configuration and releases the fence. No global config lock is held here.

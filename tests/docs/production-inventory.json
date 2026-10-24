@@ -327,10 +327,6 @@
       "category": "Helpers"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/SeerrAskedProofCache.cs",
-      "category": "Helpers"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/TagEpisodeSelector.cs",
       "category": "Helpers"
     },
@@ -1176,6 +1172,38 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ResponseGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Background.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Cache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Derived.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Migration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.OwnershipCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.OwnershipReader.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.PreparedCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.cs",
       "category": "Services"
     },
     {
@@ -11760,7 +11788,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 737,
+    "files": 744,
     "routes": 312,
     "configuration_properties": 662,
     "storage_references": 106,

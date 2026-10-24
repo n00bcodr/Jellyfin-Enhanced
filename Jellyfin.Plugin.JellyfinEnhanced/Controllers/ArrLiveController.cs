@@ -84,7 +84,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ArrAuditLog _audit;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
-        private readonly SeerrRequestReadModel _requests;
+        private readonly SeerrFacts _requests;
 
         /// <summary>Creates the controller.</summary>
         public ArrLiveController(
@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ArrAuditLog audit,
             IUserManager userManager,
             Logger logger,
-            SeerrRequestReadModel requests)
+            SeerrFacts requests)
         {
             _feed = feed;
             _limits = limits;

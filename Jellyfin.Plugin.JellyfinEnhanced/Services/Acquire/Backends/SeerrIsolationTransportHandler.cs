@@ -51,12 +51,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (!request.Options.TryGetValue(Use, out var use) && !KnownSeerrAddress(request.RequestUri, _config())
-                && _backend.Current.IsolationVersion != 0)
+            var seerr = request.Options.TryGetValue(Use, out var use) || KnownSeerrAddress(request.RequestUri, _config());
+            if (!seerr && _backend.Current.IsolationVersion != 0)
                 return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
             try
             {
                 var admission = _backend.AdmitSeerr(use, cancellationToken, request.Options.TryGetValue(Epoch, out var epoch) ? epoch : null);
+                if (seerr) _backend.Facts.Include(admission.Epoch);
                 try
                 {
                     var response = await base.SendAsync(request, admission.Token).ConfigureAwait(false);

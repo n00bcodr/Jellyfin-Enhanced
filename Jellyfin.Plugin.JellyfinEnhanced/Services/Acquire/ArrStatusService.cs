@@ -72,7 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _feed = feed;
             _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
-            _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
+            _aliases = new TitleAliases(store, requests as SeerrFacts);
             // Edition availability credits only what a finished lookup found (Ready and fulfilment never ride on a guess).
             Editions = new EditionAvailability(view, _config, (key, viewer) => CopiesOf(key, viewer).Display);
         }
@@ -100,6 +100,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// cannot see are left out) and titles by key (movie and series keys).
         /// </summary>
         public Task<StatusBody> ForBatchAsync(StatusViewer viewer, IReadOnlyList<Guid> ids, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForBatchAsyncFactsCore(viewer, ids, keys, cancellationToken));
+
+        private Task<StatusBody> ForBatchAsyncFactsCore(StatusViewer viewer, IReadOnlyList<Guid> ids, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
         {
             var titleKeys = keys.Where(k => !k.Season.HasValue).Distinct().ToList();
             return GatedAsync(
@@ -206,6 +209,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// details page of a person, collection or album costs one cheap request and no error.
         /// </summary>
         public Task<StatusBody> ForItemAsync(StatusViewer viewer, Guid itemId, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForItemAsyncFactsCore(viewer, itemId, cancellationToken));
+
+        private Task<StatusBody> ForItemAsyncFactsCore(StatusViewer viewer, Guid itemId, CancellationToken cancellationToken)
             => GatedAsync(
                 viewer,
                 v => PrepareItemAsync(v, itemId, load: true, cancellationToken),
@@ -561,6 +567,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// may not ask about it by key (see <see cref="MayAskByKey"/>).
         /// </summary>
         public Task<StatusBody> ForKeyDetailAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForKeyDetailAsyncFactsCore(viewer, key, cancellationToken));
+
+        private Task<StatusBody> ForKeyDetailAsyncFactsCore(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
         {
             var title = key.Title;
             return GatedAsync(
@@ -585,6 +594,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// viewer may not ask about the title by key.
         /// </summary>
         public Task<StatusBody> ForAbsentAsync(StatusViewer viewer, AbsentTitle page, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForAbsentAsyncFactsCore(viewer, page, cancellationToken));
+
+        private Task<StatusBody> ForAbsentAsyncFactsCore(StatusViewer viewer, AbsentTitle page, CancellationToken cancellationToken)
         {
             var title = page.Title.Title;
             // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer as they
@@ -619,7 +631,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <param name="episodes">Single episodes.</param>
         /// <param name="fourK">The 4K edition.</param>
         /// <param name="cancellationToken">Cancellation.</param>
-        internal async Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
+        internal Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForPartAsyncFactsCore(viewer, key, seasons, episodes, fourK, cancellationToken));
+
+        private async Task<StatusBody> ForPartAsyncFactsCore(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
         {
             var title = key.Title;
             var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
@@ -998,7 +1013,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// where Sonarr has got to with that season or episode, not the whole series. Reads the
         /// series' episodes from the arr when they aren't in memory (administrators only).
         /// </summary>
-        internal async Task<StatusBody> ForScopeKeyAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        internal Task<StatusBody> ForScopeKeyAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForScopeKeyAsyncFactsCore(viewer, key, cancellationToken));
+
+        private async Task<StatusBody> ForScopeKeyAsyncFactsCore(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
         {
             if (key.IsMovie || key.Season is not int season) return await ForKeyDetailAsync(viewer, key, cancellationToken).ConfigureAwait(false);
             var title = key.Title;
@@ -1079,7 +1097,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// tells the caller to prepare it again. <paramref name="responseGate"/> wraps the cache lookup and the build
         /// (a caller's own final gate).
         /// </remarks>
-        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
+        internal Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForTitlesAsyncFactsCore(viewer, keys, route, what, build, cancellationToken, scopes, loadEpisodes, presentation, presentationRevision, responseGate, editions));
+
+        private async Task<StatusBody> ForTitlesAsyncFactsCore(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
             // As in GatedAsync: a page composed from a lookup that reached its bound is answered, never cached.
@@ -1552,7 +1573,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private string HandoffEpoch(StatusViewer viewer, PluginConfiguration? config)
         {
-            if (HandoffGrace(config) is not TimeSpan grace || _requests is not SeerrRequestReadModel model) return string.Empty;
+            if (HandoffGrace(config) is not TimeSpan grace || _requests is not SeerrFacts model) return string.Empty;
             var wait = viewer.IsAdmin ? grace : TimeSpan.FromHours(Math.Clamp(config?.ArrStatusLookingHours ?? 24, 1, 720));
             var before = _now().UtcDateTime - wait;
             var count = 0;

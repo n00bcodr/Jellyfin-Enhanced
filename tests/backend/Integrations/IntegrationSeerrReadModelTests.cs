@@ -34,14 +34,14 @@ public class IntegrationSeerrReadModelTests
         };
         public ArrChangeFeed Feed { get; }
         public DateTimeOffset Now { get; set; } = new(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
-        public SeerrRequestReadModel Model { get; }
+        public SeerrFacts Model { get; }
         public Guid Emma { get; } = Guid.NewGuid();
         public Guid Sam { get; } = Guid.NewGuid();
 
         public Rig()
         {
             Feed = new ArrChangeFeed(() => Now);
-            Model = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Now);
+            Model = new SeerrFacts(Seerr.Transport, Feed, null, () => Config, () => Now);
         }
 
         public StatusViewer Viewer(Guid id) => new() { UserId = id, PolicyRevision = "p" };
@@ -406,7 +406,7 @@ public class IntegrationSeerrReadModelTests
         Assert.Equal(typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts), facts.ImplementationType);
         // The read model follows the outbox's confirmed sends: every service its one public constructor needs (but
         // Jellyfin's own HTTP client factory) is registered, and the outbox events are one shared singleton.
-        var ctor = Assert.Single(typeof(SeerrRequestReadModel).GetConstructors());
+        var ctor = Assert.Single(typeof(SeerrFacts).GetConstructors());
         Assert.All(ctor.GetParameters().Where(p => p.ParameterType != typeof(System.Net.Http.IHttpClientFactory)),
             p => Assert.Contains(registered, d => d.ServiceType == p.ParameterType && d.Lifetime == ServiceLifetime.Singleton));
         Assert.Contains(ctor.GetParameters(), p => p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutboxEvents));
@@ -420,7 +420,7 @@ public class IntegrationSeerrReadModelTests
         var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         Assert.Same(rig.Model, Assert.Single(hosted));
-        Assert.Same(rig.Model, provider.GetRequiredService<SeerrRequestReadModel>());
+        Assert.Same(rig.Model, provider.GetRequiredService<SeerrFacts>());
         foreach (var h in hosted) await h.StartAsync(default);
         foreach (var h in hosted) await h.StopAsync(default);
 
@@ -550,19 +550,19 @@ public class IntegrationSeerrReadModelTests
     public async Task MoreRequestsThanAreReadKeepTheOlderOnesAndSaySo()
     {
         using var rig = new Rig();
-        Many(rig, 1, SeerrRequestReadModel.MaxRequests - 1);
+        Many(rig, 1, SeerrFacts.MaxRequests - 1);
         Assert.True(await rig.Model.RefreshAsync(default));
         Assert.False(rig.Model.State.Truncated);
         // Six more: Seerr holds more than are read; the newest are read and the oldest are kept as
         // they were (their absence from the window says nothing).
-        Many(rig, SeerrRequestReadModel.MaxRequests, SeerrRequestReadModel.MaxRequests + 5);
+        Many(rig, SeerrFacts.MaxRequests, SeerrFacts.MaxRequests + 5);
         rig.Now = rig.Now.AddMinutes(1);
         Assert.True(await rig.Model.RefreshAsync(default));
-        Assert.Equal(SeerrRequestReadModel.MaxRequests + 5, rig.Model.All.Count);
+        Assert.Equal(SeerrFacts.MaxRequests + 5, rig.Model.All.Count);
         Assert.Contains(rig.Model.All, r => r.Id == 1);
         Assert.True(rig.Model.State.Truncated);
-        Assert.Equal(SeerrRequestReadModel.MaxRequests + 5, rig.Model.State.ReportedTotal);
-        Assert.Equal(SeerrRequestReadModel.MaxRequests, rig.Model.State.ReadLimit);
+        Assert.Equal(SeerrFacts.MaxRequests + 5, rig.Model.State.ReportedTotal);
+        Assert.Equal(SeerrFacts.MaxRequests, rig.Model.State.ReadLimit);
         Assert.False(rig.Model.RequestedLately(Key("movie:tmdb:1001")) && !rig.Model.Requested(Key("movie:tmdb:1001")));
     }
 
@@ -571,7 +571,7 @@ public class IntegrationSeerrReadModelTests
     {
         using var rig = new Rig();
         rig.Model.HeldBelowWindow = 10;
-        const int max = SeerrRequestReadModel.MaxRequests;
+        const int max = SeerrFacts.MaxRequests;
         Many(rig, 1, max);
         Assert.True(await rig.Model.RefreshAsync(default));
         Assert.Null(rig.Model.Current.Floor);
@@ -621,7 +621,7 @@ public class IntegrationSeerrReadModelTests
         Assert.Equal(50, rig.Seerr.CallCount("sort=added"));
 
         // More than are read, in pages of 50: the newest MaxRequests load and the list says so.
-        Many(rig, 2501, SeerrRequestReadModel.MaxRequests + 5);
+        Many(rig, 2501, SeerrFacts.MaxRequests + 5);
         rig.Now = rig.Now.AddMinutes(1);
         Assert.True(await rig.Model.RefreshAsync(default));
         Assert.Null(rig.Model.State.IncompleteReason);
@@ -633,9 +633,9 @@ public class IntegrationSeerrReadModelTests
     {
         // After a restart nothing older is held: what lies below the window is unknown.
         using var rig = new Rig();
-        Many(rig, 1, SeerrRequestReadModel.MaxRequests + 5);
+        Many(rig, 1, SeerrFacts.MaxRequests + 5);
         Assert.True(await rig.Model.RefreshAsync(default));
-        Assert.Equal(SeerrRequestReadModel.MaxRequests, rig.Model.All.Count);
+        Assert.Equal(SeerrFacts.MaxRequests, rig.Model.All.Count);
         Assert.Equal(6, rig.Model.Current.Floor);
         Assert.True(rig.Model.State.Truncated);
     }
@@ -739,7 +739,7 @@ public class IntegrationSeerrReadModelTests
     {
         try
         {
-            return descriptor.ImplementationFactory!(probe) is SeerrRequestReadModel;
+            return descriptor.ImplementationFactory!(probe) is SeerrFacts;
         }
         catch (InvalidOperationException)
         {

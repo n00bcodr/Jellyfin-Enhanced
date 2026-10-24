@@ -98,7 +98,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // The recipe worker: one trigger at a time; the gate's cooldown starts only after a definitive outcome.
-        private async Task ProcessAsync(PlaybackTrigger trigger, CancellationToken ct)
+        private Task ProcessAsync(PlaybackTrigger trigger, CancellationToken ct)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => ProcessAsyncFactsCore(trigger, token), ct);
+
+        private async Task ProcessAsyncFactsCore(PlaybackTrigger trigger, CancellationToken ct)
         {
             if (!_gate.TryBegin(trigger.Key)) return;
             var outcome = AutoRequestOutcome.Cancelled();

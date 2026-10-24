@@ -73,7 +73,7 @@ public class IntegrationEditionPressTests
                 Seerr.Users.Add(new JsonObject { ["id"] = 7, ["jellyfinUserId"] = Rig.Member.UserId.ToString("N"), ["permissions"] = seerrPermissions, ["displayName"] = "Emma" });
                 Seerr.Settings["series4kEnabled"] = true;
                 Seerr.SonarrServers = new JsonArray(FakeSeerr.Server(0, "sonarr.lan", 8989, is4k: false, isDefault: true), FakeSeerr.Server(1, "sonarr4k.lan", 8989, is4k: true, isDefault: true));
-                var model = new SeerrRequestReadModel(Seerr.Transport, null, null, () => Config, () => Rig.Arr.Now);
+                var model = new SeerrFacts(Seerr.Transport, null, null, () => Config, () => Rig.Arr.Now);
                 backend = new SeerrBackend(Seerr.Transport, model, null, () => Config, () => Rig.Arr.Now);
             }
             Func<PluginConfiguration?> config = () => Config;
@@ -120,7 +120,7 @@ public class IntegrationEditionPressTests
 
         public RequestsHubController Hub(StatusViewer viewer)
         {
-            var hub = new RequestsHubService(Status, new SeerrRequestReadModel((Seerr ?? _hubSeerr).Transport, null, null, () => Config, () => Rig.Arr.Now), () => Config);
+            var hub = new RequestsHubService(Status, new SeerrFacts((Seerr ?? _hubSeerr).Transport, null, null, () => Config, () => Rig.Arr.Now), () => Config);
             return Controller(Wiring.Make<RequestsHubController>(hub, Manage), viewer);
         }
 

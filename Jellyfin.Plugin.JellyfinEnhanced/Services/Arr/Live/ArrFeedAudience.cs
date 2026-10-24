@@ -85,7 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly IArrRequestFacts? _requests;
         private readonly ArrInstanceLibraries _libraries;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (Verdict Verdict, DateTimeOffset At, string Stamp)> _cache = new();
+        private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (SeerrFacts.Derived<Verdict> Verdict, DateTimeOffset At, string Stamp)> _cache = new();
         private readonly ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _series = new();
         private readonly ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)> _seasons = new();
         private volatile AliasInputs? _registryStamp;
@@ -105,7 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _libraryManager = libraryManager;
             _userManager = userManager;
             _store = store;
-            _aliases = new Acquire.TitleAliases(store, requests as SeerrRequestReadModel);
+            _aliases = new Acquire.TitleAliases(store, requests as SeerrFacts);
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
             _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
@@ -234,10 +234,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private Verdict Cached(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
         {
             var cacheKey = (user.Id, key, instanceId);
-            if (_cache.TryGetValue(cacheKey, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Verdict;
-            var verdict = Decide(user, key, instanceId, now, stamp);
+            if (_cache.TryGetValue(cacheKey, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp) && hit.Verdict.TryRead(out var cached)) return cached;
+            var verdict = SeerrFacts.Derive(() => Decide(user, key, instanceId, now, stamp));
             _cache[cacheKey] = (verdict, now, stamp);
-            return verdict;
+            return verdict.Read(Verdict.Hidden);
         }
 
         private Verdict Decide(User user, string key, string? instanceId, DateTimeOffset now, string stamp)

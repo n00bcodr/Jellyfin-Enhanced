@@ -210,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
         /// <summary>
         /// The target a Seerr-mode ask goes to while Jellyfin Enhanced points at the Seerr <paramref name="source"/>
-        /// (<see cref="SeerrRequestReadModel.SourceOf"/>): Seerr picks its own server, so no instance or connection.
+        /// (<see cref="SeerrFacts.SourceOf"/>): Seerr picks its own server, so no instance or connection.
         /// </summary>
         internal static string SeerrTargetKey(string? source)
             => TargetKey(new RequestAuthorization(Guid.Empty, null, string.Empty, string.Empty, string.Empty, "seerr", string.Empty, string.Empty, string.Empty, source));

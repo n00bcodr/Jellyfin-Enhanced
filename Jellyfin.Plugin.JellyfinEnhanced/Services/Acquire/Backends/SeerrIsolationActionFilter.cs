@@ -11,9 +11,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
     /// <summary>Rejects legacy Seerr HTTP entry points before cached links, account import or fallback selection.</summary>
     public sealed class SeerrIsolationActionFilter : IAsyncActionFilter
     {
-        private readonly IEffectiveRequestsBackend _backend;
+        private readonly EffectiveRequestsBackend _backend;
         private readonly Logger _logger;
-        public SeerrIsolationActionFilter(IEffectiveRequestsBackend backend, Logger logger) { _backend = backend; _logger = logger; }
+        public SeerrIsolationActionFilter(EffectiveRequestsBackend backend, Logger logger) { _backend = backend; _logger = logger; }
         /// <summary>Uses declared route templates, not a caller-controlled path prefix.</summary>
         internal static bool IsSeerrAction(ControllerActionDescriptor action)
             => action.MethodInfo.GetCustomAttributes(true).OfType<HttpMethodAttribute>().Any(a =>
@@ -24,11 +24,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                     || route.StartsWith("acquire/migration/seerr", StringComparison.OrdinalIgnoreCase)));
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (context.ActionDescriptor is not ControllerActionDescriptor action || !IsSeerrAction(action))
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
+            using var publication = SeerrFacts.BeginPublication();
+            var seerrOnly = context.ActionDescriptor is ControllerActionDescriptor action && IsSeerrAction(action);
             var captured = _backend.CheckSeerr(SeerrUse.Diagnostics);
             void Deny(string reason)
             {
@@ -36,11 +33,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 context.HttpContext.Response.Headers["Cache-Control"] = "private, no-store";
                 context.Result = new ObjectResult(new { code = reason, error = true }) { StatusCode = 409 };
             }
-            if (!captured.Allowed) { Deny(captured.Reason!); return; }
+            if (seerrOnly && !captured.Allowed) { Deny(captured.Reason!); return; }
             try
             {
                 var executed = await next().ConfigureAwait(false);
-                try { _backend.PublishSeerr(captured.Epoch, () => true); }
+                try
+                {
+                    if (seerrOnly) _backend.Facts.Publish(captured.Epoch, () => true);
+                    publication.Publish(() => true);
+                }
                 catch (BackendDisabledException ex)
                 {
                     Deny(ex.Reason);

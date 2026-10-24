@@ -54,7 +54,7 @@ public class ApiArrLiveRoutesTests
         public ArrAuditLog Audit { get; }
         public ArrWebhookProvisioner Provisioner { get; }
         public ArrLiveService Live { get; }
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrConnection Instance => Arr.Instance("Movies");
         public Guid UserId { get; } = Guid.NewGuid();
         public string AuditPath => Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName);
@@ -92,7 +92,7 @@ public class ApiArrLiveRoutesTests
             Provisioner = new ArrWebhookProvisioner(Arr.Factory, new ArrActionRunner(Audit, new ArrConfirmationTokens()), Receiver);
             var tracker = new ArrChangeTracker(Store, Feed, Router, null, null, () => Arr.Plugin.Plugin.Configuration);
             tracker.Start();
-            Requests = new SeerrRequestReadModel(new IntegrationTransport((_, _) => throw new InvalidOperationException("no Seerr in these tests")), Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
+            Requests = new SeerrFacts(new IntegrationTransport((_, _) => throw new InvalidOperationException("no Seerr in these tests")), Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Live = new ArrLiveService(Store, Router, tracker, null, () => Arr.Plugin.Plugin.Configuration, (_, _, _) => throw new ArrLiveConnectException("not in tests"), null, null);
             // The fake arr sends its Test event to JE when a webhook is saved or tested, like the real ones.
             Radarr.OnNotificationTest = n => Receiver.Receive(Instance.Id, HeaderOf(n), Encoding.UTF8.GetBytes("{\"eventType\":\"Test\",\"instanceName\":\"x\"}"), "arr") == ArrWebhookOutcome.Accepted ? null : "Unable to send test message";

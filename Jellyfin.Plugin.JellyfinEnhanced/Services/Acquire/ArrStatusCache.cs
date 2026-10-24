@@ -32,8 +32,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     public sealed class ArrStatusCache
     {
         private readonly object _lock = new();
-        private readonly Dictionary<string, LinkedListNode<(string Key, StatusBody Body)>> _map = new(StringComparer.Ordinal);
-        private readonly LinkedList<(string Key, StatusBody Body)> _lru = new();
+        private readonly Dictionary<string, LinkedListNode<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>> _map = new(StringComparer.Ordinal);
+        private readonly LinkedList<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)> _lru = new();
         private readonly int _maxEntries;
         private readonly long _maxBytes;
         private long _bytes;
@@ -54,13 +54,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The cached body for a key, or null.</summary>
         public StatusBody? Get(string key)
         {
+            SeerrFacts.Derived<StatusBody> held;
             lock (_lock)
             {
                 if (!_map.TryGetValue(key, out var node)) return null;
                 _lru.Remove(node);
                 _lru.AddFirst(node);
-                return node.Value.Body;
+                held = node.Value.Body;
             }
+            return held.TryRead(out var body) ? body : null;
         }
 
         /// <summary>
@@ -71,26 +73,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public StatusBody Put(string key, byte[] json)
         {
             var body = new StatusBody(json, ETagFor(key, json));
-            if (CopyLookupBound.Reached) return body;
+            var captured = SeerrFacts.Remember(body);
+            if (CopyLookupBound.Reached) return captured.Publish();
             lock (_lock)
             {
                 if (_map.TryGetValue(key, out var existing))
                 {
-                    _bytes -= existing.Value.Body.Json.Length;
+                    _bytes -= existing.Value.Bytes;
                     _lru.Remove(existing);
                     _map.Remove(key);
                 }
-                var node = _lru.AddFirst((key, body));
+                var node = _lru.AddFirst((key, captured, json.Length));
                 _map[key] = node;
                 _bytes += json.Length;
                 while ((_map.Count > _maxEntries || _bytes > _maxBytes) && _lru.Last is { } last && !ReferenceEquals(last, node))
                 {
                     _lru.RemoveLast();
                     _map.Remove(last.Value.Key);
-                    _bytes -= last.Value.Body.Json.Length;
+                    _bytes -= last.Value.Bytes;
                 }
             }
-            return body;
+            return captured.Publish();
         }
 
         /// <summary>Drops everything (configuration saved).</summary>

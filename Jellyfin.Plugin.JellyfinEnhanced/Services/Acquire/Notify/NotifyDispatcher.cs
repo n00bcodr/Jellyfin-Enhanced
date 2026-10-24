@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly Requests.RequestLedger? _ledger;
         private readonly Requests.IRequestPolicy? _policy;
         private readonly Ready.ReadyNativeChannel? _native;
-        private readonly SeerrRequestReadModel? _requests;
+        private readonly SeerrFacts? _requests;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -56,7 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy, Ready.ReadyNativeChannel native, SeerrRequestReadModel requests)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy, Ready.ReadyNativeChannel native, SeerrFacts requests)
             : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy, native, requests)
         {
         }
@@ -68,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// With <paramref name="native"/>, native Ready messages (phase 4f) go out; without it they end as suppressed. With
         /// <paramref name="requests"/>, a Seerr request's decline or ask isn't told once Seerr's list shows it moved on.
         /// </summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null, Ready.ReadyNativeChannel? native = null, SeerrRequestReadModel? requests = null)
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null, Ready.ReadyNativeChannel? native = null, SeerrFacts? requests = null)
         {
             _native = native;
             _requests = requests;
@@ -228,7 +228,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>Sends every delivery that is due; returns how many were attempted (tests step it).</summary>
-        internal async Task<int> RunOnceAsync(CancellationToken cancellationToken)
+        internal Task<int> RunOnceAsync(CancellationToken cancellationToken)
+            => SeerrFacts.BackgroundAsync(token => RunOnceAsyncFactsCore(token), cancellationToken);
+
+        private async Task<int> RunOnceAsyncFactsCore(CancellationToken cancellationToken)
         {
             if (!NotifyFlags.Enabled(_config()) || !_store.Available) return 0;
             await _run.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -331,6 +334,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// await in between (the network send itself excepted); the source scan (tests: NotifyGateWalk) holds every caller to it.
         /// </summary>
         internal NotifyFinal Final(NotifyAlert alert)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => FinalFactsCore(alert));
+
+        private NotifyFinal FinalFactsCore(NotifyAlert alert)
         {
             var config = _config();
             var now = _now();

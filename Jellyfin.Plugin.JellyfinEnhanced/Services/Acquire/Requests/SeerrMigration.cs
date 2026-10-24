@@ -89,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>How long a move waits for JE's Seerr request writes already in flight to finish.</summary>
         internal static readonly TimeSpan DrainWait = TimeSpan.FromSeconds(30);
 
-        private readonly SeerrMigrationReader _reader;
+        private readonly SeerrFacts _reader;
         private readonly RequestLedger _ledger;
         private readonly IRequestPolicy _policy;
         private readonly IArrJellyfinView _view;
@@ -102,14 +102,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly SemaphoreSlim _gate = new(1, 1);
 
         /// <summary>Creates the migration service (DI).</summary>
-        public SeerrMigration(SeerrMigrationReader reader, RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, TitleAliases aliases, ArrChangeFeed feed, SeerrRequestWriteFence fence)
+        public SeerrMigration(SeerrFacts reader, RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, TitleAliases aliases, ArrChangeFeed feed, SeerrRequestWriteFence fence)
             : this(reader, ledger, policy, view, aliases, feed, () => JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration(),
                 () => JellyfinEnhanced.Instance?.SaveConfiguration(), () => DateTimeOffset.UtcNow, fence)
         {
         }
 
         /// <param name="config">Reads the live configuration (a config-page save replaces the object).</param>
-        internal SeerrMigration(SeerrMigrationReader reader, RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, TitleAliases? aliases, ArrChangeFeed feed,
+        internal SeerrMigration(SeerrFacts reader, RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, TitleAliases? aliases, ArrChangeFeed feed,
             Func<PluginConfiguration> config, Action save, Func<DateTimeOffset> now, SeerrRequestWriteFence? fence = null)
         {
             _reader = reader; _ledger = ledger; _policy = policy; _view = view; _aliases = aliases; _feed = feed; _config = config; _save = save; _now = now;
@@ -130,7 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             lock (JellyfinEnhanced.AnalyticsCredentialLock)
             {
                 var live = _config();
-                if (addresses != null && SeerrMigrationReader.AddressFingerprint(live) != addresses) return false;
+                if (addresses != null && SeerrFacts.AddressFingerprint(live) != addresses) return false;
                 var before = live.ArrRequestBackend;
                 if (before == backend) return true;
                 live.ArrRequestBackend = backend;
@@ -288,7 +288,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (Gate(live) is { } changed) return changed;
                 // The requests just read belong to the Seerr address they were read from; a save that pointed JE
                 // at another Seerr meanwhile would hand authority over without that Seerr's requests.
-                if (SeerrMigrationReader.AddressFingerprint(live) != read.AddressFingerprint) return AddressChanged(live.ArrRequestBackend);
+                if (SeerrFacts.AddressFingerprint(live) != read.AddressFingerprint) return AddressChanged(live.ArrRequestBackend);
                 // A move while JE already handles requests (a second pass) records "je": rolling it back
                 // removes its wants and leaves request handling as it is.
                 var previous = live.ArrRequestBackend;
@@ -311,7 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     // The switch failed: undo this batch so Seerr stays the authority with nothing half moved.
                     if (result.BatchId != null) _ledger.RollbackImport(result.BatchId, now);
-                    if (SeerrMigrationReader.AddressFingerprint(_config()) != read.AddressFingerprint) return AddressChanged(_config().ArrRequestBackend);
+                    if (SeerrFacts.AddressFingerprint(_config()) != read.AddressFingerprint) return AddressChanged(_config().ArrRequestBackend);
                     return SeerrMigrationReply.Refused("switch_failed", 503, "Request handling could not be switched; nothing was moved.", _config().ArrRequestBackend);
                 }
                 Announce(result.BatchId);

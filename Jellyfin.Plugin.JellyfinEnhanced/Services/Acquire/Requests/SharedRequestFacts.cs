@@ -28,11 +28,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed class SharedRequestFacts
     {
         private readonly RequestLedger _ledger;
-        private readonly SeerrRequestReadModel _seerr;
+        private readonly SeerrFacts _seerr;
         private readonly TitleAliases? _aliases;
 
         /// <summary>Creates the reader (DI; tests may pass no aliases).</summary>
-        public SharedRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases? aliases)
+        public SharedRequestFacts(RequestLedger ledger, SeerrFacts seerr, TitleAliases? aliases)
         {
             _ledger = ledger;
             _seerr = seerr;
@@ -60,7 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="key">The title (any provider id; aliases are followed).</param>
         public TitleRequesters For(PluginConfiguration config, TitleKey key)
             => LedgerAuthority(config) ? ForCore(config, key)
-                : EffectiveRequestsBackend.Shared.ReadSeerrCached(() => ForCore(config, key), new TitleRequesters(false, Array.Empty<Guid>()));
+                : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => ForCore(config, key), new TitleRequesters(false, Array.Empty<Guid>()));
 
         private TitleRequesters ForCore(PluginConfiguration config, TitleKey key)
         {
@@ -82,8 +82,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="config">The current configuration.</param>
         /// <param name="user">The person.</param>
         public UserRequestedTitles ForUser(PluginConfiguration config, Guid user)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForUserFactsCore(config, user));
+
+        private UserRequestedTitles ForUserFactsCore(PluginConfiguration config, Guid user)
             => LedgerAuthority(config) ? ForUserCore(config, user)
-                : EffectiveRequestsBackend.Shared.ReadSeerrCached(() => ForUserCore(config, user), new UserRequestedTitles(false, Array.Empty<(bool, int)>()));
+                : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => ForUserCore(config, user), new UserRequestedTitles(false, Array.Empty<(bool, int)>()));
 
         private UserRequestedTitles ForUserCore(PluginConfiguration config, Guid user)
         {

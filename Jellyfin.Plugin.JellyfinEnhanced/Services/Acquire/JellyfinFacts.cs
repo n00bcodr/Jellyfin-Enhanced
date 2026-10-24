@@ -655,7 +655,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The backend's own word on one edition of a title (or some of its seasons or episodes in that edition) being
         /// available: whether it says so, since when, and the Jellyfin item it matched. Composed exactly as the Requests
-        /// page composes a request's row (<see cref="SeerrRequestReadModel.AvailabilityOf"/>), so a list entry and the
+        /// page composes a request's row (<see cref="SeerrFacts.AvailabilityOf"/>), so a list entry and the
         /// Requests page agree. Null when this source has no such word (Jellyfin Enhanced mode judges by the arrs).
         /// </summary>
         /// <param name="titleKey">Movie or series key.</param>

@@ -38,12 +38,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // In-memory cache of recently requested seasons to avoid duplicates (keyed by tmdbId_seasonNumber, global across all users)
         private readonly Dictionary<string, DateTime> _requestedSeasons = new();
         private readonly object _requestCacheLock = new();
-        private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
-        private readonly object _userIdCacheLock = new();
-        private readonly Dictionary<string, (string Content, DateTime CachedAt)> _seriesDetailsCache = new();
-        private readonly object _seriesDetailsCacheLock = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string Content, DateTime CachedAt)> _seriesDetailsCache = new();
         // A read in flight and when it began (what it answers lives from then, also for the requests that joined it).
-        private readonly ConcurrentDictionary<string, (Task<string?> Task, DateTime StartedAt)> _seriesDetailsInFlight = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(Task<string?> Task, DateTime StartedAt)> _seriesDetailsInFlight = new();
+
+        // Strict JE's direct TMDB answers never enter a Seerr cache. Legacy v0 keeps its existing cache path.
+        private readonly ConcurrentDictionary<string, (string Content, DateTime At)> _jeTmdbDetails = new();
+        private readonly ConcurrentDictionary<string, (Task<string?> Read, DateTime At)> _jeTmdbFlights = new();
 
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
@@ -110,7 +112,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private Task<string?> GetSeriesDetailsJsonAsync(string tmdbId)
             => SeerrConfigured(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeriesDetailsJsonAsyncCore(tmdbId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeriesDetailsJsonAsyncCore(tmdbId))
                 : GetSeriesDetailsJsonAsyncCore(tmdbId);
 
         private async Task<string?> GetSeriesDetailsJsonAsyncCore(string tmdbId)
@@ -121,13 +123,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
 
+            if (EffectiveRequestsBackend.IsStrictJe(config)) return await JeTmdbSeriesAsync(tmdbId, config).ConfigureAwait(false);
+
             var cacheKey = (EffectiveRequestsBackend.IsStrictJe(config) ? "je|" : "legacy|") + tmdbId;
             var cacheTtl = GetSeriesDetailsCacheTtl();
             var cacheEnabled = !config.JellyseerrDisableCache;
 
             if (cacheEnabled)
             {
-                lock (_seriesDetailsCacheLock)
+                using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                 {
                     if (_seriesDetailsCache.TryGetValue(cacheKey, out var cached) &&
                         DateTime.UtcNow - cached.CachedAt < cacheTtl)
@@ -188,7 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (!string.IsNullOrEmpty(content))
                 {
-                    lock (_seriesDetailsCacheLock)
+                    using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                     {
                         _seriesDetailsCache[cacheKey] = (content, flight.StartedAt);
                     }
@@ -200,6 +204,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return content;
+        }
+
+        private async Task<string?> JeTmdbSeriesAsync(string tmdbId, PluginConfiguration config)
+        {
+            if (config.JellyseerrDisableCache) return await FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey()).ConfigureAwait(false);
+            if (_jeTmdbDetails.TryGetValue(tmdbId, out var held) && DateTime.UtcNow - held.At < GetSeriesDetailsCacheTtl()) return held.Content;
+            var flight = _jeTmdbFlights.GetOrAdd(tmdbId, _ => (FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey()), DateTime.UtcNow));
+            try
+            {
+                var content = await flight.Read.ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(content)) _jeTmdbDetails[tmdbId] = (content, flight.At);
+                return content;
+            }
+            finally { _jeTmdbFlights.TryRemove(new KeyValuePair<string, (Task<string?>, DateTime)>(tmdbId, flight)); }
         }
 
         // TMDB's series details in the shape the season checks read from Seerr (seasonNumber, episodeCount).
@@ -239,7 +257,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Checks a completed episode to determine if next season should be requested.
         // Event-driven entry point called when a user finishes or starts watching an episode.
         // The outcome is typed: a failed details lookup is a PreparationFailed, never "nothing to do".
-        public async Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
+        public Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => CheckEpisodeCompletionAsyncFactsCore(episodeItem, userId, token), ct);
+
+        private async Task<AutoRequestOutcome> CheckEpisodeCompletionAsyncFactsCore(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
         {
             // Everything this check writes is the recipe's: the transport checks each write against the gate (D41).
             using var automation = AutomationTransportContext.Enter(_gate, AutomationWrite.LegacySeerr(Recipe, _recorder != null));
@@ -626,7 +647,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets season status from Jellyseerr - always fetches fresh to ensure accurate request/availability state
         private Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeasonStatusFromJellyseerrCore(tmdbId, seasonNumber))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetSeasonStatusFromJellyseerrCore(tmdbId, seasonNumber))
                 : GetSeasonStatusFromJellyseerrCore(tmdbId, seasonNumber);
 
         private async Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerrCore(string tmdbId, int seasonNumber)
@@ -785,7 +806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // more is sent). Neither: it failed.
         private Task<(bool Sent, string? Stopped)> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestNextSeasonCore(tmdbId, seasonNumber, jellyfinUserId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestNextSeasonCore(tmdbId, seasonNumber, jellyfinUserId))
                 : RequestNextSeasonCore(tmdbId, seasonNumber, jellyfinUserId);
 
         private async Task<(bool Sent, string? Stopped)> RequestNextSeasonCore(string tmdbId, int seasonNumber, string jellyfinUserId)
@@ -860,7 +881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets the Jellyseerr user ID for a Jellyfin user
         private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
             => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
-                ? EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetJellyseerrUserIdCore(jellyfinUserId))
                 : GetJellyseerrUserIdCore(jellyfinUserId);
 
         private async Task<string?> GetJellyseerrUserIdCore(string jellyfinUserId)
@@ -873,7 +894,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var normalizedJellyfinUserId = NormalizeUserId(jellyfinUserId);
 
-            lock (_userIdCacheLock)
+            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
             {
                 if (_jellyseerrUserIdCache.TryGetValue(normalizedJellyfinUserId, out var cached) &&
                     DateTime.UtcNow - cached.CachedAt < GetJellyseerrUserIdCacheTtl())
@@ -917,7 +938,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         if (normalizedJellyseerrId == normalizedJellyfinUserId)
                                         {
                                             var jellyseerrUserId = id.GetInt32().ToString();
-                                            lock (_userIdCacheLock)
+                                            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                                             {
                                                 _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, readAt);
                                             }

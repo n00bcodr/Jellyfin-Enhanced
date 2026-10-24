@@ -566,9 +566,9 @@ public class IntegrationSeerrDestinationTableTests
         ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "want.Input.Seasons.Contains(season)", "the season asked about against the request's own scope", null),
         ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "j.Input.Seasons.Contains(season)", "one request's own jobs: a new season once per request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", "s.SeasonNumber > current", "Sonarr's seasons after the request's own current one", null),
-        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", "n > current", "Seerr's seasons after the request's own current one", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsyncFactsCore", "n > current", "Seerr's seasons after the request's own current one", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
-        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsyncFactsCore", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTvdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTmdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
         ("RequestLedgerTitles.cs", "RequestLedger.Canonical", "key == input.Key", "the identity resolver itself: whether resolving the key changed it", null),
@@ -582,7 +582,7 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.OverSeries"] = (new[] { "SameTitle" }, "a Member's seasons of the title"),
         ["RequestLedger.SplitAtThreshold"] = (new[] { "SameTitle" }, "the series-threshold split: the person's seasons of the title"),
         ["RequestLedger.FollowWithin"] = (new[] { "Extra", "Extra", "Extra" }, "a merged title: who already covers whom"),
-        ["FutureSeasonCharges.FollowSeerrAsync"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
+        ["FutureSeasonCharges.FollowSeerrAsyncFactsCore"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
         ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
         ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
         ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
@@ -770,7 +770,8 @@ public class IntegrationSeerrDestinationTableTests
             _ => plugin.With("Services/Acquire/Requests/SeerrBackend.cs", text => text.Replace("=> RequestDestination.SeerrHas(", "=> SeerrHasByHand(", StringComparison.Ordinal)
                 .Replace("        // ---------------- transport ----------------", "        private static bool SeerrHasByHand(MutationInput input, int? server, int? profile, string? root) => server == input.SeerrServerId && profile == input.SeerrProfileId && root == input.SeerrRootFolder;\n\n        // ---------------- transport ----------------", StringComparison.Ordinal)),
         };
-        Assert.Empty(mutant.Errors());
+        var errors = mutant.Errors();
+        Assert.True(errors.Count == 0, string.Join("\n", errors));
         var problems = Problems(mutant);
         Assert.NotEmpty(problems);
         // The bypass in the charges file is found as a raw comparison there, not only as a path that lost its call.

@@ -176,11 +176,12 @@ internal sealed class StampWorld : IDisposable
 
     public ArrChangeFeed Feed { get; } = new();
 
-    public StampWorld(string? dbPath = null, bool live = false)
+    public StampWorld(string? dbPath = null, bool live = false, bool controlledClock = false)
     {
         Db = new AcquireDatabase(dbPath ?? Path.Combine(Core.Root, "acquire.db"));
-        Store = live
-            ? ActivatorUtilities.CreateInstance<AcquisitionStampStore>(new ServiceCollection().AddSingleton(Db).AddSingleton(Feed).BuildServiceProvider())
+        Store = live && controlledClock
+            ? new AcquisitionStampStore(Db, Clock, Feed)
+            : live ? ActivatorUtilities.CreateInstance<AcquisitionStampStore>(new ServiceCollection().AddSingleton(Db).AddSingleton(Feed).BuildServiceProvider())
             : new AcquisitionStampStore(Db, Clock);
         Resolver = new AcquisitionStampResolver(Library, Store, () => Config, Clock);
         Feeder = new AcquisitionStampFeeder(Library, Interests, Upgrades, Store, Resolver, null, () => Config, Clock);

@@ -86,7 +86,7 @@ public class UserCacheSeerrDeadlineTests
         var config = SeerrConfig();
         var start = DateTimeOffset.UtcNow;
         DateTimeOffset Now() => start.AddTicks(ticks);
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, Now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, Now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, Now);
         var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
         await backend.PrepareAsync(user, input, default);
@@ -115,7 +115,7 @@ public class UserCacheSeerrDeadlineTests
         var config = SeerrConfig();
         var start = DateTimeOffset.UtcNow;
         DateTimeOffset Now() => start.AddTicks(ticks);
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, Now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, Now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, Now);
         var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
         // Seerr links no account to the person at 0 s (a missing mapping counts 60 s) ...
@@ -139,7 +139,7 @@ public class UserCacheSeerrDeadlineTests
         seerr.Users.Add(account);
         var config = SeerrConfig();
         var now = DateTimeOffset.UtcNow;
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
         var reachedQuota = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -177,7 +177,7 @@ public class UserCacheSeerrDeadlineTests
         seerr.Users.Add(account);
         var config = SeerrConfig();
         var now = DateTimeOffset.UtcNow;
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
         var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
@@ -207,7 +207,7 @@ public class UserCacheSeerrDeadlineTests
         var other = Guid.NewGuid();
         var config = SeerrConfig();
         var now = DateTimeOffset.UtcNow;
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
         var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
@@ -232,7 +232,7 @@ public class UserCacheSeerrDeadlineTests
     public async Task AnAskedProofLivesFromWhenItsReadBegan()
     {
         var now = DateTimeOffset.UtcNow;
-        var cache = new SeerrAskedProofCache(() => now, TimeSpan.FromSeconds(5));
+        var cache = new SeerrFacts.OwnershipCache(() => now, TimeSpan.FromSeconds(5));
         var reads = 0;
         IReadOnlySet<(int, string)> answer = new HashSet<(int, string)> { (603, "movie") };
         Task<IReadOnlySet<(int TmdbId, string MediaType)>?> Read()

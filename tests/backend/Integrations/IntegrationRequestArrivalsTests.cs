@@ -31,7 +31,7 @@ public class IntegrationRequestArrivalsTests
         public ArrStateStore Store { get; }
         public FakeJellyfinView View { get; } = new() { ResolveAnyItem = true };
         public ArrChangeFeed Feed { get; } = new();
-        public SeerrRequestReadModel Model { get; }
+        public SeerrFacts Model { get; }
         public TitleAliases Aliases { get; }
         public AcquireDatabase Db { get; }
         public RequestLedger Ledger { get; }
@@ -89,7 +89,7 @@ public class IntegrationRequestArrivalsTests
             for (var e = 1; e <= 4; e++) Sonarr.Episodes.Add(Episode(3100 + e, 1, e, hasFile: e == 1, monitored: true));
             for (var e = 1; e <= 2; e++) Sonarr.Episodes.Add(Episode(3200 + e, 2, e, hasFile: false, monitored: false));
             Store = Arr.Store();
-            Model = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
+            Model = new SeerrFacts(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
             Aliases = new TitleAliases(Store, null);
             Db = new AcquireDatabase(Path.Combine(Arr.Plugin.Core.Root, "arrivals-" + Guid.NewGuid().ToString("N") + ".db"));
             Ledger = new RequestLedger(Db);

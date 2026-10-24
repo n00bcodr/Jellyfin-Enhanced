@@ -37,7 +37,7 @@ public class ApiArrAdminHubTests
         public ArrStateStore Store { get; }
         public FakeJellyfinView View { get; } = new();
         public FakeLibraryAccess Library { get; } = new();
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Status { get; }
         public RequestsHubService Hub { get; }
         public ArrManageService Manage { get; }
@@ -79,7 +79,7 @@ public class ApiArrAdminHubTests
             foreach (var e in new[] { 1, 2, 3 }) Sonarr.Queue.Add(FakeArr.SonarrQueueRow(10 + e, "pack", 2, e, "Peacemaker", 391153));
 
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, Feed);
             Hub = new RequestsHubService(Status, Requests, () => Arr.Plugin.Plugin.Configuration);
             Audit = new ArrAuditLog(Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2);
