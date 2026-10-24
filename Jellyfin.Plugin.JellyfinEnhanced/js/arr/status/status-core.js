@@ -767,9 +767,10 @@
      * Colour is never the only signal (icon and text always present).
      * @param {Object} status Movie or episode status.
      * @param {Object} ctx Response context.
-     * @param {{admin?: boolean, expanded?: boolean, onToggle?: function(boolean): void}} [options] admin false leaves
-     *   out the administrators' lines; expanded opens the journey from the start (D95: a title on its way); onToggle
-     *   hears each open/close of the journey.
+     * @param {{admin?: boolean, expanded?: boolean, onJourneyToggle?: function(boolean): void}} [options] admin false leaves
+     *   out the administrators' lines; expanded opens the journey from the start (D95: a title on its way);
+     *   onJourneyToggle hears each open/close of the journey (not `onToggle`: Spoiler Guard's owner-taking onToggle
+     *   makes the title-actions owner scan claim every call of that name).
      * @returns {HTMLElement} The status block.
      */
     function buildPill(status, ctx, options) {
@@ -812,7 +813,7 @@
                 journey.hidden = !open;
                 pill.setAttribute('aria-expanded', String(open));
                 block.classList.toggle('je-arr-open', open);
-                if (typeof options?.onToggle === 'function') options.onToggle(open);
+                if (typeof options?.onJourneyToggle === 'function') options.onJourneyToggle(open);
             });
         }
         if (options?.admin !== false) appendAdmin(block, status);

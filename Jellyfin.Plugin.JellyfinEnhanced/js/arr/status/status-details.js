@@ -140,7 +140,7 @@
             ...JE.arrStatus.detailsOptions(),
             // D95: on its way, the journey is shown unless the viewer closed it on this page view.
             expanded: !!JE.arrStatus.inFlight?.(status) && !(collapsed && collapsed.page === page && collapsed.itemId === itemId),
-            onToggle: open => { collapsed = open ? null : { page, itemId }; }
+            onJourneyToggle: open => { collapsed = open ? null : { page, itemId }; }
         };
         // The page of a title that isn't in the library: one pill for its scope (not here, asked,
         // downloading…), like the more-info modal, rather than the counts of a library series.
