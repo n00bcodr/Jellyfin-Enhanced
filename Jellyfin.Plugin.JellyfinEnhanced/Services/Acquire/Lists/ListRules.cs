@@ -387,6 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     };
                     break;
                 case PlaceholderKinds.Series:
+                    if (seriesSeasons == null && !PlaceholderProgress.HasCompleteExpected(placeholder)) return null;
                     var seasons = (seriesSeasons ?? placeholder.Expected.Select(e => e.S).ToList()).Where(s => s >= 1).Distinct().OrderBy(s => s).ToArray();
                     if (seasons.Length == 0)
                     {

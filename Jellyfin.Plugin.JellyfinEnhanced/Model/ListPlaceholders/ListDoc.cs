@@ -218,6 +218,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("expected")]
         public List<PlaceholderEpisode> Expected { get; set; } = new();
 
+        /// <summary>A partial/contradictory refresh withdrew completion authority; retained expectations are display facts only.</summary>
+        [JsonPropertyName("expectedUncertain")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ExpectedUncertain { get; set; }
+
         /// <summary>Season/series: whether the season/show is still in production (maintained by later phases).</summary>
         [JsonPropertyName("inProduction")]
         public bool? InProduction { get; set; }

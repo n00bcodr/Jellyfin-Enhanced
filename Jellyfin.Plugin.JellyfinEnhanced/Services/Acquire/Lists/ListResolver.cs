@@ -147,6 +147,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return placeholder.Filled.Any(f => !aired.Contains(new EpisodeCoord(f.S, f.E)));
         }
 
+        /// <summary>Whether retained expectations still carry completion/automatic scope authority.</summary>
+        /// <param name="placeholder">The stored entry.</param>
+        /// <returns>False after a partial refresh or without a bounded expected set.</returns>
+        public static bool HasCompleteExpected(Placeholder placeholder) => !placeholder.ExpectedUncertain
+            && placeholder.Expected.Count > 0 && placeholder.Expected.Count < MaxExpected;
+
         /// <summary>The completion rule (see the class remarks). Movies and custom entries never "complete" here.</summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="todayUtc">Today (UTC).</param>
@@ -160,7 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return placeholder.Episodes.Count > 0 && placeholder.Episodes.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
                 case PlaceholderKinds.Season:
                 {
-                    if (placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected || placeholder.InProduction == null)
+                    if (!HasCompleteExpected(placeholder) || placeholder.InProduction == null)
                     {
                         return false;
                     }
@@ -176,7 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 case PlaceholderKinds.Series:
                 {
-                    if (placeholder.InProduction != false || placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected)
+                    if (placeholder.InProduction != false || !HasCompleteExpected(placeholder))
                     {
                         return false;
                     }

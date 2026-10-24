@@ -171,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <inheritdoc />
         public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             // Provider switches and credentials are checked before the cache: a provider the admin just turned off stops
             // working at once, and nothing is sent to it.
             if (Unavailable(source, options) is { } unavailable)
@@ -178,11 +179,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return unavailable;
             }
 
-            var epoch = ListMetadataEpoch.Capture();
             var cacheKey = epoch.Generation + "|" + source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
             if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return cached.Result;
+                return epoch.Publish(() => cached.Result, Changed);
             }
 
             // F29: a person's fetches that miss the cache go upstream only a few at a time and a bounded number per window.
@@ -221,29 +221,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
                 }
 
-                if (result.Ok && !epoch.IsCurrent)
+                return epoch.Publish(() =>
                 {
-                    return SourceFetchResult.Fail(source, "configuration_changed", "The request backend changed while reading this source. Read it again.");
-                }
+                    // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
+                    // read again next time, so a corrected source is seen at once.
+                    if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
+                    {
+                        PruneCache(result.Items.Count);
+                        _cache[cacheKey] = (readAt + CacheTtl, result);
+                    }
+                    else if (!result.Ok)
+                    {
+                        _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
+                    }
 
-                // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
-                // read again next time, so a corrected source is seen at once.
-                if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
-                {
-                    PruneCache(result.Items.Count);
-                    _cache[cacheKey] = (readAt + CacheTtl, result);
-                }
-                else if (!result.Ok)
-                {
-                    _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
-                }
-
-                return result;
+                    return result;
+                }, () => result.Ok ? Changed() : result);
             }
             finally
             {
                 _gate.Release();
             }
+
+            SourceFetchResult Changed() => SourceFetchResult.Fail(source, "configuration_changed", "The request backend changed while reading this source. Read it again.");
         }
 
         // Switches and credentials of each provider (no request is made without them).

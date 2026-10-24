@@ -178,12 +178,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The metadata or null.</returns>
         public async Task<PlaceholderMetadata?> FetchAsync(Placeholder placeholder, TimeSpan maxAge, DateTime todayUtc, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || !IsAvailable)
             {
                 return null;
             }
 
-            var epoch = ListMetadataEpoch.Capture();
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
@@ -208,7 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
             {
                 metadata.ReadEpoch = epoch;
-                return epoch.IsCurrent ? metadata : null;
+                return epoch.Publish<PlaceholderMetadata?>(() => metadata, () => null);
             }
         }
 
@@ -226,8 +226,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="metadata">Fetched metadata.</param>
         /// <returns>True when anything changed.</returns>
         public static bool Apply(Placeholder placeholder, PlaceholderMetadata metadata)
+            => (metadata.ReadEpoch ?? ListMetadataEpoch.Capture()).Publish(() => ApplyCurrent(placeholder, metadata), () => false);
+
+        private static bool ApplyCurrent(Placeholder placeholder, PlaceholderMetadata metadata)
         {
-            if (!metadata.IsCurrent) return false;
             var before = Signature(placeholder);
             if (!metadata.Partial || metadata.ReleaseDate != null)
             {
@@ -265,6 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Series)
             {
+                placeholder.ExpectedUncertain = metadata.Partial || metadata.Expected == null;
                 if (metadata.Expected != null)
                 {
                     placeholder.Expected = metadata.Expected;
@@ -383,7 +386,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 case PlaceholderKinds.Series:
                     releaseDate = tv.Date("firstAirDate");
-                    expected = SeriesExpected(seasons, last, next, ended, todayUtc);
+                    expected = CompleteExpected(placeholder, seasons, null, last, next, ended, todayUtc);
+                    partial = expected == null;
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
@@ -407,21 +411,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         releaseDate = seasonAir;
                         if (seasonEpisodes != null)
                         {
-                            expected = seasonEpisodes.Select(Copy).ToList();
-                            if (next != null && next.S == number && !expected.Any(e => e.E == next.E))
-                            {
-                                expected.Add(next);
-                            }
-
-                            expected.Sort((a, b) => a.E.CompareTo(b.E));
-                            // Independent valid resources can disagree: a shorter detail payload is not a smaller season.
-                            // No completion evidence without every advertised coordinate and a known air date.
-                            if (seasonInfo is not { EpisodeCount: > 0 } || expected.Count != seasonInfo.EpisodeCount
-                                || expected.Where((e, i) => e.E != i + 1 || e.AirDate == null).Any())
-                            {
-                                partial = true;
-                                expected = null;
-                            }
+                            expected = CompleteExpected(placeholder, seasons, seasonEpisodes, last, next, ended, todayUtc);
+                            partial |= expected == null;
                         }
                     }
                     else
@@ -443,7 +434,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (expected != null && expected.Count > PlaceholderProgress.MaxExpected)
             {
-                expected = expected.Take(PlaceholderProgress.MaxExpected).ToList();
+                expected = null;
+                partial = true;
             }
 
             var seasonFailed = season == null && placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes;
@@ -472,6 +464,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Partial = partial,
                 SeasonReadFailed = seasonFailed && seasons.Any(s => s.Number == number),
             };
+        }
+
+        // The sole completeness evidence evaluator. Every consumer receives only this reconciled set via Apply;
+        // PlaceholderProgress owns the shared completion decision. Series retains the documented aggregate watermark
+        // (not exact episode chronology), but every positively known regular last/next coordinate must belong to it.
+        private static List<PlaceholderEpisode>? CompleteExpected(Placeholder placeholder, List<SeasonInfo> seasons,
+            List<PlaceholderEpisode>? details, PlaceholderEpisode? last, PlaceholderEpisode? next, bool ended, DateTime today)
+        {
+            var series = placeholder.Kind == PlaceholderKinds.Series;
+            var scope = series ? seasons.Where(s => s.Number >= 1).ToList() : seasons.Where(s => s.Number == placeholder.SeasonNumber).ToList();
+            if (scope.Count == 0 || scope.Sum(s => (long)s.EpisodeCount) >= PlaceholderProgress.MaxExpected) return null;
+            var relevantLast = last != null && (series ? last.S >= 1 : last.S == placeholder.SeasonNumber);
+            var relevantNext = next != null && (series ? next.S >= 1 : next.S == placeholder.SeasonNumber);
+            if (relevantLast && relevantNext && new EpisodeCoord(last!.S, last.E).CompareTo(new EpisodeCoord(next!.S, next.E)) >= 0) return null;
+            foreach (var known in new[] { last, next }.OfType<PlaceholderEpisode>())
+            {
+                if (series ? known.S < 1 : known.S != placeholder.SeasonNumber) continue;
+                var info = scope.FirstOrDefault(s => s.Number == known.S);
+                if (info == null || known.E < 1 || known.E > info.EpisodeCount) return null;
+            }
+
+            if (series) return SeriesExpected(scope, last, next, ended, today);
+            var season = scope.Single();
+            if (details == null || season.EpisodeCount <= 0) return null;
+            var expected = details.Select(Copy).ToList();
+            if (next != null && next.S == season.Number && expected.All(e => e.E != next.E)) expected.Add(Copy(next));
+            expected.Sort((a, b) => a.E.CompareTo(b.E));
+            foreach (var known in new[] { last, next }.OfType<PlaceholderEpisode>().Where(e => e.S == season.Number))
+            {
+                var row = expected.FirstOrDefault(e => e.E == known.E);
+                if (row == null || (known.AirDate != null && row.AirDate != known.AirDate)) return null;
+            }
+            return expected.Count == season.EpisodeCount
+                && !expected.Where((e, i) => e.S != season.Number || e.E != i + 1 || e.AirDate == null).Any()
+                ? expected : null;
         }
 
         // Series expected set from the per-season episode counts (no per-season calls): seasons ≥ 1, episodes 1..count.
@@ -568,17 +595,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static string Signature(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
-            p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.InProduction, p.EpisodeTotal, p.Episodes,
+            p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.ExpectedUncertain, p.InProduction, p.EpisodeTotal, p.Episodes,
         });
 
         private async Task<CacheEntry?> GetAsync(string apiPath, AnswerRequest asked, TimeSpan maxAge, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
                 return null;
             }
-
-            var epoch = ListMetadataEpoch.Capture();
             var scope = Fingerprint(urls, apiKey);
             var key = scope + apiPath + "|" + epoch.Generation;
             if (_cache.TryGetValue(key, out var cached))
@@ -586,7 +612,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var ttl = cached.NotFoundFor ?? (maxAge < CacheTtl ? maxAge : CacheTtl);
                 if (DateTime.UtcNow - cached.FetchedAtUtc < ttl)
                 {
-                    return cached.NotFound ? null : cached;
+                    return epoch.Publish(() => cached.NotFound ? null : cached, () => null);
                 }
             }
 
@@ -620,7 +646,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 var entry = await ListContinuation.Await(() => shared.Task.WaitAsync(cancellationToken)).ConfigureAwait(false);
                 completed = true;
-                return !epoch.IsCurrent || entry == null || entry.NotFound ? null : entry;
+                return epoch.Publish(() => entry == null || entry.NotFound ? null : entry, () => null);
             }
             finally
             {
@@ -640,18 +666,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 try
                 {
                     var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, epoch, fetch.Cancellation.Token).ConfigureAwait(false);
-                    if (!epoch.IsCurrent) return null;
-                    if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
+                    return epoch.Publish(() =>
                     {
-                        if (_cache.Count >= MaxCacheEntries)
+                        if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
                         {
-                            _cache.Clear();
+                            if (_cache.Count >= MaxCacheEntries) _cache.Clear();
+                            _cache[key] = fetched;
                         }
 
-                        _cache[key] = fetched;
-                    }
-
-                    return fetched;
+                        return fetched;
+                    }, () => null);
                 }
                 catch (OperationCanceledException) when (fetch.Cancellation.IsCancellationRequested)
                 {
@@ -798,8 +822,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The poster path or null.</returns>
-        public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken) =>
-            (await ListContinuation.Await(() => ReadTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false)).Poster;
+        public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
+        {
+            var epoch = ListMetadataEpoch.Capture();
+            var answer = await ListContinuation.Await(() => ReadTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false);
+            return epoch.Publish(() => answer.Poster, () => null);
+        }
 
         /// <summary>
         /// <see cref="FetchTmdbPosterAsync"/> that also says whether TMDB answered: Answered is true when TMDB read the
@@ -812,6 +840,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The poster path (or null) and whether TMDB answered.</returns>
         public async Task<(string? Poster, bool Answered)> ReadTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
+        {
+            var epoch = ListMetadataEpoch.Capture();
+            var answer = await ListContinuation.Await(() => ReadCurrentTmdbPosterAsync(placeholder, cancellationToken)).ConfigureAwait(false);
+            return epoch.Publish(() => answer, () => ((string?)null, false));
+        }
+
+        private async Task<(string? Poster, bool Answered)> ReadCurrentTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
         {
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || string.IsNullOrWhiteSpace(apiKey))
@@ -853,10 +888,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // NotFound: TMDB answered 404 (no such title or season), as opposed to a failure that may pass.
         private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
             if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
             {
-                return (cached.Poster, true, false);
+                return epoch.Publish(() => (cached.Poster, true, false), () => ((string?)null, false, false));
             }
 
             // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
@@ -903,8 +939,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     _tmdbPosters.Clear();
                 }
 
-                _tmdbPosters[key] = (poster, readAt);
-                return (poster, true, false);
+                return epoch.Publish(() =>
+                {
+                    _tmdbPosters[key] = (poster, readAt);
+                    return (poster, true, false);
+                }, () => ((string?)null, false, false));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

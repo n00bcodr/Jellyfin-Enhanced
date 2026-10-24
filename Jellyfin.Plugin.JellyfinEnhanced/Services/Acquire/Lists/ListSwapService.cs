@@ -609,21 +609,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
             {
-                var placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == pair.Key);
-                if (placeholder != null && !TakeMetadata(context.ListIdN, pair.Key, pair.Value))
+                (pair.Value.ReadEpoch ?? ListMetadataEpoch.Capture()).Publish(() =>
                 {
-                    continue; // a concurrent pass already applied a newer read: this one is stale (and not fresh)
-                }
-
-                if (placeholder != null && ListMetadataService.Apply(placeholder, pair.Value))
-                {
-                    context.Dirty = true;
-                }
-
-                if (!pair.Value.Partial && DateTime.UtcNow - pair.Value.FetchedAtUtc <= CompletionMetadataMaxAge)
-                {
-                    fresh.Add(pair.Key);
-                }
+                    var placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == pair.Key);
+                    if (placeholder == null || !TakeMetadata(context.ListIdN, pair.Key, pair.Value)) return false;
+                    if (ListMetadataService.Apply(placeholder, pair.Value)) context.Dirty = true;
+                    if (!pair.Value.Partial && DateTime.UtcNow - pair.Value.FetchedAtUtc <= CompletionMetadataMaxAge)
+                        fresh.Add(pair.Key);
+                    return true;
+                }, () => false);
             }
 
             await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
@@ -1854,10 +1848,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 try
                 {
                     // A title TMDB read without a poster also counts: it replaces (clears) an unverified client poster.
+                    var epoch = ListMetadataEpoch.Capture();
                     var (poster, answered) = await ListContinuation.Await(() => _metadata.ReadTmdbPosterAsync(p, token)).ConfigureAwait(false);
                     if (answered)
                     {
-                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true, PosterAnswered = true };
+                        epoch.Publish(() =>
+                        {
+                            fetched[p.Id] = new PlaceholderMetadata { ReadEpoch = epoch, FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true, PosterAnswered = true };
+                            return true;
+                        }, () => false);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
@@ -1958,8 +1957,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // recorded: they keep the expected episodes and must not block a full read fetched before them. The caller holds
         // the list lock.
         private bool TakeMetadata(string listIdN, string placeholderId, PlaceholderMetadata metadata)
+            => (metadata.ReadEpoch ?? ListMetadataEpoch.Capture()).Publish(() => TakeCurrentMetadata(listIdN, placeholderId, metadata), () => false);
+
+        private bool TakeCurrentMetadata(string listIdN, string placeholderId, PlaceholderMetadata metadata)
         {
-            if (!metadata.IsCurrent) return false;
             var key = MatchKey(listIdN, placeholderId);
             if (_appliedMetadataAt.TryGetValue(key, out var newest) && metadata.FetchedAtUtc < newest)
             {

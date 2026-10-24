@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        /// <summary>A write and the check allowing it, together under the lifecycle lock (also without a continuation).</summary>
+        /// <summary>A write and its lifecycle/backend admission, serialized with configuration commits (also without a continuation).</summary>
         /// <typeparam name="T">Result.</typeparam>
         /// <param name="effect">The write (synchronous).</param>
         /// <returns>Its result.</returns>
@@ -87,8 +87,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             lock (Lifecycle)
             {
-                Ambient.Value?.Check();
-                return effect();
+                var execution = Ambient.Value;
+                return (execution?._backend ?? ListMetadataEpoch.Capture()).Publish(() =>
+                {
+                    execution?.Check();
+                    return effect();
+                }, () =>
+                {
+                    execution?.Check(); // records the durable refusal and throws
+                    throw new ListAccessLostException(ListOutcome.Error(409, "configuration_changed", "The request backend changed. Try the list operation again."), "The request backend changed.");
+                });
             }
         }
 

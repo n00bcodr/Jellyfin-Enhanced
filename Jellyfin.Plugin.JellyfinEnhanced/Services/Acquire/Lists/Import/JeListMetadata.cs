@@ -51,6 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>Metadata or null.</returns>
         public async Task<PlaceholderMetadata?> FetchAsync(Placeholder placeholder, TimeSpan maxAge, DateTime todayUtc, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || !IsAvailable)
             {
                 return null;
@@ -58,7 +59,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var fresh = maxAge < CacheLifetime;
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
-            var epoch = ListMetadataEpoch.Capture();
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, new AnswerRequest(placeholder.TmdbId, "movie"), fresh, cancellationToken)).ConfigureAwait(false);
@@ -85,7 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
             {
                 metadata.ReadEpoch = epoch;
-                return epoch.IsCurrent ? metadata : null;
+                return epoch.Publish<PlaceholderMetadata?>(() => metadata, () => null);
             }
         }
 

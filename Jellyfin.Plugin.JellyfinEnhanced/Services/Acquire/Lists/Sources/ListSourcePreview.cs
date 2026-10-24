@@ -175,12 +175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
             }
 
-            if (!epoch.IsCurrent)
-            {
-                return SourceOutcomes.FetchFailure(SourceFetchResult.Fail(source!, "configuration_changed", "The request backend changed while reading this source. Read it again."));
-            }
-
-            return ListOutcome.Ok(response);
+            return epoch.Publish(() => ListOutcome.Ok(response), () =>
+                SourceOutcomes.FetchFailure(SourceFetchResult.Fail(source!, "configuration_changed", "The request backend changed while reading this source. Read it again.")));
         }
 
         /// <summary>A fetched entry as an import entry (feed it to resolve; carries its source key).</summary>

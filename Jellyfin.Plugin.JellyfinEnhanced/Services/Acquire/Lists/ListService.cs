@@ -581,16 +581,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 try
                 {
                     var metadata = await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListSwapService.CompletionMetadataMaxAge, today, budget.Token)).ConfigureAwait(false);
-                    if (metadata is { IsCurrent: true })
+                    if (metadata != null)
                     {
-                        ListMetadataService.Apply(placeholder, metadata);
-                        if (!metadata.Partial && DateTime.UtcNow - metadata.FetchedAtUtc <= ListSwapService.CompletionMetadataMaxAge)
+                        (metadata.ReadEpoch ?? ListMetadataEpoch.Capture()).Publish(() =>
                         {
-                            lock (fresh)
+                            ListMetadataService.Apply(placeholder, metadata);
+                            if (!metadata.Partial && DateTime.UtcNow - metadata.FetchedAtUtc <= ListSwapService.CompletionMetadataMaxAge)
                             {
-                                fresh.Add(placeholder.Id);
+                                lock (fresh)
+                                {
+                                    fresh.Add(placeholder.Id);
+                                }
                             }
-                        }
+                            return true;
+                        }, () => false);
                     }
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -637,6 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var today = DateTime.UtcNow;
             await ListContinuation.Await(() => Task.WhenAll(titles.Select(async placeholder =>
             {
+                var epoch = ListMetadataEpoch.Capture();
                 string? poster = null;
                 try
                 {
@@ -655,7 +660,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // over budget: no poster for now
                 }
 
-                placeholder.PosterPath = poster;
+                epoch.Publish(() => { placeholder.PosterPath = poster; return true; }, () => false);
             }))).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
@@ -1475,6 +1480,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     placeholder.Episodes = link.Episodes;
                     placeholder.EpisodeTotal = link.EpisodeTotal;
                     placeholder.Expected = link.Expected;
+                    placeholder.ExpectedUncertain = link.ExpectedUncertain;
                     placeholder.Filled = new List<FilledEpisode>();
                     placeholder.InProduction = link.InProduction;
                     if (link.Note != null && note == null)

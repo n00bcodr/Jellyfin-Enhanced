@@ -219,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _logger.Info($"[Lists] Resolved {entries.Count} import entries for {options.Context.Owner} in {clock.ElapsedMilliseconds} ms: "
                 + $"{response.Results.Count(r => r.Confidence == ImportScoring.Levels.High)} high, {response.Results.Count(r => r.State == "transient")} transient, {options.Context.Calls} {Provider} calls "
                 + $"(limiter since start: {total} calls, peak {peak} concurrent, at most {perSecond} started in any second).");
-            if (!epoch.IsCurrent)
+            return epoch.Publish(() => new ImportResolveOutcome(response, pending), () =>
             {
                 response.Results = entries.Select((entry, index) => new ResolvedEntryDto
                 {
@@ -227,9 +227,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }).ToList();
                 response.Complete = false;
                 response.MetadataProvider = string.Empty;
-            }
-
-            return new ImportResolveOutcome(response, pending);
+                return new ImportResolveOutcome(response, pending);
+            });
         }
 
         private async Task<ResolvedEntryDto> RunOneAsync(ImportEntryDto entry, int position, ImportResolveOptions options, CompletedIdentity.Completion completion, CancellationToken deadline, CancellationToken aborted)

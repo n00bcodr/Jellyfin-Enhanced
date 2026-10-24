@@ -1,24 +1,37 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
-    // Consumer provenance, retained beyond the HTTP lifetime (in particular while waiting for a list lock).
-    // E1 join: capture EffectiveRequestsBackend.Shared.Current.Epoch and compare that epoch in IsCurrent. Actual Seerr
-    // sends additionally require CheckSeerr(SeerrUse.Metadata, capturedEpoch) and transport marking. Keep these consumer
-    // checks even with E1's cancellable transport admissions. Until that join,
-    // ConfigurationGeneration fences even a saved Seerr -> JE -> Seerr round trip with no intervening reader.
+    // One consumer publication fence, shared with every real configuration commit. No lock crosses an await.
+    // E1 join: replace this adapter's capture/commit owner with Current.Epoch/PublishSeerr (for Seerr origins)
+    // and the matching effective-snapshot publication for JE origins. Preserve every caller and provenance.
     internal sealed record ListMetadataEpoch(JellyfinEnhanced? Plugin, long Generation, string Identity)
     {
         internal static ListMetadataEpoch Capture()
         {
-            var plugin = JellyfinEnhanced.Instance;
-            var c = plugin?.Configuration;
-            var identity = string.Join('|', c?.ArrRequestBackend, c?.ArrIntegrationEnabled, c?.ArrPhase1Enabled,
-                c?.ArrPhase3Enabled, c?.JellyseerrEnabled,
-                SeerrAddresses.Identity(SeerrAddresses.Parse(c?.JellyseerrUrls), c?.GetJellyseerrApiKey() ?? string.Empty));
-            return new(plugin, c?.ConfigurationGeneration ?? 0, identity);
+            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            {
+                var plugin = JellyfinEnhanced.Instance;
+                var c = plugin?.Configuration;
+                var identity = string.Join('|', c?.ArrRequestBackend, c?.ArrIntegrationEnabled, c?.ArrPhase1Enabled,
+                    c?.ArrPhase3Enabled, c?.JellyseerrEnabled, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(c?.GetTmdbApiKey() ?? string.Empty))),
+                    SeerrAddresses.Identity(SeerrAddresses.Parse(c?.JellyseerrUrls), c?.GetJellyseerrApiKey() ?? string.Empty));
+                return new(plugin, c?.ConfigurationGeneration ?? 0, identity);
+            }
         }
 
         internal bool IsCurrent => Equals(Capture());
+
+        // The comparison and effect are indivisible relative to configuration replacement and saved generations.
+        // Lifecycle precedes this lock when both are needed; configuration commits never acquire Lifecycle.
+        internal T Publish<T>(Func<T> effect, Func<T> refused)
+        {
+            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            {
+                return IsCurrent ? effect() : refused();
+            }
+        }
     }
 }
