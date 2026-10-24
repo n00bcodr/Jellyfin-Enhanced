@@ -561,7 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
             // E1: one live effective-backend owner, guarding shared, fallback and list transports.
-            serviceCollection.AddSingleton(Services.Acquire.Backends.EffectiveRequestsBackend.Shared);
+            serviceCollection.AddSingleton(sp => Services.Acquire.Backends.EffectiveRequestsBackend.Shared.WithLogger(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Services.Acquire.Backends.EffectiveRequestsBackend>>()));
             serviceCollection.AddSingleton<Services.Acquire.Backends.IEffectiveRequestsBackend>(sp => sp.GetRequiredService<Services.Acquire.Backends.EffectiveRequestsBackend>());
             serviceCollection.AddTransient<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
             foreach (var name in new[] { string.Empty, Helpers.Jellyseerr.SeerrHttpHelper.NamedClient })

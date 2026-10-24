@@ -174,6 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
+                using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Watchlist, CancellationToken.None);
                 // Query Jellyseerr for ALL requests in a single API call
                 var jellyseerrUrl = config.JellyseerrUrls?.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim().TrimEnd('/');
                 if (string.IsNullOrEmpty(jellyseerrUrl) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -199,7 +200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
-                AddForRequesters(e.Item, tmdbId, mediaType, matchingRequests.Select(request => request.RequestedByJellyfinUserId), config);
+                AddForRequesters(e.Item, tmdbId, mediaType, matchingRequests.Select(request => request.RequestedByJellyfinUserId), config, operation);
             }
             catch (Exception ex)
             {
@@ -209,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Adds the item to the watchlist of each requester who may still get it (blocked users and items
         // already processed are skipped).
-        private void AddForRequesters(BaseItem item, int tmdbId, string mediaType, IEnumerable<string?> requesters, PluginConfiguration config)
+        private void AddForRequesters(BaseItem item, int tmdbId, string mediaType, IEnumerable<string?> requesters, PluginConfiguration config, EffectiveRequestsBackend.Admission? operation = null)
         {
             var usersByNormalizedId = _userManager.GetAllUsers()
                 .GroupBy(user => NormalizeUserId(user.Id.ToString()), StringComparer.OrdinalIgnoreCase)
@@ -249,24 +250,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
+                void Publish(Action effect) { if (operation == null) effect(); else operation.Publish(effect); }
                 var userData = _userDataManager.GetUserData(user, item);
                 if (userData != null && userData.Likes != true)
                 {
-                    userData.Likes = true;
-                    _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
+                    Publish(() =>
+                    {
+                        userData.Likes = true;
+                        _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, operation?.Token ?? default);
+                    });
                     addedCount++;
                     addedUsers.Add(user.Username);
 
                     // Mark as processed if prevention is enabled
                     if (config.PreventWatchlistReAddition)
                     {
-                        _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "monitor");
+                        Publish(() => _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "monitor"));
                     }
                 }
                 else if (userData != null && userData.Likes == true && config.PreventWatchlistReAddition)
                 {
                     // Item is already in watchlist, mark as processed if not already marked
-                    _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "existing");
+                    Publish(() => _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "existing"));
                 }
             }
 
@@ -286,6 +291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var key = SharedRequestFacts.KeyOf(mediaType == "movie", tmdbId, item.ProviderIds.GetValueOrDefault("Tvdb"), item.ProviderIds.GetValueOrDefault("Imdb"));
             if (key == null || _facts == null) return true;
+            using var operation = SharedRequestFacts.LedgerAuthority(config) ? null : EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Watchlist, CancellationToken.None);
             var requesters = _facts.For(config, key);
             IEnumerable<string?> users = requesters.Users.Select(u => (string?)u.ToString());
             if (!requesters.Complete)
@@ -298,11 +304,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 users = users.Concat(fromSeerr);
             }
+            operation?.DemandCurrent();
             _deferred.TryRemove(item.Id, out _);
             var list = users.ToList();
             if (list.Count > 0)
             {
-                AddForRequesters(item, tmdbId, mediaType, list, config);
+                AddForRequesters(item, tmdbId, mediaType, list, config, operation);
             }
             return true;
         }

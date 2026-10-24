@@ -242,4 +242,90 @@ public class ApiRequestsBackendGateTests
         finally { cache.Remove(id); }
     }
 
+    [Fact]
+    public async Task BufferedProxyCannotPublishCacheOrReturnProviderDataAfterAdoption()
+    {
+        using var f = new ApiPluginFixture();
+        var c = f.Plugin.Configuration;
+        c.JellyseerrEnabled = true; c.JellyseerrUrls = "http://seerr.test"; c.JellyseerrApiKey = "test";
+        var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var cacheLock = typeof(JellyfinEnhancedController).GetField("_responseCacheLock", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_responseCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        Task? holder = null;
+        using var transport = new IntegrationTransport(async (request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/user") return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N"), permissions = 2 } } }));
+            holder = Task.Run(() => { lock (cacheLock) { blocked.TrySetResult(); if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException(); } });
+            await blocked.Task;
+            return IntegrationTransport.Response("{\"id\":989988,\"title\":\"old-provider-publication-sentinel\"}");
+        });
+        var parental = new SeerrParentalFilter(transport, users.Object, Mock.Of<MediaBrowser.Model.Globalization.ILocalizationManager>(), Mock.Of<MediaBrowser.Controller.Configuration.IServerConfigurationManager>(), f.Core.Logger);
+        var controller = ApiAssetTests.Controller(f.Core, transport, users.Object, parental);
+        controller.HttpContext.User = TestCallers.Principal(user.Id, true);
+        var method = typeof(JellyfinEnhancedController).GetMethod("ProxyJellyseerrRequestCore", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var run = Task.Run(async () => await (Task<IActionResult>)method.Invoke(controller, new object?[] { "/api/v1/movie/989988", HttpMethod.Get, null, null })!);
+        await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var transition = EffectiveRequestsBackend.Shared.TransitionAsync(() => { c.ArrRequestBackend = "je"; c.ArrBackendIsolationVersion = 1; }, default);
+        release.Set();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
+        await transition.WaitAsync(TimeSpan.FromSeconds(10));
+        await holder!;
+        lock (cacheLock) Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.EndsWith(":/api/v1/movie/989988", StringComparison.Ordinal));
+        Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public void EarlyBuilderDenialIsSafeAndBounded()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.ArrBackendIsolationVersion = 1; f.Plugin.Configuration.ArrRequestBackend = "je";
+        var logger = new Mock<Microsoft.Extensions.Logging.ILogger<EffectiveRequestsBackend>>();
+        EffectiveRequestsBackend.Shared.WithLogger(logger.Object);
+        try
+        {
+            for (var i = 0; i < 2; i++) Assert.Throws<BackendDisabledException>(() => SeerrHttpHelper.BuildRequest(HttpMethod.Get, "http://private-connection.test", "private-credential"));
+            var entry = Assert.Single(logger.Invocations.Where(i => i.Method.Name == "Log"));
+            Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, entry.Arguments[0]);
+            var message = entry.Arguments[2].ToString()!;
+            Assert.Contains(nameof(EarlyBuilderDenialIsSafeAndBounded)[..20], message);
+            Assert.Contains("backend=je", message); Assert.Contains("version=1", message); Assert.Contains("reason=backend_disabled", message);
+            Assert.DoesNotContain("private-connection", message); Assert.DoesNotContain("private-credential", message);
+        }
+        finally { EffectiveRequestsBackend.Shared.WithLogger(Microsoft.Extensions.Logging.Abstractions.NullLogger<EffectiveRequestsBackend>.Instance); }
+    }
+
+    private sealed class PublicationBarrierResponse(TaskCompletionSource parsed, ManualResetEventSlim release) : HttpResponseMessage(System.Net.HttpStatusCode.OK)
+    {
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                parsed.TrySetResult();
+                if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
+            }
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public async Task ReturnedProviderSettingsCannotCrossAdoptionAfterBodyWasBuffered()
+    {
+        using var lab = new IntegrationRequestBackendsTests.SeerrLab();
+        var parsed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult<HttpResponseMessage>(new PublicationBarrierResponse(parsed, release)
+        { Content = new StringContent("{\"partialRequestsEnabled\":false}", System.Text.Encoding.UTF8, "application/json") }));
+        var backend = new SeerrBackend(transport, lab.Model, null, () => lab.Config, () => lab.Now);
+        var read = Task.Run(() => backend.WholeSeriesOnlyAsync(default));
+        await parsed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var transition = EffectiveRequestsBackend.Shared.TransitionAsync(() => { lab.Config.ArrRequestBackend = "je"; lab.Config.ArrBackendIsolationVersion = 1; }, default);
+        release.Set();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await read.WaitAsync(TimeSpan.FromSeconds(10)));
+        await transition.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Null(backend.FourKServer(true));
+    }
+
 }

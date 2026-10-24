@@ -179,6 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 HouseholdRuleVerdict? heldRules = null;
                 var transportStarted = false;
                 var settledByRead = false;
+                var backendEpoch = EffectiveRequestsBackend.Shared.Current.Epoch;
                 // Automatic work (recipes, list sync) and work only phase 4 creates: the write gate before any transport
                 // (and again immediately before every write, in Guard below). A read-back is never held.
                 var want = _automation == null ? null : _ledger.Find(job.WantId);
@@ -315,7 +316,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // later attempt that is refused or fails before writing proves nothing about what the earlier one wrote.
                 if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
-                var completed = _ledger.Complete(job, generation, result, _now());
+                var completed = false;
+                if (job.Authorization.Backend != "seerr" || !result.Confirmed) completed = _ledger.Complete(job, generation, result, _now());
+                else if (!EffectiveRequestsBackend.Shared.TryPublishSeerr(backendEpoch, () => completed = _ledger.Complete(job, generation, result, _now())))
+                {
+                    result = BackendResults.Maybe(job.WantId, "The original backend changed; delivery remains unconfirmed.", "backend_disabled");
+                    completed = _ledger.Complete(job, generation, result, _now());
+                }
                 if (completed && heldRules != null && result.Outcome.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule) _ledger.HeldByRules(job.WantId, heldRules);
                 if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });

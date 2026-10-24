@@ -74,6 +74,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
+            using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.UserImport, cancellationToken);
+            cancellationToken = operation.Token;
             _logger.Info("[Jellyseerr User Import] Starting Jellyseerr user import task...");
             progress?.Report(0);
 

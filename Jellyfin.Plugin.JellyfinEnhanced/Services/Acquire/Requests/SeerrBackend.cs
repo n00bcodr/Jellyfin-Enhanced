@@ -207,6 +207,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task PrepareCoreAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { _prepared.Invalidate(user); return; }
+            await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Identity, ct, async token => { await PrepareAdmittedAsync(user, input, token, notifyLinked).ConfigureAwait(false); return true; }).ConfigureAwait(false);
+        }
+
+        private async Task PrepareAdmittedAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { _prepared.Invalidate(user); return; }
             // Taken before anything is read: an unlink while this runs ends what it read; its facts live from here.
             var ticket = _prepared.Begin();
             var start = _now();
@@ -319,6 +325,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="movie">Movies (Radarr) or series (Sonarr).</param>
         /// <param name="ct">Cancellation.</param>
         public async Task<IReadOnlyList<SeerrServerOptions>?> RequestOptionsAsync(bool movie, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.RequestRead, ct, token => RequestOptionsAdmittedAsync(movie, token)).ConfigureAwait(false);
+        }
+
+        private async Task<IReadOnlyList<SeerrServerOptions>?> RequestOptionsAdmittedAsync(bool movie, CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
@@ -575,6 +587,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.RequestRead, ct, WholeSeriesOnlyAdmittedAsync).ConfigureAwait(false);
+        }
+
+        private async Task<bool?> WholeSeriesOnlyAdmittedAsync(CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null) return null;
@@ -617,6 +635,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// switch of Jellyfin Enhanced reaches it.
         /// </remarks>
         public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
+            return await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.RequestWrite, ct, token => SendAdmittedAsync(job, finalGuard, admission, token)).ConfigureAwait(false);
+        }
+
+        private async Task<RequestBackendResult> SendAdmittedAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
             if (finalGuard() is { } refusal) return Refused(job, refusal);
@@ -810,6 +834,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled");
+            return await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.RequestRead, ct, token => ReadBackAdmittedAsync(job, token)).ConfigureAwait(false);
+        }
+
+        private async Task<RequestBackendResult> ReadBackAdmittedAsync(RequestJob job, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled");
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null || source != job.Authorization.SeerrSource)
@@ -972,6 +1002,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="variant">standard or 4k.</param>
         /// <param name="ct">Cancellation.</param>
         internal async Task<SeerrSeasonFacts?> SeasonFactsAsync(string titleKey, string variant, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await EffectiveRequestsBackend.Shared.RunSeerrAsync(SeerrUse.Metadata, ct, token => SeasonFactsAdmittedAsync(titleKey, variant, token)).ConfigureAwait(false);
+        }
+
+        private async Task<SeerrSeasonFacts?> SeasonFactsAdmittedAsync(string titleKey, string variant, CancellationToken ct)
         {
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();

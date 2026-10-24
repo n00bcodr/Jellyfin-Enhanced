@@ -88,6 +88,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
+            using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Watchlist, cancellationToken);
+            cancellationToken = operation.Token;
             _logger.Info("[Jellyfin→Seerr Watchlist Sync] Starting sync task...");
             progress?.Report(0);
 

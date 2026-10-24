@@ -1122,7 +1122,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // navigations) to the upstream Seerr/TMDB call so we stop doing
             // work nobody will read. Only GETs are cancellable: POSTs (requests,
             // issues) must run to completion even if the browser goes away.
-            var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
+            using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Metadata, method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None);
+            var ct = operation.Token;
 
             // Taken before the first read (the configuration, the person's Seerr account): a drop while this runs means its
             // answer may come from the configuration before the change; the answer lives from here.
@@ -1292,6 +1293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cacheKey = isPublicScope
                 ? $"public:{apiPath}"
                 : $"{jellyfinUserId}:{apiPath}";
+            if (EffectiveRequestsBackend.Shared.Current.IsolationVersion != 0) cacheKey += ":backend:" + operation.Epoch;
             // Parental ratings (#581): a restricted user may not request a title
             // above their limit, whichever surface the request came from.
             if (method == HttpMethod.Post
@@ -1315,7 +1317,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 if (cachedContent != null)
                 {
-                    return await ApplyParentalFilterAsync(cachedContent, apiPath, jellyfinUserId);
+                    var cachedResult = await ApplyParentalFilterAsync(cachedContent, apiPath, jellyfinUserId);
+                    operation.DemandCurrent();
+                    return cachedResult;
                 }
             }
 
@@ -1388,17 +1392,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             lock (_responseCacheLock)
                             {
-                                if (responseGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _responseCache[cacheKey] = (json, requestStart);
-
-                                if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
+                                operation.Publish(() =>
                                 {
-                                    var staleKeys = _responseCache
-                                        .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > GetResponseCacheTtl())
-                                        .Select(kv => kv.Key)
-                                        .ToList();
-                                    foreach (var key in staleKeys)
-                                        _responseCache.Remove(key);
-                                }
+                                    if (responseGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _responseCache[cacheKey] = (json, requestStart);
+
+                                    if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
+                                    {
+                                        var staleKeys = _responseCache
+                                            .Where(kv => DateTime.UtcNow - kv.Value.CachedAt > GetResponseCacheTtl())
+                                            .Select(kv => kv.Key)
+                                            .ToList();
+                                        foreach (var key in staleKeys)
+                                            _responseCache.Remove(key);
+                                    }
+                                });
                             }
                         }
                         // a successful POST /api/v1/request changes
@@ -1416,9 +1423,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             SeerrRequestsChanged();
                         }
-                        return method == HttpMethod.Get
+                        var result = method == HttpMethod.Get
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
                             : ProjectForCaller(json);
+                        operation.DemandCurrent();
+                        return result;
                     }
 
                     if (upstreamNotFound != null && error is { Code: Helpers.Jellyseerr.SeerrErrorCode.UpstreamError, HttpStatus: 404 })
@@ -1442,6 +1451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // non-admins get a sanitised version that strips it.
                     lastErrorBody = IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape();
                 }
+                catch (BackendDisabledException ex) { return StatusCode(409, new { code = ex.Reason }); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
                     // The browser aborted the request (superseded search, page
@@ -1450,7 +1460,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // 499 = "client closed request"; nobody is listening anyway.
                     // A timeout-caused OperationCanceledException (ct not
                     // cancelled) falls through to the generic handler below.
-                    return StatusCode(499);
+                    return HttpContext.RequestAborted.IsCancellationRequested ? StatusCode(499) : StatusCode(409, new { code = "configuration_changed" });
                 }
                 catch (Exception ex)
                 {
@@ -10909,6 +10919,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
         }
 
+        private RequestedTitlesResult? _requestedTitleRead;
+        private bool RequestedTitlesIncomplete => _requestedTitleRead is { Complete: false };
+        private object RequestedTitlesStatus => new { available = _requestedTitleRead?.Available ?? true, complete = !RequestedTitlesIncomplete, code = RequestedTitlesIncomplete ? "requests_unavailable" : null, message = RequestedTitlesIncomplete ? "Requests unavailable. Please retry." : null, retryable = RequestedTitlesIncomplete };
+        private IActionResult DownloadsResult(object result)
+        {
+            if (!RequestedTitlesIncomplete) return Ok(result);
+            Response.Headers["Retry-After"] = "2";
+            return StatusCode(503, result);
+        }
+
         /// <summary>
         /// With "Only show downloads users asked for" on, non-admin users see downloads/history only
         /// for items they requested via Seerr (on top of the library-access rule every non-admin
@@ -10924,9 +10944,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (EffectiveRequestsBackend.IsStrictJe(config))
             {
                 var user = ArrCaller.PersonId(User);
-                var projection = user is Guid id ? _requestedTitles?.ForUser(config, id) : null;
-                return projection is { Available: true, Complete: true }
-                    ? (projection.Titles.Count == 0, projection.Identities()) : (true, null);
+                var projection = user is Guid id && _requestedTitles != null
+                    ? await _requestedTitles.ForUserAsync(config, id, HttpContext.RequestAborted).ConfigureAwait(false) : null;
+                _requestedTitleRead = projection ?? new(false, false, "je", "projection_unavailable", Array.Empty<RequestedTitle>());
+                return projection is { Available: true }
+                    ? (projection.Titles.Count == 0, projection.Identities()) : (true, new());
             }
             if (!EffectiveRequestsBackend.AllowsSeerr(config)) return (true, null);
 
@@ -10984,16 +11006,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// about a poll interval, and never waited on for more than a moment (no answer in time =
         /// null, and the rows that needed it stay hidden this time).
         /// </summary>
-        private Task<IReadOnlySet<(int TmdbId, string MediaType)>?> GetAskedProofAsync(PluginConfiguration config, Jellyfin.Database.Implementations.Entities.User user)
+        private async Task<IReadOnlySet<(int TmdbId, string MediaType)>?> GetAskedProofAsync(PluginConfiguration config, Jellyfin.Database.Implementations.Entities.User user)
         {
             if (EffectiveRequestsBackend.IsStrictJe(config))
             {
-                var projection = _requestedTitles?.ForUser(config, user.Id);
-                return Task.FromResult<IReadOnlySet<(int TmdbId, string MediaType)>?>(projection is { Available: true, Complete: true } ? projection.Identities() : null);
+                var projection = _requestedTitles == null ? null : await _requestedTitles.ForUserAsync(config, user.Id, HttpContext.RequestAborted).ConfigureAwait(false);
+                _requestedTitleRead = projection ?? new(false, false, "je", "projection_unavailable", Array.Empty<RequestedTitle>());
+                return projection is { Available: true } ? projection.Identities() : null;
             }
-            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return Task.FromResult<IReadOnlySet<(int TmdbId, string MediaType)>?>(null);
+            if (!EffectiveRequestsBackend.AllowsSeerr(config)) return null;
             var jellyfinUserId = user.Id.ToString();
-            return SeerrAskedProofCache.Shared.GetAsync(jellyfinUserId + "|" + config.JellyseerrUrls.Trim(), async () =>
+            return await SeerrAskedProofCache.Shared.GetAsync(jellyfinUserId + "|" + config.JellyseerrUrls.Trim(), async () =>
             {
                 var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId).ConfigureAwait(false);
                 if (string.IsNullOrEmpty(jellyseerrUserId)) return null;
@@ -11149,7 +11172,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
-                return Ok(new { items = new List<object>(), errors = new List<object>() });
+                return EffectiveRequestsBackend.IsStrictJe(config)
+                    ? DownloadsResult(new { items = new List<object>(), errors = new List<object>(), requests = RequestedTitlesStatus })
+                    : Ok(new { items = new List<object>(), errors = new List<object>() });
 
             WarnIfArrInstancesCorrupt(config);
             using var scope = _arrState.BeginRequest("arr/queue");
@@ -11185,7 +11210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 rawItems = QueueRows(askedProof, null);
 
             var items = FilterByAllowedRequests(rawItems, allowedRequests, x => x.Source, x => x.TmdbId);
-            return Ok(new { items, errors });
+            return EffectiveRequestsBackend.IsStrictJe(config) ? DownloadsResult(new { items, errors, requests = RequestedTitlesStatus }) : Ok(new { items, errors });
         }
 
         // History is intentionally a bounded window, not a full archive browser — pagination
@@ -11228,7 +11253,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
-                return Ok(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>() });
+                return EffectiveRequestsBackend.IsStrictJe(config)
+                    ? DownloadsResult(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>(), requests = RequestedTitlesStatus })
+                    : Ok(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>() });
 
             WarnIfArrInstancesCorrupt(config);
             using var scope = _arrState.BeginRequest("arr/history");
@@ -11268,7 +11295,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var totalPages = filtered.Count == 0 ? 0 : (int)Math.Ceiling(filtered.Count / (double)take);
             var page = filtered.Skip(skip).Take(take).ToList();
 
-            return Ok(new { items = page, totalPages, visible = true, errors });
+            return EffectiveRequestsBackend.IsStrictJe(config)
+                ? DownloadsResult(new { items = page, totalPages, visible = true, errors, requests = RequestedTitlesStatus })
+                : Ok(new { items = page, totalPages, visible = true, errors });
         }
 
         [HttpGet("arr/requests")]

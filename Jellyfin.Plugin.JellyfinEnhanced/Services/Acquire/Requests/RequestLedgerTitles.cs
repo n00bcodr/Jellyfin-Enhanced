@@ -59,6 +59,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="key">A title key.</param>
         public string CanonicalKey(string key) => !_db.Available ? key : _db.Read(c => Canonical(c, null, key));
 
+        /// <summary>All durable provider identities for a title, including its canonical key (read only).</summary>
+        public IReadOnlyList<TitleKey> AliasesFor(TitleKey key) => _db.Read(c =>
+        {
+            var canonical = Canonical(c, null, key.Title.ToString());
+            var keys = new HashSet<string>(StringComparer.Ordinal) { canonical, key.Title.ToString() };
+            using var cmd = Cmd(c, null, "SELECT alias FROM title_aliases WHERE canonical=$c", ("$c", canonical));
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) keys.Add(reader.GetString(0));
+            return (IReadOnlyList<TitleKey>)keys.Select(TitleKey.Parse).OfType<TitleKey>().Where(k => k.IsMovie == key.IsMovie).OrderBy(Rank).ToArray();
+        });
+
         /// <summary>Every title key the ledger holds requests under (each once).</summary>
         public IReadOnlyList<string> TitleKeys() => !_db.Available ? Array.Empty<string>() : _db.Read(c =>
         {

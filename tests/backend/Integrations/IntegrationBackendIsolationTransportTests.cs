@@ -67,9 +67,9 @@ public class IntegrationBackendIsolationTransportTests
         var users = Mock.Of<IUserManager>(); var library = Mock.Of<ILibraryManager>(); var data = Mock.Of<IUserDataManager>();
         var parts = new object[] { users, library, data, transport, f.Core.Logger, f.Core.Manager };
         var inbound = Wiring.Make<JellyseerrWatchlistSyncTask>(parts);
-        await Call(inbound, "GetJellyseerrUserMap", http, "http://seerr.test", "test");
-        await Call(inbound, "GetJellyseerrWatchlist", http, "http://seerr.test", "7", "test");
-        await Call(inbound, "GetJellyseerrRequests", http, "http://seerr.test", "7", "test");
+        await Call(inbound, "GetJellyseerrUserMap", http, "http://seerr.test", "test", CancellationToken.None);
+        await Call(inbound, "GetJellyseerrWatchlist", http, "http://seerr.test", "7", "test", CancellationToken.None);
+        await Call(inbound, "GetJellyseerrRequests", http, "http://seerr.test", "7", "test", CancellationToken.None);
         var outbound = Wiring.Make<JellyfinToSeerrWatchlistSyncTask>(parts);
         await Call(outbound, "GetJellyseerrUserMap", http, "http://seerr.test", "test");
         await Call(outbound, "GetSeerrWatchlist", http, "http://seerr.test", "7", "test");

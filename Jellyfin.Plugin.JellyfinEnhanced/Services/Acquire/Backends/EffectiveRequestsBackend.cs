@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
@@ -25,6 +26,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
     {
         /// <summary>Compatibility helpers and DI share one owner, rather than separate static predicates.</summary>
         public static EffectiveRequestsBackend Shared { get; } = new(() => JellyfinEnhanced.Instance?.Configuration);
+        private ILogger<EffectiveRequestsBackend>? _logger;
+        private readonly Dictionary<string, DateTime> _denials = new(StringComparer.Ordinal);
+        /// <summary>Attaches host logging to the shared compatibility boundary.</summary>
+        public EffectiveRequestsBackend WithLogger(ILogger<EffectiveRequestsBackend> logger) { _logger = logger; return this; }
         private readonly Func<PluginConfiguration?> _config;
         private readonly object _gate = new();
         private readonly SemaphoreSlim _transitions = new(1, 1);
@@ -86,18 +91,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             }
         }
         /// <inheritdoc />
-        public void DemandSeerr(SeerrUse use, long? expectedEpoch = null) => CheckSeerr(use, expectedEpoch).Demand();
+        public void DemandSeerr(SeerrUse use, long? expectedEpoch = null) => DemandSeerr(use, expectedEpoch, "provider");
+        /// <summary>Logs early refusals without connection or person data; repeated operations are bounded.</summary>
+        public void DemandSeerr(SeerrUse use, long? expectedEpoch, string producer)
+        {
+            var decision = CheckSeerr(use, expectedEpoch);
+            if (!decision.Allowed) LogDenial(use, producer, decision.Reason!);
+            decision.Demand();
+        }
+        private void LogDenial(SeerrUse use, string producer, string reason)
+        {
+            lock (_gate)
+            {
+                var state = Read();
+                var name = producer.Length <= 80 && System.Linq.Enumerable.All(producer, c => char.IsLetterOrDigit(c) || c == '_') ? producer : "provider";
+                var key = $"{use}|{name}|{state.Backend}|{state.IsolationVersion}|{reason}";
+                var now = DateTime.UtcNow;
+                if (_denials.TryGetValue(key, out var at) && now - at < TimeSpan.FromMinutes(1)) return;
+                if (_denials.Count >= 256) _denials.Clear();
+                _denials[key] = now;
+                _logger?.LogInformation("[RequestsBackend] Seerr denied: operation={Operation} producer={Producer} backend={Backend} version={Version} reason={Reason}", use, name, state.Backend, state.IsolationVersion, reason);
+            }
+        }
         /// <summary>Admits one Seerr send, held until its response is available or it fails.</summary>
         public Admission AdmitSeerr(SeerrUse use, CancellationToken ct, long? expectedEpoch = null)
         {
             lock (_gate)
             {
                 var decision = CheckSeerr(use, expectedEpoch);
+                if (!decision.Allowed) LogDenial(use, "admission", decision.Reason!);
                 decision.Demand();
                 var admission = new Admission(this, decision.Epoch, Read().IsolationVersion == 0, ct);
                 _active.Add(admission);
                 return admission;
             }
+        }
+        /// <summary>Commits a returned provider result only while its captured backend still owns publication.</summary>
+        public bool TryPublishSeerr(long epoch, Action effect)
+        {
+            lock (_gate)
+            {
+                var state = Read();
+                if (!CheckSeerr(SeerrUse.RequestRead, state.IsolationVersion == 0 ? null : epoch).Allowed) return false;
+                effect();
+                return true;
+            }
+        }
+        /// <summary>Keeps provider parsing and its returned facts in the admitted epoch, beyond HTTP buffering.</summary>
+        public async Task<T> RunSeerrAsync<T>(SeerrUse use, CancellationToken ct, Func<CancellationToken, Task<T>> work)
+        {
+            using var operation = AdmitSeerr(use, ct);
+            var result = await work(operation.Token).ConfigureAwait(false);
+            operation.DemandCurrent();
+            return result;
         }
         /// <summary>
         /// Fences admissions, cancels and drains old sends, then calls the central writer's atomic commit.
@@ -140,6 +186,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 Token.ThrowIfCancellationRequested();
                 if (_legacy && _owner.Current.IsolationVersion == 0) return;
                 _owner.DemandSeerr(SeerrUse.Diagnostics, Epoch);
+            }
+            /// <summary>Serializes a local effect with transition commit and checks its captured epoch.</summary>
+            public void Publish(Action effect)
+            {
+                lock (_owner._gate) { DemandCurrent(); effect(); }
             }
             public void Dispose()
             {
