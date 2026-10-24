@@ -104,6 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return;
             }
 
+            // All synthetic requests enter the HTTP owner, including future facade actions and refusals.
+            PrivacyResponseGuard.Of(context.HttpContext);
+            PrivacyResponseGuard.Admit(context.HttpContext, _parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
             var result = await AnswerAsync(context, hits, serverId).ConfigureAwait(false);
             if (result == null)
             {
@@ -622,6 +625,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) || _policy.Revision(viewer) != grant.PolicyRevision) return new NotFoundResult();
+            PrivacyResponseGuard.Admit(context.HttpContext, _parental, grant.Viewer, grant: true);
             // Grants outlive their page: the viewer-level eligibility (Seerr linkage) and, for a title's own
             // artwork, the title-level one (cached rating, request visibility) are checked again.
             if (!await _policy.ViewerMayUseAsync(viewer, ct).ConfigureAwait(false)) return new NotFoundResult();

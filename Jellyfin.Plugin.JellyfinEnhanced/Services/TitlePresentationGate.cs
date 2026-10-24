@@ -388,8 +388,6 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
-    private const string EvidenceMark = "__JE_PARENTAL_PUBLICATION";
-
     private const string InputsMark = "__JE_PRESENTATION_INPUTS";
 
     /// <inheritdoc />
@@ -398,13 +396,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         // The input tick before the action reads anything: the host builds its answer (an item's user data, its owner) with
         // the inputs of that moment, so the delivery gate compares from here.
         context.HttpContext.Items[InputsMark] = PrivacyInputs.Now;
-        // Capture before any action/facade reads. This also covers page resolution before a downstream service's stamp.
-        // All authenticated reads are fenced, including native images and facade short circuits outside the JSON registry.
-        // Discover/search already retry through ResponseGate and own the safe-partial 200 contract.
-        if (context.ActionDescriptor is not ControllerActionDescriptor { ControllerName: "AcquireDiscover" }
-            && (PrivacySurfaceRegistry.IsRead(context.HttpContext) || context.ActionDescriptor is ControllerActionDescriptor { ControllerName: "AcquireListImport", ActionName: "Resolve" or "Fetch" })
-            && parental?.TryGetRestrictedPolicy(UserHelper.GetCurrentUserId(context.HttpContext.User)?.ToString("N"), out _) == true)
-            context.HttpContext.Items[EvidenceMark] = parental.CapturePublication();
+        // Admission belongs to the HTTP committer, not to this JSON projection's registry or read verbs.
+        if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
+            PrivacyResponseGuard.Admit(context.HttpContext, parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -421,14 +415,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <inheritdoc />
     public void OnResultExecuting(ResultExecutingContext context)
     {
-        if (context.HttpContext.Items[EvidenceMark] is Acquire.EvidencePublication evidence && !evidence.Current)
-        {
-            Withhold(context);
-            context.HttpContext.Response.Headers.Remove("ETag");
-            context.HttpContext.Response.Headers.Remove("Last-Modified");
-            context.HttpContext.Response.Headers["Retry-After"] = "1";
-            return;
-        }
+        if (!PrivacyResponseGuard.BeforeResult(context)) return;
         var read = PrivacySurfaceRegistry.IsRead(context.HttpContext);
         var viewer = UserHelper.GetCurrentUserId(context.HttpContext.User);
         if (viewer == null || viewer == Guid.Empty) return;

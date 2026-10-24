@@ -80,6 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private IActionResult Send(StatusViewer viewer, DiscoverAnswer? answer, string reason)
         {
             if (answer == null) return Reply(RequestOutcome.Refused("discover_unavailable", 503, "unavailable"));
+            if (answer.Publication is { } publication) Services.PrivacyResponseGuard.Publication(HttpContext, publication);
             answer = _discover.Present(viewer, answer);
             if (!answer.Complete)
             {

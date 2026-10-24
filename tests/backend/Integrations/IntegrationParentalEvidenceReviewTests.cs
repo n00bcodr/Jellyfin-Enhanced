@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
@@ -722,4 +723,352 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.Empty(result.Gaps.Missing);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task R4EvidenceMustHoldAtActualHttpCommit(bool revokeAtCommit)
+    {
+        using var r = new Rig();
+        var startRan = false;
+        using var server = new Microsoft.AspNetCore.TestHost.TestServer(
+            new Microsoft.AspNetCore.Hosting.WebHostBuilder()
+                .ConfigureServices(services => services.AddControllers())
+                .Configure(app => Microsoft.AspNetCore.Builder.RunExtensions.Run(app, async http =>
+                {
+                    http.User = TestCallers.Principal(r.User.Id, false);
+                    var controller = ApiAssetTests.Controller(r.Arr.Plugin.Core, r.Tmdb, r.Gate);
+                    controller.ControllerContext = new() { HttpContext = http };
+                    var context = EndpointRouting.Bind(http);
+                    var spoilers = new SpoilerPresentation(r.Arr.Plugin.Core.Manager, r.Library, r.Users, Mock.Of<IUserDataManager>());
+                    var filter = new TitlePresentationResultFilter(r.Arr.Plugin.Core.Manager, spoilers, r.Library,
+                        Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(),
+                        new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!), parental: r.Gate);
+                    var resource = new ResourceExecutingContext(context, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+                    filter.OnResourceExecuting(resource);
+                    await new PrivacyCommitFilter().OnResourceExecutionAsync(resource, async () =>
+                    {
+                        var admitted = await controller.ProxyTmdbRequest("movie/603");
+                        var result = new ResultExecutingContext(context, new List<IFilterMetadata>(), admitted, controller);
+                        filter.OnResultExecuting(result);
+                        Assert.NotNull(PrivacyResponseGuard.Find(http));
+                        // A real ASP.NET header-start callback, before the guard validates and releases any bytes.
+                        http.Response.OnStarting(() =>
+                        {
+                            startRan = true;
+                            if (revokeAtCommit) r.Server.MetadataCountryCode = "AU";
+                            return Task.CompletedTask;
+                        });
+                        await result.Result.ExecuteResultAsync(context);
+                        return new ResourceExecutedContext(context, new List<IFilterMetadata>());
+                    });
+                })));
+        using var client = server.CreateClient();
+        using var response = await client.GetAsync("/JellyfinEnhanced/tmdb/movie/603");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(startRan);
+        if (revokeAtCommit)
+        {
+            Assert.False(r.Gate.MaySeeAbsent("movie", 603, r.User.Id.ToString("N"), out _));
+            Assert.True(response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable,
+                "Evidence revoked before guarded HTTP commit, but status=" + (int)response.StatusCode + "; body=" + body);
+        }
+        else Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    // Real MVC result executors and ASP.NET header-start callbacks, after a production admission.
+    [Theory]
+    [InlineData("object", "GET", true)] [InlineData("object", "GET", false)]
+    [InlineData("content", "GET", true)] [InlineData("file", "GET", true)]
+    [InlineData("stream", "GET", true)] [InlineData("stream", "GET", false)]
+    [InlineData("file", "HEAD", true)] [InlineData("file", "HEAD", false)]
+    [InlineData("304", "GET", true)] [InlineData("304", "GET", false)]
+    [InlineData("short-circuit", "GET", true)] [InlineData("exception", "GET", true)]
+    [InlineData("pre-result", "GET", true)]
+    [InlineData("pending", "POST", true)] [InlineData("busy", "POST", true)]
+    [InlineData("import-resolve", "POST", true)] [InlineData("import-fetch", "POST", true)]
+    public async Task R4EveryResultCommitsUnderItsAdmission(string kind, string method, bool revoke)
+    {
+        using var r = new Rig();
+        var ran = false;
+        using var server = new Microsoft.AspNetCore.TestHost.TestServer(new WebHostBuilder()
+            .ConfigureServices(services => { services.AddControllers(); services.AddSingleton(r.Gate); })
+            .Configure(app => Microsoft.AspNetCore.Builder.RunExtensions.Run(app, async http =>
+            {
+                http.User = TestCallers.Principal(r.User.Id, false);
+                var descriptor = new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor
+                {
+                    ControllerTypeInfo = typeof(AcquireListImportController).GetTypeInfo(),
+                    ControllerName = "AcquireListImport", ActionName = kind == "import-fetch" ? "FetchSource" : "Resolve",
+                };
+                var action = new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), descriptor);
+                var filters = new List<IFilterMetadata>();
+                var resource = new ResourceExecutingContext(action, filters, new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+                var owner = new PrivacyCommitFilter();
+                await owner.OnResourceExecutionAsync(resource, async () =>
+                {
+                    // The import reader/other action's first evidence read follows resource admission.
+                    Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+                    IActionResult result = kind switch
+                    {
+                        "object" or "import-resolve" or "import-fetch" => new ObjectResult(new { title = "private evidence title" }),
+                        "file" => new FileContentResult(System.Text.Encoding.UTF8.GetBytes("private evidence title"), "image/jpeg") { FileDownloadName = "private evidence title.jpg" },
+                        "stream" => new FileStreamResult(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("private evidence title")), "image/jpeg") { FileDownloadName = "private evidence title.jpg" },
+                        "304" => new StatusCodeResult(304),
+                        "pending" or "busy" => new ObjectResult(new ListErrorDto { Code = kind == "pending" ? "parental_pending" : "busy", Message = "private evidence title" }) { StatusCode = kind == "pending" ? 504 : 429 },
+                        "exception" => new ObjectResult(new { title = "private evidence error" }) { StatusCode = 500 },
+                        _ => new ContentResult { Content = "private evidence title", ContentType = "text/plain" },
+                    };
+                    var executing = new ResultExecutingContext(action, filters, result, new object());
+                    // Discover and arbitrary POSTs do not need a JSON presentation filter to own HTTP publication.
+                    if (kind == "pre-result") r.Server.MetadataCountryCode = "AU";
+                    // Resolve the optional pre-result hook at runtime: baseline's sealed owner did not implement it.
+                    // A compiled interface call against the new owner is not a valid mixed-DLL baseline probe.
+                    owner.GetType().GetMethod("OnResultExecuting")?.Invoke(owner, new object[] { executing });
+                    http.Response.Headers.ETag = "\"old-private\"";
+                    http.Response.Headers.LastModified = "Wed, 21 Oct 2015 07:28:00 GMT";
+                    http.Response.OnStarting(() =>
+                    {
+                        ran = true;
+                        if (revoke) r.Server.MetadataCountryCode = "AU";
+                        return Task.CompletedTask;
+                    });
+                    await executing.Result.ExecuteResultAsync(action);
+                    return new ResourceExecutedContext(action, filters);
+                });
+            })));
+        using var client = server.CreateClient();
+        using var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/publication"));
+        Assert.True(ran);
+        if (kind is "pending" or "busy")
+        {
+            Assert.Equal(kind == "pending" ? 504 : 429, (int)response.StatusCode);
+            Assert.DoesNotContain("private evidence title", await response.Content.ReadAsStringAsync());
+            Assert.Equal("2", response.Headers.RetryAfter!.ToString());
+            Assert.Null(response.Headers.ETag);
+        }
+        else if (revoke)
+        {
+            Assert.Equal(System.Net.HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Empty(await response.Content.ReadAsByteArrayAsync());
+            Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+            Assert.Equal("1", response.Headers.RetryAfter!.ToString());
+            Assert.Null(response.Headers.ETag);
+            Assert.Null(response.Content.Headers.LastModified);
+            Assert.Null(response.Content.Headers.ContentDisposition);
+        }
+        else
+        {
+            Assert.Equal(kind == "304" ? System.Net.HttpStatusCode.NotModified : System.Net.HttpStatusCode.OK, response.StatusCode);
+            if (kind != "304" && method != "HEAD") Assert.Contains("private evidence title", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)] [InlineData(false, true)]
+    [InlineData(true, false)] [InlineData(true, true)]
+    public async Task R4DiscoverHandsFinalPublicationToHttpOwner(bool partial, bool revokeAtCommit)
+    {
+        using var r = new Rig();
+        if (partial) r.Evidence = (_, _) => Task.FromResult<string?>(null);
+        using var server = new Microsoft.AspNetCore.TestHost.TestServer(new WebHostBuilder()
+            .ConfigureServices(services => { services.AddControllers(); services.AddSingleton(r.Gate); })
+            .Configure(app => Microsoft.AspNetCore.Builder.RunExtensions.Run(app, async http =>
+            {
+                http.User = TestCallers.Principal(r.User.Id, false);
+                var action = EndpointRouting.Bind(http);
+                var resource = new ResourceExecutingContext(action, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+                await new PrivacyCommitFilter().OnResourceExecutionAsync(resource, async () =>
+                {
+                    var controller = new AcquireDiscoverController(r.Discover) { ControllerContext = new() { HttpContext = http } };
+                    var result = await controller.Discover("trending", "movie");
+                    http.Response.OnStarting(() =>
+                    {
+                        if (revokeAtCommit) r.Server.MetadataCountryCode = "AU";
+                        return Task.CompletedTask;
+                    });
+                    await result.ExecuteResultAsync(action);
+                    return new ResourceExecutedContext(action, new List<IFilterMetadata>());
+                });
+            })));
+        using var client = server.CreateClient();
+        using var response = await client.GetAsync("/JellyfinEnhanced/acquire/discover");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(revokeAtCommit ? System.Net.HttpStatusCode.ServiceUnavailable : System.Net.HttpStatusCode.OK, response.StatusCode);
+        if (revokeAtCommit) { Assert.Empty(body); Assert.Contains("no-store", response.Headers.CacheControl!.ToString()); }
+        else if (partial) { Assert.Contains("\"complete\":false", body); Assert.Contains("evidence_unavailable", body); }
+        else Assert.Contains("Visible only when verified", body);
+    }
+
+    [Theory]
+    [InlineData(false, false)] [InlineData(false, true)]
+    [InlineData(true, false)] [InlineData(true, true)]
+    public async Task R4ImportHttpKeepsTypedParentalPending(bool preview, bool move)
+    {
+        using var r = new Rig();
+        ImportTestFlags.AllOn(r.Arr.Plugin.Plugin.Configuration);
+        var access = new ListAccessService(new FakeListHost(), r.Users, r.Gate, r.Arr.Plugin.Core.Logger);
+        var lookup = new FakeImportLookup(); lookup.AddSearch("Allowed", FakeImportLookup.Movie(603, "Allowed", "2000-01-01"));
+        var viewer = new MovingImportView(() => { if (move) r.Server.MetadataCountryCode = "AU"; });
+        var resolver = new ListImportResolver(lookup, new FakeLibraryLookup(), access,
+            new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), r.Arr.Plugin.Core.Logger, viewer);
+        var fetcher = new FakeSourceFetcher { Items = new() { new SourceItem("movie", 603, null, null, "Allowed", 2000, null, null, null) } };
+        var source = new ListSourcePreview(fetcher, resolver, access, r.Arr.Plugin.Core.Logger, viewer);
+        var controller = new AcquireListImportController(r.Users, access, resolver, source, r.Arr.Plugin.Core.Logger)
+            { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+        controller.HttpContext.User = TestCallers.Principal(r.User.Id, false);
+        controller.HttpContext.Request.Method = "POST";
+        controller.HttpContext.Request.Path = "/JellyfinEnhanced/acquire/lists/import/" + (preview ? "source" : "resolve");
+        var actionName = preview ? "FetchSource" : "Resolve";
+        var descriptor = new Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor
+        {
+            ControllerTypeInfo = controller.GetType().GetTypeInfo(), ControllerName = "AcquireListImport", ActionName = actionName,
+            MethodInfo = controller.GetType().GetMethod(actionName)!,
+        };
+        var context = new Microsoft.AspNetCore.Mvc.ActionContext(controller.HttpContext, new Microsoft.AspNetCore.Routing.RouteData(), descriptor);
+        var spoilers = new SpoilerPresentation(r.Arr.Plugin.Core.Manager, r.Library, r.Users, Mock.Of<IUserDataManager>());
+        using var services = new ServiceCollection().AddSingleton(r.Gate).BuildServiceProvider();
+        var filter = ActivatorUtilities.CreateInstance<TitlePresentationResultFilter>(services, r.Arr.Plugin.Core.Manager, spoilers, r.Library,
+            Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!));
+        filter.OnResourceExecuting(new ResourceExecutingContext(context, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>()));
+        IActionResult answer = preview
+            ? await controller.FetchSource(new SourceFetchRequest { Url = "https://mdblist.com/lists/test/list" }, default)
+            : await controller.Resolve(new ResolveRequest { Entries = new() { new ImportEntryDto { Title = "Allowed", Year = 2000, TypeHint = "movie" } } }, default);
+        var expected = move ? 504 : 200;
+        var original = Assert.IsAssignableFrom<ObjectResult>(answer);
+        Assert.Equal(expected, original.StatusCode);
+        if (move) Assert.Equal("parental_pending", Assert.IsType<ListErrorDto>(original.Value).Code);
+        var result = new ResultExecutingContext(context, new List<IFilterMetadata>(), answer, controller);
+        filter.OnResultExecuting(result);
+        var delivered = result.Result switch { ObjectResult obj => obj.StatusCode, StatusCodeResult status => status.StatusCode, _ => null };
+        Assert.True(delivered == expected, $"Controller answered {expected}; final filter delivered {delivered} for {actionName} (move={move})");
+        if (move) Assert.Equal("parental_pending", Assert.IsType<ListErrorDto>(Assert.IsAssignableFrom<ObjectResult>(result.Result).Value).Code);
+    }
+
+    [Theory]
+    [InlineData(false, false)] [InlineData(false, true)]
+    [InlineData(true, false)] [InlineData(true, true)]
+    public async Task R4CollageProjectionRemainsInsideTheHttpCommitOwner(bool revoke, bool guardedObject)
+    {
+        using var r = new Rig();
+        var markers = Path.Combine(r.Arr.Plugin.Core.Root, "collage-markers");
+        Directory.CreateDirectory(markers);
+        File.WriteAllText(Path.Combine(markers, Guid.NewGuid().ToString("N") + ".json"), "{}");
+        var collage = new LegacyCollageBody(new LegacyCollageWithhold(new[] { markers }, r.Library), r.Arr.Plugin.Core.Logger);
+        using var server = new Microsoft.AspNetCore.TestHost.TestServer(new WebHostBuilder()
+            .ConfigureServices(services => { services.AddControllers(); services.AddSingleton(r.Gate); })
+            .Configure(app => Microsoft.AspNetCore.Builder.RunExtensions.Run(app, async http =>
+            {
+                http.User = TestCallers.Principal(r.User.Id, false);
+                var action = EndpointRouting.Bind(http);
+                var filters = new List<IFilterMetadata>();
+                var resource = new ResourceExecutingContext(action, filters, new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+                var owner = new PrivacyCommitFilter();
+                // Same order as production registration, including the pre-redesign order in the baseline DLL.
+                ResourceExecutionDelegate execute = async () =>
+                {
+                    var spoilers = new SpoilerPresentation(r.Arr.Plugin.Core.Manager, r.Library, r.Users, Mock.Of<IUserDataManager>());
+                    var projection = new TitlePresentationResultFilter(r.Arr.Plugin.Core.Manager, spoilers, r.Library,
+                        Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!), parental: r.Gate);
+                    projection.OnResourceExecuting(resource);
+                    Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+                    IActionResult result;
+                    if (guardedObject)
+                    {
+                        using var reads = PrivacyReadSet.Begin();
+                        var guard = PrivacyResponseGuard.Install(http, reads.Reads)!;
+                        result = PrivacyResponseGuard.Guarded(new ObjectResult(new { title = "private collage answer" }), guard);
+                    }
+                    else result = new ContentResult { Content = "{\"title\":\"private collage answer\"}", ContentType = "application/json" };
+                    http.Response.OnStarting(() => { if (revoke) r.Server.MetadataCountryCode = "AU"; return Task.CompletedTask; });
+                    await result.ExecuteResultAsync(action);
+                    return new ResourceExecutedContext(action, filters);
+                };
+                if (owner.Order < LegacyCollageBody.Order)
+                    await owner.OnResourceExecutionAsync(resource, async () => { await collage.OnResourceExecutionAsync(resource, execute); return new ResourceExecutedContext(action, filters); });
+                else
+                    await collage.OnResourceExecutionAsync(resource, async () => { await owner.OnResourceExecutionAsync(resource, execute); return new ResourceExecutedContext(action, filters); });
+            })));
+        using var response = await server.CreateClient().GetAsync("/JellyfinEnhanced/tmdb/movie/603");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(revoke ? System.Net.HttpStatusCode.ServiceUnavailable : System.Net.HttpStatusCode.OK, response.StatusCode);
+        if (revoke) { Assert.Empty(body); Assert.Null(response.Headers.ETag); Assert.Contains("no-store", response.Headers.CacheControl!.ToString()); }
+        else Assert.Contains("private collage answer", body);
+    }
+
+    [Theory]
+    [InlineData("short")] [InlineData("exception")] [InlineData("unhandled")]
+    public async Task R4MvcShortCircuitAndExceptionResultsReachTheOwner(string mode)
+    {
+        using var r = new Rig();
+        using var server = new Microsoft.AspNetCore.TestHost.TestServer(new WebHostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(r.Gate);
+                services.AddControllers(options =>
+                {
+                    options.Filters.Add(new PrivacyCommitFilter());
+                    if (mode != "unhandled") options.Filters.Add(new R4LifecycleFilter(() => r.Server.MetadataCountryCode = "AU"));
+                    options.Conventions.Add(new R4LifecycleConvention());
+                }).AddApplicationPart(typeof(R4LifecycleController).Assembly);
+            })
+            .Configure(app =>
+            {
+                Microsoft.AspNetCore.Builder.UseExtensions.Use(app, async (http, next) =>
+                {
+                    http.User = TestCallers.Principal(r.User.Id, false);
+                    try { await next(); }
+                    catch (InvalidOperationException) when (mode == "unhandled")
+                    {
+                        Assert.False(http.Response.HasStarted, "Owner committed before the host could handle an unhandled MVC exception");
+                        http.Response.StatusCode = 500;
+                        http.Response.ContentLength = 0;
+                    }
+                });
+                Microsoft.AspNetCore.Builder.EndpointRoutingApplicationBuilderExtensions.UseRouting(app);
+                Microsoft.AspNetCore.Builder.EndpointRoutingApplicationBuilderExtensions.UseEndpoints(app, endpoints => Microsoft.AspNetCore.Builder.ControllerEndpointRouteBuilderExtensions.MapControllers(endpoints));
+            }));
+        using var response = await server.CreateClient().GetAsync("/r4-lifecycle/" + mode);
+        Assert.Equal(mode == "unhandled" ? System.Net.HttpStatusCode.InternalServerError : System.Net.HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync());
+        if (mode != "unhandled") Assert.Contains("no-store", response.Headers.CacheControl!.ToString());
+    }
+
+}
+
+
+// Test-only MVC lifecycle controls: a native facade action identity, with no production route added.
+[ApiController]
+[Route("r4-lifecycle")]
+public sealed class R4LifecycleController : ControllerBase
+{
+    [HttpGet("{mode}")]
+    public IActionResult Read(string mode) => throw new InvalidOperationException("handled test exception");
+}
+
+internal sealed class R4LifecycleConvention : Microsoft.AspNetCore.Mvc.ApplicationModels.IControllerModelConvention
+{
+    public void Apply(Microsoft.AspNetCore.Mvc.ApplicationModels.ControllerModel controller)
+    {
+        if (controller.ControllerType != typeof(R4LifecycleController)) return;
+        controller.ControllerName = "UserLibrary";
+        foreach (var action in controller.Actions) action.ActionName = "GetItem";
+    }
+}
+
+internal sealed class R4LifecycleFilter(Action move) : IResourceFilter, IExceptionFilter
+{
+    private void Start(HttpContext http) => http.Response.OnStarting(() => { move(); return Task.CompletedTask; });
+    public void OnResourceExecuting(ResourceExecutingContext context)
+    {
+        if (!context.HttpContext.Request.Path.Value!.EndsWith("/short", StringComparison.Ordinal)) return;
+        Start(context.HttpContext);
+        context.Result = new ObjectResult(new { title = "private short circuit" });
+    }
+    public void OnResourceExecuted(ResourceExecutedContext context) { }
+    public void OnException(ExceptionContext context)
+    {
+        Start(context.HttpContext);
+        context.Result = new ObjectResult(new { title = "private exception result" }) { StatusCode = 500 };
+        context.ExceptionHandled = true;
+    }
 }

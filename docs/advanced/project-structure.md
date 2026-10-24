@@ -7,6 +7,11 @@ The server owns configuration, persistence, integration proxies and response fil
 `Services/TitleParentalEvidence.cs` selects captured TMDB or Seerr parental evidence from the request backend,
 and reads authoritative native rating/tag facts. `Services/SeerrParentalFilter.cs` remains the shared policy
 gate and bounded signature cache; JE mode uses the existing `TmdbResponseCache` and never falls back to Seerr.
+`Services/PrivacyResponseGuard.cs` owns HTTP publication: it holds every plugin/native-facade answer,
+records the effective principal or signed-artwork grant viewer before evidence reads, and checks the
+captured evidence before result execution and at header commit. Discover hands it the final revision
+used to build its complete or safe-partial answer. `TitlePresentationGate` delegates HTTP evidence
+admission and withholding to this owner while retaining privacy projection.
 
 Unless a repository-root path is stated, source paths below are relative to `Jellyfin.Plugin.JellyfinEnhanced/`. Leading slashes denote HTTP routes.
 

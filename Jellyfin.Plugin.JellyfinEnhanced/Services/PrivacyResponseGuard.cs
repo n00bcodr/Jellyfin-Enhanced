@@ -8,6 +8,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.Extensions.DependencyInjection;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 
@@ -30,6 +34,9 @@ public sealed class PrivacyResponseGuard
     private readonly List<PrivacyReadSet> _reads = new();
     private readonly object _lock = new();
     private GuardedBody? _body;
+    private GuardedBody? _transportBody;
+    private EvidencePublication? _evidence;
+    private bool _titleFreeTransient;
     private int _stopped;
     private bool _committing;
     private bool _committed;
@@ -48,6 +55,67 @@ public sealed class PrivacyResponseGuard
         var guard = Of(http);
         lock (guard._lock) if (!guard._reads.Contains(reads)) guard._reads.Add(reads);
         return guard;
+    }
+
+    /// <summary>Admits the effective viewer before their first evidence read, independently of verb or result schema.</summary>
+    internal static void Admit(HttpContext http, SeerrParentalFilter? parental, Guid? viewer, bool grant = false)
+    {
+        if (parental == null || viewer == null || viewer == Guid.Empty) return;
+        var guard = Of(http);
+        lock (guard._lock)
+        {
+            // A validated grant supplies the authority even when another principal accompanies its URL.
+            if (guard._evidence == null || grant) guard._evidence = parental.CapturePublication(viewer);
+        }
+    }
+
+    /// <summary>The service rebuilt its entire answer under this final dependency (Discover's partial-read contract).</summary>
+    internal static void Publication(HttpContext http, EvidencePublication publication)
+    {
+        var guard = Of(http);
+        lock (guard._lock) guard._evidence = publication;
+    }
+
+    /// <summary>Admission coverage, independent of HTTP verb, JSON registration or result type.</summary>
+    internal static bool Owns(Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor descriptor)
+    {
+        var action = descriptor as ControllerActionDescriptor;
+        if (action?.ControllerTypeInfo?.Assembly == typeof(PrivacyResponseGuard).Assembly) return true;
+        // The host's non-controller descriptors expose the same endpoint identity in RouteValues.
+        var controller = action?.ControllerName ?? (descriptor.RouteValues.TryGetValue("controller", out var c) ? c : null);
+        var name = action?.ActionName ?? (descriptor.RouteValues.TryGetValue("action", out var a) ? a : null);
+#if JF12
+        if (NativeDetails.NativeDetailsAllowlist.Find(controller, name) != null) return true;
+#endif
+        return PrivacySurfaceRegistry.Entries.Any(e => e.Controller == controller && e.Action == name);
+    }
+
+    /// <summary>Checks the same dependency before result execution and at the controlled HTTP commit.</summary>
+    internal static bool BeforeResult(ResultExecutingContext context)
+    {
+        var http = context.HttpContext;
+        if (Find(http) is not { } guard) return true;
+        // The import service has already discarded every candidate. Regenerate the fixed, title-free retry contract;
+        // never bless an arbitrary caller-supplied error message or a metadata-bearing result as evidence independent.
+        if (context.Result is ObjectResult { Value: Model.ListPlaceholders.ListErrorDto error } transient
+            && (transient.StatusCode == 504 && error.Code == "parental_pending" || transient.StatusCode == 429))
+        {
+            context.Result = new ObjectResult(new Model.ListPlaceholders.ListErrorDto
+            {
+                Code = transient.StatusCode == 504 ? "parental_pending" : error.Code,
+                Message = transient.StatusCode == 504 ? "Checking titles against your parental controls; try again in a moment." : "Too many lookups; try again shortly.",
+            }) { StatusCode = transient.StatusCode };
+            lock (guard._lock) { guard._evidence = null; guard._titleFreeTransient = true; }
+            http.Response.Headers.CacheControl = "private, no-store";
+            if (transient.StatusCode == 504 || !http.Response.Headers.ContainsKey("Retry-After")) http.Response.Headers["Retry-After"] = "2";
+            http.Response.Headers.Remove("ETag");
+            http.Response.Headers.Remove("Last-Modified");
+            return false;
+        }
+        if (guard.Holds()) return true;
+        guard.Stop();
+        context.Result = new StatusCodeResult(503);
+        return false;
     }
 
     /// <summary>
@@ -110,6 +178,9 @@ public sealed class PrivacyResponseGuard
         lock (_lock) _owned |= owned;
         if (http.Response.Body is GuardedBody body && body.Guard == this) { _body = body; return; }
         _body = new GuardedBody(http.Response.Body, http.Features.Get<IHttpResponseBodyFeature>(), this);
+        // Later projections can wrap this body. Their local held results still belong to this owner, but only this
+        // outermost body may start the real transport and mark the answer committed.
+        _transportBody ??= _body;
         http.Response.Body = _body;
     }
 
@@ -157,7 +228,11 @@ public sealed class PrivacyResponseGuard
     public bool Holds(bool live = true)
     {
         PrivacyReadSet[] reads;
-        lock (_lock) reads = _reads.ToArray();
+        lock (_lock)
+        {
+            if (_evidence is { Current: false }) return false;
+            reads = _reads.ToArray();
+        }
         foreach (var set in reads)
             if (!set.StillValid(live)) { PrivacyReadSet.Withheld(set); return false; }
         return true;
@@ -175,9 +250,15 @@ public sealed class PrivacyResponseGuard
     private Task OnStarting()
     {
         lock (_lock) _startChecked = true;
-        if (Stopped) return Task.CompletedTask;
+        if (_titleFreeTransient)
+        {
+            _http.Response.Headers.CacheControl = "private, no-store";
+            _http.Response.Headers.Remove("ETag");
+            _http.Response.Headers.Remove("Last-Modified");
+        }
+        if (Stopped) { WithheldHeaders(); return Task.CompletedTask; }
         bool committing, held;
-        lock (_lock) { committing = _committing; held = _body?.Held > 0; }
+        lock (_lock) { committing = _committing; held = _body?.Held > 0 || _transportBody?.Held > 0; }
         // A protected answer whose writer never committed it: nothing of it leaves.
         if (!committing && held) { Stop(); return Task.CompletedTask; }
         if (!Holds(live: !committing)) Stop();
@@ -189,11 +270,23 @@ public sealed class PrivacyResponseGuard
     /// hands the bytes to the transport. False when an input changed before the start (the held bytes are kept for the
     /// caller to discard and build again) or when the answer was withheld at the header commit (<see cref="Stopped"/>).
     /// </summary>
-    internal async Task<bool> TryCommitAsync()
+    internal Task<bool> TryCommitAsync() => TryCommitBodyAsync(_body);
+
+    private async Task<bool> TryCommitBodyAsync(GuardedBody? body)
     {
-        lock (_lock) if (_committed) return true;
+        if (Committed)
+        {
+            if (body != null) await body.ReleaseAsync().ConfigureAwait(false);
+            return !Stopped;
+        }
         if (Stopped || !Holds()) return false;
-        var body = _body;
+        if (body != null && body != _transportBody)
+        {
+            // A guarded result inside another projection hands bytes to that projection, never to the transport.
+            // The outer body retains its dependency through all later projection/serialization work.
+            await body.ReleaseAsync().ConfigureAwait(false);
+            return !Stopped;
+        }
         lock (_lock) _committing = true;
         try
         {
@@ -225,11 +318,16 @@ public sealed class PrivacyResponseGuard
     public static async Task CommitAsync(HttpContext http)
     {
         if (Find(http) is not { } guard || guard.Stopped || guard.Committed) return;
+        guard.Bind(http);
         if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
     }
 
     /// <summary>Drops the held bytes (an answer that is built and written again).</summary>
-    internal void Discard() => _body?.Discard();
+    internal void Discard()
+    {
+        _body?.Discard();
+        _transportBody?.Discard();
+    }
 
     /// <summary>
     /// Stops the response: before the start it becomes an empty, uncached 503 (the answer is withheld); after (an answer
@@ -238,19 +336,25 @@ public sealed class PrivacyResponseGuard
     internal void Stop()
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
-        _body?.Discard();
+        Discard();
         var response = _http.Response;
-        if (!response.HasStarted)
-        {
-            response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            response.ContentLength = 0;
-            response.Headers.CacheControl = "private, no-store";
-            response.Headers.Remove("ETag");
-            response.Headers.Remove("Last-Modified");
-            response.Headers.Remove("Content-Type");
-            return;
-        }
+        if (!response.HasStarted) { WithheldHeaders(); return; }
         _http.Abort();
+    }
+
+    private void WithheldHeaders()
+    {
+        var response = _http.Response;
+        response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        response.ContentLength = 0;
+        response.Headers.CacheControl = "private, no-store";
+        response.Headers.Remove("ETag");
+        response.Headers.Remove("Last-Modified");
+        response.Headers.Remove("Content-Type");
+        response.Headers.Remove("Content-Disposition");
+        response.Headers.Remove("Content-Range");
+        response.Headers.Remove("Accept-Ranges");
+        response.Headers["Retry-After"] = "1";
     }
 
     /// <summary>
@@ -363,7 +467,7 @@ public sealed class PrivacyResponseGuard
 
         private async Task CommitHeldAsync()
         {
-            if (!await Guard.TryCommitAsync().ConfigureAwait(false)) Guard.Stop();
+            if (!await Guard.TryCommitBodyAsync(this).ConfigureAwait(false)) Guard.Stop();
         }
 
         public override void Flush()
@@ -401,20 +505,41 @@ public sealed class PrivacyResponseGuard
 }
 
 /// <summary>
-/// The commit at the end of every MVC answer: outside every other resource filter but the legacy collage body (its body is
-/// the last thing written, so a held protected answer is committed into it while it is still installed), so it runs after
-/// the answer's result executed (whatever filter answered it, a short circuit included) and commits a held protected
-/// answer that its writer did not.
+/// The commit at the end of every MVC answer, outside every resource filter including legacy collage projection. Only
+/// this owner's outermost held body starts the transport, after the result and every inner projection completed. Local
+/// guarded results may hand their bytes to a projection, but cannot mark that handoff as an HTTP commit.
 /// </summary>
-public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IOrderedFilter
+public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IAlwaysRunResultFilter, IOrderedFilter
 {
     /// <inheritdoc />
-    public int Order => Acquire.Lists.LegacyCollageBody.Order + 1;
+    public int Order => Acquire.Lists.LegacyCollageBody.Order - 1;
 
     /// <inheritdoc />
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
-        await next().ConfigureAwait(false);
-        await PrivacyResponseGuard.CommitAsync(context.HttpContext).ConfigureAwait(false);
+        var http = context.HttpContext;
+        if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
+        {
+            // Install before inner resource/action/result callbacks: OnStarting is LIFO, so this owner checks last.
+            PrivacyResponseGuard.Of(http);
+            PrivacyResponseGuard.Admit(http, http.RequestServices.GetService<SeerrParentalFilter>(), UserHelper.GetCurrentUserId(http.User));
+        }
+        var executed = await next().ConfigureAwait(false);
+        if (executed.Exception != null && !executed.ExceptionHandled)
+        {
+            // MVC rethrows this to the host. Do not commit its pending answer or preempt the host's error status.
+            PrivacyResponseGuard.Find(http)?.Discard();
+            return;
+        }
+        await PrivacyResponseGuard.CommitAsync(http).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public void OnResultExecuting(ResultExecutingContext context)
+    {
+        PrivacyResponseGuard.BeforeResult(context);
+    }
+
+    /// <inheritdoc />
+    public void OnResultExecuted(ResultExecutedContext context) { }
 }

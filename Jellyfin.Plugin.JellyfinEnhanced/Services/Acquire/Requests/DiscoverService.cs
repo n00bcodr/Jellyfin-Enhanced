@@ -98,6 +98,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>One Discover row page or one search page.</summary>
     public sealed record DiscoverAnswer
     {
+        // Not serialized: the exact preparation revision is handed to the HTTP commit owner.
+        [JsonIgnore] internal EvidencePublication? Publication { get; init; }
+
         /// <summary>trending, upcoming, popular, because or search.</summary>
         [JsonPropertyName("list")] public string List { get; init; } = string.Empty;
 
@@ -325,12 +328,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 // Only what held from start to finish is kept for the next read.
                 if (answer.Complete && ResponseGate.Same(stamp, before)) Store(cacheKey, prepared);
-                return answer;
+                return answer with { Publication = _gate.Publication(stamp) };
             }
             // The list succeeded. Continuous authority/evidence changes leave no card verified for publication,
             // but this is still an incomplete successful list read, never an upstream-list failure or complete empty.
             return lastRead == null ? null : new DiscoverAnswer
             {
+                Publication = _gate.Publication(_gate.Take(viewer)),
                 List = lastRead.List, Type = lastRead.Type, Page = lastRead.Page, TotalPages = lastRead.TotalPages,
                 Complete = false, Groups = lastRead.Groups == null ? null : Array.Empty<DiscoverGroup>(),
             };

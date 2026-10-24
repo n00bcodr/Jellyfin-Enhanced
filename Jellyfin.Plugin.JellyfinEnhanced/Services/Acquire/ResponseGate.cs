@@ -21,11 +21,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     internal sealed class EvidencePublication
     {
         private readonly Func<string> _current;
-        internal EvidencePublication(Func<string> current)
+        internal EvidencePublication(Func<string> current, Guid? viewer = null, string? revision = null)
         {
             _current = current;
-            Revision = current();
+            Revision = revision ?? current();
+            Viewer = viewer;
         }
+
+        internal Guid? Viewer { get; }
 
         internal string Revision { get; }
         internal bool Current => Matches(Revision, _current);
@@ -76,7 +79,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public ResponseStamp Take(StatusViewer viewer, string hidden = "-")
             => new(viewer.UserId, viewer.IsAdmin, viewer.PolicyRevision, _view.Revision, hidden, EditionAvailability.SemanticRevision(_config()), _evidence());
 
-        /// <summary>Whether an evidence-dependent decision still belongs to the current source/configuration/country.</summary>
+        /// <summary>The exact evidence dependency used to prepare this answer, handed to its HTTP commit owner.</summary>
+        public EvidencePublication Publication(ResponseStamp prepared) => new(_evidence, prepared.User, prepared.Evidence);
+
+        /// <summary>Whether the captured evidence still holds.</summary>
         public bool EvidenceCurrent(ResponseStamp prepared) => EvidencePublication.Matches(prepared.Evidence, _evidence);
 
         /// <summary>

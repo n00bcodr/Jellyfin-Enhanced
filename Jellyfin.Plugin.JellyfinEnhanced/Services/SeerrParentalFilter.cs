@@ -553,8 +553,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public string EvidenceRevision => "parental-v2|" + JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend + "|" + _evidence.Capture().CacheScope + "|" + Region();
 
         /// <summary>Captures the evidence used by a JE publication; legacy backend behavior is unchanged.</summary>
-        internal Acquire.EvidencePublication CapturePublication() => new(() =>
-            string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase) ? EvidenceRevision : "-");
+        internal Acquire.EvidencePublication CapturePublication(Guid? viewer = null) => new(() =>
+            string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase) ? EvidenceRevision : "-", viewer);
 
         /// <summary>Current native entitlement for a broad consumer; absent-title checks never use this exemption.</summary>
         internal bool MayOpenLocal(string kind, int tmdb, string userId)

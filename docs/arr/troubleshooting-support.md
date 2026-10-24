@@ -246,7 +246,9 @@ answer does not mean there are no matches. Completed pages retain HTTP 200/ETag 
 `complete: true`, `verification: "complete"`, `retryAfterSeconds: null`.
 
 The UI must retain a retry/unavailable state for partial answers, including a partial answer containing
-safe cards. HTTP 503 is reserved for a failed TMDB list read (`discover_unavailable`). Failed or incomplete
+safe cards. A failed TMDB list read returns HTTP 503 (`discover_unavailable`). If evidence changes after
+the final page was built but before HTTP headers commit, the response is withheld with a bodyless 503
+and `Retry-After: 1`; retry the same page under current settings. Failed or incomplete
 evidence is retried after the gate's five-minute failure cache expires; in-flight reads may recover
 earlier by completing in the background. Avoid rapid retries. The initial list read has its own
 transport timeout; the two-second budget applies to title evidence preparation, including slot waits
@@ -263,3 +265,11 @@ safe partial HTTP 200 contract above.
 Public title details preserve Jellyfin's current permission to open an owned copy, including an
 unrated series when Block Unrated Series is off. Hidden copies and hidden seasons or episodes do not
 grant this permission. For restricted viewers, genuinely absent titles still require verified parental evidence.
+
+The HTTP commit guard also protects signed artwork, including anonymous image requests, streamed results,
+HEAD and conditional 304 responses. Evidence changes before headers commit withhold the old body and
+remove its validators. A stream that committed under valid evidence continues normally.
+
+Import resolution and source preview keep their title-free `504 parental_pending` response with
+`Retry-After: 2`, so the same import chunk can retry. A busy import keeps its typed 429 retry response.
+These transient errors do not mean that metadata configuration is missing.
