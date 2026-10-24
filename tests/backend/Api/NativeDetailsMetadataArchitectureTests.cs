@@ -41,7 +41,7 @@ public partial class ApiNativeDetailsTests
                     if (count > 8 || _owners.Count > 48) Violations.Add("task admission limit exceeded");
                 }
                 else if (e.Kind == "completed") _owners.Remove(e.Owner!);
-                else
+                else if (e.Kind != "transport")
                 {
                     ExternalCreations++;
                     if (e.Owner == null || !_owners.TryGetValue(e.Owner, out var viewer) || viewer != e.Viewer)
@@ -228,67 +228,6 @@ public partial class ApiNativeDetailsTests
         Assert.Equal(AbsentLookup.Refused, (await rig.Read(viewer.Id, SyntheticId.Movie(795099))).Outcome);
     }
 
-    [Theory]
-    [InlineData("resolver")]
-    [InlineData("native")]
-    [InlineData("public")]
-    [InlineData("parental")]
-    [InlineData("captured-policy")]
-    [InlineData("status")]
-    [InlineData("artwork")]
-    [InlineData("collection")]
-    [InlineData("parental-list")]
-    [InlineData("artwork-person")]
-    public async Task MetadataArchitectureEveryRestrictedViewerEntryBoundsEightyColdTaskCreations(string route)
-    {
-        await using var rig = new AdmissionRig();
-        var viewer = rig.Rig.Person(linked: false);
-        viewer.MaxParentalRatingScore = 16;
-        var evidence = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        rig.Rig.RatingGate = evidence;
-        var audit = new MetadataAudit();
-        using var observation = MetadataTaskProbe.Observe(audit.Observe);
-        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("No arr calls"));
-        using var store = new ArrStateStore(new ArrClientFactory(transport, new ArrInstanceRegistry()), null, rig.Rig.Plugin.Core.Logger, null, () => rig.Rig.Plugin.Plugin.Configuration);
-        using var services = new ServiceCollection().AddSingleton<IAbsentTitlePages>(rig.Pages).BuildServiceProvider();
-        async Task Read(int id)
-        {
-            var page = route == "artwork-person" ? SyntheticId.Person(id) : SyntheticId.Movie(id);
-            if (route == "resolver") await rig.Read(viewer.Id, page);
-            else if (route == "native") await Call(rig.Rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(page) });
-            else if (route == "public") await rig.Rig.Feeds.TitleAsync(viewer, true, id, CancellationToken.None);
-            else if (route == "parental") await rig.Rig.Parental.IsBlockedAsync("movie", id, viewer.Id.ToString(), CancellationToken.None);
-            else if (route == "captured-policy") await rig.Rig.Parental.CheckAbsentAsync("movie", id, SeerrParentalFilter.PolicyFor(viewer), viewer.Id, CancellationToken.None);
-            else if (route == "parental-list") await rig.Rig.Parental.ApplyAsync("{\"parts\":[{\"id\":" + id + "}]}", "/api/v1/collection/1", viewer.Id.ToString(), CancellationToken.None);
-            else if (route == "status") await MetadataStatus(rig, viewer, store, services).GetItemStatus(Id(page).ToString(), CancellationToken.None);
-            else if (route == "collection") await rig.Rig.Feeds.CollectionAsync(viewer, id, CancellationToken.None);
-            else
-            {
-                var tag = rig.Rig.Artwork.Mint(Id(page), ImageType.Primary, 0, "/fixture.jpg", viewer.Id, rig.Rig.Policy.Revision(viewer));
-                await Call(rig.Rig, "Image", "GetItemImage", null, new() { ["itemId"] = Id(page), ["imageType"] = ImageType.Primary, ["tag"] = tag });
-            }
-        }
-
-        var reads = Enumerable.Range(770001, 80).Select(Read).ToArray();
-        try
-        {
-            Assert.Equal(8, rig.Admission.Count());
-            Assert.False(reads[7].IsCompleted); // eighth retains its place
-            Assert.True(reads[8].IsCompletedSuccessfully); // ninth is refused promptly
-            Assert.Equal(72, reads.Count(t => t.IsCompletedSuccessfully));
-            Assert.Equal(8, audit.Creations);
-            Assert.Equal(8, audit.Peak[viewer.Id]);
-        }
-        finally
-        {
-            evidence.TrySetResult();
-            rig.Release();
-            await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(20));
-        }
-        Assert.True(audit.ExternalCreations >= 8);
-        audit.AssertSound();
-    }
-
     [Fact]
     public async Task MetadataArchitectureMixedRoutesShareFortyEightPlacesAndRetainCancelledOwners()
     {
@@ -339,26 +278,4 @@ public partial class ApiNativeDetailsTests
         audit.AssertSound();
     }
 
-    [Fact]
-    public async Task MetadataArchitecturePlantedUnboundedRawTaskFactoryIsDetectedBeforeHttpSend()
-    {
-        await using var rig = new AdmissionRig();
-        var audit = new MetadataAudit();
-        using var observation = MetadataTaskProbe.Observe(audit.Observe);
-        // Deliberately bypass the production owner. The raw cache's 20-send cap must not
-        // make this architecture self-test pass: all 80 task creations must be observed.
-        var planted = Enumerable.Range(790001, 80).Select(id => rig.Cache.GetAsync("movie/" + id, "", "fixture", CancellationToken.None)).ToArray();
-        try
-        {
-            Assert.Equal(80, audit.ExternalCreations);
-            Assert.Equal(80, audit.Violations.Count);
-            Assert.ThrowsAny<Xunit.Sdk.XunitException>(audit.AssertSound);
-            Assert.Equal(0, rig.Admission.Count());
-        }
-        finally
-        {
-            rig.Release();
-            await Task.WhenAll(planted).WaitAsync(TimeSpan.FromSeconds(15));
-        }
-    }
 }

@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 var hit = cached();
                 if (hit.Hit) return Task.FromResult(hit.Value);
                 if (_tasks.TryGetValue(path, out var running)) return ((Task<T>)running).WaitAsync(ct);
-                if (!_scheduler.TryAdmit(viewer))
+                if (viewer == Guid.Empty || !_scheduler.TryAdmit(viewer))
                 {
                     Viewer.Value?.Refuse();
                     return Task.FromResult(busy);
@@ -88,7 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 await _scheduler.TurnAsync(viewer).ConfigureAwait(false);
                 ran = true;
                 using var scope = MetadataTaskProbe.Own(new(viewer, path, "external", owner));
-                result = await fetch().ConfigureAwait(false);
+                using var admission = new MetadataAdmission("viewer:" + viewer.ToString("N"));
+                try { result = await fetch().ConfigureAwait(false); }
+                finally { await admission.DrainAsync().ConfigureAwait(false); }
             }
             catch (Exception ex) { failure = ex; }
             finally

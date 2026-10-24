@@ -3812,18 +3812,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { ok = false, message = "API key is missing" });
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
             try
             {
-                var requestUri = $"https://api.themoviedb.org/3/configuration?api_key={Uri.EscapeDataString(apiKey)}";
-                var response = await httpClient.GetAsync(requestUri);
+                using var metadataViewer = Services.NativeDetails.ViewerMetadataAdmission.ForViewer(Guid.TryParse(User.FindFirst("Jellyfin-UserId")?.Value, out var metadataUser) ? metadataUser : Guid.Empty);
+                var response = await _tmdbResponseCache.GetAsync("configuration", string.Empty, apiKey, HttpContext.RequestAborted, refresh: true);
 
-                if (response.IsSuccessStatusCode)
+                if (response.IsSuccess)
                 {
                     return Ok(new { ok = true });
                 }
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                if (response.StatusCode == 401)
                 {
                     return Unauthorized(new { ok = false, message = "Invalid API Key." });
                 }
@@ -4550,6 +4549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ProxyTmdbRequest(string apiPath)
         {
+            using var metadataViewer = Services.NativeDetails.ViewerMetadataAdmission.ForViewer(Guid.TryParse(User.FindFirst("Jellyfin-UserId")?.Value, out var metadataUser) ? metadataUser : Guid.Empty);
             // Parental ratings (#581): for a restricted user the raw TMDB passthrough
             // is limited to title-free lookups; single-title lookups are gated on
             // that title and anything else (search, discover, trending, lists) is

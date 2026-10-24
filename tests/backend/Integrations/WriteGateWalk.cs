@@ -46,6 +46,8 @@ internal sealed class WriteGateWalk
     /// <summary>The plugin as it is on disk.</summary>
     internal static WriteGateWalk Plugin => _plugin.Value;
 
+    internal CSharpCompilation Compilation => _compilation;
+
     private readonly CSharpCompilation _compilation;
     private readonly Dictionary<SyntaxTree, SemanticModel> _models = new();
     private readonly Dictionary<ISymbol, bool> _leads = new(SymbolEqualityComparer.Default);

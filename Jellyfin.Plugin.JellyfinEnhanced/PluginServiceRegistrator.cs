@@ -252,6 +252,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Home.HomeProjection>();
             serviceCollection.AddHostedService<Services.Acquire.Home.HssSectionsAdapter>();
             serviceCollection.AddHttpContextAccessor();
+            serviceCollection.AddSingleton<Services.NativeDetails.ViewerMetadataScopeFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.NativeDetails.ViewerMetadataScopeFilter>(int.MinValue));
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
             // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----

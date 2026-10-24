@@ -514,10 +514,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return CheckAbsentAsync(mediaType, tmdbId, policy, Guid.Parse(userId), ct);
         }
 
-        /// <summary>Compatibility policy-only reads share a conservative bounded owner.</summary>
-        public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
-            => await CheckAbsentAsync(mediaType, tmdbId, policy, Guid.Empty, ct).ConfigureAwait(false) == true;
-
         /// <summary>Evidence-provider join: a captured policy must retain its effective viewer for admission.</summary>
         public async Task<bool?> CheckAbsentAsync(string mediaType, int tmdbId, Policy policy, Guid viewer, CancellationToken ct)
         {
@@ -1193,10 +1189,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var requestUri = $"https://api.themoviedb.org/3/{mediaType}/{tmdbId.ToString(CultureInfo.InvariantCulture)}/{subResource}?api_key={apiKey}";
             try
             {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.Timeout = PerFetchTimeout;
+                if (MetadataAdmission.Current == null)
+                    return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Legacy,
+                        () => FetchCertFromTmdbAsync(mediaType, tmdbId, apiKey, ct)).ConfigureAwait(false);
                 MetadataTaskProbe.External(mediaType + "/" + tmdbId + "/" + subResource);
-                using var response = await httpClient.GetAsync(requestUri, ct).ConfigureAwait(false);
+                using var response = await TmdbTransport.GetAsync(_httpClientFactory, requestUri, MetadataAdmission.Required, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     return null;

@@ -2274,3 +2274,35 @@ Request-mode titles have a **More actions** menu on their details page, More Inf
 Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. On a phone it replaces only Jellyfin's button row: the poster, title and details stay exactly where Jellyfin puts them. The primary label is never cut short; on the narrowest screens Report moves into More, then the label wraps onto two lines. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. When a library title has progress, Resume stays in the row and **Play from beginning** is in the sheet's Watch group, as are Shuffle and Instant Mix where Jellyfin offers them. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus. Closing the sheet before choosing does nothing. Once you choose, the action carries on after the sheet closes (Open, Share's link or "copied" message), but moving to another page, switching user or turning the feature off stops it, even while its confirmation (Spoiler Guard, Hide, Report) is still open. The row's added controls are then rebuilt for the page and user now shown.
 
 **Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.
+
+### One TMDB transport and metadata admission
+
+`Services/TmdbTransport.cs` is the only TMDB HTTP sender. Every send requires a live typed
+`MetadataAdmission`; there is no send overload without it and no anonymous viewer allowance.
+The raw response cache admits a cold viewer read before registering its task. Native and
+parental reads reuse their live admission; cache hits and joins remain free. One admission
+serializes sends through body disposal and drains retained raw reads before releasing its place. An authenticated
+MVC scope captures the viewer for person enrichment, proxy/company lookup, watch-provider
+batches, Discover/search, hub/home, and rule preparation; native delegated reads retain their
+effective viewer. Captured-policy discovery and list evidence carry that viewer explicitly.
+An unowned JE raw read fails with 503 rather than creating external work.
+
+| Admission owner | Bound and purpose |
+|---|---|
+| `ViewerMetadataAdmission` | 8 outstanding per effective viewer; 8 running + 40 queued server-wide; cancellation ends only the waiter |
+| `AutonomousMetadataAdmission.ListImport` | 4 running server-wide; existing import/source pacing and final configuration gates retained |
+| `ListMetadataService.TmdbPosterAsync` | Existing 4-place list poster semaphore; same source client, bounded body and continuation behavior |
+| `AutonomousMetadataAdmission.Automation` | 2 running server-wide; background playback and rule-fact revalidation metadata |
+| `AutonomousMetadataAdmission.Legacy` | 4 running server-wide; retained non-JE metadata; never a fallback for an unowned JE viewer |
+
+Autonomous pool acquisition has a finite 30-second wait. These concurrency bounds are not
+a global TMDB requests-per-second promise. Binary image bodies retain their separate artwork
+owner; artwork metadata and all retries use the TMDB transport. Required native/evidence
+failures stay retryable and distinct from verified parental refusal. Existing optional rails
+and status contracts remain unchanged. Seerr-mode source selection is retained.
+
+`TmdbTransportArchitectureTests` scans all production HTTP send/client/request sites by
+Roslyn symbols. Reviewed non-TMDB helpers have body-pinned exceptions in
+`tests/fixtures/tmdb-nonmetadata-http.tsv`; any new or changed site requires host review.
+Admission construction is allowed only in the documented owners. Direct-TMDB and rogue-admission
+plants exercise both rejection rules. This replaces the starter-enumeration architecture test.

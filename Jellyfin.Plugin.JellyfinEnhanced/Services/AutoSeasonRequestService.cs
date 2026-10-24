@@ -199,34 +199,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // TMDB's series details in the shape the season checks read from Seerr (seasonNumber, episodeCount).
         private async Task<string?> FetchTmdbDetailsAsync(string tmdbId, string apiKey)
         {
-            try
+            return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation, ReadMetadata).ConfigureAwait(false);
+            async Task<string?> ReadMetadata()
             {
-                var httpClient = _httpClientFactory.CreateClient();
-                using var response = await httpClient.GetAsync($"https://api.themoviedb.org/3/tv/{tmdbId}?api_key={apiKey}");
-                if (!response.IsSuccessStatusCode)
+                try
                 {
-                    _logger.Debug($"[Auto-Season-Request] TMDB returned {response.StatusCode} for series {tmdbId}");
+                    using var response = await TmdbTransport.GetAsync(_httpClientFactory, $"https://api.themoviedb.org/3/tv/{tmdbId}?api_key={apiKey}", MetadataAdmission.Required, System.Threading.CancellationToken.None);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.Debug($"[Auto-Season-Request] TMDB returned {response.StatusCode} for series {tmdbId}");
+                        return null;
+                    }
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var root = doc.RootElement;
+                    var seasons = new List<object>();
+                    if (root.TryGetProperty("seasons", out var list) && list.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var season in list.EnumerateArray())
+                        {
+                            if (season.TryGetProperty("season_number", out var n) && n.TryGetInt32(out var number) &&
+                                season.TryGetProperty("episode_count", out var c) && c.TryGetInt32(out var count))
+                                seasons.Add(new { seasonNumber = number, episodeCount = count });
+                        }
+                    }
+                    var total = root.TryGetProperty("number_of_seasons", out var t) && t.TryGetInt32(out var totalSeasons) ? totalSeasons : seasons.Count;
+                    return JsonSerializer.Serialize(new { numberOfSeasons = total, seasons });
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"[Auto-Season-Request] Error reading TMDB series {tmdbId}: {ex.Message}");
                     return null;
                 }
-                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                var root = doc.RootElement;
-                var seasons = new List<object>();
-                if (root.TryGetProperty("seasons", out var list) && list.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var season in list.EnumerateArray())
-                    {
-                        if (season.TryGetProperty("season_number", out var n) && n.TryGetInt32(out var number) &&
-                            season.TryGetProperty("episode_count", out var c) && c.TryGetInt32(out var count))
-                            seasons.Add(new { seasonNumber = number, episodeCount = count });
-                    }
-                }
-                var total = root.TryGetProperty("number_of_seasons", out var t) && t.TryGetInt32(out var totalSeasons) ? totalSeasons : seasons.Count;
-                return JsonSerializer.Serialize(new { numberOfSeasons = total, seasons });
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug($"[Auto-Season-Request] Error reading TMDB series {tmdbId}: {ex.Message}");
-                return null;
             }
         }
 

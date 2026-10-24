@@ -324,6 +324,7 @@ MdblistService._accounts	both	independent	API key fingerprint	MDBList account qu
 MdblistService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 MdblistService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 MdblistService._retryUntil	both	independent	title	when a failed MDBList lookup may be asked again (a back-off), not an answer	deadline:a back-off after a failed lookup (when to ask again), not an answer's lifetime
+MetadataAdmission._reads	both	independent	admitted operation	public metadata completion tasks retained only by their live admission; no access verdicts; drained before capacity release	write:own-state
 MetadataCallLimiter.Queues._byOwner	both	independent	owner	waiting metadata calls per owner (a fair queue), not an answer	write:own-state
 MetadataCallLimiter.Queues._rotation	both	independent	owner	waiting metadata calls per owner (a fair queue), not an answer	write:own-state
 NativeClientPolicy._parsed	both	independent	configuration	parsed client names, per stored configuration value

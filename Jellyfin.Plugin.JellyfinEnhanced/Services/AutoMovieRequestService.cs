@@ -334,51 +334,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets TMDB collection ID and name for a movie; Failed when TMDB couldn't be asked or answered with an error
         private async Task<(CollectionInfo? Collection, bool Failed)> GetTmdbCollectionIdAsync(string tmdbId)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
+            return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation, ReadMetadata).ConfigureAwait(false);
+            async Task<(CollectionInfo? Collection, bool Failed)> ReadMetadata()
             {
-                return (null, true);
-            }
-
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                var requestUrl = $"https://api.themoviedb.org/3/movie/{tmdbId}?api_key={config.GetTmdbApiKey()}";
-
-                var response = await httpClient.GetAsync(requestUrl);
-                if (!response.IsSuccessStatusCode)
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
-                    _logger.Debug($"[Auto-Movie-Request] TMDB returned {response.StatusCode} for movie {tmdbId}");
-                    // A movie TMDB doesn't know is definitively not in a collection; anything else is a failed lookup.
-                    return (null, response.StatusCode != System.Net.HttpStatusCode.NotFound);
+                    return (null, true);
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(content))
+                try
                 {
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("belongs_to_collection", out var collectionProp))
+                    var requestUrl = $"https://api.themoviedb.org/3/movie/{tmdbId}?api_key={config.GetTmdbApiKey()}";
+
+                    using var response = await TmdbTransport.GetAsync(_httpClientFactory, requestUrl, MetadataAdmission.Required, System.Threading.CancellationToken.None);
+                    if (!response.IsSuccessStatusCode)
                     {
-                        if (collectionProp.ValueKind != JsonValueKind.Null &&
-                            collectionProp.TryGetProperty("id", out var idProp) &&
-                            collectionProp.TryGetProperty("name", out var nameProp))
+                        _logger.Debug($"[Auto-Movie-Request] TMDB returned {response.StatusCode} for movie {tmdbId}");
+                        // A movie TMDB doesn't know is definitively not in a collection; anything else is a failed lookup.
+                        return (null, response.StatusCode != System.Net.HttpStatusCode.NotFound);
+                    }
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    using (JsonDocument doc = JsonDocument.Parse(content))
+                    {
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("belongs_to_collection", out var collectionProp))
                         {
-                            return (new CollectionInfo
+                            if (collectionProp.ValueKind != JsonValueKind.Null &&
+                                collectionProp.TryGetProperty("id", out var idProp) &&
+                                collectionProp.TryGetProperty("name", out var nameProp))
                             {
-                                Id = idProp.GetInt32(),
-                                Name = nameProp.GetString() ?? "Unknown Collection"
-                            }, false);
+                                return (new CollectionInfo
+                                {
+                                    Id = idProp.GetInt32(),
+                                    Name = nameProp.GetString() ?? "Unknown Collection"
+                                }, false);
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Auto-Movie-Request] Error querying TMDB: {ex.Message}");
-                return (null, true);
-            }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Auto-Movie-Request] Error querying TMDB: {ex.Message}");
+                    return (null, true);
+                }
 
-            return (null, false);
+                return (null, false);
+            }
         }
 
         // Gets next movie in collection from Jellyseerr collection endpoint. On the ledger path Seerr only names
@@ -515,51 +518,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // release order; library availability is checked against Jellyfin by the caller.
         private async Task<NextMovie> GetNextMovieFromTmdbAsync(int collectionId, string currentTmdbId, CancellationToken ct)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
+            return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation, ReadMetadata).ConfigureAwait(false);
+            async Task<NextMovie> ReadMetadata()
             {
-                return new NextMovie(null, "not_configured", false);
-            }
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                using var response = await httpClient.GetAsync($"https://api.themoviedb.org/3/collection/{collectionId}?api_key={config.GetTmdbApiKey()}", ct);
-                if (!response.IsSuccessStatusCode)
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
+                    return new NextMovie(null, "not_configured", false);
+                }
+                try
+                {
+                    using var response = await TmdbTransport.GetAsync(_httpClientFactory, $"https://api.themoviedb.org/3/collection/{collectionId}?api_key={config.GetTmdbApiKey()}", MetadataAdmission.Required, ct);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return new NextMovie(null, "tmdb_unavailable", true);
+                    }
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (!doc.RootElement.TryGetProperty("parts", out var partsElement) || partsElement.ValueKind != JsonValueKind.Array)
+                    {
+                        return new NextMovie(null, "tmdb_unavailable", true);
+                    }
+                    var parts = partsElement.EnumerateArray()
+                        .Where(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                        .Select(p => (Id: p.GetProperty("id").GetInt32(),
+                            Title: p.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "Unknown Title" : "Unknown Title",
+                            Release: p.TryGetProperty("release_date", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : (DateTime?)null))
+                        .OrderBy(p => p.Release ?? DateTime.MaxValue).ThenBy(p => p.Id)
+                        .ToList();
+                    var index = parts.FindIndex(p => p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == currentTmdbId);
+                    if (index < 0 || index >= parts.Count - 1)
+                    {
+                        return new NextMovie(null, "last_in_collection", false);
+                    }
+                    var nextPart = parts[index + 1];
+                    if (config.AutoMovieRequestCheckReleaseDate && (nextPart.Release == null || nextPart.Release > DateTime.Now))
+                    {
+                        return new NextMovie(null, "not_released", false);
+                    }
+                    return new NextMovie(new MovieInfo { TmdbId = nextPart.Id, Title = nextPart.Title }, null, false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Auto-Movie-Request] Error querying TMDB collection: {ex.Message}");
                     return new NextMovie(null, "tmdb_unavailable", true);
                 }
-                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-                if (!doc.RootElement.TryGetProperty("parts", out var partsElement) || partsElement.ValueKind != JsonValueKind.Array)
-                {
-                    return new NextMovie(null, "tmdb_unavailable", true);
-                }
-                var parts = partsElement.EnumerateArray()
-                    .Where(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
-                    .Select(p => (Id: p.GetProperty("id").GetInt32(),
-                        Title: p.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "Unknown Title" : "Unknown Title",
-                        Release: p.TryGetProperty("release_date", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : (DateTime?)null))
-                    .OrderBy(p => p.Release ?? DateTime.MaxValue).ThenBy(p => p.Id)
-                    .ToList();
-                var index = parts.FindIndex(p => p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == currentTmdbId);
-                if (index < 0 || index >= parts.Count - 1)
-                {
-                    return new NextMovie(null, "last_in_collection", false);
-                }
-                var nextPart = parts[index + 1];
-                if (config.AutoMovieRequestCheckReleaseDate && (nextPart.Release == null || nextPart.Release > DateTime.Now))
-                {
-                    return new NextMovie(null, "not_released", false);
-                }
-                return new NextMovie(new MovieInfo { TmdbId = nextPart.Id, Title = nextPart.Title }, null, false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Auto-Movie-Request] Error querying TMDB collection: {ex.Message}");
-                return new NextMovie(null, "tmdb_unavailable", true);
             }
         }
 

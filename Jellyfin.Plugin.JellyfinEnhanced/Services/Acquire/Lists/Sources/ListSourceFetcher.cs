@@ -690,6 +690,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         private async Task<string?> TmdbGetAsync(string path, string query, string key, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            if (MetadataAdmission.Current == null)
+                return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.ListImport,
+                    () => TmdbGetAsync(path, query, key, options, cancellationToken)).ConfigureAwait(false);
+
             // F17 + 4C2-SEC-03: read upstream every time (never TmdbResponseCache's 6 h copy: a sync must see the list as
             // it is now, and the pages of one snapshot must be of one age) and over the source transport (no redirects,
             // public addresses only). The fetcher's own short result cache keeps preview → apply → link to one read.
@@ -1620,6 +1624,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             timeout.CancelAfter(Timeout);
             try
             {
+                if (new Uri(transmission.Url).Host == "api.themoviedb.org")
+                {
+                    using var metadataResponse = await TmdbTransport.GetAsync(_httpClientFactory, transmission.Url,
+                        MetadataAdmission.Required, timeout.Token, SourceHttp.ClientName,
+                        prepare: outgoing =>
+                        {
+                            outgoing.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
+                            outgoing.Headers.Accept.ParseAdd(transmission.Accept);
+                            if (transmission.Headers != null)
+                                foreach (var (name, value) in transmission.Headers) outgoing.Headers.TryAddWithoutValidation(name, value);
+                        }, beforeSend: () => GateOpen(transmission)).ConfigureAwait(false);
+                var metadataStatus = (int)metadataResponse.StatusCode;
+                if (metadataStatus is >= 300 and < 400 && metadataStatus != 304)
+                {
+                    throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
+                }
+
+                var metadataText = metadataStatus == 200 || metadataStatus is >= 400 and < 500 ? await BoundedBody.ReadAsync(metadataResponse, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
+                return new HttpResult(metadataStatus, metadataText, RetryAfterOf(metadataResponse), HeadersOf(metadataResponse));
+                }
                 var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
                 using var request = new HttpRequestMessage(transmission.Method, transmission.Url);
                 request.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
@@ -1637,7 +1661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     request.Content = new StringContent(transmission.Body, Encoding.UTF8, "application/json");
                 }
 
-                GateOpen(transmission); // the final check: nothing awaited between it and the send
+                GateOpen(transmission); // non-TMDB providers only; nothing awaited before their send
                 using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)

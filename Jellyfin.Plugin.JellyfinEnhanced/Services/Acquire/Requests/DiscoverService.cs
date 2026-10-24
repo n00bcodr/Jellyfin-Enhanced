@@ -229,7 +229,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static Func<string, int, StatusViewer, CancellationToken, Task<bool>> ParentalCheck(SeerrParentalFilter parental)
             => (kind, id, viewer, ct) => viewer.Handle is not User person
                 ? Task.FromResult(false)
-                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.MaySeeAbsentAsync(kind, id, policy, ct) : Task.FromResult(true);
+                : parental.TryGetRestrictedPolicy(person, out var policy) ? IsAllowedAsync(parental, kind, id, policy, viewer.UserId, ct) : Task.FromResult(true);
+
+        private static async Task<bool> IsAllowedAsync(SeerrParentalFilter parental, string kind, int id, SeerrParentalFilter.Policy policy, Guid viewer, CancellationToken ct)
+            => await parental.CheckAbsentAsync(kind, id, policy, viewer, ct).ConfigureAwait(false) == true;
 
         /// <summary>Hidden Content's per-user file.</summary>
         internal const string HiddenContentFile = "hidden-content.json";
@@ -267,6 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<DiscoverAnswer?> PublishAsync(StatusViewer viewer, string what, bool search, Func<StatusViewer, HiddenTitles, Task<Prepared?>> prepare, CancellationToken ct)
         {
+            using var metadataViewer = NativeDetails.ViewerMetadataAdmission.ForViewer(viewer.UserId);
             // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
             using var bound = CopyLookupBound.Track();
             for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
