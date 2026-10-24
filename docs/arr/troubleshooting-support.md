@@ -266,9 +266,19 @@ Public title details preserve Jellyfin's current permission to open an owned cop
 unrated series when Block Unrated Series is off. Hidden copies and hidden seasons or episodes do not
 grant this permission. For restricted viewers, genuinely absent titles still require verified parental evidence.
 
-The HTTP commit guard also protects signed artwork, including anonymous image requests, streamed results,
-HEAD and conditional 304 responses. Evidence changes before headers commit withhold the old body and
-remove its validators. A stream that committed under valid evidence continues normally.
+The HTTP guard also protects signed artwork, including anonymous image requests, bounded streamed results,
+HEAD and conditional 304 responses. Before starting a title-bearing answer, it validates the evidence and
+holds a completion token. Evidence-changing settings saves block new tokens and wait up to three seconds
+for outstanding answers to finish. An earlier answer can therefore finish under its original settings;
+the next request uses the new settings. A changed answer that has not acquired a token is withheld with
+503 and its validators removed. Idle change-feed polls hold no token and recheck each returned batch.
+
+A stalled response cannot block settings forever: after three seconds the save proceeds and the server
+logs `Parental evidence revision drain expired` with the outstanding response count. That exceptional
+response may finish after the change. A host configuration update that fails to complete also has bounded
+cleanup and a separate warning. These warnings contain no title or credential. Successful title-free settings,
+preferences, restore and other write acknowledgements retain their own status; a fresh host error retains its
+error status and body.
 
 Import resolution and source preview keep their title-free `504 parental_pending` response with
 `Retry-After: 2`, so the same import chunk can retry. A busy import keeps its typed 429 retry response.

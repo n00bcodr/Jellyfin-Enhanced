@@ -1419,6 +1419,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/EvidenceRevision.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs",
       "category": "Services"
     },
@@ -11725,7 +11729,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 732,
+    "files": 733,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

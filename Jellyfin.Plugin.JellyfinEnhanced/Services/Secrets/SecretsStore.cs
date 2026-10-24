@@ -166,6 +166,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         /// </summary>
         public void Update(Func<Dictionary<string, string>, bool> mutate)
         {
+            EvidenceRevision.Advance(() => UpdateUnderBarrier(mutate));
+        }
+
+        private void UpdateUnderBarrier(Func<Dictionary<string, string>, bool> mutate)
+        {
             lock (_lock)
             {
                 var copy = new Dictionary<string, string>(Values(), StringComparer.Ordinal);

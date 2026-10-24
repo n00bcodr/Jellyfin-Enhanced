@@ -398,7 +398,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         context.HttpContext.Items[InputsMark] = PrivacyInputs.Now;
         // Admission belongs to the HTTP committer, not to this JSON projection's registry or read verbs.
         if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
-            PrivacyResponseGuard.Admit(context.HttpContext, parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
+            PrivacyResponseGuard.AdmitAction(context.HttpContext, context.ActionDescriptor, parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();

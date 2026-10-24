@@ -109,6 +109,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _serverConfig = serverConfig;
             _logger = logger;
             _overallBudget = DefaultOverallBudget;
+            // The pre-event is synchronous; Jellyfin queues the post-event after its actual configuration replacement.
+            serverConfig.GetType().GetEvent("ConfigurationUpdating")?.AddEventHandler(serverConfig,
+                new EventHandler<Jellyfin.Data.Events.GenericEventArgs<MediaBrowser.Model.Configuration.ServerConfiguration>>(BeforeServerConfiguration));
+            serverConfig.ConfigurationUpdated += AfterServerConfiguration;
         }
 
         /// <summary>Creates the filter with another wait for a response's title lookups (tests).</summary>
@@ -211,10 +215,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags) { NativeUser = user };
         }
 
+        private readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, IDisposable> _countryWriters = new();
+
+        private void BeforeServerConfiguration(object? sender, Jellyfin.Data.Events.GenericEventArgs<MediaBrowser.Model.Configuration.ServerConfiguration> args)
+        {
+            if (sender == null) return;
+            var writer = global::Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.Advance(_logger, hostUpdate: true);
+            lock (_countryWriters)
+            {
+                if (_countryWriters.TryGetValue(args.Argument, out var previous))
+                {
+                    _countryWriters.Remove(args.Argument);
+                    previous.Dispose();
+                }
+                _countryWriters.Add(args.Argument, writer);
+            }
+        }
+
+        private void AfterServerConfiguration(object? sender, EventArgs args)
+        {
+            lock (_countryWriters)
+            {
+                if (!_countryWriters.TryGetValue(_serverConfig.Configuration, out var writer)) return;
+                _countryWriters.Remove(_serverConfig.Configuration);
+                writer.Dispose();
+            }
+        }
+
+        private static string NormalizeRegion(string? code) => string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
+
         private string Region()
         {
             var code = _serverConfig.Configuration?.MetadataCountryCode;
-            return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
+            return NormalizeRegion(code);
         }
 
         // Certifications almost never change: a resolved rating is kept a day.

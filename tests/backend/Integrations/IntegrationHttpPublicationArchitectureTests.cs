@@ -86,6 +86,36 @@ public class IntegrationHttpPublicationArchitectureTests(ITestOutputHelper outpu
     }
 
     [Fact]
+    public async Task AuditedMutationAcknowledgementsRetainBodyOwnershipWithoutEvidenceAdmission()
+    {
+        using var host = Host();
+        var all = host.Services.GetRequiredService<IActionDescriptorCollectionProvider>().ActionDescriptors.Items.OfType<ControllerActionDescriptor>();
+        var acknowledgements = all.Where(PrivacyResponseGuard.EvidenceIndependent).ToArray();
+        Assert.True(acknowledgements.Length > 70);
+        var names = acknowledgements.Select(a => a.ControllerName + "." + a.ActionName).ToArray();
+        foreach (var name in new[] { "AcquireMigration.Commit", "AcquireMigration.Rollback", "ConfigurationPatch.Patch", "JeBackup.Restore",
+            "Notify.PutPrefs", "JellyfinEnhanced.SaveUserSettingsSettings", "ArrAdmin.RollbackSecrets", "AcquireHousehold.SaveHousehold" }) Assert.Contains(name, names);
+        Assert.All(acknowledgements, a => Assert.True(PrivacyResponseGuard.Owns(a)));
+        using var pendingWriter = EvidenceRevision.Advance();
+        foreach (var descriptor in acknowledgements)
+        {
+            using var services = new ServiceCollection().BuildServiceProvider();
+            var http = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = services };
+            var current = "before";
+            var guard = PrivacyResponseGuard.Of(http);
+            PrivacyResponseGuard.Publication(http, new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.EvidencePublication(() => current));
+            PrivacyResponseGuard.AdmitAction(http, descriptor, null, null);
+            current = "after";
+            Assert.True(guard.Holds(), descriptor.ControllerName + "." + descriptor.ActionName);
+            await PrivacyResponseGuard.CommitAsync(http);
+            Assert.Equal(200, http.Response.StatusCode);
+            Assert.Equal(0, EvidenceRevision.Outstanding);
+            guard.Dispose();
+        }
+        output.WriteLine($"{acknowledgements.Length} audited title-free acknowledgement actions; none excluded from body ownership.");
+    }
+
+    [Fact]
     public void PlantedUnownedTitleRouteFailsTheSameArchitectureAssertion()
     {
         using var host = Host(planted: true);

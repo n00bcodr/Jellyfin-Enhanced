@@ -219,6 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var after = request.Cursor.Value;
                 while (true)
                 {
+                    Services.PrivacyResponseGuard.BeginMessage(HttpContext);
                     var read = _feed.Read(request.Epoch, after);
                     if (read.Reset) return Ok(new { epoch = _feed.Epoch, cursor = read.Cursor, keys = Array.Empty<string>(), reset = true });
                     IReadOnlyList<ArrFeedChange> asked = wanted == null ? read.Changes : read.Changes.Where(c => wanted.Contains(c.Key)).ToList();

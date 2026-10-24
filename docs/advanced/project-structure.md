@@ -861,3 +861,14 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | `more-info-needed.yml`, `stale.yml` | Issue maintenance. |
 
 `.github/ISSUE_TEMPLATE/bug.md` and `.github/ISSUE_TEMPLATE/feature_request.md` provide report templates; `.github/SECURITY_GUIDELINES.md`, `.github/codeql/codeql-config.yml`, `.github/dependabot.yml` and `.github/funding.yml` hold repository policy/configuration. Follow [CONTRIBUTING.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md) for which checks apply to a contribution and [SECURITY.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/SECURITY.md) for reporting vulnerabilities.
+
+
+Parental evidence publication uses `Services/EvidenceRevision.cs`: the HTTP owner's final evidence check
+and token admission are atomic with closing writer admission. A title-bearing response retains its token
+through `OnCompleted`, abort, exception or disposal. All plugin configuration saves/replacements/restores,
+secret-store source changes and migration switches enter `EvidenceRevision.Advance` before mutation.
+The pinned host's country replacement is bracketed by its pre/post events (the post event is queued);
+an abandoned update has bounded cleanup. A three-second drain limit keeps settings usable on a hung
+client and logs the outstanding count. Configuration/restore/adoption acknowledgements are explicitly
+independent of title evidence while retaining body ownership. Unhandled MVC errors discard held title
+bytes and restore the original response-body feature for host error handling.

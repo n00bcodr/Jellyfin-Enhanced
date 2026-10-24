@@ -32,6 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         internal string Revision { get; }
         internal bool Current => Matches(Revision, _current);
+        internal EvidencePublication NextMessage() => new(_current, Viewer);
         internal static bool Matches(string revision, Func<string> current) => revision == current();
 
         // The callback must be synchronous: a caller cannot carry an admission across another await.

@@ -127,6 +127,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private bool Switch(string backend, string? addresses = null)
         {
+            var switched = false;
+            EvidenceRevision.Advance(() => switched = SwitchUnderBarrier(backend, addresses));
+            return switched;
+        }
+
+        private bool SwitchUnderBarrier(string backend, string? addresses)
+        {
             lock (JellyfinEnhanced.AnalyticsCredentialLock)
             {
                 var live = _config();
