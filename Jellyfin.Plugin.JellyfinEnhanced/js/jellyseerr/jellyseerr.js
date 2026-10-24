@@ -1045,8 +1045,10 @@
                     // (no request when this tab already keeps fresh copies in
                     // sessionStorage, e.g. after a reload)
                     // A viewer without a Seerr account reads them from the native route (or not at all).
-                    const nativeGenres = !!JE.discoveryFilter?.useNativeFeeds?.(status);
-                    if (isJellyseerrActive && (jellyseerrUserFound || nativeGenres) && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                    // Jellyfin Enhanced the request backend (A1): the native lists or none, whatever Seerr says.
+                    const jeGenres = JE.discoveryFilter?.jeFeeds?.() ?? null;
+                    const nativeGenres = jeGenres ?? !!JE.discoveryFilter?.useNativeFeeds?.(status);
+                    if ((jeGenres ?? (isJellyseerrActive && (jellyseerrUserFound || nativeGenres))) && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
                         Promise.all([
                             JE.discoveryFilter?.fetchTmdbGenreList?.('tv', { native: nativeGenres })?.catch(() => {}),
                             JE.discoveryFilter?.fetchTmdbGenreList?.('movie', { native: nativeGenres })?.catch(() => {})

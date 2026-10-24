@@ -46,12 +46,14 @@
      *   (modalElement, primaryButton, close, press), `press` the click, whose owner (JE.ownerOf) its work takes.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
+     * @param {boolean} [options.closeOnly] - A window to look at only: no primary button (onSave never runs).
+     * @param {string} [options.closeText] - Optional custom text for the secondary button (defaults to localized 'Cancel').
      * @param {object} options.operation - The owner (required, D46S2-R6): the operation a title action submitted,
      *   a viewer's native owner (JE.ownerOf(event)), or a node inside UI it opened. The modal is in its scope, so it
      *   closes when that owner ends (its session, document or route), and onSave runs only while it is current.
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation, closeOnly = false, closeText }) {
         const submitted = JE.captureSubmitted(operation);
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
@@ -101,8 +103,8 @@
 
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-secondary';
-        cancelBtn.setAttribute('aria-label', JE.t('jellyseerr_modal_cancel'));
-        cancelBtn.textContent = JE.t('jellyseerr_modal_cancel');
+        cancelBtn.setAttribute('aria-label', closeText || JE.t('jellyseerr_modal_cancel'));
+        cancelBtn.textContent = closeText || JE.t('jellyseerr_modal_cancel');
 
         const primaryBtn = document.createElement('button');
         primaryBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-primary';
@@ -110,7 +112,8 @@
         primaryBtn.textContent = buttonText || JE.t('jellyseerr_modal_request');
 
         footerEl.appendChild(cancelBtn);
-        footerEl.appendChild(primaryBtn);
+        // A window to look at only (closeOnly): no primary action.
+        if (!closeOnly) footerEl.appendChild(primaryBtn);
 
         contentEl.appendChild(headerEl);
         contentEl.appendChild(bodyEl);

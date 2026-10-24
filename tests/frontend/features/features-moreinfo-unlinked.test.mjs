@@ -339,3 +339,22 @@ test('Jellyfin 10.11 (no public routes): a title page\'s rows are left out quiet
   await h.api.checkUserStatus();
   assert.deepEqual(plain(await h.api.fetchSimilarTvShows(615)), { results: [], page: 1, totalPages: 0, totalResults: 0 });
 });
+
+// A1 fix round 1: the JE backend's rows (a library title page's Similar/Recommended) come from the public route before any
+// Seerr account logic: a linked viewer with Seerr settings kept, or Seerr off, request switches on or off.
+test('the JE backend reads a title page\'s similar and recommended rows from the public route, never through a Seerr account', async t => {
+  const routes = {
+    '/jellyseerr/user-status': LINKED,
+    '/jellyseerr/movie/693134/similar?page=1': { results: [{ id: 1, title: 'Seerr copy' }] },
+    '/native-details/title/movie/693134/related/similar?page=1': { page: 1, totalPages: 1, results: [{ id: 438631, mediaType: 'movie', title: 'Dune' }] }
+  };
+  for (const jeMode of [true, false]) {
+    const h = setup(t, { jeMode, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } }, routes });
+    await h.api.checkUserStatus();
+    assert.deepEqual((await h.api.fetchSimilarMovies(693134)).results.map(r => r.title), ['Dune']);
+    assert.deepEqual(h.reads, ['/jellyseerr/user-status', '/native-details/title/movie/693134/related/similar?page=1'], `request switches ${jeMode ? 'on' : 'off'}`);
+  }
+  const off = setup(t, { jeMode: false, config: { JellyseerrEnabled: false, NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } }, routes });
+  assert.deepEqual((await off.api.fetchSimilarMovies(693134)).results.map(r => r.title), ['Dune']);
+  assert.deepEqual(off.reads, ['/native-details/title/movie/693134/related/similar?page=1']);
+});

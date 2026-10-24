@@ -30,6 +30,19 @@
             button.removeEventListener('click', previousHandler);
             requestHandlers.delete(button);
         }
+        // Jellyfin Enhanced the request backend with its request controls off (A1): the card still shows its title
+        // (Jellyfin Enhanced's details) but offers no request, since Seerr's own would ask Seerr (D88). Its request
+        // controls on, Jellyfin Enhanced takes the press (ask-seerr.js).
+        const requestsOff = JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb' && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
+        button.hidden = requestsOff;
+        // Inline: Seerr's button style (display: flex) outranks [hidden], and JE's request styles aren't loaded while off.
+        button.style.display = requestsOff ? 'none' : '';
+        button.classList.toggle('je-request-off', requestsOff);
+        if (requestsOff) {
+            button.innerHTML = '';
+            button.disabled = true;
+            return;
+        }
         if (!isJellyseerrActive) {
             button.innerHTML = `<span>${JE.t('jellyseerr_btn_offline')}</span>${icons.cloud_off}`;
             button.disabled = true;

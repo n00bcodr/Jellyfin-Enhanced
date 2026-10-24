@@ -142,6 +142,7 @@ jellyseerr/discovery/discovery-base.js	revalidating	uncached	the read of the cli
 jellyseerr/discovery/discovery-filter-utils.js	keptPages	revisioned	Discover pages (a load's prefetched pages, a page shown again), kept under the access revision they were asked under and the user: used only while both still hold (checked at use), dropped when the revision moves, 2 minutes at most from the request
 jellyseerr/discovery/discovery-filter-utils.js	sessionStorage:storageKey	shared	TMDB's genre list (the same for everyone)
 jellyseerr/discovery/genre-discovery.js	tmdbGenreCache	shared	TMDB's genre list (the same for everyone)
+jellyseerr/discovery/genre-discovery.js	nativeGenreCache	shared	TMDB's genre list from the server's native route (the same for everyone; kept apart from Seerr's, A1)
 jellyseerr/discovery/tag-discovery.js	keywordIdCache	shared	TMDB keyword ids by name (the same for everyone)
 jellyseerr/issue-reporter.js	cachedUserCanReport	account	whether the person's Seerr account may report issues; the server checks it again on every report
 jellyseerr/item-details.js	currentAbortController	state	an abort controller

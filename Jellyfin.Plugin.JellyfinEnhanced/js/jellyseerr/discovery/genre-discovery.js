@@ -17,8 +17,10 @@
     const genreInfoCache = JE.discoveryFilter.createSessionCache('genre-info',
         (v) => !!v && typeof v === 'object' && typeof v.name === 'string');
 
-    // Dynamic genre cache (populated from TMDB API)
+    // Dynamic genre cache (populated from TMDB API), one per source: the native route's lists and Seerr's
+    // are never handed to each other's reader.
     let tmdbGenreCache = null;
+    let nativeGenreCache = null;
 
     // Alias for shared utilities
     const fetchWithManagedRequest = (path, options) =>
@@ -31,7 +33,8 @@
      * @param {boolean} [native] - Read them from the server's native route (no Seerr account)
      */
     async function fetchTmdbGenres(signal, native = false) {
-        if (tmdbGenreCache) return tmdbGenreCache;
+        const kept = native ? nativeGenreCache : tmdbGenreCache;
+        if (kept) return kept;
 
         try {
             if (signal?.aborted) {
@@ -62,7 +65,10 @@
             });
 
             // An empty answer (a list that couldn't be read) is not kept: the next page asks again.
-            if (Object.keys(cache).length) tmdbGenreCache = cache;
+            if (Object.keys(cache).length) {
+                if (native) nativeGenreCache = cache;
+                else tmdbGenreCache = cache;
+            }
             return cache;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -156,27 +162,39 @@
      * @returns {Promise<{tvId: number|null, movieId: number|null, title: string}|null>}
      */
     async function resolveFeeds({ id: genreId, signal }) {
+        // Jellyfin Enhanced is the request backend (A1): its native feeds and genre lists, or no row; Seerr's
+        // status, account and lists are never asked for (D88).
+        const je = JE.discoveryFilter.jeFeeds?.() ?? null;
+        if (je === false) return null;
+
         // Fetch genre info and user status in parallel
         const genreInfoPromise = getGenreInfo(genreId, signal);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+        const statusPromise = je ? null : JE.jellyseerrAPI?.checkUserStatus();
 
         const [genreInfo, status] = await Promise.all([genreInfoPromise, statusPromise]);
 
         if (signal.aborted) return null;
 
-        if (!status?.active || !genreInfo?.name) return null;
-        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
-        const nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
-        if (status.userFound === false && !nativeFeeds && !syntheticGenreTmdb(genreId)) return null;
+        if (!genreInfo?.name) return null;
+        let nativeFeeds = !!je;
+        // Genre lists from the native route too (a synthetic genre without a Seerr account).
+        let nativeLists = !!je;
+        if (!je) {
+            if (!status?.active) return null;
+            // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+            nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
+            if (status.userFound === false && !nativeFeeds && !syntheticGenreTmdb(genreId)) return null;
+            nativeLists = nativeFeeds || !!syntheticGenreTmdb(genreId) && status.userFound === false;
+        }
 
-        let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal, nativeFeeds || !!syntheticGenreTmdb(genreId) && status.userFound === false);
+        let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal, nativeLists);
         if (signal.aborted) return null;
 
         // A synthetic genre names its TMDB id: that id for the media type whose list has it
         // (both when the lists can't be read: a feed of the other type's id is just empty).
         const direct = syntheticGenreTmdb(genreId);
         if (direct) {
-            const known = Object.values(await fetchTmdbGenres(signal, status.userFound === false) || {});
+            const known = Object.values(await fetchTmdbGenres(signal, nativeLists) || {});
             const movie = known.some(g => g.movie === direct) ? direct : null;
             const tv = known.some(g => g.tv === direct) ? direct : null;
             tmdbGenreIds = known.length === 0

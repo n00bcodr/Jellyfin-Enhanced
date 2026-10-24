@@ -24,7 +24,7 @@ const MEMBER = { role: 'member', canRequest: true, canRequestMovies: true, canRe
  * @param {import('node:test').TestContext} t Test.
  * @param {{jeMode?: boolean, me?: Object}} [options] JE mode, capabilities.
  */
-function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
+function setup(t, { jeMode = true, me = MEMBER, check = null, config = {}, realCollectionUi = false } = {}) {
   const posts = [];
   const checks = [];
   const toasts = [];
@@ -50,7 +50,7 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
       return jsonResponse({ outcome: 'denied', reason: 'not_found' }, 404);
     },
     JE: {
-      pluginConfig: { ArrStatusEnabled: true, ArrRequestsEnabled: true, ArrRequestsJeMode: jeMode, JellyseerrEnabled: true, JellyseerrShowSearchResults: true },
+      pluginConfig: { ArrStatusEnabled: true, ArrRequestsEnabled: true, ArrRequestsJeMode: jeMode, JellyseerrEnabled: true, JellyseerrShowSearchResults: true, ...config },
       t: translate,
       toast: text => toasts.push(text),
       escapeHtml: s => s,
@@ -80,6 +80,8 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
     ] };
   }
   t.after(() => h.close());
+  // Seerr's own collection window (the original the wrapper falls back to), over the recorded Seerr API.
+  if (realCollectionUi) for (const m of ['jellyseerr/seerr-status.js', 'jellyseerr/ui/ui-request-modals.js']) h.load(m);
   for (const m of MODULES) h.load(m);
   return { ...h, get NATIVE() { return h.NATIVE; }, posts, toasts, seerr, checks };
 }
@@ -683,4 +685,91 @@ test('a request toast shows a translation\'s icon as its emoji, never as escaped
   // Anything else stays text.
   h.JE.arrAsk.toast('<b>bold</b>');
   assert.equal(h.toasts.at(-1), '<b>bold</b>');
+});
+
+// A1 fix round 1 (A1-SOUND-02): with Jellyfin Enhanced the request backend (public config NativeAbsentDetails.Source
+// "tmdb") a collection's View reads Jellyfin Enhanced's public collection whatever the request switches say; the request
+// controls are gated apart. Seerr's window (Seerr's details) never opens for it.
+const JE_BACKEND_ASKING_OFF = { ArrRequestsEnabled: false, NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } };
+
+test('JE backend, request controls off: the collection View is Jellyfin Enhanced\'s public collection to look at, never Seerr\'s window', async t => {
+  for (const JellyseerrEnabled of [false, true]) {
+    const h = setup(t, { jeMode: false, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled } });
+    const opened = [];
+    h.JE.titleDetails = { show: (id, type, scope, owner) => { opened.push(['show', id, type, !!owner]); return true; }, openItem: (id) => { opened.push(['item', id]); } };
+    h.JE.jellyseerrAPI.fetchPublic = async (path) => { h.seerr.publicReads.push(path); return { id: 2344, name: 'The Matrix Collection', parts: [
+      { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', mediaInfo: { status: 5, jellyfinMediaId: 'a'.repeat(32) } },
+      { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15', posterPath: '/r.jpg' },
+      { id: 605, title: 'The Matrix Later', releaseDate: '2999-01-01' }
+    ] }; };
+    await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+    await settle();
+    assert.deepEqual([h.seerr.collection.length, h.seerr.details.length], [0, 0], `Seerr's window and details stay shut (Seerr ${JellyseerrEnabled ? 'kept' : 'off'})`);
+    assert.deepEqual(h.seerr.publicReads, ['/collection/2344']);
+    const modal = h.seerr.modals.at(-1);
+    assert.equal(modal.shown, 1);
+    assert.equal(modal.options.closeOnly, true, 'nothing to submit');
+    assert.equal(modal.options.subtitle, 'The Matrix Collection');
+    const body = h.document.createElement('div');
+    body.innerHTML = modal.options.bodyHtml;
+    assert.equal(body.querySelector('input, .jellyseerr-collection-checkbox'), null, 'no ask controls');
+    assert.deepEqual([...body.querySelectorAll('.je-arr-collection-view-row')].map(r => r.dataset.tmdbId), ['603', '604', '605']);
+    assert.match(body.innerHTML, new RegExp(translate('jellyseerr_btn_available')));
+    assert.match(body.innerHTML, new RegExp(translate('arr_collection_not_out')));
+    assert.equal(h.posts.length, 0, 'nothing asked for');
+  }
+});
+
+test('JE backend, request controls off: a row of the collection View opens its movie (the library copy, else its own page)', async t => {
+  const h = setup(t, { jeMode: false, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled: false } });
+  const opened = [];
+  h.JE.titleDetails = { show: (id, type, scope, owner) => { opened.push(['show', id, type, !!owner]); return true; }, openItem: (id) => { opened.push(['item', id]); } };
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 2344, name: 'The Matrix Collection', parts: [
+    { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', mediaInfo: { status: 5, jellyfinMediaId: 'a'.repeat(32) } },
+    { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' }
+  ] });
+  // The real window shell around the recorded options, so its rows take the viewer's clicks.
+  h.JE.jellyseerrModal.create = (options) => {
+    const m = { options, shown: 0, closed: 0 };
+    h.seerr.modals.push(m);
+    const modalElement = h.document.createElement('div');
+    modalElement.innerHTML = options.bodyHtml;
+    h.document.body.appendChild(modalElement);
+    return { modalElement, show: () => { m.shown++; }, close: () => { m.closed++; modalElement.remove(); } };
+  };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  click(h, h.document.querySelector('.je-arr-collection-view-row[data-tmdb-id="604"] .title'));
+  assert.deepEqual(opened, [['show', 604, 'movie', true]]);
+  assert.equal(h.seerr.modals.at(-1).closed, 1);
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  click(h, h.document.querySelector('.je-arr-collection-view-row[data-tmdb-id="603"]'));
+  assert.deepEqual(opened.at(-1), ['item', 'a'.repeat(32)]);
+});
+
+test('JE backend, request controls off, through Seerr\'s real collection window module: Seerr\'s collection is never read', async t => {
+  for (const JellyseerrEnabled of [false, true]) {
+    const h = setup(t, { jeMode: false, realCollectionUi: true, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled } });
+    await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: h.NATIVE });
+    await settle();
+    assert.deepEqual(h.seerr.details, [], `fetchCollectionDetails never runs (Seerr ${JellyseerrEnabled ? 'kept' : 'off'})`);
+    assert.deepEqual(h.seerr.publicReads, ['/collection/10']);
+  }
+  // Seerr mode: Seerr's own window and details, as before.
+  const seerr = setup(t, { jeMode: false, realCollectionUi: true, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'seerr' } } });
+  // (Only its read is looked at: the rest of the window needs Seerr's form pieces, which are not loaded here.)
+  await seerr.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: seerr.NATIVE }).catch(() => {});
+  await settle();
+  assert.deepEqual([seerr.seerr.details, seerr.seerr.publicReads], [[10], []]);
+});
+
+test('JE mode, a viewer who can\'t ask for movies: the collection View shows the collection to look at instead of a refusal', async t => {
+  const WATCHER = { ...MEMBER, role: 'watcher', canRequest: false, canRequestMovies: false, canRequestSeries: false };
+  const h = setup(t, { me: WATCHER, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } } });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  assert.deepEqual([h.seerr.collection.length, h.seerr.details.length, h.toasts.length], [0, 0, 0]);
+  assert.equal(h.seerr.modals.at(-1)?.options.closeOnly, true);
+  assert.equal(h.posts.length, 0);
 });

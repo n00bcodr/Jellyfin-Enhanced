@@ -924,11 +924,14 @@
                 return;
             }
 
+            // Jellyfin Enhanced the request backend (A1; public config NativeAbsentDetails.Source "tmdb"): the rows come
+            // from its public route (fetchRelated), so Seerr's status is never asked for (D88).
+            const jeDetails = JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
             // Check if Jellyseerr is active
-            const status = await JE.jellyseerrAPI.checkUserStatus();
+            const status = jeDetails ? null : await JE.jellyseerrAPI.checkUserStatus();
             if (signal.aborted) return;
 
-            if (!status || !status.active) {
+            if (!jeDetails && (!status || !status.active)) {
                 console.debug(`${logPrefix} Jellyseerr is not active, skipping`);
                 return;
             }

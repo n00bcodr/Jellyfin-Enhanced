@@ -435,3 +435,19 @@ test('JE handling does not tell a person Seerr linkage is required to enable req
   h.api.surfaceUserStatusBanner({ reason: 'unlinked' });
   assert.equal(h.toasts.length, 1);
 });
+
+// A1 fix round 1: with Jellyfin Enhanced the request backend (public config NativeAbsentDetails.Source "tmdb") and its
+// request controls off, a card offers no request (Seerr's own button would ask Seerr); Seerr mode keeps its button.
+test('JE backend with its request controls off: a card\'s request button is hidden and inert; Seerr mode keeps it', async t => {
+  const h = uiSetup(t, { config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } } });
+  h.configure(); h.button.click(); await flush();
+  assert.deepEqual([h.button.hidden, h.button.style.display, h.button.disabled, h.button.classList.contains('je-request-off'), h.calls.length], [true, 'none', true, true, 0]);
+  // JE's request controls on: the button is offered (ask-seerr.js takes the press).
+  h.JE.internals = { ...h.JE.internals, arrAskSeerr: { jeMode: () => true } };
+  h.configure();
+  assert.deepEqual([h.button.hidden, h.button.style.display, h.button.classList.contains('je-request-off')], [false, '', false]);
+  assert.ok(h.button.textContent.includes('jellyseerr_btn_request'));
+  const seerr = uiSetup(t, { config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'seerr' } } });
+  seerr.configure();
+  assert.deepEqual([seerr.button.hidden, seerr.button.disabled], [false, false]);
+});
