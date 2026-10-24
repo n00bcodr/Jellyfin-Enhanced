@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -39,9 +40,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private readonly string _path;
         private readonly string _connectionString;
-        private readonly SemaphoreSlim _writer = new(1, 1);
-        private readonly ReaderWriterLockSlim _swap = new(LockRecursionPolicy.SupportsRecursion);
-        private long _generation;
+        private sealed class FileGate
+        {
+            internal readonly SemaphoreSlim Writer = new(1, 1);
+            internal readonly ReaderWriterLockSlim Swap = new(LockRecursionPolicy.SupportsRecursion);
+            internal long Generation;
+            internal EvidenceOrder Ordering { get; }
+            internal FileGate() { Ordering = new EvidenceOrder(() => Interlocked.Read(ref Generation)); }
+        }
+        private static readonly ConcurrentDictionary<string, FileGate> FileGates = new(StringComparer.Ordinal);
+        private readonly FileGate _fileGate;
+        private readonly SemaphoreSlim _writer;
+        private readonly ReaderWriterLockSlim _swap;
+        internal EvidenceOrder EvidenceOrder => _fileGate.Ordering;
+        private RetryOwners? _retryOwners;
+        internal RetryOwners RetryOwners => _retryOwners ??= new RetryOwners(this);
         internal long ArrivalRevision;
         private readonly Logger? _logger;
         private readonly object _initLock = new();
@@ -293,6 +306,31 @@ CREATE INDEX title_aliases_canonical ON title_aliases(canonical);
 CREATE TABLE title_reconcile (acquisition_id TEXT PRIMARY KEY, noted_at INTEGER NOT NULL);
 ";
 
+        // The edition's durable public retry namespace: children and outbox jobs stay linked to their request receipt. A
+        // database that had request ids before takes each over as a completed legacy owner (ambiguous when one id named
+        // two different requests). Guarded and idempotent: ensured at start-up (see Initialize), never a numbered step.
+        internal const string RetryTables = @"
+CREATE TABLE IF NOT EXISTS retry_owners (
+    user_id TEXT NOT NULL, retry_key TEXT NOT NULL, revision TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL, identity TEXT NOT NULL, state TEXT NOT NULL,
+    command TEXT, binding TEXT, action_receipt TEXT, result TEXT, result_type TEXT,
+    deadline INTEGER, parent_revision TEXT REFERENCES retry_owners(revision) ON DELETE CASCADE, created_at INTEGER NOT NULL,
+    PRIMARY KEY(user_id,retry_key));
+INSERT OR IGNORE INTO retry_owners(user_id,retry_key,revision,kind,identity,state,created_at)
+SELECT user_id,trim(client_request_id),lower(hex(randomblob(16))),'legacy_request',
+       CASE WHEN COUNT(DISTINCT fingerprint)=1 THEN MIN(fingerprint) ELSE 'ambiguous_legacy_identity' END,'completed',0
+FROM request_inputs GROUP BY user_id,trim(client_request_id);
+CREATE TABLE IF NOT EXISTS retry_wants (
+    owner_revision TEXT NOT NULL REFERENCES retry_owners(revision) ON DELETE CASCADE,
+    want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    PRIMARY KEY(owner_revision,want_id));
+INSERT OR IGNORE INTO retry_wants SELECT o.revision,i.want_id FROM retry_owners o JOIN request_inputs i
+ON o.user_id=i.user_id AND o.retry_key=trim(i.client_request_id);
+CREATE TABLE IF NOT EXISTS request_search_slots (
+    slot TEXT PRIMARY KEY, owner_revision TEXT REFERENCES retry_owners(revision) ON DELETE SET NULL,
+    claimed_at INTEGER NOT NULL);
+";
+
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
         // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
         private const string Phase3dTables = @"
@@ -319,7 +357,10 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// <summary>A database at an explicit path (tests).</summary>
         internal AcquireDatabase(string path, Logger? logger = null)
         {
-            _path = path;
+            _path = Path.GetFullPath(path);
+            _fileGate = FileGates.GetOrAdd(_path, _ => new FileGate());
+            _writer = _fileGate.Writer;
+            _swap = _fileGate.Swap;
             _logger = logger;
             _connectionString = new SqliteConnectionStringBuilder
             {
@@ -377,7 +418,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// Moves on each time the database is replaced by a restore: row ids read under one
         /// generation mean nothing under the next.
         /// </summary>
-        public long Generation => Interlocked.Read(ref _generation);
+        public long Generation => Interlocked.Read(ref _fileGate.Generation);
 
         /// <summary>
         /// The version of what the automatic-write check reads from this database: budget admissions and their settling
@@ -520,9 +561,10 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                             Automation.Mutate(() =>
                             {
                                 source.BackupDatabase(live);
-                                Interlocked.Increment(ref _generation);
+                                Interlocked.Increment(ref _fileGate.Generation);
                             });
                         }
+                        Interlocked.Increment(ref _fileGate.Generation);
                         lock (_initLock)
                         {
                             _initialized = false;
@@ -630,12 +672,13 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     _logger?.Error("Requests & downloads: " + _unavailable);
                     return;
                 }
-                // One copy per start: the schema-2 extensions below don't take a second one after a migration took it.
-                var backedUp = false;
+                // Keep one original preimage for versioned migrations and additive repairs together: the first step or repair
+                // that changes an existing database copies it once; no later one (and no reopen) takes another.
+                var migrationBackedUp = false;
                 if (version < Migrations.Count && existed && version > 0)
                 {
                     BackupBeforeMigration(connection, version);
-                    backedUp = true;
+                    migrationBackedUp = true;
                 }
                 for (var v = version; v < Migrations.Count; v++)
                 {
@@ -649,14 +692,13 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     transaction.Commit();
                     _logger?.Info($"Requests & downloads: database migrated to schema {v + 1}.");
                 }
-                var extensionBackedUp = backedUp;
                 // Earlier phase-3a installations already have schema 2. Extend that migration idempotently.
                 using (var columns = connection.CreateCommand())
                 {
                     columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
                     if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
-                        if (existed && version == 2 && !extensionBackedUp) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && version >= 2 && !migrationBackedUp) { BackupBeforeMigration(connection, version); migrationBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
@@ -678,7 +720,11 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                     {
                         columns.CommandText = addTarget ? "SELECT COUNT(*) FROM wants" : "SELECT COUNT(*) FROM wants WHERE target_key='' AND status IN ('pending','queued','sent','stale')";
                         var repairsRows = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
-                        if (existed && version == 2 && !extensionBackedUp && (addTarget || addJob || repairsRows)) BackupBeforeMigration(connection, version);
+                        if (existed && version >= 2 && !migrationBackedUp && (addTarget || addJob || repairsRows))
+                        {
+                            BackupBeforeMigration(connection, version);
+                            migrationBackedUp = true;
+                        }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
@@ -716,7 +762,7 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                     if (UserVersion(connection) >= 4 && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
                         columns.CommandText = "SELECT COUNT(*) FROM reservations";
-                        if (existed && !extensionBackedUp && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && !migrationBackedUp && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0) { BackupBeforeMigration(connection, version); migrationBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
@@ -749,6 +795,26 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
                         extend.CommandText = SchemaFourTitleReconcile;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                // The edition's durable retry namespace (retry owners, the wants they took, the Search slots). The edition track
+                // numbered it schema 3 on its own base; joined, the numbered steps stay 1-8 byte for byte (D71: the next one is
+                // AA's 9), so it is ensured here at every start, like the other repairs: a fresh database gets the empty tables
+                // right after its steps; an upgraded one takes its legacy request ids over once (in one transaction, the
+                // original copied first when there are any).
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('retry_owners','retry_wants','request_search_slots')";
+                    if (UserVersion(connection) >= 2 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) < 3)
+                    {
+                        tables.CommandText = "SELECT COUNT(*) FROM request_inputs";
+                        if (existed && !migrationBackedUp && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) > 0) { BackupBeforeMigration(connection, version); migrationBackedUp = true; }
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = RetryTables;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }

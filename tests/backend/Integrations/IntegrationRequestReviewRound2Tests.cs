@@ -325,6 +325,6 @@ public class IntegrationRequestReviewRound2Tests
             }
             Assert.Equal(20, ledger.Quota(r.Policy.Evaluate(user, Seasons(1, 2)), r.Now).UsedGb);
         }
-        Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v2.*"));
+        Assert.Single(Directory.GetFiles(r.Root, "old-schema2.db.pre-v" + AcquireDatabase.Migrations.Count + ".*"));
     }
 }

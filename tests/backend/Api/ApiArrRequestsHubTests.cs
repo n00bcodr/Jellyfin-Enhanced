@@ -1590,6 +1590,9 @@ public class ApiArrRequestsHubTests
         Assert.Equal(JsonValueKind.Null, (await Search(sonarr, "movie:tmdb:693134", "found-7")).GetProperty("found").ValueKind);
     }
 
+    private static ArrManageService FamilyManage(Rig rig, AcquireDatabase database)
+        => new(rig.Service, rig.Arr.Factory, new ArrActionRunner(rig.Audit, new ArrConfirmationTokens(), database), rig.Audit, rig.Requests, null, rig.Feed, () => rig.Arr.Plugin.Plugin.Configuration, (_, _) => Task.CompletedTask);
+
     [Fact]
     public async Task SearchForEveryoneRunsTheArrsSearchAgainOnlyForWhatRequestsAlreadySent()
     {
@@ -1603,7 +1606,7 @@ public class ApiArrRequestsHubTests
         using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search.db"));
         var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
         var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
-        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, FamilyManage(rig, db), () => rig.Arr.Now);
         async Task<(int Status, JsonElement Body)> Press(StatusViewer? viewer, string key, string idem)
         {
             var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
@@ -1708,7 +1711,7 @@ public class ApiArrRequestsHubTests
         using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-target.db"));
         var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
         var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
-        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, FamilyManage(rig, db), () => rig.Arr.Now);
         async Task<JsonElement> Press(string key, string idem)
         {
             var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
@@ -1781,7 +1784,7 @@ public class ApiArrRequestsHubTests
         using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-series.db"));
         var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
         var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
-        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, FamilyManage(rig, db), () => rig.Arr.Now);
         async Task<(int Status, JsonElement Body)> Press(StatusViewer viewer, string key, string idem)
         {
             var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
@@ -1871,7 +1874,7 @@ public class ApiArrRequestsHubTests
         using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-long.db"));
         var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
         var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
-        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, FamilyManage(rig, db), () => rig.Arr.Now);
         async Task<(int Status, JsonElement Body)> Press(string key, string idem)
         {
             var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
@@ -1927,7 +1930,7 @@ public class ApiArrRequestsHubTests
         using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-gone.db"));
         var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
         var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
-        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, FamilyManage(rig, db), () => rig.Arr.Now);
         int Searches() => rig.Sonarr.Writes.Count(w => w.Path == "/api/v3/command" && w.Body.Contains("EpisodeSearch", StringComparison.Ordinal));
         const string Series = "tv:tvdb:81189";
         var input = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = Series, Scope = "seasons", Seasons = new[] { 1 } };

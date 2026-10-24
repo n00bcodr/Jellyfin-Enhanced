@@ -390,7 +390,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 PressChecks.Household => searchOn,
                 _ => seerr ? null : _store.Registry.DefaultFor(ArrKind.Sonarr, edition == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id,
             };
-            Func<ArrConnection, bool> depends = i => PressDepends(i, edition, destination);
+            // The copy the press acts for is held where its binding says, whatever that instance's role is labelled.
+            // Seerr owns its title-wide request and selects its server. JE discovery, connection proof and downloads
+            // are prerequisites only for a JE command, on both real and synthetic season pages.
+            Func<ArrConnection, bool>? depends = seerr ? null : i => PressDepends(i, edition, destination) || (intent.Copy != null && string.Equals(i.Role, intent.Copy, StringComparison.Ordinal));
             // Not a library item the viewer opens: a synthetic absent season page, resolved as the page itself for the viewer.
             AbsentTitle? absent = null;
             if (_view.Resolve(itemId, viewer) == null && pages != null)
@@ -404,8 +407,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     default: return PressProof.Changed;
                 }
             }
+            if (seerr && route == PressChecks.Ask)
+            {
+                // Ordinary Seerr asks concern the title's seasons. Their final page check uses current Jellyfin
+                // availability and visibility, plus Seerr's own policy; no JE holder, queue or connection is evidence.
+                return await GatedAsync(viewer, v => Task.FromResult(_view.Resolve(itemId, v)), (now, item) =>
+                {
+                    var title = absent?.Title.Title ?? item?.Key?.Title;
+                    var season = absent?.Season ?? item?.Season;
+                    if (title == null || season == null || (absent == null && item?.Kind != "season")) return PressProof.Changed;
+                    using var budget = CopyLookupBound.Track();
+                    var copies = CopiesOf(title, now);
+                    var open = copies.Seen.Where(c => c.Visible).ToList();
+                    var have = Editions.Episodes(now, open, Edition.Standard, season, readDimensions: Editions.NeedsDimensions(Edition.Standard)).Coverage();
+                    var context = Context(now);
+                    var folder = item?.SeriesId is Guid series ? context.FolderOf!(series) : null;
+                    var hidden = folder == null ? null : StatusComposer.SplitHidden(folder.EpisodesOf(season, includeVirtual: true), folder.Seasons).Hidden;
+                    var numbers = (intent.Episodes ?? Array.Empty<int>()).Distinct().ToArray();
+                    if (numbers.Any(n => n < 1 || have.Contains((season.Value, n)) || hidden?.Hides(season.Value, n) == true
+                        || absent?.HiddenEpisodes.Contains(n) == true || absent?.HiddenSeasons.Contains(season.Value) == true
+                        || absent?.HiddenSeriesEpisodes.Contains((season.Value, n)) == true)) return PressProof.Changed;
+                    if (budget.Reached || !copies.IsComplete) return new PressProof(PressChecks.Unverified);
+                    var status = new TitleStatus
+                    {
+                        Key = title.WithSeason(season.Value).ToString(), Kind = "season",
+                        Episodes = numbers.Select(n => new EpisodeStatus { Key = title.WithEpisode(season.Value, n).ToString(), Season = season.Value, Episode = n, Stage = StatusStage.NotHere,
+                            Reason = new StatusReason { Code = StatusReasonCode.Looking } }).ToArray(),
+                    };
+                    return Compare(now, status, title.WithSeason(season.Value), season.Value, new Gathered());
+                }, _ => PressProof.Changed, again: absent == null).ConfigureAwait(false);
+            }
             PressProof Compare(StatusViewer now, TitleStatus? status, TitleKey seasonKey, int season, Gathered gather)
             {
+                if ((_config()?.ArrRequestBackend != "je") != seerr) return PressProof.Changed;
                 if (gather.Unverified) return new PressProof(PressChecks.Unverified);
                 if (status == null) return PressProof.Changed;
                 // The press is for this season of this title (whichever id each side used).
@@ -413,6 +447,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var pressed = input != null ? TitleKey.Parse(input.Key) : key;
                 if (pressed == null || !_aliases.Canonical(pressed.Title).Equals(title) || (key?.Season is int s && s != season)) return PressProof.Changed;
                 if (PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin, out var bound) is { } refusal) return new PressProof(refusal);
+                // An episode the press names is under way on an instance it depends on (any of its copies): no longer missing.
+                var named = (intent.Episodes ?? Array.Empty<int>()).ToHashSet();
+                if (!seerr && gather.UnderWay.Any(u => u.Title.Equals(title) && u.Season == season && named.Contains(u.Episode))) return PressProof.Changed;
                 return resolve ? Resolve(gather, pressed, season, bound) : new PressProof(null);
             }
             // The command the check proves: built only from what was just compared and read (nothing chosen before the check).
@@ -429,17 +466,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     case PressChecks.Ask:
                         if (!seerr && destination == null) return PressProof.Changed;
-                        return new PressProof(null, command with { Instance = destination });
+                        return seerr ? new PressProof(null, command with { Instance = destination }) : Bound(gather, new PressProof(null, command with { Instance = destination }));
                     case PressChecks.Household:
                     {
                         // The binding's own Sonarr; a title-wide Search runs where its caller chose (one of the title's copies).
                         var on = bound?.Route ?? destination;
                         if (on == null || (destination != null && !string.Equals(on, destination, StringComparison.OrdinalIgnoreCase))) return PressProof.Changed;
-                        return Searched(gather, command with { Instance = on }, subset);
+                        return Bound(gather, Searched(gather, command with { Instance = on }, subset));
                     }
                     default:
-                        return destination == null ? PressProof.Changed : Searched(gather, command with { Instance = destination }, null);
+                        return destination == null ? PressProof.Changed : Bound(gather, Searched(gather, command with { Instance = destination }, null));
                 }
+            }
+            // The command lands on the connection its facts were read through (D53, edition round 22), or it proves nothing.
+            PressProof Bound(Gathered gather, PressProof proof)
+            {
+                if (proof.Command is not { Instance: { } instance } command) return proof;
+                if (!gather.Bound.TryGetValue(instance, out var client)) return new PressProof(PressChecks.Unverified);
+                var clients = _store.Clients;
+                return proof with { Command = command with { Connection = client, StillBound = () => clients.Bound(client).Ok } };
             }
             if (absent != null)
             {
@@ -1346,7 +1391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var copies = read ?? CopiesOf(key, viewer);
             var unproven = !copies.IsComplete && copies.Seen.Count == 0;
-            return new CopyAccess(copies.IsProvenAbsent, copies.SeenOpenable != null, (copies.IsProvenAbsent || unproven) && AskedBy(key, viewer), unproven);
+            return new CopyAccess(copies.IsProvenAbsent, copies.SeenOpenable != null, copies.IsProvenAbsent && _libraries.MaySeeAbsent(viewer, key) && AskedBy(key, viewer), unproven);
         }
 
         private bool MayUseCopy(StatusViewer viewer, CopyAccess access, ArrConnection instance, string? path)
@@ -1359,6 +1404,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // destination can distinguish an inaccessible quality copy from that visible title.
             if (access.Visible && !target.Resolved) return true;
             return viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
+        }
+
+        /// <summary>
+        /// Whether any copy an instance holds could be the viewer's (D53, edition round 22: dependencies follow eligibility):
+        /// false only when the instance is linked to libraries none of which the viewer may open (every title it holds lands in
+        /// one of them, see <see cref="ArrInstanceLibraries.Resolve"/>); an instance with no linked library can't be told apart.
+        /// </summary>
+        private bool MayServe(StatusViewer viewer, ArrConnection instance)
+        {
+            if (viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) return true;
+            var linked = instance.LinkedLibraryIds.Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).ToList();
+            if (linked.Count == 0 || viewer.Handle is not User user) return true;
+            return ArrInstanceLibraries.CanOpen(user, linked);
         }
 
         private IEnumerable<ArrMovieEntry> MoviesOf(ArrLibrarySnapshot library, TitleKey key)
@@ -1609,6 +1667,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             /// source of a Search command's episode ids (D53, edition round 21); never shown to anyone.
             /// </summary>
             public List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)> CheckedEpisodes { get; } = new();
+
+            /// <summary>
+            /// A press's check (D53, edition round 22): the client (connection) each instance's fresh reads went through. Reads of
+            /// one instance through two connections (it was pointed elsewhere while it was read) prove nothing: unverified.
+            /// </summary>
+            public System.Collections.Concurrent.ConcurrentDictionary<string, ArrClient> Bound { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>A press's check: the episodes the instances it depends on are downloading now (title, instance, season, episode).</summary>
+            public System.Collections.Concurrent.ConcurrentBag<(TitleKey Title, string Instance, int Season, int Episode)> UnderWay { get; } = new();
+
+            public void Bind(string instance, ArrClient? client)
+            {
+                if (client == null) return;
+                var held = Bound.GetOrAdd(instance, client);
+                if (!ReferenceEquals(held, client) && !string.Equals(held.Generation, client.Generation, StringComparison.Ordinal)) Unverified = true;
+            }
         }
 
         /// <summary>
@@ -1635,20 +1709,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var peek = new HashSet<TitleKey>(peekEpisodes ?? Array.Empty<TitleKey>());
             AppendFeedRevisions(revision, distinct);
 
+            // A press (D53, edition round 22): an instance none of whose copies the viewer may use is no evidence of theirs; it is
+            // left out before anything is read (its outage can neither refuse their press nor reveal it holds the title).
+            bool EligibleTitle(ArrConnection instance, TitleKey title)
+            {
+                if (MayServe(viewer, instance)) return true;
+                var copies = CopiesOf(title, viewer);
+                return copies.IsProvenAbsent && AskedBy(title, viewer) && _libraries.MaySeeAbsent(viewer, title)
+                    && _libraries.CanSeeAbsent(viewer, instance, null, asked: true);
+            }
             foreach (var kind in kinds)
             {
-                var instances = _store.Instances(kind);
+                var instances = _store.Instances(kind).Where(i => fresh == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && EligibleTitle(i, t))).ToList();
                 var reads = await Task.WhenAll(instances.Select(async i =>
                 {
-                    var library = await _store.GetLibraryAsync(i, ct).ConfigureAwait(false);
-                    // A press's check reads the downloads of an instance that holds the title from the arr now.
-                    var now = fresh != null && fresh(i) && (library.Value == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && (kind == ArrKind.Radarr ? MoviesOf(library.Value, t).Any() : SeriesOf(library.Value, t).Any())));
+                    // A press's check discovers who holds the title now: an instance it depends on is read from the arr now (its
+                    // series or movies, ids, paths and ownership: never the index held for pages, which can miss a newly holding
+                    // instance or a moved series); one that can't be read completely now leaves the press unverified.
+                    var depends = fresh != null && fresh(i);
+                    var library = depends ? await _store.ReadLibraryNowAsync(i, ct).ConfigureAwait(false) : await _store.GetLibraryAsync(i, ct).ConfigureAwait(false);
+                    // ... and the downloads of one that holds the title, read from the arr now too.
+                    var now = depends && (library.Value == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && (kind == ArrKind.Radarr ? MoviesOf(library.Value, t).Any() : SeriesOf(library.Value, t).Any())));
                     var queue = now ? await _store.ReadQueueNowAsync(i, ct).ConfigureAwait(false) : await _store.GetQueueAsync(i, ct).ConfigureAwait(false);
                     var history = now ? await _store.ReadHistoryNowAsync(i, ct).ConfigureAwait(false) : await _store.GetHistoryAsync(i, ct).ConfigureAwait(false);
-                    if (now && (library.Value == null || queue.Value == null || queue.Error != null || history.Value == null || history.Error != null)) result.Unverified = true;
-                    return (Instance: i, Library: library, Queue: queue, History: history);
+                    if (depends && (library.Value == null || library.Error != null)) result.Unverified = true;
+                    if (now && (queue.Value == null || queue.Error != null || history.Value == null || history.Error != null)) result.Unverified = true;
+                    if (depends)
+                    {
+                        // Every read made for the press went through one connection of the instance, or nothing proves it.
+                        result.Bind(i.Id, library.ReadBy);
+                        if (now)
+                        {
+                            result.Bind(i.Id, queue.ReadBy);
+                            result.Bind(i.Id, history.ReadBy);
+                        }
+                    }
+                    return (Instance: i, Library: library, Queue: queue, History: history, Fresh: now);
                 })).ConfigureAwait(false);
-                foreach (var (instance, library, queue, history) in reads)
+                foreach (var (instance, library, queue, history, freshQueue) in reads)
                 {
                     revision.Append(instance.Id).Append(':').Append(instance.Name).Append(':').Append(instance.Role).Append(instance.IsDefault ? "*" : string.Empty)
                         .Append(':').Append(string.Join(",", instance.LinkedLibraryIds))
@@ -1668,14 +1766,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var queueIndex = queue.Value != null && !queue.Expired ? QueueIndex.GetValue(queue.Value, q => q.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
                     // An expired history says nothing about now either: its last rows never decide a status.
                     var historyIndex = history.Value != null && !history.Expired ? HistoryIndex.GetValue(history.Value, h => h.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
-                    // Suspects are useful only while the queue is still within its serving limit.
-                    var missedState = _store.MissedQueueState(instance);
+                    // Suspects are useful only while the queue is still within its serving limit. A press's complete queue read
+                    // made now (D53, edition round 22) is the whole queue: rows an earlier paged read may have missed are not added
+                    // to it (they could only be rows it proves are gone).
+                    var missedState = freshQueue ? (Current: (IReadOnlyList<ArrQueueEntry>)Array.Empty<ArrQueueEntry>(), Expired: (IReadOnlyList<ArrQueueEntry>)Array.Empty<ArrQueueEntry>()) : _store.MissedQueueState(instance);
                     var missed = queue.Expired ? Array.Empty<ArrQueueEntry>() : missedState.Current;
                     // A suspect can expire before the newer snapshot does. That changes the body
                     // even if the feed and the snapshot's timestamp have not changed.
                     revision.Append("missedExpired:").Append(string.Join(",", missedState.Expired.Select(r => r.Id))).Append(';');
 
-                    foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr)))
+                    foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr) && (fresh == null || EligibleTitle(instance, t))))
                     {
                         var facts = result.Facts[title];
                         if (library.Value == null)
@@ -1722,10 +1822,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                     episodes = await _store.ReadEpisodesNowAsync(instance, series.Id, ct).ConfigureAwait(false);
                                     if (episodes.Value == null || episodes.Error != null) result.Unverified = true;
                                     else result.CheckedEpisodes.Add((instance.Id, series.Id, episodes.Value));
+                                    result.Bind(instance.Id, episodes.ReadBy);
                                 }
                                 else if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
                                 else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
                                 if (episodes != null) revision.Append('e').Append(series.Id).Append(':').Append(Stamp(episodes.LoadedAt)).Append(';');
+                                // A press's check: what an instance it depends on is downloading now, whichever copy that is (a newly
+                                // holding instance's download is no page copy's, and still makes the press's episode under way).
+                                if (freshQueue)
+                                {
+                                    foreach (var row in QueueRowsOf(queueIndex, missed, series.Id, movie: false))
+                                    {
+                                        var number = row.SeasonNumber is int rs && row.EpisodeNumber is int re ? (rs, re)
+                                            : episodes?.Value?.Episodes.FirstOrDefault(e => e.Id == row.EpisodeId) is { } listed ? (listed.SeasonNumber, listed.EpisodeNumber) : ((int, int)?)null;
+                                        if (number is { } n) result.UnderWay.Add((_aliases.Canonical(title.Title), instance.Id, n.Item1, n.Item2));
+                                    }
+                                }
                                 // Its episode list was needed and can't be read (nothing to serve meanwhile): the copy is judged by
                                 // Sonarr's season counts, and administrators are told the list can't be read.
                                 if (load.Contains(title) && episodes is { Value: null, Error: { } failed })

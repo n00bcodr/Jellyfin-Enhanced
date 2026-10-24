@@ -816,7 +816,8 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       nothing is spoiled; a 4K request hears about episodes whose own file is 4K, in whichever copy or folder they are: an
       HD file in the 4K Sonarr's folder is not a 4K arrival (and doesn't use up the 4K one), a 4K file in the standard folder
       is, and an HD episode or movie whose file is replaced by a 4K one in place is a 4K arrival however old the item is
-      (being given access to an old 4K version that was already there is not an arrival);
+      (also when Jellyfin first lists the new file before it has read its picture size; being given access to an old 4K
+      version that was already there is not an arrival, and if the alert can't be saved it is told on a later look, once);
       with *Standard requests need a non-4K copy* on, a standard request isn't told about a 4K-only episode; a stub or
       placeholder file is never an arrival, and neither is a season whose episodes are all stubs); a request of yours **declined**
       (with the reason given) and, for requests Jellyfin Enhanced handles (phase 3), a request of yours **OK'd** ("Dad
@@ -1045,13 +1046,21 @@ ask fetch the episodes that are missing, one tap each.
       takes whole series only), reading Sonarr's downloads, history and files again at that moment (never what it had in
       memory): if any of that has changed since the page was shown (your permissions, an episode that has arrived or that
       Sonarr has just started downloading, Seerr's partial-request setting), nothing is sent, the buttons are drawn again
-      for what you can do now and a short message says so; if it can't be checked right now (Sonarr doesn't answer), nothing
-      is sent and the message says that. Only the Sonarrs a press depends on are checked like that (the one it lands on and
-      the ones that hold the same edition): a 4K button still works while the standard Sonarr is down, and the other way
-      round; a Sonarr whose download list moved while it was read counts as not answering. The same holds on the page of a season that isn't in your library yet. A button
+      for what you can do now and a short message says so (with a keyboard or a TV remote the focus stays by the
+      episode you pressed, on the row next to it when that episode's row went, until you move it yourself or activate
+      something, a screen reader's activation included); if it can't be checked right now (Sonarr doesn't answer), nothing
+      is sent and the message says that. After a request is recorded, keyboard and TV focus stays on its outcome or
+      available request button as the page updates. Moving to another control or opening another dialog leaves focus there.
+      Only the Sonarrs a press depends on are checked like that (the one it lands on, the
+      ones of the same edition or with no edition role, such as anime, and the one holding the copy it acts for), and what
+      they hold is read again too (a series moved to another folder, or a Sonarr that took the title since): a 4K button
+      still works while the standard Sonarr is down, and the other way round, and a Sonarr whose copies are all in libraries
+      you can't open never stops your button; a Sonarr whose download list moved while it was read counts as not answering.
+      If an instance's address or key is changed in the settings while a press is being checked, the press is not sent to
+      the new server. The same holds on the page of a season that isn't in your library yet. A button
       pressed twice (on an episode's row and in its dialog, say) sends one request, and if the answer to a press is lost and
       your browser sends it again, you get the answer the first press had (even if the episode has arrived since); the same retry for a different button
-      is refused. What is sent is exactly what the server checked: an ask is recorded for its episodes and edition at the
+      (or the same button sent differently) is refused, and the same press arriving twice at once runs once. What is sent is exactly what the server checked: an ask is recorded for its episodes and edition at the
       Sonarr it was checked for (a request that names another Sonarr, a root folder or a quality profile is refused), and a
       **Search** (an administrator's, or the household's) searches exactly its episodes as that Sonarr numbers them at that
       moment, never anything else the request might say. A 4K copy's buttons show that copy's own requests (a standard
@@ -1228,6 +1237,11 @@ profiles, folders or tags.
       and for people with parental limits a missing movie is only listed when its rating is known and allowed.
 
 Every ask carries a client request id: a double tap or a retry after a lost answer is the same request.
+The same person's key belongs to one operation across asks, adds, Search, queue actions and webhook setup, including while it is being prepared.
+Ownership and recorded answers survive a restart. An interrupted action stays unresolved and is never automatically sent again;
+completed direct actions keep their existing ten-minute replay window, and request receipts remain durable.
+Following, unfollowing and background arrival checks are ordered together, so an older observation cannot replace newer evidence.
+Seerr approval and decline notices, their channel deliveries and the consumed request states are saved together.
 
 ### Titles that aren't in the library (native details)
 
@@ -1452,6 +1466,7 @@ Approved requests go out through the request handling the administrator chose: s
       while it isn't in the library, say) is known by its TVDB id only; Jellyfin Enhanced finds its TMDB id on TMDB
       (through the shared TMDB cache, so it needs the TMDB API key) and sends it under that. Without one it waits
       (`title_not_found`).
+    - Ordinary Seerr requests do not require JE's Sonarr discovery or download checks; an unrelated JE instance being unavailable does not block them.
     - Seerr picks the server a request goes to (its default for the edition); Jellyfin Enhanced never names one. Buttons
       that act on one copy of a title (**Get them in 4K** on a 4K copy's season, an administrator's **Search in 4K**) need
       the Jellyfin Enhanced request backend and aren't offered in Seerr mode; Seerr's standard and 4K requests work as usual.

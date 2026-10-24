@@ -150,7 +150,7 @@ public class IntegrationRequestReviewRound3Tests
                 Assert.Empty(ledger.ForWant(follower.RequestId!));
             }
         }
-        Assert.Single(Directory.GetFiles(r.Root, "v2.db.pre-v2.*"));
+        Assert.Single(Directory.GetFiles(r.Root, "v2.db.pre-v" + AcquireDatabase.Migrations.Count + ".*"));
     }
 
     [Theory]

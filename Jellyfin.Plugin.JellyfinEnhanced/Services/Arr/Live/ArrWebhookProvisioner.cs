@@ -173,16 +173,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         public async Task<ArrActionOutcome> ProvisionAsync(ArrConnection instance, string jellyfinUrl, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)
         {
             var hookUrl = HookUrl(jellyfinUrl, instance.Id);
-            var gate = Gate(instance.Id);
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            var identity = ArrActionRunner.Identity("webhook.provision", instance.Id, "notification:webhook", hookUrl);
+            return await _runner.SingleFlightAsync(userId, idempotencyKey, identity, async token =>
             {
-                return await ProvisionLockedAsync(instance, hookUrl, userId, userName, idempotencyKey, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                gate.Release();
-            }
+                var gate = Gate(instance.Id);
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try { return await ProvisionLockedAsync(instance, hookUrl, userId, userName, idempotencyKey, token).ConfigureAwait(false); }
+                finally { gate.Release(); }
+            }, () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = "This repeats another action." }, cancellationToken).ConfigureAwait(false);
         }
 
         // One set-up or removal at a time per instance: a removal forgetting the secret must never
@@ -193,6 +191,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         {
             var started = _now();
             string? secret = null;
+            // One connection for the whole set-up (D53, edition round 22): what is read, written, read back and tested goes to the
+            // server the instance pointed at when the action started; after a save that points it elsewhere nothing is written.
+            var bound = _clients.For(instance.Id);
             return await _runner.RunAsync(new ArrActionRequest
             {
                 Action = "webhook.provision",
@@ -201,11 +202,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 UserId = userId,
                 UserName = userName,
                 IdempotencyKey = idempotencyKey,
+                Binding = bound.Ok ? ArrClientFactory.Tag(bound.Value!) : null,
+                Fingerprint = ArrActionRunner.Identity("webhook.provision", instance.Id, "notification:webhook", hookUrl),
                 Tier = ArrActionTier.Change,
                 Details = new Dictionary<string, string> { ["url"] = hookUrl },
                 Execute = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    var client = bound.Ok ? _clients.Bound(bound.Value!) : bound;
                     if (!client.Ok) return client.Error;
                     secret = _receiver.EnsureSecret(instance.Id);
                     var existing = await client.Value!.GetAsync<List<JsonElement>>("notification", null, ArrCallClass.Read, ct).ConfigureAwait(false);
@@ -243,7 +246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 },
                 ReadBack = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    var client = bound;
                     if (!client.Ok || secret == null) return new ArrReadBack { Confirmed = null, Summary = "Could not check the result." };
                     var list = await client.Value!.GetAsync<List<JsonElement>>("notification", null, ArrCallClass.Read, ct).ConfigureAwait(false);
                     if (!list.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the result." };
@@ -278,20 +281,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// </summary>
         public async Task<ArrActionOutcome> RemoveAsync(ArrConnection instance, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)
         {
-            var gate = Gate(instance.Id);
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            var identity = ArrActionRunner.Identity("webhook.remove", instance.Id, "notification:webhook");
+            return await _runner.SingleFlightAsync(userId, idempotencyKey, identity, async token =>
             {
-                return await RemoveLockedAsync(instance, userId, userName, idempotencyKey, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                gate.Release();
-            }
+                var gate = Gate(instance.Id);
+                await gate.WaitAsync(token).ConfigureAwait(false);
+                try { return await RemoveLockedAsync(instance, userId, userName, idempotencyKey, token).ConfigureAwait(false); }
+                finally { gate.Release(); }
+            }, () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = "This repeats another action." }, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task<ArrActionOutcome> RemoveLockedAsync(ArrConnection instance, Guid userId, string? userName, string idempotencyKey, CancellationToken cancellationToken)
         {
+            // One connection for the whole removal (see ProvisionLockedAsync).
+            var bound = _clients.For(instance.Id);
             return await _runner.RunAsync(new ArrActionRequest
             {
                 Action = "webhook.remove",
@@ -300,10 +303,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 UserId = userId,
                 UserName = userName,
                 IdempotencyKey = idempotencyKey,
+                Binding = bound.Ok ? ArrClientFactory.Tag(bound.Value!) : null,
                 Tier = ArrActionTier.Change,
                 Execute = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    var client = bound.Ok ? _clients.Bound(bound.Value!) : bound;
                     if (!client.Ok) return client.Error;
                     var list = await client.Value!.GetAsync<List<JsonElement>>("notification", null, ArrCallClass.Read, ct).ConfigureAwait(false);
                     if (!list.Ok) return list.Error;
@@ -318,7 +322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 },
                 ReadBack = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    var client = bound;
                     if (!client.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the result." };
                     var list = await client.Value!.GetAsync<List<JsonElement>>("notification", null, ArrCallClass.Read, ct).ConfigureAwait(false);
                     if (!list.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the result." };

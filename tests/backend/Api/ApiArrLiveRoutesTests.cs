@@ -782,4 +782,106 @@ public class ApiArrLiveRoutesTests
         Assert.DoesNotContain(secret, audit);
         Assert.DoesNotContain(secret, rig.Logs());
     }
+    // A webhook set-up writes, reads back and tests on one connection (edition round 22): a save that points the instance at
+    // another server while it runs never makes the replacement's connections (or its test) stand for this one's.
+    [Fact]
+    public async Task AWebhookSetUpReadsBackOnTheConnectionItWroteTo()
+    {
+        using var rig = new Rig();
+        var id = rig.Instance.Id;
+        var twin = rig.Arr.Add("radarr-twin.invalid", "Radarr");
+        var moved = 0;
+        rig.Radarr.Before = (path, _) =>
+        {
+            if (path == "/api/v3/notification/schema" && Interlocked.Exchange(ref moved, 1) == 0)
+            {
+                var config = rig.Arr.Plugin.Plugin.Configuration;
+                var rows = JsonNode.Parse(config.RadarrInstances)!.AsArray();
+                var row = rows.First(r => (string?)r!["Name"] == "Movies")!;
+                row["Url"] = "http://radarr-twin.invalid:7878";
+                row["ApiKey"] = "synthetic-replacement-key";
+                config.RadarrInstances = rows.ToJsonString();
+            }
+            return Task.CompletedTask;
+        };
+        var done = Body(await rig.Controller().ProvisionWebhook(id, new ArrWebhookRequest { Consent = true, IdempotencyKey = "moved-click" }, default));
+        Assert.Equal(1, moved);
+        Assert.Single(rig.Radarr.Notifications);
+        Assert.True(rig.Arr.CallCount("radarr-twin.invalid") == 0, $"read back or tested on the replacement: {done}");
+        Assert.Equal("Succeeded", done.GetProperty("status").ToString());
+    }
+    [Fact]
+    public async Task AWebhookWaitingForItsInstanceGateAlreadyOwnsItsPublicRetry()
+    {
+        using var r = new Rig();
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        r.Radarr.Before = async (path, ct) => { if (path == "/api/v3/notification/schema") { reached.TrySetResult(); await release.Task.WaitAsync(ct); } };
+        var first = r.Provisioner.ProvisionAsync(r.Instance, "http://jellyfin.lan", r.UserId, null, "first-hook", default);
+        await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var waiting = r.Provisioner.ProvisionAsync(r.Instance, "http://jellyfin.lan", r.UserId, null, "waiting-hook", default);
+        var sent = 0;
+        try
+        {
+            var other = await new ArrActionRunner(r.Audit, new ArrConfirmationTokens()).RunAsync(new ArrActionRequest { UserId = r.UserId, IdempotencyKey = "waiting-hook", Action = "movie.search", InstanceId = r.Instance.Id, Target = "another", Execute = _ => { sent++; return Task.FromResult<ArrError?>(null); } });
+            Assert.True(other.Conflict); Assert.Equal(0, sent);
+        }
+        finally { release.TrySetResult(); }
+        await Task.WhenAll(first, waiting).WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task ChangedWebhookUrlOrActionReturnsConflictThroughTheRoute()
+    {
+        using var r = new Rig();
+        var controller = r.Controller();
+        Assert.Equal(200, Status(await controller.ProvisionWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, JellyfinUrl = "http://jellyfin.lan", IdempotencyKey = "hook-options" }, default)));
+        var changed = await controller.ProvisionWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, JellyfinUrl = "http://other-jellyfin.lan", IdempotencyKey = "hook-options" }, default);
+        Assert.Equal(409, Status(changed)); Assert.Equal("idempotency_conflict", Body(changed).GetProperty("code").GetString());
+        Assert.Equal(409, Status(await controller.RemoveWebhook(r.Instance.Id, new ArrWebhookRequest { Consent = true, IdempotencyKey = "hook-options" }, default)));
+        Assert.Single(r.Radarr.Notifications);
+    }
+
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WebhookActionsPersistTheirOriginalBindingBeforeTransport(bool remove)
+    {
+        using var rig = new Rig();
+        if (remove)
+            Assert.Equal(ArrActionStatus.Succeeded, (await rig.Provisioner.ProvisionAsync(rig.Instance, "http://jellyfin.lan", rig.UserId, null, "prepare-hook", default)).Status);
+        const string key = "bound-hook";
+        var path = Path.Combine(Path.GetDirectoryName(rig.Audit.FilePath)!, AcquireDatabase.FileName);
+        using var db = new AcquireDatabase(path);
+        string? Binding(AcquireDatabase data, bool sending = false) => data.Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT binding,state,command FROM retry_owners WHERE retry_key=$key";
+            cmd.Parameters.AddWithValue("$key", key);
+            using var row = cmd.ExecuteReader();
+            Assert.True(row.Read(), "The reserved owner row must exist before transport.");
+            if (sending) Assert.Equal("sending", row.GetString(1));
+            Assert.False(row.IsDBNull(2));
+            using var command = JsonDocument.Parse(row.GetString(2));
+            Assert.Equal(remove ? "webhook.remove" : "webhook.provision", command.RootElement.GetProperty("Action").GetString());
+            return row.IsDBNull(0) ? null : row.GetString(0);
+        });
+        var expected = ArrClientFactory.Tag(rig.Arr.Factory.For(rig.Instance.Id).Value!);
+        var captured = new List<string?>();
+        rig.Radarr.Before = (route, _) =>
+        {
+            if (route == "/api/v3/notification") captured.Add(Binding(db, sending: true));
+            return Task.CompletedTask;
+        };
+        var outcome = remove
+            ? await rig.Provisioner.RemoveAsync(rig.Instance, rig.UserId, null, key, default)
+            : await rig.Provisioner.ProvisionAsync(rig.Instance, "http://jellyfin.lan", rig.UserId, null, key, default);
+        Assert.Equal(ArrActionStatus.Succeeded, outcome.Status);
+        Assert.NotEmpty(captured);
+        Assert.All(captured, binding => Assert.Equal(expected, binding));
+        using var reopened = new AcquireDatabase(path);
+        Assert.Equal(expected, Binding(reopened));
+    }
+
 }

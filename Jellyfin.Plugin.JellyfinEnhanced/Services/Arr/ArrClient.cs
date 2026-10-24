@@ -87,6 +87,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>The instance this client talks to.</summary>
         public ArrConnection Connection { get; }
 
+        /// <summary>
+        /// The connection this client talks over (its kind, URL and a hash of its key), server-only and opaque: two clients of
+        /// one instance with the same generation reach the same server with the same credential (see
+        /// <see cref="ArrClientFactory.Bound(ArrClient, bool)"/>). Empty for a client of unsaved values.
+        /// </summary>
+        internal string Generation { get; init; } = string.Empty;
+
         /// <summary>Calls made since creation (diagnostics and the "zero upstream calls" checks).</summary>
         public long CallCount => Interlocked.Read(ref _callCount);
 

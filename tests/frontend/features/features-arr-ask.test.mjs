@@ -92,13 +92,13 @@ function setup(t, { rows = row(1), status = season(), config = {}, server = {}, 
       if ((init.method || 'GET') === 'POST') {
         const body = JSON.parse(init.body);
         posts.push({ path, body });
-        const answer = server.post ? server.post(path, body, posts.length) : { status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', message: 'Asked!', requestId: 'f'.repeat(32) } };
+        const answer = server.post ? await server.post(path, body, posts.length) : { status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', message: 'Asked!', requestId: 'f'.repeat(32) } };
         if (answer instanceof Error) throw answer;
         return jsonResponse(answer.body, answer.status);
       }
       gets.push(path);
       if (path.startsWith('/acquire/requests/season/')) {
-        const answer = rowsAnswer(gets.length, path);
+        const answer = await rowsAnswer(gets.length, path);
         if (answer instanceof Error) throw answer;
         return jsonResponse(answer);
       }
@@ -1356,6 +1356,175 @@ test('Seerr mode: the banner\'s Get them reads "Get Season 1" and asks for the s
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] }]);
 });
 
+// The real request changes the optimistic chip before the read model settles. Each refresh below
+// uses the production details/status renderer, including its whole-banner replacement boundary.
+for (const width of [1280, 390]) for (const replacement of ['action', 'banner']) for (const successor of ['button', 'chip']) {
+  test(`focus: accepted season request survives ${replacement} replacement to ${successor} at ${width}px`, async t => {
+    let holdRows = false;
+    const pending = [];
+    const server = {
+      me: SEERR_MEMBER,
+      rows: () => holdRows ? new Promise(resolve => pending.push(resolve)) : rowsBody({ displayMissing: false }),
+      post: () => {
+        holdRows = true;
+        return { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', message: 'Asked!', requestId: 'f'.repeat(32) } };
+      }
+    };
+    const h = setup(t, { rows: row(1, { phone: width === 390 }), server });
+    h.window.innerWidth = width;
+    h.document.documentElement.classList.add(width === 390 ? 'layout-mobile' : 'layout-desktop');
+    await h.open();
+    const banner = h.document.querySelector('.je-arr-banner');
+    const original = banner.querySelector('.je-ask-get-many');
+    original.focus();
+    assert.equal(h.document.activeElement, original);
+    original.click();
+    await settle(40);
+    assert.equal(h.posts.length, 1, 'the real checked press reached the request endpoint');
+    assert.equal(h.posts[0].body.expect.mode, 'get');
+    assert.equal(original.isConnected, false, 'busy/result rendering replaced the initiating node');
+    assert.ok(pending.length, 'the actual post-request season read is held');
+    assert.match(banner.querySelector('.je-ask-banner-action').textContent, /Asked!/);
+    // The server acknowledges this request, replacing the optimistic entry. A later complete
+    // projection can offer another request or show its confirmed waiting state.
+    holdRows = false;
+    for (const resolve of pending.splice(0)) resolve(rowsBody({ displayMissing: false, seasonRequest: 'waiting' }));
+    await settle(40);
+    const oldAction = banner.querySelector('.je-ask-banner-action');
+    const reads = h.gets.filter(path => path.startsWith('/acquire/requests/season/')).length;
+    let settledRead = false;
+    h.setRows(() => {
+      settledRead = true;
+      return rowsBody({ displayMissing: false, seasonRequest: successor === 'chip' ? 'declined' : null });
+    });
+    h.setStatus(replacement === 'banner' ? withEpisode(season(), 3, 'notHere', 'unmonitored') : season());
+    await h.JE.internals.arrStatusDetails.update(true);
+    await settle(40);
+    assert.ok(settledRead && h.gets.filter(path => path.startsWith('/acquire/requests/season/')).length > reads, 'a real settled season refresh completed');
+    const currentBanner = h.document.querySelector('.je-arr-banner');
+    assert.equal(currentBanner === banner, replacement === 'action', 'the designated replacement boundary ran');
+    assert.equal(oldAction.isConnected, false, 'the earlier outcome subtree was replaced');
+    const action = currentBanner.querySelector('.je-ask-banner-action');
+    const expected = action.querySelector(successor === 'button' ? '.je-ask-get-many' : '.je-arr-chip');
+    assert.ok(expected, 'the settled state has a deliberate focus successor');
+    assert.equal(h.document.activeElement, expected, 'the semantic request origin survives settled redraws');
+    assert.equal(h.posts.length, 1, 'focus recovery never sends another request');
+  });
+}
+
+async function heldSeasonPress(t) {
+  let finish;
+  const response = new Promise(resolve => { finish = resolve; });
+  const server = { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }), post: () => response };
+  const h = setup(t, { server });
+  await h.open();
+  const original = h.document.querySelector('.je-arr-banner .je-ask-get-many');
+  original.focus(); original.click();
+  await settle(30);
+  assert.equal(h.posts.length, 1, 'the actual request is pending');
+  const other = h.document.createElement('button');
+  other.textContent = 'Other action';
+  h.document.querySelector('#itemDetailPage').prepend(other);
+  return { h, server, original, other, finish: () => finish({ status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', requestId: 'f'.repeat(32) } }) };
+}
+
+for (const move of ['keyboard', 'activation']) test(`focus: accepted pending request respects deliberate ${move}`, async t => {
+  const { h, other, finish } = await heldSeasonPress(t);
+  if (move === 'keyboard') h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  other.focus();
+  if (move === 'activation') other.click();
+  finish(); await settle(40);
+  h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
+  await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.equal(h.document.activeElement, other, 'an old reply/redraw cannot reacquire focus');
+});
+
+for (const end of ['session', 'route', 'feature', 'container', 'stop']) test(`focus: accepted pending request ends ownership with ${end}`, async t => {
+  const { h, other, finish } = await heldSeasonPress(t);
+  if (end === 'session') h.switchUser();
+  if (end === 'route') { h.navigate('#/home'); h.navigate(`#/details?id=${SEASON_ID}`); }
+  if (end === 'feature') {
+    h.JE.pluginConfig.ArrRequestsEnabled = false;
+    h.JE.internals.arrStatusEpisodes.apply();
+    h.JE.pluginConfig.ArrRequestsEnabled = true;
+  }
+  if (end === 'container') {
+    h.document.body.appendChild(other);
+    h.document.querySelector('#itemDetailPage').remove();
+    h.document.body.insertAdjacentHTML('beforeend', page(row(1)));
+  }
+  if (end === 'stop') h.JE.internals.arrAskEpisodes.stop();
+  other.focus(); finish(); await settle(40);
+  h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
+  await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.equal(h.document.activeElement, other, 'lifecycle-ended ownership cannot return on a reply');
+});
+
+test('focus: a pending request yields to another real episode modal', async t => {
+  const { h, other, finish } = await heldSeasonPress(t);
+  h.JE.internals.arrAskEpisodes.openDetails(season().episodes[2], {});
+  const modal = h.document.querySelector('[role="dialog"]');
+  const active = h.document.activeElement;
+  assert.ok(modal.contains(active));
+  finish(); await settle(40);
+  h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
+  await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.equal(h.document.activeElement, active, 'the pending response leaves the modal in control');
+  h.JE.internals.arrAskEpisodes.closeDialog();
+  other.focus();
+  await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.equal(h.document.activeElement, other, 'closing that modal does not revive the old press');
+});
+
+test('focus: a programmatic unfocused season request never takes another control\'s focus', async t => {
+  const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const other = h.document.createElement('button'); h.document.body.appendChild(other); other.focus();
+  h.document.querySelector('.je-arr-banner .je-ask-get-many').click(); await settle(40);
+  assert.equal(h.posts.length, 1);
+  assert.equal(h.document.activeElement, other);
+});
+
+test('focus: an older accepted season response cannot supersede a different season\'s press', async t => {
+  let finish;
+  const first = new Promise(resolve => { finish = resolve; });
+  const server = { post: () => first };
+  const h = setup(t, { server });
+  await h.open();
+  const original = h.list().querySelector('[data-je-ask-episode="2"] .je-ask-get'); original.focus(); original.click(); await settle(30);
+  assert.equal(h.posts.length, 1);
+  const nextId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2';
+  const next = { ...season(), itemId: nextId, key: 'tv:tvdb:1:s2', episodes: season().episodes.map(ep => ({ ...ep, season: 2, key: ep.key.replace(':s1:', ':s2:') })) };
+  h.setStatus(next);
+  h.setRows(() => { const body = rowsBody({ requests: h.posts.length > 1 ? { 4: 'waiting' } : {} }); return { ...body, rows: { ...body.rows, season: 2, key: 'tv:tvdb:1:s2' } }; });
+  h.navigate(`#/details?id=${nextId}`); await h.open();
+  server.post = () => ({ status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', requestId: 'e'.repeat(32) } });
+  const second = h.list().querySelector('[data-je-ask-episode="4"] .je-ask-get'); second.focus(); second.click(); await settle(40);
+  assert.equal(h.posts.length, 2);
+  same(h.posts[1].body.input.episodes, [{ season: 2, episode: 4 }]);
+  const current = h.document.activeElement;
+  assert.ok(current.closest('[data-je-ask-episode="4"]'));
+  finish({ status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', requestId: 'f'.repeat(32) } }); await settle(40);
+  assert.equal(h.document.activeElement, current, 'the first season never takes focus from the second');
+});
+
+for (const [name, response] of [
+  ['unavailable', { status: 503, body: { outcome: 'unavailable', reason: 'database_unavailable' } }],
+  ['lost answer', new TypeError('Failed to fetch')],
+  ['uncertain', { status: 202, body: { outcome: 'maybe_sent', certainty: 'Unknown' } }],
+  ['unverified', { status: 409, body: { outcome: 'conflict', reason: 'press_unverified', certainty: 'Rejected' } }],
+  ['changed', { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected' } }]
+]) test(`focus: ${name} season result shares the checked press lifecycle`, async t => {
+  const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }), post: () => response } });
+  await h.open();
+  const original = h.document.querySelector('.je-arr-banner .je-ask-get-many'); original.focus(); original.click(); await settle(40);
+  h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
+  await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  const active = h.document.activeElement;
+  assert.ok(active !== h.document.body && active.isConnected && active.closest('.je-arr-banner'), 'result and later renderer preserve a reachable semantic place');
+  assert.equal(h.posts.length, 1);
+});
+
 test('Seerr with partial requests off: the episode\'s button reads "Get the whole series" and asks for every season', async t => {
   const h = setup(t, { server: { me: { ...SEERR_MEMBER, seerrWholeSeries: true } } });
   h.JE.core.api.plugin = async (path) => (String(path).startsWith('/acquire/status?keys=')
@@ -1788,4 +1957,69 @@ test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an olde
   await settle(20);
   assert.equal(h.posts.length, 1);
   same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
+});
+
+// Any deliberate activation ends focus recovery (D53, edition round 22): a screen reader synthesizes the click (and the focus
+// it gives) without a key, pointer or mouse event first; a later row redraw must leave the focus where the person put it.
+test('focus: an assistive-technology click ends the recovery before a later row redraw', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus(); two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const priorRow = recovered.closest('.listItem');
+  assert.ok(priorRow, 'focus recovery ran');
+  const button = h.document.createElement('button');
+  button.textContent = 'Show options';
+  h.document.querySelector('#itemDetailPage').prepend(button);
+  button.addEventListener('click', () => button.focus());
+  button.click();
+  assert.equal(h.document.activeElement, button, 'the person deliberately activated another control');
+  priorRow.replaceWith(priorRow.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.activeElement, button, 'a later refresh must not take focus away from the new control');
+});
+
+// Activating the control the recovery put the focus on is deliberate too (it ends the recovery without any focus change):
+// when the host then moves the focus by itself and redraws the row, nothing pulls it back.
+test('focus: activating the recovered control itself ends the recovery', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus(); two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const row = recovered.closest('.listItem');
+  assert.ok(row, 'focus recovery ran');
+  // The person activates the recovered control (Enter on a TV remote synthesizes this click; no focus change follows).
+  recovered.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  h.document.querySelectorAll('.je-ask-dialog').forEach(d => d.remove());
+  const top = h.document.createElement('button');
+  top.className = 'btnPlay';
+  h.document.querySelector('#itemDetailPage').prepend(top);
+  top.focus();
+  row.replaceWith(row.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.activeElement, top, 'the recovery ended at the activation; the later focus stands');
 });

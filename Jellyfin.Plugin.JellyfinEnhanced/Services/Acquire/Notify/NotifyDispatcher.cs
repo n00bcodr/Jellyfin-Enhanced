@@ -423,7 +423,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (fresh.Count == 0) return null;
             if (fresh.Count == all.Count) return Guid.Empty;
             payload["episodeItems"] = JsonSerializer.Serialize(fresh, PayloadJson);
-            payload["count"] = fresh.Count.ToString(CultureInfo.InvariantCulture);
+            // Counted by the episodes they cover (the one interval-coverage helper, edition round 22), never by entries.
+            payload["count"] = new EpisodeCoverage(fresh.Select(e => new JfEpisode { Season = e.Season, Episode = e.Episode })).Count.ToString(CultureInfo.InvariantCulture);
             payload["seasons"] = string.Join(", ", fresh.Select(e => e.Season).Distinct().OrderBy(x => x));
             if (fresh.Count == 1)
             {

@@ -41,10 +41,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var fingerprint = Fingerprint(connection, key);
             var entry = _clients.AddOrUpdate(
                 connection.Id,
-                _ => (fingerprint, Create(connection, key)),
-                (_, existing) => existing.Fingerprint == fingerprint ? existing : (fingerprint, Create(connection, key)));
+                _ => (fingerprint, Create(connection, key, fingerprint)),
+                (_, existing) => existing.Fingerprint == fingerprint ? existing : (fingerprint, Create(connection, key, fingerprint)));
             return ArrResult<ArrClient>.Success(entry.Client);
         }
+
+        /// <summary>
+        /// The client a caller checked something on, while it still is the instance's connection (D53, edition round 22: a
+        /// checked command never moves to another server): the same kind, URL and key as when the check read through it, and
+        /// the instance still usable (unless <paramref name="allowUnusable"/>). After a save that points the instance elsewhere
+        /// (or changes its key) this refuses: nothing checked there is sent to the replacement, and nothing read from it can
+        /// prove what the checked one did. The check and the client come from one registry read, so there is no window between
+        /// comparing the generation and acquiring the client.
+        /// </summary>
+        /// <param name="checkedClient">The client the caller's facts were read through.</param>
+        /// <param name="allowUnusable">Accept a disabled or retired instance (read-backs of what already went out).</param>
+        /// <returns>That client, or a not-configured error (nothing was sent).</returns>
+        internal ArrResult<ArrClient> Bound(ArrClient checkedClient, bool allowUnusable = false)
+        {
+            var now = For(checkedClient.Connection.Id, allowUnusable);
+            if (!now.Ok) return now;
+            return string.Equals(now.Value!.Generation, checkedClient.Generation, StringComparison.Ordinal) && checkedClient.Generation.Length > 0
+                ? ArrResult<ArrClient>.Success(checkedClient)
+                : ArrResult<ArrClient>.Failure(ArrErrorKind.NotConfigured, ConnectionChanged);
+        }
+
+        /// <summary>
+        /// The instance's current client only while its connection is still <paramref name="generation"/> (a durable job's
+        /// recorded connection, see <see cref="ConnectionGeneration"/>), from one registry read.
+        /// </summary>
+        internal ArrResult<ArrClient> Bound(string instanceId, string? generation, bool allowUnusable = false)
+        {
+            var now = For(instanceId, allowUnusable);
+            if (!now.Ok) return now;
+            return generation != null && string.Equals(now.Value!.Generation, generation, StringComparison.Ordinal)
+                ? now
+                : ArrResult<ArrClient>.Failure(ArrErrorKind.NotConfigured, ConnectionChanged);
+        }
+
+        /// <summary>
+        /// An opaque tag of a client's connection (a hash of its generation), for binding a confirmation to the connection it
+        /// was issued on; it says nothing about the URL or key.
+        /// </summary>
+        internal static string Tag(ArrClient client)
+            => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("je-connection|" + client.Generation)), 0, 8).ToLowerInvariant();
+
+        /// <summary>The message of a connection that changed after a check (nothing was sent).</summary>
+        internal const string ConnectionChanged = "The instance's connection changed since this was checked, so nothing was sent.";
 
         /// <summary>A client for values that are not saved yet (the config page's Test). Not cached.</summary>
         public ArrClient ForUnsaved(ArrKind kind, string url, string apiKey, string? name = null)
@@ -57,8 +100,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return instance == null ? null : Fingerprint(instance, _registry.ResolveApiKey(instance));
         }
 
-        private ArrClient Create(ArrConnection connection, string key)
-            => new(connection, key, () => _httpClientFactory.CreateClient(ArrHttp.ClientName));
+        private ArrClient Create(ArrConnection connection, string key, string generation = "")
+            => new(connection, key, () => _httpClientFactory.CreateClient(ArrHttp.ClientName)) { Generation = generation };
 
         // URL, kind and a hash of the key: a changed key or URL gets a fresh client (and status cache).
         private static string Fingerprint(ArrConnection connection, string key)

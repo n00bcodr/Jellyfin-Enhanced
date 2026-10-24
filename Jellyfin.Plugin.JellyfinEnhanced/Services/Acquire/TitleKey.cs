@@ -1,6 +1,6 @@
 using System;
 using System.Globalization;
-using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
@@ -15,11 +15,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// </summary>
     public sealed class TitleKey : IEquatable<TitleKey>
     {
-        private static readonly Regex Pattern = new(
-            @"^(movie|tv):(tmdb|tvdb|imdb):(tt[0-9]{1,12}|[0-9]{1,12})(?::s([0-9]{1,4})(?::e([0-9]{1,5}))?)?$",
-            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
-            TimeSpan.FromMilliseconds(100));
-
         private TitleKey(bool movie, string provider, string id, int? season, int? episode)
         {
             IsMovie = movie;
@@ -73,33 +68,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The key of an episode of this series.</summary>
         public TitleKey WithEpisode(int season, int episode) => new(false, Provider, Id, season, episode);
 
-        /// <summary>Parses a key; null when it is not one.</summary>
+        /// <summary>
+        /// Parses a key; null when it is not one. The grammar is <c>(movie|tv):(tmdb|tvdb|imdb):(tt&lt;1-12 digits&gt;|&lt;1-12
+        /// digits&gt;)[:s&lt;1-4 digits&gt;[:e&lt;1-5 digits&gt;]]</c>, ASCII letters in either case and ASCII digits only, matched in one
+        /// deterministic pass (a regular expression with a match timeout refused valid keys on a loaded server).
+        /// </summary>
         public static TitleKey? Parse(string? value)
         {
             if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return null;
-            var m = Pattern.Match(value.Trim());
-            if (!m.Success) return null;
-            var movie = m.Groups[1].Value.Equals("movie", StringComparison.OrdinalIgnoreCase);
-            var provider = m.Groups[2].Value.ToLowerInvariant();
-            var id = m.Groups[3].Value.ToLowerInvariant();
+            var text = value.Trim().AsSpan();
+            bool movie;
+            if (AsciiGrammar.StartsWithIgnoreCase(text, "movie:")) { movie = true; text = text[6..]; }
+            else if (AsciiGrammar.StartsWithIgnoreCase(text, "tv:")) { movie = false; text = text[3..]; }
+            else return null;
+            string provider;
+            if (AsciiGrammar.StartsWithIgnoreCase(text, "tmdb:")) provider = "tmdb";
+            else if (AsciiGrammar.StartsWithIgnoreCase(text, "tvdb:")) provider = "tvdb";
+            else if (AsciiGrammar.StartsWithIgnoreCase(text, "imdb:")) provider = "imdb";
+            else return null;
+            text = text[5..];
+            // The id: "tt" and 1-12 digits, or 1-12 digits.
+            var prefix = AsciiGrammar.StartsWithIgnoreCase(text, "tt") ? 2 : 0;
+            var digits = AsciiGrammar.DigitRun(text[prefix..]);
+            if (digits is < 1 or > 12) return null;
+            var id = text[..(prefix + digits)].ToString().ToLowerInvariant();
+            text = text[(prefix + digits)..];
+            // ":s" and 1-4 digits, then ":e" and 1-5 digits, each optional, and nothing after.
+            int? season = null, episode = null;
+            if (text.Length > 0)
+            {
+                if (!Part(ref text, 's', 4, out var s)) return null;
+                season = s;
+                if (text.Length > 0)
+                {
+                    if (!Part(ref text, 'e', 5, out var e) || text.Length > 0) return null;
+                    episode = e;
+                }
+            }
             var isImdb = id.StartsWith("tt", StringComparison.Ordinal);
             if (isImdb != (provider == "imdb")) return null;
-            if (movie && (provider == "tvdb" || m.Groups[4].Success)) return null;
-            // ASCII digits only ([0-9], not \d, which matches any Unicode digit int.Parse rejects).
-            int? season = null, episode = null;
-            if (m.Groups[4].Success)
-            {
-                if (!int.TryParse(m.Groups[4].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var s)) return null;
-                season = s;
-            }
-            if (m.Groups[5].Success)
-            {
-                if (!int.TryParse(m.Groups[5].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var e)) return null;
-                episode = e;
-            }
+            if (movie && (provider == "tvdb" || season.HasValue)) return null;
             if (!isImdb) id = id.TrimStart('0') is { Length: > 0 } trimmed ? trimmed : "0";
             if (id == "0") return null;
             return new TitleKey(movie, provider, id, season, episode);
+        }
+
+        // ":<letter><1-max ASCII digits>" at the start of text (the letter in either case); moves past it.
+        private static bool Part(ref ReadOnlySpan<char> text, char letter, int max, out int number)
+        {
+            number = 0;
+            if (text.Length < 3 || text[0] != ':' || !AsciiGrammar.StartsWithIgnoreCase(text[1..], letter.ToString())) return false;
+            var digits = AsciiGrammar.DigitRun(text[2..]);
+            if (digits < 1 || digits > max || !int.TryParse(text.Slice(2, digits), NumberStyles.None, CultureInfo.InvariantCulture, out number)) return false;
+            text = text[(2 + digits)..];
+            return true;
         }
 
         /// <summary>The numeric id (TMDB/TVDB), or null for IMDb keys.</summary>
