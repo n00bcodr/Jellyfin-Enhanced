@@ -101,7 +101,7 @@ public partial class IntegrationArrAddChoicesTests
             {
                 Assert.Equal(200, Outcome(await rig.Controller(rig.Admin).Approve(pending.RequestId!, null, default)).HttpStatus);
                 await rig.Runner(lab.Direct).TickAsync(default);
-                Assert.Equal(("parked", "invalid_defaults"), (Assert.Single(rig.Ledger.ForWant(pending.RequestId!)).State, Assert.Single(rig.Ledger.ForWant(pending.RequestId!)).Reason));
+                Assert.Equal(("parked", "invalid_choice"), (Assert.Single(rig.Ledger.ForWant(pending.RequestId!)).State, Assert.Single(rig.Ledger.ForWant(pending.RequestId!)).Reason));
             }
         }
         var sheet = Sheet(lab, movie);
@@ -299,7 +299,11 @@ public partial class IntegrationArrAddChoicesTests
             Assert.Equal("retry", Assert.Single(rig.Ledger.ForWant(first.RequestId!)).State);
             host.FailWith = 0;
         }
-        var second = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, id: "second-sheet"), default));
+        var updated = Sheet(lab, movie, id: "second-sheet");
+        var conflict = Outcome(await Controller(lab, rig).Add(updated, default));
+        Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
+        updated.OverrideChoiceVersion = conflict.Choice!.Version;
+        var second = Outcome(await Controller(lab, rig).Add(updated, default));
         Assert.Equal(200, second.HttpStatus);
         var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
         Assert.Equal((5, "/selected"), (job.Input.ProfileId, job.Input.RootFolder));
@@ -554,7 +558,7 @@ public partial class IntegrationArrAddChoicesTests
         }
         await rig.Runner(lab.Direct).TickAsync(default);
         var job = Assert.Single(rig.Ledger.ForWant(accepted.RequestId!));
-        Assert.Equal(("parked", removal == "defaults" ? "invalid_defaults" : "invalid_choice"), (job.State, job.Reason));
+        Assert.Equal(("parked", "invalid_choice"), (job.State, job.Reason));
         Assert.Empty(host.Writes);
         var audit = Assert.Single(rig.Audit.ReadRecent(10), e => e.Action == "request.dispatch");
         Assert.Contains("Profile:", audit.Message);

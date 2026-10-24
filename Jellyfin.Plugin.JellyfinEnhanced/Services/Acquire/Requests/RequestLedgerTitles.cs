@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="t">The transaction, if any.</param>
         /// <param name="key">A title key (any of its ids).</param>
         internal static string Canonical(SqliteConnection c, SqliteTransaction? t, string key)
-            => Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$k", ("$k", key)) ?? key;
+            => TitleChoiceRegistry.IsIdentityFenced(c, t, key) ? key : Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$k", ("$k", key)) ?? key;
 
         // The input under its title's canonical key.
         private static MutationInput Canonical(SqliteConnection c, SqliteTransaction? t, MutationInput input)
@@ -104,8 +104,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var given = keys.Select(TitleKey.Parse).OfType<TitleKey>().Select(k => k.Title).DistinctBy(k => k.ToString()).ToList();
             if (given.Count < 2 || given.Any(k => k.IsMovie != given[0].IsMovie) || !_db.Available) return null;
-            if (!_db.Read(c => Group(c, null, given) is { } group && Needed(c, null, group))) return null;
-            return _db.Write((c, t) => Group(c, t, given) is { } group && Needed(c, t, group) ? UnifyCore(c, t, group, policy, now) : null);
+            if (_db.Read(c => given.Any(k => TitleChoiceRegistry.IsIdentityFenced(c, null, k.ToString()))))
+                return _db.Write<TitleMerge?>((c, t) => { TitleChoiceRegistry.FenceSplit(c, t, given); return null; });
+            if (!_db.Read(c => Group(c, null, given) is not { } group || Needed(c, null, group))) return null;
+            return _db.Write((c, t) =>
+            {
+                if (Group(c, t, given) is not { } group)
+                {
+                    TitleChoiceRegistry.FenceSplit(c, t, given);
+                    return null;
+                }
+                return Needed(c, t, group) ? UnifyCore(c, t, group, policy, now) : null;
+            });
         }
 
         // The title's keys: the ones given, what the ledger already maps them to, and the aliases it maps to those, with the

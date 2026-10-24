@@ -539,6 +539,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (SingleSeason(policy.Configuration, facts, normalized) is { } oneSeason) return oneSeason;
             if (facts.Role != "Admin" && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             if (CheckTitleChoice(c, t, user, normalized, facts, request.OverrideChoiceVersion, allowChanges: !automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role == "Admin") is { } choiceConflict) return choiceConflict;
+            normalized = Canonical(c, t, normalized);
+            var admittedInput = facts.Backend == "je" && TitleChoiceRegistry.Current(c, t, normalized, Authorize(facts, null, normalized, false)) is { } admittedChoice
+                ? normalized with { ProfileId = normalized.ProfileId ?? admittedChoice.ProfileId, RootFolder = normalized.RootFolder ?? admittedChoice.RootFolder }
+                : normalized;
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
             // An ask that chooses a Seerr destination doesn't approve someone else's pending ask without it (that would
@@ -552,12 +556,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // Manage Add may authorize a viewer's pending ask instead of creating its own job. Its
                     // explicit profile/root must therefore become that approval's input, while the viewer
                     // keeps their own scope and charge. ApproveCore persists the edits in the want and job.
-                    var edits = normalized.HasArrRouting ? pending.Input.WithArrChoices(normalized) : null;
+                    var edits = admittedInput.HasArrRouting ? pending.Input.WithArrChoices(admittedInput) : null;
                     // Coverage ignores add settings. Reconcile them with the actual owner before acknowledging
                     // a follower/duplicate. ApproveCore alone owns authorization, replacement and persistence.
                     if (pending.Status != "pending" && edits?.Fingerprint == pending.Input.Fingerprint &&
                         Jobs(c, t, "want_id=$w AND state IN ('queued','retry')", ("$w", pending.Id)).All(j => TitleChoiceRegistry.Check(c, t, j) == null)) continue;
-                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now, reconcileArrChoices: pending.Status != "pending", overrideChoiceVersion: TitleChoiceRegistry.Current(c, t, normalized, Authorize(facts, null, normalized, false))?.Revision ?? request.OverrideChoiceVersion);
+                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now, reconcileArrChoices: pending.Status != "pending");
                     if (approved.HttpStatus >= 400 && edits != null)
                         return approved with { Message = approved.Reason is "request_in_flight" or "request_changed"
                             ? "These add choices could not be applied: the shared request is already sending or sent. Check the title in Manage before changing its profile or folder."
@@ -816,23 +820,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (job.Uncertain || job.State is "sending" or "maybe_sent" or "succeeded")
                     return RequestOutcome.Refused(job.State == "succeeded" ? "request_changed" : "request_in_flight", 409, "conflict") with
                     { Message = "These add choices could not be applied: the title is already sending or sent. Check the title in Manage before changing its profile or folder." };
-            if (current == null) return null; // Only executable work claims a new title.
-            if (!HasChoice(input) && !current.Conflicted) return null;
-            var conflict = TitleChoiceRegistry.Conflicts(current, input);
-            var ownCorrection = !current.Conflicted && allowChanges && current.Owner == actor && jobs.All(j => (!HasChoice(j.Input) || RequestDestination.ScopesOverlap(j.Input, input) == true) && (correctionWant == null || j.WantId == correctionWant));
-            if (allowChanges && overrideVersion != null || conflict && ownCorrection && overrideVersion == null)
+            if (current == null)
             {
-                if (TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion ?? current.Revision, actor).Accepted) return null;
+                if (!TitleChoiceRegistry.IsIdentityFenced(c, t, input.Key)) return null; // Only executable work claims a new title.
+                if (allowChanges && overrideVersion != null && TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion.Value, actor).Accepted) return null;
+                return RequestOutcome.Refused("choice_conflict", 409, "conflict") with
+                {
+                    Choice = allowChanges || facts.Role == "Admin" ? new RequestChoice(Guid.Empty, TitleChoiceRegistry.SplitRevision(c, t, input.Key), null, null) : null,
+                    Message = "This title's learned identity changed. Cancel or settle ambiguous work, then explicitly confirm the corrected identity and add choices.",
+                };
+            }
+            if (!HasChoice(input) && !current.Conflicted && overrideVersion == null) return null;
+            var conflict = TitleChoiceRegistry.Conflicts(current, input);
+            if (!allowChanges && HasChoice(input) && TitleChoiceRegistry.Differs(current, input)) conflict = true;
+            if (allowChanges && overrideVersion != null)
+            {
+                if (TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion.Value, actor).Accepted) return null;
             }
             else if (!conflict)
             {
-                TitleChoiceRegistry.Claim(c, t, input, auth, actor, defaults);
-                return null;
+                // Explicit partial/default adoption is a checked Claim. Read-only approval must not
+                // fill, adopt or bump an existing record, even through this common admission helper.
+                if (!allowChanges || TitleChoiceRegistry.Claim(c, t, input, auth, actor, defaults, current.Revision).Accepted) return null;
             }
             return RequestOutcome.Refused("choice_conflict", 409, "conflict") with
             {
                 Choice = allowChanges || facts.Role == "Admin" ? current.Wire : null,
-                Message = "This title already has an administrator's profile and root folder choice. Series settings apply to the whole title; seasons remain separate. Use the current choices, or explicitly confirm replacing this version before it sends.",
+                Message = TitleChoiceRegistry.IsIdentityFenced(c, t, input.Key)
+                    ? "This title's learned ids disagree. Cancel or settle ambiguous requests and correct conflicting source ids, then explicitly confirm the current revision to accept the corrected mapping and these add choices. Detached titles remain held."
+                    : "This title already has an administrator's profile and root folder choice. Series settings apply to the whole title; seasons remain separate. Use the current choices, or explicitly confirm replacing this version before it sends.",
             };
         }
         // linkReservation: the job carries the want's latest unlinked ask or approval charge (a followed new season's
@@ -868,7 +884,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
         // resumeHeld: an explicit approval may resume work held after part of it was written; an approver's matching ask
         // (an implicit approval) leaves such work alone.
-        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false, bool reconcileArrChoices = false, long? overrideChoiceVersion = null)
+        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false, bool reconcileArrChoices = false)
         {
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
@@ -883,7 +899,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
             if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
             if (approver.Role != "Admin" && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
-            if (CheckTitleChoice(c, t, actor, input, requester, overrideChoiceVersion, reconcileArrChoices ? null : id, edits != null && approver.Role == "Admin") is { } choiceConflict)
+            if (CheckTitleChoice(c, t, actor, input, requester, null, reconcileArrChoices ? null : id, allowChanges: false) is { } choiceConflict)
                 return approver.Role == "Admin" ? choiceConflict : choiceConflict with { Choice = null, Message = "This title's add settings changed. Ask an administrator to review it in Manage." };
             // Manage Add can reauthorize the known-unsent owner without moving its scope or charge.
             // It cannot reopen sent work; normal approval retains its pending-only contract.

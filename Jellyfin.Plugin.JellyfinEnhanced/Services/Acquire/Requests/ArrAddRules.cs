@@ -64,11 +64,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return new ArrAddCheck(null, "defaults_unverified", $"{name}'s quality profiles and root folders could not be read just now, so the add settings can't be checked.");
             }
             var saved = instance.Defaults;
-            var profile = profileId ?? saved?.QualityProfileId;
-            var root = rootFolder ?? saved?.RootFolderPath;
+            var profile = ownedSettings != null ? profileId : profileId ?? saved?.QualityProfileId;
+            var root = ownedSettings != null ? rootFolder : rootFolder ?? saved?.RootFolderPath;
             if (profile == null || root == null)
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
+                return new ArrAddCheck(null, ownedSettings != null ? "invalid_choice" : "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
             }
             if (!system.Value.QualityProfiles.Any(p => p.Id == profile))
             {
@@ -92,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var availability = Availability.FirstOrDefault(a => string.Equals(a, settings?.MinimumAvailability, StringComparison.OrdinalIgnoreCase)) ?? "released";
             var seriesType = SeriesTypes.FirstOrDefault(s => string.Equals(s, settings?.SeriesType, StringComparison.OrdinalIgnoreCase))
                 ?? (instance.Role == ArrInstanceRole.Anime ? "anime" : "standard");
-            return new ArrAddCheck(new ArrAddDefaults(profile.Value, folder.Path!, wanted, availability, seriesType), null, string.Empty);
+            return new ArrAddCheck(new ArrAddDefaults(profile.Value, ownedSettings != null ? root : folder.Path!, wanted, availability, seriesType), null, string.Empty);
         }
     }
 }

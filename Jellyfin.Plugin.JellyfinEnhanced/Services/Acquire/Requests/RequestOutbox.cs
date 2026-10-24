@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static IReadOnlyDictionary<string, string>? AddChoices(RequestJob job, RequestBackendResult result)
         {
-            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null && result.Outcome.Reason != "invalid_defaults") return null;
+            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null && result.Outcome.Reason is not ("invalid_defaults" or "invalid_choice")) return null;
             var details = new Dictionary<string, string>();
             if (job.Input.ProfileId is { } profile) details["qualityProfileId"] = profile.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (job.Input.RootFolder is { } root) details["rootFolder"] = root;

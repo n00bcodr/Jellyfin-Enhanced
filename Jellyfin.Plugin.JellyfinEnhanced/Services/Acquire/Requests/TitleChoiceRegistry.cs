@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Microsoft.Data.Sqlite;
 
@@ -42,9 +43,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         internal static TitleChoiceRecord? Current(SqliteConnection c, SqliteTransaction? t, MutationInput input, RequestAuthorization auth)
         {
-            using var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices WHERE title=" + RequestLedger.CanonicalOf("$title") + " AND destination=$d",
-                ("$title", input.Key), ("$d", Destination(input, auth)));
-            return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<TitleChoiceRecord>(json) : null;
+            TitleChoiceRecord? Read(string title)
+            {
+                using var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices WHERE title=" + RequestLedger.CanonicalOf("$title") + " AND destination=$d",
+                    ("$title", title), ("$d", Destination(input, auth)));
+                return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<TitleChoiceRecord>(json) : null;
+            }
+            return Read(input.Key) ?? (IdentityFence(c, t, input.Key) is { } fence ? Read(fence.Canonical) : null);
         }
         private static TitleChoiceRecord? ById(SqliteConnection c, SqliteTransaction? t, string? id)
         {
@@ -57,36 +62,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ("$id", record.Id), ("$title", record.Title), ("$d", record.Destination), ("$v", JsonSerializer.Serialize(record)));
             return record;
         }
-        // Claim never replaces a conflicting owned value. Identical choices retain owner and revision.
-        internal static TitleChoiceDecision Claim(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, Guid actor, ArrInstanceDefaults? defaults = null)
+        // Claim is an explicit admission, not job binding. Updating a provisional or incomplete
+        // choice still compares the revision admitted by the caller and is audited atomically.
+        internal static TitleChoiceDecision Claim(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, Guid actor, ArrInstanceDefaults? defaults = null, long? expectedRevision = null)
         {
             var current = Current(c, t, input, auth);
+            if (IsIdentityFenced(c, t, input.Key)) return new(TitleChoiceResult.Conflict, current);
             var supplied = HasChoice(input);
-            input = input with { ProfileId = input.ProfileId ?? current?.ProfileId ?? defaults?.QualityProfileId,
-                RootFolder = input.RootFolder ?? current?.RootFolder ?? defaults?.RootFolderPath };
-            if (current != null && Conflicts(current, input)) return new(TitleChoiceResult.Conflict, current);
-            if (current != null && !Differs(current, input) && (current.Owned || !supplied)) return new(TitleChoiceResult.Accepted, current);
-            var title = RequestLedger.Canonical(c, t, input.Key);
-            return new(TitleChoiceResult.Accepted, Save(c, t, current == null
-                ? new(RequestLedger.NewId(), title, Destination(input, auth), actor, 1, input.ProfileId ?? defaults?.QualityProfileId, input.RootFolder ?? defaults?.RootFolderPath,
+            var proposed = input with { ProfileId = input.ProfileId ?? current?.ProfileId ?? (current == null ? defaults?.QualityProfileId : null),
+                RootFolder = input.RootFolder ?? current?.RootFolder ?? (current == null ? defaults?.RootFolderPath : null) };
+            if (current != null)
+            {
+                if (Conflicts(current, proposed)) return new(TitleChoiceResult.Conflict, current);
+                if (!Differs(current, proposed) && (current.Owned || !supplied)) return new(TitleChoiceResult.Accepted, current);
+                if (!supplied || expectedRevision != current.Revision) return new(TitleChoiceResult.StaleVersion, current);
+            }
+            var title = RequestLedger.Canonical(c, t, input.Key.ToString());
+            var record = current == null
+                ? new TitleChoiceRecord(RequestLedger.NewId(), title, Destination(input, auth), actor, 1, proposed.ProfileId, proposed.RootFolder,
                     defaults?.Tags.Distinct().OrderBy(x => x).ToArray() ?? Array.Empty<int>(), defaults?.SeriesType ?? "standard", defaults?.MinimumAvailability ?? "released", Owned: supplied)
-                : current with { Owner = actor, Revision = current.Revision + 1, ProfileId = input.ProfileId ?? current.ProfileId, RootFolder = input.RootFolder ?? current.RootFolder, Owned = supplied || current.Owned }));
+                : current with { Owner = actor, Revision = current.Revision + 1, ProfileId = proposed.ProfileId, RootFolder = proposed.RootFolder, Owned = true };
+            return new(TitleChoiceResult.Accepted, CommitChoice(c, t, record, actor.ToString("N"), "claim", current?.Revision ?? 0));
         }
-        // A stale revision is a conflict even if the chosen values happen to match again (ABA).
+        // Only the request's explicit override token may authorize a replacement. Approval and Bind
+        // cannot turn a read of Current into permission to advance it.
         internal static TitleChoiceDecision Override(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, long expectedRevision, Guid actor)
         {
             var current = Current(c, t, input, auth);
-            if (current == null || current.Revision != expectedRevision) return new(TitleChoiceResult.StaleVersion, current);
-            if (!current.Conflicted && !Differs(current, input)) return new(TitleChoiceResult.Accepted, current);
-            return new(TitleChoiceResult.Accepted, Save(c, t, current with { Owner = actor, Revision = current.Revision + 1, ProfileId = input.ProfileId ?? current.ProfileId,
-                RootFolder = input.RootFolder ?? current.RootFolder, Conflicted = false, Owned = true }));
+            if ((current?.Revision ?? SplitRevision(c, t, input.Key)) != expectedRevision) return new(TitleChoiceResult.StaleVersion, current);
+            if (IdentityFence(c, t, input.Key.ToString()) != null)
+                return ResolveSplit(c, t, input, auth, current, actor);
+            if (current == null) return new(TitleChoiceResult.StaleVersion, null);
+            if (!current.Conflicted && current.Owned && !Differs(current, input)) return new(TitleChoiceResult.Accepted, current);
+            return new(TitleChoiceResult.Accepted, CommitChoice(c, t, current with { Owner = actor, Revision = current.Revision + 1, ProfileId = input.ProfileId ?? current.ProfileId,
+                RootFolder = input.RootFolder ?? current.RootFolder, Conflicted = false, Owned = true }, actor.ToString("N"), "override", expectedRevision));
         }
         internal static (MutationInput Input, RequestAuthorization Authorization, string? Id, long Revision) Bind(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, ArrInstanceDefaults? defaults = null)
         {
             if (auth.Backend != "je") return (input, auth, null, 0);
-            var decision = Claim(c, t, input, auth, auth.Approver ?? auth.Requester, defaults);
-            if (!decision.Accepted) throw new InvalidOperationException("A conflicting title choice must be acknowledged before creating a job.");
-            var record = decision.Current!;
+            // An approval may claim only an absent record, as the approving actor. Existing records
+            // are immutable here, even if pending/job snapshots contain a different or partial choice.
+            var record = Current(c, t, input, auth);
+            if (record == null) record = Claim(c, t, input, auth, auth.Approver ?? auth.Requester, defaults).Current!;
+            if (record.Conflicted) throw new InvalidOperationException("A conflicting title choice must be acknowledged before creating a job.");
             return (Apply(input, record), Snapshot(auth, record), record.Id, record.Revision);
         }
         internal static void Link(SqliteConnection c, SqliteTransaction t, string job, string? id, long revision)
@@ -160,11 +178,146 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     RequestLedger.Exec(c, t, "UPDATE jobs SET title_choice_id=$to WHERE title_choice_id=$from", ("$to", survivor.Id), ("$from", other.Id));
                     RequestLedger.Exec(c, t, "DELETE FROM title_choices WHERE id=$id", ("$id", other.Id));
                 }
-                Save(c, t, survivor with { Title = aliases[0], Revision = revision, Conflicted = different });
+                CommitChoice(c, t, survivor with { Title = aliases[0], Revision = revision, Conflicted = different }, "system", "claim.identity_merge", survivor.Revision);
                 if (!different)
                     RequestLedger.Exec(c, t, "UPDATE jobs SET title_choice_revision=$v WHERE title_choice_id=$id", ("$v", revision), ("$id", survivor.Id));
             }
         }
+        private static TitleChoiceRecord CommitChoice(SqliteConnection c, SqliteTransaction t, TitleChoiceRecord record, string actor, string action, long expectedRevision)
+        {
+            Save(c, t, record);
+            var entry = new ArrAuditEntry
+            {
+                Id = RequestLedger.NewId(), Time = DateTimeOffset.UtcNow, UserId = actor, Action = "request.choice." + action,
+                Tier = 2, InstanceId = record.Destination, Target = record.Title, Outcome = "succeeded",
+                Message = $"Choice {action}; Actor: {actor}; Expected revision: {expectedRevision}; Revision: {record.Revision}; Profile: {record.ProfileId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "missing"}; Root: {record.RootFolder ?? "missing"}; Tags: {string.Join(",", record.Tags)}; Series type: {record.SeriesType}; Availability: {record.MinimumAvailability}.",
+            };
+            RequestLedger.Exec(c, t, "INSERT INTO title_choice_audit(id,record_id,revision,value) VALUES($id,$r,$v,$entry)",
+                ("$id", entry.Id), ("$r", record.Id), ("$v", record.Revision), ("$entry", JsonSerializer.Serialize(entry)));
+            return record;
+        }
+        /// <summary>Committed choice admissions, including their actor, expected revision and effective settings.</summary>
+        public IReadOnlyList<ArrAuditEntry> Audit(int take) => _db.Read(c =>
+        {
+            var entries = new List<ArrAuditEntry>();
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT value FROM title_choice_audit ORDER BY rowid DESC LIMIT $n", ("$n", Math.Clamp(take, 1, 500)));
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) entries.Add(JsonSerializer.Deserialize<ArrAuditEntry>(r.GetString(0))!);
+            return entries;
+        });
+
+        private sealed record SplitFence(string Canonical, string[] Aliases, string[] Observed);
+        private static SplitFence? IdentityFence(SqliteConnection c, SqliteTransaction? t, string alias)
+        {
+            using (var exists = RequestLedger.Cmd(c, t, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_identity_fences'"))
+                if (Convert.ToInt32(exists.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0) return null;
+            using var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_identity_fences WHERE alias=$a", ("$a", alias));
+            return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<SplitFence>(json) : null;
+        }
+        internal static bool IsIdentityFenced(SqliteConnection c, SqliteTransaction? t, string alias) => IdentityFence(c, t, alias) != null;
+        internal static long SplitRevision(SqliteConnection c, SqliteTransaction? t, string alias)
+        {
+            var fence = IdentityFence(c, t, alias);
+            if (fence == null) return 0;
+            var revision = 0L;
+            using var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices");
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!;
+                if (fence.Aliases.Contains(record.Title)) revision = Math.Max(revision, record.Revision);
+            }
+            return revision;
+        }
+        /// <summary>Retains the submitted identity while a contradictory learned mapping is fenced.</summary>
+        public bool IdentityFenced(string title) => _db.Available && _db.Read(c => IsIdentityFenced(c, null, title));
+
+        // A fresh observed provider pair conflicting with an inherited alias is positive evidence of
+        // a wrong mapping. Absence from a cache is not. Keep all ids frozen, including newly observed
+        // ones; do not silently decide which historical scope belonged to which of the two titles.
+        internal static void FenceSplit(SqliteConnection c, SqliteTransaction t, IReadOnlyList<TitleKey> observed)
+        {
+            var ids = observed.Select(x => x.ToString()).ToArray();
+            var canonicals = ids.Select(x => RequestLedger.Canonical(c, t, x)).Distinct().ToArray();
+            var all = new HashSet<string>(ids, StringComparer.Ordinal);
+            foreach (var canonical in canonicals)
+            {
+                all.Add(canonical);
+                using var cmd = RequestLedger.Cmd(c, t, "SELECT alias FROM title_aliases WHERE canonical=$c", ("$c", canonical));
+                using var r = cmd.ExecuteReader(); while (r.Read()) all.Add(r.GetString(0));
+            }
+            if (!all.Select(x => TitleKey.Parse(x)!).GroupBy(x => x.Provider).Any(g => g.Count() > 1)) return;
+            var prior = ids.Select(x => IdentityFence(c, t, x)).FirstOrDefault(x => x != null);
+            if (prior != null)
+            {
+                all.UnionWith(prior.Aliases);
+                if (all.SetEquals(prior.Aliases) && new HashSet<string>(ids, StringComparer.Ordinal).SetEquals(prior.Observed)) return;
+            }
+            var records = new List<TitleChoiceRecord>();
+            using (var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices"))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) { var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!; if (all.Contains(record.Title)) records.Add(record); }
+            var canonicalTitle = prior?.Canonical ?? (records.Count == 0 ? canonicals.OrderBy(x => RequestLedger.Rank(TitleKey.Parse(x)!)).First() : records.OrderBy(x => x.Title, StringComparer.Ordinal).First().Title);
+            var fence = new SplitFence(canonicalTitle, all.OrderBy(x => x, StringComparer.Ordinal).ToArray(), ids);
+            foreach (var alias in all)
+                RequestLedger.Exec(c, t, "INSERT INTO title_identity_fences(alias,value) VALUES($a,$v) ON CONFLICT(alias) DO UPDATE SET value=$v", ("$a", alias), ("$v", JsonSerializer.Serialize(fence)));
+            var fenceRevision = records.Count == 0 ? 0 : records.Max(x => x.Revision) + 1;
+            foreach (var record in records)
+                CommitChoice(c, t, record with { Conflicted = true, Revision = fenceRevision }, "system", "claim.identity_split_fence", record.Revision);
+        }
+
+        // Reversible conservative resolution: ambiguous executable history must be cancelled (or
+        // settled) first. The explicit current-version override accepts the observed provider pair,
+        // separates orphan ids, and admits only the requested identity. Other identities stay
+        // conflicted until their own administrator confirmation; old job references never revive.
+        private static TitleChoiceDecision ResolveSplit(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, TitleChoiceRecord? current, Guid actor)
+        {
+            var fence = IdentityFence(c, t, input.Key.ToString())!;
+            // Contradictory source rows cannot nominate a safe provider pair. Keep the fence until
+            // the resolver observes a coherent correction, then require the new revision explicitly.
+            if (fence.Observed.Select(x => TitleKey.Parse(x)!).GroupBy(x => x.Provider).Any(g => g.Count() > 1))
+                return new(TitleChoiceResult.Conflict, current);
+            current ??= new TitleChoiceRecord(RequestLedger.NewId(), fence.Canonical, Destination(input, auth), actor, SplitRevision(c, t, input.Key),
+                input.ProfileId, input.RootFolder, Array.Empty<int>(), "standard", "released", Conflicted: true);
+            var records = new List<TitleChoiceRecord>();
+            using (var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices"))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) { var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!; if (fence.Aliases.Contains(record.Title)) records.Add(record); }
+            if (records.All(x => x.Destination != current.Destination)) records.Add(current);
+            foreach (var record in records)
+            {
+                using var cmd = RequestLedger.Cmd(c, t, "SELECT COUNT(*) FROM jobs WHERE title_choice_id=$id AND state NOT IN ('cancelled','succeeded')", ("$id", record.Id));
+                if (Convert.ToInt32(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) != 0) return new(TitleChoiceResult.Conflict, current);
+            }
+            var canonical = fence.Observed.OrderBy(x => RequestLedger.Rank(TitleKey.Parse(x)!)).First();
+            var selected = fence.Observed.Contains(input.Key) ? canonical : input.Key;
+            foreach (var alias in fence.Aliases)
+            {
+                RequestLedger.Exec(c, t, "DELETE FROM title_aliases WHERE alias=$a", ("$a", alias));
+                RequestLedger.Exec(c, t, "DELETE FROM title_identity_fences WHERE alias=$a", ("$a", alias));
+            }
+            foreach (var alias in fence.Observed.Where(x => x != canonical.ToString()))
+                RequestLedger.Exec(c, t, "INSERT INTO title_aliases(alias,canonical,learned_at) VALUES($a,$c,$at)", ("$a", alias), ("$c", canonical.ToString()), ("$at", RequestLedger.Ms(DateTimeOffset.UtcNow)));
+            var titles = fence.Aliases.Except(fence.Observed).Append(canonical.ToString()).Distinct().ToArray();
+            TitleChoiceRecord? admitted = null;
+            foreach (var old in records)
+                RequestLedger.Exec(c, t, "DELETE FROM title_choices WHERE id=$id", ("$id", old.Id));
+            foreach (var group in records.GroupBy(x => x.Destination))
+            {
+                foreach (var title in titles)
+                {
+                    var accepts = title == selected && group.Key == current.Destination;
+                    var source = accepts ? current : group.FirstOrDefault(x => x.Title == title) ?? group.OrderBy(x => x.Id, StringComparer.Ordinal).First();
+                    var record = source with { Id = RequestLedger.NewId(), Title = title, Revision = group.Max(x => x.Revision) + 1, Conflicted = !accepts,
+                        Owner = accepts ? actor : source.Owner, Owned = accepts || source.Owned, ProfileId = accepts ? input.ProfileId ?? source.ProfileId : source.ProfileId,
+                        RootFolder = accepts ? input.RootFolder ?? source.RootFolder : source.RootFolder };
+                    CommitChoice(c, t, record, actor.ToString("N"), "override.identity_split", source.Revision);
+                    if (accepts) admitted = record;
+                }
+            }
+            return new(TitleChoiceResult.Accepted, admitted!);
+        }
+
         private static bool SameValues(TitleChoiceRecord a, TitleChoiceRecord b)
             => a.ProfileId == b.ProfileId && a.RootFolder == b.RootFolder && a.Tags.SequenceEqual(b.Tags) && a.SeriesType == b.SeriesType && a.MinimumAvailability == b.MinimumAvailability;
 
@@ -183,6 +336,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static void Ensure(SqliteConnection c)
         {
             using var t = c.BeginTransaction(deferred: false);
+            RequestLedger.Exec(c, t, "CREATE TABLE IF NOT EXISTS title_choice_audit(id TEXT PRIMARY KEY,record_id TEXT NOT NULL,revision INTEGER NOT NULL,value TEXT NOT NULL)");
+            RequestLedger.Exec(c, t, "CREATE TABLE IF NOT EXISTS title_identity_fences(alias TEXT PRIMARY KEY,value TEXT NOT NULL)");
             RequestLedger.Exec(c, t, "CREATE TABLE IF NOT EXISTS title_choices(id TEXT PRIMARY KEY,title TEXT NOT NULL,destination TEXT NOT NULL,value TEXT NOT NULL,UNIQUE(title,destination))");
             using (var columns = RequestLedger.Cmd(c, t, "SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name='title_choice_id'"))
                 if (Convert.ToInt32(columns.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0)
@@ -204,9 +359,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var conflictingFence = group.Where(j => Math.Max(1, j.Auth.ChoiceVersion) == maximum).Any(j =>
                     HasChoice(j.Input) && !RequestDestination.SameArrChoices(j.Input, winner.Input.ProfileId, winner.Input.RootFolder));
                 var revision = maximum + (conflictingFence ? 1 : 0);
-                var record = Current(c, t, winner.Input, winner.Auth) ?? Save(c, t, new(RequestLedger.NewId(), group.Key.Title, group.Key.Destination,
+                var record = Current(c, t, winner.Input, winner.Auth) ?? CommitChoice(c, t, new(RequestLedger.NewId(), group.Key.Title, group.Key.Destination,
                     winner.Auth.ChoiceOwner ?? winner.Auth.Approver ?? winner.Auth.Requester, revision, winner.Input.ProfileId ?? defaults?.QualityProfileId, winner.Input.RootFolder ?? defaults?.RootFolderPath,
-                    defaults?.Tags.Distinct().OrderBy(x => x).ToArray() ?? Array.Empty<int>(), defaults?.SeriesType, defaults?.MinimumAvailability, Owned: HasChoice(winner.Input)));
+                    defaults?.Tags.Distinct().OrderBy(x => x).ToArray() ?? Array.Empty<int>(), defaults?.SeriesType, defaults?.MinimumAvailability, Owned: HasChoice(winner.Input)), "system", "claim.migration", 0);
                 foreach (var job in group)
                 {
                     if (HasChoice(job.Input) && !RequestDestination.SameArrChoices(job.Input, record.ProfileId, record.RootFolder))
