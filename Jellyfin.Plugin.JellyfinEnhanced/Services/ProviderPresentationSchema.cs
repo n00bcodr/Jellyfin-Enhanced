@@ -55,7 +55,7 @@ public static class ProviderPresentationSchema
         Add("person-search", Role.Envelope, "page totalPages totalResults");
         Add("named-search", Role.Envelope, "page totalPages totalResults");
         Add("named-lookup", Role.Envelope, "");
-        Add("page", Role.Envelope, "id page totalPages totalResults totalRecordCount startIndex list type more contact lookingHours canApproveRequests outcome reason certainty message");
+        Add("page", Role.Envelope, "id page totalPages totalResults totalRecordCount startIndex list type more contact lookingHours canApproveRequests outcome reason certainty message complete verification retryAfterSeconds");
         Add("hub-seerr", Role.Metadata, "configured loaded unavailable ledger");
         Add("hub-arr", Role.Metadata, "unavailable");
         Add("hub-admin", Role.Metadata, "downloads calendar hub");

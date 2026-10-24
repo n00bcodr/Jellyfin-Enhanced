@@ -113,6 +113,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The titles of the page the caller may see.</summary>
         [JsonPropertyName("results")] public IReadOnlyList<DiscoverCard> Results { get; init; } = Array.Empty<DiscoverCard>();
 
+        /// <summary>False when some titles could not yet be verified; hidden titles are never named.</summary>
+        [JsonPropertyName("complete")] public bool Complete { get; init; } = true;
+
+        /// <summary>complete or partial; a partial page must not be rendered as a completed empty result.</summary>
+        [JsonPropertyName("verification")] public string Verification => Complete ? "complete" : "partial";
+
+        /// <summary>Minimum retry delay for partial verification; null for a complete answer.</summary>
+        [JsonPropertyName("retryAfterSeconds")] public int? RetryAfterSeconds => Complete ? null : 5;
+
         /// <summary>"Because you watched" only: one group per watched title (empty: no row).</summary>
         [JsonPropertyName("groups")] public IReadOnlyList<DiscoverGroup>? Groups { get; init; }
     }
@@ -180,7 +189,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private UserConfigurationManager? _userConfig;
         private ILibraryManager? _library;
         private readonly TitleAliases? _aliases;
-        private readonly Func<string, int, StatusViewer, CancellationToken, Task<bool>> _maySeeAbsent;
+        private readonly Func<string, int, StatusViewer, CancellationToken, Task<bool?>> _maySeeAbsent;
+        private readonly Func<string> _evidenceRevision;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
         private readonly Func<StatusViewer, int, IReadOnlyList<RecentTitle>> _recent;
         private readonly Func<Guid, HiddenTitles> _hidden;
@@ -195,7 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
                 (viewer, max) => RecentlyWatched(library, viewer, max),
                 user => ReadHidden(userConfig, library, user),
-                () => DateTimeOffset.UtcNow)
+                () => DateTimeOffset.UtcNow, () => parental.EvidenceRevision)
         {
             _presentation = presentation; _userConfig = userConfig; _library = library;
         }
@@ -207,7 +217,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<StatusViewer, int, IReadOnlyList<RecentTitle>> recent,
             Func<Guid, HiddenTitles> hidden,
             Func<DateTimeOffset> now)
+            : this(requests, aliases, async (kind, id, viewer, ct) => (bool?)await maySeeAbsent(kind, id, viewer, ct).ConfigureAwait(false), tmdb, recent, hidden, now) { }
+
+        /// <summary>Creates the service with tri-state evidence and its revision.</summary>
+        internal DiscoverService(RequestService requests, TitleAliases? aliases,
+            Func<string, int, StatusViewer, CancellationToken, Task<bool?>> maySeeAbsent,
+            Func<string, string, CancellationToken, Task<string?>> tmdb,
+            Func<StatusViewer, int, IReadOnlyList<RecentTitle>> recent,
+            Func<Guid, HiddenTitles> hidden,
+            Func<DateTimeOffset> now,
+            Func<string>? evidenceRevision = null)
         {
+            _evidenceRevision = evidenceRevision ?? (() => requests.Policy.Configuration.ArrRequestBackend);
             _requests = requests;
             _aliases = aliases;
             _maySeeAbsent = maySeeAbsent;
@@ -226,10 +247,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         /// <param name="parental">The parental filter.</param>
         /// <returns>The check.</returns>
-        internal static Func<string, int, StatusViewer, CancellationToken, Task<bool>> ParentalCheck(SeerrParentalFilter parental)
+        internal static Func<string, int, StatusViewer, CancellationToken, Task<bool?>> ParentalCheck(SeerrParentalFilter parental)
             => (kind, id, viewer, ct) => viewer.Handle is not User person
-                ? Task.FromResult(false)
-                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.MaySeeAbsentAsync(kind, id, policy, ct) : Task.FromResult(true);
+                ? Task.FromResult<bool?>(null)
+                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.AbsentVerdictAsync(kind, id, policy, ct) : Task.FromResult<bool?>(true);
 
         /// <summary>Hidden Content's per-user file.</summary>
         internal const string HiddenContentFile = "hidden-content.json";
@@ -247,14 +268,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task<DiscoverAnswer?> DiscoverAsync(StatusViewer viewer, string list, string type, int page, string? language, CancellationToken ct)
         {
             var lang = Lang(language);
-            return PublishAsync(viewer, list + "|" + type + "|" + page + "|" + lang, false, (v, hidden) => PrepareDiscoverAsync(v, list, type, page, lang, hidden, ct), ct);
+            return PublishAsync(viewer, list + "|" + type + "|" + page + "|" + lang, false, (v, hidden, budget) => PrepareDiscoverAsync(v, list, type, page, lang, hidden, budget, ct), ct);
         }
 
         /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
         public Task<DiscoverAnswer?> SearchAsync(StatusViewer viewer, string query, int page, string? language, CancellationToken ct)
         {
             var lang = Lang(language);
-            return PublishAsync(viewer, "search|" + page + "|" + lang + "|" + query, true, (v, hidden) => PrepareSearchAsync(v, query, page, lang, hidden, ct), ct);
+            return PublishAsync(viewer, "search|" + page + "|" + lang + "|" + query, true, (v, hidden, budget) => PrepareSearchAsync(v, query, page, lang, hidden, budget, ct), ct);
         }
 
         /// <summary>
@@ -265,26 +286,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// changed meanwhile gets the page prepared again for them as they are now, at most <see cref="ResponseGate.Attempts"/>
         /// times, then nothing (fail closed). An answer is cached only under a stamp that held from the start to publication.
         /// </summary>
-        private async Task<DiscoverAnswer?> PublishAsync(StatusViewer viewer, string what, bool search, Func<StatusViewer, HiddenTitles, Task<Prepared?>> prepare, CancellationToken ct)
+        private async Task<DiscoverAnswer?> PublishAsync(StatusViewer viewer, string what, bool search, Func<StatusViewer, HiddenTitles, EvidenceDeadline, Task<Prepared?>> prepare, CancellationToken ct)
         {
             // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
             using var bound = CopyLookupBound.Track();
+            using var budget = new EvidenceDeadline(ct);
             for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
             {
                 var hidden = Hidden(viewer.UserId);
                 var stamp = _gate.Take(viewer, hidden.Stamp);
-                var cacheKey = CacheKey(viewer, what, hidden);
+                var evidence = _evidenceRevision();
+                var cacheKey = CacheKey(viewer, what, hidden) + "|" + evidence;
                 Prepared? prepared;
                 if (Cached(cacheKey) is { } cached) prepared = cached;
                 else
                 {
-                    prepared = await prepare(viewer, hidden).ConfigureAwait(false);
+                    prepared = await prepare(viewer, hidden, budget).ConfigureAwait(false);
                     if (prepared == null) return null;
                 }
                 var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
                 // Publication: no await from here on.
                 var nowHidden = Hidden(viewer.UserId);
-                if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now)
+                if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now || evidence != _evidenceRevision())
                 {
                     if (_requests.View.Viewer(viewer.UserId) is not { } changed) return null;
                     viewer = changed;
@@ -294,19 +317,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // The final Hidden Content and Spoiler Guard projection (D46), at publication, under the presentation revision it read.
                 var revision = _presentation?.Load(now.UserId).Revision;
                 var answer = Present(now, Project(now, prepared, search ? nowHidden.Search : nowHidden.Discovery, paused), nowHidden);
-                if (!ResponseGate.SameViewer(before, _gate.Take(now, Hidden(now.UserId).Stamp)) || _presentation?.Load(now.UserId).Revision != revision)
+                if (!ResponseGate.SameViewer(before, _gate.Take(now, Hidden(now.UserId).Stamp)) || _presentation?.Load(now.UserId).Revision != revision || evidence != _evidenceRevision())
                 {
                     viewer = now;
                     continue;
                 }
                 // Only what held from start to finish is kept for the next read.
-                if (ResponseGate.Same(stamp, before)) Store(cacheKey, prepared);
+                if (answer.Complete && ResponseGate.Same(stamp, before)) Store(cacheKey, prepared);
                 return answer;
             }
             return null;
         }
 
-        private async Task<Prepared?> PrepareDiscoverAsync(StatusViewer viewer, string list, string type, int page, string? lang, HiddenTitles hidden, CancellationToken ct)
+        private async Task<Prepared?> PrepareDiscoverAsync(StatusViewer viewer, string list, string type, int page, string? lang, HiddenTitles hidden, EvidenceDeadline budget, CancellationToken ct)
         {
             if (list == "because")
             {
@@ -322,7 +345,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var kept = Page(rows.Where(r => r.Key != seedKey), hidden.Discovery);
                     groups.Add(new PreparedGroup(seed.Title.Length > 200 ? seed.Title[..200] : seed.Title, seedKey, kept));
                 }
-                return new Prepared("because", "all", 1, 1, Array.Empty<Row>(), groups, await RatingsAsync(viewer, groups.SelectMany(g => g.Rows), ct).ConfigureAwait(false));
+                return new Prepared("because", "all", 1, 1, Array.Empty<Row>(), groups, await RatingsAsync(viewer, groups.SelectMany(g => g.Rows), budget, ct).ConfigureAwait(false));
             }
             var path = list switch
             {
@@ -334,16 +357,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (page1 == null) return null;
             var (found, total) = Parse(page1, type);
             var pageRows = Page(found, hidden.Discovery);
-            return new Prepared(list, type, page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, ct).ConfigureAwait(false));
+            return new Prepared(list, type, page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, budget, ct).ConfigureAwait(false));
         }
 
-        private async Task<Prepared?> PrepareSearchAsync(StatusViewer viewer, string query, int page, string? lang, HiddenTitles hidden, CancellationToken ct)
+        private async Task<Prepared?> PrepareSearchAsync(StatusViewer viewer, string query, int page, string? lang, HiddenTitles hidden, EvidenceDeadline budget, CancellationToken ct)
         {
             var json = await Read("search/multi", Query(page, lang) + "&include_adult=false&query=" + Uri.EscapeDataString(query), ct).ConfigureAwait(false);
             if (json == null) return null;
             var (found, total) = Parse(json, null);
             var pageRows = Page(found, hidden.Search);
-            return new Prepared("search", "all", page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, ct).ConfigureAwait(false));
+            return new Prepared("search", "all", page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, budget, ct).ConfigureAwait(false));
         }
 
         /// <summary>The rows of a page that Hidden Content doesn't hide by key, at most <see cref="MaxResults"/>.</summary>
@@ -377,7 +400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal sealed record Row(string Key, string Kind, int TmdbId, string Title, int? Year, string? Poster, string? Overview);
 
         /// <summary>A page prepared ahead of publication: its rows (or "because" groups) and the rating checks of absent titles.</summary>
-        internal sealed record Prepared(string List, string Type, int Page, int TotalPages, IReadOnlyList<Row> Rows, IReadOnlyList<PreparedGroup>? Groups, IReadOnlyDictionary<string, bool> Ratings)
+        internal sealed record Prepared(string List, string Type, int Page, int TotalPages, IReadOnlyList<Row> Rows, IReadOnlyList<PreparedGroup>? Groups, IReadOnlyDictionary<string, bool?> Ratings)
         {
             /// <summary>Every title key of the page.</summary>
             public IEnumerable<string> Keys => Rows.Concat(Groups?.SelectMany(g => g.Rows) ?? Enumerable.Empty<Row>()).Select(r => r.Key);
@@ -390,13 +413,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// For a viewer with parental limits, the rating checks of the titles Jellyfin proves absent for them now (an absent
         /// title needs a verified rating they may see): run in parallel, bounded. Others need none.
         /// </summary>
-        private async Task<IReadOnlyDictionary<string, bool>> RatingsAsync(StatusViewer viewer, IEnumerable<Row> rows, CancellationToken ct)
+        private sealed class EvidenceDeadline(CancellationToken request) : IDisposable
         {
-            var result = new Dictionary<string, bool>(StringComparer.Ordinal);
+            private CancellationTokenSource? _source;
+            // One preparation budget across all title checks, slot waits and publication retries.
+            public CancellationToken Token
+            {
+                get
+                {
+                    if (_source == null)
+                    {
+                        _source = CancellationTokenSource.CreateLinkedTokenSource(request);
+                        _source.CancelAfter(TimeSpan.FromSeconds(2));
+                    }
+                    return _source.Token;
+                }
+            }
+            public void Dispose() => _source?.Dispose();
+        }
+
+        private async Task<IReadOnlyDictionary<string, bool?>> RatingsAsync(StatusViewer viewer, IEnumerable<Row> rows, EvidenceDeadline budget, CancellationToken ct)
+        {
+            var result = new Dictionary<string, bool?>(StringComparer.Ordinal);
             if (!viewer.HasParentalLimit) return result;
             var absent = rows.DistinctBy(r => r.Key).Where(r => Lookup(viewer, r) is { Seen.Count: 0, IsProvenAbsent: true }).ToList();
-            var checks = await Task.WhenAll(absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer, ct))).ConfigureAwait(false);
-            for (var i = 0; i < absent.Count; i++) result[absent[i].Key] = checks[i];
+            var checks = absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer, budget.Token)).ToArray();
+            try { await Task.WhenAll(checks).WaitAsync(budget.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+            ct.ThrowIfCancellationRequested();
+            for (var i = 0; i < absent.Count; i++) result[absent[i].Key] = checks[i].IsCompletedSuccessfully ? checks[i].Result : null;
             return result;
         }
 
@@ -409,18 +454,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The answer for the viewer as they are now, from Jellyfin as it is now (no I/O beyond Jellyfin and the ledger).</summary>
         private DiscoverAnswer Project(StatusViewer viewer, Prepared prepared, IReadOnlySet<string> hidden, IReadOnlyDictionary<string, RequestBlock> paused)
         {
-            List<DiscoverCard> Cards(IEnumerable<Row> rows) => rows.Where(r => !hidden.Contains(r.Key)).Select(r => Card(viewer, r, hidden, prepared.Ratings)).Where(c => c != null)
+            var complete = prepared.Ratings.Values.All(v => v != null);
+            List<DiscoverCard> Cards(IEnumerable<Row> rows) => rows.Where(r => !hidden.Contains(r.Key)).Select(r =>
+                {
+                    var card = Card(viewer, r, hidden, prepared.Ratings, out var unverified);
+                    if (unverified) complete = false;
+                    return card;
+                }).Where(c => c != null)
                 .Select(c => paused.TryGetValue(c!.Key, out var block) ? c with { Blocked = block } : c!).Take(MaxResults).ToList();
             if (prepared.Groups != null)
             {
                 var groups = prepared.Groups.Select(g => new DiscoverGroup { BasedOn = g.BasedOn, Key = g.Key, Results = Cards(g.Rows) }).Where(g => g.Results.Count > 0).ToList();
-                return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = 1, TotalPages = 1, Groups = groups };
+                return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = 1, TotalPages = 1, Groups = groups, Complete = complete };
             }
-            return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = prepared.Page, TotalPages = prepared.TotalPages, Results = Cards(prepared.Rows) };
+            return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = prepared.Page, TotalPages = prepared.TotalPages, Results = Cards(prepared.Rows), Complete = complete };
         }
 
-        private DiscoverCard? Card(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, IReadOnlyDictionary<string, bool> ratings)
+        private DiscoverCard? Card(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, IReadOnlyDictionary<string, bool?> ratings, out bool unverified)
         {
+            unverified = false;
             var key = TitleKey.Parse(row.Key)!;
             var lookup = Lookup(viewer, row);
             // The card shows what a finished lookup found (one that couldn't finish reads as not in the library). In the library
@@ -435,7 +487,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // was seen too; an absent title needs a verified rating they may see, and only a proven absence is one (a
                 // title no rating was checked for, absent only now, is left out: never shown on an unchecked rating).
                 var seen = lookup.Seen;
-                if (seen.Count > 0 ? lookup.SeenOpenable == null : !lookup.IsProvenAbsent || !ratings.TryGetValue(row.Key, out var may) || !may) return null;
+                if (seen.Count > 0)
+                {
+                    if (lookup.SeenOpenable == null) return null;
+                }
+                else
+                {
+                    if (!lookup.IsProvenAbsent || !ratings.TryGetValue(row.Key, out var may) || may == null)
+                    {
+                        unverified = true;
+                        return null;
+                    }
+                    if (may != true) return null;
+                }
             }
             var itemId = open?.ItemId.ToString("N", CultureInfo.InvariantCulture);
             // Hidden Content keyed by a copy's item id hides the title whether or not that copy plays.
@@ -460,24 +524,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
         }
 
-        private async Task<bool> MaySeeAsync(string kind, int tmdbId, StatusViewer viewer, CancellationToken ct)
+        private async Task<bool?> MaySeeAsync(string kind, int tmdbId, StatusViewer viewer, CancellationToken ct)
         {
-            await ParentalSlots.WaitAsync(ct).ConfigureAwait(false);
+            var entered = false;
             try
             {
+                await ParentalSlots.WaitAsync(ct).ConfigureAwait(false);
+                entered = true;
                 return await _maySeeAbsent(kind, tmdbId, viewer, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
             }
             catch (Exception)
             {
-                return false;
+                return null;
             }
             finally
             {
-                ParentalSlots.Release();
+                if (entered) ParentalSlots.Release();
             }
         }
 
@@ -715,7 +777,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Not an answer composed from a copy lookup that reached its bound: the next read looks again.
         private void Store(string key, Prepared answer)
         {
-            if (CopyLookupBound.Reached) return;
+            if (CopyLookupBound.Reached || answer.Ratings.Values.Any(v => v == null)) return;
             var now = _now();
             if (_cache.Count >= MaxCacheEntries)
             {

@@ -480,7 +480,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!policy.IsRestricted) return true;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
-            if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature?.Score == null) return false;
+            if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature == null) return false;
+            if (JeEvidence ? JeVerdict(signature, type, policy) == null : signature.Score == null) return false;
             facts = new AbsentSignature(signature.Score, signature.SubScore, signature.Keywords ?? Array.Empty<string>(), signature.Genres ?? Array.Empty<string>());
             return IsAllowed(signature, type, policy);
         }
@@ -496,11 +497,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <returns>Whether the person may see it, or null when that isn't known yet.</returns>
         public bool? AbsentVerdict(string mediaType, int tmdbId, string userId)
         {
-            if (!TryGetRestrictedPolicy(userId, out var policy) || !policy.IsRestricted) return true;
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            return AbsentVerdict(mediaType, tmdbId, policy);
+        }
+
+        /// <summary>Cache-only tri-state decision under the captured caller policy.</summary>
+        public bool? AbsentVerdict(string mediaType, int tmdbId, Policy policy)
+        {
+            if (!policy.IsRestricted) return true;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
             if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature == null) return null;
-            return signature.Score != null && IsAllowed(signature, type, policy);
+            return JeEvidence ? JeVerdict(signature, type, policy) : signature.Score != null && IsAllowed(signature, type, policy);
         }
 
         /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
@@ -517,6 +525,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="ct">Cancellation.</param>
         /// <returns>Whether the person may see it.</returns>
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
+            => await AbsentVerdictAsync(mediaType, tmdbId, policy, ct).ConfigureAwait(false) == true;
+
+        /// <summary>Prepares evidence, preserving unknown on unavailable, incomplete or unscorable facts.</summary>
+        public async Task<bool?> AbsentVerdictAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
         {
             if (!policy.IsRestricted) return true;
             var type = NormalizeMediaType(mediaType);
@@ -526,17 +538,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(8));
                 await GetSignatureAsync(type, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
-                return MaySeeAbsent(type, tmdbId, policy, out _);
+                return AbsentVerdict(type, tmdbId, policy);
             }
-            catch (Exception) { return false; }
+            catch (Exception) { return null; }
         }
 
         // ── Decisions ────────────────────────────────────────────────────────
 
-        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
+        private static bool JeEvidence => string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Nonsecret revision of evidence source, configuration, country and decision semantics.</summary>
+        public string EvidenceRevision => "parental-v2|" + JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend + "|" + _evidence.Capture().CacheScope + "|" + Region();
+
+        // All JE entry points share this decision. Adult is a verified refusal even without other facets;
+        // missing regional ratings, failed scoring and incomplete required tags remain unknown.
+        private static bool? JeVerdict(Signature? signature, string mediaType, Policy policy)
         {
-            // Could not verify -> fail closed.
-            if (resolved == null || resolved.Adult == true)
+            if (signature?.Adult == true) return false;
+            if (signature?.Adult != false || signature.Score == null
+                || (policy.HasTagRules && (signature.Keywords == null || signature.Genres == null))) return null;
+            return RatedAndTaggedAllowed(signature, mediaType, policy);
+        }
+
+        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
+            => JeEvidence ? JeVerdict(resolved, mediaType, policy) == true : resolved != null && RatedAndTaggedAllowed(resolved, mediaType, policy);
+
+        // Seerr's broad/native-style unrated rules stay unchanged; JE's completeness rule lives above.
+        private static bool RatedAndTaggedAllowed(Signature resolved, string mediaType, Policy policy)
+        {
+            if (resolved == null)
             {
                 return false;
             }
@@ -638,6 +668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return true;
             }
 
+            if (JeEvidence) return await AbsentVerdictAsync(mediaType, tmdbId, policy, requestAborted).ConfigureAwait(false) != true;
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(_overallBudget);
             var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
@@ -937,7 +968,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return true; // recently failed to verify -> still hidden, no refetch
                     }
                 }
-                else if (age < CacheTtl() && (!needTags || cached.Sig?.Adult == true || (cached.Sig?.Keywords != null && cached.Sig.Genres != null)))
+                else if (age < (key.StartsWith("je:", StringComparison.Ordinal) && cached.Sig?.Adult != true && cached.Sig?.Score == null ? NegativeCacheTtl : CacheTtl()) && (!needTags || cached.Sig?.Adult == true || (cached.Sig?.Keywords != null && cached.Sig.Genres != null)))
                 {
                     // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
                     signature = cached.Sig;
@@ -1056,6 +1087,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var resolved = SignatureFromEvidence(detail);
+                if (source.CacheScope.StartsWith("je:", StringComparison.Ordinal) && resolved.Adult != true && resolved.Score == null)
+                    source.Forget(mediaType, tmdbId, needTags);
                 if (resolved.Keywords != null && resolved.Genres != null)
                 {
                     _tagFetchFailedAt.TryRemove(key, out _);

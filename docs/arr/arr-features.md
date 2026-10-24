@@ -186,7 +186,14 @@ has no separate adult flag. Conflicting local copies remain unverified.
 
 Restricted people see only verified, rated absent titles within their limits. Adult titles are hidden.
 An unavailable or incomplete metadata response stays unverified and hidden until it can be checked;
-a verified rating or tag refusal remains a refusal. People without parental restrictions need no additional lookup.
+a verified rating or tag refusal remains a refusal. An empty ratings container, a certification only for another
+country, or a certification Jellyfin cannot score also stays unverified, even when Block unrated is off.
+People without parental restrictions need no additional lookup.
+
+Discover/search responses distinguish incomplete verification from a completed empty result. Unknown titles
+stay hidden. Evidence preparation has one two-second budget including queued checks; already-started shared
+lookups can finish and warm the cache for a retry. This budget does not cover the initial TMDB list read or
+other request work. Changing the metadata country, backend or evidence connection invalidates prepared decisions.
 
 ## ARR Tags
 

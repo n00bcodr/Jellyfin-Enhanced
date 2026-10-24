@@ -87,6 +87,7 @@ public class IntegrationRequestDiscoverTests
     internal static (int Status, JsonElement Body, AcquireDiscoverController Controller) Read(IActionResult result, AcquireDiscoverController controller) => result switch
     {
         FileContentResult file => (200, JsonDocument.Parse(file.FileContents).RootElement.Clone(), controller),
+        ContentResult content => (content.StatusCode ?? 200, JsonDocument.Parse(content.Content!).RootElement.Clone(), controller),
         ObjectResult o => (o.StatusCode ?? 200, JsonSerializer.SerializeToElement(o.Value), controller),
         StatusCodeResult code => (code.StatusCode, default, controller),
         _ => throw new InvalidOperationException(result.GetType().Name),
@@ -388,7 +389,8 @@ public class IntegrationRequestDiscoverTests
         };
 
         var (status, body, _) = await rig.Discover(kid, "trending");
-        Assert.Equal(200, status);
+        Assert.Equal(503, status);
+        Assert.False(body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.Equal(new[] { "movie:tmdb:1", "movie:tmdb:3" }, Keys(body));
         Assert.Equal(3, rig.MaySeeCalls);                     // absent titles only; copies decide by Jellyfin's own check
         Assert.True(Card(body, "movie:tmdb:1").GetProperty("inLibrary").GetBoolean());

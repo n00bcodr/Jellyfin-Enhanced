@@ -456,6 +456,16 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 Withhold(context);
                 return;
             }
+            // Retryable partial pages still carry titles, so they need the same final privacy projection.
+            // Projection must preserve their error status and must never turn them into cacheable success/304.
+            if (context.Result is ContentResult { StatusCode: >= 400 } incomplete)
+            {
+                context.Result = new ContentResult { Content = projected, ContentType = "application/json; charset=utf-8", StatusCode = incomplete.StatusCode };
+                context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+                context.HttpContext.Response.Headers.Remove("ETag");
+                context.HttpContext.Response.Headers.Remove("Last-Modified");
+                return;
+            }
             // The validator derives from the validated answer (its read-set guards the bytes and the 304 alike).
             var etag = TmdbResponseCache.ComputeETag(viewer.Value.ToString("N") + "|" + final.Revision + "|" + projected);
             var conditional = context.HttpContext.Items.TryGetValue(ConditionalHeader, out var original) ? original?.ToString() : context.HttpContext.Request.Headers.IfNoneMatch.ToString();

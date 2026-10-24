@@ -31,6 +31,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Reads public evidence, or null when unavailable. Never makes a per-user policy decision.</summary>
         Task<TitleParentalEvidence?> ReadAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct);
+
+        /// <summary>Discards raw facts the scoring gate could not verify, so its short retry TTL can recover.</summary>
+        void Forget(string mediaType, int tmdbId, bool needTags) { }
     }
 
     /// <summary>
@@ -119,6 +122,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private sealed class Tmdb(TmdbResponseCache client, string apiKey) : ITitleParentalEvidence
         {
             public string CacheScope { get; } = "je:" + Scope(apiKey);
+
+            public void Forget(string mediaType, int tmdbId, bool needTags)
+                => client.Forget(mediaType + "/" + tmdbId.ToString(CultureInfo.InvariantCulture),
+                    "?language=en-US&append_to_response=" + (mediaType == "movie" ? "release_dates" : "content_ratings") + (needTags ? ",keywords" : string.Empty), apiKey);
 
             public async Task<TitleParentalEvidence?> ReadAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
             {

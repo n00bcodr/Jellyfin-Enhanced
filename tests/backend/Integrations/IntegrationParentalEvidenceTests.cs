@@ -96,9 +96,9 @@ public class IntegrationParentalEvidenceTests
         });
         var gate = Filter(plugin, transport, user);
         Assert.Null(gate.AbsentVerdict("movie", 603, user.Id.ToString("N")));
-        var allowed = scenario == "allowed";
+        var allowed = scenario == "allowed" || (backend == "seerr" && scenario == "adult");
         Assert.Equal(allowed, await gate.MaySeeAbsentAsync("movie", 603, user.Id.ToString("N"), default));
-        Assert.Equal(scenario == "unknown" ? null : allowed, gate.AbsentVerdict("movie", 603, user.Id.ToString("N")));
+        Assert.Equal(scenario == "unknown" || (backend == "je" && scenario == "unrated") ? null : allowed, gate.AbsentVerdict("movie", 603, user.Id.ToString("N")));
         Assert.Equal(!allowed, await gate.IsBlockedAsync("movie", 603, user.Id.ToString("N")));
         Assert.Equal(backend == "je" ? 0 : 1, seerrCalls);
         // Failure and success are both bounded/cached: repeated checks never hammer either provider.
@@ -342,7 +342,7 @@ public class IntegrationParentalEvidenceTests
         var gate = Filter(plugin, transport, user);
         Assert.True(await gate.MaySeeAbsentAsync("tv", 603, user.Id.ToString("N"), default));
         Assert.False(await gate.MaySeeAbsentAsync("tv", 604, user.Id.ToString("N"), default));
-        Assert.False(gate.AbsentVerdict("tv", 604, user.Id.ToString("N")));
+        Assert.Null(gate.AbsentVerdict("tv", 604, user.Id.ToString("N")));
         Assert.All(calls, call => Assert.Contains("append_to_response=content_ratings,keywords", call));
     }
 
