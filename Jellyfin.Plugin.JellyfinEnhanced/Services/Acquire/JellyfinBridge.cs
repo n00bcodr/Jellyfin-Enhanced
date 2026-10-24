@@ -723,6 +723,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var file = plan.File;
                     switch (plan.Outcome)
                     {
+                        case RefreshOutcome.Refresh when CreatedSeries(created, file) is { } series:
+                        {
+                            // A file of a series this batch just added: that series' one hydration finds and reads it inside
+                            // the series (no second refresh of its folders beside it).
+                            var has = _library.FindByPath(file) != null;
+                            if (has) Interlocked.Increment(ref _found);
+                            Record(p.Instance, p.ArrPath, file, plan.Library?.Locations.FirstOrDefault(l => BridgePaths.IsUnder(series, l)), "folder", NewFolder, has, before, null);
+                            if (!has) Hydrate(p.Instance, p.ArrPath, file, null);
+                            break;
+                        }
                         case RefreshOutcome.Refresh:
                             if (!groups.TryGetValue(plan.AncestorId!.Value, out var group))
                             {
@@ -824,6 +834,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The new folder directly inside the plan's folder that holds the file (null when the file sits in that folder).</summary>
         private static string? NextLevel(RefreshPlan plan) => plan.RefreshPaths.Count > 1 ? plan.RefreshPaths[^1] : null;
+
+        /// <summary>The series folder this batch added that holds <paramref name="file"/>, or null.</summary>
+        private static string? CreatedSeries(Dictionary<string, JfCreatedItem?> created, string file)
+            => created.FirstOrDefault(c => c.Value is { Kind: "series" } && BridgePaths.IsUnder(file, c.Key)).Key;
 
         /// <summary>The new folder directly inside a library's own folder that holds the file (null when the file sits in that folder itself).</summary>
         private static string? NewTopFolder(RefreshPlan plan) => plan.Outcome == RefreshOutcome.LibraryRoot && plan.RefreshPaths.Count > 1 ? plan.RefreshPaths[^1] : null;

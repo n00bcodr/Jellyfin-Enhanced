@@ -307,6 +307,25 @@ internal sealed class FakeLibraryAccess : IJellyfinLibraryAccess
         lock (Hydrations) Hydrations.Add((itemId, scope));
         DuringHydration?.Invoke(itemId, scope);
         if (!HydrationWorks) return true;
+        if (HydrationDelay > TimeSpan.Zero)
+        {
+            // Like Jellyfin's refresh queue: accepted now, done a moment later.
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(HydrationDelay);
+                Apply(itemId, path, kind, scope);
+            });
+            return true;
+        }
+        Apply(itemId, path, kind, scope);
+        return true;
+    }
+
+    /// <summary>How long a hydration takes after it was accepted (zero: at once, inside the call).</summary>
+    public TimeSpan HydrationDelay { get; set; }
+
+    private void Apply(Guid itemId, string path, string kind, HydrationScope scope)
+    {
         lock (Items)
         {
             Fill(itemId, path, kind);
@@ -330,7 +349,6 @@ internal sealed class FakeLibraryAccess : IJellyfinLibraryAccess
                 }
             }
         }
-        return true;
     }
 
     // Under the lock.

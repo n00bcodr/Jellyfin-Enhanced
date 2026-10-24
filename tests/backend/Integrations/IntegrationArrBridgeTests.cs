@@ -569,6 +569,8 @@ public class IntegrationArrBridgeTests
         // resolver and hydrated inside it; the TV root is never validated, scanned or reported, either way.
         using var rig = new Rig();
         rig.Library.SetRealtime("Shows", realtime);
+        // Jellyfin's refresh queue takes a moment: the series' episodes appear after the batch has planned every file.
+        rig.Library.HydrationDelay = TimeSpan.FromMilliseconds(300);
         await rig.History(rig.Sonarr, "SonarrZ");
         await rig.History(rig.Radarr, "RadarrZ");
         // A season pack of a new series: three files, one new series folder. And a new movie.
@@ -590,8 +592,10 @@ public class IntegrationArrBridgeTests
         Assert.Empty(rig.Library.Reported);
         var spaced = rig.Library.Items["/media/tv/Spaced (1999)"];
         Assert.Equal("series", spaced.Kind);
-        // One hydration of that series and everything in it (not one per file); nothing of the other series or the root.
+        // One hydration of that series and everything in it (not one per file); nothing of the other series or the root,
+        // and no refresh of the new series' own folders beside it (its other files join that one hydration).
         Assert.Equal(new[] { (spaced.Id, HydrationScope.SeriesTree) }, rig.Library.Hydrations);
+        Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == spaced.Id || r.Folder == rig.Library.Items["/media/tv/Spaced (1999)/Season 01"].Id);
         // Each episode is in Jellyfin under the new series, with its metadata, and was published Ready once.
         for (var e = 1; e <= 3; e++)
         {
