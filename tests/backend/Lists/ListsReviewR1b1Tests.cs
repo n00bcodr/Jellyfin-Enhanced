@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using static JE.Tests.ListsHarness;
@@ -27,6 +28,17 @@ public class ListsReviewR1b1Tests
         $"\"seasons\":[{{\"seasonNumber\":0,\"episodeCount\":4,\"airDate\":\"{Past}\"}},{{\"seasonNumber\":1,\"episodeCount\":2,\"airDate\":\"{Past}\"}}," +
         $"{{\"seasonNumber\":2,\"episodeCount\":2,\"airDate\":\"2021-01-01\"}}" +
         (announcedS3 ? ",{\"seasonNumber\":3,\"episodeCount\":2,\"airDate\":null}" : string.Empty) + "]}";
+
+    private static string DetailedSeason(int tmdb, int number, string premiere, string first, string second) =>
+        JsonSerializer.Serialize(new
+        {
+            seasonNumber = number, airDate = premiere, posterPath = (string?)null,
+            episodes = new[]
+            {
+                new { showId = tmdb, seasonNumber = number, episodeNumber = 1, airDate = first },
+                new { showId = tmdb, seasonNumber = number, episodeNumber = 2, airDate = second },
+            },
+        });
 
     private static void Fill(Placeholder placeholder, params (int S, int E)[] coords) =>
         placeholder.Filled.AddRange(coords.Select(c => new FilledEpisode { ItemId = Guid.NewGuid().ToString("N"), S = c.S, E = c.E }));
@@ -127,7 +139,9 @@ public class ListsReviewR1b1Tests
     {
         var tv = Json(Show(903, "Ended", inProduction: false, last: Episode(0, 4, "2022-12-25"), next: null));
         var series = Ph("{\"kind\":\"series\",\"tmdbId\":903,\"title\":\"Show\"}");
-        var meta = ListMetadataService.FromTv(series, tv, null, Today, Today);
+        var meta = ReconciledTv(series, tv.GetRawText(), Today,
+            DetailedSeason(series.TmdbId!.Value, 1, Past, Past, Past),
+            DetailedSeason(series.TmdbId.Value, 2, "2021-01-01", "2021-01-01", "2021-01-01"));
         Assert.Equal(new[] { (1, 1), (1, 2), (2, 1), (2, 2) }, meta.Expected!.Select(e => (e.S, e.E)));
         Assert.All(meta.Expected!, e => Assert.True(PlaceholderProgress.IsAired(e, Today)));
         Assert.Equal(4, meta.EpisodeTotal);
@@ -147,25 +161,35 @@ public class ListsReviewR1b1Tests
 
         // A holiday special aired; the next regular episode is S2E2.
         var tv = Json(Show(904, "Returning Series", inProduction: true, last: Episode(0, 4, "2022-12-25"), next: Episode(2, 2, Future)));
-        var meta = ListMetadataService.FromTv(series, tv, null, Today, Today);
+        var meta = ReconciledTv(series, tv.GetRawText(), Today,
+            DetailedSeason(904, 1, Past, Past, Past),
+            DetailedSeason(904, 2, "2021-01-01", "2021-01-01", Future));
         Assert.Equal(
             new[] { (1, 1, true), (1, 2, true), (2, 1, true), (2, 2, false) },
             meta.Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
         Assert.Equal(Future, meta.Expected![3].AirDate);
         Assert.Equal(3, meta.EpisodeTotal);
 
-        // Between seasons (S3 announced without dates): the seasons that have started have aired, S3 hasn't.
+        // Between seasons: the show omits S3's premiere; its detailed resource confirms future dates.
         var between = Json(Show(904, "Returning Series", inProduction: true, last: Episode(0, 4, "2022-12-25"), next: null, announcedS3: true));
-        var later = ListMetadataService.FromTv(series, between, null, Today, Today);
+        var later = ReconciledTv(series, between.GetRawText(), Today,
+            DetailedSeason(904, 1, Past, Past, Past),
+            DetailedSeason(904, 2, "2021-01-01", "2021-01-01", "2021-01-01"),
+            DetailedSeason(904, 3, Future, Future, Future));
         Assert.Equal(
             new[] { (1, 1, true), (1, 2, true), (2, 1, true), (2, 2, true), (3, 1, false), (3, 2, false) },
             later.Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
 
         // A special announced as the next episode doesn't count as a regular one either.
         var nextSpecial = Json(Show(904, "Returning Series", inProduction: true, last: Episode(1, 2, Past), next: Episode(0, 5, Future)));
+        var futureSeason = JsonNode.Parse(nextSpecial.GetRawText())!;
+        futureSeason["seasons"]![2]!["airDate"] = Future; // S2 is announced, with explicit future evidence
+        futureSeason["seasons"]![0]!["episodeCount"] = 5; // the announced next special exists in its own count
+        var future = ReconciledTv(series, futureSeason.ToJsonString(), Today,
+            DetailedSeason(904, 1, Past, Past, Past), DetailedSeason(904, 2, Future, Future, Future));
         Assert.Equal(
             new[] { (1, 1, true), (1, 2, true), (2, 1, false), (2, 2, false) },
-            ListMetadataService.FromTv(series, nextSpecial, null, Today, Today).Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
+            future.Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
     }
 
     // ── F12: the episodes release date follows the fresh season read ───

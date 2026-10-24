@@ -360,6 +360,7 @@ public class ListsAcquisitionTests
         var movie = Released(603);
         var series = SeriesPh(1399, tvdb: 121361);
         series.Expected = new List<PlaceholderEpisode> { new() { S = 1, E = 1, AirDate = Past }, new() { S = 1, E = 2, AirDate = Past } };
+        ReconcileSeries(series, 2);
         await r.Seed(movie, series);
         using var stop = new CancellationTokenSource();
         var asks = 0;
@@ -387,7 +388,9 @@ public class ListsAcquisitionTests
         using (await r.H.Store.LockAsync(r.ListIdN))
         {
             var doc = r.H.Store.LoadForUpdate(r.ListIdN, ListKinds.Playlist);
-            doc.Items.Single(p => p.Id == series.Id).Expected.Add(new PlaceholderEpisode { S = 2, E = 1, AirDate = Past });
+            var grown = doc.Items.Single(p => p.Id == series.Id);
+            ReconcileSeries(grown, 2, 1);
+            Assert.Equal(new[] { 1, 2 }, ListRules.RequestInput(grown)!.Seasons);
             r.H.Store.Save(doc);
         }
 
@@ -471,6 +474,8 @@ public class ListsAcquisitionTests
         var member = r.Person("member");
         var series = SeriesPh(1399, tvdb: 121361);
         series.Expected = Enumerable.Range(1, 4).Select(s => new PlaceholderEpisode { S = s, E = 1 }).ToList();
+        Assert.Null(ListRules.RequestInput(series)); // display facts alone cannot confer acquisition authority
+        ReconcileSeries(series, 1, 1, 1, 1);
         await r.Seed(series);
 
         var outcome = Result(Ok<ListRequestSubmitDto>(await r.Acquisition.SubmitAsync(r.As(member), "split", new[] { series.Id }, None)), series);
@@ -532,6 +537,9 @@ public class ListsAcquisitionTests
         var series = SeriesPh(1399, tvdb: 121361);
         Assert.Null(ListRules.RequestInput(series)); // seasons not known yet
         series.Expected = new List<PlaceholderEpisode> { new() { S = 0, E = 1 }, new() { S = 2, E = 1 }, new() { S = 1, E = 1 }, new() { S = 2, E = 2 } };
+        Assert.Null(ListRules.RequestInput(series)); // legacy raw expectations are still unknown
+        ReconcileSeries(series, 1, 2);
+        series.Expected.Insert(0, new PlaceholderEpisode { S = 0, E = 1 }); // stale/display special stays irrelevant
         var whole = ListRules.RequestInput(series)!;
         Assert.Equal(("tv:tvdb:121361", "seasons"), (whole.Key, whole.Scope));
         Assert.Equal(new[] { 1, 2 }, whole.Seasons); // regular seasons only
