@@ -389,6 +389,17 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
     private const string InputsMark = "__JE_PRESENTATION_INPUTS";
+    private const string FinalReadsMark = "__JE_PRESENTATION_READS";
+
+    // A new final projection supersedes only this gate's previous projection. Dependencies installed by an action,
+    // an image decision or another writer still belong to the answer and must survive until the transport commit.
+    private static PrivacyResponseGuard InstallFinalReads(HttpContext http, PrivacyReadSet reads)
+    {
+        var previous = http.Items.TryGetValue(FinalReadsMark, out var held) ? held as PrivacyReadSet : null;
+        PrivacyResponseGuard.Replace(http, previous, reads);
+        http.Items[FinalReadsMark] = reads;
+        return PrivacyResponseGuard.Of(http);
+    }
 
     /// <inheritdoc />
     public void OnResourceExecuting(ResourceExecutingContext context)
@@ -498,7 +509,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
             if (!PolicyApplies(final) && scope.Reads.Valid())
             {
-                PrivacyResponseGuard.Install(context.HttpContext, scope.Reads);
+                InstallFinalReads(context.HttpContext, scope.Reads);
                 return;
             }
         }
@@ -523,7 +534,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             var rows = spec.Resource == "activity" ? ProjectActivity(json, final, viewer) : json;
             var projected = final.Project(rows, spec.Surface, spec.Title, spec.Resource, spec.Kind, spec.Scope, spec.Season, spec.Episode);
             if (!scope.Reads.Valid()) continue;
-            PrivacyResponseGuard.Install(http, scope.Reads);
+            InstallFinalReads(http, scope.Reads);
             return projected;
         }
         final = null;
@@ -590,15 +601,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         // The host's executor writes the answer later: it writes through the guard, and when an input changed before the
         // first byte it projects the answer again (a new read-set in place of this one) rather than withholding it.
-        if (PrivacyResponseGuard.Install(context.HttpContext, reads) is not { } guard) return;
+        var guard = InstallFinalReads(context.HttpContext, reads);
         ObjectResult? delivered = null;
         delivered = PrivacyResponseGuard.Guarded(result, guard, () =>
         {
             context.Result = delivered!;
             var again = NativeAttempts(context, delivered!, entry, viewer, null, refresh: true);
             if (again == null || context.Result != delivered) return false;
-            PrivacyResponseGuard.Replace(context.HttpContext, reads, again);
-            reads = again;
+            InstallFinalReads(context.HttpContext, again);
             return true;
         });
         context.Result = delivered;

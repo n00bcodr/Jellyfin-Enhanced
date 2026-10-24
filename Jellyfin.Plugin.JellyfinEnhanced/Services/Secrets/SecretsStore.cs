@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
             _path = path;
             _warn = warn ?? (_ => { });
             _now = now ?? (() => DateTimeOffset.UtcNow);
-            _values = Load();
+            Version.Mutate(() => _values = Load());
         }
 
         /// <summary>The store's default location for a Jellyfin installation.</summary>
@@ -282,7 +282,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
                 lock (_lock)
                 {
                     if (_unavailableReason == null || _now() - _loadFailedAt < ReloadInterval) return;
-                    Version.Mutate(() => _values = Load());
+                    var values = Version.Mutate(() => _values = Load());
                     if (_unavailableReason == null && _warnedUnavailable)
                     {
                         _warnedUnavailable = false;

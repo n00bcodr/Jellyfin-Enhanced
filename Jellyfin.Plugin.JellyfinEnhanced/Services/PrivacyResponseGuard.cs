@@ -48,6 +48,7 @@ public sealed class PrivacyResponseGuard : IDisposable
     private bool _committed;
     private bool _startChecked;
     private bool _owned;
+    private bool _resourceOwned;
 
     private PrivacyResponseGuard(HttpContext http)
     {
@@ -216,7 +217,10 @@ public sealed class PrivacyResponseGuard : IDisposable
             http.Response.Headers.Remove("Last-Modified");
             return false;
         }
-        if (guard.Holds()) return true;
+        // Privacy projections re-read and replace their own dependencies at the final result gate. An earlier
+        // projection's obsolete read-set must not prevent that rebuild; every retained set is still checked at commit.
+        // Parental evidence belongs to the action's answer and cannot be refreshed by a privacy-only projection.
+        lock (guard._lock) if (!guard.Stopped && guard._evidence is not { Current: false }) return true;
         guard.Stop();
         context.Result = new StatusCodeResult(503);
         return false;
@@ -284,7 +288,9 @@ public sealed class PrivacyResponseGuard : IDisposable
         _body = new GuardedBody(http.Response.Body, http.Features.Get<IHttpResponseBodyFeature>(), this);
         // Later projections can wrap this body. Their local held results still belong to this owner, but only this
         // outermost body may start the real transport and mark the answer committed.
-        _transportBody ??= _body;
+        // Without a resource owner the host may replace its default body before executing a guarded result. That
+        // replacement is the transport. Under the resource owner, replacements are inner projections instead.
+        if (!_resourceOwned || _transportBody == null) _transportBody = _body;
         http.Response.Body = _body;
     }
 
@@ -432,6 +438,16 @@ public sealed class PrivacyResponseGuard : IDisposable
         if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
     }
 
+    /// <summary>
+    /// Finishes a held inner result before its enclosing projection finishes. This only hands bytes to that projection;
+    /// the resource owner's pinned transport remains uncommitted and validates the final answer after all projections.
+    /// </summary>
+    internal static async Task CompleteProjectionAsync(HttpContext http)
+    {
+        if (Find(http) is not { } guard || guard.Stopped || guard._body is not { } body || body == guard._transportBody) return;
+        if (!await guard.TryCommitBodyAsync(body).ConfigureAwait(false)) guard.Stop();
+    }
+
     /// <summary>Drops the held bytes (an answer that is built and written again).</summary>
     internal void Discard()
     {
@@ -498,6 +514,12 @@ public sealed class PrivacyResponseGuard : IDisposable
     /// commit it.
     /// </summary>
     internal void Own() { lock (_lock) _owned = true; }
+
+    /// <summary>Pins the outer transport before any resource projection can replace the body.</summary>
+    internal void OwnTransport()
+    {
+        lock (_lock) { _resourceOwned = true; _owned = true; }
+    }
 
     /// <summary>
     /// The response body: every write is held until the commit. The declared length reached (an answer whose writer does
@@ -629,10 +651,12 @@ public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IAlwaysRunResult
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         var http = context.HttpContext;
+        // An unclassified host action can still return title-bearing DTOs that the final privacy gate protects.
+        // Install its transport boundary before every inner projection, even when it has no parental admission.
+        PrivacyResponseGuard.Of(http).OwnTransport();
         if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
         {
             // Admission precedes evidence reads; the token spans all remaining host callbacks and transport completion.
-            PrivacyResponseGuard.Of(http);
             PrivacyResponseGuard.AdmitAction(http, context.ActionDescriptor, http.RequestServices.GetService<SeerrParentalFilter>(), UserHelper.GetCurrentUserId(http.User));
         }
         ResourceExecutedContext executed;
