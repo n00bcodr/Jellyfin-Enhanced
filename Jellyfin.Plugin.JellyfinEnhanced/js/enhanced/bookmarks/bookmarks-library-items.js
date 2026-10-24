@@ -273,6 +273,7 @@
           });
 
           saveBtn.addEventListener('click', async () => {
+            const origin = JE.core.userWrite.origin();
             const parsedTime = parseTimestampInput(timeInput.value);
             if (parsedTime === null) {
               JE.toast(JE.t('bookmark_time_format_hint'), 3000);
@@ -285,8 +286,10 @@
               const ok = await JE.bookmarks.update(bm.id, {
                 timestamp: parsedTime,
                 label: labelInput.value.trim()
-              });
-              if (ok) {
+              }, origin);
+              if (ok === null) {
+                // Said already: an account change, or an outcome that couldn't be confirmed.
+              } else if (ok) {
                 JE.toast(JE.t('toast_bookmark_updated'), 2000);
                 const bookmarksSection = document.querySelector('.sections.bookmarks');
                 if (bookmarksSection) {
@@ -297,7 +300,7 @@
               }
             } catch (err) {
               console.error('Bookmark update failed', err);
-              JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
+              if (!JE.bookmarks.handledFailure(err)) JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
             } finally {
               saveBtn.disabled = false;
               editBtn.disabled = false;
@@ -306,11 +309,12 @@
 
           // Delete button handler
           deleteBtn.addEventListener('click', async () => {
+            const origin = JE.core.userWrite.origin();
             const bookmarkId = deleteBtn.dataset.bookmarkId;
             deleteBtn.disabled = true;
             let deleted;
             try {
-              deleted = await JE.bookmarks.delete(bookmarkId);
+              deleted = await JE.bookmarks.delete(bookmarkId, origin);
             } finally {
               deleteBtn.disabled = false;
             }
@@ -344,6 +348,8 @@
    * Play item at specific time
    */
   async function playItemAtTime(itemId, startTime) {
+    // The session the person asked in: the play command goes out only while it is still the signed-in one.
+    const binding = JE.core.userWrite.bind();
     try {
       console.log(`${logPrefix} Attempting playback: itemId=${itemId}, startTime=${startTime}`);
 
@@ -387,10 +393,10 @@
 
       console.log(`${logPrefix} Sending playback request:`, url);
 
-      await apiClient.ajax({
+      await JE.core.userWrite.send(binding, () => apiClient.ajax({
         type: 'POST',
         url: apiClient.getUrl(url)
-      });
+      }), url);
 
       console.log(`${logPrefix} Playback started successfully`);
       JE.toast(JE.t('toast_playing'), 2000);

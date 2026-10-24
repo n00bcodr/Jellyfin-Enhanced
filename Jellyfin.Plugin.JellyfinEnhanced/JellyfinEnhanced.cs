@@ -96,12 +96,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 var config = Configuration;
                 if (config == null) return;
-                Services.Secrets.SecretsMigration.Report report;
-                lock (AnalyticsCredentialLock)
+                Services.Secrets.SecretsMigration.Report report = null!;
+                MutateConfiguration(live =>
                 {
-                    report = Services.Secrets.SecretsMigration.MigrateStored(config, Secrets);
-                    if (report.ConfigChanged) SaveConfiguration();
-                }
+                    report = Services.Secrets.SecretsMigration.MigrateStored(live, Secrets);
+                    return report.ConfigChanged;
+                });
                 if (report.Moved.Count > 0)
                     _logger.Info($"Secrets: moved {report.Moved.Count} credential(s) out of the plugin configuration into {Services.Secrets.SecretsStore.FileName}: {string.Join(", ", report.Moved)}");
                 if (report.Missing.Count > 0)
@@ -132,12 +132,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// </summary>
         internal int RollbackSecretsToConfiguration()
         {
-            lock (AnalyticsCredentialLock)
+            var restored = 0;
+            MutateConfiguration(live =>
             {
-                var restored = Services.Secrets.SecretsMigration.Rollback(Configuration, Secrets);
-                SaveConfiguration();
-                return restored;
-            }
+                restored = Services.Secrets.SecretsMigration.Rollback(live, Secrets);
+                return true;
+            });
+            return restored;
         }
 
         // Set while RestoreConfiguration replaces the configuration: the restored object is applied as
@@ -156,7 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// </summary>
         internal Services.Secrets.SecretsMigration.Report RestoreConfiguration(PluginConfiguration restored, IReadOnlyCollection<string> restoredSecretNames)
         {
-            lock (AnalyticsCredentialLock)
+            lock (ConfigurationLock)
             {
                 var current = Configuration;
                 if (current != null)
@@ -204,45 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             List<Shortcut>? originalShortcuts = null;
             try
             {
-                var config = Configuration;
-                if (config == null) return;
-                config.Shortcuts ??= new List<Shortcut>();
-                originalShortcuts = config.Shortcuts;
-
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
-                var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
-                for (int i = originalShortcuts.Count - 1; i >= 0; i--)
-                {
-                    var s = originalShortcuts[i];
-                    var name = s?.Name ?? string.Empty;
-                    if (string.IsNullOrEmpty(name)) continue;
-                    if (string.IsNullOrEmpty(s?.Key))
-                    {
-                        emptyKeyNames.Add(name);
-                        continue;
-                    }
-                    if (seen.Add(name)) dedupedReversed.Add(s!);
-                }
-                var deduped = new List<Shortcut>(dedupedReversed.Count);
-                for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
-                var malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
-                int duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
-
-                var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
-                var missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
-                deduped.AddRange(missing);
-
-                if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return;
-
-                config.Shortcuts = deduped;
-                SaveConfiguration();
-                _logger.Info(
-                    $"Normalized shortcut list: dropped {duplicatesDropped} duplicate(s), " +
-                    $"{malformed.Count} malformed entry/entries" +
-                    (malformed.Count > 0 ? $" [{string.Join(", ", malformed)}]" : "") +
-                    $", added {missing.Count} missing default(s)" +
-                    (missing.Count > 0 ? $" [{string.Join(", ", missing.Select(s => s.Name))}]" : ""));
+                MutateConfiguration(config => NormalizeShortcuts(config, out originalShortcuts));
             }
             catch (IOException ex)
             {
@@ -259,6 +222,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 RollbackShortcuts(originalShortcuts);
                 _logger.Error($"Unexpected error normalizing shortcut list: {ex}");
             }
+        }
+
+        // The change BackfillMissingDefaultShortcuts makes (under the configuration lock): true when the list changed.
+        private bool NormalizeShortcuts(PluginConfiguration config, out List<Shortcut>? originalShortcuts)
+        {
+            config.Shortcuts ??= new List<Shortcut>();
+            originalShortcuts = config.Shortcuts;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
+            var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = originalShortcuts.Count - 1; i >= 0; i--)
+            {
+                var s = originalShortcuts[i];
+                var name = s?.Name ?? string.Empty;
+                if (string.IsNullOrEmpty(name)) continue;
+                if (string.IsNullOrEmpty(s?.Key))
+                {
+                    emptyKeyNames.Add(name);
+                    continue;
+                }
+                if (seen.Add(name)) dedupedReversed.Add(s!);
+            }
+            var deduped = new List<Shortcut>(dedupedReversed.Count);
+            for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
+            var malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
+            int duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
+
+            var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
+            var missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
+            deduped.AddRange(missing);
+
+            if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return false;
+
+            config.Shortcuts = deduped;
+            _logger.Info(
+                $"Normalized shortcut list: dropped {duplicatesDropped} duplicate(s), " +
+                $"{malformed.Count} malformed entry/entries" +
+                (malformed.Count > 0 ? $" [{string.Join(", ", malformed)}]" : "") +
+                $", added {missing.Count} missing default(s)" +
+                (missing.Count > 0 ? $" [{string.Join(", ", missing.Select(s => s.Name))}]" : ""));
+            return true;
         }
 
         private void RollbackShortcuts(List<Shortcut>? original)
@@ -301,33 +306,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             }
         }
 
-        // Cache-busting key: plugin version plus the DLL's last-write timestamp, so
-        // every build yields a distinct value even when the version is unchanged
-        // (local dev/testing). Falls back to the bare version if the assembly
-        // location can't be read (e.g. single-file hosting).
-        internal string ScriptCacheKey
-        {
-            get
-            {
-                var version = Version?.ToString() ?? "unknown";
-                try
-                {
-                    var location = typeof(JellyfinEnhanced).Assembly.Location;
-                    if (!string.IsNullOrEmpty(location) && File.Exists(location))
-                    {
-                        var ticks = new FileInfo(location).LastWriteTimeUtc.Ticks;
-                        return $"{version}-{ticks}";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Fall through to the bare version below.
-                    _logger.Debug($"ScriptCacheKey: couldn't read assembly file metadata, using bare version: {ex.Message}");
-                }
+        // The running build's identity, and the client scripts' cache-busting key: the plugin version plus the module version
+        // id of the assembly that is running. The compiler derives that id from the assembly's content (deterministic builds,
+        // the embedded client scripts included), so every build that changes anything has another one, while the same DLL
+        // copied or restored again (a new file time, the same bytes) keeps it: pages are asked to reload only for another
+        // build. Taken from the loaded module, never from the file on disk (which may have been replaced since it was loaded).
+        private static readonly Lazy<string> _buildIdentity = new(() =>
+            typeof(JellyfinEnhanced).Assembly.ManifestModule.ModuleVersionId.ToString("N", System.Globalization.CultureInfo.InvariantCulture)[..12]);
 
-                return version;
-            }
-        }
+        internal string ScriptCacheKey => $"{Version?.ToString() ?? "unknown"}-{_buildIdentity.Value}";
 
         // The single source of truth for the client-script tag. Consumed both by the
         // request-time injection middleware (ScriptInjectionStartupFilter) and by the
@@ -374,7 +361,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         });
 
         // The generation of the configuration last written (or held when the first write came): every write takes the next one.
-        private readonly object _generationLock = new();
         private long _writtenGeneration;
 
         /// <summary>
@@ -385,7 +371,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override void SaveConfiguration(PluginConfiguration config)
         {
             ArgumentNullException.ThrowIfNull(config);
-            lock (_generationLock)
+            lock (ConfigurationLock)
             {
                 var next = Math.Max(config.ConfigurationGeneration, _writtenGeneration) + 1;
                 config.ConfigurationGeneration = next;
@@ -398,7 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         private void NoteHeldGeneration(PluginConfiguration? held)
         {
             if (held == null) return;
-            lock (_generationLock) _writtenGeneration = Math.Max(_writtenGeneration, held.ConfigurationGeneration);
+            lock (ConfigurationLock) _writtenGeneration = Math.Max(_writtenGeneration, held.ConfigurationGeneration);
         }
 
         /// <summary>
@@ -418,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             return result!;
         }
 
-        // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
+        // Builds the configuration to store from the one held now (under ConfigurationLock, so a patch reads and
         // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
         private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build)
         {
@@ -433,7 +419,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // the next send would register a duplicate install. Treat
             // "incomplete incoming (either half missing — e.g. a restored
             // backup with the secret redacted), complete current" as
-            // "preserve current". Runs under AnalyticsCredentialLock so the
+            // "preserve current". Runs under ConfigurationLock so the
             // object swap can't interleave with AnalyticsReportingService
             // writing freshly minted credentials to the live object — without
             // it, registration could write to an already-replaced object and
@@ -442,7 +428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            lock (AnalyticsCredentialLock)
+            lock (ConfigurationLock)
             {
                 // Captured BEFORE base.UpdateConfiguration replaces Configuration, so an actual OFF<->ON transition is
                 // distinguishable from an unrelated config save (this runs on every save).
@@ -485,6 +471,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 base.UpdateConfiguration(configuration);
             }
+            // The configuration's runtime effects (maintenance mode, the Custom Tabs entries) follow the configuration held
+            // now: one server owner reconciles them from the current generation (never from a snapshot a page carried).
+            Services.ConfigurationEffects.Instance?.Request();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try
@@ -547,11 +536,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         }
 
         /// <summary>
-        /// Guards every read-modify-write of the Analytics install credentials
-        /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
-        /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
+        /// The configuration's one lock (its generation lock): every write of the configuration reads, changes and saves it
+        /// as one step under it. Whole writes (the configuration page's PATCH, Jellyfin's route, a restore) build their copy
+        /// from the configuration held at that moment inside it (<see cref="ApplyConfiguration"/>); server writers change the
+        /// live configuration inside it (<see cref="MutateConfiguration(Func{PluginConfiguration, bool})"/>, or the request
+        /// services' own locked blocks), so no copy taken before a write can put back what that write changed, and no write
+        /// lands on a configuration that is about to be replaced.
         /// </summary>
-        internal static readonly object AnalyticsCredentialLock = new object();
+        internal static readonly object ConfigurationLock = new object();
+
+        /// <summary>
+        /// Every server write of the live configuration (maintenance mode, the analytics bookkeeping, the start-up ensures,
+        /// scheduled tasks): under <see cref="ConfigurationLock"/>, the configuration held now is changed by
+        /// <paramref name="change"/> and, when it says it changed something, saved, in one step. Nothing reads the
+        /// configuration for this write before the lock is taken, so a configuration page save that copied it earlier can't
+        /// be applied in between, and this write never lands on a copy that save is about to replace.
+        /// </summary>
+        /// <returns>Whether anything was changed (and saved).</returns>
+        internal bool MutateConfiguration(Func<PluginConfiguration, bool> change)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+            bool effectsChanged;
+            lock (ConfigurationLock)
+            {
+                var live = Configuration;
+                if (live == null) return false;
+                var before = Services.ConfigurationEffects.EffectFingerprint(live);
+                if (!change(live)) return false;
+                SaveConfiguration(live);
+                effectsChanged = before != Services.ConfigurationEffects.EffectFingerprint(live);
+            }
+            // A field writer that changed what the runtime effects follow (maintenance mode, the Custom Tabs intent) asks the
+            // one owner to reconcile them (it never waits for it: the configuration lock is not held across that).
+            if (effectsChanged) Services.ConfigurationEffects.Instance?.Request();
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="MutateConfiguration(Func{PluginConfiguration, bool})"/> of the running plugin; without one (a host that has
+        /// none loaded yet, tests), <paramref name="fallback"/> is changed under the same lock and nothing is saved.
+        /// </summary>
+        internal static bool MutateLive(PluginConfiguration fallback, Func<PluginConfiguration, bool> change)
+        {
+            if (Instance is { } plugin) return plugin.MutateConfiguration(change);
+            lock (ConfigurationLock) return change(fallback);
+        }
 
         private readonly object _analyticsTransitionLock = new object();
         private Task _analyticsTransitionChain = Task.CompletedTask;

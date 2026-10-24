@@ -40,8 +40,9 @@
      * Automatically dismisses after {@link UNDO_TOAST_DURATION}.
      * @param {string} itemName Display name of the hidden item.
      * @param {string} itemId Storage key used to unhide if the user clicks Undo.
+     * @param {any} origin The hide's origin: Undo undoes that person's hide only (an account change removes the toast).
      */
-    function showUndoToast(itemName, itemId) {
+    function showUndoToast(itemName, itemId, origin) {
         const action = JE.createSessionAction();
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
@@ -79,7 +80,8 @@
             clearTimeout(dismissTimer);
             undoBtn.disabled = true;
             try {
-                if (await unhideItem(itemId) === false) throw new Error('Undo failed');
+                // Undo undoes the hide of the person who made it (its origin), never the next person's.
+                if (await unhideItem(itemId, undefined, null, origin) === false) throw new Error('Undo failed');
                 if (!action.current()) return;
                 release();
                 toast.classList.remove('je-visible');
@@ -316,6 +318,8 @@
      * @param {Object|Node|Event} dialogOptions.owner The owner (required, D46S2-R6): the operation a title action pressed
      *     Hide for (the confirmation is in its scope and its accept is refused once it ends), a viewer's native owner, or the node or
      *     press it comes from.
+     * @param {any} [dialogOptions.origin] The action's origin: a choice made once its session ended does nothing (an
+     *   account change also closes the dialog).
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
         const action = JE.createSessionAction({ owner: dialogOptions.owner });
@@ -395,19 +399,32 @@
      * Episode-choice and surface-scoped dialogs always show (never suppressed).
      * @param {Object} itemData Data for the item to hide.
      * @param {Function} onHidden Callback after hiding.
-     * @param {Object} dialogOptions Options passed to showHideConfirmation (owner required there).
+     * @param {Object} dialogOptions Options passed to showHideConfirmation (owner required there; `origin`: the action's,
+     *     else the session its owner was taken in).
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
         const owner = JE.requireOwner(dialogOptions.owner, 'confirmAndHide');
         if (!owner) return;
+        // The action's origin: the caller's (taken when the person acted), else the session its owner was taken in.
+        const ownerSession = JE.isOwnerToken?.(owner) ? owner.session : null;
+        const origin = JE.core.userWrite.originOf(dialogOptions.origin
+            || (ownerSession?.userId ? { epoch: ownerSession.epoch, userId: ownerSession.userId } : undefined));
+        const hide = () => {
+            // The dialog belongs to the session its action began in: a choice made after it ended changes nothing.
+            if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
+            Promise.resolve(hideItem(itemData, owner, origin)).then(saved => { if (saved !== false) onHidden?.(); });
+        };
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            Promise.resolve(hideItem(itemData, owner)).then(saved => { if (saved !== false) onHidden?.(); });
+            hide();
             return;
         }
-        showHideConfirmation(itemData.name || 'Item', () => {
-            Promise.resolve(hideItem(itemData, owner)).then(saved => { if (saved !== false) onHidden?.(); });
-        }, { ...dialogOptions, owner });
+        showHideConfirmation(itemData.name || 'Item', hide, { ...dialogOptions, owner, origin });
     }
+
+    // The previous person's open dialog and undo toast are theirs: an account change removes them.
+    JE.session?.onUserChange('hidden-content-dialogs', () => {
+        document.querySelectorAll('.je-hide-confirm-overlay, .je-undo-toast').forEach(el => el.remove());
+    });
 
     Object.assign(internal, { showUndoToast, confirmAndHide, showHideConfirmation, isConfirmationSuppressed });
 

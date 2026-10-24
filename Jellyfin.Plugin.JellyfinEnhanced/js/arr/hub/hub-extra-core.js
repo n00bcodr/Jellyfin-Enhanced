@@ -116,6 +116,16 @@
      * @param {{method?: string, body?: Object}} [options] Options.
      * @returns {Promise<{status: number, body: Object|null}>} Answer (status 0 when nothing came back).
      */
+    /**
+     * Whether a write's answer was lost after it went out (it may be stored): shown as "couldn't confirm", never as
+     * failed, and the page reads the server again.
+     * @param {{status: number, error?: *}} answer
+     * @returns {boolean}
+     */
+    function unconfirmed(answer) {
+        return !!answer?.error && !answer.error.sessionChanged && JE.core.userWrite.outcome(answer.error) === 'uncertain';
+    }
+
     async function call(path, options) {
         if (!JE.arrAsk?.call) return { status: 0, body: null };
         try {
@@ -352,7 +362,7 @@
     });
 
     Object.assign(X, {
-        tr, el, icon, button, busy, epoch, intent, call, capabilities, approver, isAdmin, contact,
+        tr, el, icon, button, busy, epoch, intent, call, unconfirmed, capabilities, approver, isAdmin, contact,
         scopeText, ago, poster, titleText, isTv, focusedId, restoreFocus, follow, userKey, partText, partPill
     });
     H.extraTabs = H.extraTabs || [];

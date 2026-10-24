@@ -53,6 +53,13 @@
         return JE.core.api.plugin(path, options);
     }
 
+    /**
+     * Whether a value is an action's origin (JE.core.userWrite.origin()) rather than an owner (a token, a captured action,
+     * a node or an event): a caller of the origin-only shape passes it in the owner's place.
+     */
+    const isOriginArg = value => !!value && typeof value === 'object' && 'epoch' in value && 'userId' in value
+        && typeof value.current !== 'function' && !(typeof Node !== 'undefined' && value instanceof Node) && !JE.isOwnerToken?.(value);
+
     /** An unshared full-state read; a unique signal prevents joining a read submitted before a write. */
     function readState() {
         return request('/spoiler-blur/series', { skipCache: true, signal: new AbortController().signal });
@@ -147,7 +154,9 @@
      * owner ended (accepted), reconciles this session's state from the server (a reread and the policy event) and
      * resolves with the answer; a failure rejects. Page effects are the caller's, only while its owner is current.
      */
-    function mutateState(path, options, project, owner, transmit) {
+    function mutateState(path, options, project, owner, transmit, origin) {
+        // The action's origin (JE.core.userWrite): taken when the person acted, carried to the send (checked right there).
+        origin = JE.core.userWrite.originOf(origin);
         const action = JE.createSessionAction();
         const submitted = JE.createSessionAction({ owner });
         const task = mutationQueue.catch(() => {}).then(async () => {
@@ -157,7 +166,7 @@
             // The transport checks the owner again right before the bytes go out (after the core queue).
             let response;
             // A document with its own session queue (the preferences) sends through it (transmit).
-            try { response = await (transmit ? transmit(bound) : request(path, { ...options, bound })); }
+            try { response = await (transmit ? transmit(bound) : request(path, { ...options, bound, session: origin })); }
             catch (err) {
                 const { outcome, answer, sessionChanged } = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
                 if (outcome === 'unsent') return UNSENT;
@@ -293,36 +302,52 @@
         return internal.isEnabledFor(id);
     };
 
-    internal.enableForSeries = function(id, owner) {
+    internal.enableForSeries = function(id, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, true), owner);
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, true), owner, undefined, origin);
     };
-    internal.disableForSeries = function(id, owner) {
+    internal.disableForSeries = function(id, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, false), owner);
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, false), owner, undefined, origin);
     };
-    internal.enableForMovie = function(id, name, owner) {
+    internal.enableForMovie = function(id, name, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, true), owner);
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, true), owner, undefined, origin);
     };
-    internal.disableForMovie = function(id, owner) {
+    internal.disableForMovie = function(id, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, false), owner);
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, false), owner, undefined, origin);
     };
-    internal.enableForCollection = function(id, name, owner) {
+    internal.enableForCollection = function(id, name, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, true), owner);
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, true), owner, undefined, origin);
     };
-    internal.disableForCollection = function(id, owner) {
+    internal.disableForCollection = function(id, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, false), owner);
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, false), owner, undefined, origin);
     };
 
     /** True when the mirrors can answer for this title: a loaded state, or an accepted write since. */
     internal.isKnownForKind = function(kind, id) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         return loadOk || confirmed.has(`${kind === 'movie' || kind === 'collection' ? kind : 'series'}:${internal.normalizeId(id)}`);
     };
     internal.isTmdbKnown = function(mediaType, tmdbId) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         return loadOk || confirmed.has(`tmdb:${internal.pendingKey(mediaType, tmdbId)}`);
     };
 
@@ -338,18 +363,22 @@
         return false;
     };
 
-    internal.enableForTmdb = function(mediaType, tmdbId, displayName, owner) {
+    internal.enableForTmdb = function(mediaType, tmdbId, displayName, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         const query = displayName ? `?displayName=${encodeURIComponent(displayName)}` : '';
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, true), owner);
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, true), owner, undefined, origin);
     };
-    internal.disableForTmdb = function(mediaType, tmdbId, owner) {
+    internal.disableForTmdb = function(mediaType, tmdbId, owner, origin) {
+        // The toggle's origin (taken at the click, carried through a confirmation): the write and its answer belong to it.
+        origin = JE.core.userWrite.originOf(origin);
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, false), owner);
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, false), owner, undefined, origin);
     };
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
@@ -363,8 +392,12 @@
 
     // Play edge: the rebuild's PATCH (only the preferences that differ from what the server will hold once the saves still
     // out are answered; the server applies them to what it holds then, so a preference changed back while its save is out
-    // is sent too) sent through D46's owner-bound mutateState.
-    internal.setUserPrefs = function(next, owner) {
+    // is sent too) sent through D46's owner-bound mutateState, on the preferences' queue with the change's origin.
+    internal.setUserPrefs = function(next, owner, origin) {
+        if (origin === undefined && isOriginArg(owner)) { origin = owner; owner = undefined; }
+        // The session this change was made in (its origin: taken by the control when the person acted, before any wait):
+        // the save goes out, and its answer counts, only while it is the signed-in one (JE.core.userWrite).
+        const binding = JE.core.userWrite.originOf(origin);
         const expected = expectedPrefs();
         const set = {};
         for (const [key, value] of Object.entries(next || {})) {
@@ -379,19 +412,46 @@
         // The server's answer is the preferences it holds now (else this change applied to the ones known).
         function acknowledged(response) {
             settled();
-            if (!madeIn.current()) return;
+            if (!madeIn.current() || !JE.core.userWrite.isBound(binding)) return;
             userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
         }
-        // Sent on the preferences' session queue, with its owner's binding (checked again as the bytes go out).
+        // Sent on the preferences' session queue with the change's origin (never once the person changed), with its
+        // owner's binding (both checked again as the bytes go out).
         return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, acknowledged, owner,
-            bound => prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound }))
-                .then(response => { acknowledged(response); return response; }))
+            bound => prefsQueue.send(queued => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound, session: queued }), binding)
+                .then(response => { acknowledged(response); return response; }), binding)
             .then(result => {
                 settled();
                 // Never sent (its owner ended first): the caller is told, as for a failed save (the panel puts its box back).
                 if (result === UNSENT) throw Object.assign(new Error('Spoiler Guard preferences not sent'), { notSent: true });
                 return internal.getUserPrefs();
-            }, err => { settled(); throw err; });
+            }, err => {
+                settled();
+                // A save the previous person queued, cancelled by the account switch: the page already said it wasn't saved
+                // (JE.core.userWrite.notSent).
+                if (!err?.sessionChanged) console.error(`${logPrefix} setUserPrefs failed:`, err);
+                throw err;
+            });
+    };
+
+    /**
+     * After a preference save whose outcome is uncertain (its answer was lost): ONE read of the person's state says what is
+     * stored now. Only for the save's own session (an account change cancels it: nothing is read as the next person), and
+     * taken only while no other preference save is out; the save itself is never sent again.
+     * @param {any} origin The save's origin.
+     * @returns {Promise<object|null>} The stored preferences, or null when they couldn't be read for that session.
+     */
+    internal.reconcilePrefs = async function(origin) {
+        if (!JE.core.userWrite.isBound(origin)) return null;
+        const readRevision = prefsQueue.revision;
+        let value;
+        try { value = await request('/spoiler-blur/series', { skipCache: true }); } catch (_) { return null; }
+        if (!JE.core.userWrite.isBound(origin)) return null;
+        if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) {
+            userPrefs = Object.assign({}, value?.Prefs || {});
+            notifyPolicyChanged();
+        }
+        return Object.assign({}, userPrefs);
     };
 
     // Spoiler Guard state (enabled series/movies/collections, prefs) is

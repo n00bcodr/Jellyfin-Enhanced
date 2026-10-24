@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading;
@@ -12,12 +13,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <summary>
     /// Tells a page that runs an earlier JE build to reload. A page loaded before JE was updated keeps its scripts until it is
     /// reloaded; the server recognizes it by a write only such a page makes (a whole per-user document without the revision
-    /// it read, JE's whole configuration through Jellyfin's plugin-configuration route), refuses the write, and sends that
-    /// page's session Jellyfin's own message (a dialog the page shows whatever JE build it runs), so the change it didn't
-    /// save is never lost silently. Later builds also learn it themselves (the build named in every JE answer, see
-    /// <c>js/core/api-client.js</c>). Only signed-in sessions are told (an API key has no page); once a few minutes per device.
-    /// A page whose session isn't connected right now (Jellyfin 10.11's web client reconnects only when the tab is shown
-    /// again after the server restarted) is told as soon as its session starts again (within half an hour).
+    /// it read, JE's whole configuration through Jellyfin's plugin-configuration route, a maintenance command replaying its
+    /// snapshot), refuses the write, and sends that page's session Jellyfin's own message (a dialog the page shows whatever JE
+    /// build it runs), so the change it didn't save is never lost silently. Later builds also learn it themselves (see
+    /// <c>js/core/api-client.js</c>). Only signed-in sessions are told (an API key has no page).
+    /// Delivery: every notice is held for its device first (at most one per device, the newest; at most 500 devices, for
+    /// half an hour) and leaves only when Jellyfin's send of it COMPLETED successfully (the host's handoff to the page's
+    /// connected controller: that, not a person reading it, is what the host can confirm). A send that throws, faults or is
+    /// cancelled keeps it held: the next deliverable moment (a controller connecting, the session starting, another refused
+    /// write) tries again, one send at a time per device, never in a loop. A send is made only to a session of the same
+    /// device and person with a connected controller (Jellyfin's web socket), checked when it is made. Only a successful
+    /// delivery counts towards the once-in-a-few-minutes limit per device; an older send completing never removes a newer
+    /// notice held after it.
     /// </summary>
     public static class ClientReloadNotice
     {
@@ -30,15 +37,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>A refused save of JE's configuration.</summary>
         public const string ConfigurationText = "This Jellyfin Enhanced settings page is from an earlier version, so it was not saved. Reload the page, then make your changes again.";
 
+        /// <summary>A refused maintenance command of an earlier configuration page (its settings were saved; the server applies them).</summary>
+        public const string EffectsText = "This Jellyfin Enhanced settings page is from an earlier version. Your settings were saved and are being applied by the server; reload the page to see how maintenance mode stands.";
+
         private static readonly TimeSpan Interval = TimeSpan.FromMinutes(2);
         private static readonly TimeSpan PendingFor = TimeSpan.FromMinutes(30);
         private const int MaxPending = 500;
+        // The last successful delivery per device (the limit counts only those).
         private static readonly ConcurrentDictionary<string, DateTime> _told = new(StringComparer.Ordinal);
-        // Devices refused while their session wasn't there: (person, text, when).
-        private static readonly ConcurrentDictionary<string, (Guid User, string Text, DateTime At)> _pending = new(StringComparer.Ordinal);
+
+        /// <summary>A notice held for a device until a send of it completes: its person, text, when, and its own id.</summary>
+        private sealed record Held(Guid User, string Text, DateTime At, long Id);
+
+        // The notice held per device (the newest), and the id of the one whose send is out per device.
+        private static readonly ConcurrentDictionary<string, Held> _pending = new(StringComparer.Ordinal);
+        private static readonly ConcurrentDictionary<string, long> _inFlight = new(StringComparer.Ordinal);
+        private static long _ids;
         private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ISessionManager, object> _watched = new();
 
-        /// <summary>Tests: how long after a session starts its parked notice is sent (its connection settles first).</summary>
+        /// <summary>Tests: how long after a controller connects a held notice is sent (its connection settles first).</summary>
         internal static TimeSpan DeliveryDelay { get; set; } = TimeSpan.FromSeconds(2);
 
         /// <summary>The caller is a signed-in session (an app or a page with a device), not an API key.</summary>
@@ -49,81 +66,122 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Sends the caller's session the reload dialog (not more than once in a few minutes per device).
+        /// Holds the reload dialog for the caller's device (not when one was delivered to it in the last few minutes) and
+        /// starts its send now when the device's session has a connected controller.
         /// </summary>
-        /// <returns>Whether a message was sent.</returns>
+        /// <returns>Whether a send was started now. Its completion is not awaited: until it completes successfully the notice
+        /// stays held (a failed send is tried again at the next deliverable moment).</returns>
         public static bool Send(ISessionManager? sessions, ClaimsPrincipal? user, string text, Logger? logger)
         {
             if (sessions == null || !FromSession(user)) return false;
             var device = user!.FindFirst("Jellyfin-DeviceId")!.Value;
             Guid.TryParse(user.FindFirst("Jellyfin-UserId")?.Value, out var userId);
-            SessionInfo? session;
+            var now = DateTime.UtcNow;
+            if (_told.TryGetValue(device, out var last) && now - last < Interval) return false;
+
+            foreach (var (key, value) in _pending)
+            {
+                if (now - value.At > PendingFor) _pending.TryRemove(key, out _);
+            }
+            if (_pending.Count >= MaxPending && !_pending.ContainsKey(device)) return false;
+            _pending[device] = new Held(userId, text, now, Interlocked.Increment(ref _ids));
+            Watch(sessions, logger);
+
             try
             {
-                session = sessions.Sessions.FirstOrDefault(s => string.Equals(s.DeviceId, device, StringComparison.Ordinal) && (userId == Guid.Empty || s.UserId == userId));
+                return Connected(sessions, device, userId) is { } session && TryDeliver(sessions, session, logger);
             }
             catch (Exception ex)
             {
                 logger?.Warning($"Reload notice: could not list sessions: {ex.Message}");
                 return false;
             }
-
-            if (session == null)
-            {
-                Park(sessions, device, userId, text, logger);
-                return false;
-            }
-
-            return Deliver(sessions, session, text, logger);
         }
 
-        // Keeps the notice for the device's next session (bounded), watching the session manager for it.
-        private static void Park(ISessionManager sessions, string device, Guid userId, string text, Logger? logger)
-        {
-            var now = DateTime.UtcNow;
-            foreach (var (key, value) in _pending)
-            {
-                if (now - value.At > PendingFor) _pending.TryRemove(key, out _);
-            }
+        /// <summary>The device's session for the person, only while it has a connected controller (else null).</summary>
+        private static SessionInfo? Connected(ISessionManager sessions, string device, Guid userId)
+            => sessions.Sessions.FirstOrDefault(s => string.Equals(s.DeviceId, device, StringComparison.Ordinal)
+                && (userId == Guid.Empty || s.UserId == userId) && HasConnectedController(s));
 
-            if (_pending.Count >= MaxPending && !_pending.ContainsKey(device)) return;
-            _pending[device] = (userId, text, now);
+        private static bool HasConnectedController(SessionInfo session)
+        {
+            try
+            {
+                return session.SessionControllers.Any(controller => controller.IsSessionActive);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        // Watches the session manager once for a session starting or a controller connecting (a deliverable moment).
+        private static void Watch(ISessionManager sessions, Logger? logger)
+        {
             lock (_watched)
             {
                 if (_watched.TryGetValue(sessions, out _)) return;
                 _watched.Add(sessions, new object());
-                sessions.SessionStarted += (_, e) => Started(sessions, e?.SessionInfo, logger);
+                sessions.SessionStarted += (_, e) => Changed(sessions, e?.SessionInfo, logger);
+                sessions.SessionControllerConnected += (_, e) => Changed(sessions, e?.SessionInfo, logger);
             }
         }
 
-        // A session started: a notice parked for its device (and person) is sent once it is connected.
-        private static void Started(ISessionManager sessions, SessionInfo? session, Logger? logger)
+        // A session started or a controller connected: the notice held for its device (and person) is sent once its
+        // connection settled, while it is still held, still that person's and still connected.
+        private static void Changed(ISessionManager sessions, SessionInfo? session, Logger? logger)
         {
-            if (session?.DeviceId == null || !_pending.TryGetValue(session.DeviceId, out var parked)) return;
-            if (DateTime.UtcNow - parked.At > PendingFor || (parked.User != Guid.Empty && session.UserId != parked.User)) return;
-            if (!_pending.TryRemove(session.DeviceId, out _)) return;
-            _ = Task.Delay(DeliveryDelay).ContinueWith(_ => Deliver(sessions, session, parked.Text, logger), TaskScheduler.Default);
+            if (session?.DeviceId == null || !_pending.TryGetValue(session.DeviceId, out var held)) return;
+            if (DateTime.UtcNow - held.At > PendingFor)
+            {
+                _pending.TryRemove(new KeyValuePair<string, Held>(session.DeviceId, held));
+                return;
+            }
+            if ((held.User != Guid.Empty && session.UserId != held.User) || !HasConnectedController(session)) return;
+            _ = Task.Delay(DeliveryDelay).ContinueWith(_ => TryDeliver(sessions, session, logger), TaskScheduler.Default);
         }
 
-        private static bool Deliver(ISessionManager sessions, SessionInfo session, string text, Logger? logger)
+        // Starts the send of the notice held for the session's device, unless one is out already or it isn't deliverable to
+        // this session (another person, no connected controller, delivered within the limit). Only a send that completes
+        // successfully removes that notice (never a newer one held since) and counts towards the limit.
+        private static bool TryDeliver(ISessionManager sessions, SessionInfo session, Logger? logger)
         {
             var device = session.DeviceId ?? string.Empty;
-            var now = DateTime.UtcNow;
-            if (_told.AddOrUpdate(device, now, (_, last) => now - last >= Interval ? now : last) != now) return false;
-            var command = new MessageCommand { Header = Header, Text = text };
+            if (!_pending.TryGetValue(device, out var held)) return false;
+            if ((held.User != Guid.Empty && session.UserId != held.User) || !HasConnectedController(session)) return false;
+            if (_told.TryGetValue(device, out var last) && DateTime.UtcNow - last < Interval)
+            {
+                // Told within the limit (another notice's send completed): nothing more is sent now.
+                _pending.TryRemove(new KeyValuePair<string, Held>(device, held));
+                return false;
+            }
+            if (!_inFlight.TryAdd(device, held.Id)) return false;
+            var command = new MessageCommand { Header = Header, Text = held.Text };
             Task sent;
             try
             {
-                sent = sessions.SendMessageCommand(string.Empty, session.Id, command, CancellationToken.None);
+                sent = sessions.SendMessageCommand(string.Empty, session.Id, command, CancellationToken.None) ?? Task.CompletedTask;
             }
             catch (Exception ex)
             {
-                logger?.Warning($"Reload notice: could not message the session: {ex.Message}");
+                _inFlight.TryRemove(new KeyValuePair<string, long>(device, held.Id));
+                logger?.Warning($"Reload notice: could not message the session (it stays held for the next connection): {ex.Message}");
                 return false;
             }
-
-            sent.ContinueWith(t => logger?.Warning($"Reload notice: could not message the session: {t.Exception?.GetBaseException().Message}"), CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-            logger?.Info($"Told a page of an earlier Jellyfin Enhanced build (device {device}) to reload: its write was refused.");
+            sent.ContinueWith(t =>
+            {
+                if (t.IsCompletedSuccessfully)
+                {
+                    _told[device] = DateTime.UtcNow;
+                    _pending.TryRemove(new KeyValuePair<string, Held>(device, held));
+                    logger?.Info($"Told a page of an earlier Jellyfin Enhanced build (device {device}) to reload: its write was refused.");
+                }
+                else
+                {
+                    logger?.Warning($"Reload notice: could not message the session (it stays held for the next connection): {(t.IsCanceled ? "cancelled" : t.Exception?.GetBaseException().Message)}");
+                }
+                _inFlight.TryRemove(new KeyValuePair<string, long>(device, held.Id));
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             return true;
         }
     }

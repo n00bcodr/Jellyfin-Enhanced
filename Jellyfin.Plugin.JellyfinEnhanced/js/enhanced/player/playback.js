@@ -928,10 +928,14 @@
      * (including toasts and deliberate swallows); false → the caller runs the
      * menu fallback.
      * @param {'subtitle'|'audio'} kind
-     * @param {{item: Promise<?string>, idless: boolean, video: ?HTMLVideoElement, src: string}} press
+     * @param {{item: Promise<?string>, idless: boolean, video: ?HTMLVideoElement, src: string, origin: any}} press
      * @returns {Promise<boolean>}
      */
     async function cycleTrackViaApi(kind, press) {
+        // The session of the keypress (taken at the press, before it queued): the command goes out only while it is still
+        // the signed-in one; a press whose session ended while it waited is swallowed, never sent as the next person.
+        const binding = press.origin;
+        if (!JE.core.userWrite.isBound(binding)) return true;
         const ac = window.ApiClient;
         if (!ac) return false;
         const onVideoPage = () => (typeof JE.isVideoPage !== 'function' || JE.isVideoPage());
@@ -943,6 +947,7 @@
 
         const [pressItemId, session] = await Promise.all([press.item, probeOwnSession()]);
         if (!onVideoPage()) return true; // navigated away — swallow
+        if (!JE.core.userWrite.isBound(binding)) return true; // another session since the press — swallow
         // Unproven ownership never commands. The menu fallback is acceptable
         // only while the press surface has not moved; unproven + moved may
         // belong to the previous item — swallow.
@@ -991,30 +996,32 @@
         const itemNow = currentItemHint();
         if (itemNow && itemNow !== pressItemId) return true;
         try {
-            await ac.ajax({
+            await JE.core.userWrite.send(binding, () => ac.ajax({
                 type: 'POST',
                 url: ac.getUrl(`/Sessions/${encodeURIComponent(sessionId)}/Command`),
                 contentType: 'application/json',
                 data: JSON.stringify({ Name: commandName, Arguments: { Index: String(next) } })
-            });
+            }), 'session command');
         } catch (err) {
             // The menu fallback after a FAILED command requires positively
             // proven, unmoved ownership — a rejected command cannot explain a
             // surface change, and a moved item must not get the menu.
-            if (!onVideoPage()) return true;
+            if (!onVideoPage() || err?.sessionChanged || !JE.core.userWrite.isBound(binding)) return true;
+            // A command whose answer was lost may have switched the track: the menu must not switch it again.
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return true;
             let proven = currentItemHint();
             if (!proven) {
                 const fresh = await probeOwnSession();
                 proven = normalizeItemId(fresh && fresh.NowPlayingItem && fresh.NowPlayingItem.Id);
             }
-            if (proven !== pressItemId) return true;
+            if (proven !== pressItemId || !JE.core.userWrite.isBound(binding)) return true;
             console.warn(`🪼 Jellyfin Enhanced: ${commandName} failed, falling back to the menu cycle`, err);
             return false;
         }
         // POST-side check deliberately ignores the surface: a successful switch
         // itself restarts the stream. The memory is session+item keyed, so a
         // write after a genuine item change self-invalidates on the next press.
-        if (!onVideoPage()) return true;
+        if (!onVideoPage() || !JE.core.userWrite.isBound(binding)) return true;
         lastCommanded[kind] = { sessionId, itemId, mediaSourceId, index: next, at: performance.now() };
         const nextStream = next === -1 ? null : streams.find(s => s.Index === next);
         JE.toast(JE.t(kind === 'subtitle' ? 'toast_subtitle' : 'toast_audio',
@@ -1053,7 +1060,9 @@
             idless: !hint,
             video: pressVideo,
             src: (pressVideo && (pressVideo.currentSrc || pressVideo.src)) || '',
-            item: null
+            item: null,
+            // The press's origin: everything it does after its queue and probes belongs to this session.
+            origin: JE.core.userWrite.origin()
         };
         press.item = hint
             ? Promise.resolve(hint)
@@ -1074,6 +1083,8 @@
             }
             if (handled) return;
             if (typeof JE.isVideoPage === 'function' && !JE.isVideoPage()) return;
+            // The menu fallback is the press's too: not once its session ended.
+            if (!JE.core.userWrite.isBound(press.origin)) return;
             // Every menu fallback invalidates the optimistic memory: the menu is
             // authoritative and its selection is not observed here.
             forgetCommanded(kind);

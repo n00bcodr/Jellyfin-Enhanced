@@ -40,7 +40,7 @@ Components consume a value once, shortly after bootstrap, through `JE.takePrefet
 
 ### Bundle and development mode
 
-`Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
+`Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus the running assembly's module version id). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
 
 The index source map at `/JellyfinEnhanced/bundle.js.map` uses `sections` to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`.
 
@@ -246,8 +246,8 @@ These indexes group client modules and relevant supporting server files by web f
 
 | File | Responsibility |
 |---|---|
-| `api-client.js` | Shared managed HTTP layer, `JE.core.api.{fetch,jf,plugin}`: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct `ApiClient.ajax` or `fetch` requests. `JE.core.build` compares the JE build every answer names (`X-JE-Build`, and the bootstrap's `Build`) with the one the page booted against and asks for a reload when they differ. |
-| `mutation-queue.js` | `JE.core.mutationQueue(name)`: each server document's one write queue (the per-user documents, Spoiler Guard preferences, notification preferences). Writes go out one at a time; the session is checked right before each is sent and an account switch cancels the previous person's writes; its revision fences reads that began before a write. |
+| `api-client.js` | Shared managed HTTP layer, `JE.core.api.{fetch,jf,plugin}`: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct `ApiClient.ajax` or `fetch` requests. `JE.core.build` compares the JE build with the one the page booted against and asks for a reload when they differ. Only uncacheable answers count (the bootstrap's `Build`, the no-store `version` handshake, write answers, no-store requests); any other `X-JE-Build` is a hint confirmed by one shared handshake. |
+| `mutation-queue.js` | `JE.core.userWrite`: an action's origin (`origin()`, taken at the person's gesture before any wait, and carried through every later write and answer), the one send (`send`, `ajax`) that checks that origin right before the request is built, and the three write outcomes (stored, refused or unsent, uncertain) with their notices. `JE.core.mutationQueue(name)`: each server document's one write queue (the per-user documents, Spoiler Guard preferences, notification preferences). Writes go out one at a time, each with its own origin; a write without an origin is refused, and an account switch cancels the previous person's writes; its revision fences reads that began before a write. |
 | `dom-observer.js` | One shared body MutationObserver with named subscribers, dedicated observers and `waitForElement`. |
 | `lifecycle.js` | Registers feature observers, timers and listeners for coordinated cleanup. |
 | `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`. |
@@ -502,6 +502,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `WikidataAwardsService.cs`, `MdblistService.cs` | Awards and MDBList fetching/cache ownership. |
 | `ActivityService.cs`, `ActivityFavoriteMonitor.cs`, `ActivityFeedBuilder.cs`, `CatchUpLogService.cs` | Activity recording/selection and separate Catch Up action logs. |
 | `MaintenanceModeService.cs` | Maintenance state file, policy changes/restoration, message tokens `{countdown}` / `{ends_at}` and session popups. |
+| `ConfigurationEffects.cs` | The one server owner of the configuration's runtime effects (maintenance mode, the Custom Tabs entries JE manages): reconciles from the current configuration generation, one pass at a time, rechecking the generation at each effect. |
 | `MaintenanceScheduleService.cs` | Hosted 30-second timer for scheduled windows and timed-window expiry; distinct from scheduled tasks. |
 
 ### Spoiler Guard and identity

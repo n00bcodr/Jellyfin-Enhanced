@@ -9,6 +9,8 @@ import { createHarness, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
+  // Stage 1 fix round 12: the writes go out through JE.core.userWrite with the origin of the click.
+  'core/mutation-queue.js',
   'arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js', 'arr/status/status-cards.js',
   'arr/status/status-modal.js', 'arr/status/status-styles.js',
   'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js',

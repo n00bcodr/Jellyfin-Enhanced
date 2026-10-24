@@ -131,29 +131,32 @@
         /**
          * Saves (creates or updates) the current user's review for a TMDB item.
          */
-        async function saveUserReview(tmdbId, mediaType, content, rating) {
+        async function saveUserReview(tmdbId, mediaType, content, rating, origin) {
             const body = { content, rating: rating || null };
             try {
                 // skipRetry: saving a review is not idempotent — never auto-repeat it.
                 return await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, {
                     method: 'POST',
                     body,
-                    skipRetry: true
+                    skipRetry: true,
+                    session: JE.core.userWrite.originOf(origin)
                 });
             } catch (e) {
                 // Preserve the server-provided message when present, matching the
-                // hand-rolled fetch's `err.message || \`HTTP ${status}\`` shape.
-                throw new Error(e?.responseJSON?.message || e.message);
+                // hand-rolled fetch's `err.message || \`HTTP ${status}\`` shape (and what the attempt proves).
+                throw Object.assign(new Error(e?.responseJSON?.message || e.message), {
+                    writeOutcome: JE.core.userWrite.outcome(e), sessionChanged: e?.sessionChanged, status: e?.status
+                });
             }
         }
 
         /**
          * Deletes the current user's review for a TMDB item.
          */
-        async function deleteUserReview(tmdbId, mediaType) {
+        async function deleteUserReview(tmdbId, mediaType, origin) {
             // skipRetry keeps the original single-attempt semantics for this mutation.
             // Core throws Error('HTTP <status>') on failure — same shape as before.
-            await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
+            await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true, session: origin });
         }
 
         /**
@@ -165,11 +168,11 @@
          * translate that into a human-readable Error so the caller can
          * show a sensible message.
          */
-        async function adminDeleteUserReview(targetUserId, tmdbId, mediaType) {
+        async function adminDeleteUserReview(targetUserId, tmdbId, mediaType, origin) {
             const userIdN = (targetUserId || '').replace(/-/g, '');
             try {
                 // skipRetry keeps the original single-attempt semantics for this mutation.
-                await JE.core.api.plugin(`/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
+                await JE.core.api.plugin(`/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true, session: origin });
             } catch (e) {
                 if (e && e.status === 404) {
                     throw new Error('No matching review to delete (it may have already been removed).');
@@ -520,9 +523,9 @@
 
             if (isOwn) {
                 reviewCard.querySelector('.je-review-edit-btn').addEventListener('click', () => onEditCallback(review));
-                reviewCard.querySelector('.je-review-delete-btn').addEventListener('click', () => onDeleteCallback(review));
+                reviewCard.querySelector('.je-review-delete-btn').addEventListener('click', () => onDeleteCallback(review, JE.core.userWrite.origin()));
             } else if (showModerationDelete) {
-                reviewCard.querySelector('.je-review-admin-delete-btn').addEventListener('click', () => onDeleteCallback(review));
+                reviewCard.querySelector('.je-review-admin-delete-btn').addEventListener('click', () => onDeleteCallback(review, JE.core.userWrite.origin()));
             }
 
             return reviewCard;
@@ -613,8 +616,16 @@
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span>';
                 try {
-                    await onSave(content, currentRating || null);
+                    await onSave(content, currentRating || null, JE.core.userWrite.origin());
                 } catch (err) {
+                    if (err?.sessionChanged) return;
+                    // Its answer was lost: it may be saved. Said as such; the reviews are read again.
+                    if (JE.core.userWrite.outcome(err) === 'uncertain') {
+                        JE.core.userWrite.reportUncertain(err);
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
+                        return;
+                    }
                     errorEl.textContent = JE.t('reviews_form_error_save');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<span class="material-icons" aria-hidden="true">save</span>';
@@ -719,7 +730,9 @@
                         (r) => openForm(r),
                         // Delete callback — routes to self-delete for own reviews,
                         // admin moderation delete for others (admin viewers only).
-                        async (r) => {
+                        async (r, origin) => {
+                            // The delete belongs to the click's session, through the confirmation.
+                            const current = () => JE.core.userWrite.isBound(origin);
                             const isOwn = r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, '');
                             const userName = r.userName || 'user';
                             const title = isOwn
@@ -732,14 +745,22 @@
                                     'Delete this review by {user}? This cannot be undone.',
                                     { user: userName });
                             if (!(await jeConfirm(body, title))) return;
+                            // The confirmation waited: a delete whose session ended is cancelled, never sent as the next person.
+                            if (!current()) { JE.core.userWrite.notSent(); return; }
                             try {
                                 if (isOwn) {
-                                    await deleteUserReview(tmdbId, tmdbMediaType);
+                                    await deleteUserReview(tmdbId, tmdbMediaType, origin);
                                 } else {
-                                    await adminDeleteUserReview(r.userId, tmdbId, tmdbMediaType);
+                                    await adminDeleteUserReview(r.userId, tmdbId, tmdbMediaType, origin);
                                 }
-                                refreshReviews(contextPage);
+                                if (current()) refreshReviews(contextPage);
                             } catch (e) {
+                                if (e?.sessionChanged || !current()) return;
+                                if (JE.core.userWrite.outcome(e) === 'uncertain') {
+                                    JE.core.userWrite.reportUncertain(e);
+                                    refreshReviews(contextPage);
+                                    return;
+                                }
                                 // Surface the failure to the admin instead of
                                 // silently failing: without this, a 403/404/500
                                 // on the delete call would leave the review on
@@ -778,9 +799,16 @@
                     formPlaceholder.innerHTML = '';
                     const form = createReviewForm(
                         existingReview || null,
-                        async (content, rating) => {
-                            await saveUserReview(tmdbId, tmdbMediaType, content, rating);
-                            refreshReviews(contextPage);
+                        async (content, rating, origin) => {
+                            try {
+                                await saveUserReview(tmdbId, tmdbMediaType, content, rating, origin);
+                            } catch (e) {
+                                // A lost answer: the reviews as stored are read again (a refusal keeps the form as typed).
+                                if (JE.core.userWrite.outcome(e) === 'uncertain' && JE.core.userWrite.isBound(origin)) refreshReviews(contextPage);
+                                throw e;
+                            }
+                            // The next person's page isn't redrawn by it.
+                            if (JE.core.userWrite.isBound(origin)) refreshReviews(contextPage);
                         },
                         () => { formPlaceholder.innerHTML = ''; }
                     );
@@ -835,7 +863,7 @@
                         if (JE.currentSettings.reviewsExpandedByDefault !== reviewsSection.open) {
                             JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;
                             if (typeof JE.saveUserSettings === 'function') {
-                                JE.saveUserSettings('settings.json', JE.currentSettings);
+                                JE.saveUserSettings('settings.json', JE.currentSettings, { origin: JE.core.userWrite.origin() });
                             }
                         }
                     } catch (err) {

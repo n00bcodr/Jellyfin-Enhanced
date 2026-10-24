@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// traces and DevTools keep showing the original file names and line numbers.
     ///
     /// Built once per process and cached: the URL carries the plugin's cache key
-    /// (version + DLL timestamp), which changes on every deploy. Dev mode
+    /// (version + the running assembly's module version id), which changes with every build. Dev mode
     /// bypasses the cache so edits show up after a restart without a version bump.
     /// </summary>
     internal static class ClientScriptBundle

@@ -240,7 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             // Under the lock a config-page save takes to swap the configuration object, so the edit lands on the
             // live configuration and neither save can overwrite the other; the saved values are read back.
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            lock (JellyfinEnhanced.ConfigurationLock)
             {
                 var config = Service.Policy.Configuration;
                 Dictionary<string, RequestUserSettings> storedUsers;

@@ -14,7 +14,8 @@ const named = (doc, field) => Object.keys(doc).find(k => k.toLowerCase() === fie
 const canonicalId = id => String(id || '').replace(/-/g, '').toLowerCase();
 
 /**
- * A scripted server holding each person's documents (PascalCase, as stored). `failWrites`: files whose writes fail (500).
+ * A scripted server holding each person's documents (PascalCase, as stored). `failWrites`: files whose writes the server
+ * refuses (400: nothing stored; a 500 or a lost answer is an uncertain outcome instead, since stage 1 fix round 12).
  * `spoilerPrefs`: the person's Spoiler Guard preferences (spoilerblur.json Prefs).
  */
 export function settingsServer(documents) {
@@ -111,7 +112,7 @@ export function route(server, request) {
   }
   if (path.endsWith('/spoiler-blur/user-prefs')) {
     server.writes.push({ file: 'spoiler-prefs', type: request.type, body: JSON.parse(request.data) });
-    if (server.failWrites.has('spoiler-prefs')) throw Object.assign(new Error('write failed'), { status: 500 });
+    if (server.failWrites.has('spoiler-prefs')) throw Object.assign(new Error('write refused'), { status: 400 });
     const body = JSON.parse(request.data);
     if (request.type === 'POST') server.spoilerPrefs = structuredClone(body);
     else for (const [field, value] of Object.entries(body.Set || {})) server.spoilerPrefs[named(server.spoilerPrefs, field)] = value;
@@ -126,7 +127,7 @@ export function route(server, request) {
     // ?withRevision=true: the document with its revision (the ETag), for clients that can't read headers.
     return new URL(request.url).searchParams.get('withRevision') === 'true' ? { document, revision: server.revision(file) } : document;
   }
-  if (server.failWrites.has(file)) throw Object.assign(new Error('write failed'), { status: 500 });
+  if (server.failWrites.has(file)) throw Object.assign(new Error('write refused'), { status: 400 });
   if (file === 'consent') {
     const { Field, Value } = JSON.parse(request.data);
     server.documents.Settings[Field] = Value;

@@ -84,22 +84,34 @@
      * Calls a list route; resolves with {status, body} for every HTTP answer, rejects with {stale:true} when the rule
      * refuses it (another session, or the caller's scope no longer holds) and with the fetch error when no answer arrived.
      * @param {string} path Path under /JellyfinEnhanced/acquire/lists.
-     * @param {{method?: string, body?: Object, signal?: AbortSignal, etag?: string, ticket?: Object}} [options] Options.
+     * @param {{method?: string, body?: Object, signal?: AbortSignal, etag?: string, ticket?: Object, session?: any,
+     *   readOnly?: boolean}} [options] Options; session: a write's origin (required: a write without it is refused, never
+     *   sent as whoever is signed in); readOnly: a read sent as POST (a preview), which needs none.
      * @returns {Promise<{status: number, body: Object|null, etag: string|null}>} The answer.
      */
     async function call(path, options) {
         const rule = options?.ticket || ticket(null);
         const method = options?.method || 'GET';
-        const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
-        if (options?.body) headers['Content-Type'] = 'application/json';
-        if (options?.etag) headers['If-None-Match'] = options.etag;
-        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists${path}`), {
-            method,
-            headers,
-            body: options?.body ? JSON.stringify(options.body) : undefined,
-            signal: options?.signal,
-            cache: 'no-store'
-        });
+        // A write goes out through JE.core.userWrite with the origin it was made in (never another person's).
+        const write = method !== 'GET' && options?.readOnly !== true;
+        const binding = write ? options?.session || null : null;
+        if (write && !binding) return JE.core.userWrite.send(null, () => Promise.resolve(), path);
+        const transmit = () => {
+            const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
+            if (options?.body) headers['Content-Type'] = 'application/json';
+            if (options?.etag) headers['If-None-Match'] = options.etag;
+            return fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists${path}`), {
+                method,
+                headers,
+                body: options?.body ? JSON.stringify(options.body) : undefined,
+                signal: options?.signal,
+                cache: 'no-store'
+            });
+        };
+        const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
+        // Every answer names the server's build: seen before the rule or the body can end this call (asked with no-store:
+        // the server's now).
+        JE.core.build?.noteAnswer?.(response, { fresh: true });
         // The answer carries the person's revisions (core/access-revision.js).
         JE.core?.revision?.noteResponse(response);
         if (!rule.current()) throw STALE;
@@ -145,11 +157,13 @@
      * @param {string} method Method.
      * @param {Object} body Body.
      * @param {AbortSignal} [signal] Abort.
+     * @param {any} [origin] The change's origin (taken when the person acted; required from a caller that waited).
      * @returns {Promise<{status: number, body: Object|null}>} The answer.
      */
-    async function mutate(listId, path, method, body, signal) {
+    async function mutate(listId, path, method, body, signal, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const rule = ticket(listId);
-        const answer = await call(path, { method, body, signal, ticket: rule });
+        const answer = await call(path, { method, body, signal, ticket: rule, session: origin });
         if (!rule.current()) throw STALE;
         const found = answer.body?.view || answer.body?.result?.view || (answer.body?.listId && answer.body?.placeholders ? answer.body : null);
         const view = found && rule.accepts(found) ? found : null;
@@ -186,7 +200,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} ApplyResult ({added[], addedAsItems[], skipped[], view}).
          */
-        addItems: (listId, body, signal) => mutate(listId, `/${encodeURIComponent(listId)}/items`, 'POST', body, signal),
+        addItems: (listId, body, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/items`, 'POST', body, signal, origin),
         /**
          * Applies ordered entries ({type: 'item', itemId} or {type: 'placeholder', placeholder}).
          * @param {string} listId List id.
@@ -194,7 +208,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} ApplyResult.
          */
-        apply: (listId, body, signal) => mutate(listId, `/${encodeURIComponent(listId)}/apply`, 'POST', body, signal),
+        apply: (listId, body, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/apply`, 'POST', body, signal, origin),
         /**
          * Edits an entry's note, or links a custom entry to a title.
          * @param {string} listId List id.
@@ -203,7 +217,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} The view.
          */
-        patchItem: (listId, placeholderId, body, signal) => mutate(listId, `/${encodeURIComponent(listId)}/items/${encodeURIComponent(placeholderId)}`, 'PATCH', body, signal),
+        patchItem: (listId, placeholderId, body, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/items/${encodeURIComponent(placeholderId)}`, 'PATCH', body, signal, origin),
         /**
          * Removes an entry.
          * @param {string} listId List id.
@@ -212,7 +226,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} The view.
          */
-        removeItem: (listId, placeholderId, query, signal) => mutate(listId, `/${encodeURIComponent(listId)}/items/${encodeURIComponent(placeholderId)}?rev=${encodeURIComponent(query.rev)}&requestId=${encodeURIComponent(query.requestId)}`, 'DELETE', null, signal),
+        removeItem: (listId, placeholderId, query, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/items/${encodeURIComponent(placeholderId)}?rev=${encodeURIComponent(query.rev)}&requestId=${encodeURIComponent(query.requestId)}`, 'DELETE', null, signal, origin),
         /**
          * Saves the order after a drag (the caller's projection; a moved real row is moved in Jellyfin by the server).
          * @param {string} listId Playlist id.
@@ -220,7 +234,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} The view (409 with a fresh view when it can't).
          */
-        reorder: (listId, body, signal) => mutate(listId, `/${encodeURIComponent(listId)}/order`, 'PUT', body, signal),
+        reorder: (listId, body, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/order`, 'PUT', body, signal, origin),
         /**
          * Turns automatic swap-in on or off for a list.
          * @param {string} listId List id.
@@ -228,7 +242,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} The view.
          */
-        setSwapIn: (listId, body, signal) => mutate(listId, `/${encodeURIComponent(listId)}/swap-in`, 'PUT', body, signal),
+        setSwapIn: (listId, body, signal, origin) => mutate(listId, `/${encodeURIComponent(listId)}/swap-in`, 'PUT', body, signal, origin),
         /**
          * What asking for entries would do (nothing is written).
          * @param {string} listId List id.
@@ -236,7 +250,7 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} Preview ({items[{placeholderId, title, outcome, reason, cost}], askable, cost, maxBatch}).
          */
-        previewRequests: (listId, body, signal) => call(`/${encodeURIComponent(listId)}/requests/preview`, { method: 'POST', body, signal }),
+        previewRequests: (listId, body, signal) => call(`/${encodeURIComponent(listId)}/requests/preview`, { method: 'POST', body, signal, readOnly: true }),
         /**
          * Asks for at most 20 entries as one confirmation (keep clientId for its retries).
          * @param {string} listId List id.
@@ -244,9 +258,10 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} ({operationId, replayed, results[{placeholderId, result}], view}).
          */
-        requestEntries: async (listId, body, signal) => {
+        requestEntries: async (listId, body, signal, origin) => {
+            origin = JE.core.userWrite.originOf(origin);
             const rule = ticket(listId);
-            const answer = await mutate(listId, `/${encodeURIComponent(listId)}/requests`, 'POST', body, signal);
+            const answer = await mutate(listId, `/${encodeURIComponent(listId)}/requests`, 'POST', body, signal, origin);
             if (!rule.current()) throw STALE;
             if (answer.status < 300) JE.arrStatus?.refresh?.();
             return answer;
@@ -263,14 +278,14 @@
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} ({listId, listKind, name, result}).
          */
-        createPlaylist: (body, signal) => call('/playlists', { method: 'POST', body, signal }),
+        createPlaylist: (body, signal, origin) => call('/playlists', { method: 'POST', body, signal, session: JE.core.userWrite.originOf(origin) }),
         /**
          * Creates a collection (administrators and collection managers).
          * @param {{requestId: string, name: string, entries?: Object[]}} body Body.
          * @param {AbortSignal} [signal] Abort.
          * @returns {Promise<{status: number, body: Object|null}>} ({listId, listKind, name, result}).
          */
-        createCollection: (body, signal) => call('/collections', { method: 'POST', body, signal }),
+        createCollection: (body, signal, origin) => call('/collections', { method: 'POST', body, signal, session: JE.core.userWrite.originOf(origin) }),
         /**
          * Subscribes to list changes made through this module.
          * @param {function(string, Object|null, {epoch: number}): void} listener Called with (listId, view or null, the

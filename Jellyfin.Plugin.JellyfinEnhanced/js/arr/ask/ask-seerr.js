@@ -61,6 +61,8 @@
      * @returns {Promise<Object|null>} The ask result, or null.
      */
     async function openSheet(title, options) {
+        // The sheet's origin (its click): what an ask from it shows on the opener belongs to that session only.
+        const origin = JE.core.userWrite.originOf(options?.origin);
         const sheet = JE.arrAskSheet;
         if (!sheet || !title) return null;
         const opener = options?.opener || null;
@@ -73,13 +75,14 @@
         let result = null;
         try {
             result = title.kind === 'movie' && variant === 'standard'
-                ? await sheet.openOrAsk(title, { opener, operation })
-                : await sheet.open(title, { opener, variant, operation });
+                ? await sheet.openOrAsk(title, { opener, operation, origin })
+                : await sheet.open(title, { opener, variant, operation, origin });
         } catch (err) {
             console.warn(`${logPrefix} the request sheet could not open (${err?.message || err})`);
             JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
+        if (!JE.core.userWrite.isBound(origin) || result?.stale) return result;
         // The opener changes only through the publication, checked as it does (D46S2-R9-5).
         if (result && (result.ok || result.state === 'unknown') && publication && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
             if (title.kind !== 'movie') {
@@ -90,7 +93,10 @@
                 });
             } else if (variant === 'standard' && publication.current()) {
                 // (A 4K ask leaves the standard button as it is; the sheet said what happened.)
-                const said = JE.arrAsk.describe(result, await JE.arrAsk.me(), null);
+                const caps = await JE.arrAsk.me();
+                // The capability read waited: the chip is shown in the ask's session only.
+                if (!JE.core.userWrite.isBound(origin)) return result;
+                const said = JE.arrAsk.describe(result, caps, null);
                 if (said.chip) publication.apply(opener, node => {
                     node.disabled = true;
                     node.textContent = said.chip;
@@ -177,16 +183,20 @@
      * movies judged for them on the server).
      * @param {number|string} [collectionId] TMDB collection id.
      * @param {string} [collectionName] Collection name.
-     * @param {{operation?: Object|Node}} [options] The operation the picker is opened for (as Seerr's own Collection
-     *     modal): taken here, rechecked after each read, and the picker and its asks are in its scope.
+     * @param {{operation?: Object|Node, origin?: any}} [options] The operation the picker is opened for (as Seerr's own
+     *     Collection modal): taken here, rechecked after each read, and the picker and its asks are in its scope; origin:
+     *     the click's (JE.core.userWrite), else the session of this direct call.
      * @returns {Promise<void>}
      */
     async function collectionAsk(collectionId, collectionName, options) {
+        // The asks' origin: the click that opened this picker (through its reads, its Save and every ask of it).
+        const origin = JE.core.userWrite.originOf(options?.origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const submitted = JE.captureSubmitted(options?.operation);
         // Only the newest opening opens its picker (D46S2-R6): an older one whose reads answer later is dropped.
         const newest = pickerOpening(submitted);
         const caps = await JE.arrAsk.me();
-        if (!newest()) return;
+        if (!newest() || !current()) return;
         if (!JE.arrAsk.canAsk(caps, 'movie')) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return;
@@ -290,13 +300,15 @@
                 button.disabled = true;
                 const results = [];
                 for (const tmdbId of ids) {
+                    // One action: no further ask once its session ended, and nothing reported to the next person.
+                    if (!current()) { JE.core.userWrite.notSent(); return; }
                     let result;
                     try {
-                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`), { bound });
+                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`), { bound, session: origin });
                     } catch {
                         result = { ok: false, state: 'failed' };
                     }
-                    if (result?.stale) return;
+                    if (result?.stale || !current()) return;
                     results.push(result || { ok: false, state: 'failed' });
                 }
                 if (!submitted.current()) return;

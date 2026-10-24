@@ -11,7 +11,7 @@ import { createHarness, jsRoot, jsonResponse, deferred } from '../helpers/harnes
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
   'arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js',
-  'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
+  'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
   'arr/ask/ask-actions.js', 'arr/ask/ask-collection.js', 'arr/ask/ask-styles.js'
 ];
 const ARR_WORDS = /sonarr|radarr|instance|profile|root folder|tags?\b|quality|path/i;

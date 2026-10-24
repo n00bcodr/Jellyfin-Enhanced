@@ -13,7 +13,7 @@ import { installDomWriteSpy } from '../helpers/dom-write-spy.mjs';
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
   'arr/status/status-core.js', 'arr/status/status-styles.js',
-  'arr/ask/ask-core.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
+  'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
   'arr/lists/list-api.js', 'arr/lists/list-paint.js', 'arr/lists/list-render.js', 'arr/lists/list-request.js', 'arr/lists/list-playlist.js',
   'arr/lists/list-collection.js', 'arr/lists/list-grid.js', 'arr/lists/list-pages.js'
 ];

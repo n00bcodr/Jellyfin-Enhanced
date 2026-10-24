@@ -399,6 +399,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // plugin's own section-content endpoint, which replaces those native lists on an HSS home screen. Same
             // filter handles "Remove from Continue Watching" via HideScope=continuewatching in hidden-content.json.
             serviceCollection.AddSingleton<MaintenanceModeService>();
+            // The one owner of the configuration's runtime effects (maintenance mode, the Custom Tabs entries): reconciled on
+            // the server from the configuration's current generation after every change of it.
+            serviceCollection.AddSingleton<ConfigurationEffects>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<ConfigurationEffects>());
             // Maintenance Mode extras: a 30s timer that opens/closes the daily scheduled window
             // and expires timed manual windows, plus the per-playback-start reminder popup.
             serviceCollection.AddHostedService<MaintenanceScheduleService>();

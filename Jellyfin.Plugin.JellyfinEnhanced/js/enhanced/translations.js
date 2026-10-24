@@ -126,7 +126,7 @@
 
     /**
      * Returns the build identity the translation cache is keyed by: the injected script
-     * tag's `version` attribute, `{version}-{dllTimestamp}` (the same value the script URLs
+     * tag's `version` attribute, `{version}-{build identity}` (the same value the script URLs
      * use). It changes with every build even when the plugin version does not, so entries an
      * earlier build wrote (older locale files, or upstream English the previous loader stored
      * under `en`) are dropped by cleanOldTranslationCache instead of being reused. Falls back

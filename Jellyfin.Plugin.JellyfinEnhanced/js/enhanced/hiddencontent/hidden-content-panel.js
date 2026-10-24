@@ -269,11 +269,12 @@
                 unhideBtn.addEventListener('click', () => {
                     if (unhideBtn.disabled) return;
                     unhideBtn.disabled = true;
+                    const origin = JE.core.userWrite.origin();
                     card.classList.add('je-hidden-item-removing');
                     setTimeout(async () => {
                         if (!action.current()) return;
                         // The card, count and empty state change only once the unhide is confirmed.
-                        const saved = await unhideConfirmed(unhideItem(item._key || item.itemId));
+                        const saved = await unhideConfirmed(unhideItem(item._key || item.itemId, undefined, null, origin));
                         if (!action.current()) return;
                         if (!saved) {
                             showUnhideFailed(card, unhideBtn);
@@ -303,9 +304,10 @@
         toolbar.searchInput.addEventListener('input', () => renderGrid(toolbar.searchInput.value));
 
         toolbar.unhideAllBtn.addEventListener('click', () => {
+            const origin = JE.core.userWrite.origin();
             if (!confirm(JE.t('hidden_content_clear_confirm'))) return;
             if (!action.current()) return;
-            unhideAll();
+            unhideAll(origin);
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'je-hidden-management-empty';
             emptyDiv.textContent = JE.t('hidden_content_manage_empty');

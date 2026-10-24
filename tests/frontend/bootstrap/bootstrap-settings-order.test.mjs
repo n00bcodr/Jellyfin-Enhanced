@@ -27,7 +27,7 @@ for (const withRevision of [false, true]) {
     await until(() => applied);
     // Another route of the server (the home-row removal) stores b after a and answers first.
     s.apply('hidden-content.json', 'PATCH', { Upsert: { b: { ItemId: 'b' } } });
-    h.JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { b: { itemId: 'b' } } }, withRevision ? s.revision('hidden-content.json') : undefined);
+    h.JE.internals.userDocumentHandle('hidden-content.json', h.JE.core.userWrite.origin()).acknowledge({ upsert: { b: { itemId: 'b' } } }, withRevision ? s.revision('hidden-content.json') : undefined);
     assert.ok(h.JE.internals.userDocument('hidden-content.json').document.items.b);
     reply.release();
     await save;
@@ -46,7 +46,7 @@ test('R10-5: an answer newer than an acknowledgement is taken whole', async t =>
   // Another tab removed b and added c (the server's newer document); this tab's save answers with it.
   s.apply('hidden-content.json', 'PATCH', { Remove: ['b'], Upsert: { c: { ItemId: 'c' } } });
   await h.JE.patchUserSettings('hidden-content.json', { upsert: { a: { itemId: 'a' } } }, { throwOnError: true });
-  h.JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { b: { itemId: 'b' } } }, acknowledged);
+  h.JE.internals.userDocumentHandle('hidden-content.json', h.JE.core.userWrite.origin()).acknowledge({ upsert: { b: { itemId: 'b' } } }, acknowledged);
   const shown = h.JE.internals.userDocument('hidden-content.json').document.items;
   assert.deepEqual(Object.keys(shown).sort(), ['a', 'c'], 'an acknowledgement older than the answer held changes nothing');
 });

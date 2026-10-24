@@ -26,7 +26,7 @@
 // slow fetch resolves after user B has already signed in.
 //
 // Public surface: JE.session { getUserId, getServerId, getEpoch,
-// onUserChange(name, fn), isCurrent(epoch), checkNow(reason) }.
+// onUserChange(name, fn), isCurrent(epoch), bind(), isBound(binding), checkNow(reason) }.
 // Transition order: reset handlers run synchronously (registration order),
 // then a 'je:user-changed' CustomEvent is dispatched on document.
 (function(JE) {
@@ -256,6 +256,27 @@
          * @param {number} capturedEpoch
          */
         isCurrent: (capturedEpoch) => capturedEpoch === epoch,
+        /**
+         * The origin of an action (JE.core.userWrite.origin): the identity epoch, the signed-in user and server, taken when
+         * the person acts. It names a session, never a credential.
+         * @returns {{epoch: number, userId: string|null, serverId: string|null}}
+         */
+        bind: () => {
+            checkNow('bind');
+            return Object.freeze({ epoch, userId: currentUserId, serverId: currentServerId });
+        },
+        /**
+         * Whether an origin is still the signed-in session, right now: the host's credentials are read again first (a switch
+         * none of the detectors reported yet is a transition from here on), then the epoch, the user and the server must match.
+         * @param {{epoch: number, userId: string|null, serverId?: string|null}} binding - From bind().
+         * @returns {boolean}
+         */
+        isBound: (binding) => {
+            if (!binding) return false;
+            checkNow('send');
+            return binding.epoch === epoch && !!binding.userId && binding.userId === currentUserId
+                && (binding.serverId === undefined || binding.serverId === currentServerId);
+        },
         /**
          * Build a per-user localStorage key: `${base}:${userId}`. Shared by
          * every module that scopes a preference per user so the format stays

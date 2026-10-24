@@ -75,6 +75,8 @@
             event.preventDefault();
             event.stopPropagation();
             if (button.disabled || !viewAction.current()) return;
+            // The toggle belongs to this click's session, through the confirmation and the write.
+            const origin = JE.core.userWrite.origin();
             button.disabled = true;
             // The press's owner: the operation a title action pressed it for, else where it was pressed (D46S2-R6).
             const owner = JE.ownerOf(event);
@@ -85,16 +87,20 @@
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler(owner)) return;
                         if (!action.current()) return;
-                        await internal.disableForTmdb(mediaType, tmdbId, owner);
-                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
+                        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return; }
+                        await internal.disableForTmdb(mediaType, tmdbId, owner, origin);
+                        if (action.current() && JE.core.userWrite.isBound(origin)) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
-                        await internal.enableForTmdb(mediaType, tmdbId, displayName, owner);
-                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
+                        await internal.enableForTmdb(mediaType, tmdbId, displayName, owner, origin);
+                        if (action.current() && JE.core.userWrite.isBound(origin)) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
                 } catch (e) {
                     if (!action.current()) return;
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
-                    JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
+                    if (!e?.sessionChanged && JE.core.userWrite.isBound(origin)) {
+                        if (JE.core.userWrite.outcome(e) === 'uncertain') JE.core.userWrite.reportUncertain(e);
+                        else JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
+                    }
                 } finally {
                     refresh();
                     button.disabled = !viewAction.current();

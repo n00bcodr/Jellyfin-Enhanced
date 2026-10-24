@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 // The configuration page is one inline script, not a bundled module: run the real masked-credential
 // and instance-registry helpers (and the createEl they use) from it in a fresh realm.
@@ -24,7 +26,8 @@ function setup(t, { libraries = [] } = {}) {
     apiClient: { getVirtualFolders: async () => libraries },
   });
   t.after(() => h.close());
-  h.window.eval(`${helpers}\nwindow.__je = { jeSecretInit, jeSecretSetState, jeSecretRead, jeSecretWireValue, jeSecretBindServers, jeSecretCheckServers, jeImportedKeysLost, jeIsSecretPlaceholder, jeNewGuid, jeBuildInstanceRegistryFields, jeReadInstanceRegistryFields, JE_SECRET_CLEAR };`);
+  h.window.eval(`${adminOriginSource()}
+${helpers}\nwindow.__je = { jeSecretInit, jeSecretSetState, jeSecretRead, jeSecretWireValue, jeSecretBindServers, jeSecretCheckServers, jeImportedKeysLost, jeIsSecretPlaceholder, jeNewGuid, jeBuildInstanceRegistryFields, jeReadInstanceRegistryFields, JE_SECRET_CLEAR };`);
   return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, $: id => h.document.getElementById(id) };
 }
 
@@ -203,7 +206,8 @@ test('the arr, Seerr and scan-now buttons send a saved key in a header the brows
     globals: { Dashboard: { alert: a => alerts.push(a) } },
   });
   t.after(() => h.close());
-  h.window.eval(`${helpers}\nvar jeTestAlert = function (a) { Dashboard.alert(a); };
+  h.window.eval(`${adminOriginSource()}
+${helpers}\nvar jeTestAlert = function (a) { Dashboard.alert(a); };
     var setConnectionTestResult = function () {}; var updateAllDependencies = function () {};
     var _jeNormalizeArrUrl = function (u) { return u; };
     var testJellyseerrBtn = document.getElementById('seerrTest');

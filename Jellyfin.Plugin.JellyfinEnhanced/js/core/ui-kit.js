@@ -110,16 +110,30 @@
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
             backdropFilter: `blur(${blurValue})`,
             border: toastBorder,
-            transition: 'transform 0.3s ease-out',
+            transition: 'transform 0.3s ease-out, bottom 0.2s ease-out',
             maxWidth: 'clamp(280px, 80vw, 350px)'
         });
         t.innerHTML = html; // Note: the calling function should pass the localized string
         document.body.appendChild(t);
+        stackToasts();
         setTimeout(() => t.style.transform = 'translateX(0)', 10);
         setTimeout(() => {
             t.style.transform = 'translateX(100%)';
-            setTimeout(() => t.remove(), 300);
+            setTimeout(() => { t.remove(); stackToasts(); }, 300);
         }, ms);
+    }
+
+    /**
+     * Toasts shown at the same time (a "couldn't confirm" notice and the outcome of its check, say) stack upwards from
+     * the corner, the newest at the bottom, instead of being drawn over each other; they close up as each one leaves.
+     */
+    function stackToasts() {
+        const shown = [...document.querySelectorAll('.jellyfin-enhanced-toast')];
+        let bottom = 20;
+        for (let i = shown.length - 1; i >= 0; i--) {
+            shown[i].style.bottom = `${bottom}px`;
+            bottom += (shown[i].offsetHeight || 0) + 8;
+        }
     }
 
     // Most recent scroll seen anywhere in the document (capture phase sees the

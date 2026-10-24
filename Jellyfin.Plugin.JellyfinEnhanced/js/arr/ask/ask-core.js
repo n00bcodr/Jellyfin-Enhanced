@@ -58,11 +58,15 @@
      * included, so the request outcome's real HTTP status is kept) and rejects only when no answer
      * arrived (network failure, abort).
      * @param {string} path Path under /JellyfinEnhanced.
-     * @param {{method?: string, body?: Object, signal?: AbortSignal}} [options] Options.
+     * @param {{method?: string, body?: Object, signal?: AbortSignal, session?: any}} [options] Options; session: a write's
+     *   origin (required: a write without it is refused, never sent as whoever is signed in).
      * @returns {Promise<{status: number, body: Object|null}>} The answer.
      */
     async function call(path, options) {
-        return JE.core.api.pluginResponse(path, options);
+        // The session-bound core transport (D46, play edge) in status mode: every HTTP answer comes back as {status, body}.
+        // A write goes out through JE.core.userWrite with the origin it was asked in (options.session, else its operation's
+        // binding): never another person's. Asked with no-store, so every answer names the build that runs now.
+        return JE.core.api.pluginResponse(path, { ...options, cache: 'no-store' });
     }
 
     /**
@@ -347,25 +351,39 @@
      *     when a bound ask was never sent (its operation or session ended).
      */
     async function ask(input, options) {
+        // The ask's origin: the caller's (taken when the person acted, before its own waits), or the session now for a
+        // direct call. The ask goes out, and its answer counts, only in that session.
+        const origin = JE.core.userWrite.originOf(options?.session);
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
         const print = fingerprint(input);
         const clientRequestId = options?.clientRequestId || openIds.get(print) || newClientId();
         openIds.set(print, clientRequestId);
-        const started = epoch();
         let answer;
         try {
-            answer = await call('/acquire/requests', { method: 'POST', body: options?.expect ? { clientRequestId, input, expect: options.expect } : { clientRequestId, input }, signal: options?.signal, bound: options?.bound });
+            answer = await call('/acquire/requests', { method: 'POST', body: options?.expect ? { clientRequestId, input, expect: options.expect } : { clientRequestId, input }, signal: options?.signal, bound: options?.bound, session: origin });
         } catch (err) {
             // Bound to an operation or session that ended before the send: nothing was sent, nothing to say.
-            if (err?.name === 'AbortError' && options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
-            if (err?.name === 'AbortError') throw err;
+            if (err?.name === 'AbortError' && options?.bound && JE.core.userWrite.outcome(err) !== 'uncertain') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
+            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) {
+                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId: null, clientRequestId, stale: true };
+            }
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
+            if (JE.core.userWrite.outcome(err) === 'uncertain') {
+                // Sent, and its answer was lost: it may be recorded. The id is kept (asking again is the same ask, never a
+                // second one) and the title's status is read again to say what the server holds.
+                const result = { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId: null, clientRequestId };
+                meState = null;
+                checks.clear();
+                emit({ type: 'unconfirmed', key: input.key, input, result });
+                return result;
+            }
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };
         }
         // A server error may or may not have recorded the ask: keep the id so a retry is the same ask.
         if (answer.status < 500) openIds.delete(print);
         const result = { ...interpret(answer.status, answer.body), clientRequestId };
-        if (started !== epoch()) return { ...result, stale: true };
+        if (!JE.core.userWrite.isBound(origin)) return { ...result, stale: true };
         if (result.ok || result.state === 'unknown') {
             meState = null;
             checks.clear();
@@ -377,19 +395,25 @@
     /**
      * Cancels the caller's own request that hasn't been sent yet.
      * @param {string} requestId Request id.
-     * @param {{bound?: Object}} [options] bound: the operation's transport binding (as {@link ask}).
-     * @returns {Promise<Object>} Result (state 'cancelled' on success).
+     * @param {{bound?: Object, session?: any}} [options] bound: the operation's transport binding (as {@link ask}); session:
+     *   the cancel's origin (required from a caller that waited, e.g. a loop).
+     * @returns {Promise<Object>} Result (state 'cancelled' on success; `stale` once its session ended).
      */
     async function cancel(requestId, options) {
+        const origin = JE.core.userWrite.originOf(options?.session);
         if (!enabled() || !/^[0-9a-f]{32}$/i.test(String(requestId || ''))) return { ok: false, status: 0, state: 'invalid', outcome: '', reason: 'invalid_id', certainty: '', requestId: null };
         let answer;
         try {
-            answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {}, bound: options?.bound });
+            answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {}, bound: options?.bound, session: origin });
         } catch (err) {
             console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId, stale: true };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId };
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
         }
         const result = interpret(answer.status, answer.body);
+        // The answer belongs to the cancel's session: nothing is published into the next person's page.
+        if (!JE.core.userWrite.isBound(origin)) return { ...result, stale: true };
         if (result.ok) {
             result.state = 'cancelled';
             emit({ type: 'cancel', requestId, result });
@@ -442,6 +466,7 @@
             case 'merged': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_merged'), tone: 'approved' };
             case 'nothing': return { chip: '', text: tr('arr_ask_toast_nothing'), tone: 'none' };
             case 'unknown': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_unknown'), tone: 'approved' };
+            case 'unconfirmed': return { chip: '', text: tr('arr_ask_toast_unconfirmed'), tone: 'attention' };
             case 'quota': {
                 const day = allowance?.nextSlotAt && JE.arrStatus ? JE.arrStatus.formatDate(allowance.nextSlotAt) : '';
                 return { chip: '', text: day ? tr('arr_ask_toast_quota_day', { day }) : tr('arr_ask_toast_quota'), tone: 'attention' };
@@ -704,24 +729,32 @@
      * then read their status again.
      * @param {string} key Title key in scope.
      * @param {string} instanceId Instance ({@link searchInstance}).
-     * @param {{episodes?: number[], expect?: Object, bound?: Object}} [options] A season key's episodes to search (exactly
-     * those), what a season page's control was drawn to do (the server works it out again: a refusal is state 'changed' or
-     * 'unchecked'), and bound: the core transport binding of the operation that searches (if any), checked right before the
-     * POST (an AbortError when it ended first: nothing was sent).
-     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string}>} Result.
+     * @param {{episodes?: number[], expect?: Object, bound?: Object, session?: any}} [options] A season key's episodes to
+     * search (exactly those), what a season page's control was drawn to do (the server works it out again: a refusal is
+     * state 'changed' or 'unchecked'), bound: the core transport binding of the operation that searches (if any), checked
+     * right before the POST (an AbortError when it ended first: nothing was sent), and session: the search's origin
+     * (required from a caller that waited).
+     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string, stale?: boolean}>} Result.
      */
     async function adminSearch(key, instanceId, options) {
+        const origin = JE.core.userWrite.originOf(options?.session);
         let answer;
         const payload = { instanceId, key, idempotencyKey: newClientId() };
         if (options?.episodes?.length) payload.episodes = options.episodes;
         if (options?.expect) payload.expect = options.expect;
         try {
-            answer = await call('/arr/admin/manage/search', { method: 'POST', body: payload, bound: options?.bound });
+            answer = await call('/arr/admin/manage/search', { method: 'POST', body: payload, bound: options?.bound, session: origin });
         } catch (err) {
-            if (err?.name === 'AbortError') throw err;
+            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') {
+                return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention' };
+            }
             const text = tr('arr_manage_search_failed', { message: err?.message || String(err) });
             return { ok: false, state: 'failed', chip: '', text, tone: 'attention' };
         }
+        // The answer belongs to the search's session: nothing is published into the next person's page.
+        if (!JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
         const body = answer.body || {};
         let result;
         if (answer.status === 409 && (body.code === 'press_changed' || body.code === 'press_unverified')) {
@@ -748,21 +781,29 @@
      * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
      * may not): the caller then asks for it instead, as before.
      * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
-     * @param {{expect?: Object, bound?: Object}} [options] What a season page's control was drawn to do (the server works it
-     * out again: a refusal is state 'changed' or 'unchecked', never "ask instead"); bound: the operation's transport binding
-     * (as {@link adminSearch}).
-     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string}|null>} Result, or null to ask instead.
+     * @param {{expect?: Object, bound?: Object, session?: any}} [options] What a season page's control was drawn to do (the
+     * server works it out again: a refusal is state 'changed' or 'unchecked', never "ask instead"); bound: the operation's
+     * transport binding (as {@link adminSearch}); session: the search's origin (required from a caller that waited).
+     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string, stale?: boolean}|null>}
+     *   Result, or null to ask instead (never once its session ended: a stale result then, so the caller doesn't go on to
+     *   ask as the next person).
      */
     async function familySearch(key, options) {
+        const origin = JE.core.userWrite.originOf(options?.session);
+        const stale = { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
         const k = String(key || '');
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
         try {
-            answer = await call('/acquire/requests/search', { method: 'POST', body: options?.expect ? { key: k, idempotencyKey: newClientId(), expect: options.expect } : { key: k, idempotencyKey: newClientId() }, bound: options?.bound });
+            answer = await call('/acquire/requests/search', { method: 'POST', body: options?.expect ? { key: k, idempotencyKey: newClientId(), expect: options.expect } : { key: k, idempotencyKey: newClientId() }, bound: options?.bound, session: origin });
         } catch (err) {
-            if (err?.name === 'AbortError') throw err;
+            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return stale;
+            // Sent and its answer lost: the search may run; asking as well could ask twice for one title.
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention' };
             return null;
         }
+        if (!JE.core.userWrite.isBound(origin)) return stale;
         const body = answer.body || {};
         let result;
         if (answer.status === 409 && (body.reason === 'press_changed' || body.reason === 'press_unverified')) {

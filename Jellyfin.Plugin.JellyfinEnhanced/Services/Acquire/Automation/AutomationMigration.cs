@@ -172,10 +172,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 var plugin = JellyfinEnhanced.Instance;
-                if (plugin?.Configuration is not { } config) return Task.CompletedTask;
-                var record = AutomationMigration.Run(config, _store, !plugin.ConfigurationExistedAtStart,
-                    () => AutomationMigration.Managers(config, _users.GetAllUsers().Select(u => (u.Id, u.HasPermission(PermissionKind.IsAdministrator)))),
-                    DateTimeOffset.UtcNow, plugin.SaveConfiguration);
+                if (plugin?.Configuration == null) return Task.CompletedTask;
+                // One read-modify-write of the live configuration under its lock: its save is the step's last change.
+                AutomationMigrationRecord? record = null;
+                plugin.MutateConfiguration(config =>
+                {
+                    var saved = false;
+                    record = AutomationMigration.Run(config, _store, !plugin.ConfigurationExistedAtStart,
+                        () => AutomationMigration.Managers(config, _users.GetAllUsers().Select(u => (u.Id, u.HasPermission(PermissionKind.IsAdministrator)))),
+                        DateTimeOffset.UtcNow, () => saved = true);
+                    return saved;
+                });
                 if (record != null)
                     _logger.Info($"Requests & downloads: automation migration ({record.Kind}) recorded: next season {(record.AutoSeason ? "Auto" : record.Kind == "fresh" ? "Shadow" : "Off")}, next movie {(record.AutoMovie ? "Auto" : record.Kind == "fresh" ? "Shadow" : "Off")}, {record.Grants} eligibility grant(s).");
             }

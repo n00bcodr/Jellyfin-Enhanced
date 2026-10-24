@@ -6,6 +6,8 @@ function setup(t, html = '') {
   const h = createHarness({html});
   t.after(() => h.close());
   h.window.Date.now = () => 100000000;
+  // Stage 1 fix round 12: the switches write with the origin of the click (JE.core.userWrite).
+  h.load('core/mutation-queue.js');
   return h;
 }
 

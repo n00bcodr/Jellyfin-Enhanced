@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -15,11 +18,13 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
 function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
-  const writes = [], toasts = [];
+  // Claims of a saved change go to `toasts`; the notices that a change wasn't saved (round 11) go to `notSaved`.
+  const writes = [], toasts = [], notSaved = [];
+  const notices = [translate('settings_not_saved'), translate('settings_not_saved_account_changed')];
   const h = createHarness({
     JE: {
       pluginConfig: { Shortcuts: [], ...config }, userConfig: { settings: { ...settings }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
-      t: translate, toast: message => toasts.push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      t: translate, toast: message => (notices.includes(message) ? notSaved : toasts).push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
       icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none'
@@ -33,7 +38,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
-  return { ...h, writes, toasts,
+  return { ...h, writes, toasts, notSaved,
     wire() { h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} }); },
     async choose(id, value) {
       const select = h.document.getElementById(id);
@@ -136,7 +141,7 @@ for (const consentSucceeds of [false, true]) test(`explicit revocation followed 
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
     if (request.url.endsWith('/consent')) return new Promise((resolve, reject) => {
-      release = () => consentSucceeds ? resolve({ consents: { ListSwapIn: false } }) : reject(new Error('consent refused'));
+      release = () => consentSucceeds ? resolve({ consents: { ListSwapIn: false } }) : reject(refused('consent refused'));
     });
     return Promise.resolve({ consents: { ListSwapIn: consentSucceeds ? false : true } });
   };
@@ -160,7 +165,7 @@ test('a consent operation never retains a display save that failed ahead of it',
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
-    if (!request.url.endsWith('/consent')) return new Promise((_, reject) => { fail = () => reject(new Error('display refused')); });
+    if (!request.url.endsWith('/consent')) return new Promise((_, reject) => { fail = () => reject(refused('display refused')); });
     return Promise.resolve({ consents: { ListSwapIn: true } });
   };
   h.wire();
@@ -174,10 +179,11 @@ test('a consent operation never retains a display save that failed ahead of it',
 
 test('a failed explicit consent rolls back and never announces success', async t => {
   const h = panel(t, { config: lists, settings: { listSwapIn: false } });
-  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') throw new Error('save refused'); return []; };
+  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') throw refused('save refused'); return []; };
   h.wire();await h.choose('listSwapInSelect', 'on');
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.deepEqual(h.toasts, []);
+  assert.deepEqual(h.notSaved, [tr('settings_not_saved')], 'shown as not saved');
 });
 
 test('session change cancels a consent queued behind an in-flight display save', async t => {
@@ -194,4 +200,5 @@ test('session change cancels a consent queued behind an in-flight display save',
   assert.equal(h.writes.length, 1);
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.deepEqual(h.toasts, []);
+  assert.deepEqual(h.notSaved, [tr('settings_not_saved_account_changed')], 'the cancelled consent is shown as not saved');
 });

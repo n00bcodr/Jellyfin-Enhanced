@@ -24,6 +24,7 @@ function lists(t, routes, { config = { ArrListsEnabled: true }, JE = {} } = {}) 
   const state = { epoch: 1 };
   const h = createHarness({ fetch: net.fetch, JE: { pluginConfig: config, session: { getEpoch: () => state.epoch }, ...JE } });
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('arr/lists/list-api.js');
   return { ...h, net, state, api: h.JE.arrLists };
 }

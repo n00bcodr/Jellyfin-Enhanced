@@ -50,7 +50,7 @@
             };
             const saveShortcutKey = (action, key) => {
                 const base = storedShortcut(action) || pluginShortcuts.find(s => s.Name === action) || { Name: action };
-                JE.patchUserSettings('shortcuts.json', { upsert: { [action]: { ...base, Key: key } } });
+                JE.patchUserSettings('shortcuts.json', { upsert: { [action]: { ...base, Key: key } } }, { origin: JE.core.userWrite.origin() });
             };
 
             const setShortcutDisabled = (action, disabled) => {
@@ -60,7 +60,7 @@
                 } else {
                     const defaultConfig = pluginShortcuts.find(s => s.Name === action);
                     const defaultKey = defaultConfig ? defaultConfig.Key : '';
-                    if (storedShortcut(action)) JE.patchUserSettings('shortcuts.json', { remove: [action] });
+                    if (storedShortcut(action)) JE.patchUserSettings('shortcuts.json', { remove: [action] }, { origin: JE.core.userWrite.origin() });
                     JE.state.activeShortcuts[action] = defaultKey;
                 }
 

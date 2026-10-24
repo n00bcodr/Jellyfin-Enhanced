@@ -566,7 +566,7 @@ public class IntegrationRequestHouseholdTests
         var household = new HouseholdService(hub.Projection, hub.R.Feed, _ => saved.Set());
         Task<RequestOutcome> pending;
         // A config-page save swapping the configuration object holds this lock: the household edit waits for it.
-        lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+        lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.ConfigurationLock)
         {
             pending = Task.Run(() => household.Save(admin, new HouseholdSave { Preset = "open_house" }));
             Assert.False(saved.Wait(300));

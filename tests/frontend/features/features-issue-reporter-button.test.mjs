@@ -36,6 +36,7 @@ function page(t, { active = true, html = ROW } = {}) {
     },
   });
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('core/ui-kit.js');
   h.load('jellyseerr/issue-reporter.js');
   const row = () => [...h.document.querySelector('.mainDetailButtons').children].map(n => n.className.split(' ').find(c => /^(btn|je-|jellyseerr-)/.test(c)));
@@ -249,6 +250,7 @@ function libraryPage(t) {
     apiClient: { ajax: async () => ({ active: true }) },
   });
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('core/ui-kit.js');
   h.load('enhanced/spoilerguard/detail-button.js');
   h.JE.spoilerBlur = { addSpoilerBlurButton: h.JE.internals.spoilerGuard.addSpoilerBlurButton };

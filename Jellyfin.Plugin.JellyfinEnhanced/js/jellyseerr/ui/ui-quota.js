@@ -160,9 +160,18 @@
         JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
     }
 
-    /** A refused request's answer for `owner` (required: its press's owner): said only while that is current. */
+    /**
+     * A refused request's answer for `owner` (required: its press's owner): said only while that is current. An account
+     * change said once that it wasn't sent; a lost answer is "couldn't confirm", never "failed" (the request may have been
+     * made: it isn't offered again as if it hadn't).
+     */
     async function handleRequestError(error, mediaType, requestBtn, resetLabel, owner) {
         const submitted = JE.captureSubmitted(owner);
+        if (error?.sessionChanged) return;
+        if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) {
+            if (submitted.current()) JE.core.userWrite.reportUncertain(error);
+            return;
+        }
         if (error?.name === 'AbortError' || !submitted.current()) {
             // Its owner ended (nothing was sent, or the answer has nowhere to go): nothing to say.
         } else if (isQuotaError(error)) {

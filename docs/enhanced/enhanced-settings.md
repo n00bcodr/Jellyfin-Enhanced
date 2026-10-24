@@ -41,7 +41,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
 ### Saving and syncing
 
-Your changes save automatically to your account on the server. There is no personal **Save** button.
+Your changes save automatically to your account on the server. There is no personal **Save** button. A control confirms a change ("updated", "saved") once the server has stored it; if the server refuses a change, or the signed-in account changes before it was sent, the page says the change wasn't saved and shows the stored setting again. If the change was sent but its answer was lost (a dropped connection), it may have been saved. The page then says it couldn't confirm the change, never that it wasn't saved, and reads your settings once to show what the server holds. A change is only ever saved to the account it was made in, and a change you started before the account changed is never sent as the next person.
 
 1. Sign in with the same account on another browser or device to load your saved preferences.
 2. Reload an already-open client to load all changes made elsewhere.

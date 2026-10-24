@@ -10,7 +10,7 @@ import { createHarness, jsRoot, jsonResponse } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = ['arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js', 'arr/status/status-styles.js',
-  'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-styles.js'];
+  'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-styles.js'];
 
 function translate(key, params) {
   const text = en[key];
@@ -208,7 +208,8 @@ test('a retry after a lost answer reuses the clientRequestId; a definitive answe
   const changes = [];
   A.onChange(c => changes.push(c.type));
   const input = A.movieInput('movie:tmdb:603');
-  assert.equal((await A.ask(input)).state, 'failed');
+  // Stage 1 fix round 12: a lost answer is uncertain (the ask may be recorded), never "failed".
+  assert.equal((await A.ask(input)).state, 'unconfirmed');
   mode = '503';
   assert.equal((await A.ask({ ...input })).state, 'unavailable');
   mode = 'ok';
@@ -218,7 +219,7 @@ test('a retry after a lost answer reuses the clientRequestId; a definitive answe
   assert.equal(new Set(ids).size, 1, 'the same ask kept its id through a network failure and a 503');
   await A.ask(input);
   assert.notEqual(h.posts[3].body.clientRequestId, ids[0], 'a new ask after the definitive answer gets a new id');
-  same(changes, ['ask', 'ask']);
+  same(changes, ['unconfirmed', 'ask', 'ask']);
   // A user switch forgets open ids.
   mode = 'network';
   await A.ask(A.movieInput('movie:tmdb:1'));
@@ -291,10 +292,11 @@ test('a refused or failed ask keeps Get it and says so honestly', async t => {
   assert.equal(four.querySelector('.je-arr-chip').textContent, 'Missing');
   assert.ok(four.querySelector('.je-ask-get:not([disabled])'), 'Get it is back');
   assert.equal(h.toasts.at(-1), "You've used this week's requests.");
+  // Stage 1 fix round 12: a lost answer may have been recorded, so it is said as unconfirmed, never as not asked.
   answer = new TypeError('Failed to fetch');
   four.querySelector('.je-ask-get').click();
   await settle(20);
-  assert.equal(h.toasts.at(-1), "Couldn't ask right now. Try again later.");
+  assert.equal(h.toasts.at(-1), "Couldn't confirm your ask reached the server. Asking again won't ask twice.");
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
 });
 

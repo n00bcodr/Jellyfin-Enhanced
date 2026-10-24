@@ -175,7 +175,7 @@ test('calendar Shoko cards escape metadata, map public URLs, and use Jellyfin po
 function actions(t){
   const h=rendering(t);const saved=[];h.JE.saveUserSettings=(file,settings)=>saved.push({file,settings:{...settings}});
   h.P.renderPage=()=>{};h.P.syncPageModeClasses=()=>{};h.P.updateDisplayModeButtons=()=>{};h.P.toggleSidebarCollapsed=()=>{};
-  h.load('arr/calendar/calendar-page-actions.js');return {...h,get NATIVE(){return h.NATIVE;},saved};
+  h.load('core/mutation-queue.js');h.load('arr/calendar/calendar-page-actions.js');return {...h,get NATIVE(){return h.NATIVE;},saved};
 }
 test('Play of an episode the server found by its number opens that episode, not the series', async t => {
   const h = actions(t);

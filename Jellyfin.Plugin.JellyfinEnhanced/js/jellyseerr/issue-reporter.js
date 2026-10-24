@@ -111,8 +111,11 @@
      * @param {Object|null} item - The Jellyfin item (absent titles report catalogue issues only)
      * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, a viewer's native owner,
      *   or the node or press it comes from. It lasts through the form and into reportIssue's POST.
+     * @param {any} [origin] - The click's origin (JE.core.userWrite), else the session of this direct call.
      */
-    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null, owner) {
+    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null, owner, origin = undefined) {
+        // The report's origin: the click that opened this dialog (its Save sends the report in that session only).
+        origin = JE.core.userWrite.originOf(origin);
         const submitted = JE.captureSubmitted(owner);
         if (!submitted.owner) return;
         const action = JE.createSessionAction({ owner: submitted.owner });
@@ -211,7 +214,8 @@
                     button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
-                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, reporter.owner);
+                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, reporter.owner, origin);
+                    if (!JE.core.userWrite.isBound(origin)) return;
 
                     if (!action.current()) return;
                     if (result) {
@@ -228,6 +232,12 @@
                 } catch (error) {
                     if (!action.current()) return;
                     console.error(`${logPrefix} Error reporting issue:`, error);
+                    if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+                    if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) {
+                        JE.core.userWrite.reportUncertain(error);
+                        closeModal();
+                        return;
+                    }
                     const errorMsg = error?.message || error?.toString() || '';
                     if (error?.status === 403) {
                         JE.toast(JE.t('jellyseerr_err_no_issue_permission'), 4000);

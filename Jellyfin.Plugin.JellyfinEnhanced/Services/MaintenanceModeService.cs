@@ -45,6 +45,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public DateTime? SkippedScheduledWindowEnd { get; set; }
     }
 
+    /// <summary>
+    /// What the configuration of one generation asks maintenance mode to be (the configuration page's manual toggle and its
+    /// settings, and whether the daily schedule is on), read from the configuration held when a reconcile runs.
+    /// </summary>
+    public sealed record MaintenanceDesired(long Generation, bool Enabled, string Message, string NotificationMessage,
+        int DurationMinutes, string Action, List<string>? AffectedUserIds, bool ScheduleEnabled)
+    {
+        /// <summary>The desired state a configuration holds.</summary>
+        public static MaintenanceDesired Of(Configuration.PluginConfiguration cfg) => new(
+            cfg.ConfigurationGeneration, cfg.MaintenanceModeEnabled, cfg.MaintenanceModeMessage ?? string.Empty,
+            cfg.MaintenanceModeNotificationMessage ?? string.Empty, cfg.MaintenanceModeDurationMinutes,
+            string.IsNullOrWhiteSpace(cfg.MaintenanceModeAction) ? "disable_accounts" : cfg.MaintenanceModeAction,
+            MaintenanceModeService.ParseAffectedUsersSetting(cfg.MaintenanceModeAffectedUsers), cfg.MaintenanceScheduleEnabled);
+
+        /// <summary>The fields maintenance mode follows (everything but the generation), to tell a change of them.</summary>
+        public string Fingerprint() => string.Join("\u001f", Enabled, Message, NotificationMessage, DurationMinutes, Action,
+            AffectedUserIds == null ? "*" : string.Join(",", AffectedUserIds), ScheduleEnabled);
+    }
+
+    /// <summary>What one reconcile did: the generation it reconciled, whether it opened a window, and whether a newer generation took over while it ran.</summary>
+    public sealed record MaintenanceReconcile(long Generation, bool Opened, bool Superseded);
+
     public class MaintenanceModeService
     {
         public const string DefaultHeader = "Server Maintenance";
@@ -182,8 +204,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        /// <summary>
+        /// Reconciles maintenance mode with the configuration held NOW (<paramref name="current"/>, read under the configuration
+        /// lock while the gate is held), the one server-side path by which a configuration change takes effect: the manual
+        /// toggle on applies its window (as the configuration page's Enable did), off ends a manual window (and a scheduled one
+        /// when the schedule is off), exactly as before, but never from a snapshot a client or an earlier write carried. The
+        /// generation is checked again before each user is changed: when a newer configuration arrives meanwhile, this pass
+        /// stops (what it changed stays journalled) and the next reconcile, which that newer write asked for, applies it.
+        /// </summary>
+        /// <returns>What it did; null when there is no configuration.</returns>
+        public async Task<MaintenanceReconcile?> ReconcileAsync(Func<MaintenanceDesired?> current)
+        {
+            ArgumentNullException.ThrowIfNull(current);
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var desired = current();
+                if (desired == null) return null;
+                var superseded = false;
+                bool StillCurrent()
+                {
+                    if (current()?.Generation == desired.Generation) return true;
+                    superseded = true;
+                    return false;
+                }
+                var wasActive = LoadState().IsActive;
+                if (desired.Enabled)
+                {
+                    await EnableLockedAsync(desired.Message, desired.NotificationMessage, desired.Action, desired.AffectedUserIds,
+                        "manual", desired.DurationMinutes, null, StillCurrent).ConfigureAwait(false);
+                }
+                else
+                {
+                    // With the daily schedule on, "manual off" leaves a scheduled window running; with it off, nothing should
+                    // be active, so a scheduled window ends too.
+                    await DisableLockedAsync(state =>
+                    {
+                        if (!desired.ScheduleEnabled || state.Source != "schedule") return true;
+                        _logger.Info("[Maintenance] Active window was started by the schedule - leaving it running (turn the schedule off to end it early).");
+                        return false;
+                    }, null, true).ConfigureAwait(false);
+                }
+                var opened = !wasActive && LoadState().IsActive;
+                return new MaintenanceReconcile(desired.Generation, opened, superseded || !StillCurrent());
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         private async Task EnableLockedAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds,
-            string source, int durationMinutes, DateTime? fixedEndsAtUtc)
+            string source, int durationMinutes, DateTime? fixedEndsAtUtc, Func<bool>? stillCurrent = null)
         {
             message ??= string.Empty;
             notificationMessage ??= string.Empty;
@@ -289,6 +361,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             foreach (var user in targetUsers)
             {
+                // A reconcile whose configuration was replaced meanwhile stops before the next user: the users changed so
+                // far stay on the journal (an inactive state), and the next reconcile applies the newer configuration.
+                if (stillCurrent != null && !stillCurrent())
+                {
+                    _logger.Info("[Maintenance] A newer configuration arrived while maintenance was being applied - stopping this pass.");
+                    return;
+                }
                 bool accountChanged = false;
                 bool remoteChanged = false;
                 try
@@ -335,6 +414,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Info($"[Maintenance] Updated user '{user.Username}'" +
                     $"{(accountChanged ? " (account disabled)" : "")}" +
                     $"{(remoteChanged ? " (remote disabled)" : "")}");
+            }
+
+            if (stillCurrent != null && !stillCurrent())
+            {
+                _logger.Info("[Maintenance] A newer configuration arrived while maintenance was being applied - not opening the window.");
+                return;
             }
 
             var newState = new MaintenanceState
@@ -389,34 +474,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var state = LoadState();
-                if (!state.IsActive)
-                {
-                    if (HasPendingRestores(state))
-                        await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
-                    _logger.Info("[Maintenance] Already inactive - skipping disable.");
-                    return;
-                }
-                if (!shouldDisable(state)) return;
-                if (reason != null) _logger.Info($"[Maintenance] {reason} - disabling.");
-                // Persist restoration intent before touching policies. Failed users
-                // remain on this inactive state so the next tick/restart retries.
-                // An unwritable state file must not keep users locked out: the
-                // pending list is then kept in memory and restoration goes ahead.
-                state.IsActive = false;
-                state.SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null;
-                Checkpoint(state, failOpen: true);
-
-                // A timed manual window that ran out must also clear the admin toggle, or the config
-                // page would still show it checked and the next save would re-enable it. Cleared before
-                // the restore so public-config stops reporting maintenance as soon as the state flips.
-                if (state.Source == "manual")
-                {
-                    ClearManualConfigFlag();
-                }
-
-                await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
-                _logger.Info($"[Maintenance Mode] Disabled (was {state.Source}).");
+                await DisableLockedAsync(shouldDisable, reason, explicitEnd).ConfigureAwait(false);
             }
             finally
             {
@@ -424,16 +482,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        /// <summary>The disable itself; the caller holds the gate.</summary>
+        private async Task DisableLockedAsync(Func<MaintenanceState, bool> shouldDisable, string? reason, bool explicitEnd)
+        {
+            var state = LoadState();
+            if (!state.IsActive)
+            {
+                if (HasPendingRestores(state))
+                    await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
+                _logger.Info("[Maintenance] Already inactive - skipping disable.");
+                return;
+            }
+            if (!shouldDisable(state)) return;
+            if (reason != null) _logger.Info($"[Maintenance] {reason} - disabling.");
+            // Persist restoration intent before touching policies. Failed users
+            // remain on this inactive state so the next tick/restart retries.
+            // An unwritable state file must not keep users locked out: the
+            // pending list is then kept in memory and restoration goes ahead.
+            state.IsActive = false;
+            state.SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null;
+            Checkpoint(state, failOpen: true);
+
+            // A timed manual window that ran out must also clear the admin toggle, or the config
+            // page would still show it checked and the next save would re-enable it. Cleared before
+            // the restore so public-config stops reporting maintenance as soon as the state flips.
+            if (state.Source == "manual")
+            {
+                ClearManualConfigFlag();
+            }
+
+            await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
+            _logger.Info($"[Maintenance Mode] Disabled (was {state.Source}).");
+        }
+
         private void ClearManualConfigFlag()
         {
             try
             {
-                var plugin = JellyfinEnhanced.Instance;
-                var cfg = plugin?.Configuration;
-                if (plugin == null || cfg == null || !cfg.MaintenanceModeEnabled) return;
-                cfg.MaintenanceModeEnabled = false;
-                plugin.SaveConfiguration();
-                _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
+                // One read-modify-write under the configuration lock: a configuration page save that copied the configuration
+                // before this can't be applied after it and turn the setting back on.
+                var cleared = JellyfinEnhanced.Instance?.MutateConfiguration(cfg =>
+                {
+                    if (!cfg.MaintenanceModeEnabled) return false;
+                    cfg.MaintenanceModeEnabled = false;
+                    return true;
+                }) == true;
+                if (cleared) _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
             }
             catch (Exception ex)
             {

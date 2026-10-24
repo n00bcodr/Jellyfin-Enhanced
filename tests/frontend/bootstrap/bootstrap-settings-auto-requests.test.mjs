@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -116,7 +119,7 @@ test('a whole settings save never carries consent intent, and a failed choice ro
   assert.equal(h.JE.userConfig.settings.autoSeasonRequests, false);
   assert.equal(h.document.getElementById('autoSeasonRequestsSelect').value, 'off');
   // The server refuses the choice: the panel goes back to what is stored.
-  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') { h.writes.push(request); throw new Error('refused'); } return []; };
+  h.window.ApiClient.ajax = async request => { if (request.type === 'PATCH') { h.writes.push(request); throw refused('refused'); } return []; };
   await h.choose('autoSeasonRequestsSelect', 'on');
   await new Promise(done => setImmediate(done));
   assert.equal(h.writes.at(-1).type, 'PATCH');

@@ -273,18 +273,19 @@
      * @param {Object} [input] Edited request input (approve with changes).
      * @returns {Promise<void>}
      */
-    async function approve(item, input) {
+    async function approve(item, input, origin) {
+        // The approval's origin (the click): sent, and its answer shown, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
         if (state.busy.has(item.id) || !item.canApprove) return;
         state.busy.add(item.id);
         state.results.delete(item.id);
         draw();
         // The answer belongs to this session: after a sign-out (the state is then the next
         // person's) it is dropped, not shown.
-        const asked = X.epoch();
-        const answer = await X.call(`/acquire/requests/${encodeURIComponent(item.id)}/approve`, { method: 'POST', body: input ? { input } : {} });
-        if (asked !== X.epoch()) return;
+        const answer = await X.call(`/acquire/requests/${encodeURIComponent(item.id)}/approve`, { method: 'POST', body: input ? { input } : {}, session: origin });
+        if (!JE.core.userWrite.isBound(origin)) return;
         state.busy.delete(item.id);
-        settle(item, describe('approve', answer.status, answer.body));
+        settle(item, X.unconfirmed(answer) ? unconfirmedResult() : describe('approve', answer.status, answer.body));
         if (state.results.get(item.id)?.ok) state.edits.delete(item.id);
         draw();
         JE.arrStatus?.refresh?.([item.key]);
@@ -297,17 +298,17 @@
      * @param {string} reason The reason the requester sees.
      * @returns {Promise<void>}
      */
-    async function decline(item, reason) {
+    async function decline(item, reason, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         if (state.busy.has(item.id) || !item.canApprove) return;
         const text = String(reason || '').trim().slice(0, 500) || X.tr('arr_approvals_reason_default');
         state.busy.add(item.id);
         state.results.delete(item.id);
         draw();
-        const asked = X.epoch();
-        const answer = await X.call(`/acquire/requests/${encodeURIComponent(item.id)}/decline`, { method: 'POST', body: { reason: text } });
-        if (asked !== X.epoch()) return;
+        const answer = await X.call(`/acquire/requests/${encodeURIComponent(item.id)}/decline`, { method: 'POST', body: { reason: text }, session: origin });
+        if (!JE.core.userWrite.isBound(origin)) return;
         state.busy.delete(item.id);
-        const result = describe('decline', answer.status, answer.body);
+        const result = X.unconfirmed(answer) ? unconfirmedResult() : describe('decline', answer.status, answer.body);
         settle(item, result);
         if (result.ok) {
             state.reasons.delete(item.id);
@@ -325,6 +326,11 @@
      * @param {{text: string, tone: string, ok: boolean}} result Outcome words.
      * @returns {void}
      */
+    /** A card whose approval or decline lost its answer: it may be done; the list is read again. */
+    function unconfirmedResult() {
+        return { text: X.tr('arr_write_unconfirmed'), tone: 'attention', ok: false, code: null };
+    }
+
     function settle(item, result) {
         state.results.set(item.id, result);
         if (result.ok) state.banner = { text: X.tr('arr_approvals_result_with_title', { title: X.titleText(item), result: result.text }), tone: result.tone };
@@ -353,16 +359,16 @@
      * puts every card's own outcome on it.
      * @returns {Promise<void>}
      */
-    async function bulkApprove() {
+    async function bulkApprove(origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const ids = [...state.selected].slice(0, MAX_BULK);
         if (!ids.length || state.busy.has('bulk')) return;
         state.busy.add('bulk');
         ids.forEach(id => state.busy.add(id));
         state.banner = null;
         draw();
-        const asked = X.epoch();
-        const answer = await X.call('/acquire/requests/bulk-approve', { method: 'POST', body: { ids } });
-        if (asked !== X.epoch()) return;
+        const answer = await X.call('/acquire/requests/bulk-approve', { method: 'POST', body: { ids }, session: origin });
+        if (!JE.core.userWrite.isBound(origin)) return;
         state.busy.delete('bulk');
         ids.forEach(id => state.busy.delete(id));
         const items = Array.isArray(answer.body?.items) ? answer.body.items : null;

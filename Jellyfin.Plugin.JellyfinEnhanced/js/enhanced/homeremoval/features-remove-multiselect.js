@@ -133,14 +133,18 @@
      * and notifies — but only if at least one removal succeeded (so a total failure leaves the
      * selection intact for a retry).
      * @param {Array<{itemId: string, surface: string, card: Element}>} targets
+     * @param {any} [origin] The confirmation's origin: every removal of it in that session, none once it ended.
      * @returns {Promise<number>} how many were removed.
      */
-    async function performMultiRemove(targets) {
+    async function performMultiRemove(targets, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         let removed = 0;
         for (const t of targets) {
+            if (!JE.core.userWrite.isBound(origin)) return removed;
             // Sequential — selections are small and this keeps the HC store writes ordered.
-            if (await removeFromHomeSurface(t.itemId, t.surface, t.card)) removed++;
+            if (await removeFromHomeSurface(t.itemId, t.surface, t.card, origin)) removed++;
         }
+        if (!JE.core.userWrite.isBound(origin)) return removed;
         if (removed > 0) {
             exitSelectionMode();
             showNotification(JE.t('remove_items_success'), 'success');
@@ -179,6 +183,8 @@
         });
 
         button.addEventListener('click', async (e) => {
+            // The removal belongs to this click's session, through the confirmation and every item of it.
+            const origin = JE.core.userWrite.origin();
             // Recollect the selection at click time, not from the build-time closure: if the
             // sheet was reused after the selection changed, act on the CURRENT selection.
             const current = collectSelectedRemovableCards();
@@ -193,12 +199,12 @@
                 closeOpenActionSheet();
                 const confirmed = await confirmMultiRemove(current);
                 if (!confirmed) return; // selection kept so the user can adjust
-                await performMultiRemove(current);
+                await performMultiRemove(current, origin);
                 return;
             }
 
             // Single item: let the click bubble so jellyfin-web closes the sheet natively.
-            await performMultiRemove(current);
+            await performMultiRemove(current, origin);
         });
 
         return button;

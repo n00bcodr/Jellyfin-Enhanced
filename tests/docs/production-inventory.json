@@ -1415,6 +1415,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ConfigurationEffects.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
@@ -4419,7 +4423,9 @@
       "path": "/JellyfinEnhanced/version",
       "method": "GetVersion",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
-      "following_attributes": []
+      "following_attributes": [
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
     },
     {
       "verb": "GET",
@@ -5524,6 +5530,13 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/MaintenanceMode/Disable",
       "method": "DisableMaintenanceMode",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/custom-tabs/sync",
+      "method": "SyncCustomTabs",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
     },
@@ -11497,6 +11510,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-save.js"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/homeremoval/features-remove-home.js"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-media-info.js"
     },
@@ -11721,10 +11738,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 731,
-    "routes": 311,
+    "files": 732,
+    "routes": 312,
     "configuration_properties": 661,
-    "storage_references": 106,
+    "storage_references": 107,
     "scheduled_tasks": 15,
     "locales": 33
   }

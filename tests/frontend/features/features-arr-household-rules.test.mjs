@@ -49,7 +49,7 @@ function tick(h, node, on) {
 }
 
 test('every key the household rules use exists in en.json, prefixed arr_rules_ in one contiguous run', () => {
-  const source = ['arr/household/household-rules.js', 'arr/hub/hub-household.js', 'arr/hub/hub-approvals.js', 'arr/hub/hub-mine-ledger.js', 'arr/ask/ask-core.js', 'arr/ask/ask-sheet.js', 'arr/ask/ask-collection.js']
+  const source = ['arr/household/household-rules.js', 'arr/hub/hub-household.js', 'arr/hub/hub-approvals.js', 'arr/hub/hub-mine-ledger.js', 'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-sheet.js', 'arr/ask/ask-collection.js']
     .map(m => readFileSync(resolve(jsRoot, m), 'utf8')).join('\n');
   const keys = [...source.matchAll(/'(arr_rules_[a-z0-9_]+)'/g)].map(m => m[1]);
   assert.ok(keys.length > 60);

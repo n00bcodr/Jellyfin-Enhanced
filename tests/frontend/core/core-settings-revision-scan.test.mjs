@@ -33,6 +33,7 @@ function walk(node, visit, ancestors = []) {
 const isFunction = node => /Function/.test(node.type) || node.type === 'ObjectMethod' || node.type === 'ClassMethod';
 function functionName(fn, parent) {
   if (fn.id?.name) return fn.id.name;
+  if (fn.type === 'ObjectMethod' && fn.key?.name) return fn.key.name;
   if (parent?.type === 'VariableDeclarator') return parent.id.name;
   if (parent?.type === 'ObjectProperty' || parent?.type === 'ObjectMethod') return parent.key.name || parent.key.value;
   if (parent?.type === 'AssignmentExpression') {
@@ -96,20 +97,21 @@ function storeViolations(source) {
     if (!/\.(persisted|readOk)$/.test(a.target) || a.name === 'takeDocument') continue;
     found.push(`${a.target} assigned in ${a.name} without takeDocument (the revision stays)`);
   }
-  // A queued operation is the other revision step (its answer is taken through takeDocument).
+  // A queued operation is the other revision step (its answer is taken through takeDocument), and so is another route's
+  // write queued on the document (round 11: sendUserDocumentWrite; round 12: a document handle's send).
   for (const a of assignments) {
-    if (a.target === 'state.revision' && !['takeDocument', 'queueOperation'].includes(a.name)) found.push(`state.revision moved in ${a.name}`);
+    if (a.target === 'state.revision' && !['takeDocument', 'queueOperation', 'send'].includes(a.name)) found.push(`state.revision moved in ${a.name}`);
   }
   // What each caller hands takeDocument: a read only behind the revision check it took before the request (and, round 10,
   // never older than the document held, in the server's order).
-  const READS = { readUserSettings: 'revision === state.revision', noteSettingsRead: 'revision !== state.revision' };
+  const READS = { readUserSettings: 'revision === state.revision', noteRead: 'revision !== state.revision' };
   for (const c of calls.filter(c => c.callee === 'takeDocument')) {
     if (READS[c.name]) {
-      const ok = c.name === 'noteSettingsRead'
+      const ok = c.name === 'noteRead'
         ? text(source, c.fn.body).indexOf(READS[c.name]) !== -1 && text(source, c.fn.body).indexOf(READS[c.name]) < c.node.start - c.fn.body.start
         : guardedBy(source, READS[c.name])(c.node, c.ancestors) && (c.name !== 'readUserSettings' || guardedBy(source, 'newerRevision(')(c.node, c.ancestors));
       if (!ok) found.push(`takeDocument in ${c.name}: a read taken without the revision check`);
-    } else if (!['adoptBootDocuments', 'acknowledgeUserDocumentChange', 'settleAnswer'].includes(c.name)) {
+    } else if (!['adoptBootDocuments', 'acknowledge', 'settleAnswer'].includes(c.name)) {
       found.push(`takeDocument called from ${c.name}`);
     }
   }
@@ -128,6 +130,11 @@ function storeViolations(source) {
   if (!settle || !/state\.outsideTakes === entry\.outsideAt/.test(text(source, settle.body)) || !/newerRevision\(/.test(text(source, settle.body))) {
     found.push('an answer taken whole whatever reached the store since it was sent');
   }
+  // Round 11: an answer older than the document held never puts its operation or its fields back over it (the document
+  // stays; acknowledged changes on top of an older one are put back over the answer instead).
+  if (!settle || !/if \(order === false\) \{[\s\S]*?takeDocument\(state, previous, true, state\.serverRevision, false(, false)?\);\s*return;/.test(text(source, settle.body))) {
+    found.push('an older answer puts its operation back over a newer document');
+  }
   // Every revision step a module of the store's documents makes outside it: the home-row hide's answer is acknowledged.
   return found;
 }
@@ -140,8 +147,9 @@ function spoilerViolations(source) {
   const found = [];
   const { functions, assignments, calls } = shape(source);
   for (const a of assignments.filter(a => a.target === 'userPrefs' && !isClear(a.value))) {
-    if (a.name === 'stateRead') {
-      if (!guardedBy(source, 'prefsQueue.revision')(a.node, a.ancestors)) found.push('the state read takes Prefs without the revision check');
+    // Round 12: reconcilePrefs is the one read after a save whose answer was lost: behind the same revision check.
+    if (a.name === 'stateRead' || a.name === 'reconcilePrefs') {
+      if (!guardedBy(source, 'prefsQueue.revision')(a.node, a.ancestors)) found.push(`the ${a.name === 'stateRead' ? 'state read' : 'reconcile read'} takes Prefs without the revision check`);
     } else if (a.name !== 'acknowledged') found.push(`userPrefs assigned in ${a.name}`);
   }
   if (!/const prefsQueue = JE\.core\.mutationQueue\(/.test(source)) found.push('the preferences have no session queue');
@@ -211,8 +219,9 @@ const CHANGE_SOURCES = [
 
 test('scan 3: every change source advances the revision, and reads are taken only behind it', () => {
   for (const [name, source, violations] of CHANGE_SOURCES) assert.deepEqual(violations(source()), [], name);
-  // The acknowledged external write (the home-row hide) goes through the store's acknowledgement.
-  assert.match(read('enhanced/hiddencontent/hidden-content-data.js'), /JE\.internals\.acknowledgeUserDocumentChange\('hidden-content\.json'/);
+  // The acknowledged external write (the home-row hide) goes through the store's acknowledgement, on the document handle the
+  // write was sent for (round 12: never a document looked up again by its file name).
+  assert.match(read('enhanced/hiddencontent/hidden-content-data.js'), /handle\.acknowledge\(\{ upsert: \{ \[itemId\]: merged \}, remove \}, revision\)/);
 });
 
 const replace = (source, anchor, line) => {
@@ -221,7 +230,7 @@ const replace = (source, anchor, line) => {
 };
 const CHANGE_PLANTS = [
   ['store: an acknowledged write taken without the revision (the R9-3 shape)', 'enhanced/config.js',
-    "takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, typeof serverRevision === 'string' ? serverRevision : undefined);",
+    'takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, known ? serverRevision : undefined, true, false);',
     'state.persisted = applyOperation(fileName, previousPersisted, copyDocument(operation));'],
   ['store: the helper no longer moves the revision on', 'enhanced/config.js', '        state.revision++;\n        if (outside) state.outsideTakes++;', '        if (outside) state.outsideTakes++;'],
   ['store: a read taken whatever changed meanwhile', 'enhanced/config.js',
@@ -235,13 +244,15 @@ const CHANGE_PLANTS = [
     'set: value => { recordRead(value); userConfig = value; adoptBootDocuments(); }', 'set: value => { recordRead(value); userConfig = value; }'],
   ['store: a late answer taken whole over an acknowledged write (the R10-5 shape)', 'enhanced/config.js',
     '(state.outsideTakes === entry.outsideAt || order === true)', 'true'],
+  ['store: an older answer applied over a newer document (the R11-3 shape)', 'enhanced/config.js',
+    '            takeDocument(state, previous, true, state.serverRevision, false, false);\n            return;\n        }', '        }'],
   ['Spoiler Guard: the state read takes Prefs whatever changed meanwhile', 'enhanced/spoilerguard/state.js',
     'if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};', 'userPrefs = value.Prefs || {};'],
   ['Spoiler Guard: a save sent outside the session queue (the R10-1 shape)', 'enhanced/spoilerguard/state.js',
-    "prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound }))",
-    "request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound })"],
+    "prefsQueue.send(queued => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound, session: queued }), binding)",
+    "request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound, session: binding })"],
   ['notifications: a change sent outside the session queue (the R10-8 shape)', 'arr/notify/notify-core.js',
-    'const res = await prefsQueue.send(() => api(path, { method, body }));', 'const res = await api(path, { method, body });'],
+    'const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);', 'const res = await api(path, { method, body });'],
   ['notifications: a read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
     'if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);', 'applyPrefs(body);'],
   ['page: a value the server holds taken without moving the revision on', 'configPage.html',

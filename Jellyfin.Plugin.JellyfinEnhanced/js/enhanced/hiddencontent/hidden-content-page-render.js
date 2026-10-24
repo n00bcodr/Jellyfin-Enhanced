@@ -12,7 +12,7 @@
   const internal = JE.internals.hiddenContentPage = JE.internals.hiddenContentPage || {};
 
   const { state, scopeBadgeText, showUnhideConfirmation,
-    handleUnhide, handleUnhideMany, maybeInitAdminFilter, onAdminUserChange,
+    handleUnhide, handleUnhideMany, adminActionScope, maybeInitAdminFilter, onAdminUserChange,
     toOpaqueColor, applyAdminThemeVars, isCssColor, createAdminViewingBadge,
     openAdminAddModal, createGroupCard, createSection } = internal;
   // Late-bound cross-module reference (defined in hidden-content-page-nav.js).
@@ -438,12 +438,13 @@
     } else {
       toolbar.unhideAllBtn.addEventListener('click', () => {
         if (!view.current()) return;
+        const scope = adminActionScope();
         showUnhideConfirmation(JE.t('hidden_content_clear_confirm') || 'Unhide all items?', () => {
           if (!view.current()) return;
           if (viewingOther) {
-            void handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId));
+            void handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId), scope);
           } else {
-            JE.hiddenContent.unhideAll();
+            JE.hiddenContent.unhideAll(scope.origin);
           }
         });
       });
@@ -477,13 +478,14 @@
       const action = internal.viewAction();
       unhideBtn.addEventListener('click', () => {
         if (!action.current()) return;
+        const scope = adminActionScope();
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           card.classList.add('je-hidden-item-removing');
           unhideBtn.disabled = true;
           setTimeout(async () => {
             if (!action.current()) return;
             // A confirmed unhide repaints the page; a failure restores the card with a retry.
-            const saved = await handleUnhide(item._key || item.itemId);
+            const saved = await handleUnhide(item._key || item.itemId, scope);
             if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(card, unhideBtn);
           }, 300);
         }, item.name || 'this item');

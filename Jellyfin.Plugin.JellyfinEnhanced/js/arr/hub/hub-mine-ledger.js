@@ -303,25 +303,30 @@
      * @param {Object} entry Row entry.
      * @returns {Promise<void>}
      */
-    async function askAgain(entry) {
+    async function askAgain(entry, origin) {
+        // One action from the click: every ask of it, and what it shows, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const id = `again:${entry.key}`;
         const inputs = againInputs(entry, X.capabilities());
         if (state.busy.has(id) || !inputs.length) return;
         state.busy.add(id);
         if (H.state?.visible) H.render?.();
-        const asked = X.epoch();
         let last = null;
         try {
             for (const input of inputs) {
-                last = await JE.arrAsk.ask(input);
+                if (!current()) return;
+                last = await JE.arrAsk.ask(input, { session: origin });
                 if (last.stale || !(last.ok || last.state === 'unknown')) break;
             }
         } finally {
             state.busy.delete(id);
         }
-        if (asked !== X.epoch() || !last || last.stale) return;
+        if (!current() || !last || last.stale) return;
         const caps = await JE.arrAsk.me();
         const allowance = last.state === 'quota' ? await JE.arrAsk.quota(entry.kind === 'movie' ? 'movie' : 'tv') : null;
+        // The capability and allowance reads waited: shown in the action's session only.
+        if (!current()) return;
         JE.arrAsk.toast(JE.arrAsk.describe(last, caps, allowance).text);
         state.stale = true;
         if (H.state?.visible) {
@@ -335,19 +340,28 @@
      * @param {string[]} ids Request ids.
      * @returns {Promise<void>}
      */
-    async function cancelAll(ids) {
+    async function cancelAll(ids, origin) {
+        // One action from the click: no further cancel once its session ended (each cancel is checked before it goes),
+        // and nothing shown on the next person's page.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         if (ids.some(id => state.busy.has(id))) return;
         ids.forEach(id => state.busy.add(id));
         if (H.state?.visible) H.render?.();
-        const asked = X.epoch();
         let last = null;
-        for (const id of ids) {
-            last = await JE.arrAsk.cancel(id);
-            if (!last.ok) break;
+        try {
+            for (const id of ids) {
+                if (!current()) return;
+                last = await JE.arrAsk.cancel(id, { session: origin });
+                if (last.stale || !last.ok) break;
+            }
+        } finally {
+            ids.forEach(id => state.busy.delete(id));
         }
-        ids.forEach(id => state.busy.delete(id));
-        if (asked !== X.epoch()) return;
-        if (last) JE.arrAsk.toast(JE.arrAsk.describe(last, await JE.arrAsk.me()).text);
+        if (!current() || last?.stale) return;
+        const caps = last ? await JE.arrAsk.me() : null;
+        if (!current()) return;
+        if (last) JE.arrAsk.toast(JE.arrAsk.describe(last, caps).text);
         state.stale = true;
         if (H.state?.visible) {
             load();

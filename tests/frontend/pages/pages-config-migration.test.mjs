@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 // The configuration page's "Move requests from Seerr" panel (Requests & downloads, phase 3): run its real
 // helpers in a fresh realm against a scripted admin API.
@@ -32,7 +34,8 @@ function setup(t, { confirm = true, respond }) {
   });
   h.window.confirm = message => { requests.push({ confirm: message }); return confirm; };
   t.after(() => h.close());
-  h.window.eval(`${createEl}\n${helpers}\nwindow.__je = { jeArrMigrationCheck, jeArrMigrationRollback };`);
+  h.window.eval(`${adminOriginSource()}
+${createEl}\n${helpers}\nwindow.__je = { jeArrMigrationCheck, jeArrMigrationRollback };`);
   return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests, out: () => h.document.getElementById('arrSeerrMigrationResult'), backend: () => h.document.getElementById('arrRequestBackend').value };
 }
 

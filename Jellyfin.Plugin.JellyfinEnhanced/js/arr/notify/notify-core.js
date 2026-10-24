@@ -193,14 +193,15 @@
      * @param {number[]|null} ids Ids, or null for all.
      * @returns {Promise<void>}
      */
-    async function markRead(ids) {
+    async function markRead(ids, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const body = ids ? { ids } : { all: true };
         state.items = state.items.map(i => (!ids || ids.includes(i.id)) ? Object.assign({}, i, { read: true }) : i);
         state.unread = ids ? Math.max(0, state.unread - ids.length) : 0;
         emit('inbox');
         const identity = state.identity;
         try {
-            const res = await api('/acquire/notify/read', { method: 'POST', body });
+            const res = await api('/acquire/notify/read', { method: 'POST', body, session: origin });
             if (identity === state.identity && res && typeof res.unread === 'number') {
                 state.unread = res.unread;
                 emit('inbox');
@@ -277,17 +278,22 @@
      * @param {boolean} on Follow.
      * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action, the PUT is that
      *     operation's, checked by the transport right before it goes out; the viewer's own press otherwise.
+     * @param {any} [origin] The press's origin (JE.core.userWrite), else the session of this direct call.
      * @returns {Promise<{ok: boolean, code?: string, accepted?: boolean}>} Outcome (D46S2 audit S3): never sent
-     *     (cancelled); accepted after its owner ended (ok, accepted: the follows are reread for this session, the
-     *     caller shows nothing); answered; or failed. The reread after the PUT never joins a read from before it.
+     *     (cancelled, or user_changed once its session ended); accepted after its owner ended (ok, accepted: the follows
+     *     are reread for this session, the caller shows nothing); answered; unconfirmed (its answer was lost); or failed.
+     *     The reread after the PUT never joins a read from before it.
      */
-    async function setFollow(key, on, owner) {
+    async function setFollow(key, on, owner, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const action = JE.createSessionAction();
         const submitted = JE.captureSubmitted(owner);
         let accepted = false;
         try {
-            await api('/acquire/follows', { method: 'PUT', body: { key, on }, bound: submitted.bound() });
+            await api('/acquire/follows', { method: 'PUT', body: { key, on }, bound: submitted.bound(), session: origin });
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
             if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
             if (outcome.outcome !== 'accepted' || outcome.sessionChanged) {
@@ -295,6 +301,7 @@
             }
             accepted = true;
         }
+        if (!JE.core.userWrite.isBound(origin)) return { ok: false, code: 'user_changed' };
         if (!action.current()) return { ok: false, code: 'cancelled' };
         await loadFollows(true);
         if (!action.current()) return { ok: false, code: 'cancelled' };
@@ -309,12 +316,16 @@
      *     sheet's Remind), the POST is that operation's, checked by the transport right before it goes out.
      * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
      */
-    async function remind(key, itemId, owner) {
+    async function remind(key, itemId, owner, origin) {
+        // The reminder's origin (JE.core.userWrite): the caller's, taken when the person acted, else the session now.
+        origin = JE.core.userWrite.originOf(origin);
         const submitted = JE.captureSubmitted(owner);
         try {
-            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound() });
+            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound(), session: origin });
             return { ok: true, nextAt: res?.nextAt };
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };
         }
     }
@@ -363,17 +374,22 @@
      * @param {string} path Route.
      * @param {string} method Method.
      * @param {Object} [body] Body.
+     * @param {any} [origin] The change's origin (taken when the person acted; required from a caller that waited, e.g.
+     *   the second call of a chain): sent only while it is the signed-in session (JE.core.userWrite).
      * @returns {Promise<{ok: boolean, code?: string, body?: Object}>} Outcome.
      */
-    async function prefsCall(path, method, body) {
+    async function prefsCall(path, method, body, origin) {
         const identity = state.identity;
+        const binding = JE.core.userWrite.originOf(origin);
         try {
-            const res = await prefsQueue.send(() => api(path, { method, body }));
+            const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);
             if (identity !== state.identity) return { ok: false, code: 'user_changed' };
             if (res && res.prefs) applyPrefs(res);
             return { ok: true, body: res };
         } catch (err) {
             if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
+            // A lost answer: the change may be stored; said as such (the next read of the settings shows what holds).
+            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             const code = err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed');
             return { ok: false, code, status: err?.status };
         }

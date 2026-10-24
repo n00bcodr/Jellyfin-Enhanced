@@ -70,11 +70,12 @@
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
      * @param {object} [bound] - The core transport binding of the operation that writes (if any): checked right before the send.
+     * @param {any} [origin] - The action's origin (JE.core.userWrite.origin() when the person acted); else its binding's session.
      * @returns {Promise<any>} - The server's response.
      */
-    async function post(path, body, bound) {
+    async function post(path, body, bound, origin) {
         // skipRetry: POSTs are not idempotent — never auto-retry them.
-        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true, bound });
+        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true, bound, session: origin });
     }
 
     /**
@@ -643,13 +644,16 @@
      * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
-     * @param {{bound?: Object}} [options] - bound: the core transport binding of the operation that requests
+     * @param {{bound?: Object, origin?: any}} [options] - bound: the core transport binding of the operation that requests
      *   (JE.captureSubmitted(owner).bound(): a title action's operation or the viewer's own gesture). Required
      *   (D46S2-R10-1): without it nothing is read or sent. Checked after the override-rule read and by the transport
-     *   right before the POST.
+     *   right before the POST. origin: the action's (JE.core.userWrite.origin() when the person acted; required from a
+     *   caller that waited): the request and every effect of its answer belong to that session.
      * @returns {Promise<any>}
      */
     api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null, options = {}) {
+        // The action's origin (JE.core.userWrite): the caller's, taken when the person acted, else the session now.
+        const origin = JE.core.userWrite.originOf(options?.origin);
         // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
         requireBinding(bound, 'a Seerr request');
@@ -675,12 +679,13 @@
         };
 
         let result;
-        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, mediaType); throw error; }
+        try { result = await post('/request', body, bound, origin); } catch (error) { reconcileAccepted(error, tmdbId, mediaType); throw error; }
 
-        // Add to watchlist after successful request
-        if (result) {
+        // Add to watchlist after successful request. The answer's effects belong to the request's session: once it
+        // ended, nothing is invalidated, announced or counted for the next person.
+        if (result && JE.core.userWrite.isBound(origin)) {
             invalidateRequestCaches(tmdbId, mediaType);
-            JE.helpers.trackUsage('seerr.request_submitted');
+            JE.helpers.trackUsage('seerr.request_submitted', origin);
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
             } catch (error) {
@@ -702,10 +707,13 @@
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for shows TMDB has none for (#653).
      *   Passed separately from advancedSettings so a manual match does not
      *   disable override-rule evaluation.
-     * @param {{bound?: Object}} [options] - bound: the operation's transport binding (as {@link api.requestMedia}).
+     * @param {{bound?: Object, origin?: any}} [options] - bound: the operation's transport binding; origin: the action's
+     *   (as {@link api.requestMedia}).
      * @returns {Promise<any>}
      */
     api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null, options = {}) {
+        // The action's origin (JE.core.userWrite): the caller's, taken when the person acted, else the session now.
+        const origin = JE.core.userWrite.originOf(options?.origin);
         // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
         requireBinding(bound, 'a Seerr request');
@@ -730,12 +738,12 @@
             ...(is4k ? { is4k: true } : {})
         };
         let result;
-        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, 'tv'); throw error; }
+        try { result = await post('/request', body, bound, origin); } catch (error) { reconcileAccepted(error, tmdbId, 'tv'); throw error; }
 
-        // Add to watchlist after successful request
-        if (result) {
+        // Add to watchlist after successful request (its effects: the request's session only).
+        if (result && JE.core.userWrite.isBound(origin)) {
             invalidateRequestCaches(tmdbId, 'tv');
-            JE.helpers.trackUsage('seerr.request_submitted');
+            JE.helpers.trackUsage('seerr.request_submitted', origin);
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
             } catch (error) {
@@ -962,7 +970,9 @@
         return { mediaId: data?.mediaInfo?.id || null };
     };
 
-    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0, owner) {
+    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0, owner, origin = undefined) {
+        // The report's origin (JE.core.userWrite), taken before the media-id read: the report is sent only in that session.
+        origin = JE.core.userWrite.originOf(origin);
         const action = JE.createSessionAction();
         // The report's owner (required, D46S2-R6): a report submitted from title actions stays theirs until the POST;
         // another page, mount or user ends it.
@@ -992,7 +1002,7 @@
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
             if (!action.current() || !submitted.writable()) throw new DOMException('Cancelled', 'AbortError');
-            const result = await post('/issue', body, submitted.bound());
+            const result = await post('/issue', body, submitted.bound(), origin);
             if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);

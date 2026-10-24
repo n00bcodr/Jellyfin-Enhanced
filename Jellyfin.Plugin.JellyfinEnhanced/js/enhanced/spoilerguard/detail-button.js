@@ -37,11 +37,12 @@
     const stateName = enabled => enabled === null ? 'unknown' : enabled ? 'on' : 'off';
 
     /**
-     * Writes the toggle for `owner` (the press's). Its page effects (toast, the page's reviews, the reload) happen only
-     * for a write that was sent, while `owner` is still current, and on the page it was pressed on (D46S2 audit S3);
-     * the button shows the state whatever happened.
+     * Writes the toggle for `owner` (the press's) and `origin` (the click's session, JE.core.userWrite). Its page effects
+     * (toast, the page's reviews, the reload) happen only for a write that was sent, while `owner` is still current and
+     * `origin` the signed-in session, and on the page it was pressed on (D46S2 audit S3); the button shows the state
+     * whatever happened.
      */
-    function performToggle(button, itemId, kind, page, enable, owner) {
+    function performToggle(button, itemId, kind, page, enable, owner, origin) {
         const action = JE.createSessionAction({ owner });
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
@@ -54,15 +55,16 @@
         }
 
         let operation;
-        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName, owner) : internal.disableForMovie(itemId, owner);
-        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName, owner) : internal.disableForCollection(itemId, owner);
-        else operation = enable ? internal.enableForSeries(itemId, owner) : internal.disableForSeries(itemId, owner);
+        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName, owner, origin) : internal.disableForMovie(itemId, owner, origin);
+        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName, owner, origin) : internal.disableForCollection(itemId, owner, origin);
+        else operation = enable ? internal.enableForSeries(itemId, owner, origin) : internal.disableForSeries(itemId, owner, origin);
 
         operation.then(function(result) {
             const enabled = stateOf(kind, itemId);
             renderButton(button, enabled);
             button.setAttribute('data-je-spoiler-state', stateName(enabled));
-            if (result === internal.UNSENT || !action.current() || !page?.isConnected) return;
+            // The answer belongs to the toggle's session: the next person's page is not changed by it.
+            if (result === internal.UNSENT || !action.current() || !JE.core.userWrite.isBound(origin) || !page?.isConnected) return;
             // Keep separate per-kind keys so translators can tailor the
             // wording later; all enabled messages are deliberately
             // mode-neutral because images may be hidden or blurred.
@@ -93,7 +95,9 @@
         }).catch(function(err) {
             if (!action.current()) return;
             console.error(`${logPrefix} toggle failed:`, err);
-            JE.toast?.(JE.t('spoiler_blur_error_toast'));
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+            if (JE.core.userWrite.outcome(err) === 'uncertain') JE.core.userWrite.reportUncertain(err);
+            else JE.toast?.(JE.t('spoiler_blur_error_toast'));
         }).finally(function() {
             button.disabled = stateOf(kind, itemId) === null;
         });
@@ -103,14 +107,16 @@
     function onToggle(button, itemId, kind, page, owner) {
         const action = JE.createSessionAction({ owner });
         if (button.disabled || stateOf(kind, itemId) === null) return;
+        // The toggle belongs to this click's session, through the confirmation.
+        const origin = JE.core.userWrite.origin();
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
         if (enable) {
-            performToggle(button, itemId, kind, page, true, owner);
+            performToggle(button, itemId, kind, page, true, owner, origin);
             return;
         }
         internal.confirmDisableSpoiler(owner).then(function(proceed) {
-            if (proceed && action.current()) performToggle(button, itemId, kind, page, false, owner);
+            if (proceed && action.current() && JE.core.userWrite.isBound(origin)) performToggle(button, itemId, kind, page, false, owner, origin);
             else button.disabled = false;
         }).catch(function(err) {
             console.warn(`${logPrefix} disable confirmation failed:`, err);

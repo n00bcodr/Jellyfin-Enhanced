@@ -14,6 +14,14 @@
     // hidden-content-save/dialogs/filter modules).
     const persist = (...args) => internal.persist(...args);
     const showUndoToast = (...args) => internal.showUndoToast(...args);
+    /**
+     * Whether a value is an action's origin (JE.core.userWrite.origin(): { epoch, userId, serverId }) rather than an owner
+     * (a token, a captured action, a node or an event) or a title's metadata: entry points of the origin-only shape take
+     * it in the owner's or the metadata's place.
+     */
+    const isOriginArg = value => !!value && typeof value === 'object' && 'epoch' in value && 'userId' in value
+        && typeof value.current !== 'function' && !('Id' in value) && !(typeof Node !== 'undefined' && value instanceof Node)
+        && !JE.isOwnerToken?.(value);
     const refreshNativeCardVisibility = (...args) => internal.refreshNativeCardVisibility(...args);
 
     // ============================================================
@@ -93,10 +101,14 @@
      * write), or the node or press it comes from; none (null): the library's own hide controls outside every title
      * action, a session-bound write with no authority of its own (refused inside an operation, D46S2-R10-1).
      */
-    function saveTitleRule(data, hidden, owner) {
+    function saveTitleRule(data, hidden, owner, origin) {
         const title = titleData(data);
         if (!title) return Promise.resolve(false);
-        const user = ApiClient.getCurrentUserId();
+        // The action's origin (taken when the person acted) and the document it was made for: the rule goes out only for
+        // that session, and its answer is acknowledged to that document only (never to the next person's).
+        origin = JE.core.userWrite.originOf(origin);
+        const handle = JE.internals?.userDocumentHandle?.('hidden-content.json', origin) || null;
+        const user = origin.userId || ApiClient.getCurrentUserId();
         const action = JE.createSessionAction();
         const submitted = owner ? JE.createSessionAction({ owner }) : JE.createSessionAction();
         const previous = ruleWrites.get(title.key) || Promise.resolve();
@@ -110,11 +122,11 @@
             // The transport checks the operation (if any) again right before the bytes go out.
             let reply;
             try {
-                reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json', bound: submitted.operationBound(),
+                reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json', session: origin, bound: submitted.operationBound(),
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
                     ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
             } catch (err) { if (err?.name === 'AbortError' && !submitted.writable()) return false; throw err; }
-            if (!action.current()) return false;
+            if (!action.current() || (handle && !handle.isCurrent())) return false;
             const current = getHiddenData();
             const authoritative = reply?.items || reply?.Items;
             const items = authoritative ? (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(authoritative) : authoritative) : { ...current.items };
@@ -135,7 +147,7 @@
             // The settings store holds the person's document too (its next publication replaces this copy): it takes what
             // the answer established, the server's rule base (when the route answered it) with this rule applied, so a
             // later item change doesn't show the title again until its own answer arrives.
-            if (typeof JE.internals?.acknowledgeUserDocumentChange === 'function') {
+            if (handle) {
                 const sameTitle = (key, value) => titleKey(value?.type, value?.tmdbId) === title.key && (value?.hideScope || 'global') === 'global';
                 const established = {};
                 const removed = new Set();
@@ -147,10 +159,10 @@
                 for (const [key, value] of Object.entries(beforeRules)) if (sameTitle(key, value)) removed.add(key);
                 if (hidden) established[title.key] = items[title.key];
                 for (const key of Object.keys(established)) removed.delete(key);
-                JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: established, remove: [...removed] },
+                handle.acknowledge({ upsert: established, remove: [...removed] },
                     authoritative ? (reply?.revision || reply?.Revision || undefined) : undefined);
             }
-            if (hidden) showUndoToast(item.name, title.key);
+            if (hidden) showUndoToast(item.name, title.key, origin);
             return true;
         }));
         ruleWrites.set(title.key, task);
@@ -382,12 +394,13 @@
     // The answer of a server-side hide write (the home-row removal) as part of the store's document — preserves existing
     // metadata + merges scopes via mergeCwScope, as the server did. Looks up under hyphenated AND N-format keys (server
     // canonical is hyphenated; some callers pass N-format from data-id). `revision`: the document's revision the route
-    // answered (the store orders it with its own saves' answers).
-    function markScopedHidden(itemId, scope, revision) {
-        if (!itemId) return;
+    // answered (the store orders it with its own saves' answers). `handle`: the document the write was sent for
+    // (JE.internals.userDocumentHandle, taken when the person acted): the answer goes into that document only, never into
+    // whichever person's document is the signed-in one by then.
+    function markScopedHidden(itemId, scope, revision, handle) {
+        if (!itemId || !handle || !handle.isCurrent()) return;
         const _scope = (scope || 'continuewatching').toLowerCase();
-        const data = getHiddenData();
-        const items = (data.items) || {};
+        const items = (handle.document().items) || {};
         const noHyphen = itemId.replace(/-/g, '');
         const hyphenated = noHyphen.length === 32
             ? `${noHyphen.slice(0, 8)}-${noHyphen.slice(8, 12)}-${noHyphen.slice(12, 16)}-${noHyphen.slice(16, 20)}-${noHyphen.slice(20)}`
@@ -422,7 +435,7 @@
             hideScope: finalScope,
         };
         const remove = [hyphenated, noHyphen].filter(key => key !== itemId && items[key]);
-        JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { [itemId]: merged }, remove }, revision);
+        handle.acknowledge({ upsert: { [itemId]: merged }, remove }, revision);
     }
 
     // ============================================================
@@ -472,10 +485,17 @@
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
      * @param {Object} [owner] The owner of a provider-rule write (confirmAndHide passes its confirmation's); none for the
      *     library's own hide controls and panels (see saveTitleRule).
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (before any wait; required after one): the
+     *   hide, its undo toast and its answer belong to that session only. A caller without an owner may pass it second.
      */
-    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = null) {
+    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = null, origin = undefined) {
+        // A caller of the origin-only shape passes its origin second (no owner).
+        if (origin === undefined && isOriginArg(owner)) { origin = owner; owner = null; }
+        origin = JE.core.userWrite.originOf(origin);
+        // A continuation of an action whose session ended changes nothing (the store would refuse it too).
+        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return false; }
         const provider = titleData({ itemId, name, type, tmdbId, posterPath });
-        if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true, owner).catch(() => false);
+        if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true, owner, origin).catch(() => false);
         // Synthetic ids (titles not in the library, shown on a native details page) are never stored.
         if (JE.titleDetails?.isSynthetic?.(itemId) || JE.titleDetails?.isSynthetic?.(seriesId)) return;
         const key = itemId || `tmdb-${tmdbId}`;
@@ -493,8 +513,8 @@
             hideScope: hideScope || 'global'
         };
 
-        persist({ upsert: { [key]: newItem } });
-        showUndoToast(name || 'Item', key);
+        persist({ upsert: { [key]: newItem } }, origin);
+        showUndoToast(name || 'Item', key, origin);
     }
 
     /**
@@ -503,11 +523,17 @@
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
      * @param {Object} [metadata] Existing library DTO or card metadata for provider-rule removal.
      * @param {Object} [owner] The owner of a provider-rule write; none for the library's own unhide controls and panels.
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait). A caller with
+     *   neither metadata nor owner may pass it second.
      */
-    function unhideItem(itemId, metadata, owner = null) {
+    function unhideItem(itemId, metadata, owner = null, origin = undefined) {
+        // A caller of the origin-only shape passes its origin second (no metadata, no owner).
+        if (origin === undefined && isOriginArg(metadata)) { origin = metadata; metadata = undefined; }
+        origin = JE.core.userWrite.originOf(origin);
+        if (!JE.core.userWrite.isBound(origin)) { JE.core.userWrite.notSent(); return false; }
         if (/^(movie|tv):tmdb:[1-9][0-9]*$/.test(itemId)) {
             const [type, , tmdbId] = itemId.split(':');
-            return saveTitleRule({ type, tmdbId }, false, owner).catch(() => false);
+            return saveTitleRule({ type, tmdbId }, false, owner, origin).catch(() => false);
         }
         const data = getHiddenData();
         const entry = data.items?.[itemId] || Object.values(data.items || {}).find(item =>
@@ -519,8 +545,8 @@
             const wanted = normalizeId(metadata?.Id || metadata?.itemId || entry?.itemId || itemId);
             const aliases = Object.keys(data.items || {}).filter(key => data.items[key].itemId && normalizeId(data.items[key].itemId) === wanted &&
                 (data.items[key].hideScope || 'global') === 'global' && !titleKey(data.items[key].type, data.items[key].tmdbId));
-            if (aliases.length) persist({ remove: aliases });
-            return saveTitleRule(title, false, owner).catch(() => false);
+            if (aliases.length) persist({ remove: aliases }, origin);
+            return saveTitleRule(title, false, owner, origin).catch(() => false);
         }
         const items = getHiddenData().items;
         // Try direct key match first (covers storage keys like "tmdb-12345")
@@ -535,7 +561,7 @@
             key = wanted ? Object.keys(items).find(k => normalizeId(items[k].itemId) === wanted) : undefined;
         }
         // The server also removes the same item stored under another spelling of its id (another tab may have hidden it so).
-        persist({ remove: [key || itemId].filter(Boolean) });
+        persist({ remove: [key || itemId].filter(Boolean) }, origin);
         // Cards of a scoped hide (not in the global lookup set) come back too: every native card is decided again.
         refreshNativeCardVisibility();
     }
@@ -571,10 +597,12 @@
      * Merges partial settings into the hidden-content settings.
      * Triggers a save, change event, and native card re-filter.
      * @param {Object} partial Key-value pairs to merge into settings.
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait).
      */
-    function updateSettings(partial) {
+    function updateSettings(partial, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         rulesGeneration++;
-        persist({ set: { ...partial } });
+        persist({ set: { ...partial } }, origin);
     }
 
     /**
@@ -662,10 +690,12 @@
 
     /**
      * Unhides every item this page shows (an item another tab or device hid since its answer stays hidden).
+     * @param {any} [origin] JE.core.userWrite.origin() when the person acted (required after any wait).
      */
-    function unhideAll() {
+    function unhideAll(origin) {
+        origin = JE.core.userWrite.originOf(origin);
         const keys = Object.keys(getHiddenData().items);
-        if (keys.length) persist({ remove: keys });
+        if (keys.length) persist({ remove: keys }, origin);
     }
 
     /**

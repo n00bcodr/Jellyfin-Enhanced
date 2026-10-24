@@ -11,7 +11,7 @@
   const internal = JE.internals.hiddenContentPage = JE.internals.hiddenContentPage || {};
 
   const { scopeBadgeText, scopeUnhideText, showUnhideConfirmation,
-    handleUnhide, handleUnhideMany, POSTER_MAX_WIDTH } = internal;
+    handleUnhide, handleUnhideMany, adminActionScope, POSTER_MAX_WIDTH } = internal;
   // Late-bound (hidden-content-page-state.js): the session of the render creating these controls.
   const viewAction = () => (internal.viewAction || JE.createSessionAction)();
 
@@ -218,6 +218,8 @@
     const action = viewAction();
     unhideBtn.addEventListener('click', () => {
       if (!action.current()) return;
+      // The unhide belongs to this click (session and viewed list), through the confirmation and the fade.
+      const scope = adminActionScope();
       const itemLabel = hasEpisodes
         ? (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(mainItem)
         : (group.seriesName || mainItem.name || 'this item');
@@ -228,7 +230,7 @@
         setTimeout(async () => {
           if (!action.current()) return;
           // A confirmed unhide repaints the page; a failure restores the card with a retry.
-          const saved = await handleUnhide(mainItem._key || mainItem.itemId);
+          const saved = await handleUnhide(mainItem._key || mainItem.itemId, scope);
           if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(groupCard, unhideBtn);
         }, UNHIDE_FADE_DELAY_MS);
       }, itemLabel);
@@ -302,13 +304,15 @@
       unhideBtn.addEventListener('click', (e) => {
         e.preventDefault();
         if (!action.current()) return;
+        // The unhide belongs to this click (session and viewed list), through the confirmation and the fade.
+        const scope = adminActionScope();
         const rowLabel = (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(item);
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           row.style.opacity = '0.3';
           unhideBtn.disabled = true;
           setTimeout(async () => {
             if (!action.current()) return;
-            const saved = await handleUnhide(item._key || item.itemId);
+            const saved = await handleUnhide(item._key || item.itemId, scope);
             if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(row, unhideBtn);
           }, UNHIDE_FADE_DELAY_MS);
         }, rowLabel);
@@ -325,8 +329,9 @@
     unhideAllBtn.textContent = JE.t('hidden_content_unhide_all_show');
     unhideAllBtn.addEventListener('click', () => {
       if (!action.current()) return;
+      const scope = adminActionScope();
       showUnhideConfirmation(JE.t('hidden_content_unhide_all_confirm') || 'Unhide all items for this show?', () => {
-        void handleUnhideMany(group.items.map((item) => item._key || item.itemId));
+        void handleUnhideMany(group.items.map((item) => item._key || item.itemId), scope);
       }, group.seriesName || 'this show');
     });
     fragment.appendChild(unhideAllBtn);

@@ -695,11 +695,16 @@
      *   Server-side validated as ^[a-z0-9_.]{1,64}$ AND against the allowlist
      *   in UsageEventCounterService.KnownKeys -- a new key must be added there
      *   in the same change that starts emitting it, or the endpoint rejects it.
+     * @param {any} [origin] - The origin of the action it counts (required when counted after any wait: an answer of a
+     *   request); a count whose session ended is dropped, never counted for the next person.
      */
-    function trackUsage(key) {
+    function trackUsage(key, origin) {
         try {
             if (!JE.pluginConfig?.AnalyticsEnabled || !JE.pluginConfig?.AnalyticsShareUsageCounts) return;
+            origin = JE.core.userWrite.originOf(origin);
+            if (!JE.core.userWrite.isBound(origin)) return;
             JE.core.api.ajax({
+                session: origin,
                 type: 'POST',
                 url: ApiClient.getUrl('/JellyfinEnhanced/usage/track'),
                 data: JSON.stringify({ key }),

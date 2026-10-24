@@ -8,6 +8,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
+// Stage 1 fix round 12: a save the server refused (a contractual answer: nothing stored). A failure without an answer (a
+// lost connection) is an uncertain outcome instead, never shown as not saved (features-write-outcome).
+const refused = (message, status = 400) => Object.assign(new Error(message), { status });
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = ['arr/status/status-core.js', 'arr/status/status-cards.js', 'arr/status/status-styles.js'];
@@ -661,7 +664,7 @@ for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : '
   await nextTurn();
   await h.show();
   await h.cards.flush(); // give the optimistic surface time to detach/observe before the failure
-  saved.reject(new Error('blocked save'));
+  saved.reject(refused('blocked save'));
   await new Promise(resolve => h.window.setTimeout(resolve, 20));
   for (const io of h.observers) io.fn([...io.observed].map(target => ({ isIntersecting: true, target })));
   await h.cards.flush();
@@ -712,7 +715,7 @@ for (const initial of [null, false]) for (const outcomes of [[false, false], [fa
     await nextTurn();
     assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
     for (let n = 0; n < 2; n++) {
-      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(refused('blocked save'));
       await nextTurn();
     }
     await h.show();
@@ -765,7 +768,7 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) fo
     await nextTurn();
     assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
     for (let n = 0; n < 2; n++) {
-      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(refused('blocked save'));
       await nextTurn();
       if (n === 0) {
         const chosen = initial === false ? null : false;

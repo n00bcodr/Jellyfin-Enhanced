@@ -231,13 +231,16 @@
     });
 
     cleanupBtn?.addEventListener('click', async () => {
+      const origin = JE.core.userWrite.origin();
       cleanupBtn.disabled = true;
       const label = cleanupBtn.querySelector('span:last-child');
       const origText = label?.innerHTML;
       if (label) label.innerHTML = '<span class="material-icons" style="animation: spin 1s linear infinite;">refresh</span>';
 
       try {
-        const result = await JE.bookmarks.cleanupOrphaned();
+        const result = await JE.bookmarks.cleanupOrphaned(origin);
+        // Its session ended meanwhile: the next person's page says nothing about the previous person's cleanup.
+        if (!JE.core.userWrite.isBound(origin)) return;
         JE.toast(JE.t('bookmark_cleanup_complete').replace('{count}', result.cleaned), 4000);
         renderBookmarksLibrary(container);
       } catch (error) {
@@ -250,6 +253,7 @@
     });
 
     deleteAllBtn?.addEventListener('click', async () => {
+      const origin = JE.core.userWrite.origin();
       if (!confirm(JE.t('bookmark_delete_all_confirm'))) return;
 
       deleteAllBtn.disabled = true;
@@ -259,12 +263,12 @@
 
       try {
         // Queued behind the user's other bookmark mutations; restores them if the save fails.
-        if (!await JE.bookmarks.deleteAll()) return;
+        if (!await JE.bookmarks.deleteAll(origin)) return;
         JE.toast(JE.t('bookmark_deleted_all'), 3000);
         renderBookmarksLibrary(container);
       } catch (error) {
         console.error('Delete failed:', error);
-        JE.toast(JE.t('bookmark_delete_failed'), 3000);
+        if (!JE.bookmarks.handledFailure(error)) JE.toast(JE.t('bookmark_delete_failed'), 3000);
       } finally {
         deleteAllBtn.disabled = false;
         if (label && origText) label.innerHTML = origText;

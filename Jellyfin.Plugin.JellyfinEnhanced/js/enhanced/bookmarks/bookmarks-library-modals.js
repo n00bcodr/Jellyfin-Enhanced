@@ -89,6 +89,7 @@
 
     // Apply offset button handler
     modal.querySelector('.btnApplyOffset').addEventListener('click', async () => {
+      const origin = JE.core.userWrite.origin();
       const offset = parseFloat(modal.querySelector('#offset-adjustment-input').value) || 0;
 
       const btn = modal.querySelector('.btnApplyOffset');
@@ -100,13 +101,16 @@
 
         // Update each synced bookmark
         for (const bm of syncedBookmarks) {
+          // One action: once its session ended, no later bookmark of it is changed (as anyone).
+          if (!JE.core.userWrite.isBound(origin)) return;
           const newTimestamp = Math.max(0, bm.timestamp + offset);
           const ok = await JE.bookmarks.update(bm.id, {
             timestamp: newTimestamp,
             syncedFrom: '' // Clear syncedFrom to remove the icon
-          });
-          if (ok) updatedCount++;
+          }, origin);
+          if (ok === true) updatedCount++;
         }
+        if (!JE.core.userWrite.isBound(origin)) return;
 
         if (updatedCount > 0) {
           const message = offset === 0
@@ -269,6 +273,7 @@
     // Adjust Offset button handlers
     modal.querySelectorAll('[data-sync-from]').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const origin = JE.core.userWrite.origin();
         const dupIndex = parseInt(btn.dataset.dupIndex);
         const versionIndex = parseInt(btn.dataset.syncFrom);
         const dup = duplicates[dupIndex];
@@ -292,6 +297,7 @@
       if (!btn.dataset.dupIndex) return;
 
       btn.addEventListener('click', async () => {
+        const origin = JE.core.userWrite.origin();
         const dupIndex = parseInt(btn.dataset.dupIndex);
         const dup = duplicates[dupIndex];
         const itemIds = Object.keys(dup.itemGroups);
@@ -324,7 +330,7 @@
           };
 
           // Sync old bookmarks to primary
-          const synced = await JE.bookmarks.syncBookmarks(oldBookmarks, primaryDetails, 0);
+          const synced = await JE.bookmarks.syncBookmarks(oldBookmarks, primaryDetails, 0, { origin });
           JE.toast(JE.t('bookmark_merge_success').replace('{count}', synced.length), 3000);
 
           closeDialog();
@@ -336,7 +342,7 @@
           }
         } catch (e) {
           console.error('Merge failed:', e);
-          JE.toast(JE.t('bookmark_merge_failed'), 3000);
+          if (!JE.bookmarks.handledFailure(e)) JE.toast(JE.t('bookmark_merge_failed'), 3000);
           btn.disabled = false;
           btn.querySelector('span:last-child').textContent = JE.t('bookmark_merge_primary');
         }

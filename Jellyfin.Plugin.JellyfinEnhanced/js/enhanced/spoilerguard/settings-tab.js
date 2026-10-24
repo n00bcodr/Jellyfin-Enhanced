@@ -102,7 +102,12 @@
         }
         internal.bindStateView?.(ctx.help, sync);
 
-        async function save(changed, previousChecked, event) {
+        /**
+         * Saves one control's choice, as the person who made it: `origin` was taken at the change, before the wait for the
+         * initial read; once that session ended the choice is cancelled (said once), never saved as the next person, and
+         * the value chosen is the one of the change, not whatever the control shows after the wait.
+         */
+        async function save(changed, previousChecked, event, origin, choice) {
             // The settings tab's own control: the change's owner (the viewer's own gesture), taken at the change, as the
             // write follows awaits (D46S2-R10-1).
             const native = event ? JE.ownerOf(event) : null;
@@ -116,15 +121,39 @@
             try {
                 await internal.whenLoaded();
                 if (!action.current()) return;
+                if (!JE.core.userWrite.isBound(origin)) {
+                    throw Object.assign(new Error('the session changed before the preference was saved'), { sessionChanged: true, writeOutcome: 'unsent' });
+                }
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
                 // Only this override: the others are as the server holds them (or will, once their saves are answered).
                 const key = changed.dataset.pref;
-                await internal.setUserPrefs({ [key]: key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false) }, native);
+                await internal.setUserPrefs({ [key]: key === 'SkipDisableConfirm' ? !!choice : (choice ? null : false) }, native, origin);
+                // Stored: the control shows the choice (the initial read may have drawn the stored value over it meanwhile).
+                if (action.current() && JE.core.userWrite.isBound(origin)) changed.checked = choice;
             } catch (e) {
                 if (!action.current()) return;
+                if (e?.sessionChanged) {
+                    // The page said once that a change wasn't saved; the control is the next person's now.
+                    JE.core.userWrite.notSent(e);
+                    return;
+                }
+                if (JE.core.userWrite.outcome(e) === 'uncertain') {
+                    // Its answer was lost: it may be stored. Never shown as not saved; one read says what is stored.
+                    JE.core.userWrite.reportUncertain(e);
+                    const stored = await internal.reconcilePrefs(origin);
+                    if (stored && action.current() && JE.core.userWrite.isBound(origin)) {
+                        const key = changed.dataset.pref;
+                        changed.checked = key === 'SkipDisableConfirm' ? !!stored[key] : stored[key] !== false;
+                    }
+                    return;
+                }
                 console.error(`${logPrefix} preference save failed:`, e);
                 changed.checked = previousChecked;
-                JE.toast?.(JE.t('spoiler_blur_error_toast'));
+                // An account change already told the person the change wasn't saved (once for all of them).
+                if (!e?.sessionChanged) {
+                    console.error(`${logPrefix} preference save failed:`, e);
+                    JE.toast?.(JE.t('spoiler_blur_error_toast'));
+                }
             } finally {
                 saving = false;
                 // An accepted save keeps its visible value even while its full reread is unavailable.
@@ -135,7 +164,7 @@
 
         boxes.forEach(function(box) {
             box.addEventListener('change', function(event) {
-                void save(box, !box.checked, event);
+                void save(box, !box.checked, event, JE.core.userWrite.origin(), box.checked);
                 ctx.resetAutoCloseTimer();
             });
         });

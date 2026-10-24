@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
+// Stage 1 fix round 12: the fragments' writes go through the page's own origin contract (jeAdminSend and the rest).
+import { adminOriginSource } from '../helpers/config-page.mjs';
 
 // The configuration page's "Live updates status" block (Requests & downloads, phase 1): run its
 // real helpers in a fresh realm against a scripted admin API.
@@ -42,7 +44,8 @@ function setup(t, { confirm = true, respond } = {}) {
   h.window.confirm = message => { requests.push({ confirm: message }); return confirm; };
   h.window.crypto.getRandomValues = arr => arr;
   t.after(() => h.close());
-  h.window.eval(`${createEl}\nfunction jeNewGuid() { return 'guid-1'; }\n${helpers}\nwindow.__je = { jeArrLiveConnectionText, jeArrLiveWebhookText, jeArrLiveStatus, jeArrLiveWebhookAction, jeArrLiveManual };`);
+  h.window.eval(`${adminOriginSource()}
+${createEl}\nfunction jeNewGuid() { return 'guid-1'; }\n${helpers}\nwindow.__je = { jeArrLiveConnectionText, jeArrLiveWebhookText, jeArrLiveStatus, jeArrLiveWebhookAction, jeArrLiveManual };`);
   return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests, out: () => h.document.getElementById('arrLiveResult') };
 }
 

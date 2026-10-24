@@ -11,7 +11,7 @@ export const HUB_MODULES = [
   'arr/status/status-core.js', 'arr/status/status-styles.js',
   'arr/hub/hub-styles.js', 'arr/hub/hub-render.js',
   'arr/hub/hub-extra-core.js', 'arr/hub/hub-extra-styles.js', 'arr/hub/hub-approvals.js', 'arr/hub/hub-household.js', 'arr/household/household-rules.js',
-  'arr/hub/hub-mine-ledger.js', 'arr/hub/hub-chipbar.js', 'arr/hub/hub-page.js', 'arr/ask/ask-core.js'
+  'arr/hub/hub-mine-ledger.js', 'arr/hub/hub-chipbar.js', 'arr/hub/hub-page.js', 'core/mutation-queue.js', 'arr/ask/ask-core.js'
 ];
 export const USER = '0123456789abcdef0123456789abcdef';
 

@@ -32,6 +32,7 @@ const isFunction = node => /Function/.test(node.type) || node.type === 'ObjectMe
 /** The name of a function node: its own, or the variable, property or assignment it is the value of. */
 function functionName(fn, parent) {
   if (fn.id?.name) return fn.id.name;
+  if (fn.type === 'ObjectMethod' && fn.key?.name) return fn.key.name;
   if (parent?.type === 'VariableDeclarator') return parent.id.name;
   if (parent?.type === 'ObjectProperty' || parent?.type === 'ObjectMethod') return parent.key.name || parent.key.value;
   if (parent?.type === 'AssignmentExpression') {
@@ -142,8 +143,9 @@ const STORE_RULES = [{
     // Round 10: a userConfig object's documents are adopted as it is assigned (adoptBootDocuments), from its read record.
     adoptBootDocuments: fromBootObject,
     readUserSettings: insideIf(test => JSON.stringify(test).includes('"read"')),
-    noteSettingsRead: ok,
-    acknowledgeUserDocumentChange: ok,
+    // Round 12: a document handle's read report and route acknowledgement (the handle's own document only).
+    noteRead: ok,
+    acknowledge: ok,
     // Round 10: an operation's answer, in the server's order; settleAnswer itself runs only behind the success (below).
     settleAnswer: ok
   }
@@ -168,7 +170,8 @@ const PAGE_RULES = [{
   allowed: { setStored: ok, saved: ok }
 }];
 const ELSEWHERE_RULES = [{ target: path => /^dialogShown(\.|\[)/.test(path), allowed: { acknowledged: ok } }];
-const SPOILER_RULES = [{ target: path => path === 'userPrefs', allowed: { stateRead: ok, acknowledged: ok, '*': clears } }];
+// Round 12: reconcilePrefs is a read (one read after a save whose answer was lost), taken behind the queue's revision.
+const SPOILER_RULES = [{ target: path => path === 'userPrefs', allowed: { stateRead: ok, acknowledged: ok, reconcilePrefs: ok, '*': clears } }];
 const HIDDEN_RULES = [{ target: path => path === 'hiddenData', allowed: { getHiddenData: (n, a, f, v) => calls(v, 'withParts') || 'not the store\'s document', followStore: (n, a, f, v) => calls(v, 'withParts') || 'not the store\'s document', '*': clears } }];
 
 const pageSource = () => configPageParts().scripts.join('\n;\n');
@@ -195,7 +198,7 @@ const PLANTS = [
   ['store: a whole-document caller\'s object as the baseline', 'enhanced/config.js', STORE_RULES,
     "const before = fileName === 'settings.json' ? resolveSettings(state.shown) : state.shown;", 'state.persisted = copyDocument(settings);'],
   ['store: an answer applied before its success', 'enhanced/config.js', STORE_RULES,
-    'const previousPersisted = state.persisted;\n                if (succeeded)', 'takeDocument(state, applyOperation(state.fileName, previousPersisted, entry));'],
+    "const previousPersisted = state.persisted;\n                const uncertain = !succeeded && JE.core.userWrite.outcome(failure) === 'uncertain';", 'takeDocument(state, applyOperation(state.fileName, previousPersisted, entry));'],
   ['store: the page\'s object as the boot document (the R8-1 shape)', 'enhanced/config.js', STORE_RULES,
     'const bootDocument = fileName => {', 'const own = JE.userConfig?.[kindOf(fileName)?.view]; if (own) return { persisted: copyDocument(own), readOk: true };'],
   ['store: the page\'s object written into a document\'s state', 'enhanced/config.js', STORE_RULES,
@@ -209,7 +212,7 @@ const PLANTS = [
   ['Spoiler Guard: preferences taken before the answer', 'enhanced/spoilerguard/state.js', SPOILER_RULES,
     'if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));', 'userPrefs = Object.assign({}, userPrefs, set);'],
   ['Hidden Content: a private copy changed in place of an operation', 'enhanced/hiddencontent/hidden-content-data.js', HIDDEN_RULES,
-    'function updateSettings(partial) {', 'hiddenData = { ...getHiddenData(), settings: { ...getHiddenData().settings, ...partial } };']
+    'function updateSettings(partial, origin) {', 'hiddenData = { ...getHiddenData(), settings: { ...getHiddenData().settings, ...partial } };']
 ];
 for (const [label, name, rules, anchor, line] of PLANTS) {
   test(`scan 1 finds a plant: ${label}`, () => {
@@ -290,9 +293,9 @@ const WHOLE_PLANTS = [
     "ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${ApiClient.getCurrentUserId()}/hidden-content.json`), data: JSON.stringify(getHiddenData()) });"],
   ['a whole POST whose URL is built apart', 'enhanced/config.js', 'const queueOperation = async (fileName, operation, options = {}) => {',
     "const wholeUrl = ApiClient.getUrl(`/JellyfinEnhanced/user-settings/u/${fileName}`); ApiClient.ajax({ type: options.whole ? 'POST' : 'PATCH', url: wholeUrl });"],
-  ['Spoiler Guard\'s old whole preferences POST', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner) {',
+  ['Spoiler Guard\'s old whole preferences POST', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner, origin) {',
     "request('/spoiler-blur/user-prefs', { method: 'POST', body: next, skipRetry: true });"],
-  ['a whole save of a file without operations', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner) {',
+  ['a whole save of a file without operations', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner, origin) {',
     "JE.saveUserSettings('spoilerblur.json', next);"],
   ['the configuration page saving the whole configuration', 'configPage.html', 'function saveConfig(e) {',
     'ApiClient.updatePluginConfiguration(pluginId, jeFormConfig(_jeBase));']

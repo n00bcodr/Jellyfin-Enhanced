@@ -309,15 +309,19 @@
             }
             state.data = { ...data, revisions };
         }
-        /** Save one draft. Conflicts retain it until reload; other groups stay dirty. */
-        async function saveGroup(name, state, changes) {
+        /**
+         * Save one draft. Conflicts retain it until reload; other groups stay dirty. `origin`: the Save click's (Save All
+         * hands its own to every group it saves, one after another).
+         */
+        async function saveGroup(name, state, changes, origin) {
+            origin = JE.core.userWrite.originOf(origin);
             if (!authorized || !changes || state.busy.has(name)) return false;
             const gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
             const revision = state.data.revisions[name];
             state.busy.add(name); state.messages[name] = t('saving'); render(state);
             try {
-                const result = name === 'notifications' ? await api.assignTopic(id, changes, request?.signal)
-                    : await api.patch(id, name, { revision, ...changes }, request?.signal);
+                const result = name === 'notifications' ? await api.assignTopic(id, changes, request?.signal, origin)
+                    : await api.patch(id, name, { revision, ...changes }, request?.signal, origin);
                 if (!current(gen, epoch, id)) return;
                 if (name === 'notifications') state.data = { ...state.data, notifications: {
                     ...state.data.notifications, ...result, topic: result.topic ?? null, assigned: !!result.topic
@@ -335,7 +339,9 @@
             } catch (error) {
                 if (!current(gen, epoch, id)) return;
                 if (error.status === 403 || error.status === 401) { clear(true); return; }
-                state.messages[name] = t(error.status === 409 ? 'conflict' : 'saveError');
+                // A lost answer: the change may be stored ("couldn't confirm"); the draft stays for a later read.
+                state.messages[name] = t(error.status === 409 ? 'conflict'
+                    : JE.core.userWrite.outcome(error) === 'uncertain' ? 'saveUnconfirmed' : 'saveError');
                 return false;
             } finally {
                 delete state.submitted[name]; reconcile(state, name); state.busy.delete(name);
@@ -356,7 +362,9 @@
             toastTimer = setTimeout(() => container.remove(), 3300);
         }
         /** Save the submitted drafts sequentially, retaining independent errors and edits made in flight. */
-        async function saveAll(state) {
+        async function saveAll(state, origin) {
+            // The Save click's origin: every group of it is saved in that session, none once it ended.
+            origin = JE.core.userWrite.originOf(origin);
             if (!authorized || state.saving || !Object.keys(state.changes).length) return;
             const submitted = structuredClone(state.changes), gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
             state.submitted = submitted;
@@ -364,8 +372,8 @@
             render(state);
             try {
                 for (const name of ['policy', 'pool-membership', 'notifications', 'display', 'seerr-import']) {
-                    if (!current(gen, epoch, id)) return;
-                    if (submitted[name]) success = await saveGroup(name, state, submitted[name]) && success;
+                    if (!current(gen, epoch, id) || !JE.core.userWrite.isBound(origin)) return;
+                    if (submitted[name]) success = await saveGroup(name, state, submitted[name], origin) && success;
                 }
                 if (!current(gen, epoch, id)) return;
                 nativeToast(success, gen, epoch, id);

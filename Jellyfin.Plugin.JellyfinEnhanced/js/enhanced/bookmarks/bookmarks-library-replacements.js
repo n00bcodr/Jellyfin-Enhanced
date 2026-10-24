@@ -217,6 +217,8 @@
     // Migrate handler
     modal.querySelector('.je-bookmark-btn-submit').addEventListener('click', async () => {
       if (!selectedItem) return;
+      // The migration belongs to this click's session, through the item read and the save.
+      const origin = JE.core.userWrite.origin();
 
       const btn = modal.querySelector('.je-bookmark-btn-submit');
       btn.disabled = true;
@@ -241,7 +243,7 @@
 
         // Move the bookmarks to the new item (no offset). The old records are removed
         // in the same save, before the re-render it triggers, and come back if it fails.
-        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0, { replaceOriginals: true });
+        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0, { replaceOriginals: true, origin });
 
         JE.toast(JE.t('bookmark_migrated').replace('{count}', synced.length).replace('{name}', fullItem.Name), 4000);
 
@@ -254,7 +256,7 @@
         }
       } catch (e) {
         console.error('Migration failed:', e);
-        JE.toast(JE.t('bookmark_migration_failed'), 3000);
+        if (!JE.bookmarks.handledFailure(e)) JE.toast(JE.t('bookmark_migration_failed'), 3000);
         btn.disabled = false;
         btn.querySelector('span:last-child').textContent = JE.t('bookmark_migrate');
       }

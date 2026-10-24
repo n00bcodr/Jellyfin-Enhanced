@@ -137,10 +137,11 @@
             button.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const origin = JE.core.userWrite.origin();
                 const action = JE.createSessionAction();
                 button.disabled = true;
                 try {
-                    const saved = await JE.hiddenContent.unhideItem(itemId, detailItem);
+                    const saved = await JE.hiddenContent.unhideItem(itemId, detailItem, null, origin);
                     if (!action.current()) return;
                     if (saved === false) button.setAttribute('aria-label', JE.t('hidden_content_save_failed_persistent'));
                     else setHideState();
@@ -161,6 +162,9 @@
                 // The press's owner (D46S2-R6): the operation a title action pressed Hide for, else the page (native).
                 const owner = JE.ownerOf(e);
                 const action = JE.createSessionAction({ owner });
+                // The session this hide belongs to, from the click on: carried through the metadata reads and the dialog.
+                const origin = JE.core.userWrite.origin();
+                const current = () => JE.core.userWrite.isBound(origin);
 
                 // Get item name from the page title
                 const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
@@ -185,7 +189,8 @@
                 } catch (err) {
                     console.warn('🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button', err);
                 }
-                if (!action.current()) return;
+                // The metadata read waited: a hide whose session ended meanwhile is cancelled, never rebound.
+                if (!action.current() || !current()) return;
 
                 const isEpisode = lastDetailsItemType === 'Episode';
                 const isSeason = lastDetailsItemType === 'Season';
@@ -208,9 +213,11 @@
                         setHiddenState();
                     }, {
                         owner,
+                        origin,
                         showEpisodeChoice: true,
                         onChooseShow: async () => {
                             // User chose to hide the entire show
+                            if (!current()) { JE.core.userWrite.notSent(); return; }
                             let seriesTmdbId = '';
                             try {
                                 const userId = ApiClient.getCurrentUserId();
@@ -219,14 +226,14 @@
                             } catch (err) {
                                 console.warn('🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action', err);
                             }
-                            if (!action.current()) return;
+                            if (!action.current() || !current()) { JE.core.userWrite.notSent(); return; }
                             JE.hiddenContent.hideItem({
                                 itemId: seriesId,
                                 name: seriesName || itemName,
                                 type: 'Series',
                                 tmdbId: seriesTmdbId,
                                 posterPath: ''
-                            });
+                            }, origin);
                             setHiddenState();
                         }
                     });
@@ -234,12 +241,12 @@
                     // Season: hide with series metadata
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    }, { owner });
+                    }, { owner, origin });
                 } else {
                     // Movie or Series: standard hide
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    }, { owner });
+                    }, { owner, origin });
                 }
             };
         }

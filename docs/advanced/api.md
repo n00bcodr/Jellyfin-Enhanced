@@ -102,7 +102,7 @@ Error bodies vary: some are strings, some have `message`, some have `success:fal
 
 ### Check version
 
-`GET /JellyfinEnhanced/version` is anonymous. It returns unquoted text such as `12.12.0.0`, or `unknown` if the plugin instance is unavailable.
+`GET /JellyfinEnhanced/version` is anonymous. It returns unquoted text such as `12.12.0.0`, or `unknown` if the plugin instance is unavailable. It is answered `Cache-Control: no-store`, and its `X-JE-Build` header is the build the server runs now: the web client asks it (with `cache: 'no-store'`) to confirm a build that a cacheable answer named.
 
 ```bash
 curl "$JE_URL/version"
@@ -370,7 +370,7 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 
 **Revisions.** Every GET of a document answers its revision in the `ETag` header. A POST that replaces a document whole must send that revision back in `If-Match`: the server replaces the document only while it is still that revision (checked under the document's lock), so a client that read an older document (another tab, device or client changed it since) can't put it back. A POST without `If-Match` goes ahead only where nothing can be lost: no document is stored yet, or it sends the document as stored. Otherwise nothing is written and the answer is `409 {"success":false,"code":"revision_conflict","file":"…","revision":"<current>","message":"…"}` (the current revision also in `ETag`): read the document again and make the change to what it holds now. A successful POST answers the new revision in `ETag`. To change part of a document, use its PATCH route (no revision needed: only what it names changes).
 
-A revision counts the writes of that document (`"<incarnation>.<writes>"`); it never comes from the content, so a document changed back, or restored from a backup, has a new revision and a revision read before is refused. Revisions are also spent when the server starts again, when a JE backup is restored and when a person's folder is removed: read again after any of those. `If-Match` takes entity tags as HTTP defines them: quoted (`If-Match: "018f3a2b4c5d.7"`), one or a list (`"a", "b"`: any of them current); a weak tag (`W/"…"`), an unquoted value or `*` names no revision. PATCH answers (and the consent route's) carry the revision they stored in `revision` (and `ETag`); a GET with `?withRevision=true` answers `{"document":…,"revision":"…"}` for clients that can't read headers.
+A revision counts the writes of that document (`"<incarnation>.<writes>"`); it never comes from the content, so a document changed back, or restored from a backup, has a new revision and a revision read before is refused. Revisions are also spent when the server starts again, when a JE backup is restored, when a person's folder is removed and when a document's file was changed outside Jellyfin Enhanced (removed, or put back by hand): read again after any of those. Revisions are counted by the running server process; Jellyfin runs one server process per configuration directory, and two servers writing the same plugin configuration folder at once is not a supported setup. `If-Match` takes entity tags as HTTP defines them: quoted (`If-Match: "018f3a2b4c5d.7"`), one or a list (`"a", "b"`: any of them current); a weak tag (`W/"…"`), an unquoted value or `*` names no revision. PATCH answers (and the consent route's) carry the revision they stored in `revision` (and `ETag`); a GET with `?withRevision=true` answers `{"document":…,"revision":"…"}` for clients that can't read headers.
 
 **Recovering from a 409.** Read the document again (GET, which hands out the current revision), apply your change to what it holds now, and send it again with that revision, or send only your change with the document's PATCH route, which needs no revision. A page of an earlier Jellyfin Enhanced (one that was open while JE was updated) is refused the same way; its signed-in session is also shown Jellyfin's own message asking to reload the page.
 
@@ -1226,7 +1226,7 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | Field | Shape |
 |---|---|
 | `Version`, `UserId` | Version string and caller's N-format ID. |
-| `Build` | The server's JE build (the client script's cache key, new with every build). Every answer of JE's routes names it in `X-JE-Build` too; the web client asks for a reload when it changes while a page is open. |
+| `Build` | The server's JE build (the client script's cache key: the version and the running assembly's identity, new with every build and the same for the same DLL copied again). Every answer of JE's routes names it in `X-JE-Build` too. The web client trusts only answers no browser cache can have kept: the bootstrap and `version` (both no-store), answers of writes, and answers it asked for with `cache: 'no-store'`. A build named by any other answer (Awards and ratings are cached for 30 minutes, for example) is a hint, confirmed by one shared `version` request before the client asks for a reload. A failed confirmation is retried no sooner than 30 seconds later, doubling up to 10 minutes. |
 | `PublicConfig` | Same field set as `public-config`, authenticated context. |
 | `PrivateConfig` | Curated admin object below; null/omitted for viewers. |
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
@@ -2104,8 +2104,8 @@ These routes require **Administrator** access. See [Other settings](../other/oth
 | Method | Path | Request → response |
 |---|---|---|
 | GET | `MaintenanceMode/Status` | Current state object. |
-| POST | `MaintenanceMode/Enable` | JSON request below → `{"success":true}`. |
-| POST | `MaintenanceMode/Disable` | Optional query `includeScheduled=true` → `{"success":true}`. |
+| POST | `MaintenanceMode/Enable` | JSON request below → `{"success":true}`. With `?generation=N`, see [Configuration effects](#configuration-effects). |
+| POST | `MaintenanceMode/Disable` | Optional query `includeScheduled=true` → `{"success":true}`. With `?generation=N`, see [Configuration effects](#configuration-effects). |
 | GET | `MaintenanceMode/Users` | Bare array of all eligible non-admin `{Id,Username,HasImage}` accounts. |
 | POST | `MaintenanceMode/Broadcast` | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 
@@ -2130,6 +2130,18 @@ curl -X POST -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 !!! warning "Maintenance access changes"
 
     `disable_accounts` and `both` can disable selected accounts; `disable_remote` and `both` can disable remote access. Use `Action:"none"` for a notice-only window. Unknown action strings are not rejected, but disable neither account nor remote access.
+
+### Configuration effects
+
+Maintenance mode and the Custom Tabs entries JE manages follow the configuration the server holds. Every configuration write advances `ConfigurationGeneration`; a write that changes what these effects follow (a configuration page save, Jellyfin's configuration route, a backup restore, a server-side writer) asks one server owner to reconcile. It runs one reconcile at a time from the configuration it reads then, and checks the generation again before each account it changes. An older Enable therefore cannot land after a newer Disable has completed.
+
+| Request | Result |
+|---|---|
+| `POST MaintenanceMode/Enable?generation=N` or `MaintenanceMode/Disable?generation=N` | Waits (up to 20 seconds) for the reconcile covering generation `N`, then `{"success","generation","maintenance","customTabs"}`. `maintenance` is `applied`, `superseded` (a newer configuration's effects apply), `failed` or `pending`. `409` with `code:"stale_generation"` when the configuration changed since `N`, or when it no longer asks for that state. Nothing is replayed then. |
+| `POST custom-tabs/sync?generation=N` | The same confirmation, for the Custom Tabs entries. `customTabs.status` is `noop`, `ok`, `skipped` (Custom Tabs not installed), `superseded` or `failed` (with `detail`). |
+| `MaintenanceMode/Enable` or `Disable` without `generation`, from a signed-in session | `409` with `code:"reload_required"`, and the session is asked to reload. Only a configuration page of an earlier JE build sends this. It would replay that page's copy over newer saves. An API key keeps the direct command. |
+
+The configuration page confirms its own save this way. It reads the configuration back first and sends nothing when another save has landed since.
 
 For an active manual window, resending the same duration, action, and affected-user set preserves the existing deadline. Target-set comparison ignores order/duplicates but compares supplied strings, so differently formatted IDs can compare differently. Changing these values can establish a new deadline.
 

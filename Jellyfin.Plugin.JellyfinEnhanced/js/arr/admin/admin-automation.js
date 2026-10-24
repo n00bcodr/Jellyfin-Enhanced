@@ -216,21 +216,27 @@
      * @param {string} key Busy / focus key of the button.
      * @param {string} path Plugin route.
      * @param {Object} body Request body.
+     * @param {any} [origin] The click's origin: the action is sent, and its answer shown, in that session only.
      * @returns {Promise<void>}
      */
-    async function act(key, path, body) {
+    async function act(key, path, body, origin) {
+        origin = JE.core.userWrite.originOf(origin);
         if (state.busy.has(key)) return;
         state.busy.add(key);
         state.failed = null;
         state.onChange?.();
         try {
-            await JE.core.api.plugin(path, { method: 'POST', body, skipRetry: true });
+            await JE.core.api.plugin(path, { method: 'POST', body, skipRetry: true, session: origin });
         } catch (err) {
-            state.failed = key;
             console.warn(`${logPrefix} automation action failed (${err?.status || err?.message || err})`);
+            // A lost answer may have been done: "couldn't confirm" (the status read below says what holds), not failed.
+            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
+            if (JE.core.userWrite.outcome(err) === 'uncertain') JE.core.userWrite.reportUncertain(err);
+            else state.failed = key;
         } finally {
             state.busy.delete(key);
         }
+        if (!JE.core.userWrite.isBound(origin)) return;
         state.onChange?.();
         await read(true);
     }

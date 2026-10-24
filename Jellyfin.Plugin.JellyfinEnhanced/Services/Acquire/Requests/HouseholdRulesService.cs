@@ -162,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 pools = GroupQuotaPolicy.Store(body.Pools);
             }
 
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            lock (JellyfinEnhanced.ConfigurationLock)
             {
                 var config = _service.Policy.Configuration;
                 if (rules != null) config.ArrHouseholdRules = rules;

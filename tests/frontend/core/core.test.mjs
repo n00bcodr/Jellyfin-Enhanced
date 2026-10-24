@@ -295,3 +295,15 @@ test('personalized reads bypass browser HTTP caches after a guard change',async 
  await h.JE.core.api.plugin('/awards/tv/42');
  assert.equal(options.cache,'no-store');
 });
+
+// Stage 1 fix round 12: a "couldn't confirm" notice and the outcome of its check are shown one after the other; toasts on
+// screen at the same time stack (the newest at the bottom) instead of being drawn over each other.
+test("JE's toasts shown at the same time stack instead of covering each other", t => {
+  const { JE, document } = setup(t, {}, ['ui-kit']);
+  JE.toast('Couldn\'t confirm your change was saved.', 5000);
+  JE.toast('Your change was saved.', 5000);
+  const [older, newer] = [...document.querySelectorAll('.jellyfin-enhanced-toast')];
+  assert.equal(newer.style.bottom, '20px', 'the newest sits in the corner');
+  assert.notEqual(older.style.bottom, newer.style.bottom, 'the older one moved up, not under it');
+  assert.ok(parseInt(older.style.bottom, 10) > parseInt(newer.style.bottom, 10));
+});

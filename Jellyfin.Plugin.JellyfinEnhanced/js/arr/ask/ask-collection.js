@@ -480,7 +480,10 @@
      * @param {HTMLButtonElement} button The button.
      * @returns {Promise<void>}
      */
-    async function getMissing(page, token, parts, caps, button) {
+    async function getMissing(page, token, parts, caps, button, origin) {
+        // One action, from the click: every ask of it goes out in that session, and none once it ended (a lost answer
+        // doesn't let the loop go on as the next person).
+        origin = JE.core.userWrite.originOf(origin);
         if (running) return;
         running = true;
         button.disabled = true;
@@ -489,14 +492,15 @@
         const results = [];
         try {
             for (const part of parts) {
+                if (!JE.core.userWrite.isBound(origin)) return;
                 if (text) text.textContent = tr('arr_collection_asking', { done: results.length + 1, total: parts.length });
                 let result;
                 try {
-                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(part.key));
+                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(part.key), { session: origin });
                 } catch {
                     result = { ok: false, state: 'failed' };
                 }
-                if (result.stale) return;
+                if (result.stale || !JE.core.userWrite.isBound(origin)) return;
                 results.push(result);
             }
         } finally {

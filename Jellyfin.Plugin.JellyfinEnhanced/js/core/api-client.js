@@ -203,6 +203,8 @@
     function createUnsentAbort() {
         const error = /** @type {any} */ (createAbortError());
         error.jeOutcome = 'unsent';
+        // The same proof in JE.core.userWrite's words (nothing was sent).
+        error.writeOutcome = 'unsent';
         return error;
     }
     /**
@@ -213,7 +215,9 @@
      */
     function writeOutcome(error) {
         if (error?.jeOutcome === 'accepted') return { outcome: 'accepted', answer: error.jeAnswer, sessionChanged: !!error.jeSessionChanged };
-        if (error?.jeOutcome === 'unsent' || (error?.name === 'AbortError' && error?.jeSent !== true)) return { outcome: 'unsent' };
+        // JE.core.userWrite's cancellation before the send (its origin ended, or none was given) is unsent too.
+        if (error?.jeOutcome === 'unsent' || error?.writeOutcome === 'unsent'
+            || (error?.name === 'AbortError' && error?.jeSent !== true && !error?.writeOutcome)) return { outcome: 'unsent' };
         return { outcome: 'failed' };
     }
 
@@ -299,38 +303,78 @@
     }
 
     /**
-     * Fetch with automatic retry and exponential backoff
+     * Fetch with automatic retry and exponential backoff.
+     *
+     * A write (one sent with its origin, `binding`) is tried again only when no attempt can have been stored: after an
+     * answer refusing it before processing (429, 503), or, for an idempotent write (PUT, DELETE, or one its caller marks
+     * idempotent), after any retryable failure. A write whose attempt went out without a usable answer (a lost connection,
+     * a 5xx, a timeout) is otherwise never sent blindly again: it fails as 'uncertain' (JE.core.userWrite.outcome). A retry
+     * goes out only while its origin is still the signed-in session; one cancelled after an uncertain attempt stays
+     * uncertain (the first attempt may have been stored), never "not sent".
      * @param {string} url
      * @param {RequestInit} [options]
      * @param {typeof CONFIG.retry} [retryConfig]
      * @param {() => void} [assertSession] Submit-time identity check, including every retry.
      * @param {boolean} [acceptHttpErrors=false] Return HTTP errors to status-preserving callers.
+     * @param {*} [binding] - A write's origin (JE.core.userWrite.origin()): a retry goes out only while it is current.
+     * @param {{idempotent?: boolean}} [write] - A write that may be sent again after an uncertain attempt.
      * @returns {Promise<Response>}
      */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null) {
+    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null, binding = null, write = {}) {
         const startTime = performance.now();
         let lastError;
         let lastStatus;
+        // Whether an attempt of this write went out and may have been stored (nothing proves it wasn't).
+        let mayHaveCommitted = false;
+        const method = String(options.method || 'GET').toUpperCase();
+        const idempotent = write.idempotent === true || method === 'PUT' || method === 'DELETE';
+        /** A write's failure, with what its attempts prove. */
+        const writeFailure = error => {
+            if (binding && error && typeof error === 'object') {
+                if (mayHaveCommitted) {
+                    error.mayHaveCommitted = true;
+                    error.writeOutcome = 'uncertain';
+                }
+            }
+            return error;
+        };
+        /** An answer of a write is never served from the browser's cache; a GET asked with no-store neither. */
+        const fresh = method !== 'GET' && method !== 'HEAD' || options.cache === 'no-store';
 
         for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
+            // A write's retry is sent again only while its session is still the signed-in one (the first attempt was
+            // checked by JE.core.userWrite.send).
+            if (binding && attempt > 1 && !JE.core.userWrite.isBound(binding)) {
+                const error = /** @type {any} */ (new Error(`${url}: the session changed; this write was not sent again`));
+                error.sessionChanged = true;
+                error.mayHaveCommitted = mayHaveCommitted;
+                error.writeOutcome = mayHaveCommitted ? 'uncertain' : 'unsent';
+                JE.core.userWrite.notSent(error);
+                throw error;
+            }
             // Check time budget
             if (performance.now() - startTime > retryConfig.timeoutBudgetMs) {
-                throw new Error(`Time budget exceeded (${retryConfig.timeoutBudgetMs}ms)`);
+                const error = /** @type {any} */ (new Error(`Time budget exceeded (${retryConfig.timeoutBudgetMs}ms)`));
+                if (binding) error.writeOutcome = mayHaveCommitted ? 'uncertain' : 'unsent';
+                throw writeFailure(error);
             }
 
             // Check if aborted
             if (options.signal?.aborted) {
-                const abortError = new Error('Request aborted');
+                const abortError = /** @type {any} */ (new Error('Request aborted'));
                 abortError.name = 'AbortError';
-                throw abortError;
+                if (binding) abortError.writeOutcome = mayHaveCommitted ? 'uncertain' : 'unsent';
+                throw writeFailure(abortError);
             }
 
             try {
                 assertSession();
                 if (onSend) onSend();
                 const response = await fetch(url, options);
-                // Every JE answer names the server's build: another one than this page booted against asks for a reload.
-                build.noteAnswer(response);
+                // Every JE answer names the server's build: before anything about its body can fail, the page compares it
+                // (an answer of a write, or one asked with no-store, is the server's now; any other is a hint, confirmed
+                // by a fresh handshake).
+                build.noteAnswer(response, { fresh });
                 assertSession();
                 // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
                 JE.core?.revision?.noteResponse(response);
@@ -371,21 +415,32 @@
                     console.debug(`${logPrefix} Failed to read error body:`, readErr);
                 }
 
-                if (!isRetryable(null, response.status)) {
+                if (binding) {
+                    // A refusal before processing proves nothing was stored; any other failed answer may follow a commit.
+                    const refusedBeforeProcessing = response.status === 429 || response.status === 503;
+                    if (!refusedBeforeProcessing && response.status >= 500 || response.status === 408) mayHaveCommitted = true;
+                    if (!isRetryable(null, response.status) || (!refusedBeforeProcessing && !idempotent)) {
+                        throw writeFailure(JE.core.userWrite.classify(lastError));
+                    }
+                } else if (!isRetryable(null, response.status)) {
                     throw lastError;
                 }
             } catch (error) {
                 assertSession();
                 lastError = error;
 
+                // An attempt that went out without an answer may have been stored.
+                if (binding && !(/** @type {any} */ (error)?.status) && !(/** @type {any} */ (error)?.writeOutcome)) mayHaveCommitted = true;
+
                 // Don't retry abort errors
                 if (/** @type {any} */ (error).name === 'AbortError') {
-                    throw error;
+                    throw writeFailure(error);
                 }
 
-                // Don't retry non-retryable errors
-                if (!isRetryable(error, lastStatus)) {
-                    throw error;
+                // Don't retry non-retryable errors (a write's uncertain attempt is retried only when idempotent)
+                if (!isRetryable(error, lastStatus) || (binding && /** @type {any} */ (error)?.writeOutcome)
+                    || (binding && mayHaveCommitted && !idempotent)) {
+                    throw writeFailure(error);
                 }
             }
 
@@ -399,7 +454,11 @@
                 if (metrics.enabled) {
                     console.debug(`${logPrefix} Retry ${attempt}/${retryConfig.maxAttempts} for ${url} in ${delay}ms`);
                 }
-                await sleep(delay, options.signal);
+                try {
+                    await sleep(delay, options.signal);
+                } catch (error) {
+                    throw writeFailure(error);
+                }
             }
         }
 
@@ -407,7 +466,7 @@
         if (metrics.enabled) {
             console.warn(`${logPrefix} All retries exhausted for ${url}`);
         }
-        throw lastError;
+        throw writeFailure(lastError);
     }
 
     /**
@@ -916,6 +975,17 @@
         }, { userId: owner.userId, token: owner.token });
     }
 
+    /**
+     * The origin (JE.core.userWrite) of an owner-bound request: the session its owner token captured when the person
+     * acted. Its own server and credential are checked by bindRequest; the origin names the epoch and the user.
+     * @param {{session: RequestSession}|undefined} bound
+     * @returns {{epoch: *, userId: string}|null}
+     */
+    function originOfBound(bound) {
+        const owner = bound?.session;
+        return owner && owner.userId ? Object.freeze({ epoch: owner.epoch, userId: owner.userId }) : null;
+    }
+
     /** @type {WeakMap<object, number>} */
     const bindingIds = new WeakMap();
     let nextBindingId = 1;
@@ -995,6 +1065,13 @@
      * @property {{session: RequestSession, current?: () => boolean}} [bound] - Deferred work: the session that
      *   asked (and its owner's predicate). Checked immediately before every send; otherwise AbortError, nothing sent.
      *   Part of the request's identity: de-duplication and caching never cross bindings or unbound callers.
+     * @property {*} [session] - A write's origin: JE.core.userWrite.origin() taken when the person acted (or the origin a
+     *   mutation queue handed it). Required for every write: one without it is refused, never sent as whoever is signed in.
+     * @property {boolean} [idempotent=false] - A write that changes nothing when sent twice (marking an item played): it may
+     *   be tried again after an attempt whose answer was lost. PUT and DELETE are idempotent by definition.
+     * @property {'no-store'} [cache] - Ask the network, not the browser's cache (the answer then names the build that runs).
+     * @property {boolean} [readOnly=false] - A read sent as POST (its ids in the body): changes nothing on the server, so it
+     *   is no person's write and needs no origin (Q-REBUILD1FIX11-4).
      */
 
     /**
@@ -1056,6 +1133,13 @@
         function assertPresentation() {
             if (sensitive && presentation !== presentationGeneration) throw createPresentationAbort();
         }
+        // A write belongs to the origin it was made in (taken when the person acted, before any wait): it is sent through
+        // JE.core.userWrite.send once the limiter grants its slot (the check runs right before its headers are built), and
+        // never as anyone else. This layer never takes a session of its own for a write: without its origin it is refused.
+        // An owner-bound write (`bound`, the title actions' tokens) carries its origin in its binding's session.
+        const write = !isGet && auth && options.readOnly !== true && !!JE.core.userWrite;
+        const binding = write ? (options.session || originOfBound(bound)) : null;
+        if (write && !binding) return JE.core.userWrite.send(null, () => Promise.resolve(), url);
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -1068,7 +1152,7 @@
             if (cached) return cached;
         }
 
-        const fetchFn = async () => {
+        const sendRequest = async () => {
             assertPresentation();
             assertSession();
             /** @type {Record<string, string>} */
@@ -1079,8 +1163,9 @@
 
             /** @type {RequestInit} */
             const init = { method, headers: requestHeaders };
-            // Earlier unguarded responses may still be fresh in the browser's HTTP cache.
-            if (sensitive) init.cache = 'no-store';
+            // Earlier unguarded responses may still be fresh in the browser's HTTP cache; a caller asking for no-store
+            // wants the network's answer (it then names the build that runs).
+            if (sensitive || options.cache === 'no-store') init.cache = 'no-store';
             // Fetch Priority hint; ignored by browsers without support. Read at
             // start time so a promoted request goes out at normal priority.
             if (limit.priority === 'low') init.priority = 'low';
@@ -1126,7 +1211,9 @@
                     (skipRetry || withStatus) ? { ...CONFIG.retry, maxAttempts: 1 } : undefined,
                     assertSession,
                     withStatus,
-                    onSend
+                    onSend,
+                    binding,
+                    { idempotent: options.idempotent === true }
                 );
                 assertSession();
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
@@ -1156,6 +1243,9 @@
                 if (sent) bumpEpoch(family);
             }
         };
+        // Runs once the limiter granted the slot: a write's session is checked right then, before sendRequest builds its
+        // headers (synchronously, up to the network call).
+        const fetchFn = () => (binding ? JE.core.userWrite.send(binding, sendRequest, url) : sendRequest());
 
         // In-flight dedup OUTSIDE the concurrency limit so only the one unique
         // fetch takes a pool slot (waiters share its promise without holding
@@ -1201,6 +1291,9 @@
                 throw createAcceptedAbort(data, !sameSession);
             }
         }
+        // An origin write the server answered was stored: its caller applies the answer's effects only while its origin is
+        // still the signed-in session (JE.core.userWrite.isBound), never reads it as not sent.
+        if (isWrite && sent && binding && !boundSession) return data;
         assertSession();
         assertPresentation();
         return data;
@@ -1234,15 +1327,36 @@
         return coreFetch(options.url, {
             method: options.type || 'GET', body: options.data,
             headers: { ...(options.contentType ? { 'Content-Type': options.contentType } : {}), ...options.headers },
-            signal: options.signal, skipRetry: true, bound: options.bound
+            signal: options.signal, skipRetry: true, bound: options.bound,
+            // A write's origin (JE.core.userWrite.origin()) and what it may claim (see CoreFetchOptions).
+            session: options.session, idempotent: options.idempotent, readOnly: options.readOnly, cache: options.cache
         });
     }
     // ---- The server's JE build (the version handshake) ----
-    // The server names its JE build (the client script's cache key, new with every build) in the bootstrap and on every
-    // answer of its routes (X-JE-Build). The first one this page sees is the build it booted against (JE.serverBuild, set
-    // from the bootstrap); an answer naming another means JE was updated on the server while this page kept its scripts:
-    // the page asks the person to reload (once), before a save can be lost to a contract this page doesn't know.
+    // The server names its JE build (the client script's cache key: the version and the running assembly's identity, new
+    // with every build) in the bootstrap and on every answer of its routes (X-JE-Build). The page knows the build of the code
+    // it runs (JE.pageBuild: written into plugin.js as the server serves it, so a copy the browser kept from an earlier build
+    // names that one); the server running another build than this page's scripts means the page asks the person to reload
+    // (once), before a save can be lost to a contract this page doesn't know. Without a page build (a host that set none),
+    // the first build the server named stands in for it (JE.serverBuild).
+    //
+    // Which answer proves the build that runs NOW: only one the browser could not have kept. That is an answer of a write
+    // (never served from the cache), an answer asked with `cache: 'no-store'`, and an answer the server marked no-store (the
+    // bootstrap, the handshake). Any other answer (Awards and MDBList ratings kept for 30 minutes, scripts, locales, data a
+    // browser revalidates) may be a copy from an earlier build: its header is a hint. A hint naming another build than the
+    // page's is confirmed by ONE handshake (GET /JellyfinEnhanced/version, asked with no-store; the server answers it no-store),
+    // shared by every hint that arrives meanwhile; only the handshake's answer shows the notice. A handshake that fails
+    // leaves it unknown: the next hint may try again, no sooner than a growing delay (30 s, doubling to 10 minutes).
     let reloadNotice = null;
+    /** @type {Promise<void>|null} */
+    let confirming = null;
+    // The hint a handshake found to be a kept copy (the server runs this page's build): not confirmed again.
+    let refutedHint = '';
+    let failedConfirmations = 0;
+    let nextConfirmationAt = 0;
+
+    /** The build this page compares with: its own, else the first the server named. */
+    const ownBuild = () => (typeof JE.pageBuild === 'string' && JE.pageBuild ? JE.pageBuild : JE.serverBuild);
 
     /** Shows the reload notice (once per page). */
     function showReloadNotice() {
@@ -1254,7 +1368,9 @@
         const notice = document.createElement('div');
         notice.className = 'je-reload-notice';
         notice.setAttribute('role', 'alert');
-        notice.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100000;max-width:min(560px,calc(100vw - 32px));'
+        // Centred between 16 px gutters (fit to its text, at most 560 px): a phone gets the full width, never a half-width
+        // column of one word per line.
+        notice.style.cssText = 'position:fixed;left:16px;right:16px;bottom:24px;margin:0 auto;width:fit-content;z-index:100000;max-width:560px;'
             + 'box-sizing:border-box;display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:8px;'
             + 'background:#202020;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:14px;line-height:1.4;';
         const message = document.createElement('span');
@@ -1272,29 +1388,77 @@
 
     const build = {
         /**
-         * Compares a build the server named with the one this page booted against (the first it saw).
-         * @param {*} serverBuild - The server's build, as named in an answer.
+         * Compares the build the server runs now (an answer it could not have been kept: the bootstrap, the handshake, an
+         * answer of a write) with the one this page runs.
+         * @param {*} serverBuild - The server's build, as named in such an answer.
          * @returns {boolean} True when they differ (the reload notice is shown).
          */
         check(serverBuild) {
             if (typeof serverBuild !== 'string' || !serverBuild) return false;
-            if (!JE.serverBuild) { JE.serverBuild = serverBuild; return false; }
-            if (serverBuild === JE.serverBuild) return false;
+            if (!JE.serverBuild) JE.serverBuild = serverBuild;
+            if (serverBuild === ownBuild()) return false;
             showReloadNotice();
             return true;
         },
         /**
-         * Reads the build an answer names (a fetch Response, or the Response a failed ApiClient.ajax rejects with).
-         * @param {*} response
+         * A build named by an answer that may be a kept copy: nothing when it is the page's own, else one shared handshake
+         * confirms what runs.
+         * @param {*} named
+         * @returns {Promise<void>|undefined} The confirmation, when one runs.
          */
-        noteAnswer(response) {
+        hint(named) {
+            if (typeof named !== 'string' || !named) return undefined;
+            const own = ownBuild();
+            if (!own || named === own || named === refutedHint) return undefined;
+            return build.confirm(named);
+        },
+        /**
+         * The handshake: what the server runs now, from an answer the browser can't have kept. One at a time; a failed one
+         * is tried again only after a growing delay.
+         * @param {string} [hinted] - The hint being confirmed (remembered when the server runs this page's build after all).
+         * @returns {Promise<void>}
+         */
+        confirm(hinted) {
+            if (confirming) return confirming;
+            if (Date.now() < nextConfirmationAt || typeof fetch !== 'function' || typeof ApiClient === 'undefined') return Promise.resolve();
+            const run = (async () => {
+                try {
+                    const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/version'), { cache: 'no-store', headers: { 'Accept': 'text/plain' } });
+                    const named = response?.headers?.get?.('X-JE-Build');
+                    if (!named) throw new Error('the handshake named no build');
+                    failedConfirmations = 0;
+                    nextConfirmationAt = 0;
+                    if (!build.check(named) && hinted) refutedHint = hinted;
+                } catch (error) {
+                    failedConfirmations++;
+                    nextConfirmationAt = Date.now() + Math.min(600000, 30000 * Math.pow(2, failedConfirmations - 1));
+                    console.debug(`${logPrefix} build handshake failed; the server's build stays unknown for now.`, error?.message || error);
+                }
+            })();
+            const guarded = run.finally(() => { if (confirming === guarded) confirming = null; });
+            confirming = guarded;
+            return guarded;
+        },
+        /**
+         * Reads the build an answer names (a fetch Response, or the Response a failed ApiClient.ajax rejects with), before
+         * its body is read. `fresh`: the answer can't be a kept copy (a write's, or one asked with no-store); an answer the
+         * server marked no-store is fresh too. Anything else is a hint.
+         * @param {*} response
+         * @param {{fresh?: boolean}} [options]
+         */
+        noteAnswer(response, options = {}) {
             try {
                 const named = response?.headers?.get?.('X-JE-Build');
-                if (named) build.check(named);
+                if (!named) return;
+                const control = String(response?.headers?.get?.('Cache-Control') || '').toLowerCase();
+                if (options.fresh === true || /(^|[,\s])no-store([,\s]|$)/.test(control)) build.check(named);
+                else void build.hint(named);
             } catch { /* An answer without readable headers names no build. */ }
         }
     };
     JE.core.build = build;
+    // A bootstrap answered before this module loaded named the server's build already.
+    if (typeof JE.serverBuild === 'string' && JE.serverBuild) build.check(JE.serverBuild);
 
     JE.core.api = {
         fetch: coreFetch,

@@ -251,7 +251,7 @@
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
-                    if (scope.isCurrent()) JE.updateSettings({ lastOpenedTab: pane.dataset.pane });
+                    if (scope.isCurrent()) JE.updateSettings({ lastOpenedTab: pane.dataset.pane }, { origin: JE.core.userWrite.origin() });
                 }
                 resetAutoCloseTimer();
             };

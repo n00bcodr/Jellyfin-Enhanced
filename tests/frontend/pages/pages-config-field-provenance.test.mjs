@@ -19,9 +19,12 @@ for (const outcome of ['pending', 'failed']) {
     if (outcome === 'failed') await users.reject();
     const saved = await p.save();
     assert.equal(fieldBytes(saved, 'MaintenanceModeAffectedUsers'), JSON.stringify('["u1"]'));
+    // Stage 1 fix round 12: the page only confirms its save's generation; the server applies maintenance from the selection
+    // stored (asserted above), never from a snapshot the page sends.
     const calls = enableCalls(p);
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0].data.affectedUserIds, ['u1']);
+    assert.deepEqual(calls[0].data, {});
+    assert.match(calls[0].url, /[?&]generation=/);
     if (outcome === 'failed') assert.match(p.$('#je-mm-users-inner').textContent, /Saving keeps the current selection/);
   });
 }
@@ -36,7 +39,7 @@ test('R6-1: "specific users" picked while the list loads is not saved as an empt
   await p.flush();
   const saved = await p.save();
   assert.equal(fieldBytes(saved, 'MaintenanceModeAffectedUsers'), '"all"');
-  assert.deepEqual(enableCalls(p)[0].data.affectedUserIds, []);
+  assert.deepEqual(enableCalls(p)[0].data, {}, 'the stored "all" is what the server applies');
   await again.reject();
 });
 
@@ -47,11 +50,11 @@ test('R6-1 control: with the list loaded, the selection the admin makes is saved
   p.choose(p.$('.je-mm-user-cb[value="u3"]'), true);
   let saved = await p.save();
   assert.equal(fieldBytes(saved, 'MaintenanceModeAffectedUsers'), JSON.stringify('["u1","u3"]'));
-  assert.deepEqual(enableCalls(p).at(-1).data.affectedUserIds, ['u1', 'u3']);
+  assert.deepEqual(enableCalls(p).at(-1).data, {}, 'the server applies the stored selection (round 12)');
   p.choose('#mmUsers_all', true);
   saved = await p.save();
   assert.equal(fieldBytes(saved, 'MaintenanceModeAffectedUsers'), '"all"');
-  assert.deepEqual(enableCalls(p).at(-1).data.affectedUserIds, []);
+  assert.deepEqual(enableCalls(p).at(-1).data, {});
 });
 
 // RBS1-R6-2: the custom auto-movie destination.
@@ -177,7 +180,10 @@ test('Q-REBUILD1FIX5-1 control: a read that fails after one succeeded leaves the
   const read = p.hold('pluginConfig');
   await p.pageshow();
   await read.reject();
-  assert.equal(p.$('#je-config-read-warning').style.display, 'none');
+  // Round 11: the page says it may be out of date (the form may be older than the saved settings), with Retry.
+  assert.notEqual(p.$('#je-config-read-warning').style.display, 'none');
+  assert.match(p.$('#je-config-read-warning-msg').textContent, /may show values older/);
+  assert.ok(p.$('.je-save-dock').classList.contains('je-stale'));
   const saved = await p.save();
   assert.equal(saved.DefaultLanguage, 'de');
 });

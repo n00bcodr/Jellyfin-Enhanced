@@ -81,12 +81,21 @@ public class ApiHostConfigurationRouteTests
 
         public Route()
         {
-            var session = new SessionInfo(Sessions.Object, NullLogger.Instance) { Id = "session-" + Device, DeviceId = Device, UserId = User, Client = "Jellyfin Web" };
+            var session = Connect(new SessionInfo(Sessions.Object, NullLogger.Instance) { Id = "session-" + Device, DeviceId = Device, UserId = User, Client = "Jellyfin Web" });
             Sessions.SetupGet(s => s.Sessions).Returns(new[] { session });
             Sessions.Setup(s => s.SendMessageCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<MessageCommand>(), It.IsAny<CancellationToken>()))
                 .Callback<string, string, MessageCommand, CancellationToken>((_, target, command, _) => Sent.Add((target, command)))
                 .Returns(Task.CompletedTask);
         }
+    }
+
+    /// <summary>The session with a connected controller (its page's web socket): a message to it reaches the page.</summary>
+    internal static SessionInfo Connect(SessionInfo session)
+    {
+        var controller = new Mock<ISessionController>();
+        controller.SetupGet(c => c.IsSessionActive).Returns(true);
+        session.AddController(controller.Object);
+        return session;
     }
 
     private static int Status(IActionResult? result) => result switch
@@ -188,7 +197,7 @@ public class ApiHostConfigurationRouteTests
         Assert.NotEqual(tag, ApiUserDocumentRevisionTests.ETag(again, again.GetUserHiddenContent(id)));
     }
     // A page whose session isn't connected when its write is refused (10.11's web client reconnects only when the tab is
-    // shown again after a restart) is told once its session starts again; a session of another device is not.
+    // shown again after a restart) is told once its session is connected again; a session of another device is not.
     [Fact]
     public async Task ARefusedPageWithoutASessionIsToldWhenItsSessionStarts()
     {
@@ -202,9 +211,9 @@ public class ApiHostConfigurationRouteTests
             using var f = new ApiPluginFixture();
             Assert.Equal(409, Status(await RunOnRoute(route, PluginId, () => { }, apiKey: false)));
             Assert.Empty(route.Sent);
-            var other = new SessionInfo(route.Sessions.Object, NullLogger.Instance) { Id = "other", DeviceId = "device-other", UserId = route.User };
+            var other = Connect(new SessionInfo(route.Sessions.Object, NullLogger.Instance) { Id = "other", DeviceId = "device-other", UserId = route.User });
             route.Sessions.Raise(s => s.SessionStarted += null, new SessionEventArgs { SessionInfo = other });
-            var back = new SessionInfo(route.Sessions.Object, NullLogger.Instance) { Id = "back", DeviceId = route.Device, UserId = route.User };
+            var back = Connect(new SessionInfo(route.Sessions.Object, NullLogger.Instance) { Id = "back", DeviceId = route.Device, UserId = route.User });
             connected.Add(back);
             route.Sessions.Raise(s => s.SessionStarted += null, new SessionEventArgs { SessionInfo = back });
             for (var i = 0; i < 100 && route.Sent.Count == 0; i++) await Task.Delay(20);

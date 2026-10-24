@@ -136,7 +136,7 @@ public sealed class AdminUserSettingsService
         var person=ArrCaller.Find(id,_users);
         if(person==null) return Error(404,"unknown_user");
         var ready=ReadyBlock(id,Config);
-        lock(JellyfinEnhanced.AnalyticsCredentialLock)
+        lock(JellyfinEnhanced.ConfigurationLock)
         lock(_files.UserSettingsLock(id.ToString("N")))
         {
             var c=Config;
@@ -301,7 +301,7 @@ public sealed class AdminUserSettingsService
         var fields=body.EnumerateObject().ToArray();
         if(fields.Length<2||fields.Select(p=>p.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=fields.Length||fields.Any(p=>p.Name!="revision"&&!allow.Contains(p.Name))) return Error(400,"invalid_fields");
         if(!body.TryGetProperty("revision",out var rev)||rev.ValueKind!=JsonValueKind.String) return Error(400,"revision_required");
-        lock(JellyfinEnhanced.AnalyticsCredentialLock)
+        lock(JellyfinEnhanced.ConfigurationLock)
         lock(_files.UserSettingsLock(id.ToString("N")))
         {
             // Recheck authority/target after lock contention too.

@@ -478,13 +478,16 @@
      * @returns {Promise<void>}
      */
     async function act(button, numbers, now, run) {
+        // The press's origin (JE.core.userWrite), taken at the click before the check's reads: what it runs is that
+        // session's, or nothing.
+        const origin = JE.core.userWrite.origin();
         const target = season;
         if (!target) return;
         const release = reserve(target.itemId, numbers);
         if (!release) return;
         try {
             const intent = await checkAtClick(target, button.dataset.intent || '', now, button);
-            if (intent) await run(intent);
+            if (intent && JE.core.userWrite.isBound(origin)) await run(intent, origin);
         } finally {
             release();
         }
@@ -948,7 +951,7 @@
             // Checked at the press: the episode's button as the server and the caller's capabilities say now; the server is sent
             // what it was drawn to do and works it out again.
             const now = fresh => rowIntent((fresh.episodes || []).find(x => x.episode === ep.episode), fresh);
-            act(btn, pressScope([ep.episode], btn), now, intent => (mode === 'search' ? searchEpisode(ep, btn, scope, intent) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent)));
+            act(btn, pressScope([ep.episode], btn), now, (intent, origin) => (mode === 'search' ? searchEpisode(ep, btn, scope, intent, origin) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent, origin)));
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -979,15 +982,17 @@
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope, intent) {
+    async function searchEpisode(ep, button, scope, intent, origin) {
+        // The Search's origin (the click): the search, the ask it falls back to and what they show, in that session only.
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
-        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
-        if (JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
+        if (!current() || JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
         const binding = bindingOf([ep], target.statusRef);
         const instanceId = intent ? intent.instance : adminInstance([ep], target.statusRef, ep.key, caps);
         const place = button?.closest('.listItem') || null;
@@ -998,17 +1003,17 @@
             // A household Search runs on the standard request target: never for a copy it doesn't reach. Under a copy's
             // binding without its administrator's instance or a household Search that reaches it, nothing runs (no other
             // edition or instance in its place): the controls are drawn again.
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent }) : null;
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent, session: origin }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent, session: origin }) : null;
         } finally {
             busy.delete(ep.episode);
         }
-        if (JE.arrAsk.epoch() !== started) return;
+        if (!current() || JE.arrAsk.epoch() !== started || result?.stale) return;
         if (result && pressRefusal(result, button)) return;
         if (!result) {
             // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
-            // edition of its binding, only while that ask reaches the copy.
+            // edition of its binding, only while that ask reaches the copy (as this click's).
             if (season?.itemId !== target.itemId) return;
-            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null);
+            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null, origin);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
@@ -1039,9 +1044,12 @@
      * @param {string|null} [variant] The edition asked for (a copy's binding; default standard).
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): the ask is exactly that (a whole-series
      * ask only when it was drawn as one, never widened at the press), and the server is sent it to work out again.
+     * @param {any} [origin] The click's origin (a Search falling back to this passes its own).
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope, variant, intent) {
+    async function getEpisodes(episodes, button, search, scope, variant, intent, origin) {
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const rows = target?.rows;
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
@@ -1051,7 +1059,6 @@
         const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
         affected.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
-        const started = JE.arrAsk.epoch();
         let result = null;
         try {
             const caps = await JE.arrAsk.me();
@@ -1068,15 +1075,17 @@
                 if (!input) result = { ok: false, state: rounded ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
             const expect = intent ? { ...intent, mode: 'get', episodes: [...episodes].sort((a, b) => a - b), seasons: input?.scope === 'seasons' ? input.seasons : intent.seasons } : null;
-            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input, expect ? { expect } : undefined);
+            if (!result && JE.arrAsk.epoch() === started && current()) result = await JE.arrAsk.ask(input, expect ? { expect, session: origin } : { session: origin });
         } finally {
             affected.forEach(n => busy.delete(n));
         }
         // Answered after a sign-out: the next person is not told about it.
-        if (!result || result.stale || JE.arrAsk.epoch() !== started) return;
+        if (!result || result.stale || JE.arrAsk.epoch() !== started || !current()) return;
         if (pressRefusal(result, button)) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('tv') : null;
+        // These reads waited too: shown in the ask's session only.
+        if (!current()) return;
         const words = JE.arrAsk.describe(result, caps, allowance);
         // The same season page is still shown (the ask itself makes the page read the season again).
         const stillHere = !!season && season.itemId === target.itemId;
@@ -1531,7 +1540,7 @@
             // what it was drawn to do and works it out again.
             btn.addEventListener('click', () => {
                 if (season?.itemId !== scope) return;
-                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, intent => (search ? searchBanner(offerEps, status, btn, intent) : getEpisodes(offer, btn, false, scope, binding?.variant, intent)));
+                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, (intent, origin) => (search ? searchBanner(offerEps, status, btn, intent, origin) : getEpisodes(offer, btn, false, scope, binding?.variant, intent, origin)));
             });
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
@@ -1553,15 +1562,18 @@
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button, intent) {
+    async function searchBanner(eps, status, button, intent, origin) {
+        // The Search's origin (the click): every search of it, the ask it falls back to and what they show, in that
+        // session only (a loop never goes on as the next person).
+        origin = JE.core.userWrite.originOf(origin);
+        const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const numbers = eps.map(ep => ep.episode);
         if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
         const key = eps.length === 1 ? eps[0].key : status.key;
-        const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
-        if (JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
+        if (!current() || JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
         const binding = bindingOf(eps, status);
         const instanceId = intent ? intent.instance : key ? adminInstance(eps, status, key, caps) : null;
         numbers.forEach(n => busy.add(n));
@@ -1571,19 +1583,19 @@
         try {
             if (instanceId) {
                 // Exactly the episodes it names (one EpisodeSearch for several, never the whole season).
-                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent });
+                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent, session: origin });
             } else if (binding && !binding.search) {
                 // Neither its administrator's instance nor a household Search reaches this copy: nothing runs (no ask in
                 // another edition or on another instance in its place); the controls are drawn again below.
                 result = null;
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent }) : null;
-                if (JE.arrAsk.epoch() !== started) return;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent, session: origin }) : null;
+                if (!current() || JE.arrAsk.epoch() !== started) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined }) : null;
-                    if (JE.arrAsk.epoch() !== started) return;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined, session: origin }) : null;
+                    if (!current() || JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);
                     if (one && (one.reason === 'press_changed' || one.reason === 'press_unverified')) break;
@@ -1593,7 +1605,7 @@
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
-        if (JE.arrAsk.epoch() !== started) return;
+        if (!current() || JE.arrAsk.epoch() !== started) return;
         if (result && pressRefusal(result, button)) return;
         // A household Search asks for what no request sent yet (like Get them), in the edition of its binding, only while
         // that ask reaches the copy.
@@ -1601,12 +1613,13 @@
         const asks = intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks);
+            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks, origin);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks);
+        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks, origin);
+        if (!current()) return;
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         announce(result.text);

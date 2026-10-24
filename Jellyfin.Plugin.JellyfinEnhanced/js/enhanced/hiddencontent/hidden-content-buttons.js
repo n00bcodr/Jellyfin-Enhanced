@@ -111,8 +111,9 @@
             btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const origin = JE.core.userWrite.origin();
                 const action = JE.createSessionAction();
-                const saved = await unhideItem(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+                const saved = await unhideItem(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId }, null, origin);
                 if (!action.current()) return;
                 if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
                 else setHideState();
@@ -132,32 +133,34 @@
                 // A library card's own control: native unless a title action pressed it (D46S2-R6).
                 const owner = JE.ownerOf(e);
                 const action = JE.createSessionAction();
+                // The session this hide belongs to, from the click on: carried through the metadata reads and the dialog.
+                const origin = JE.core.userWrite.origin();
 
                 const cardName = card.querySelector('.cardText')?.textContent || '';
                 const surface = getCardSurface(card);
 
                 if (surface === 'nextup' || surface === 'continuewatching') {
-                    await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner);
+                    await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner, origin);
                 } else {
                     const itemData = { itemId, name: cardName, type: card.dataset.type || '', tmdbId: card.dataset.tmdbId || '' };
                     if (isPerson) itemData.type = 'Person';
                     // Only a deliberate click resolves an ID-only native card. Mounting/scanning makes no requests.
                     if (!isPerson && !itemData.tmdbId) {
                         try {
-                            const userId = ApiClient.getCurrentUserId();
+                            const userId = origin.userId || ApiClient.getCurrentUserId();
                             const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(itemId, { userId }) : await ApiClient.getItem(userId, itemId);
                             itemData.type = item?.Type || itemData.type;
                             itemData.tmdbId = item?.ProviderIds?.Tmdb || '';
                         } catch (_) { btn.textContent = JE.t('hidden_content_save_failed_persistent'); return; }
                     }
-                    if (!action.current()) return;
+                    if (!action.current() || !JE.core.userWrite.isBound(origin)) return;
                     const title = internal.titleData(itemData);
                     if (title) {
                         // Later filter passes (and cloned cards) need the identity resolved by this click.
                         card.dataset.type = title.type;
                         card.dataset.tmdbId = title.tmdbId;
                         if (internal.isHiddenByTmdbId(title.tmdbId, title.type)) {
-                            const saved = await unhideItem(itemId, itemData);
+                            const saved = await unhideItem(itemId, itemData, null, origin);
                             if (!action.current()) return;
                             if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
                             else setHideState();
@@ -168,7 +171,7 @@
                             if (!action.current()) return;
                             btn.disabled = true;
                             try {
-                                const saved = await internal.saveTitleRule(title, true, owner).catch(() => false);
+                                const saved = await internal.saveTitleRule(title, true, owner, origin).catch(() => false);
                                 if (saved && action.current()) {
                                     internal.requestNativeDecision();
                                     setHiddenState();
@@ -177,12 +180,12 @@
                             } finally { btn.disabled = false; }
                         }
                         if (!internal.isConfirmationSuppressed()) {
-                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle, { owner });
+                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle, { owner, origin });
                             return;
                         }
                         return saveConfirmedTitle();
                     }
-                    confirmAndHide(itemData, () => internal.requestNativeDecision(), { owner });
+                    confirmAndHide(itemData, () => internal.requestNativeDecision(), { owner, origin });
                 }
             };
         }
@@ -208,18 +211,22 @@
      * @param {string} cardName Display name from the card text.
      * @param {string} surface The detected surface ('nextup' or 'continuewatching').
      * @param {Function} setHiddenState Callback to switch the button to "hidden" state.
+     * @param {any} origin JE.core.userWrite.origin() taken at the click: every read, the dialog and the hide belong to it.
      */
-    async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner) {
+    async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner, origin) {
         const action = JE.createSessionAction();
         const itemData = { itemId, name: cardName };
         // Pass surface through so the hideScope stays bound to the row the user clicked.
-        const dialogOpts = { surface, owner };
+        const dialogOpts = { surface, owner, origin };
+        // A continuation whose session ended is cancelled: it never becomes the next person's hide.
+        const current = () => JE.core.userWrite.isBound(origin);
 
         try {
-            const userId = ApiClient.getCurrentUserId();
+            const userId = origin?.userId || ApiClient.getCurrentUserId();
             const item = JE.helpers?.getItemCached
                 ? await JE.helpers.getItemCached(itemId, { userId })
                 : await ApiClient.getItem(userId, itemId);
+            if (!current()) return;
             const itemType = item?.Type || '';
             if (!action.current()) return;
             const seriesId = item?.SeriesId || '';
@@ -236,10 +243,12 @@
             if ((itemType === 'Episode' || itemType === 'Season') && seriesId) {
                 dialogOpts.showEpisodeChoice = true;
                 dialogOpts.onChooseScoped = () => {
-                    hideItem({ ...itemData, hideScope: surface });
+                    if (!current()) { JE.core.userWrite.notSent(); return; }
+                    hideItem({ ...itemData, hideScope: surface }, null, origin);
                     internal.requestNativeDecision();
                 };
                 dialogOpts.onChooseShow = async () => {
+                    if (!current()) { JE.core.userWrite.notSent(); return; }
                     let seriesTmdbId = '';
                     try {
                         const series = JE.helpers?.getItemCached
@@ -249,25 +258,29 @@
                     } catch (err) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to fetch series TMDB ID', err);
                     }
-                    if (!action.current()) return;
+                    // The series read waited: the hide is the person's who chose it, or nothing.
+                    if (!action.current() || !current()) { JE.core.userWrite.notSent(); return; }
                     hideItem({
                         itemId: seriesId,
                         name: seriesName || cardName,
                         type: 'Series',
                         tmdbId: seriesTmdbId
-                    });
+                    }, null, origin);
                     internal.requestNativeDecision();
                 };
             } else {
                 dialogOpts.onChooseScoped = () => {
-                    hideItem({ ...itemData, hideScope: surface });
+                    if (!current()) { JE.core.userWrite.notSent(); return; }
+                    hideItem({ ...itemData, hideScope: surface }, null, origin);
                     internal.requestNativeDecision();
                 };
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
+            if (!current()) return;
             dialogOpts.onChooseScoped = () => {
-                hideItem({ itemId, name: cardName, hideScope: surface });
+                if (!current()) { JE.core.userWrite.notSent(); return; }
+                hideItem({ itemId, name: cardName, hideScope: surface }, null, origin);
                 internal.requestNativeDecision();
             };
         }

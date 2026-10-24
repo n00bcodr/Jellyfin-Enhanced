@@ -15,7 +15,8 @@ async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},con
   t.after(()=>h.close());
   // Advance the page-visibility delay without sleeping; promises still resolve asynchronously.
   h.window.setTimeout=fn=>{queueMicrotask(fn);return 1;};
-  h.load('elsewhere/reviews.js');h.JE.initializeReviewsScript();
+  // Stage 1 fix round 12: the review writes go out with the origin of the click (JE.core.userWrite).
+  h.load('core/mutation-queue.js');h.load('elsewhere/reviews.js');h.JE.initializeReviewsScript();
   async function navigate(){if(hook){await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();}}
   await navigate(); return {...h,get NATIVE(){return h.NATIVE;},calls,navigate};
 }
@@ -156,3 +157,22 @@ test('reviews item read failing for real is still logged as an error',async t=>{
   const h=await setup(t,{getItem:async()=>{throw Error('boom');},errors:[/Reviews: Error processing page/]});
   assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
 });
+// Stage 1 fix round 12 (P16): a delete confirmed after the account changed is the previous person's: never sent as the next.
+for(const admin of [false,true]){
+  test(`a review ${admin?'moderation ':''}delete whose confirmation waited across an account switch is not sent`,async t=>{
+    const h=await setup(t,{admin,reviews:[{userId:admin?'other-user':'user-a',userName:'Reviewer',content:'Delete me'}]});
+    let user='user-a',answer;const deletes=[];
+    h.window.ApiClient.getCurrentUserId=()=>user;
+    h.window.Dashboard={confirm:(text,title,resolve)=>{answer=resolve;}};
+    h.JE.core.api.plugin=async(path,options)=>{if(options?.method==='DELETE')deletes.push({path,user});return {reviews:[]};};
+    h.document.querySelector('.je-review-delete-btn').click();await nextTurn();
+    assert.equal(typeof answer,'function','the confirmation is open');
+    user='user-b';
+    answer(true);await nextTurn();await nextTurn();
+    assert.deepEqual(deletes,[],'confirmed for A after the switch: cancelled, never B\'s delete');
+    // A fresh click after the switch is the signed-in person's own action and goes out.
+    answer=undefined;h.document.querySelector('.je-review-delete-btn').click();await nextTurn();
+    answer(true);await nextTurn();await nextTurn();
+    assert.deepEqual(deletes.map(d=>d.user),['user-b']);
+  });
+}
