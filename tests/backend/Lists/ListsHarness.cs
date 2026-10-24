@@ -45,6 +45,31 @@ internal sealed class ListsHarness : IDisposable
     public ListMetadataService Metadata { get; }
     public ListSwapService Swap { get; }
     public ListService Service { get; }
+    private readonly List<Task> _cleanup = new();
+
+    /// <summary>Track the actual event cleanup through Delete's notification and release of its per-list lock.</summary>
+    public void TrackRemovedListCleanup(Guid id)
+    {
+        var list = id.ToString("N");
+        var deleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Changed(string changed)
+        {
+            if (changed == list) deleted.TrySetResult();
+        }
+        Store.Changed += Changed;
+        _cleanup.Add(Drain());
+        async Task Drain()
+        {
+            try
+            {
+                await deleted.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                // Delete raises Changed inside the lock, BEFORE its final SQLite cleanup. Taking it afterwards
+                // observes the actual cleanup completion, unlike the synchronously written operation state.
+                using (await Store.LockAsync(list).WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false)) { }
+            }
+            finally { Store.Changed -= Changed; }
+        }
+    }
 
     /// <summary>Request capabilities per user for the list views' request actions (null: none).</summary>
     public Dictionary<Guid, RequestCapabilities> Capabilities { get; } = new();
@@ -178,6 +203,7 @@ internal sealed class ListsHarness : IDisposable
 
     public void Dispose()
     {
+        Task.WhenAll(_cleanup).WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
         Swap.Dispose();
         Transport.Dispose();
         Database.Dispose();

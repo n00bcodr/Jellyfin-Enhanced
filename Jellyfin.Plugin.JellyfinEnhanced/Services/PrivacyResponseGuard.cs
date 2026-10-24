@@ -49,6 +49,7 @@ public sealed class PrivacyResponseGuard : IDisposable
     private bool _startChecked;
     private bool _owned;
     private bool _resourceOwned;
+    private bool _rawDownloadCandidate;
 
     private PrivacyResponseGuard(HttpContext http)
     {
@@ -516,9 +517,25 @@ public sealed class PrivacyResponseGuard : IDisposable
     internal void Own() { lock (_lock) _owned = true; }
 
     /// <summary>Pins the outer transport before any resource projection can replace the body.</summary>
-    internal void OwnTransport()
+    internal void OwnTransport(bool rawDownloadCandidate = false)
     {
-        lock (_lock) { _resourceOwned = true; _owned = true; }
+        lock (_lock) { _resourceOwned = true; _owned = true; _rawDownloadCandidate = rawDownloadCandidate; }
+    }
+
+    // The mixed native download route retains its outer anchor until the concrete file executor runs. No existing
+    // classification or already-written bytes can be reclassified here. Keep wrappers in place for inner projections.
+    internal void StreamRawDownload(ActionContext context, IActionResult result)
+    {
+        if (!_rawDownloadCandidate || !MediaResponseContract.RawDownload(context, result)) return;
+        lock (_lock)
+        {
+            if (_reads.Count != 0 || _evidence != null || _finished || Stopped || _committed
+                || _body?.Held > 0 || _transportBody?.Held > 0) return;
+            _body?.ReleaseEmpty();
+            _transportBody?.ReleaseEmpty();
+            _detached = true;
+            _committed = true;
+        }
     }
 
     /// <summary>
@@ -559,6 +576,15 @@ public sealed class PrivacyResponseGuard : IDisposable
                 if (_released) return;
                 _held.Clear();
                 _length = 0;
+            }
+        }
+
+        public void ReleaseEmpty()
+        {
+            lock (_lock)
+            {
+                if (_length != 0) throw new InvalidOperationException("A written answer cannot become raw media.");
+                _released = true;
             }
         }
 
@@ -655,8 +681,9 @@ public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IAlwaysRunResult
         // host's explicit raw-media contract may stream without one, decided here before content type or body exists.
         // An existing guard or privacy/evidence admission always takes precedence over the streaming exception.
         var owns = PrivacyResponseGuard.Owns(context.ActionDescriptor);
-        if (owns || PrivacyResponseGuard.Find(http) != null || !MediaResponseContract.Streams(context.ActionDescriptor))
-            PrivacyResponseGuard.Of(http).OwnTransport();
+        var existing = PrivacyResponseGuard.Find(http);
+        if (owns || existing != null || !MediaResponseContract.Streams(context.ActionDescriptor))
+            PrivacyResponseGuard.Of(http).OwnTransport(!owns && existing == null && MediaResponseContract.Download(context.ActionDescriptor));
         if (owns)
         {
             // Admission precedes evidence reads; the token spans all remaining host callbacks and transport completion.
@@ -677,7 +704,21 @@ public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IAlwaysRunResult
     /// <inheritdoc />
     public void OnResultExecuting(ResultExecutingContext context)
     {
-        PrivacyResponseGuard.BeforeResult(context);
+        if (!PrivacyResponseGuard.BeforeResult(context)) return;
+        if (MediaResponseContract.Download(context.ActionDescriptor) && context.Result.GetType() == typeof(PhysicalFileResult))
+            context.Result = new DownloadResult(context.Result);
+    }
+
+    private sealed class DownloadResult(IActionResult inner) : IActionResult
+    {
+        public async Task ExecuteResultAsync(ActionContext context)
+        {
+            var guard = PrivacyResponseGuard.Of(context.HttpContext);
+            guard.Bind(context.HttpContext, owned: true);
+            if (!guard.Holds()) { guard.Stop(); return; }
+            guard.StreamRawDownload(context, inner);
+            await inner.ExecuteResultAsync(context).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />
