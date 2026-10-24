@@ -139,7 +139,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var info = new { id = instance.Id, name = instance.Name, kind = instance.Kind.ToString(), role = instance.Role };
             if (!instance.Usable) return new AddOptions { Instance = info, Reason = "instance_unusable", Message = $"{instance.Name} is disabled.", Defaults = instance.Defaults };
             var system = await ArrAddRules.FreshSystemAsync(_store, instance, ct).ConfigureAwait(false);
-            var tags = await TagsAsync(instance, ct).ConfigureAwait(false);
+            // One connection for the whole preview (D53, edition round 22): its defaults, tags and the title lookup are read through
+            // the client the system facts came from, so the preview never mixes two servers' answers.
+            var bound = system.ReadBy is { } read ? _clients.Bound(read) : _clients.For(instance.Id);
+            var tags = await TagsAsync(instance, ct, bound.Ok ? bound.Value : null).ConfigureAwait(false);
             var check = ArrAddRules.Check(instance, system, tags);
             var profiles = system.Value?.QualityProfiles.Select(p => new AddChoice(p.Id, p.Name)).ToList() ?? new List<AddChoice>();
             var folders = system.Value?.RootFolders.Where(r => !string.IsNullOrEmpty(r.Path)).Select(r => new AddFolder(r.Path!, r.FreeSpace, r.Accessible != false)).ToList() ?? new List<AddFolder>();
@@ -170,7 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             object? title = null;
             if (key != null && reason == null)
             {
-                var client = _clients.For(instance.Id);
+                var client = bound;
                 if (!client.Ok)
                 {
                     reason = "snapshot_unavailable";
@@ -230,11 +233,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public async Task<RequestOutcome> AddAsync(Guid admin, ManageAddRequest? body, CancellationToken ct)
         {
+            if (!_requests.Policy.IsAdmin(admin)) return RequestOutcome.Refused("admin_required");
             if (!DirectOn(_config())) return RequestOutcome.Refused("direct_add_unavailable", 409, "unavailable") with { Message = "Adding from Jellyfin Enhanced isn't on." };
             if (body == null || string.IsNullOrWhiteSpace(body.InstanceId) || TitleKey.Parse(body.Key) is not { } parsed || parsed.Season.HasValue)
                 return RequestOutcome.Refused("invalid_input", 400);
             if (string.IsNullOrWhiteSpace(body.IdempotencyKey) || body.IdempotencyKey.Length > 64 || body.IdempotencyKey.Any(char.IsControl))
                 return RequestOutcome.Refused("idempotency_key_required", 400);
+            var identity = MutationInput.Hash(JsonSerializer.Serialize(new { operation = "add", title = parsed.ToString(), instance = body.InstanceId.ToLowerInvariant(), body.ProfileId, body.RootFolder, seasons = body.Seasons?.Distinct().OrderBy(n => n).ToArray() }));
+            return await _requests.Ledger.Database.RetryOwners.ExecuteAsync(admin, body.IdempotencyKey, "add", identity,
+                token => AddOwnedAsync(admin, body, parsed, identity, token),
+                () => RequestOutcome.Refused(PressChecks.Conflict, 409), RetryOwners.UnresolvedRequest, ct, DateTimeOffset.UtcNow,
+                releaseUnsent: result => result.HttpStatus >= 400).ConfigureAwait(false);
+        }
+
+        private async Task<RequestOutcome> AddOwnedAsync(Guid admin, ManageAddRequest body, TitleKey parsed, string identity, CancellationToken ct)
+        {
             var instance = _clients.Registry.Get(body.InstanceId);
             if (instance == null) return RequestOutcome.Refused("not_found", 404);
             if (!instance.Usable) return RequestOutcome.Refused("instance_changed", 409);
@@ -262,14 +275,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ProfileId = body.ProfileId,
                 RootFolder = body.RootFolder,
             };
-            return await _requests.CreateAsync(admin, new CreateRequest("je-add-" + body.IdempotencyKey.Trim(), input), ct).ConfigureAwait(false);
+            // The administrator's key, in the same namespace as their asks (D53, edition round 22): an add is told apart by its
+            // operation in the request's identity, never by a key prefix of its own.
+            return await _requests.CreateAsync(admin, new CreateRequest(body.IdempotencyKey!.Trim(), input) { Operation = "add", Identity = identity }, ct).ConfigureAwait(false);
         }
 
-        // Tag ids and labels: from the library snapshot in memory, else one read of the instance's tags.
-        private async Task<IReadOnlyDictionary<int, string>?> TagsAsync(ArrConnection instance, CancellationToken ct)
+        // Tag ids and labels: from the library snapshot in memory (display labels; the add's own send checks its tag ids again),
+        // else one read of the instance's tags through the given client (the preview's connection).
+        private async Task<IReadOnlyDictionary<int, string>?> TagsAsync(ArrConnection instance, CancellationToken ct, ArrClient? through = null)
         {
             if (_store.PeekLibrary(instance.Id)?.Tags is { } held) return held;
-            var client = _clients.For(instance.Id);
+            var client = through != null ? ArrResult<ArrClient>.Success(through) : _clients.For(instance.Id);
             if (!client.Ok) return null;
             var read = await client.Value!.GetAsync<List<JsonElement>>("tag", null, ArrCallClass.Read, ct).ConfigureAwait(false);
             if (!read.Ok) return null;

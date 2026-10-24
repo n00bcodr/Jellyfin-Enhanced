@@ -70,6 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private static readonly JsonSerializerOptions Json = new();
 
         private readonly NotifyStore _store;
+        private readonly NotifyStore _publicStore;
         private readonly ArrStatusService _status;
         private readonly SeerrRequestReadModel _requests;
         private readonly IArrJellyfinView _view;
@@ -89,6 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly IRequestPolicy? _policy;
         private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
         private readonly RecentArrivals _recentlyAdded;
+        private long _observedGeneration;
         private readonly SemaphoreSlim _round = new(1, 1);
         private volatile HashSet<string> _interest = new(StringComparer.Ordinal);
         // Guards _dirty together with _firstDirty/_lastDirty: titles are marked from other threads
@@ -131,7 +133,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _ledger = ledger;
             _titleMeta = titleMeta;
             _policy = policy;
-            _store = store;
+            _publicStore = store;
+            _store = store.ForEvaluation();
+            _observedGeneration = store.Generation;
             _status = status;
             _requests = requests;
             _view = view;
@@ -153,7 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public bool Enabled => NotifyFlags.Enabled(_config()) && _store.Available;
 
         /// <summary>The store (routes).</summary>
-        public NotifyStore Store => _store;
+        public NotifyStore Store => _publicStore;
 
         /// <summary>The status service (routes).</summary>
         public ArrStatusService Status => _status;
@@ -336,11 +340,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// One round: Seerr's changes, due titles (after a short quiet spell, or at most a few
         /// seconds), the periodic sweep, batches whose window closed, admin checks and housekeeping.
         /// </summary>
-        internal async Task TickAsync(CancellationToken cancellationToken, bool force = false)
+        internal Task TickAsync(CancellationToken cancellationToken, bool force = false)
+            => _store.Ordering.RunAsync(() => TickCoreAsync(cancellationToken, force), cancellationToken);
+
+        private async Task TickCoreAsync(CancellationToken cancellationToken, bool force)
         {
             if (!Enabled)
             {
-                NoteAlertsPaused();
+                NoteAlertsPausedCore();
                 return;
             }
             _pauseNoted = false;
@@ -348,29 +355,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             try
             {
                 var now = _now();
+                var generation = _store.Generation;
+                if (_observedGeneration != generation)
+                {
+                    _observedGeneration = generation;
+                    Interlocked.Exchange(ref _seenRequests, -1);
+                    _ledgerCursor = null;
+                    _storedLedgerCursor = null;
+                    _nextSweep = now;
+                    _nextAdmin = now;
+                }
                 if (_requests.Revision != Interlocked.Read(ref _seenRequests))
                 {
                     // Only a list that was actually compared counts as seen: one announced before it
                     // finished loading (or while Seerr can't be read) is compared once it has.
                     var revision = _requests.Revision;
                     var prepared = await PrepareAskVisibilityAsync(cancellationToken).ConfigureAwait(false);
-                    if (ScanRequests(now, prepared)) Interlocked.Exchange(ref _seenRequests, revision);
+                    if (ScanRequestsCore(now, prepared) && _store.Generation == generation) Interlocked.Exchange(ref _seenRequests, revision);
+                    if (_store.Generation != generation) return;
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 // Phase 3: the ledger's notices (OK'd, declined) and, in JE mode, its requests as interests.
-                if (NoticesOn) await DeliverRequestNoticesAsync(now, cancellationToken).ConfigureAwait(false);
+                if (NoticesOn) await DeliverRequestNoticesCoreAsync(now, cancellationToken).ConfigureAwait(false);
                 // Outcome alerts waiting for evidence: on their own schedule, whatever else changed (or didn't).
-                await RetryAlertWaitsAsync(now, cancellationToken).ConfigureAwait(false);
+                await RetryAlertWaitsCoreAsync(now, cancellationToken).ConfigureAwait(false);
                 // Evidence a bell read found unprepared (its rows were shown without their titles meanwhile).
                 await PrepareLaterAsync(cancellationToken).ConfigureAwait(false);
-                if (LedgerInterest) ScanLedger();
+                if (LedgerInterest) ScanLedgerCore();
                 else _ledgerCursor = null;
                 cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextSweep)
                 {
                     _nextSweep = now + SweepEvery;
                     _recentlyAdded.Prune();
-                    RebuildInterest();
+                    RebuildInterestCore();
                     lock (_dirtyGate)
                     {
                         foreach (var key in _interest) _dirty[key] = 0;
@@ -378,13 +396,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         _lastDirty = now - QuietDebounce;
                     }
                 }
-                if (TakeDue(now, force) is { } keys) await EvaluateAsync(keys, null, cancellationToken).ConfigureAwait(false);
-                FlushBatches(_now(), cancellationToken);
+                if (TakeDue(now, force) is { } keys) await EvaluateCoreAsync(keys, null, cancellationToken).ConfigureAwait(false);
+                FlushBatchesCore(_now(), cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextAdmin)
                 {
                     _nextAdmin = now + AdminEvery;
-                    await AdminChecksAsync(cancellationToken).ConfigureAwait(false);
+                    await AdminChecksCoreAsync(cancellationToken).ConfigureAwait(false);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextPurge)
@@ -406,7 +424,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// The title keys anyone follows or asked for (movie and series level), plus the other keys
         /// the arrs know those titles by, so changes announced under either reach them.
         /// </summary>
-        internal void RebuildInterest()
+        internal void RebuildInterest() => _store.Ordering.Run(RebuildInterestCore);
+
+        private void RebuildInterestCore()
         {
             var set = new HashSet<string>(StringComparer.Ordinal);
             foreach (var f in _store.AllFollows())
@@ -594,7 +614,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// title taken was looked at, so after a restart the requests made just before it get their first look at
         /// once (not only at the first sweep or when what they ask for arrives, which would be recorded silently).
         /// </summary>
-        internal void ScanLedger()
+        internal void ScanLedger() => _store.Ordering.Run(ScanLedgerCore);
+
+        private void ScanLedgerCore()
         {
             var first = _ledgerCursor == null;
             if (!first && _ledgerCursor != _storedLedgerCursor && _dirty.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
@@ -605,11 +627,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 // Never looked before: from now on.
                 StoreLedgerCursor(cursor);
-                RebuildInterest();
+                RebuildInterestCore();
                 return;
             }
             if (!first && titles.Count == 0) return;
-            RebuildInterest();
+            RebuildInterestCore();
             MarkDirty(titles);
         }
 
@@ -637,7 +659,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// removed. A new ask by someone with no other request for the title forgets what they were told about it,
         /// so its arrival is told again (as for a Seerr request asked again).
         /// </summary>
-        internal async Task<int> DeliverRequestNoticesAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        internal Task<int> DeliverRequestNoticesAsync(DateTimeOffset now, CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => DeliverRequestNoticesCoreAsync(now, cancellationToken), cancellationToken);
+
+        private async Task<int> DeliverRequestNoticesCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             var told = 0;
             // The batch is decided from the database as it is now: a restore while it is handled (between awaits)
@@ -777,7 +802,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
                         continue;
                     case NotifyEffect.Act:
-                        if (Notify(final, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
+                        if (NotifyCore(final, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
                         else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
                         continue;
                 }
@@ -833,7 +858,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// round.
         /// Returns how many were told.
         /// </summary>
-        internal async Task<int> RetryAlertWaitsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        internal Task<int> RetryAlertWaitsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => RetryAlertWaitsCoreAsync(now, cancellationToken), cancellationToken);
+
+        private async Task<int> RetryAlertWaitsCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             var told = 0;
             var generation = _store.Generation;
@@ -872,7 +900,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         _store.DropAlertWait(wait, generation);
                         continue;
                     case NotifyEffect.Act:
-                        if (Notify(final, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation)) told++;
+                        if (NotifyCore(final, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation)) told++;
                         else _store.DropAlertWait(wait, generation);
                         continue;
                 }
@@ -880,9 +908,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return told;
         }
 
-        // A waiting outcome alert as the final gate is asked about it (its own expiry: the outcome's original time).
+        // A waiting outcome alert keeps the same original time for freshness and
+        // the edition's bounded-copy retry deadline; a default Queued expires immediately.
         private static NotifyAlert WaitAlert(AlertWait wait, IReadOnlyDictionary<string, string> payload)
-            => new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Since = wait.OriginalAt };
+            => new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Since = wait.OriginalAt, Queued = wait.OriginalAt };
 
         /// <summary>
         /// Whether an administrator may see the title an ask waiting for an OK (or a reminder about a title) names, by
@@ -976,7 +1005,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Looks at titles for everyone interested in them (or one user): records first looks and
         /// tells about what became ready since the last look.
         /// </summary>
-        internal async Task EvaluateAsync(IReadOnlyCollection<string> titleKeys, Guid? onlyUser, CancellationToken cancellationToken)
+        internal Task EvaluateAsync(IReadOnlyCollection<string> titleKeys, Guid? onlyUser, CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => EvaluateCoreAsync(titleKeys, onlyUser, cancellationToken), cancellationToken);
+
+        private async Task EvaluateCoreAsync(IReadOnlyCollection<string> titleKeys, Guid? onlyUser, CancellationToken cancellationToken)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var raw in titleKeys)
@@ -1041,11 +1073,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Jellyfin holds them for anyone, so a version the viewer only now may open is no arrival.
             var hadPlaying = interest.Scope == null ? null : PlayingBefore(viewer, key, scopeName);
             var hadSources = interest.Scope == null ? null : SourcesBefore(viewer, key, scopeName);
+            // What this look saw, merged with what was known (an unprobed file keeps its last known quality); written only in the
+            // transaction that decides this look (D53, edition round 22: an event and the evidence it consumes commit together).
+            Action<NotifyTransaction> baselines = _ => { };
             if (interest.Scope != null)
             {
                 var playing = _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList();
-                RememberPlaying(viewer, key, scopeName, playing, generation);
-                RememberSources(viewer, key, scopeName, _status.Editions.HeldSources(playing), generation);
+                baselines = Baselines(viewer, key, scopeName, playing, _status.Editions.HeldSources(playing));
             }
             var mark = "ready|" + key + "|" + scopeName;
             var itemId = composed?.Visible?.ItemId;
@@ -1064,13 +1098,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, stage == StatusStage.Ready ? ReadyItems(null, itemId) : null, now);
                     if (stage == StatusStage.Ready) foreach (var m in marks) tx.TryMark(viewer.UserId, m, now);
+                    baselines(tx);
                     return true;
                 }, false).Done);
                 return;
             }
             if (watch is { } seen && (stage != StatusStage.Ready || seen.Stage == StatusStage.Ready))
             {
-                if (stage != seen.Stage) Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, seen.Known, now); return true; }, false).Done);
+                // No event at this look: what it saw is recorded on its own (nothing pending consumes it).
+                Written(key, _store.InTransaction(generation, tx =>
+                {
+                    if (stage != seen.Stage) tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, seen.Known, now);
+                    baselines(tx);
+                    return true;
+                }, false).Done);
                 return;
             }
             // Became ready (or arrived after it was asked for, before its first look): the new stage, the "handled"
@@ -1081,6 +1122,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             bool Handle(NotifyTransaction tx)
             {
                 tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, ReadyItems(known, itemId), now);
+                // The evidence the arrival was judged by is consumed with it: a notification that can't be written leaves it as it
+                // was, and the next look judges the same upgrade again.
+                baselines(tx);
                 var first = true;
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
@@ -1113,7 +1157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     Written(key, _store.InTransaction(generation, Handle, false).Done);
                     return;
                 case NotifyEffect.Act:
-                    if (!Notify(final, Handle, generation)) Written(key, _store.Generation == generation);
+                    if (!NotifyCore(final, Handle, generation)) Written(key, _store.Generation == generation);
                     return;
             }
         }
@@ -1175,11 +1219,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToHashSet();
             // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
             if (bound.Reached) return;
-            if (playingNow != null)
-            {
-                RememberPlaying(viewer, key, scope, playingNow, generation);
-                RememberSources(viewer, key, scope, _status.Editions.HeldSources(playingNow, seriesCopies), generation);
-            }
+            // As for a movie (D53, edition round 22): what this look saw is merged with what was known and written only in the
+            // transaction that decides the look (the batch of its arrivals, or a look with nothing to tell).
+            Action<NotifyTransaction> baselines = _ => { };
+            if (playingNow != null) baselines = Baselines(viewer, key, scope, playingNow, _status.Editions.HeldSources(playingNow, seriesCopies));
             seriesItem = files.Select(f => (Guid?)f.Series).FirstOrDefault() ?? seriesCopies.FirstOrDefault()?.ItemId;
             foreach (var copy in seriesCopies.Where(c => c.ItemId != Guid.Empty)) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
@@ -1203,12 +1246,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 known = present.Where(p => asked == null || p.Value.Added is not DateTime added || added <= asked).Select(p => p.Key).ToHashSet();
                 if (known.Count == present.Count)
                 {
-                    Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); return true; }, false).Done);
+                    Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); baselines(tx); return true; }, false).Done);
                     return;
                 }
             }
             var arrivals = present.Where(p => !known.Contains(p.Key)).OrderBy(a => a.Key.Season).ThenBy(a => a.Key.Episode).ToList();
-            if (arrivals.Count == 0) return;
+            if (arrivals.Count == 0)
+            {
+                // Nothing new at this look: what it saw is recorded on its own (nothing pending consumes it).
+                Written(key, _store.InTransaction(generation, tx => { baselines(tx); return true; }, false).Done);
+                return;
+            }
             var prefs = _store.Prefs(viewer.UserId);
             foreach (var a in arrivals) known.Add(a.Key);
             var minutes = Math.Clamp(_config()?.ArrNotifyBatchMinutes ?? 10, 1, 60);
@@ -1241,6 +1289,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     wanted.Add((number.Season, number.Episode, id, arrival));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
+                // The evidence the arrivals were judged by commits with their batch (a failed batch write leaves both as they were).
+                baselines(tx);
                 if (wanted.Count > 0 && prefs.Episodes)
                 {
                     var first = wanted[0];
@@ -1270,20 +1320,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// The items that played for the viewer (any edition) at the last look of an interest in one edition (see
-        /// <see cref="RememberPlaying"/>); null when none was remembered yet (no evidence of an upgrade in place).
+        /// <see cref="Baselines"/>); null when none was remembered yet (no evidence of an upgrade in place).
         /// </summary>
         private HashSet<Guid>? PlayingBefore(StatusViewer viewer, TitleKey key, string scope)
             => _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known is { } known
                 ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Guid.TryParseExact(x, "N", out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToHashSet()
                 : null;
 
-        /// <summary>Remembers the items that play for the viewer now (any edition), when that changed (see <see cref="PlayingBefore"/>).</summary>
-        private void RememberPlaying(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, long generation)
+        /// <summary>
+        /// The writes of what a look of an interest in one edition saw (see <see cref="PlayingBefore"/> and
+        /// <see cref="SourcesBefore"/>), for the transaction that decides the look: the items that play now, and their backing
+        /// sources merged with what was known of them (<see cref="MergeSources"/>). Each is written only when it changed.
+        /// </summary>
+        internal Action? BaselinesCaptured { get; set; }
+
+        private Action<NotifyTransaction> Baselines(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, IEnumerable<JfSource> sources)
         {
-            var known = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
-            if (_store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known == known) return;
-            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, known, _now()); return true; }, false);
+            var playingText = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
+            var heldPlaying = _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known;
+            var heldSources = _store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known;
+            var sourcesText = MergeSources(sources, SourcesBefore(viewer, key, scope));
+            BaselinesCaptured?.Invoke();
+            var now = _now();
+            return tx =>
+            {
+                if (heldPlaying != playingText) tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, playingText, now);
+                if (heldSources != sourcesText) tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, sourcesText, now);
+            };
         }
+
+        /// <summary>
+        /// What is known of the sources seen now (D53, edition round 22: evidence never becomes less informative): each source
+        /// (its version item and file) with the quality read now, or, while Jellyfin hasn't probed it ("-"), the last quality
+        /// known for that same source. Only sources seen now are kept: a removed one is forgotten (it comes back as new), and
+        /// a source holds one quality, the latest known (never every quality it ever had).
+        /// </summary>
+        private static string MergeSources(IEnumerable<JfSource> sources, Dictionary<string, HashSet<string>>? before)
+            => string.Join(",", sources.GroupBy(SourceIdentity, StringComparer.Ordinal)
+                .Select(g =>
+                {
+                    var quality = g.Select(SourceQuality).Where(q => q != "-").OrderBy(q => q, StringComparer.Ordinal).FirstOrDefault();
+                    if (quality == null && before != null && before.TryGetValue(g.Key, out var held))
+                        quality = held.Where(q => q != "-").OrderBy(q => q, StringComparer.Ordinal).FirstOrDefault();
+                    return g.Key + ":" + (quality ?? "-");
+                })
+                .OrderBy(x => x, StringComparer.Ordinal));
 
         /// <summary>The watch scope suffix of the items that played in any edition (see <see cref="PlayingBefore"/>).</summary>
         private const string PlayingSuffix = "|playing";
@@ -1293,7 +1374,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// The backing sources the playing items had at the last look of an interest in one edition, as Jellyfin holds them for
-        /// anyone (see <see cref="RememberSources"/>): each source's identity (its version item and path) with its quality (the
+        /// anyone (see <see cref="Baselines"/>): each source's identity (its version item and path) with its quality (the
         /// video size, "-" while unread); null when none were remembered yet (no evidence of an upgrade in place).
         /// </summary>
         private Dictionary<string, HashSet<string>>? SourcesBefore(StatusViewer viewer, TitleKey key, string scope)
@@ -1302,22 +1383,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     .GroupBy(x => x[0], StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Select(x => x[1]).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal)
                 : null;
 
-        /// <summary>Remembers the backing sources of the items that play now (library context: whoever may open them), when that changed.</summary>
-        private void RememberSources(StatusViewer viewer, TitleKey key, string scope, IEnumerable<JfSource> sources, long generation)
-        {
-            var known = string.Join(",", sources.Select(s => SourceIdentity(s) + ":" + SourceQuality(s)).Distinct().OrderBy(x => x, StringComparer.Ordinal));
-            if (_store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known == known) return;
-            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, known, _now()); return true; }, false);
-        }
-
         /// <summary>
-        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes):
-        /// a version or path not held then, or one whose known quality changed (a file replaced in place). A source that was
-        /// there and only became visible to the viewer is not new. Nothing remembered: no evidence, no.
+        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes;
+        /// round 22: compared with the last KNOWN quality): a version or path not held then, or one whose known quality differs
+        /// from the one known then (a file replaced in place). A source that was there and only became visible to the viewer is
+        /// not new; neither is one whose quality was never known before (an unprobed first look proves no upgrade) or isn't
+        /// known now. Nothing remembered: no evidence, no.
         /// </summary>
         private static bool NewSource(IEnumerable<JfSource> qualifying, Dictionary<string, HashSet<string>>? before)
-            => before != null && qualifying.Any(s => !before.TryGetValue(SourceIdentity(s), out var qualities)
-                || !(qualities.Contains(SourceQuality(s)) || qualities.Contains("-") || SourceQuality(s) == "-"));
+            => before != null && qualifying.Any(s =>
+            {
+                if (!before.TryGetValue(SourceIdentity(s), out var qualities)) return true;
+                var now = SourceQuality(s);
+                var known = qualities.Where(q => q != "-").ToList();
+                return now != "-" && known.Count > 0 && !known.Contains(now, StringComparer.Ordinal);
+            });
 
         // A source's identity: the item behind the version and its file (never Jellyfin's source id: 10.11 changes it while grouping).
         private static string SourceIdentity(JfSource source)
@@ -1499,6 +1579,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// for ever). Nothing read before a restore of the database is written into the restored one.
         /// </summary>
         internal int FlushBatches(DateTimeOffset now, CancellationToken cancellationToken = default)
+            => _store.Ordering.Run(() => FlushBatchesCore(now, cancellationToken));
+
+        private int FlushBatchesCore(DateTimeOffset now, CancellationToken cancellationToken)
         {
             var sent = 0;
             var generation = _store.Generation;
@@ -1688,7 +1771,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     DropBatch(user, key, json, generation);
                     return false;
                 case NotifyEffect.Act:
-                    if (Notify(final, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
+                    if (NotifyCore(final, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
                     if (_store.Generation != generation) throw new BatchChangedException();
                     return false;
             }
@@ -1733,7 +1816,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </param>
         /// <returns>False when there was no list to compare (Seerr off, not read yet), or some of it waits for its evidence.</returns>
         internal bool ScanRequests(DateTimeOffset now, IReadOnlySet<int>? prepared = null)
+            => _store.Ordering.Run(() => ScanRequestsCore(now, prepared));
+
+        private bool ScanRequestsCore(DateTimeOffset now, IReadOnlySet<int>? prepared = null)
         {
+            var generation = _store.Generation;
             if (!_requests.Active || !_requests.Loaded) return false;
             var (source, all, floor) = _requests.Current;
             if (source == null) return false;
@@ -1745,14 +1832,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 if (baselineText != null) _logger?.Info("Notifications: Seerr was replaced by another server; its requests are recorded without telling anyone.");
                 foreach (var r in all) changed.Add((r.Id, r.Status));
-                _store.ResetSeerrSeen(changed, now, source);
-                RebuildInterest();
+                if (_requests.CurrentSource != source) return false;
+                var reset = _store.InTransaction(generation, tx =>
+                {
+                    if (_requests.CurrentSource != source || tx.Meta("seerr_baseline") != baselineText || tx.Meta(NotifyStore.SeerrSourceKey) != seenSource) return false;
+                    tx.ResetSeerrSeen(changed, now, source);
+                    return true;
+                }, false);
+                if (!reset.Done || !reset.Result) return false;
+                RebuildInterestCore();
                 foreach (var r in all.Where(r => r.RequestedBy.HasValue && r.Key != null)) titles.Add(r.Key!.Title.ToString());
                 MarkDirty(titles);
                 return true;
             }
             // Seen before this server was noted (an upgrade): the states seen are this server's.
-            if (seenSource == null) _store.SetMeta(NotifyStore.SeerrSourceKey, source);
+            var resets = new List<(Guid User, TitleKey Title)>();
             var seen = _store.SeerrSeen();
             // Below this, what was seen was forgotten (it fell below the requests read): not known is old, not new.
             var forgotten = int.TryParse(_store.Meta(NotifyStore.SeerrForgottenBelowKey), NumberStyles.None, CultureInfo.InvariantCulture, out var fb) ? fb : 0;
@@ -1761,6 +1855,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var baseline = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(baselineText, CultureInfo.InvariantCulture)).UtcDateTime;
             var admins = (IReadOnlyList<Guid>?)null;
             var deferred = false;
+            var finals = new List<NotifyFinal>();
+            var waits = new List<AlertWait>();
             foreach (var r in all)
             {
                 var known = seen.TryGetValue(r.Id, out var previous);
@@ -1784,9 +1880,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // A new request from someone with no other request for the title (asked again after
                     // it was removed): what they were told under the old one doesn't stop telling them
                     // this time. An upgrade flapping under the same request is still told once.
-                    ForgetTitle(asker, r.Key.Title);
+                    resets.Add((asker, r.Key.Title));
                 }
-                if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && r.Key != null)
+                if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && r.Key != null && _users.IsActive(requester))
                 {
                     var p = TitleParams(r.Key.Title, null, r);
                     p["contact"] = Contact();
@@ -1808,7 +1904,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         case NotifyEffect.Postpone:
                         {
                             var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id, declinedAt, final.Until!.Value, 0);
-                            _store.InTransaction(tx => tx.AddAlertWait(wait));
+                            waits.Add(wait);
                             break;
                         }
 
@@ -1816,7 +1912,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             // Ended: the change is seen with the rest of the list.
                             break;
                         case NotifyEffect.Act:
-                            Notify(final, null);
+                            finals.Add(final);
                             break;
                     }
                 }
@@ -1845,7 +1941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                                 // expiring from the ask's own time), as a Seerr decline does; the change is seen.
                                 var wait = new AlertWait("seerr-ask", server + "|" + r.Id.ToString(CultureInfo.InvariantCulture) + "|" + NotifyValues.Id(admin), admin, NotifyKind.Approval,
                                     r.Key?.Title.ToString() ?? string.Empty, askKey, JsonSerializer.Serialize(p), r.Id.ToString(CultureInfo.InvariantCulture), askedAt, final.Until!.Value, 0);
-                                _store.InTransaction(tx => tx.AddAlertWait(wait));
+                                waits.Add(wait);
                                 break;
                             }
 
@@ -1853,7 +1949,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                                 // Not for this administrator: the change is seen with the rest of the list.
                                 break;
                             case NotifyEffect.Act:
-                                Notify(final, null);
+                                finals.Add(final);
                                 break;
                         }
                     }
@@ -1866,10 +1962,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // ... and it can't be compared again while that lasts: what was seen below the floor is
             // forgotten (the table stays as large as the list held, not as Seerr's lifetime).
             var forget = floor is int below && seen.Keys.Any(id => id < below) ? floor : null;
-            if (changed.Count > 0 || gone.Count > 0 || forget != null) _store.SetSeerrSeen(changed, gone, now, forget);
+            var plans = resets.Select(pair => PlanForget(pair.User, pair.Title)).ToList();
+            if (_requests.CurrentSource != source) return false;
+            var committed = _store.InTransaction(generation, tx =>
+            {
+                if (_requests.CurrentSource != source || tx.Meta("seerr_baseline") != baselineText || tx.Meta(NotifyStore.SeerrSourceKey) != seenSource) return (false, new List<NotifyFinal>());
+                foreach (var plan in plans) tx.ForgetTitle(plan.User, plan.Keys, plan.Items);
+                // Preserve the edition's original transaction: the r21 Final
+                // verdicts, channels, waits and seen state commit together.
+                var created = finals.Where(final => Add(tx, final) != null).ToList();
+                foreach (var wait in waits) tx.AddAlertWait(wait);
+                tx.SetSeerrSeen(changed, gone, now, forget);
+                tx.SetMeta(NotifyStore.SeerrSourceKey, source);
+                return (true, created);
+            }, (false, new List<NotifyFinal>()));
+            if (!committed.Done || !committed.Result.Item1) return false;
+            foreach (var final in committed.Result.Item2) Announce(final);
             if (gone.Count > 0 || changed.Count > 0)
             {
-                RebuildInterest();
+                RebuildInterestCore();
                 ForgetEndedInterests();
             }
             MarkDirty(titles);
@@ -1896,6 +2007,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         private void ForgetTitle(Guid user, TitleKey title, long? generation = null)
         {
+            generation ??= _store.Generation;
+            var plan = PlanForget(user, title);
+            _store.InTransaction(generation, tx => { tx.ForgetTitle(user, plan.Keys, plan.Items); return true; }, false);
+        }
+
+        private (Guid User, IReadOnlyList<string> Keys, IReadOnlyList<Guid> Items) PlanForget(Guid user, TitleKey title)
+        {
             var canonical = Canonical(title.Title);
             var keys = new[] { title.Title.ToString(), canonical.ToString() }.Concat(Aliases(canonical)).Distinct(StringComparer.Ordinal).ToList();
             var items = new List<Guid>();
@@ -1908,7 +2026,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
             }
             // Read before a restore (generation given): not written into the restored data.
-            _store.InTransaction(generation, tx => { tx.ForgetTitle(user, keys, items); return true; }, false);
+            return (user, keys, items);
         }
 
         private void MarkDirty(IEnumerable<string> titles)
@@ -1967,7 +2085,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// its first look at once, so only what arrives from now on is announced. Returns false when
         /// the user may not follow it or holds too many follows.
         /// </summary>
-        public async Task<string> SetFollowAsync(StatusViewer viewer, TitleKey key, bool on, CancellationToken cancellationToken)
+        public Task<string> SetFollowAsync(StatusViewer viewer, TitleKey key, bool on, CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => SetFollowCoreAsync(viewer, key, on, cancellationToken), cancellationToken);
+
+        private async Task<string> SetFollowCoreAsync(StatusViewer viewer, TitleKey key, bool on, CancellationToken cancellationToken)
         {
             if (!Enabled) return "disabled";
             if (key.Episode.HasValue) return "invalid_key";
@@ -1980,10 +2101,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             else if (asked && !key.Season.HasValue) ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: true, remove: false, now);
             else ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: false, remove: true, now);
             if (!ok) return "too_many";
-            RebuildInterest();
+            RebuildInterestCore();
             if (on)
             {
-                await EvaluateAsync(new[] { key.Title.ToString() }, viewer.UserId, cancellationToken).ConfigureAwait(false);
+                await EvaluateCoreAsync(new[] { key.Title.ToString() }, viewer.UserId, cancellationToken).ConfigureAwait(false);
             }
             else if (InterestsIn(Canonical(key.Title), viewer.UserId).Count == 0)
             {
@@ -2025,7 +2146,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// as an admin event, at most once per user and title every 24 hours. Only for titles the user
         /// can see that really need attention right now; administrators don't remind themselves.
         /// </summary>
-        public async Task<RemindOutcome> RemindAsync(StatusViewer viewer, TitleKey key, Guid? itemId, CancellationToken cancellationToken)
+        public Task<RemindOutcome> RemindAsync(StatusViewer viewer, TitleKey key, Guid? itemId, CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => RemindCoreAsync(viewer, key, itemId, cancellationToken), cancellationToken);
+
+        private async Task<RemindOutcome> RemindCoreAsync(StatusViewer viewer, TitleKey key, Guid? itemId, CancellationToken cancellationToken)
         {
             if (!Enabled) return new RemindOutcome("disabled");
             if (viewer.IsAdmin) return new RemindOutcome("admin");
@@ -2111,7 +2235,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// OK'd request is told once per occurrence, and only when it started after the first check
         /// (rows already listed when the alerts were switched on stay on the Overview only).
         /// </summary>
-        internal async Task AdminChecksAsync(CancellationToken cancellationToken)
+        internal Task AdminChecksAsync(CancellationToken cancellationToken)
+            => _store.Ordering.RunAsync(() => AdminChecksCoreAsync(cancellationToken), cancellationToken);
+
+        private async Task AdminChecksCoreAsync(CancellationToken cancellationToken)
         {
             if (_hub == null) return;
             var attention = await _hub.NeedsAttentionAsync(cancellationToken, background: true).ConfigureAwait(false);
@@ -2206,7 +2333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             // Nothing queued: the next check observes the row again.
                             break;
                         case NotifyEffect.Act:
-                            Notify(final, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+                            NotifyCore(final, tx => tx.KeepMark(admin, "told|" + eventKey, now));
                             break;
                     }
                 }
@@ -2269,7 +2396,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// alerts were switched off after they had begun: the next check starts their baseline afresh.
         /// A plain restart with the alerts on notes nothing.
         /// </summary>
-        internal void NoteAlertsPaused()
+        internal void NoteAlertsPaused() => _store.Ordering.Run(NoteAlertsPausedCore);
+
+        private void NoteAlertsPausedCore()
         {
             if (_pauseNoted || NotifyFlags.Enabled(_config()) || !_store.Available) return;
             try
@@ -2342,7 +2471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <remarks><paramref name="since"/>: its origin, when what it tells happened (4f round 10: every alert carries one; the gate
         /// holds it to the catch-up limit).</remarks>
         private static NotifyAlert Alert(Guid user, string kind, string? eventKey, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset since)
-            => new(user, kind, titleKey, itemId, eventKey, payload) { Since = since };
+            => new(user, kind, titleKey, itemId, eventKey, payload) { Since = since, Queued = since };
 
         /// <summary>
         /// Creates the notification the final gate let go (<paramref name="final"/>, decided right before with no await in
@@ -2357,6 +2486,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// is written (false) when the database was restored since the event's rows were read.
         /// </remarks>
         internal bool Notify(NotifyFinal final, Func<NotifyTransaction, bool>? first, long? generation = null)
+            => _store.Ordering.Run(() => NotifyCore(final, first, generation));
+
+        private bool NotifyCore(NotifyFinal final, Func<NotifyTransaction, bool>? first, long? generation = null)
         {
             switch (final.Effect)
             {
@@ -2417,14 +2549,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public void BumpInbox(Guid user) => _feed.Bump(new[] { ArrTitleKey.UserInbox(user) });
 
         /// <summary>Sends a test message to one user (in-app, plus each outbound channel they have on).</summary>
-        public bool SendTest(Guid user)
+        public bool SendTest(Guid user) => _store.Ordering.Run(() => SendTestCore(user));
+
+        private bool SendTestCore(Guid user)
         {
             var now = _now();
             var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));
             switch (final.Effect)
             {
                 case NotifyEffect.Act:
-                    return Notify(final, null);
+                    return NotifyCore(final, null);
                 case NotifyEffect.Leave:
                 case NotifyEffect.Postpone:
                 case NotifyEffect.Suppress:
@@ -2438,14 +2572,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// "Send me a test", at most once per <paramref name="every"/>: the slot is claimed in the same
         /// transaction that adds the test (many requests at once send one). False when it is too soon.
         /// </summary>
-        public bool TrySendTest(Guid user, TimeSpan every)
+        public bool TrySendTest(Guid user, TimeSpan every) => _store.Ordering.Run(() => TrySendTestCore(user, every));
+
+        private bool TrySendTestCore(Guid user, TimeSpan every)
         {
             var now = _now();
             var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));
             switch (final.Effect)
             {
                 case NotifyEffect.Act:
-                    return Notify(final, tx => tx.ClaimMark(user, "test", now, every));
+                    return NotifyCore(final, tx => tx.ClaimMark(user, "test", now, every));
                 case NotifyEffect.Leave:
                 case NotifyEffect.Postpone:
                 case NotifyEffect.Suppress:

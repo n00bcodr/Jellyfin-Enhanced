@@ -2,7 +2,6 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -37,11 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private int _loggedOnce;
 
-        private static readonly RegexOptions Opts = RegexOptions.IgnoreCase | RegexOptions.Compiled;
-        private static readonly TimeSpan MatchTimeout = TimeSpan.FromSeconds(2);
-
-        // Served-filename pattern -> fixed on-disk filename under BrandingDirectory.
-        // Patterns match the stable basename and are hash-agnostic, since the webpack
+        // Served file name -> fixed on-disk filename under BrandingDirectory.
+        // The names match the stable basename and are hash-agnostic, since the webpack
         // content hash changes on every jellyfin-web build. The served basename
         // "touchicon" (in any sized/hashed form) maps to the single upload name
         // "apple-touch-icon.png"; the other four match 1:1.
@@ -51,16 +47,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // references unhashed, sized touch-icon variants copied verbatim into a new
         // /web/favicons/ subdirectory (e.g. favicons/touchicon144.png) - distinct from
         // the older flat, content-hashed /web/touchicon.<hash>.png used by the
-        // <link rel="apple-touch-icon"> tag. The touchicon pattern below covers both:
+        // <link rel="apple-touch-icon"> tag. The touchicon form covers both:
         // an optional size suffix (72/114/144/512) and an optional ".<hash>" segment.
-        private static readonly (Regex Pattern, string OnDiskFileName)[] Map =
+        //
+        // Each name is matched in one deterministic pass (no regular expression, no match timeout: a valid asset path
+        // always gets the custom image, however long the server takes to schedule the request). Letters match in either
+        // case, as the case-insensitive patterns did (the dotted capital I and the Kelvin sign included).
+        private static readonly (Func<string, bool> Matches, string OnDiskFileName)[] Map =
         {
-            (new Regex(@"^icon-transparent\..*\.png$", Opts, MatchTimeout), "icon-transparent.png"),
-            (new Regex(@"^banner-light\..*\.png$", Opts, MatchTimeout), "banner-light.png"),
-            (new Regex(@"^banner-dark\..*\.png$", Opts, MatchTimeout), "banner-dark.png"),
-            (new Regex(@"^favicon\..*\.ico$", Opts, MatchTimeout), "favicon.ico"),
-            (new Regex(@"^touchicon\d*(\.[0-9a-f]+)?\.png$", Opts, MatchTimeout), "apple-touch-icon.png"),
+            (name => Hashed(name, "icon-transparent.", ".png"), "icon-transparent.png"),
+            (name => Hashed(name, "banner-light.", ".png"), "banner-light.png"),
+            (name => Hashed(name, "banner-dark.", ".png"), "banner-dark.png"),
+            (name => Hashed(name, "favicon.", ".ico"), "favicon.ico"),
+            (TouchIcon, "apple-touch-icon.png"),
         };
+
+        // "<prefix><anything but a line feed><suffix>" (the old "^prefix.*suffix$"; a name never ends in a line feed).
+        private static bool Hashed(string name, string prefix, string suffix)
+            => name.Length >= prefix.Length + suffix.Length
+                && Helpers.AsciiGrammar.StartsWithIgnoreCase(name, prefix, culture: true)
+                && Helpers.AsciiGrammar.EndsWithIgnoreCase(name, suffix, culture: true)
+                && name.IndexOf('\n', StringComparison.Ordinal) < 0;
+
+        // "touchicon", then digits (any script's decimal digits, as \d), then optionally "." and 1+ hex digits, then ".png".
+        private static bool TouchIcon(string name)
+        {
+            const string Prefix = "touchicon";
+            if (!Helpers.AsciiGrammar.StartsWithIgnoreCase(name, Prefix, culture: true)) return false;
+            var i = Prefix.Length;
+            while (i < name.Length && char.IsDigit(name[i])) i++;
+            var rest = name.AsSpan(i);
+            if (Helpers.AsciiGrammar.EqualsIgnoreCase(rest, ".png")) return true;
+            if (rest.Length < 6 || rest[0] != '.') return false;
+            var hex = 1;
+            while (hex < rest.Length && Helpers.AsciiGrammar.IsHex(rest[hex])) hex++;
+            return hex > 1 && Helpers.AsciiGrammar.EqualsIgnoreCase(rest[hex..], ".png");
+        }
 
         public BrandingAssetStartupFilter(Logger logger)
         {
@@ -210,7 +232,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static string Unweaken(string etag) =>
             etag.StartsWith("W/", StringComparison.Ordinal) ? etag.Substring(2) : etag;
 
-        private static string? MatchBrandingAsset(string? path)
+        /// <summary>The on-disk branding file a request path asks for (its file name, under a /web/ path), or null.</summary>
+        internal static string? MatchBrandingAsset(string? path)
         {
             if (string.IsNullOrEmpty(path) || path.IndexOf("/web/", StringComparison.OrdinalIgnoreCase) < 0)
             {
@@ -223,18 +246,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
 
-            foreach (var (pattern, onDiskFileName) in Map)
+            foreach (var (matches, onDiskFileName) in Map)
             {
-                try
+                if (matches(fileName))
                 {
-                    if (pattern.IsMatch(fileName))
-                    {
-                        return onDiskFileName;
-                    }
-                }
-                catch (RegexMatchTimeoutException)
-                {
-                    // Pathological filename — treat as no match.
+                    return onDiskFileName;
                 }
             }
 

@@ -52,47 +52,62 @@ public class ReadyEffectTableTests
         Assert.Single(w.Sessions.Sent);
     }
 
-    [Fact]
-    public async Task ASeerrAskThatMustWaitIsPostponedInTheWaitQueueAndToldOnceSeerrCanBeReadAgain()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASeerrAskFanoutPreservesTheSourceAndPostponesBoundedRecipients(bool sourceChanged)
     {
-        // The table at the Seerr scan: Wait = postpone. Seerr's list stops being readable between two administrators' gates in
-        // the same scan (Seerr switched off while Jake's view of the title is evaluated): Sam's ask waits in the wait queue and
-        // the change is seen; once Seerr is back, Sam is told once. It was dropped (the change seen, nothing kept for Sam).
-        var w = new World(await IntegrationNotificationsTests.Started(), jeMode: false);
-        using (w)
+        // The joined scan commits recipients, waits and seen state atomically.
+        // A changed source commits none of them. With a stable source, one
+        // recipient's bounded copy lookup still creates a durable wait.
+        using var w = new World(await IntegrationNotificationsTests.Started(), jeMode: false);
+        var sam = w.Rig.Sam;
+        w.Rig.Users.AdminIds.Add(sam.UserId);
+        w.Rig.Users.Names[sam.UserId] = "Sam";
+        w.Rig.Prefs(sam, p => p.AdminAlerts = true);
+        w.Policy.People[sam.UserId] = new(sam.UserId, "Admin", true, true, true, true, "p1", "je", "inst", "g1", 1000, 7, 0, "{}");
+        w.Rig.Arr.Now = w.Rig.Arr.Now.AddMinutes(1);
+        var once = false;
+        var samChecks = 0;
+        w.Policy.Adjust = (user, input, facts) =>
         {
-            var sam = w.Rig.Sam;
-            w.Rig.Users.AdminIds.Add(sam.UserId);
-            w.Rig.Users.Names[sam.UserId] = "Sam";
-            w.Policy.People[sam.UserId] = new(sam.UserId, "Admin", true, true, true, true, "p1", "je", "inst", "g1", 1000, 7, 0, "{}");
-            w.Rig.Arr.Now = w.Rig.Arr.Now.AddMinutes(1);
-            var once = false;
-            w.Policy.Adjust = (user, input, facts) =>
+            if (user == w.Rig.Admin.UserId && !once && w.Rig.Seerr.Requests.Count > 0)
             {
-                if (user == w.Rig.Admin.UserId && !once && w.Rig.Config.JellyseerrEnabled && w.Rig.Seerr.Requests.Count > 0)
-                {
-                    once = true;
-                    w.Rig.Config.JellyseerrEnabled = false;
-                }
+                once = true;
+                if (sourceChanged) w.Rig.Config.JellyseerrEnabled = false;
+            }
+            if (!sourceChanged && once && user == sam.UserId)
+            {
+                samChecks++;
+                CopyLookupBound.Note();
+                return facts with { Visible = false };
+            }
+            return facts;
+        };
+        w.Rig.Seerr.Requests.Add(FakeSeerr.Request(7, "movie", 7100, 1, w.Rig.Kid.UserId, w.Rig.Arr.Now.UtcDateTime, userName: "Kid"));
+        await w.Step(false);
+        Assert.True(once);
+        Assert.Equal(sourceChanged ? 0 : 1, w.Rows(w.Rig.Admin, NotifyKind.Approval));
+        Assert.Equal(0, w.Rows(sam, NotifyKind.Approval));
+        Assert.True(sourceChanged || samChecks > 0, "The second administrator must reach the bounded policy read.");
+        Assert.Equal(sourceChanged ? 0L : 1L, w.Count("SELECT COUNT(*) FROM alert_waits WHERE source='seerr-ask'"));
+        if (sourceChanged) Assert.False(w.Rig.NotifyStore.SeerrSeen().ContainsKey(7));
 
-                return facts;
-            };
-            w.Rig.Seerr.Requests.Add(FakeSeerr.Request(7, "movie", 7100, 1, w.Rig.Kid.UserId, w.Rig.Arr.Now.UtcDateTime, userName: "Kid"));
+        if (!sourceChanged)
+        {
+            w.Rig.Arr.Now += NotifyDispatcher.BoundRetry + TimeSpan.FromMinutes(1);
             await w.Step(false);
-            Assert.True(once);
-            Assert.Equal(1, w.Rows(w.Rig.Admin, NotifyKind.Approval));
             Assert.Equal(0, w.Rows(sam, NotifyKind.Approval));
             Assert.Equal(1L, w.Count("SELECT COUNT(*) FROM alert_waits WHERE source='seerr-ask'"));
-
-            w.Policy.Adjust = null;
-            w.Rig.Config.JellyseerrEnabled = true;
-            w.Rig.Arr.Now = w.Rig.Arr.Now.AddMinutes(6);
-            await w.Step(false);
-            await w.Step(false);
-            Assert.Equal(1, w.Rows(sam, NotifyKind.Approval));
-            Assert.Equal(1, w.Rows(w.Rig.Admin, NotifyKind.Approval));
-            Assert.Equal(0L, w.Count("SELECT COUNT(*) FROM alert_waits"));
         }
+        w.Policy.Adjust = null;
+        w.Rig.Config.JellyseerrEnabled = true;
+        w.Rig.Arr.Now = w.Rig.Arr.Now.Add(NotifyDispatcher.BoundRetry).AddMinutes(1);
+        await w.Step(false);
+        await w.Step(false);
+        Assert.Equal(1, w.Rows(sam, NotifyKind.Approval));
+        Assert.Equal(1, w.Rows(w.Rig.Admin, NotifyKind.Approval));
+        Assert.Equal(0L, w.Count("SELECT COUNT(*) FROM alert_waits"));
     }
 
     // Severance followed by Emma, S1E1 here long ago; S1E2 arrives now and is batched (the window closes in ten minutes).

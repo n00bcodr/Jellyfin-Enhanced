@@ -19,9 +19,11 @@ public class NotifyGateWalkTests
         var problems = walk.Problems();
         Assert.True(problems.Count == 0, string.Join("\n", problems));
         // Not vacuous: every kind of action was found and checked, in both files.
+        // ScanRequests now gathers Final recipients for one atomic seen/notice
+        // transaction: its former Notify site is an Add + post-commit Announce.
         int Count(string name, string file) => walk.Checked.Count(c => c.StartsWith(name + " at " + file, StringComparison.Ordinal));
-        Assert.True(Count("Notify", Service) >= 8, string.Join(", ", walk.Checked));
-        Assert.True(Count("Announce", Service) >= 2 && Count("NotifyAll", Service) >= 1 && Count("Add", Service) >= 2, string.Join(", ", walk.Checked));
+        Assert.True(Count("Notify", Service) + Count("NotifyCore", Service) >= 7, string.Join(", ", walk.Checked));
+        Assert.True(Count("Announce", Service) >= 3 && Count("NotifyAll", Service) >= 1 && Count("Add", Service) >= 3, string.Join(", ", walk.Checked));
         Assert.True(Count("AddAlertWait", Service) >= 2 && Count("RetryAlertWait", Service) >= 1, string.Join(", ", walk.Checked));
         Assert.True(Count("SendAsync", Dispatcher) >= 3 && Count("Settle", Dispatcher) >= 2 && Count("Act", Dispatcher) >= 3, string.Join(", ", walk.Checked));
         Assert.True(Count("Finish", Dispatcher) >= 1 && Count("Suppress", Dispatcher) >= 2, string.Join(", ", walk.Checked));
@@ -40,9 +42,9 @@ public class NotifyGateWalkTests
         var all = string.Join(", ", walk.EffectSites);
         // Not vacuous: each action site of the dispatcher and the service is one of the switches checked.
         Assert.True(Sites("Act") == 1 && Sites("DeliverAsync") + Sites("DeliverSummaryAsync") >= 1 && Sites("DeliverDisplayAsync") >= 2, all);
-        Assert.True(Sites("FlushBatch") == 1 && Sites("EvaluateMovieAsync") == 1 && Sites("DeliverRequestNoticesAsync") >= 3 && Sites("RetryAlertWaitsAsync") >= 2, all);
-        Assert.True(Sites("ScanRequests") >= 2 && Sites("RemindAsync") >= 1 && Sites("TellAdmins") >= 1 && Sites("AdminChecksAsync") >= 1, all);
-        Assert.True(Sites("SendTest") >= 1 && Sites("TrySendTest") >= 1 && Sites("Notify") >= 1 && Sites("Add") >= 1, all);
+        Assert.True(Sites("FlushBatch") == 1 && Sites("EvaluateMovieAsync") == 1 && Sites("DeliverRequestNoticesCoreAsync") >= 3 && Sites("RetryAlertWaitsCoreAsync") >= 2, all);
+        Assert.True(Sites("ScanRequestsCore") >= 2 && Sites("RemindCoreAsync") >= 1 && Sites("TellAdmins") >= 1 && Sites("AdminChecksCoreAsync") >= 1, all);
+        Assert.True(Sites("SendTestCore") >= 1 && Sites("TrySendTestCore") >= 1 && Sites("NotifyCore") >= 1 && Sites("Add") >= 1, all);
     }
 
     private static List<string> Planted(string file, string find, string replace)
@@ -90,9 +92,9 @@ public class NotifyGateWalkTests
     public void ABellRowWrittenWithNoGateBeforeItIsNamed()
     {
         var problems = Planted(Service,
-            "var final = _dispatcher.Final(Alert(user, NotifyKind.Test, \"test|\" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));\n            switch (final.Effect)\n            {\n                case NotifyEffect.Act:\n                    return Notify(final, null);",
-            "NotifyFinal final = null!;\n            switch (final.Effect)\n            {\n                case NotifyEffect.Act:\n                    return Notify(final, null);");
-        Assert.Contains(problems, p => p.StartsWith("Notify with no Final before it", StringComparison.Ordinal));
+            "var final = _dispatcher.Final(Alert(user, NotifyKind.Test, \"test|\" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));\n            switch (final.Effect)\n            {\n                case NotifyEffect.Act:\n                    return NotifyCore(final, null);",
+            "NotifyFinal final = null!;\n            switch (final.Effect)\n            {\n                case NotifyEffect.Act:\n                    return NotifyCore(final, null);");
+        Assert.Contains(problems, p => p.StartsWith("NotifyCore with no Final before it", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -149,7 +151,7 @@ public class NotifyGateWalkTests
         var problems = Planted(Service,
             "case NotifyEffect.Suppress:\n                        _store.DropAlertWait(wait, generation);\n                        continue;\n                    case NotifyEffect.Act:",
             "case NotifyEffect.Suppress:\n                        continue;\n                    case NotifyEffect.Act:");
-        Assert.Contains(problems, p => p.Contains("(RetryAlertWaitsAsync) suppresses nothing", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.Contains("(RetryAlertWaitsCoreAsync) suppresses nothing", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -163,7 +165,7 @@ public class NotifyGateWalkTests
     public void AnAlertWithNoOriginIsNamed()
     {
         // 4f-r9-2 as it shipped: an alert the gate couldn't hold to the catch-up limit.
-        var problems = Planted(Service, "=> new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Since = wait.OriginalAt };", "=> new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload);");
+        var problems = Planted(Service, "=> new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Since = wait.OriginalAt, Queued = wait.OriginalAt };", "=> new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Queued = wait.OriginalAt };");
         Assert.Contains(problems, p => p.StartsWith("an alert made with no origin", StringComparison.Ordinal) && p.Contains("(WaitAlert)", StringComparison.Ordinal));
     }
 

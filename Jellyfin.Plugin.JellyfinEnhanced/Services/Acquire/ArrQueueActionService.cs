@@ -105,6 +105,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public async Task<QueueGroup?> FindAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
             => (await LookupAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false)).Group;
 
+        // The queue action's identity under the person's key (D53, edition round 22: one key namespace; what it does is compared).
+        private static string Identity(QueueActionInput input)
+            => ArrActionRunner.Identity("queue." + input.Action, input.InstanceId, Target(input.DownloadId), input.Blocklist ? "blocklist" : null, input.SearchAgain ? "search" : null);
+
         /// <summary>
         /// Issues the Tier-3 token for removing one download together with its data, with what it
         /// covers. <c>QueueChanging</c> is set (and no token issued) when the download's rows can't
@@ -112,10 +116,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public async Task<(QueueConfirmation? Confirmation, bool QueueChanging)> ConfirmAsync(StatusViewer viewer, string instanceId, string downloadId, CancellationToken cancellationToken)
         {
-            var (group, expired, unsure) = await LookupAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false);
+            var (group, expired, unsure, client) = await LookupAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false);
             if (unsure) return (null, true);
-            if (expired || group == null || !group.Actions.Contains(QueueAction.RemoveWithData)) return (null, false);
-            var (token, expires) = _runner.Tokens.Issue(viewer.UserId, QueueAction.AuditName(QueueAction.RemoveWithData), group.InstanceId, Target(group.DownloadId));
+            if (expired || group == null || client == null || !group.Actions.Contains(QueueAction.RemoveWithData)) return (null, false);
+            // The token confirms this download as read on this connection (D53, edition round 22): after a save that points the
+            // instance elsewhere it confirms nothing (the same download id there is another client's data).
+            var (token, expires) = _runner.Tokens.Issue(viewer.UserId, QueueAction.AuditName(QueueAction.RemoveWithData), group.InstanceId,
+                ArrActionRunner.ConfirmationTarget(Target(group.DownloadId), ArrClientFactory.Tag(client)));
             return (new QueueConfirmation { Token = token, ExpiresAt = expires, Download = group }, false);
         }
 
@@ -123,26 +130,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The download from the snapshot, or — when it was paged, partial or cut — from an unpaged
         /// read of the arr's queue. Expired: too old to act on. Unsure: that read failed.
         /// </summary>
-        private async Task<(QueueGroup? Group, bool Expired, bool Unsure)> LookupAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
+        /// <summary>
+        /// The download as it was read, and the client (connection) every read of it went through (D53, edition round 22): the
+        /// action, its confirmation and its read-back stay on that connection. Reads that went through two connections (the
+        /// instance was pointed elsewhere meanwhile) are unsure.
+        /// </summary>
+        private async Task<(QueueGroup? Group, bool Expired, bool Unsure, ArrClient? Client)> LookupAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
         {
             var instance = _store.Registry.Get(instanceId);
-            if (instance == null || !instance.Usable) return (null, false, false);
+            if (instance == null || !instance.Usable) return (null, false, false, null);
             var queue = await _store.GetQueueAsync(instance, cancellationToken).ConfigureAwait(false);
-            if (queue.Expired) return (null, true, false);
+            if (queue.Expired) return (null, true, false, null);
             var library = await _store.GetLibraryAsync(instance, cancellationToken).ConfigureAwait(false);
+            var bound = queue.ReadBy;
+            if (bound == null || library.ReadBy == null || !string.Equals(library.ReadBy.Generation, bound.Generation, StringComparison.Ordinal)) return (null, false, queue.Value != null, null);
             var group = Pick(NeedsAttention.Group(instance, queue.Value, library.Value), downloadId);
-            if (queue.Value is not { } snapshot || !(snapshot.Incomplete || snapshot.Truncated || snapshot.Paged)) return (group, false, false);
+            if (queue.Value is not { } snapshot || !(snapshot.Incomplete || snapshot.Truncated || snapshot.Paged)) return (group, false, false, bound);
 
             // A read over more than one page, or cut, or with rows moved may miss rows: 7 of a pack's 8
-            // episodes (or not at all) must not be acted on, or confirmed for deletion, as such.
-            var client = _clients.For(instance.Id);
-            if (!client.Ok) return (null, false, true);
+            // episodes (or not at all) must not be acted on, or confirmed for deletion, as such. Read again on the same connection.
+            var client = _clients.Bound(bound);
+            if (!client.Ok) return (null, false, true, null);
             var rows = await ArrStateLoaders.LoadQueueDetailsAsync(client.Value!, group?.ArrId, cancellationToken).ConfigureAwait(false);
-            if (!rows.Ok) return (null, false, true);
+            if (!rows.Ok) return (null, false, true, null);
             var mine = rows.Value!.Where(r => downloadId.StartsWith("row:", StringComparison.Ordinal)
                 ? string.IsNullOrEmpty(r.DownloadId) && downloadId == "row:" + r.Id.ToString(CultureInfo.InvariantCulture)
                 : string.Equals(r.DownloadId, downloadId, StringComparison.Ordinal)).ToList();
-            return (Pick(NeedsAttention.Group(instance, new ArrQueueSnapshot { Records = mine, TotalRecords = mine.Count }, library.Value), downloadId), false, false);
+            return (Pick(NeedsAttention.Group(instance, new ArrQueueSnapshot { Records = mine, TotalRecords = mine.Count }, library.Value), downloadId), false, false, bound);
         }
 
         private static QueueGroup? Pick(IEnumerable<QueueGroup> groups, string downloadId)
@@ -151,18 +165,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Runs a queue action once per idempotency key (audited; Tier 3 needs its token).</summary>
         public async Task<ArrActionOutcome> RunAsync(StatusViewer viewer, string? userName, QueueActionInput input, CancellationToken cancellationToken)
         {
+            return await _runner.SingleFlightAsync(viewer.UserId, input.IdempotencyKey, Identity(input),
+                token => RunOwnedAsync(viewer, userName, input, token),
+                () => new ArrActionOutcome { Status = ArrActionStatus.Rejected, Conflict = true, Message = Requests.PressChecks.Message(Requests.PressChecks.Conflict) }, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<ArrActionOutcome> RunOwnedAsync(StatusViewer viewer, string? userName, QueueActionInput input, CancellationToken cancellationToken)
+        {
             // A retry of a click that already ran (its answer was lost) gets that outcome back, before
             // the queue is looked at: after a removal the download is no longer there to find.
-            var replay = await _runner.ReplayAsync(viewer.UserId, QueueAction.AuditName(input.Action), input.InstanceId, input.IdempotencyKey, cancellationToken).ConfigureAwait(false);
+            var replay = await _runner.ReplayPressAsync(viewer.UserId, input.IdempotencyKey, Identity(input), cancellationToken).ConfigureAwait(false);
+            if (replay is { Conflict: true }) return Refuse(viewer, userName, input, "idempotency_conflict", "This repeats another action, so nothing was changed.");
             if (replay != null) return replay;
-            var (group, expired, unsure) = await LookupAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
+            var (group, expired, unsure, client) = await LookupAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
             var instance = _store.Registry.Get(input.InstanceId);
             if (expired)
             {
                 return Refuse(viewer, userName, input, "queue_unreadable", "That download's queue can't be read right now, so nothing was changed. Try again once it can.");
             }
             if (unsure) return Refuse(viewer, userName, input, "queue_changing", QueueChangingMessage);
-            if (group == null || instance == null)
+            if (group == null || instance == null || client == null)
             {
                 return Refuse(viewer, userName, input, "not_in_queue", "That download is no longer in the queue.");
             }
@@ -183,9 +205,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             var request = input.Action switch
             {
-                QueueAction.Remove or QueueAction.RemoveWithData => RemoveRequest(viewer, userName, instance, group, input, details),
-                QueueAction.RetryImport => CommandRequest(viewer, userName, instance, group, input, details, QueueAction.RetryImport, new { name = "RefreshMonitoredDownloads" }),
-                _ => SearchRequest(viewer, userName, instance, group, input, details),
+                QueueAction.Remove or QueueAction.RemoveWithData => RemoveRequest(viewer, userName, instance, client, group, input, details),
+                QueueAction.RetryImport => CommandRequest(viewer, userName, instance, client, group, input, details, QueueAction.RetryImport, new { name = "RefreshMonitoredDownloads" }),
+                _ => SearchRequest(viewer, userName, instance, client, group, input, details),
             };
             if (request == null) return Refuse(viewer, userName, input, "nothing_to_search", "There is nothing to search for in this download.");
             var outcome = await _runner.RunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -216,10 +238,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Error = reason,
                 Message = message,
             });
-            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited };
+            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited, Conflict = reason == Requests.PressChecks.Conflict };
         }
 
-        private ArrActionRequest RemoveRequest(StatusViewer viewer, string? userName, ArrConnection instance, QueueGroup group, QueueActionInput input, Dictionary<string, string> details)
+        private ArrActionRequest RemoveRequest(StatusViewer viewer, string? userName, ArrConnection instance, ArrClient bound, QueueGroup group, QueueActionInput input, Dictionary<string, string> details)
         {
             var withData = input.Action == QueueAction.RemoveWithData;
             details["blocklist"] = input.Blocklist ? "yes" : "no";
@@ -243,11 +265,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 IdempotencyKey = input.IdempotencyKey,
                 Tier = withData ? ArrActionTier.Destructive : ArrActionTier.Change,
                 ConfirmationToken = input.ConfirmationToken,
+                Fingerprint = Identity(input),
+                Binding = ArrClientFactory.Tag(bound),
                 Details = details,
                 Timeout = TimeSpan.FromSeconds(45),
                 Execute = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    // Only on the connection the download was read through: a save since sends the checked row ids nowhere.
+                    var client = _clients.Bound(bound);
                     if (!client.Ok) return client.Error;
                     var removed = group.Ids.Count == 1
                         ? await client.Value!.SendAsync<NoContent>(HttpMethod.Delete, "queue/" + group.Ids[0].ToString(CultureInfo.InvariantCulture), null, query, ct).ConfigureAwait(false)
@@ -270,7 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // the audit line and Jellyfin's activity log all show the read-back).
                 ReadBack = async ct =>
                 {
-                    var gone = await GoneAsync(instance, group, ct).ConfigureAwait(false);
+                    var gone = await GoneAsync(bound, group, ct).ConfigureAwait(false);
                     return searchFailed == null
                         ? gone
                         : new ArrReadBack { Confirmed = gone.Confirmed, Summary = gone.Summary.TrimEnd('.') + "; the new search could not be started: " + searchFailed };
@@ -278,13 +303,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        private ArrActionRequest? SearchRequest(StatusViewer viewer, string? userName, ArrConnection instance, QueueGroup group, QueueActionInput input, Dictionary<string, string> details)
+        private ArrActionRequest? SearchRequest(StatusViewer viewer, string? userName, ArrConnection instance, ArrClient bound, QueueGroup group, QueueActionInput input, Dictionary<string, string> details)
         {
             var command = SearchCommand(instance, group);
-            return command == null ? null : CommandRequest(viewer, userName, instance, group, input, details, QueueAction.Search, command);
+            return command == null ? null : CommandRequest(viewer, userName, instance, bound, group, input, details, QueueAction.Search, command);
         }
 
-        private ArrActionRequest CommandRequest(StatusViewer viewer, string? userName, ArrConnection instance, QueueGroup group, QueueActionInput input, Dictionary<string, string> details, string action, object command)
+        private ArrActionRequest CommandRequest(StatusViewer viewer, string? userName, ArrConnection instance, ArrClient bound, QueueGroup group, QueueActionInput input, Dictionary<string, string> details, string action, object command)
         {
             int? id = null;
             return new ArrActionRequest
@@ -296,11 +321,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 UserName = userName,
                 IdempotencyKey = input.IdempotencyKey,
                 Tier = ArrActionTier.Safe,
+                Fingerprint = Identity(input),
+                Binding = ArrClientFactory.Tag(bound),
                 Details = details,
                 Timeout = TimeSpan.FromSeconds(30),
                 Execute = async ct =>
                 {
-                    var client = _clients.For(instance.Id);
+                    var client = _clients.Bound(bound);
                     if (!client.Ok) return client.Error;
                     var sent = await client.Value!.SendAsync<SearchCommandWire>(HttpMethod.Post, "command", command, null, ct).ConfigureAwait(false);
                     if (!sent.Ok) return sent.Error;
@@ -310,8 +337,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ReadBack = async ct =>
                 {
                     if (id is not int commandId) return new ArrReadBack { Confirmed = null, Summary = "The instance accepted the command." };
-                    var client = _clients.For(instance.Id);
-                    if (!client.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the command." };
+                    // Read back where it was sent (never a replacement's answer for a command id of its own).
+                    var client = ArrResult<ArrClient>.Success(bound);
                     var until = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
                     SearchCommandWire? last = null;
                     while (true)
@@ -344,11 +371,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>Read-back of a removal: none of the download's rows is in the arr's queue any more.</summary>
-        private async Task<ArrReadBack> GoneAsync(ArrConnection instance, QueueGroup group, CancellationToken ct)
+        private static async Task<ArrReadBack> GoneAsync(ArrClient client, QueueGroup group, CancellationToken ct)
         {
-            var client = _clients.For(instance.Id);
-            if (!client.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the queue." };
-            var rows = await client.Value!.GetAsync<List<QueueRowWire>>("queue/details", null, ArrCallClass.List, ct).ConfigureAwait(false);
+            // On the connection the removal was sent on (the replacement after a save could only say its own rows are gone).
+            var rows = await client.GetAsync<List<QueueRowWire>>("queue/details", null, ArrCallClass.List, ct).ConfigureAwait(false);
             if (!rows.Ok) return new ArrReadBack { Confirmed = null, Summary = "Could not check the queue." };
             var left = rows.Value!.Count(r => group.Ids.Contains(r.Id) || (!group.DownloadId.StartsWith("row:", StringComparison.Ordinal) && string.Equals(r.DownloadId, group.DownloadId, StringComparison.Ordinal)));
             return left == 0

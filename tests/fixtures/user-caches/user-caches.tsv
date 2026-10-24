@@ -23,7 +23,6 @@ AcquisitionStampStore._deleted	both	independent	item / title	acquisition-badge f
 AcquisitionStampStore._expired	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampStore._index	both	independent	item / person	the stamp store's facts index, rebuilt on write: JE's own data; what the viewer may open is checked per poster; built from the database under _gate (Current) and dropped under _gate (Reload): a build that read before a write either finishes before the drop or starts after it; each serve also checks the database generation	write:locked=_gate
 AcquisitionStampStore._pendingNotifications	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); pending change notifications, handed on when the batch completes	write:own-state
-ArrActionRunner._recent	both	independent	action idempotency key	in-flight arr action de-duplication (an admin action), not a cached answer
 ArrAdminHubController.DeniedSeen	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 ArrChangeFeed._revisions	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrChangeTracker._items	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
@@ -522,3 +521,8 @@ WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's
 WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WrittenStateCache._entries	both	independent	key	the written-state helper's own storage: its ledger refuses and stops serving every entry read before an invalidation	write:own-state
+AcquireDatabase.FileGates	both	independent	database file	process-shared writer, swap and observation coordinators for one database file; coordination state, not a user answer	write:own-state
+AcquireDatabase._retryOwners	both	independent	database file	the database-owned durable retry service reference; receipts and leases authorize effects, not this object reference	write:own-state
+ArrStatusService.Gathered.Bound	both	independent	one status or checked-press gather / instance	bound client handles captured for one gather; exact connection and press destination are checked at use, no cross-request answer reuse	write:per-call
+ArrStatusService.Gathered.UnderWay	both	independent	one checked-press gather / title / instance / episode	ephemeral complete fresh observation used by that press only, never an answer for another press or user	write:per-call
+RetryOwners.Flights	both	independent	database file / user / retry id	process waiters join one durable reservation revision; the database receipt owns replay and callers recheck authority before effects	write:locked=Gate

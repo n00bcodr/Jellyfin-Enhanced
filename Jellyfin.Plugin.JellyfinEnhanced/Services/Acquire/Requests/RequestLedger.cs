@@ -363,19 +363,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// A season page's ask (D53, edition round 21: the check's command is what is recorded): the instance the check proved it
         /// lands on; the ask is refused (<see cref="PressChecks.Changed"/>) unless the policy sends it there now. Null: no press.
         /// </param>
-        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null, string? target = null)
+        /// <param name="bound">
+        /// A season page's ask (D53, edition round 22): true while the connection its check read the destination through is still
+        /// the destination's connection; checked inside the transaction with the target (a save since refuses, nothing recorded).
+        /// </param>
+        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null, string? target = null, Func<bool>? bound = null)
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return RequestOutcome.Refused("invalid_input", 400);
-            return _db.Write((c, t) =>
+            if (_db.RetryOwners.Current is not { } lease || lease.User != user || lease.Key != RetryOwners.Key(request.ClientRequestId)
+                || lease.Kind != (request.Operation ?? "ask") || lease.Identity != Idempotency(request, normalized))
+                return _db.RetryOwners.ExecuteAsync(user, request.ClientRequestId, request.Operation ?? "ask", Idempotency(request, normalized),
+                    _ => System.Threading.Tasks.Task.FromResult(Create(user, request, policy, now, origin, target, bound)),
+                    () => RequestOutcome.Refused(PressChecks.Conflict, 409), RetryOwners.UnresolvedRequest,
+                    default, now, releaseUnsent: result => result.HttpStatus >= 400).GetAwaiter().GetResult();
+            try
             {
-                // Matching asks may approve existing wants; a later refusal must undo those approvals too.
-                Exec(c, t, "SAVEPOINT request_create");
-                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin, target);
-                if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
-                Exec(c, t, "RELEASE request_create");
-                return outcome;
-            });
+                return _db.WriteIf(lease.Generation, (c, t) =>
+                {
+                    Exec(c, t, "SAVEPOINT request_create");
+                    var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin, target, bound);
+                    if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
+                    Exec(c, t, "RELEASE request_create");
+                    if (outcome.HttpStatus < 400)
+                    {
+                        // The receipt, quota, outbox jobs and their single public owner commit together. Split children
+                        // remain ordinary ledger wants linked here, never independently reserved public keys.
+                        foreach (var id in new[] { outcome.RequestId, outcome.HeldRequestId }.OfType<string>())
+                            Exec(c, t, "INSERT OR IGNORE INTO retry_wants VALUES($r,$w)", ("$r", lease.Revision), ("$w", id));
+                        Exec(c, t, "UPDATE retry_owners SET command=$command,binding=COALESCE($binding,(SELECT NULLIF(connection_generation,'') FROM jobs WHERE want_id=$w ORDER BY created_at,id LIMIT 1),$target) WHERE revision=$r",
+                            ("$command", request.Command ?? normalized.Canonical), ("$binding", request.Binding), ("$w", outcome.RequestId), ("$target", target), ("$r", lease.Revision));
+                        if (!RetryOwners.Complete(c, t, lease, outcome, now, null)) throw new InvalidOperationException("Retry owner changed before request commit.");
+                    }
+                    return outcome;
+                }, RetryOwners.UnresolvedRequest()).Result;
+            }
+            catch
+            {
+                // The deciding transaction rolled back in full and no transport is part of create. Its own
+                // reservation is proven unsent; an interrupted process, in contrast, cannot make that claim.
+                _db.RetryOwners.ReleaseUnsent();
+                throw;
+            }
         }
         /// <summary>
         /// The no-write preview of <see cref="Create"/>: the same checks, merges and charges worked out inside a
@@ -478,16 +507,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// is the same (a split ask answers as the split did), a conflict when the id was used for another input; null when the
         /// id is new.
         /// </summary>
-        private RequestOutcome? Recorded(SqliteConnection c, SqliteTransaction? t, Guid user, string clientRequestId, MutationInput normalized, PressIntent? expect)
+        private RequestOutcome? Recorded(SqliteConnection c, SqliteTransaction? t, Guid user, string clientRequestId, MutationInput normalized, CreateRequest request)
         {
-            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId));
+            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND trim(client_request_id)=$k", ("$u", Id(user)), ("$k", clientRequestId));
             if (priorHash == null) return null;
-            // A retry of the same ask names the title by any of its ids.
-            if (priorHash != Idempotency(expect, normalized) && (expect != null || !Fingerprints(c, t, normalized).Contains(priorHash))) return RequestOutcome.Refused(PressChecks.Conflict, 409);
-            var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId))!;
+            // A retry of the same plain ask names the title by any of its ids (4b); anything else (an operation, a press, a
+            // routed input) replays only the identical request (edition round 22).
+            var identity = Idempotency(request, normalized);
+            if (priorHash != identity && (identity != normalized.Fingerprint || !Fingerprints(c, t, normalized).Contains(priorHash))) return RequestOutcome.Refused(PressChecks.Conflict, 409);
+            var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND trim(client_request_id)=$k", ("$u", Id(user)), ("$k", clientRequestId))!;
             var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
-            // A retry of an ask that was split answers as the split did.
-            if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
+            // A retry of an ask that was split answers as the split did, including older untrimmed public keys.
+            var originalClient = Scalar(c, t, "SELECT client_request_id FROM request_inputs WHERE user_id=$u AND trim(client_request_id)=$k", ("$u", Id(user)), ("$k", clientRequestId));
+            if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", originalClient + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
                 return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
             return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
         }
@@ -505,7 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return null;
-            return _db.Read(c => Deleted(c, null, user) ? null : Recorded(c, null, user, request.ClientRequestId, normalized, request.Expect) is { } recorded && (recorded.HttpStatus < 400 || recorded.Reason == PressChecks.Conflict) ? recorded : null);
+            return _db.Read(c => Deleted(c, null, user) ? null : Recorded(c, null, user, request.ClientRequestId, normalized, request) is { } recorded && (recorded.HttpStatus < 400 || recorded.Reason == PressChecks.Conflict) ? recorded : null);
         }
 
         /// <summary>
@@ -513,24 +545,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// input, and for a season page's press the whole press too (its page, copy, edition and destination as well as its
         /// scope), so the same id with another press is a conflict, never the first ask's receipt.
         /// </summary>
-        private static string Idempotency(PressIntent? expect, MutationInput normalized)
-            => expect == null ? normalized.Fingerprint : MutationInput.Hash("press|" + (PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, normalized) ?? normalized.Fingerprint));
+        private static string Idempotency(CreateRequest request, MutationInput normalized)
+            => request.Identity ?? PressChecks.RequestIdentity(request.Operation, request.Expect, normalized);
 
-        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin, string? target = null)
+        /// <summary>
+        /// Whether the person's key was already used for a request recorded here (D53, edition round 22: one key namespace per
+        /// person, shared with the audited arr actions, which refuse a key an ask holds).
+        /// </summary>
+        public bool HasClientKey(Guid user, string clientRequestId) => _db.Available && _db.Read(c =>
+            Scalar(c, null, "SELECT 1 FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId)) != null);
+
+        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin, string? target = null, Func<bool>? bound = null)
         {
             // Automatic origins (recipes, list sync) never self-approve a Member and never approve someone else's ask.
             var automation = origin?.Automatic == true;
             // Ask mode, or automation the person isn't eligible for: the want waits for an OK whoever they are.
             var mustAsk = origin?.RequireApproval == true;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
-            if (Recorded(c, t, user, request.ClientRequestId, normalized, request.Expect) is { } recorded) return recorded;
+            if (Recorded(c, t, user, request.ClientRequestId, normalized, request) is { } recorded) return recorded;
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             // The title as the ledger holds it (any of its ids resolved).
             normalized = Canonical(c, t, normalized);
             var facts = policy.Evaluate(user, normalized);
-            // A press records only where its check proved it lands (the request target now, in the same transaction).
+            // A press records only where its check proved it lands (the request target now, in the same transaction), through
+            // the connection its check read the destination on (edition round 22).
             bool landsOnTarget = RequestDestination.SameInstance(facts.InstanceId, target);
-            if (target != null && facts.Backend == "je" && !landsOnTarget)
+            if (target != null && facts.Backend == "je" && (!landsOnTarget || (bound != null && !bound())))
                 return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
@@ -559,7 +599,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)
             {
-                RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), sameOwn.Id);
+                RememberInput(c, t, user, request.ClientRequestId, Idempotency(request, normalized), sameOwn.Id);
                 return RequestOutcome.Accepted(sameOwn.Id, sameOwn.Reason, 200) with { Message = "Your request is already recorded." };
             }
             // An explicit household-rule deny (phase 4b) refuses every new request of the person for it, following someone
@@ -617,7 +657,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // The verdict it was created with, as its rationale (phase 4b).
             if (rules is { Verdict: not HouseholdRules.None } && extra != null)
                 Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id", ("$rules", rules.Json), ("$id", id));
-            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), id);
+            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request, normalized), id);
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial", facts.Pool?.Id);
             Fault?.Invoke("reservation");
@@ -693,7 +733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return null;
             }
             Exec(c, t, "RELEASE request_split");
-            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), queued.RequestId!);
+            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request, normalized), queued.RequestId!);
             return Split(queued, waiting.RequestId!, held);
         }
         /// <summary>The client id suffix of the part of a split ask that waits for an OK.</summary>
@@ -732,8 +772,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static MutationInput? LinkedScope(SqliteConnection c, SqliteTransaction? t, RequestWant want)
             => want.OriginKind == RequestOrigin.SeerrImportKind && want.Status is "sent" or "stale" && want.OwnedInput != null &&
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", want.Id)) == null ? want.OwnedInput : null;
-        private static void RememberInput(SqliteConnection c, SqliteTransaction t, Guid user, string client, string fingerprint, string wantId)
-            => Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
+        private void RememberInput(SqliteConnection c, SqliteTransaction t, Guid user, string client, string fingerprint, string wantId)
+        {
+            Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
+            var lease = _db.RetryOwners.Current;
+            if (lease == null || lease.Key != RetryOwners.Key(client))
+            {
+                // Imported intents and split-child aliases cannot become a second public operation. A split alias
+                // belongs to its original owner; imported intents have no transport and retain origin uniqueness.
+                Exec(c, t, "INSERT OR IGNORE INTO retry_owners(user_id,retry_key,revision,kind,identity,state,parent_revision,created_at) VALUES($u,$k,$r,$kind,$i,'completed',$parent,0)",
+                    ("$u", Id(user)), ("$k", RetryOwners.Key(client) ?? client), ("$r", NewId()), ("$kind", lease == null ? "import" : "internal"), ("$i", fingerprint), ("$parent", lease?.Revision));
+            }
+            var revision = lease?.Revision ?? Scalar(c, t, "SELECT revision FROM retry_owners WHERE user_id=$u AND retry_key=$k", ("$u", Id(user)), ("$k", RetryOwners.Key(client) ?? client));
+            if (revision != null) Exec(c, t, "INSERT OR IGNORE INTO retry_wants VALUES($r,$w)", ("$r", revision), ("$w", wantId));
+        }
         // pool: the group pool the initial reservation is bound to (phase 4b); every later charge of the want (an
         // approval's extra scope, a future season) is bound to the same pool, so spend never moves between pools.
         private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope, string? pool = null)
@@ -1363,6 +1415,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "UPDATE import_batches SET actor_id=NULL WHERE actor_id=$u", ("$u", id));
             Exec(c, t, "DELETE FROM automation_log WHERE user_id=$u", ("$u", id));
             Exec(c, t, "DELETE FROM automation_decisions WHERE user_id=$u; DELETE FROM automation_grants WHERE user_id=$u; DELETE FROM request_operations WHERE user_id=$u", ("$u", id));
+            Exec(c, t, "UPDATE retry_owners SET user_id=$anon,retry_key=revision,identity='',kind='retained',result=NULL,result_type=NULL,action_receipt=NULL WHERE user_id=$u AND state IN ('sending','unknown')",
+                ("$anon", MutationInput.Hash("deleted:" + id)[..32].ToLowerInvariant()), ("$u", id));
+            Exec(c, t, "DELETE FROM retry_owners WHERE user_id=$u", ("$u", id));
             // Revoke only known-unsent approvals. Preserve send certainty and anonymise every retained context.
             const string unsent = "json_extract(authorization_context,'$.Approver')=$guid AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown'";
             Exec(c, t, "UPDATE wants SET status='pending',reason='identity_changed' WHERE id IN (SELECT want_id FROM jobs WHERE " + unsent + ")", ("$guid", user.ToString()));

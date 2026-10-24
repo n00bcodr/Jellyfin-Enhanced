@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready;
@@ -170,7 +171,7 @@ public class ReadyAwaitPointModelTests
                 w.Rig.Config.ArrNotificationsEnabled = false;
                 break;
             case Mutation.KindOff:
-                w.Rig.Prefs(who, p => Kind(p, path.Kind, false));
+                ChangeObservedPrefs(w, who, p => Kind(p, path.Kind, false));
                 break;
             case Mutation.Hidden:
                 // A series is hidden by a rule on its copy (Hidden Content's title rules are TMDB keys).
@@ -186,7 +187,7 @@ public class ReadyAwaitPointModelTests
                 w.Privacy.Rules[who.UserId] = null;
                 break;
             case Mutation.Quiet:
-                w.Rig.Prefs(who, p =>
+                ChangeObservedPrefs(w, who, p =>
                 {
                     p.QuietHours = true;
                     p.QuietFrom = w.Rig.Arr.Now.UtcDateTime.AddHours(-1).ToString("HH:mm", CultureInfo.InvariantCulture);
@@ -202,6 +203,27 @@ public class ReadyAwaitPointModelTests
                 w.Rig.Users.Disabled.Add(who.UserId);
                 break;
         }
+    }
+
+    // These hooks deliberately change persisted evidence during an evaluator
+    // await. Public preference writers now serialize behind that entire owner;
+    // synchronously calling one from this hook would deadlock the test itself.
+    // Inject the stronger out-of-band database mutation through the fixture DB.
+    // IntegrationEvidenceOrderingTests separately verifies real API writers wait.
+    internal static void ChangeObservedPrefs(World w, StatusViewer who, Action<NotifyPrefs> change)
+    {
+        var prefs = w.Rig.NotifyStore.Prefs(who.UserId);
+        change(prefs);
+        w.Rig.Db.Write((connection, transaction) =>
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json,updated_at=excluded.updated_at";
+            command.Parameters.AddWithValue("$u", who.UserId.ToString("N"));
+            command.Parameters.AddWithValue("$j", JsonSerializer.Serialize(prefs, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+            command.Parameters.AddWithValue("$n", w.Rig.Arr.Now.ToUnixTimeMilliseconds());
+            return command.ExecuteNonQuery();
+        });
     }
 
     private static void Undo(AlertPath path, World w, Ctx ctx, Mutation m)
@@ -461,7 +483,7 @@ public class ReadyAwaitPointModelTests
         Kind = NotifyKind.Declined,
         Title = Keys[0],
         Target = w => w.Rig.Kid,
-        Points = new[] { new Point("prepare:kid#1", "RetryAlertWaitsAsync:PrepareVisibilityAsync") },
+        Points = new[] { new Point("prepare:kid#1", "RetryAlertWaitsCoreAsync:PrepareVisibilityAsync") },
         Setup = async () =>
         {
             var w = await ReadyProvenanceAndWaitsTests.JeWorld();
@@ -489,7 +511,7 @@ public class ReadyAwaitPointModelTests
         Kind = outcome,
         Title = Keys[0],
         Target = w => w.Rig.Kid,
-        Points = new[] { new Point("meta:kid#1", "DeliverRequestNoticesAsync:_titleMeta#2"), new Point("prepare:kid#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#2") },
+        Points = new[] { new Point("meta:kid#1", "DeliverRequestNoticesCoreAsync:_titleMeta#2"), new Point("prepare:kid#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2") },
         Setup = async () =>
         {
             var w = await ReadyProvenanceAndWaitsTests.JeWorld();
@@ -525,8 +547,8 @@ public class ReadyAwaitPointModelTests
         Target = w => w.Rig.Admin,
         Points = new[]
         {
-            new Point("prepare:jake#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#1"), new Point("meta:jake#1", "DeliverRequestNoticesAsync:_titleMeta#1"),
-            new Point("prepare:sam#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#1"), new Point("meta:sam#1", "DeliverRequestNoticesAsync:_titleMeta#1"),
+            new Point("prepare:jake#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#1"), new Point("meta:jake#1", "DeliverRequestNoticesCoreAsync:_titleMeta#1"),
+            new Point("prepare:sam#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#1"), new Point("meta:sam#1", "DeliverRequestNoticesCoreAsync:_titleMeta#1"),
         },
         Setup = async () =>
         {
@@ -608,7 +630,7 @@ public class ReadyAwaitPointModelTests
         Kind = NotifyKind.Remind,
         Title = Dune,
         Target = w => w.Rig.Admin,
-        Points = new[] { new Point(Queue, "RemindAsync:CurrentAsync"), new Point("prepare:jake#1", "RemindAsync:PrepareVisibilityAsync"), new Point("prepare:sam#1", "RemindAsync:PrepareVisibilityAsync") },
+        Points = new[] { new Point(Queue, "RemindCoreAsync:CurrentAsync"), new Point("prepare:jake#1", "RemindCoreAsync:PrepareVisibilityAsync"), new Point("prepare:sam#1", "RemindCoreAsync:PrepareVisibilityAsync") },
         Setup = async () =>
         {
             var w = new World(await IntegrationNotificationsTests.Started(r => r.Request(1, 693134, r.Emma)), jeMode: false);
@@ -800,28 +822,39 @@ public class ReadyAwaitPointModelTests
         ["SendAsync:EmailSender.SendAsync"] = "point",
         ["DeliverDisplayAsync:SendAsync"] = "point",
         // NotificationService: asks, outcomes, the wait queue, Remind, Ready, new episodes, administrators' checks.
-        ["TickAsync:WaitAsync"] = "excluded: the round's lock, taken before the round reads anything",
-        ["TickAsync:PrepareAskVisibilityAsync"] = "composite",
-        ["TickAsync:DeliverRequestNoticesAsync"] = "composite",
-        ["TickAsync:RetryAlertWaitsAsync"] = "composite",
-        ["TickAsync:PrepareLaterAsync"] = "composite",
-        ["TickAsync:EvaluateAsync"] = "composite",
-        ["TickAsync:AdminChecksAsync"] = "composite",
+        ["TickCoreAsync:WaitAsync"] = "excluded: the round's lock, taken before the round reads anything",
+        ["TickCoreAsync:PrepareAskVisibilityAsync"] = "composite",
+        ["TickCoreAsync:DeliverRequestNoticesCoreAsync"] = "composite",
+        ["TickCoreAsync:RetryAlertWaitsCoreAsync"] = "composite",
+        ["TickCoreAsync:PrepareLaterAsync"] = "composite",
+        ["TickCoreAsync:EvaluateCoreAsync"] = "composite",
+        ["TickCoreAsync:AdminChecksCoreAsync"] = "composite",
         ["PrepareAskVisibilityAsync:PrepareVisibilityAsync#1"] = "point",
         ["PrepareAskVisibilityAsync:PrepareVisibilityAsync#2"] = "point",
-        ["DeliverRequestNoticesAsync:PrepareVisibilityAsync#1"] = "point",
-        ["DeliverRequestNoticesAsync:_titleMeta#1"] = "point",
-        ["DeliverRequestNoticesAsync:_titleMeta#2"] = "point",
-        ["DeliverRequestNoticesAsync:PrepareVisibilityAsync#2"] = "point",
-        ["RetryAlertWaitsAsync:PrepareVisibilityAsync"] = "point",
+        ["DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#1"] = "point",
+        ["DeliverRequestNoticesCoreAsync:_titleMeta#1"] = "point",
+        ["DeliverRequestNoticesCoreAsync:_titleMeta#2"] = "point",
+        ["DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2"] = "point",
+        ["RetryAlertWaitsCoreAsync:PrepareVisibilityAsync"] = "point",
         ["PrepareLaterAsync:PrepareVisibilityAsync"] = "excluded: a preparation for the bell's next read; nothing is decided or written after it in that function",
-        ["EvaluateAsync:EvaluateMovieAsync"] = "composite",
+        ["EvaluateCoreAsync:EvaluateMovieAsync"] = "composite",
         ["EvaluateMovieAsync:ComposeForAsync"] = "point",
-        ["RemindAsync:CurrentAsync"] = "point",
-        ["RemindAsync:PrepareVisibilityAsync"] = "point",
-        ["SetFollowAsync:EvaluateAsync"] = "composite",
-        ["AdminChecksAsync:NeedsAttentionAsync"] = "excluded: administrators' outage, disk and attention alerts (no title visibility, Hidden Content or request); decided by the final gate after the read (walk) and r8's TheAdministratorsOutageAlertIsDecidedOnTheSettingsAfterTheAttentionRead",
+        ["RemindCoreAsync:CurrentAsync"] = "point",
+        ["RemindCoreAsync:PrepareVisibilityAsync"] = "point",
+        ["SetFollowCoreAsync:EvaluateCoreAsync"] = "composite",
+        ["AdminChecksCoreAsync:NeedsAttentionAsync"] = "excluded: administrators' outage, disk and attention alerts (no title visibility, Hidden Content or request); decided by the final gate after the read (walk) and r8's TheAdministratorsOutageAlertIsDecidedOnTheSettingsAfterTheAttentionRead",
     };
+
+    [Fact]
+    public void EveryAwaitInventoryRejectsAnAwaitAddedToTheForwardedCore()
+    {
+        const string signature = "private async Task TickCoreAsync(CancellationToken cancellationToken, bool force)\n        {";
+        var planted = NotifyGateWalk.Plugin.With("NotificationService.cs", source =>
+            source.Replace(signature, signature + "\n            await Task.Delay(1).ConfigureAwait(false);", StringComparison.Ordinal));
+        Assert.Empty(planted.Errors());
+        var unknown = planted.AwaitSites().Except(Sites.Keys).ToList();
+        Assert.Contains("TickCoreAsync:Delay", unknown);
+    }
 
     [Fact]
     public void EveryAwaitOnTheAlertPathsIsAPointOfTheModel()

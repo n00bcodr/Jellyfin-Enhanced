@@ -235,6 +235,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AsciiGrammar.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AudioLanguageTagHelper.cs",
       "category": "Helpers"
     },
@@ -632,6 +636,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EpisodeRange.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EvidenceOrder.cs",
       "category": "Services"
     },
     {
@@ -1152,6 +1160,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ResponseGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RetryOwners.cs",
       "category": "Services"
     },
     {
@@ -11738,7 +11750,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 732,
+    "files": 735,
     "routes": 312,
     "configuration_properties": 661,
     "storage_references": 107,

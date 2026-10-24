@@ -476,12 +476,15 @@ public class ListsSwapTests
         // The pending state lasts the settle delay: long enough that a loaded host's worker maps the burst well inside it (the
         // test was flaky with a 5 s delay and a 2 s wait: the worker hadn't mapped the events when the wait ended).
         h.Swap.SettleDelay = TimeSpan.FromSeconds(30);
-        h.Swap.Start();
         try
         {
             var arrived = h.Host.AddItem(tmdb: 55);
             h.Swap.NotifyItemChanged(collection ? seasonItem : e1);
             h.Swap.NotifyItemChanged(arrived);
+            // Queue the whole burst before starting. Earlier synchronous drains
+            // can leave a wake signal: starting first could consume that signal,
+            // enter the 30s settle delay, and only then receive our control movie.
+            h.Swap.Start();
             for (var i = 0; i < 2000 && h.Swap.GetPendingMatch(access.ListIdN, movie.Id) == null; i++)
             {
                 await Task.Delay(10);

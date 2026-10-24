@@ -67,7 +67,7 @@ internal sealed class DestinationRuleWalk
 
     private readonly CSharpCompilation _compilation;
     private readonly Dictionary<SyntaxTree, SemanticModel> _models = new();
-    private readonly Dictionary<(IMethodSymbol, int), string?> _helpers = new();
+    private readonly Dictionary<(IMethodSymbol, int, int), string?> _helpers = new();
 
     private DestinationRuleWalk(CSharpCompilation compilation, DestinationRuleWalk? from = null)
     {
@@ -501,15 +501,17 @@ internal sealed class DestinationRuleWalk
         private readonly SemanticModel _model;
         private readonly SyntaxNode _body;
         private readonly HashSet<IParameterSymbol> _seeded;
+        private readonly HashSet<IParameterSymbol> _constants;
         private readonly Dictionary<ISymbol, Value> _vars = new(SymbolEqualityComparer.Default);
         private readonly ISymbol _this;
 
-        public Flow(DestinationRuleWalk walk, SemanticModel model, SyntaxNode body, HashSet<IParameterSymbol> seeded)
+        public Flow(DestinationRuleWalk walk, SemanticModel model, SyntaxNode body, HashSet<IParameterSymbol> seeded, HashSet<IParameterSymbol>? constants = null)
         {
             _walk = walk;
             _model = model;
             _body = body;
             _seeded = seeded;
+            _constants = constants ?? new HashSet<IParameterSymbol>(SymbolEqualityComparer.Default);
             _this = body.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().FirstOrDefault() is { } type && model.GetDeclaredSymbol(type) is { } declared ? declared : model.Compilation.ObjectType;
             Settle();
         }
@@ -642,7 +644,7 @@ internal sealed class DestinationRuleWalk
                     return symbol switch
                     {
                         ILocalSymbol or IRangeVariableSymbol => _vars.TryGetValue(symbol, out var v) ? v : Value.None,
-                        IParameterSymbol parameter => _vars.TryGetValue(parameter, out var lambdaParameter) ? lambdaParameter : new Value(_seeded.Contains(parameter), ImmutableSet.Of(parameter), false),
+                        IParameterSymbol parameter => _vars.TryGetValue(parameter, out var lambdaParameter) ? lambdaParameter : _constants.Contains(parameter) ? new Value(false, ImmutableSet.Empty, true) : new Value(_seeded.Contains(parameter), ImmutableSet.Of(parameter), false),
                         IPropertySymbol or IFieldSymbol when !symbol.IsStatic => new Value(IsProtected(symbol), ImmutableSet.Of(_this), false),
                         IPropertySymbol or IFieldSymbol => new Value(IsProtected(symbol), ImmutableSet.Of(symbol), false),
                         _ => Value.None,
@@ -651,6 +653,7 @@ internal sealed class DestinationRuleWalk
                 {
                     if (symbol is IMethodSymbol) return Eval(access.Expression);
                     var left = _model.GetSymbolInfo(access.Expression).Symbol is ITypeSymbol or INamespaceSymbol ? new Value(false, symbol == null ? ImmutableSet.Empty : ImmutableSet.Of(symbol), false) : Eval(access.Expression);
+                    if (left.Constant && symbol is IPropertySymbol { Name: "Length" } && symbol.ContainingType.SpecialType == SpecialType.System_String) return left;
                     if (symbol?.ContainingType != null && Unprotected.TryGetValue(symbol.ContainingType.Name, out var plain) && plain.Contains(symbol.Name)) return left with { Tainted = false };
                     return new Value(left.Tainted || IsProtected(symbol), left.Origins, false);
                 }
@@ -661,8 +664,13 @@ internal sealed class DestinationRuleWalk
                     var parts = Value.None;
                     if (call.Expression is MemberAccessExpressionSyntax access && _model.GetSymbolInfo(access.Expression).Symbol is not (ITypeSymbol or INamespaceSymbol)) parts = parts.With(Eval(access.Expression));
                     foreach (var argument in call.ArgumentList.Arguments) parts = parts.With(Eval(argument.Expression));
+                    // Formatting a literal char/prefix passed through a helper
+                    // does not introduce a second request's destination.
+                    if (symbol is IMethodSymbol { Name: "ToString" } && call.Expression is MemberAccessExpressionSyntax format
+                        && Eval(format.Expression).Constant && call.ArgumentList.Arguments.Count == 0)
+                        return new Value(false, ImmutableSet.Empty, true);
                     // The rule's answer, and a comparison's, are not themselves a destination.
-                    var answer = symbol is IMethodSymbol method && (IsRule(method) || (Comparing.Contains(method.Name) && method.ReturnType.SpecialType == SpecialType.System_Boolean));
+                    var answer = symbol is IMethodSymbol method && (IsRule(method) || ((Comparing.Contains(method.Name) || IsLexical(method)) && method.ReturnType.SpecialType == SpecialType.System_Boolean));
                     // A database read (RequestLedger.Scalar) is a value of its own, whatever it was looked up by.
                     if (symbol is IMethodSymbol { Name: "Scalar", ContainingType.Name: "RequestLedger" }) return new Value(false, ImmutableSet.Of(call), false);
                     // One request picked from a collection (its first, last, nth…) is a source of its own: another pick is another request.
@@ -726,12 +734,18 @@ internal sealed class DestinationRuleWalk
         // A comparison between a protected value and a value from somewhere else (two values from one source are not).
         private bool Compares(IEnumerable<ExpressionSyntax> participants, bool elementIsAnother = false)
         {
-            var values = participants.Where(p => !IsConstant(p)).Select(Eval).ToList();
+            var values = participants.Select(Eval).Where(value => !value.Constant).ToList();
             if (!values.Any(v => v.Tainted)) return false;
             if (elementIsAnother) return true;
             if (values.Count < 2) return false;
             return values.Any(v => v.Origins.Count == 0 || !v.Origins.SameAs(values[0].Origins));
         }
+
+        // Numeric/range offsets in strings and spans split one token, just as
+        // array offsets select positions; they do not use a destination as a map key.
+        private static bool IsPositionalSequence(ITypeSymbol? type)
+            => type is IArrayTypeSymbol || type?.SpecialType == SpecialType.System_String ||
+                type is INamedTypeSymbol { Name: "Span" or "ReadOnlySpan", ContainingNamespace: { } ns } && ns.ToDisplayString() == "System";
 
         /// <summary>Every comparison or selection on a protected value in this body, outside the rule.</summary>
         public IEnumerable<(SyntaxNode Node, string Why)> Sites(int depth)
@@ -750,6 +764,15 @@ internal sealed class DestinationRuleWalk
                         var arguments = call.ArgumentList.Arguments.Select(a => a.Expression).Where(a => a is not LambdaExpressionSyntax).ToList();
                         var lambdas = call.ArgumentList.Arguments.Select(a => a.Expression).OfType<LambdaExpressionSyntax>().ToList();
                         var participants = (receiver == null ? arguments : arguments.Prepend(receiver)).ToList();
+                        // These exact, reviewed lexical primitives have the
+                        // same call-boundary semantics as string.StartsWith.
+                        // Compare their arguments, not their loop bounds. Two
+                        // request-derived arguments still fail the rule.
+                        if (IsLexical(method))
+                        {
+                            if (Compares(participants)) yield return (call, "compares with " + method.Name);
+                            break;
+                        }
                         if (Comparing.Contains(method.Name) && Compares(participants))
                         {
                             yield return (call, "compares with " + method.Name);
@@ -778,13 +801,20 @@ internal sealed class DestinationRuleWalk
                             yield return (call, "via " + via);
                         break;
                     }
-                    case ElementAccessExpressionSyntax element when element.ArgumentList.Arguments.Any(a => Eval(a.Expression).Tainted) && _model.GetTypeInfo(element.Expression).Type is not IArrayTypeSymbol:
+                    case ElementAccessExpressionSyntax element when element.ArgumentList.Arguments.Any(a => Eval(a.Expression).Tainted) && !IsPositionalSequence(_model.GetTypeInfo(element.Expression).Type):
                         yield return (element, "looks it up as a key");
                         break;
                 }
             }
         }
     }
+
+    // Named lexical boundary, not a file exclusion: the fixed prefix matcher
+    // and digit counter inspect one token. Runtime request-to-request arguments
+    // remain comparisons at the call site, as the planted ASCII bypass proves.
+    private static bool IsLexical(IMethodSymbol method)
+        => method.ContainingType.ToDisplayString() == "Jellyfin.Plugin.JellyfinEnhanced.Helpers.AsciiGrammar"
+            && method.Name is "StartsWithIgnoreCase" or "DigitRun";
 
     // A plugin method outside the rule files, given these values: what in it (or in what it calls) compares them; null if nothing.
     private string? Helper(IMethodSymbol method, List<Value> values, List<ITypeSymbol?> types, bool hasReceiver, int depth)
@@ -796,20 +826,24 @@ internal sealed class DestinationRuleWalk
         if (!values.Any(v => v.Tainted) && !types.Any(IsRequestType)) return null;
         // Which parameters receive a protected value (an extension method's receiver is its first parameter).
         var mask = 0;
+        var constants = 0;
         var offset = hasReceiver && method.IsExtensionMethod ? 0 : hasReceiver ? 1 : 0;
         for (var i = 0; i < values.Count; i++)
         {
             var index = i - offset;
-            if (values[i].Tainted && index >= 0 && index < method.Parameters.Length && index < 30) mask |= 1 << index;
+            if (index < 0 || index >= method.Parameters.Length || index >= 30) continue;
+            if (values[i].Tainted) mask |= 1 << index;
+            if (values[i].Constant) constants |= 1 << index;
         }
-        if (_helpers.TryGetValue((method, mask), out var known)) return known;
-        _helpers[(method, mask)] = null;
+        if (_helpers.TryGetValue((method, mask, constants), out var known)) return known;
+        _helpers[(method, mask, constants)] = null;
         var seeded = new HashSet<IParameterSymbol>(method.Parameters.Where((p, i) => (mask & (1 << i)) != 0), SymbolEqualityComparer.Default);
         var model = Model(declaration.SyntaxTree);
-        var flow = new Flow(this, model, declaration, seeded);
+        var literal = new HashSet<IParameterSymbol>(method.Parameters.Where((p, i) => (constants & (1 << i)) != 0), SymbolEqualityComparer.Default);
+        var flow = new Flow(this, model, declaration, seeded, literal);
         var first = flow.Sites(depth + 1).Select(s => (s.Node, s.Why)).FirstOrDefault();
         var found = first.Node == null ? null : method.ContainingType.Name + "." + method.Name + " (" + first.Why + ": " + Normal(first.Node) + ")";
-        _helpers[(method, mask)] = found;
+        _helpers[(method, mask, constants)] = found;
         return found;
     }
 }

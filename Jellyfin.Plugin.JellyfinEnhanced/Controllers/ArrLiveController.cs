@@ -399,6 +399,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var outcome = await run().ConfigureAwait(false);
+                if (outcome.Conflict) return StatusCode(409, new { code = Services.Acquire.Requests.PressChecks.Conflict, status = outcome.Status, message = outcome.Message, auditId = outcome.AuditId });
                 return Ok(new
                 {
                     status = outcome.Status,

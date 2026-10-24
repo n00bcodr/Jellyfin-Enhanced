@@ -245,7 +245,7 @@ internal sealed class NotifyGateWalk
         if (type == "NotifyStore" && m.Name is "Suppress") return "settle-or-act";
         if (type == "NotifyStore" && m.Name is "Postpone" or "RetryAlertWait" or "Add") return "act";
         if (type == "NotifyTransaction" && m.Name is "Add" or "AddAlertWait") return "act";
-        if (Is(m.ContainingType, Service) && m.Name is "Notify" or "NotifyAll") return "act";
+        if (Is(m.ContainingType, Service) && m.Name is "Notify" or "NotifyCore" or "NotifyAll") return "act";
         if ((InScope(m.ContainingType)) && TakesPlan(m)) return "act";
         return null;
     }
@@ -345,10 +345,10 @@ internal sealed class NotifyGateWalk
     // nothing. A collector (its Act section only gathers the verdicts) consumes the event with the rows it makes.
     internal static readonly Dictionary<string, string> ConsumedElsewhere = new(StringComparer.Ordinal)
     {
-        ["ScanRequests"] = "the Seerr change is marked seen with the rest of the list after the loop",
-        ["AdminChecksAsync"] = "a Needs-attention row is a condition the next check observes again; nothing is queued for it",
-        ["SendTest"] = "a test: nothing is queued, nothing to consume",
-        ["TrySendTest"] = "a test: nothing is queued, nothing to consume",
+        ["ScanRequestsCore"] = "the Seerr change is marked seen with the rest of the list after the loop",
+        ["AdminChecksCoreAsync"] = "a Needs-attention row is a condition the next check observes again; nothing is queued for it",
+        ["SendTestCore"] = "a test: nothing is queued, nothing to consume",
+        ["TrySendTestCore"] = "a test: nothing is queued, nothing to consume",
     };
 
     /// <summary>The switches over the effect the last <see cref="Problems"/> checked ("Method at File:line").</summary>
@@ -361,7 +361,7 @@ internal sealed class NotifyGateWalk
         var type = m.ContainingType?.Name;
         if (Is(m.ContainingType, Dispatcher) && m.Name is "SendAsync" or "Settle") return "act";
         if (type == "ReadyNativeChannel" && m.Name == "SendAsync") return "act";
-        if (Is(m.ContainingType, Service) && m.Name is "Notify" or "NotifyAll" or "Add" or "Announce") return "act";
+        if (Is(m.ContainingType, Service) && m.Name is "Notify" or "NotifyCore" or "NotifyAll" or "Add" or "Announce") return "act";
         if (type is "NotifyStore" or "NotifyTransaction" && m.Name is "Add" or "Finish") return "act";
         if (type is "NotifyStore" or "NotifyTransaction" && m.Name is "Postpone" or "AddAlertWait" or "RetryAlertWait") return "postpone";
         if (Is(m.ContainingType, Service) && m.Name == "WaitBatch") return "postpone";
@@ -550,6 +550,22 @@ internal sealed class NotifyGateWalk
             {
                 var declaration = reference.GetSyntax();
                 var model = Model(declaration.SyntaxTree);
+                // EvidenceOrder admission precedes observation. Follow its
+                // exact forwarded core, rather than losing every await when an
+                // entry method becomes a non-async serialization wrapper.
+                foreach (var call in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    if (model.GetSymbolInfo(call).Symbol is not IMethodSymbol { Name: "RunAsync", ContainingType.Name: "EvidenceOrder" }) continue;
+                    foreach (var argument in call.ArgumentList.Arguments)
+                    {
+                        if (argument.Expression is not LambdaExpressionSyntax lambda) continue;
+                        if (lambda.AsyncKeyword.RawKind != 0 || lambda.Body is not InvocationExpressionSyntax forwarded
+                            || model.GetSymbolInfo(forwarded).Symbol is not IMethodSymbol core
+                            || !(Is(core.ContainingType, Dispatcher) || Is(core.ContainingType, Service)))
+                            throw new InvalidOperationException("Await model needs an explicit path for the ordering delegate at " + Where(lambda));
+                        pending.Push(core.OriginalDefinition);
+                    }
+                }
                 var awaits = declaration.DescendantNodes().OfType<AwaitExpressionSyntax>()
                     .Where(a => !a.Ancestors().TakeWhile(x => x != declaration).Any(x => x is AnonymousFunctionExpressionSyntax))
                     .Select(a => (Await: a, Call: Awaited(a.Expression))).ToList();

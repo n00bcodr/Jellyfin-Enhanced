@@ -30,28 +30,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private static readonly long DeletedForMs = (long)TimeSpan.FromMinutes(10).TotalMilliseconds;
 
         private readonly AcquireDatabase _db;
-        private readonly ConcurrentDictionary<string, long> _deleted = new(StringComparer.Ordinal);
+        internal EvidenceOrder Ordering => _db.EvidenceOrder;
+        private readonly ConcurrentDictionary<string, long> _deleted;
+        private readonly bool _evaluationAccess;
+
+        // Only NotificationService's private cores use this view, after their entry point acquired Ordering.
+        // Public store writers always acquire, even when a callback fork inherits an evaluator's ExecutionContext.
+        internal NotifyStore ForEvaluation() => new(_db, _deleted, true);
+        private NotifyStore(AcquireDatabase db, ConcurrentDictionary<string, long> deleted, bool evaluationAccess)
+        { _db = db; _deleted = deleted; _evaluationAccess = evaluationAccess; }
+        private T WithWriteOrder<T>(Func<T> work) => _evaluationAccess && Ordering.Generation.HasValue ? work() : Ordering.Run(work);
 
         /// <summary>The store over the installation's database (DI).</summary>
         public NotifyStore(AcquireDatabase db)
         {
             _db = db;
+            _deleted = new(StringComparer.Ordinal);
         }
 
         // Every write of this store: the work, then (in the same transaction) the rows of users deleted lately.
-        private T Write<T>(Func<SqliteConnection, SqliteTransaction, T> write) => _db.Write((c, t) =>
+        private T Write<T>(Func<SqliteConnection, SqliteTransaction, T> write) => WithWriteOrder(() =>
         {
-            var result = write(c, t);
-            RemoveDeleted(c, t);
-            return result;
+            var outcome = WriteIfCore(Ordering.Generation, write, default!);
+            return outcome.Done ? outcome.Result : throw new InvalidOperationException("Notification evidence changed during the observation.");
         });
 
-        private (bool Done, T Result) WriteIf<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise) => _db.WriteIf(generation, (c, t) =>
+        private (bool Done, T Result) WriteIf<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise)
+            => WithWriteOrder(() => WriteIfCore(generation, write, otherwise));
+
+        private (bool Done, T Result) WriteIfCore<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise)
         {
-            var result = write(c, t);
-            RemoveDeleted(c, t);
-            return result;
-        }, otherwise);
+            if (Ordering.Generation != _db.Generation) return (false, otherwise);
+            return _db.WriteIf(generation ?? Ordering.Generation, (c, t) =>
+            {
+                var result = write(c, t);
+                RemoveDeleted(c, t);
+                return result;
+            }, otherwise);
+        }
 
         private int RemoveDeleted(SqliteConnection c, SqliteTransaction t)
         {
@@ -497,23 +513,8 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// too, since they can't be compared again while that lasts, and the floor is noted
         /// (<see cref="SeerrForgottenBelowKey"/>): one of them seen again later is old, not new.
         /// </summary>
-        public void SetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, IReadOnlyCollection<int> gone, DateTimeOffset now, int? floor = null) => Write((c, t) =>
-        {
-            foreach (var (id, status) in seen)
-            {
-                Exec(c, t, "INSERT INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,NULL,$n) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status, user_id=NULL",
-                    ("$i", id), ("$s", status), ("$n", Ms(now)));
-            }
-            foreach (var id in gone) Exec(c, t, "DELETE FROM seerr_seen WHERE request_id=$i", ("$i", id));
-            if (floor is int f)
-            {
-                Exec(c, t, "DELETE FROM seerr_seen WHERE request_id < $f", ("$f", f));
-                var tx = new NotifyTransaction(c, t);
-                var before = int.TryParse(tx.Meta(SeerrForgottenBelowKey), NumberStyles.None, CultureInfo.InvariantCulture, out var b) ? b : 0;
-                if (f > before) tx.SetMeta(SeerrForgottenBelowKey, f.ToString(CultureInfo.InvariantCulture));
-            }
-            return 0;
-        });
+        public void SetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, IReadOnlyCollection<int> gone, DateTimeOffset now, int? floor = null)
+            => InTransaction(tx => tx.SetSeerrSeen(seen, gone, now, floor));
 
         /// <summary>The meta key holding the identity of the Seerr the seen states belong to.</summary>
         internal const string SeerrSourceKey = "seerr_source";
@@ -531,20 +532,8 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// (<paramref name="source"/>) they belong to. Used at the first look and when Seerr was
         /// replaced by another server, whose request ids mean other requests.
         /// </summary>
-        public void ResetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, DateTimeOffset now, string source) => Write((c, t) =>
-        {
-            Exec(c, t, "DELETE FROM seerr_seen");
-            foreach (var (id, status) in seen)
-            {
-                Exec(c, t, "INSERT OR REPLACE INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,NULL,$n)",
-                    ("$i", id), ("$s", status), ("$n", Ms(now)));
-            }
-            var tx = new NotifyTransaction(c, t);
-            tx.SetMeta("seerr_baseline", now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
-            tx.SetMeta(SeerrSourceKey, source);
-            tx.SetMeta(SeerrForgottenBelowKey, null);
-            return 0;
-        });
+        public void ResetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, DateTimeOffset now, string source)
+            => InTransaction(tx => tx.ResetSeerrSeen(seen, now, source));
 
         // ------------------------------------------------------------------ e-mail verification codes
 
@@ -620,28 +609,37 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// Retention: notifications older than 90 days (their deliveries with them), marks older
         /// than 400 days, and everything of users that no longer exist.
         /// </summary>
-        public int Purge(DateTimeOffset now, Func<Guid, bool> userExists) => Write((c, t) =>
+        public int Purge(DateTimeOffset now, Func<Guid, bool> userExists) => WithWriteOrder(() =>
         {
-            var removed = Exec(c, t, "DELETE FROM notifications WHERE created_at < $c", ("$c", Ms(now.AddDays(-90))));
-            removed += Exec(c, t, "DELETE FROM marks WHERE at < $c", ("$c", Ms(now.AddDays(-400))));
-            // User ids earlier versions noted on the Seerr requests seen (never read, no longer written).
-            Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id IS NOT NULL");
-            var users = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var table in UserTables)
+            var generation = _db.Generation;
+            var users = _db.Read(c =>
             {
-                using var cmd = Command(c, t, $"SELECT DISTINCT user_id FROM {table}");
-                using var r = cmd.ExecuteReader();
-                while (r.Read()) users.Add(r.GetString(0));
-            }
-            foreach (var user in users)
-            {
-                if (Guid.TryParse(user, out var id) && userExists(id)) continue;
+                var users = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var table in UserTables)
                 {
-                    removed += Exec(c, t, $"DELETE FROM {table} WHERE user_id=$u", ("$u", user));
+                    using var cmd = Command(c, null, $"SELECT DISTINCT user_id FROM {table}");
+                    using var r = cmd.ExecuteReader();
+                    while (r.Read()) users.Add(r.GetString(0));
                 }
-            }
-            return removed;
+                return users;
+            });
+            // User-manager/policy callbacks run before the transaction; a restore during them drops this purge.
+            var gone = users.Where(user => !Guid.TryParse(user, out var id) || !userExists(id)).ToList();
+            return WriteIfCore(generation, (c, t) =>
+            {
+                var removed = Exec(c, t, "DELETE FROM notifications WHERE created_at < $c", ("$c", Ms(now.AddDays(-90))));
+                removed += Exec(c, t, "DELETE FROM marks WHERE at < $c", ("$c", Ms(now.AddDays(-400))));
+                // User ids earlier versions noted on the Seerr requests seen (never read, no longer written).
+                Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id IS NOT NULL");
+                foreach (var user in gone)
+                {
+                    foreach (var table in UserTables)
+                    {
+                        removed += Exec(c, t, $"DELETE FROM {table} WHERE user_id=$u", ("$u", user));
+                    }
+                }
+                return removed;
+            }, 0).Result;
         });
 
         /// <summary>
@@ -655,8 +653,9 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         {
             NoteDeleted(userId);
             var id = Id(userId);
-            // Their automation eligibility grant goes with them (RequestLedger.PurgeUser): inside the automation version's bracket.
-            var purged = _db.WriteAutomation((c, t) =>
+            // Their automation eligibility grant goes with them (RequestLedger.PurgeUser): inside the automation version's bracket,
+            // ordered with the notifier's observations like every other write of this store (edition round 22).
+            var purged = WithWriteOrder(() => _db.WriteAutomation((c, t) =>
             {
                 var removed = 0;
                 foreach (var table in UserTables)
@@ -666,7 +665,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
                 // Their id on the Seerr requests seen (written by earlier versions, never read; no
                 // longer written): the states stay, they tell what's new.
                 return removed + Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id=$u", ("$u", id)) + Requests.RequestLedger.PurgeUser(c, t, userId);
-            });
+            }));
             return purged;
         }
 
@@ -893,6 +892,33 @@ VALUES($s,$i,$u,$k,$t,$e,$p,$r,$o,$n,$tr)", ("$s", wait.Source), ("$i", wait.Sou
         /// <summary>Takes a waiting outcome alert in this transaction (the notification it becomes commits with its removal).</summary>
         public bool TakeAlertWait(string source, string sourceId)
             => NotifyStore.Exec(Connection, Transaction, "DELETE FROM alert_waits WHERE source=$s AND source_id=$i", ("$s", source), ("$i", sourceId)) == 1;
+
+        /// <summary>Consume Seerr states, pruning and floor in the event's transaction.</summary>
+        public void SetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, IReadOnlyCollection<int> gone, DateTimeOffset now, int? floor = null)
+        {
+            foreach (var (id, status) in seen)
+            {
+                NotifyStore.Exec(Connection, Transaction, "INSERT INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,NULL,$n) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status, user_id=NULL",
+                    ("$i", id), ("$s", status), ("$n", Ms(now)));
+            }
+            foreach (var id in gone) NotifyStore.Exec(Connection, Transaction, "DELETE FROM seerr_seen WHERE request_id=$i", ("$i", id));
+            if (floor is int f)
+            {
+                NotifyStore.Exec(Connection, Transaction, "DELETE FROM seerr_seen WHERE request_id < $f", ("$f", f));
+                var before = int.TryParse(Meta(NotifyStore.SeerrForgottenBelowKey), NumberStyles.None, CultureInfo.InvariantCulture, out var b) ? b : 0;
+                if (f > before) SetMeta(NotifyStore.SeerrForgottenBelowKey, f.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        /// <summary>Explicit first/source-reset non-event, committed under the scan's generation fence.</summary>
+        public void ResetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, DateTimeOffset now, string source)
+        {
+            NotifyStore.Exec(Connection, Transaction, "DELETE FROM seerr_seen");
+            SetSeerrSeen(seen, Array.Empty<int>(), now);
+            SetMeta("seerr_baseline", now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+            SetMeta(NotifyStore.SeerrSourceKey, source);
+            SetMeta(NotifyStore.SeerrForgottenBelowKey, null);
+        }
 
         /// <summary>Adds a notification and its deliveries; null when the user already has one for <paramref name="eventKey"/>.</summary>
         public long? Add(Guid userId, string eventKey, string kind, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, IReadOnlyList<(string Channel, DateTimeOffset At)> deliveries, DateTimeOffset now)

@@ -247,7 +247,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
     /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
     /// </summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null);
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null)
+    {
+        /// <summary>
+        /// What the caller asks to do with it (server-only): null for a person's ask, <c>add</c> for an administrator's add from
+        /// the Manage drawer. Part of the request's identity under the person's key, never a key prefix of its own.
+        /// </summary>
+        [JsonIgnore] internal string? Operation { get; init; }
+
+        /// <summary>
+        /// The complete identity of the request as it was made (D53, edition round 22; set by the request service before
+        /// anything is checked): every field of its input (routing included) and of its press, and its operation. The ledger
+        /// remembers the client id by it; the same id with anything else is a conflict.
+        /// </summary>
+        [JsonIgnore] internal string? Identity { get; init; }
+        /// <summary>The resolved command, separate from the incoming identity; server-only.</summary>
+        [JsonIgnore] internal string? Command { get; init; }
+        /// <summary>The opaque connection proved by the page check; server-only.</summary>
+        [JsonIgnore] internal string? Binding { get; init; }
+    }
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);
     /// <summary>A decline explanation shown to the requester as plain text.</summary>

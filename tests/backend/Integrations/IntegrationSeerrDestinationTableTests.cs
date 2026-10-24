@@ -720,6 +720,7 @@ public class IntegrationSeerrDestinationTableTests
     [InlineData("an Array.IndexOf over each request's seasons")]
     // A plugin helper that compares seasons (MutationInput.Overlaps).
     [InlineData("a plugin helper (Overlaps)")]
+    [InlineData("ASCII grammar comparing two request keys")]
     // A new helper in another file that compares what it is given.
     [InlineData("a new helper in another file")]
     // The seasons merged into a set first, then looked up.
@@ -754,6 +755,7 @@ public class IntegrationSeerrDestinationTableTests
         {
             "an Array.IndexOf over each request's seasons" => Charges(asked, "=> asked.Any(i => Array.IndexOf(i.Seasons, season) >= 0);"),
             "a plugin helper (Overlaps)" => Charges(asked, "=> asked.Any(i => i.Overlaps(want.Input.NewSeason(season)));"),
+            "ASCII grammar comparing two request keys" => Charges(explicitFilter, "Jellyfin.Plugin.JellyfinEnhanced.Helpers.AsciiGrammar.StartsWithIgnoreCase(w.Input.Key, want.Input.Key)"),
             "a new helper in another file" => plugin
                 .With("Services/Acquire/BridgePaths.cs", text => text.Replace("    public static class BridgePaths\n    {", "    public static class BridgePaths\n    {\n        internal static bool HasSeason(Requests.MutationInput input, int season) => System.Array.IndexOf(input.Seasons, season) >= 0;\n", StringComparison.Ordinal))
                 .With("Services/Acquire/Requests/FutureSeasonCharges.cs", text => text.Replace(asked, "=> asked.Any(i => BridgePaths.HasSeason(i, season));", StringComparison.Ordinal)),

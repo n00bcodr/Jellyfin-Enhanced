@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 {
@@ -20,11 +20,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// <summary>Longest key accepted from a client.</summary>
         public const int MaxLength = 48;
 
-        private static readonly Regex Shape = new(
-            @"^(movie:tmdb:[1-9][0-9]{0,8}|tv:tvdb:[1-9][0-9]{0,8}(:s(0|[1-9][0-9]{0,3})(:e(0|[1-9][0-9]{0,4}))?)?)$",
-            RegexOptions.CultureInvariant | RegexOptions.Compiled,
-            TimeSpan.FromMilliseconds(50));
-
         /// <summary>A movie by its TMDB id.</summary>
         public static string Movie(int tmdbId) => "movie:tmdb:" + tmdbId.ToString(CultureInfo.InvariantCulture);
 
@@ -37,9 +32,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// <summary>An episode of a series.</summary>
         public static string Episode(int tvdbId, int season, int episode) => Season(tvdbId, season) + ":e" + episode.ToString(CultureInfo.InvariantCulture);
 
-        /// <summary>True for a well-formed key.</summary>
+        /// <summary>
+        /// True for a well-formed key: <c>movie:tmdb:&lt;id&gt;</c>, or <c>tv:tvdb:&lt;id&gt;</c> with an optional <c>:s&lt;n&gt;</c> and
+        /// then <c>:e&lt;n&gt;</c> (lower case; ids of 1-9 ASCII digits without a leading zero, seasons of up to 4 digits and episodes
+        /// of up to 5, "0" allowed), and nothing else. One deterministic pass, no clock.
+        /// </summary>
         public static bool IsValid(string? key)
-            => !string.IsNullOrEmpty(key) && key.Length <= MaxLength && Shape.IsMatch(key);
+        {
+            if (string.IsNullOrEmpty(key) || key.Length > MaxLength) return false;
+            var text = key.AsSpan();
+            var movie = text.StartsWith("movie:tmdb:", StringComparison.Ordinal);
+            if (!movie && !text.StartsWith("tv:tvdb:", StringComparison.Ordinal)) return false;
+            text = text[(movie ? 11 : 8)..];
+            var id = AsciiGrammar.DigitRun(text);
+            if (!AsciiGrammar.IsPlainNumber(text[..id], 9, zero: false)) return false;
+            text = text[id..];
+            if (text.Length == 0) return true;
+            if (movie || !Part(ref text, ":s", 4)) return false;
+            if (text.Length == 0) return true;
+            return Part(ref text, ":e", 5) && text.Length == 0;
+        }
+
+        // A ":s"/":e" part: the marker and a number of up to max digits without a leading zero ("0" itself allowed).
+        private static bool Part(ref ReadOnlySpan<char> text, string marker, int max)
+        {
+            if (!text.StartsWith(marker, StringComparison.Ordinal)) return false;
+            var digits = AsciiGrammar.DigitRun(text[2..]);
+            if (!AsciiGrammar.IsPlainNumber(text.Slice(2, digits), max, zero: true)) return false;
+            text = text[(2 + digits)..];
+            return true;
+        }
 
         /// <summary>
         /// The keys a change to a series, season or episode touches: the title itself, plus its season

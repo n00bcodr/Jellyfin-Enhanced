@@ -31,6 +31,7 @@ arr/ask/ask-core.js	openIds	state	client request ids of asks in flight (idempote
 arr/ask/ask-episodes.js	bannerSearched	state	outcome of the administrator's own Search press
 arr/ask/ask-episodes.js	busy	state	episodes with a Search press running
 arr/ask/ask-episodes.js	local	state	optimistic states after the person's own ask, until the server agrees
+arr/ask/ask-episodes.js	pendingFocus	state	the checked press's semantic focus origin and DOM neighbours; no server answer or reveal authority, dropped on page/session change or deliberate focus movement
 arr/ask/ask-episodes.js	searched	state	outcomes of the administrator's own Search presses, shown as chips
 arr/ask/ask-episodes.js	season	state	the open season sheet's own rows (read when it opens, under its generation; dropped when it closes)
 arr/ask/ask-sheet.js	current	state	the sheet being shown (its read is made on each open)

@@ -172,7 +172,8 @@ public class IntegrationArrActionRunnerTests
         var audit = new ArrAuditLog(Path.Combine(blocker, ArrAuditLog.FileName), 1024 * 1024, 3);
         var now = DateTimeOffset.UtcNow;
         var tokens = new ArrConfirmationTokens(TimeSpan.FromMinutes(2), () => now);
-        var runner = new ArrActionRunner(audit, tokens, () => now);
+        using var database = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.AcquireDatabase(Path.Combine(env.Root, "acquire.db"));
+        var runner = new ArrActionRunner(audit, tokens, database);
         var admin = Guid.NewGuid();
         var calls = 0;
         ArrActionRequest Make(ArrActionTier tier, string key, string? token) => new()

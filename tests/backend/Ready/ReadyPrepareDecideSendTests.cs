@@ -104,7 +104,7 @@ public class ReadyPrepareDecideSendTests
                     w.Privacy.Rules[kid.UserId] = null;
                     break;
                 case "kind_off":
-                    w.Rig.Prefs(kid, p => p.Declined = false);
+                    ReadyAwaitPointModelTests.ChangeObservedPrefs(w, kid, p => p.Declined = false);
                     break;
                 case "revoked":
                     // The kid's library access is taken away: no title nobody has yet would be visible to them now.
@@ -242,7 +242,7 @@ public class ReadyPrepareDecideSendTests
         w.Policy.Visibility = (who, input) =>
         {
             if (who != kid.UserId) return Task.CompletedTask;
-            if (change == "kind_off") w.Rig.Prefs(kid, p => p.Declined = false);
+            if (change == "kind_off") ReadyAwaitPointModelTests.ChangeObservedPrefs(w, kid, p => p.Declined = false);
             else if (change == "notifications_off") w.Rig.Config.ArrNotificationsEnabled = false;
             else w.Privacy.Rules[kid.UserId] = TitleRules(Keys[0]);
             return Task.CompletedTask;
@@ -279,7 +279,7 @@ public class ReadyPrepareDecideSendTests
         await w.Step(true);
         void Change()
         {
-            if (change == "kind_off") w.Rig.Prefs(kid, p => p.Declined = false);
+            if (change == "kind_off") ReadyAwaitPointModelTests.ChangeObservedPrefs(w, kid, p => p.Declined = false);
             else w.Rig.Config.ArrNotificationsEnabled = false;
         }
 
@@ -426,7 +426,7 @@ public class ReadyPrepareDecideSendTests
             if (first != null || (user != emma.UserId && user != sam.UserId)) return;
             first = user;
             // The other one stops following what they asked for.
-            if (change == "unfollowed") w.Rig.Prefs(user == emma.UserId ? sam : emma, p => p.AutoFollowRequests = false);
+            if (change == "unfollowed") ReadyAwaitPointModelTests.ChangeObservedPrefs(w, user == emma.UserId ? sam : emma, p => p.AutoFollowRequests = false);
         };
         await w.Service.EvaluateAsync(new[] { Dune }, null, default);
         w.Rig.View.OnViewer = null;

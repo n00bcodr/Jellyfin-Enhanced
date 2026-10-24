@@ -72,6 +72,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return (RequestOutcome.Refused("invalid_input", 400), null);
             if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 64)
                 return (RequestOutcome.Refused("invalid_input", 400), null);
+            // The request's whole identity (D53, edition round 22): a season page's press by its fingerprint, else this route and
+            // its key. It is the person's key, shared with every other route (no namespace of the household's own), and it has
+            // one owner at a time from here on: an identical request meanwhile claims nothing and gets the owner's answer.
+            string identity;
+            string? fingerprint = null;
+            if (expect != null)
+            {
+                fingerprint = PressChecks.RequestFingerprint(expect, PressChecks.Household, scope, null);
+                if (fingerprint == null) return (RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) }, null);
+                identity = PressChecks.IncomingIdentity(PressChecks.Household, scope, expect);
+            }
+            else identity = PressChecks.IncomingIdentity(PressChecks.Household, scope, null);
+            return await _manage.Runner.SingleFlightAsync(viewer.UserId, idempotencyKey, identity,
+                token => SearchOwnedAsync(viewer, scope, idempotencyKey, identity, fingerprint, token, expect, pages),
+                () => (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, (bool?)null), ct).ConfigureAwait(false);
+        }
+
+        // The owner of the person's key (see SearchAsync): replay, checks, candidates, claims and the one command.
+        private async Task<(RequestOutcome Outcome, bool? Found)> SearchOwnedAsync(StatusViewer viewer, TitleKey scope, string idempotencyKey, string identity, string? fingerprint, CancellationToken ct, PressIntent? expect, IAbsentTitlePages? pages)
+        {
             var many = !scope.IsMovie && scope.Episode == null;
             var hours = Math.Clamp(_requests.Policy.Configuration.ArrStatusLookingHours, 1, 720);
             var now = _now();
@@ -89,23 +109,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // viewer as they are then (D53, edition round 19: a household Search never reuses candidates chosen before an await).
             var probe = Input(null);
             if (probe == null) return (RequestOutcome.Refused("invalid_input", 400), null);
-            await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
-            // A season page's press is known by its fingerprint (D53, edition round 21): a retry of the identical press whose search
-            // already ran (its answer was lost) gets that outcome before anything is checked again (round 20: replay before
-            // revalidation; the route's own checks were made); the same key used for another press is refused.
-            string? fingerprint = null;
-            if (expect != null)
+
+            // A retry of the identical request whose search already ran (its answer was lost) gets that outcome before anything is
+            // checked again or claimed (round 20: replay before revalidation; the route's own checks were made); the same key used
+            // for anything else is refused (D53, edition rounds 21-22).
+            if (await _manage.ReplayPressAsync(viewer.UserId, idempotencyKey, identity, ct).ConfigureAwait(false) is { } replayed)
             {
-                fingerprint = PressChecks.RequestFingerprint(expect, PressChecks.Household, scope, null);
-                if (fingerprint == null) return (RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) }, null);
-                if (await _manage.ReplayPressAsync(viewer.UserId, "family-" + idempotencyKey, fingerprint, ct).ConfigureAwait(false) is { } replayed)
-                {
-                    if (replayed.Conflict) return (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, null);
-                    if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
-                        return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
-                    return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
-                }
+                if (replayed.Conflict) return (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, null);
+                if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                    return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Certainty = replayed.Status, Message = replayed.Status == ArrActionStatus.Unknown ? "The search may have run. Check it before trying again." : "Searched for it." }, null);
+                return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
             }
+            await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
             // A season page's press that no longer matches is refused before anything else (nothing claimed, nothing asked for
             // instead); it is worked out again right before the command too.
             if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct, pages, resolve: false).ConfigureAwait(false)).Refusal is { } early)
@@ -173,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // started, the search runs to the end on its own).
             void Release()
             {
+                _requests.Ledger.Database.RetryOwners.ReleaseSearch(claimed.Select(p => p.Slot));
                 foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
             }
             // Right before the command (after the arr reads): the season page's press worked out again (without one, the viewer
@@ -197,10 +213,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             try
             {
                 result = expect != null
-                    ? await _manage.SearchCommandAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, fingerprint!, check, ct).ConfigureAwait(false)
+                    ? await _manage.SearchCommandAsync(viewer, null, instanceId, scope, idempotencyKey, fingerprint!, check, ct, owned: true, incomingIdentity: identity).ConfigureAwait(false)
                     : part != null
-                    ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false)
-                    : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false);
+                    ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), idempotencyKey, recheck, ct, owned: true, identity: identity).ConfigureAwait(false)
+                    : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, idempotencyKey, recheck, ct, owned: true, identity: identity).ConfigureAwait(false);
             }
             catch
             {
@@ -208,7 +224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 throw;
             }
             if (result.Outcome.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
-                return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = result.Found == true ? "Found a copy. It's downloading." : "Searched for it." }, result.Found);
+                return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Certainty = result.Outcome.Status, Message = result.Outcome.Status == ArrActionStatus.Unknown ? "The search may have run. Check it before trying again." : result.Found == true ? "Found a copy. It's downloading." : "Searched for it." }, result.Found);
             Release();
             // A press refusal: nothing was searched and its parts are free again; the page redraws and says so.
             if (result.Refusal is { } pressRefusal)
@@ -218,23 +234,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Whether a part was searched within this "still looking" period (a peek; <see cref="Claim"/> decides).</summary>
         private bool Searched(string slot, DateTimeOffset now, int hours)
-            => _last.TryGetValue(slot, out var at) && now - at < TimeSpan.FromHours(hours);
+            => _requests.Ledger.Database.RetryOwners.SearchClaimed(slot, now, hours);
 
         /// <summary>Takes a part's search slot for this "still looking" period; false when it was searched within it.</summary>
         private bool Claim(string slot, DateTimeOffset now, int hours)
         {
-            while (true)
-            {
-                if (_last.TryGetValue(slot, out var at))
-                {
-                    if (now - at < TimeSpan.FromHours(hours)) return false;
-                    if (_last.TryUpdate(slot, now, at)) return true;
-                }
-                else if (_last.TryAdd(slot, now))
-                {
-                    return true;
-                }
-            }
+            if (!_requests.Ledger.Database.RetryOwners.ClaimSearch(slot, now, hours)) return false;
+            _last[slot] = now; // bounded diagnostics only; the database owns authorisation and release.
+            return true;
         }
 
         private static RequestOutcome Skipped(string reason, string message)

@@ -287,10 +287,12 @@ public class ApiArrAdminHubTests
         await rig.Warm();
         var c = rig.Controller(rig.AdminUser);
         var radarr = rig.Instance("RadarrMainZ").Id;
-        var calls = rig.Arr.Calls.Count;
-        // A title the instance doesn't have (deleted in Radarr's UI since), and the wrong kind of instance.
+        // A title the instance doesn't have (deleted in Radarr's UI since): its library is read as it is now (edition round 22:
+        // never from memory) and the Search is refused with nothing sent; the wrong kind of instance is refused before any call.
         var missing = Json(await Send(() => c.Search(new ManageSearchRequest { InstanceId = radarr, Key = "movie:tmdb:27205", IdempotencyKey = "h1" }, default)));
         Assert.Equal("Rejected", missing.GetProperty("status").GetString());
+        Assert.Empty(rig.Radarr.Writes);
+        var calls = rig.Arr.Calls.Count;
         var wrong = Json(await Send(() => c.Search(new ManageSearchRequest { InstanceId = rig.Instance("SonarrZ").Id, Key = "movie:tmdb:438631", IdempotencyKey = "h2" }, default)));
         Assert.Equal("Rejected", wrong.GetProperty("status").GetString());
         Assert.Equal(calls, rig.Arr.Calls.Count);
@@ -896,6 +898,156 @@ public class ApiArrAdminHubTests
         rig.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = false;
         Assert.False((await HubFor(rig.AdminUser)).GetProperty("admin").GetProperty("hub").GetBoolean());
     }
+
+    // ------------------------------------------------------------------ queue actions stay on the connection they were checked on (edition round 22)
+
+    /// <summary>Points an instance at another server (same id: a configuration save).</summary>
+    private static void Repoint(Rig rig, string name, string url)
+    {
+        var c = rig.Arr.Plugin.Plugin.Configuration;
+        var radarr = name.StartsWith("Radarr", StringComparison.Ordinal);
+        var rows = JsonNode.Parse(radarr ? c.RadarrInstances : c.SonarrInstances)!.AsArray();
+        var row = rows.First(r => (string?)r!["Name"] == name)!;
+        row["Url"] = url;
+        row["ApiKey"] = "synthetic-replacement-key";
+        if (radarr) c.RadarrInstances = rows.ToJsonString(); else c.SonarrInstances = rows.ToJsonString();
+    }
+
+    /// <summary>Another Radarr holding the same movies and queue (the same download id: one torrent in two clients).</summary>
+    private static FakeArr.Host RadarrTwin(Rig rig, string host)
+    {
+        var twin = rig.Arr.Add(host, "Radarr");
+        foreach (var m in rig.Radarr.Movies) twin.Movies.Add((JsonObject)m.DeepClone());
+        foreach (var q in rig.Radarr.Queue) twin.Queue.Add((JsonObject)q.DeepClone());
+        return twin;
+    }
+
+    // A deletion with the client's data, confirmed for the download as one server had it, never deletes on the server the
+    // instance points at after a save (the same download id there is another client's data): the confirmation is bound to
+    // the connection it was issued for.
+    [Fact]
+    public async Task ARemovalConfirmedOnOneConnectionNeverDeletesOnItsReplacement()
+    {
+        using var rig = new Rig();
+        await rig.Warm();
+        var twin = RadarrTwin(rig, "radarr-new.invalid");
+        var c = rig.Controller(rig.AdminUser);
+        var token = Json(await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = rig.Instance("RadarrMainZ").Id, DownloadId = "dl2" }, default))).GetProperty("token").GetString()!;
+        Repoint(rig, "RadarrMainZ", "http://radarr-new.invalid:7878");
+        var done = Json(await Act(rig, rig.AdminUser, "RadarrMainZ", "dl2", "remove_with_data", token: token));
+        Assert.True(twin.Writes.Count == 0 && rig.Radarr.Writes.Count == 0, $"{done}; replacement writes {twin.Writes.Count}");
+        Assert.Equal("Rejected", done.GetProperty("status").GetString());
+    }
+
+    // A removal went out; a save then points the instance elsewhere. Its read-back (are the rows gone?) is read where it was
+    // sent, never from the replacement.
+    [Fact]
+    public async Task AQueueRemovalReadsBackFromTheConnectionItWasSentTo()
+    {
+        using var rig = new Rig();
+        await rig.Warm();
+        var twin = RadarrTwin(rig, "radarr-after.invalid");
+        // The save lands while the removal is being sent (it reached the server), before its read-back.
+        rig.Radarr.Before = (path, _) =>
+        {
+            if (path == "/api/v3/queue/2") Repoint(rig, "RadarrMainZ", "http://radarr-after.invalid:7878");
+            return Task.CompletedTask;
+        };
+        var done = Json(await Act(rig, rig.AdminUser, "RadarrMainZ", "dl2", "remove"));
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        Assert.Single(rig.Radarr.Writes);
+        Assert.True(rig.Arr.CallCount("radarr-after.invalid") == 0, $"read back from the replacement: {done}");
+    }
+
+    // The download's rows were read (one unpaged read of a pack) from one server; a save points the instance elsewhere before
+    // the command: the search is not sent to the replacement (nor anywhere: it can't be proved there).
+    [Fact]
+    public async Task AQueueSearchIsSentOnlyOnTheConnectionItsDownloadWasReadFrom()
+    {
+        using var rig = new Rig();
+        ShortQueueWithAPack(rig);
+        var tv = rig.Instance("SonarrZ");
+        Assert.True((await rig.Store.GetQueueAsync(tv, default)).Value!.Incomplete);
+        var twin = rig.Arr.Add("sonarr-new.invalid", "Sonarr");
+        foreach (var s in rig.Sonarr.Series) twin.Series.Add((JsonObject)s.DeepClone());
+        foreach (var q in rig.Sonarr.Queue) twin.Queue.Add((JsonObject)q.DeepClone());
+        var moved = 0;
+        rig.Sonarr.Before = (path, _) =>
+        {
+            if (path.StartsWith("/api/v3/queue/details", StringComparison.Ordinal) && Interlocked.Exchange(ref moved, 1) == 0) Repoint(rig, "SonarrZ", "http://sonarr-new.invalid:8989");
+            return Task.CompletedTask;
+        };
+        var done = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "search"));
+        Assert.Equal(1, moved);
+        Assert.True(twin.Writes.Count == 0 && rig.Sonarr.Writes.Count == 0, $"{done}; replacement writes {twin.Writes.Count}");
+    }
+    [Fact]
+    public async Task AQueueActionOwnsItsRetryBeforeLookingUpTheDownload()
+    {
+        using var r = new Rig();
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        r.Sonarr.Before = async (path, ct) => { if (path == "/api/v3/queue") { reached.TrySetResult(); await release.Task.WaitAsync(ct); } };
+        var first = r.Queue.RunAsync(r.AdminUser, null, new QueueActionInput { InstanceId = r.Instance("SonarrZ").Id, DownloadId = "pack", Action = QueueAction.Search, IdempotencyKey = "before-lookup" }, default);
+        var sent = 0;
+        try
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var other = await r.Runner.RunAsync(new ArrActionRequest { UserId = r.AdminUser.UserId, IdempotencyKey = "before-lookup", Action = "movie.search", InstanceId = r.Instance("SonarrZ").Id, Target = "another", Execute = _ => { sent++; return Task.FromResult<ArrError?>(null); } });
+            Assert.True(other.Conflict); Assert.Equal(0, sent);
+        }
+        finally { release.TrySetResult(); }
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task ChangedQueueOptionsReturnAnIdempotencyConflictThroughTheRoute()
+    {
+        using var r = new Rig(); await r.Warm();
+        Assert.Equal(200, (await Act(r, r.AdminUser, "SonarrZ", "pack", "search", key: "queue-options")).Status);
+        var changed = await Act(r, r.AdminUser, "SonarrZ", "pack", "search", blocklist: true, key: "queue-options");
+        Assert.Equal(409, changed.Status); Assert.Equal("idempotency_conflict", Json(changed).GetProperty("code").GetString());
+        Assert.Single(r.Sonarr.Writes, write => write.Path == "/api/v3/command");
+    }
+
+    [Theory]
+    [InlineData("search", "dl2")]
+    [InlineData("retry_import", "dl3")]
+    public async Task QueueCommandsPersistTheirOriginalBindingBeforeTransport(string action, string download)
+    {
+        using var rig = new Rig();
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(3, 45745, "Sintel", state: "importPending", status: "warning"));
+        await rig.Warm();
+        const string key = "bound-command";
+        var path = Path.Combine(Path.GetDirectoryName(rig.Audit.FilePath)!, AcquireDatabase.FileName);
+        using var db = new AcquireDatabase(path);
+        string? Binding(AcquireDatabase data, bool sending = false) => data.Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT binding,state,command FROM retry_owners WHERE retry_key=$key";
+            cmd.Parameters.AddWithValue("$key", key);
+            using var row = cmd.ExecuteReader();
+            Assert.True(row.Read(), "The reserved owner row must exist before transport.");
+            if (sending) Assert.Equal("sending", row.GetString(1));
+            Assert.False(row.IsDBNull(2));
+            using var command = JsonDocument.Parse(row.GetString(2));
+            Assert.Equal("queue." + action, command.RootElement.GetProperty("Action").GetString());
+            return row.IsDBNull(0) ? null : row.GetString(0);
+        });
+        var expected = ArrClientFactory.Tag(rig.Arr.Factory.For(rig.Instance("RadarrMainZ").Id).Value!);
+        var captured = new List<string?>();
+        rig.Radarr.Before = (route, _) =>
+        {
+            if (route == "/api/v3/command") captured.Add(Binding(db, sending: true));
+            return Task.CompletedTask;
+        };
+        var result = Json(await Act(rig, rig.AdminUser, "RadarrMainZ", download, action, key: key));
+        Assert.Equal("Succeeded", result.GetProperty("status").GetString());
+        Assert.Equal(expected, Assert.Single(captured));
+        using var reopened = new AcquireDatabase(path);
+        Assert.Equal(expected, Binding(reopened));
+    }
+
 }
 
 /// <summary>Shared helper: adds a path mapping to every instance row of a JSON list.</summary>
@@ -907,4 +1059,7 @@ internal static class IntegrationArrBridgeTestsAccess
         foreach (var row in rows) row!["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = arr, ["JellyfinPath"] = jf });
         return rows.ToJsonString();
     }
+
+
+
 }
