@@ -375,6 +375,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
             serviceCollection.AddSingleton<SeerrParentalFilter>();
+            // A2 — backend-neutral parental evidence; policy and caching stay in the shared gate.
+            serviceCollection.AddSingleton<TitleParentalEvidenceProvider>();
+            // End A2.
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

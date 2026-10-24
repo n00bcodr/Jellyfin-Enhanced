@@ -116,17 +116,16 @@ public class IntegrationRequestParentalTests
         arr.Add("movies.invalid", "Radarr"); arr.Configure(("Movies", ArrKind.Radarr, "http://movies.invalid", "test-key"));
         var config = arr.Plugin.Plugin.Configuration;
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je"; config.ArrRequestDefaultRole = "Kid";
-        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.invalid"; config.JellyseerrApiKey = "test-seerr";
+        config.JellyseerrEnabled = false; config.TMDB_API_KEY = "test-tmdb";
         var jf = new FakeJellyfinView(); var kid = jf.AddUser(false, parental: true); var user = (User)kid.Handle!; user.MaxParentalRatingScore = 10;
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(kid.UserId)).Returns(user);
         var localization = new Mock<ILocalizationManager>();
         localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
         localization.Setup(l => l.GetRatingScore("R", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(18, null));
         var server = new Mock<IServerConfigurationManager>(); server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
-        using var transport = new IntegrationTransport((_, _) => Task.FromResult(rating == "fail"
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(rating == "fail"
             ? IntegrationTransport.Response("{}", 503)
-            : IntegrationTransport.Response(JsonSerializer.Serialize(new
-            { releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = rating } } } } }, keywords = new { keywords = Array.Empty<object>() }, genres = Array.Empty<object>() }))));
+            : IntegrationTransport.Response(IntegrationParentalEvidenceTests.Movie(int.Parse(request.RequestUri!.Segments.Last()), rating))));
         var parental = new SeerrParentalFilter(transport, users.Object, localization.Object, server.Object, arr.Plugin.Core.Logger);
         using var store = arr.Store(); var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         var aliases = new TitleAliases(store, null); var policy = new RequestPolicy(jf, store, libraries, aliases, parental, arr.Factory, new UnavailableRequestBackend());
@@ -191,15 +190,15 @@ public class IntegrationRequestParentalTests
         var movies = arr.Add("movies.invalid", "Radarr"); arr.Configure(("Movies", ArrKind.Radarr, "http://movies.invalid", "test-key"));
         var config = arr.Plugin.Plugin.Configuration;
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je"; config.ArrRequestDefaultRole = "Kid";
-        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.invalid"; config.JellyseerrApiKey = "test-seerr";
+        config.JellyseerrEnabled = false; config.TMDB_API_KEY = "test-tmdb";
         var jf = new FakeJellyfinView(); var kid = jf.AddUser(false, parental: true); var user = (User)kid.Handle!; user.MaxParentalRatingScore = 10;
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(kid.UserId)).Returns(user);
         var localization = new Mock<ILocalizationManager>();
         localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
         localization.Setup(l => l.GetRatingScore("R", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(18, null));
         var server = new Mock<IServerConfigurationManager>(); server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
-        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new
-        { releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = rating } } } } }, keywords = new { keywords = Array.Empty<object>() }, genres = Array.Empty<object>() }))));
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(IntegrationTransport.Response(
+            IntegrationParentalEvidenceTests.Movie(int.Parse(request.RequestUri!.Segments.Last()), rating))));
         var parental = new SeerrParentalFilter(transport, users.Object, localization.Object, server.Object, arr.Plugin.Core.Logger);
         using var store = arr.Store(); var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         var aliases = new TitleAliases(store, null); var policy = new RequestPolicy(jf, store, libraries, aliases, parental, arr.Factory, new UnavailableRequestBackend());
@@ -281,7 +280,7 @@ public class IntegrationRequestParentalTests
         }
         user.SetPreference(PreferenceKind.BlockedTags, new[] { "violence" });
         config.JellyseerrEnabled = false;
-        Assert.False(await parental.MaySeeAbsentAsync("movie", 603, kid.UserId.ToString("N"), default));
+        Assert.Equal(allowed, await parental.MaySeeAbsentAsync("movie", 603, kid.UserId.ToString("N"), default));
     }
 }
 

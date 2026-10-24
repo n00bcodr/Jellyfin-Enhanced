@@ -4,6 +4,10 @@ Use this map to find the files responsible for a feature before changing it. Jel
 
 The server owns configuration, persistence, integration proxies and response filters. The client adds controls and pages to Jellyfin Web.
 
+`Services/TitleParentalEvidence.cs` selects captured TMDB or Seerr parental evidence from the request backend,
+and reads authoritative native rating/tag facts. `Services/SeerrParentalFilter.cs` remains the shared policy
+gate and bounded signature cache; JE mode uses the existing `TmdbResponseCache` and never falls back to Seerr.
+
 Unless a repository-root path is stated, source paths below are relative to `Jellyfin.Plugin.JellyfinEnhanced/`. Leading slashes denote HTTP routes.
 
 For endpoint details, see the [API reference](api.md). For setup and placement, see [Settings Overview](../getting-started/settings-overview.md) and [JE Pages & Tabs](../getting-started/pages-and-tabs.md).

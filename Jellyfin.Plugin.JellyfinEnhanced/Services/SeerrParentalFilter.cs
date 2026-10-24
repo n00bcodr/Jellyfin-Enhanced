@@ -19,12 +19,9 @@ using MediaBrowser.Model.Globalization;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
-    /// Enforces each Jellyfin user's parental-rating limit on the Seerr surfaces
-    /// the plugin proxies (issue #581). Seerr/TMDB list responses carry no
-    /// certification, so for a *restricted* user (MaxParentalRating set, or
-    /// "block unrated" enabled) every movie/series row is resolved to a parental
-    /// score — TMDB's tiny release_dates / content_ratings endpoints when a TMDB
-    /// key is configured, otherwise Seerr's full detail — through a user-neutral
+    /// Enforces each Jellyfin user's parental rating and tag rules on shared JE
+    /// and proxied Seerr surfaces (issue #581). Every restricted title is resolved
+    /// through the selected backend's evidence provider and a user-neutral
     /// cache (default 24 h), and rows above the limit are removed. Detail
     /// endpoints answer 403 for blocked titles and request POSTs are refused, so
     /// a restricted user can't reach a hidden title through a direct link.
@@ -62,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // TMDB hiccup or a deleted title doesn't trigger a refetch on every list.
         private static readonly TimeSpan NegativeCacheTtl = TimeSpan.FromMinutes(5);
 
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly TitleParentalEvidenceProvider _evidence;
         private readonly IUserManager _userManager;
         private readonly ILocalizationManager _localization;
         private readonly IServerConfigurationManager _serverConfig;
@@ -79,7 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// body that carries them, its cleaned TMDB keyword and genre names.
         /// Keywords/Genres null = tag data not fetched (rating-only lookup).
         /// </summary>
-        private sealed record Signature(int? Score, int? SubScore, string[]? Keywords, string[]? Genres);
+        private sealed record Signature(int? Score, int? SubScore, string[]? Keywords, string[]? Genres, bool? Adult);
 
         // Resolved signature per "{mediaType}:{tmdbId}:{region}" — user-neutral.
         // Unresolved = the fetch failed (negative entry, short TTL); Sig with a null
@@ -103,9 +100,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IUserManager userManager,
             ILocalizationManager localization,
             IServerConfigurationManager serverConfig,
-            Logger logger)
+            Logger logger,
+            TitleParentalEvidenceProvider? evidence = null)
         {
-            _httpClientFactory = httpClientFactory;
+            _evidence = evidence ?? new TitleParentalEvidenceProvider(httpClientFactory, new TmdbResponseCache(httpClientFactory, TimeProvider.System));
             _userManager = userManager;
             _localization = localization;
             _serverConfig = serverConfig;
@@ -260,6 +258,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return new Result(false, filtered, retryLater);
 
                     case Category.Detail:
+                        if (string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // A legacy-shaped detail body must not seed JE's trusted evidence partition.
+                            return new Result(!TryParseId(apiPath, "/api/v1/" + plan.MediaType + "/", out var detailId)
+                                || await IsTitleBlockedAsync(plan.MediaType!, detailId, policy, requestAborted).ConfigureAwait(false), json);
+                        }
                         return new Result(IsDetailBodyBlocked(json, plan.MediaType!, policy), json);
 
                     case Category.SubResource:
@@ -474,16 +478,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             facts = null;
             if (!policy.IsRestricted) return true;
-            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
-            var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
-            if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature?.Score == null) return false;
+            var type = NormalizeMediaType(mediaType);
+            if (tmdbId <= 0 || type == null) return false;
+            if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature?.Score == null) return false;
             facts = new AbsentSignature(signature.Score, signature.SubScore, signature.Keywords ?? Array.Empty<string>(), signature.Genres ?? Array.Empty<string>());
-            return IsAllowed(signature, mediaType, policy);
+            return IsAllowed(signature, type, policy);
         }
 
         /// <summary>
         /// The cache-only absent-title decision as a verdict (4f round 7): true or false once the title's rating (and tags, when
-        /// the person's rules need them) was verified, or the answer can never change (no TMDB id; tag rules without Seerr);
+        /// the person's rules need them) was verified, or the answer can never change (no valid title identity);
         /// null while it is unverified (not read yet, or the lookup failed lately): evidence to prepare, never a refusal.
         /// </summary>
         /// <param name="mediaType">"movie" or "tv".</param>
@@ -493,10 +497,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public bool? AbsentVerdict(string mediaType, int tmdbId, string userId)
         {
             if (!TryGetRestrictedPolicy(userId, out var policy) || !policy.IsRestricted) return true;
-            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
-            var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
-            if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature == null) return null;
-            return signature.Score != null && IsAllowed(signature, mediaType, policy);
+            var type = NormalizeMediaType(mediaType);
+            if (tmdbId <= 0 || type == null) return false;
+            if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature == null) return null;
+            return signature.Score != null && IsAllowed(signature, type, policy);
         }
 
         /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
@@ -515,25 +519,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
         {
             if (!policy.IsRestricted) return true;
-            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            var type = NormalizeMediaType(mediaType);
+            if (tmdbId <= 0 || type == null) return false;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(8));
-                await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
-                return MaySeeAbsent(mediaType, tmdbId, policy, out _);
+                await GetSignatureAsync(type, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
+                return MaySeeAbsent(type, tmdbId, policy, out _);
             }
             catch (Exception) { return false; }
         }
-
-        private static bool HasSeerr() => JellyfinEnhanced.Instance?.Configuration is { JellyseerrEnabled: true } c && !string.IsNullOrWhiteSpace(c.JellyseerrUrls) && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
 
         // ── Decisions ────────────────────────────────────────────────────────
 
         private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
         {
             // Could not verify -> fail closed.
-            if (resolved == null)
+            if (resolved == null || resolved.Adult == true)
             {
                 return false;
             }
@@ -593,7 +596,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Seerr detail bodies carry certification AND (normally) keywords/genres;
             // without a keyword container the tags stay unknown rather than empty.
             var resolved = SignatureFromDetail(detail, mediaType, region, includeTags: SeerrTagSignatureExtractor.HasKeywordData(detail));
-            if (detail.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
+            if (string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "seerr", StringComparison.OrdinalIgnoreCase)
+                && detail.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
             {
                 StoreSignature(CacheKey(mediaType, tmdbId, region), resolved, DateTime.UtcNow, CacheTtl());
             }
@@ -772,7 +776,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var tasks = keys.Select(async kvp =>
             {
                 // Cache hits never occupy a slot.
-                if (TryGetFreshSignature(kvp.Key, needTags, out var hit))
+                if (TryGetTitleSignature(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, out var hit))
                 {
                     return (kvp.Key, hit);
                 }
@@ -933,7 +937,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return true; // recently failed to verify -> still hidden, no refetch
                     }
                 }
-                else if (age < CacheTtl() && (!needTags || cached.Sig?.Keywords != null))
+                else if (age < CacheTtl() && (!needTags || cached.Sig?.Adult == true || (cached.Sig?.Keywords != null && cached.Sig.Genres != null)))
                 {
                     // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
                     signature = cached.Sig;
@@ -954,10 +958,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
+        private bool TryGetTitleSignature(string mediaType, int tmdbId, string region, bool needTags, out Signature? signature)
+        {
+            signature = null;
+            try
+            {
+                if (_evidence.TryReadLocal(mediaType, tmdbId, region, out var local))
+                {
+                    if (local == null) return true;
+                    // Native rating/tags are authoritative for those facets. Jellyfin has no separate adult
+                    // flag: a local override must not erase a known adult flag or invent a non-adult verdict.
+                    if (!TryGetFreshSignature(CacheKey(mediaType, tmdbId, region), false, out var remote)) return false;
+                    if (remote?.Adult != null) signature = SignatureFromEvidence(local) with { Adult = remote.Adult };
+                    return true;
+                }
+                return TryGetFreshSignature(CacheKey(mediaType, tmdbId, region), needTags, out signature);
+            }
+            catch (Exception)
+            {
+                // An unreadable native authority is unknown, never permission to use a more permissive source.
+                return true;
+            }
+        }
+
         private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
         {
-            var key = CacheKey(mediaType, tmdbId, region);
-            if (TryGetFreshSignature(key, needTags, out var fresh))
+            var source = _evidence.Capture();
+            var key = CacheKey(source, mediaType, tmdbId, region);
+            if (TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var fresh))
             {
                 return fresh;
             }
@@ -967,40 +995,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // cancel a fetch another request depends on.
             var inFlightKey = needTags ? key + "|tags" : key;
             var lazy = _inFlight.GetOrAdd(inFlightKey, _ => new Lazy<Task<Signature?>>(
-                () => FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
+                () => FetchAndCacheAsync(source, inFlightKey, key, mediaType, tmdbId, region, needTags),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
             try
             {
-                return await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
+                var resolved = await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
+                if (source.CacheScope != _evidence.Capture().CacheScope) return null;
+                return TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var merged) ? merged : resolved;
             }
             catch (Exception ex)
             {
                 // Over budget or fetch faulted -> cannot verify -> fail closed.
                 if (ex is not OperationCanceledException)
                 {
-                    _logger.Debug($"Parental filter: lookup for {mediaType}/{tmdbId} failed: {ex.Message}");
+                    _logger.Debug($"Parental filter: lookup for {mediaType}/{tmdbId} failed ({ex.GetType().Name}).");
                 }
 
                 return null;
             }
         }
 
-        private async Task<Signature?> FetchAndCacheAsync(string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
+        private async Task<Signature?> FetchAndCacheAsync(ITitleParentalEvidence source, string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
         {
             try
             {
-                JsonElement? detail = null;
-                var hasTagData = false;
+                TitleParentalEvidence? detail = null;
                 try
                 {
                     using var cts = new CancellationTokenSource(PerFetchTimeout);
-                    (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
+                    detail = await source.ReadAsync(mediaType, tmdbId, region, needTags, cts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     // Timeouts and transport faults count as "could not verify" too.
-                    _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId}: {ex.Message}");
+                    _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId} ({ex.GetType().Name}).");
                 }
 
                 var now = DateTime.UtcNow;
@@ -1026,13 +1055,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return null;
                 }
 
-                var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
-                if (hasTagData)
+                var resolved = SignatureFromEvidence(detail);
+                if (resolved.Keywords != null && resolved.Genres != null)
                 {
                     _tagFetchFailedAt.TryRemove(key, out _);
                 }
 
                 StoreSignature(key, resolved, now, ttl);
+                if (needTags && resolved.Adult != true && (resolved.Keywords == null || resolved.Genres == null))
+                {
+                    _tagFetchFailedAt[key] = now;
+                    return null;
+                }
                 return resolved;
             }
             finally
@@ -1057,12 +1091,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _ => (resolved, false, now),
                 (_, current) =>
                 {
-                    if (resolved.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
+                    var stored = resolved;
+                    if (!current.Unresolved && current.Sig != null && now - current.CachedAt < ttl)
+                        stored = stored with { Adult = stored.Adult ?? current.Sig.Adult };
+                    if (stored.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
                     {
-                        return (resolved with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
+                        return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
                     }
 
-                    return (resolved, false, now);
+                    return (stored, false, now);
                 });
             TrimCache();
         }
@@ -1107,138 +1144,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         private Signature SignatureFromDetail(JsonElement detail, string mediaType, string region, bool includeTags)
+            => SignatureFromEvidence(TitleParentalEvidenceProvider.FromSeerr(detail, mediaType, region, includeTags));
+
+        private Signature SignatureFromEvidence(TitleParentalEvidence evidence)
         {
-            string[]? keywords = null;
-            string[]? genres = null;
-            if (includeTags)
-            {
-                var extracted = SeerrTagSignatureExtractor.Extract(detail);
-                keywords = extracted.Keywords.ToArray();
-                genres = extracted.Genres.ToArray();
-            }
-
-            var cert = SeerrCertificationExtractor.Extract(detail, mediaType, region);
-            if (string.IsNullOrWhiteSpace(cert.Certification))
-            {
-                return new Signature(null, null, keywords, genres); // known-unrated
-            }
-
+            if (string.IsNullOrWhiteSpace(evidence.Certification))
+                return new Signature(null, null, evidence.Keywords, evidence.Genres, evidence.Adult);
             try
             {
-                var score = _localization.GetRatingScore(cert.Certification, cert.Iso ?? region);
-                return score == null
-                    ? new Signature(null, null, keywords, genres)
-                    : new Signature(score.Score, score.SubScore, keywords, genres);
+                var score = _localization.GetRatingScore(evidence.Certification, evidence.Region);
+                return new Signature(score?.Score, score?.SubScore, evidence.Keywords, evidence.Genres, evidence.Adult);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.Debug($"Parental filter: could not score certification '{cert.Certification}' ({cert.Iso}): {ex.Message}");
-                return new Signature(null, null, keywords, genres);
+                return new Signature(null, null, evidence.Keywords, evidence.Genres, evidence.Adult);
             }
-        }
-
-        // Rating-only lookups prefer TMDB's dedicated cert endpoints (tiny payload)
-        // when a TMDB key is set and fall back to Seerr's full detail. When tag
-        // rules are active the Seerr full detail is required: it is the one body
-        // carrying certifications AND keywords/genres. Certification and keyword
-        // data don't vary per user, so X-Api-User is deliberately omitted — that
-        // is what keeps the cache shareable. Returns whether the body carries tags.
-        private async Task<(JsonElement? Detail, bool HasTagData)> FetchDetailAsync(string mediaType, int tmdbId, bool needTags, CancellationToken ct)
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
-            {
-                return (null, false);
-            }
-
-            if (!needTags && !string.IsNullOrEmpty(config.GetTmdbApiKey()))
-            {
-                var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.GetTmdbApiKey(), ct).ConfigureAwait(false);
-                if (fromTmdb != null)
-                {
-                    return (fromTmdb, false);
-                }
-            }
-
-            var fromSeerr = await FetchDetailFromSeerrAsync(mediaType, tmdbId, config, ct).ConfigureAwait(false);
-            // "Has tag data" means the body carries a keyword container, not merely
-            // that the call succeeded: an empty set from a body without one would
-            // let a blocked-tag rule pass instead of failing closed.
-            return (fromSeerr, fromSeerr != null && SeerrTagSignatureExtractor.HasKeywordData(fromSeerr.Value));
-        }
-
-        private async Task<JsonElement?> FetchCertFromTmdbAsync(string mediaType, int tmdbId, string apiKey, CancellationToken ct)
-        {
-            var subResource = mediaType == "tv" ? "content_ratings" : "release_dates";
-            var requestUri = $"https://api.themoviedb.org/3/{mediaType}/{tmdbId.ToString(CultureInfo.InvariantCulture)}/{subResource}?api_key={apiKey}";
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.Timeout = PerFetchTimeout;
-                using var response = await httpClient.GetAsync(requestUri, ct).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    return null;
-                }
-
-                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(body))
-                {
-                    return null;
-                }
-
-                using var parsed = JsonDocument.Parse(body);
-                return parsed.RootElement.Clone();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug($"Parental filter: TMDB certification fetch failed for {mediaType}/{tmdbId}: {ex.Message}");
-                return null;
-            }
-        }
-
-        private async Task<JsonElement?> FetchDetailFromSeerrAsync(string mediaType, int tmdbId, Configuration.PluginConfiguration config, CancellationToken ct)
-        {
-            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
-            {
-                return null;
-            }
-
-            var relative = $"/api/v1/{mediaType}/{tmdbId.ToString(CultureInfo.InvariantCulture)}";
-            var httpClient = SeerrHttpHelper.CreateClient(_httpClientFactory);
-            httpClient.Timeout = PerFetchTimeout;
-
-            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var requestUri = $"{url.Trim().TrimEnd('/')}{relative}";
-                try
-                {
-                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
-                    using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
-                    var (body, error) = await SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct).ConfigureAwait(false);
-                    if (error != null || string.IsNullOrEmpty(body))
-                    {
-                        continue;
-                    }
-
-                    using var parsed = JsonDocument.Parse(body);
-                    return parsed.RootElement.Clone();
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.Debug($"Parental filter: Seerr detail fetch failed for {mediaType}/{tmdbId} at {url}: {ex.Message}");
-                }
-            }
-
-            return null;
         }
 
         // ── Endpoint classification ──────────────────────────────────────────
@@ -1502,7 +1422,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static string CacheKey(string mediaType, int tmdbId, string region)
-            => $"{mediaType}:{tmdbId.ToString(CultureInfo.InvariantCulture)}:{region}";
+        private string CacheKey(string mediaType, int tmdbId, string region)
+            => CacheKey(_evidence.Capture(), mediaType, tmdbId, region);
+
+        private static string CacheKey(ITitleParentalEvidence source, string mediaType, int tmdbId, string region)
+            => $"{source.CacheScope}:{mediaType}:{tmdbId.ToString(CultureInfo.InvariantCulture)}:{region}";
     }
 }
