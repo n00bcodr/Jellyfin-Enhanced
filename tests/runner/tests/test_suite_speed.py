@@ -143,6 +143,70 @@ class CoverageUnionTests(unittest.TestCase):
             self.assertNotEqual(0, subprocess.run(command, capture_output=True).returncode)
 
 
+class BuildIdentityTests(unittest.TestCase):
+    def test_output_fingerprint_frames_file_names_and_contents(self):
+        import backend
+        with tempfile.TemporaryDirectory() as tmp:
+            left, right = Path(tmp) / 'left', Path(tmp) / 'right'
+            left.mkdir()
+            right.mkdir()
+            (left / 'a').write_bytes(b'bc')
+            (right / 'ab').write_bytes(b'c')
+            self.assertNotEqual(backend.fingerprint(left), backend.fingerprint(right))
+
+    def test_custom_output_root_is_ignored_but_a_source_results_directory_is_not(self):
+        import backend
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'Jellyfin.Plugin.JellyfinEnhanced/results/Input.cs'
+            source.parent.mkdir(parents=True)
+            source.write_text('class InputA {}')
+            pins = root / 'tests/backend/Support/jellyfin-api.json'
+            pins.parent.mkdir(parents=True)
+            pins.write_text(json.dumps({'jf12': {'version': '12.2', 'image': 'image@sha256:' + 'a' * 64}}))
+            cache = root / 'api-cache/12.2-aaaaaaaaaaaa'
+            cache.mkdir(parents=True)
+            (cache / 'host.dll').write_bytes(b'host')
+            build = root / 'custom-output/build/jf12/snapshot'
+            build.parent.mkdir(parents=True)
+            builds = []
+            def execute(command, log):
+                builds.append(command)
+                build.mkdir(parents=True)
+                (build / 'plugin.dll').write_bytes(b'output')
+                Path(log).write_text('build complete')
+                return {'exit_code': 0, 'seconds': 0.1}
+            with patch.object(backend, 'ROOT', root), patch.dict(os.environ, {'JE_JELLYFIN_API_CACHE': str(cache.parent)}), \
+                 patch.object(backend.subprocess, 'check_output', return_value=b'sdk'), patch.object(backend, 'run', side_effect=execute):
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                self.assertTrue(backend.prepare_build('jf12', build, True)['reused'])
+                source.write_text('class InputB {}')
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                self.assertEqual(2, len(builds))
+
+    def test_source_resources_sdk_properties_target_and_outputs_affect_identity(self):
+        import backend
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'tests/backend/Support').mkdir(parents=True)
+            pin = {'version': '12.2', 'image': 'image@sha256:' + 'a' * 64}
+            (root / 'tests/backend/Support/jellyfin-api.json').write_text(json.dumps({'jf12': pin, 'jf10': pin}))
+            source = root / 'source.cs'; source.write_text('class A {}')
+            resource = root / 'resource.json'; resource.write_text('{}')
+            with patch.object(backend, 'ROOT', root), patch.object(backend.subprocess, 'check_output', return_value=b'sdk1'):
+                first = backend.build_identity('jf12', ['Release'])
+                self.assertEqual(first, backend.build_identity('jf12', ['Release']))
+                self.assertNotEqual(first, backend.build_identity('jf10', ['Release']))
+                self.assertNotEqual(first, backend.build_identity('jf12', ['Debug']))
+                resource.write_text('{"changed":true}')
+                self.assertNotEqual(first, backend.build_identity('jf12', ['Release']))
+                source.write_text('class B {}')
+                second = backend.build_identity('jf12', ['Release'])
+                with patch.object(backend.subprocess, 'check_output', return_value=b'sdk2'):
+                    self.assertNotEqual(second, backend.build_identity('jf12', ['Release']))
+            before = backend.fingerprint(root)
+            source.write_text('class C {}')
+            self.assertNotEqual(before, backend.fingerprint(root))
 
 
 
@@ -176,6 +240,32 @@ class CoverageDenominatorTests(unittest.TestCase):
 
 
 
+class BuildReuseTests(unittest.TestCase):
+    def test_reuse_requires_matching_inputs_and_every_output_hash(self):
+        import backend
+        with tempfile.TemporaryDirectory() as tmp:
+            build = Path(tmp) / 'build/jf12/snapshot'
+            build.parent.mkdir(parents=True)
+            state = {'identity': 'a' * 64, 'builds': 0}
+            def execute(command, log):
+                state['builds'] += 1
+                self.assertIn('-m:4', command)
+                self.assertIn('-p:RestoreLockedMode=true', command)
+                build.mkdir()
+                (build / 'plugin.dll').write_text('fresh binary')
+                return {'exit_code': 0, 'seconds': 1.0}
+            with patch.object(backend, 'build_identity', side_effect=lambda *_: state['identity']), patch.object(backend, 'run', side_effect=execute):
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                self.assertTrue(backend.prepare_build('jf12', build, True)['reused'])
+                self.assertEqual(1, state['builds'])
+                (build / 'plugin.dll').write_text('collector left instrumented/stale output')
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                state['identity'] = 'b' * 64
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                (build.parent / 'build-identity.json').write_text('corrupt receipt')
+                self.assertFalse(backend.prepare_build('jf12', build, True)['reused'])
+                self.assertFalse(backend.prepare_build('jf12', build, False)['reused'])
+                self.assertEqual(5, state['builds'])
 
 
 
@@ -193,6 +283,41 @@ class GeneratedCoverageTests(unittest.TestCase):
             self.assertEqual({'covered': 1, 'total': 1}, summary(union_reports(paths))['line'])
 
 
+class SourceControlIdentityTests(unittest.TestCase):
+    def test_staged_source_tracking_is_part_of_sdk_metadata_identity(self):
+        import backend
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / '.git').write_text('gitdir: fixture')
+            state = {'index': b'first staged source set'}
+            def read(command, **kwargs):
+                return SimpleNamespace(returncode=0, stdout=state['index'] if 'ls-files' in command else b'unchanged')
+            with patch.object(backend, 'ROOT', root), patch.object(backend.shutil, 'which', return_value='/usr/bin/git'), \
+                 patch.object(backend.subprocess, 'run', side_effect=read):
+                before = backend.source_control_identity()
+                state['index'] = b'changed staged source set'
+                self.assertNotEqual(before, backend.source_control_identity())
+
+    def test_revision_metadata_also_invalidates_identical_source_build_reuse(self):
+        import backend
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(backend, 'ROOT', root):
+                archive = backend.source_control_identity()
+                self.assertIsNotNone(archive)
+                (root / '.git').write_text('gitdir: fixture')
+                with patch.object(backend.shutil, 'which', return_value=None):
+                    self.assertIsNone(backend.source_control_identity())
+                with patch.object(backend.shutil, 'which', return_value='/usr/bin/git'), patch.object(backend.subprocess, 'run') as run:
+                    from types import SimpleNamespace
+                    state = {'revision': b'first-head'}
+                    def read(command, **kwargs):
+                        return SimpleNamespace(returncode=0, stdout=state['revision'] if 'rev-parse' in command else b'constant')
+                    run.side_effect = read
+                    first = backend.source_control_identity()
+                    state['revision'] = b'second-head'
+                    self.assertNotEqual(first, backend.source_control_identity())
 
 
 class DiscoveryIntegrationTests(unittest.TestCase):

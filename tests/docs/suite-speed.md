@@ -49,3 +49,14 @@ Equal case-duration sums did not balance wall time: the first partition trial to
 Real Coverlet diagnostic unions retain exactly 73,249 line points and 67,830 branch points, matching the original XML reporter's denominators. Covered points are 61,001 → 61,002 lines and 51,741 → 51,742 branches, above unchanged 47% / 35% floors. Per-method line identity and complete IL branch identity are preserved, including generated documents. Percentages are never averaged. The actual strict validator rejects the failed partition (exit 2); these diagnostics are not a green coverage certificate. CLI regressions also exercise successful unions and missing, empty, duplicate, incomplete and failed partition rejection.
 
 The final frontend step completes all 3,674 cases in 231.92s. All 239 point schemas/denominators remain unchanged; covered totals are S38,429/56,112 B26,394/43,752 F5,651/8,095 L32,975/46,423. Every global/core floor holds. Aggregate cgroup peak is 16.61 GiB, below 20 GiB. Both separate production Release builds complete with zero warnings/errors (jf12 16.144s, jf10 16.140s). Host load, pressure, CPU time and raw reports remain available with the receipts. Build/global caches and shared-laptop load vary, so do not attribute the entire aggregate difference to the partition model alone.
+
+The final build key was measured separately on an immutable final-helper snapshot on the same laptop and runtime:
+
+| Repeat invocation with known-failure preflight | Whole command seconds | Build seconds | Case result |
+|---|---:|---:|---|
+| Cold verified snapshot | 59.183 | 44.218 | One StampFeed failure; incomplete |
+| Matching input/output hashes | 13.493 | 0.000 | Same one failure; incomplete |
+
+The source/build identities and every snapshot-output hash match across the pair. `--reuse-build` alone enables reuse; mismatched source, resources, target, SDK, properties, dependency locks, pinned assemblies, Git revision/tracked-source metadata or output bytes force a build. File/metadata hash records are length-framed, and output roots are excluded exactly so custom outputs cannot contaminate the key or hide a production `results` directory. Collectors only modify disposable copies. Build locks cover identity checks, building, discovery and all worker copies.
+
+Read-only VSTest discovery with the ordinary single-process method filter selects exactly all 27,876 names and leaves the reusable snapshot unchanged. The temporary measurement parser initially counted only namespace-prefixed names and missed 102 custom DisplayNames; an independent header-based parser reconciles the complete original listing exactly. Raw receipts are retained. All 47 tooling safeguards pass, including output corruption, source/resource/SDK/target/property changes, Git index changes, output/source separation and name/content framing collisions. The final witness pair's aggregate peak is 2.70 GiB. Neither invocation certifies the unexecuted full gate.

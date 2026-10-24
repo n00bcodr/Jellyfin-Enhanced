@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--target", choices=["jf10", "jf12", "all"], default="all")
     parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts" / "regression")
     parser.add_argument("--backend-shards", type=int, choices=[1, 2, 3, 4], default=int(os.environ.get("JE_BACKEND_SHARDS", "1")))
+    parser.add_argument("--reuse-build", action="store_true", help="Reuse only an identity-verified backend build")
     parser.add_argument("--backend-durations", type=Path, help="Previous complete TRX for shard balancing")
     args = parser.parse_args()
     suites = {"fast": ["tooling", "backend", "frontend"], "all": ["tooling", "backend", "frontend", "browser", "poster", "host", "mutation", "history"]}.get(args.suite, [args.suite])
@@ -104,6 +105,8 @@ def main():
                 command = [sys.executable, "tests/runner/backend.py", "--target", target,
                            "--results", results_path, "--build", artifacts / "build" / target / "snapshot",
                            "--shards", args.backend_shards]
+                if args.reuse_build:
+                    command.append("--reuse-build")
                 if args.backend_durations:
                     command.extend(["--durations", args.backend_durations.resolve()])
                 if execute("backend-" + target, command):

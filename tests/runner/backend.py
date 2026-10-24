@@ -105,6 +105,9 @@ def prepare_build(target, directory, reuse):
         previous = json.loads(stamp.read_text()) if stamp.exists() else {}
     except (ValueError, OSError):
         previous = {}
+    if reuse and source_control_identity() is not None and previous.get('identity') == identity and directory.is_dir() and previous.get('outputs') == fingerprint(directory):
+        print('Build identity and all output hashes match; reusing Release test build', flush=True)
+        return dict(reused=True, identity=identity, seconds=0.0)
     stamp.unlink(missing_ok=True)
     shutil.rmtree(directory, ignore_errors=True)
     result = run(['dotnet', 'build', 'tests/backend/JE.Tests.csproj', *properties, '--artifacts-path', directory], directory.parent / 'build.log')
@@ -121,6 +124,7 @@ def main():
     parser.add_argument('--results', type=Path, required=True)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--shards', type=int, choices=[1, 2, 3, 4], default=2)
+    parser.add_argument('--reuse-build', action='store_true')
     parser.add_argument('--durations', type=Path, help='Previous full TRX used only for partition weights')
     args = parser.parse_args()
     results = args.results.resolve()
@@ -141,7 +145,7 @@ def main():
                     weights[case['name']] = h * 3600 + m * 60 + s
             shutil.rmtree(results, ignore_errors=True)
             results.mkdir(parents=True)
-            receipt = prepare_build(args.target, args.build, False)
+            receipt = prepare_build(args.target, args.build, args.reuse_build)
             (results / 'build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
             assemblies = list((args.build / 'bin/JE.Tests').rglob('JE.Tests.dll'))
             if len(assemblies) != 1: raise ValueError('Expected one built backend test assembly')
