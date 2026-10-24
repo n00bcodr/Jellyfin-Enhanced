@@ -70,6 +70,18 @@ internal static partial class UserCacheScan
                 if (clock == null) continue;
                 var function = site.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
                 if (function == null) continue;
+                // Synchronous publication callbacks run at this call site. Their enclosing async read owns the
+                // input deadline too; stopping at the lambda hid the planted proxy late stamp on the old baseline.
+                while (function is AnonymousFunctionExpressionSyntax
+                    && function.Parent is ArgumentSyntax { Parent.Parent: InvocationExpressionSyntax invocation }
+                    && plugin.ModelOf(site.SyntaxTree).GetSymbolInfo(invocation).Symbol is IMethodSymbol publisher
+                    && publisher.Name is "Publish" or "TryPublishSeerr" or "PublishSeerr"
+                    && (publisher.ContainingType.ToDisplayString().Contains("Seerr", StringComparison.Ordinal)
+                        || publisher.ContainingType.ToDisplayString().Contains("EffectiveRequestsBackend", StringComparison.Ordinal)))
+                {
+                    function = function.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
+                }
+                if (function == null) continue;
                 var awaited = function.DescendantNodes().OfType<AwaitExpressionSyntax>()
                     .Any(a => a.Span.End <= statement.SpanStart && a.Ancestors().FirstOrDefault(x => x is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax) == function);
                 if (!awaited) continue;

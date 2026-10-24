@@ -49,8 +49,8 @@ public class UserCacheSeerrDeadlineTests
             new JsonObject { ["results"] = new JsonArray(new JsonObject { ["id"] = 38, ["jellyfinUserId"] = user }) }.ToJsonString())));
         var controller = ApiAssetTests.Controller(plugin.Core, transport);
         var type = typeof(JellyfinEnhancedController);
-        var users = (Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)>)type.GetField("_userCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var users = (SeerrFacts.Cache<(JellyseerrUser? User, DateTime CachedAt)>)type.GetField("_userCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var ids = (SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var getter = type.GetMethod("GetJellyseerrUserId", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Task<string?> Read() => (Task<string?>)getter.Invoke(controller, [user])!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
@@ -180,7 +180,7 @@ public class UserCacheSeerrDeadlineTests
         using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var ids = (SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         try
         {
@@ -210,7 +210,7 @@ public class UserCacheSeerrDeadlineTests
         using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var ids = (SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         try
         {
@@ -219,7 +219,7 @@ public class UserCacheSeerrDeadlineTests
             ids[other.ToString()] = ("5", DateTime.UtcNow);
             await backend.PrepareAsync(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }, default);
             Assert.True(backend.Binding(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }).SeerrUnlinked);
-            Assert.False(ids.ContainsKey(user.ToString()), "the proxy no longer acts as an account Seerr doesn't link to the person");
+            Assert.False(ids.TryGetValue(user.ToString(), out _), "the proxy no longer acts as an account Seerr doesn't link to the person");
             Assert.Equal("5", ids[other.ToString()].JellyseerrUserId);
         }
         finally

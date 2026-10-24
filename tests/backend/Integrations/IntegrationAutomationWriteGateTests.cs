@@ -734,7 +734,7 @@ public class IntegrationAutomationWriteGateTests
                         break;
                     case "legacy":
                         waits.AddRange(walk.GateToSend(file, index, RuleGates[rule]));
-                        Assert.Contains("private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;", source, StringComparison.Ordinal);
+                        Assert.Contains("private string? DirectStop() => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.RequestWrite).Allowed ? \"backend_disabled\" : _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;", source, StringComparison.Ordinal);
                         break;
                 }
             }

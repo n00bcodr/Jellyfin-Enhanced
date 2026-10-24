@@ -78,6 +78,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (aliases == null || TitleKey.Parse(key) is not { } parsed || !ledger.Database.Available) return null;
             try
             {
+                using var effect = SeerrFacts.BeginEffect();
                 var keys = Keys(aliases, parsed);
                 if (keys.Count < 2 || ledger.Unify(keys, policy, now) is not { } merge) return null;
                 feed?.Bump(merge.Keys.Concat(merge.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
@@ -99,11 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="key">A title key (any of its ids).</param>
         internal static TitleKey Held(RequestLedger ledger, TitleAliases? aliases, TitleKey key)
         {
+            using var publication = SeerrFacts.BeginPublication();
             var given = key.Title.ToString();
             var held = ledger.CanonicalKey(given);
             if (held != given) return TitleKey.Parse(held) ?? key.Title;
             var known = aliases?.Canonical(key.Title) ?? key.Title;
-            return TitleKey.Parse(ledger.CanonicalKey(known.ToString())) ?? known;
+            return publication.Publish(() => TitleKey.Parse(ledger.CanonicalKey(known.ToString())) ?? known);
         }
 
         /// <summary>
@@ -122,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="learn">Learn the title's other ids first (an entry that may write; a read-only check doesn't).</param>
         internal static MutationInput? Entry(RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, ArrChangeFeed? feed, MutationInput? input, DateTimeOffset now, bool learn = true)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var normalized = input?.Normalize();
             if (normalized == null || TitleKey.Parse(normalized.Key) is not { } key) return null;
             if (learn) Learn(ledger, policy, aliases, feed, normalized.Key, now);

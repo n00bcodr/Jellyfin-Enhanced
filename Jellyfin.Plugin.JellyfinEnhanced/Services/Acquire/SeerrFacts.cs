@@ -125,14 +125,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             private readonly Publication? _parent;
             private readonly Background? _background;
             private readonly Dictionary<EffectiveRequestsBackend, long> _dependencies = new();
+            private readonly Dictionary<EffectiveRequestsBackend, long> _effectiveDependencies = new();
+            /// <summary>
+            /// Enlists a backend-neutral read admitted under EffectiveRequestsBackend.Shared.Current. Unlike a Seerr
+            /// dependency this permits strict-JE metadata/history reads with submissions off, but rejects epoch changes.
+            /// </summary>
+            public void EnlistEffective(EffectiveBackendSnapshot snapshot) => IncludeEffective(EffectiveRequestsBackend.Shared, snapshot.Epoch);
+            internal void IncludeEffective(EffectiveRequestsBackend owner, long epoch)
+            {
+                _parent?.IncludeEffective(owner, epoch);
+                lock (_effectiveDependencies) _effectiveDependencies.TryAdd(owner, epoch);
+            }
+            internal KeyValuePair<EffectiveRequestsBackend, long>[] EffectiveDependencies()
+            {
+                var all = _parent?.EffectiveDependencies().ToDictionary(e => e.Key, e => e.Value) ?? new Dictionary<EffectiveRequestsBackend, long>();
+                lock (_effectiveDependencies) foreach (var pair in _effectiveDependencies) all.TryAdd(pair.Key, pair.Value);
+                return all.ToArray();
+            }
             internal Publication(bool retain = false, CancellationToken ct = default) { _parent = Pending.Value; _background = retain ? new Background(ct) : null; Pending.Value = this; }
             internal CancellationToken Token => _background?.Token ?? CancellationToken.None;
             internal void Include(EffectiveRequestsBackend owner, long epoch)
             {
                 var admitted = _parent?.Epoch(owner) ?? epoch;
-                lock (_dependencies) _dependencies.TryAdd(owner, admitted);
-                _parent?.Include(owner, epoch);
+                // Refused admission must not taint an otherwise independent optional result.
                 _background?.Include(owner, admitted);
+                _parent?.Include(owner, epoch);
+                lock (_dependencies) _dependencies.TryAdd(owner, admitted);
             }
             internal KeyValuePair<EffectiveRequestsBackend, long>[] Dependencies()
             {
@@ -149,7 +167,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 KeyValuePair<EffectiveRequestsBackend, long>[] dependencies;
                 lock (_dependencies) dependencies = System.Linq.Enumerable.ToArray(_dependencies);
                 T Check(int index) => index == dependencies.Length ? result() : dependencies[index].Key.CommitSeerr(dependencies[index].Value, () => Check(index + 1));
-                return Check(0);
+                var effective = EffectiveDependencies();
+                T CheckEffective(int index) => index == effective.Length ? Check(0) : effective[index].Key.CommitEffective(effective[index].Value, () => CheckEffective(index + 1));
+                return CheckEffective(0);
             }
             public void Dispose() { if (Pending.Value == this) Pending.Value = _parent; _background?.Dispose(); }
         }
@@ -160,6 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             internal void Include(long epoch) => Pending.Value?.Include(owner, epoch);
             internal T Publish<T>(long epoch, Func<T> result)
             {
+                owner.CheckSeerr(SeerrUse.RequestRead, epoch).Demand();
                 Include(epoch);
                 var admitted = Pending.Value?.Epoch(owner) ?? epoch;
                 return owner.CommitSeerr(admitted, () => owner.CommitSeerr(epoch, result));

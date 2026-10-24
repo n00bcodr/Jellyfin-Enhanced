@@ -149,6 +149,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Of(key).FirstOrDefault(a => a.Provider == provider) ?? key;
         }
 
+        /// <summary>Arr-only aliases for the memory-only final disk decision; never enters the Seerr owner.</summary>
+        internal IReadOnlyList<TitleKey> ArrOnly(TitleKey key)
+        {
+            var result = new List<TitleKey>();
+            var seen = new HashSet<string>(StringComparer.Ordinal) { key.Title.ToString() };
+            var pending = new Queue<TitleKey>();
+            pending.Enqueue(key.Title);
+            while (pending.TryDequeue(out var current))
+            {
+                foreach (var raw in FromArrs(current))
+                {
+                    if (!seen.Add(raw) || TitleKey.Parse(raw) is not { } parsed || parsed.IsMovie != key.IsMovie) continue;
+                    result.Add(parsed);
+                    pending.Enqueue(parsed);
+                }
+            }
+            return result;
+        }
+
         /// <summary>
         /// The keys the arr libraries in memory hold the title under (its own included when an arr
         /// holds it): TMDB and IMDb for a movie; TVDB, TMDB and IMDb for a series.

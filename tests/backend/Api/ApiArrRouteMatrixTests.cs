@@ -142,6 +142,8 @@ public class ApiArrRouteMatrixTests
                 new ArrAdminController(N.Arr.Factory, Audit, users, logger),
                 new ArrStateController(N.Store, users),
                 new ArrStatusController(N.Status),
+                new RequestsBackendController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.RequestedTitlesProjection(
+                    new ServicesForRequests(N).Service.Ledger, new TitleAliases(N.Store, N.Requests), new ServicesForRequests(N).Service.Policy, N.View), N.View),
                 new AcquireRequestsController(new ServicesForRequests(N).Service),
                 new AcquireAdminUsersController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Users.AdminUserSettingsService(new ServicesForRequests(N).Service, users, N.Arr.Plugin.Core.Manager, Audit, _ => { }), users),
                 new AcquireDiscoverController(IntegrationRequestDiscoverTests.Offline(new ServicesForRequests(N).Service)),

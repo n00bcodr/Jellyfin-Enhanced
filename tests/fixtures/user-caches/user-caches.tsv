@@ -399,7 +399,7 @@ PrivacyValues._plans	both	independent	(type, mode)	the value walk's per-type pla
 ReadyPlaylistService._gates	both	independent	user	one person's playlist-sync lock (a reference), not an answer
 ReadyPlaylistService._refused	both	independent	user	items the host refused to add to that person's own playlist lately (back-off of a write), not an answer about access	write:own-state
 RecentArrivals._added	both	independent	content / item	when library content arrived: not per user; entries past their window are dropped	write:evicts
-RequestFulfilment._watched	both	independent	title id	open requests' titles (JE data)
+RequestFulfilment._watched	both	independent	title id	open local request title ids and epoch-tagged provider aliases; no user access verdicts
 RequestHubProjection._hidden	both	independent	service	a service reference set once at start-up (not an answer)
 RequestIdentityService._cookieMissCache	both	independent	IP / cookie / none	who is asking (sessions on an IP, the only user): identity, not what they may see
 RequestIdentityService._ipScanCache	both	independent	IP / cookie / none	who is asking (sessions on an IP, the only user): identity, not what they may see

@@ -9,9 +9,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     public sealed partial class SeerrFacts
     {
+        /// <summary>
+        /// Owns downstream effects, including waits for a writer and the feed after its commit. Only an actual
+        /// fact read acquires admission; an empty scope leaves local/arr work independent. Dispose before adoption.
+        /// </summary>
+        internal static Publication BeginEffect(CancellationToken ct = default) => new(retain: true, ct);
+
         internal static T Process<T>(Func<T> work)
         {
-            using var publication = new Publication(retain: true);
+            using var publication = BeginEffect();
             var value = work();
             publication.Token.ThrowIfCancellationRequested();
             return publication.Publish(() => value);
@@ -19,7 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Retains admission only if background processing actually consumes Seerr facts.</summary>
         internal static async Task<T> BackgroundAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct)
         {
-            using var publication = new Publication(retain: true, ct);
+            using var publication = BeginEffect(ct);
             var value = await work(publication.Token).ConfigureAwait(false);
             publication.Token.ThrowIfCancellationRequested();
             return publication.Publish(() => value);

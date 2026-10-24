@@ -19,13 +19,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             private readonly T _value;
             private readonly KeyValuePair<EffectiveRequestsBackend, long>[] _dependencies;
-            private Derived(T value, KeyValuePair<EffectiveRequestsBackend, long>[] dependencies) { _value = value; _dependencies = dependencies; }
-            internal static Derived<T> Capture(T value) => new(value, Pending.Value?.Dependencies() ?? Array.Empty<KeyValuePair<EffectiveRequestsBackend, long>>());
+            private readonly KeyValuePair<EffectiveRequestsBackend, long>[] _effective;
+            private Derived(T value, KeyValuePair<EffectiveRequestsBackend, long>[] dependencies, KeyValuePair<EffectiveRequestsBackend, long>[] effective) { _value = value; _dependencies = dependencies; _effective = effective; }
+            internal static Derived<T> Capture(T value) => new(value, Pending.Value?.Dependencies() ?? Array.Empty<KeyValuePair<EffectiveRequestsBackend, long>>(), Pending.Value?.EffectiveDependencies() ?? Array.Empty<KeyValuePair<EffectiveRequestsBackend, long>>());
             internal T Publish()
             {
                 T Check(int index) => index == _dependencies.Length ? _value
                     : _dependencies[index].Key.Facts.Publish(_dependencies[index].Value, () => Check(index + 1));
-                return Check(0);
+                T Effective(int index)
+                {
+                    if (index == _effective.Length) return Check(0);
+                    var pair = _effective[index];
+                    pair.Key.CommitEffective(pair.Value, () => true);
+                    Pending.Value?.IncludeEffective(pair.Key, pair.Value);
+                    return pair.Key.CommitEffective(pair.Value, () => Effective(index + 1));
+                }
+                return Effective(0);
             }
             internal T Read(T inactive)
             {

@@ -259,6 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // JE's own Seerr request writes wait until the move is done (the ones in flight finish first).
                 using var move = await _fence.BeginMoveAsync(DrainWait, ct).ConfigureAwait(false);
                 if (move == null) return SeerrMigrationReply.Refused("seerr_writes_in_flight", 409, "Requests are being sent to Seerr right now; try again in a moment.", config.ArrRequestBackend);
+                using var effect = SeerrFacts.BeginEffect(ct);
                 var read = await _reader.ReadAsync(config, ct).ConfigureAwait(false);
                 if (!read.Complete) return Describe(read, null, config.ArrRequestBackend, "seerr_read_incomplete", "Seerr's request list could not be read completely; nothing was moved.") with { Outcome = "unavailable", HttpStatus = 409 };
                 if (!string.Equals(read.Digest, digest, StringComparison.Ordinal))
@@ -297,6 +298,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // whichever id either was asked by (one identity: RequestTitleIdentity).
                 foreach (var key in plan.Items.Select(i => i.Input.Key).Distinct(StringComparer.Ordinal)) RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, now);
                 var result = _ledger.ImportSeerr(sourceId, read.Digest, plan.Items, plan.Skipped, actor, previous, Target, now, RollbackWindow);
+                // Imported history is durable now. Release our fact admission before our own adoption drains.
+                effect.Dispose();
                 var switched = false;
                 try
                 {

@@ -571,6 +571,34 @@ public class IntegrationRequestLowDiskTests
         Assert.All((await discover.DiscoverAsync(lab.Member, "because", "all", 1, null, default))!.Groups!.Single().Results, c => Assert.Null(c.Blocked));
     }
 
+    [Fact]
+    public async Task TheFinalJeDiskDecisionDoesNotEnterTheSeerrOwnerEvenWithRetainedSeerrAliases()
+    {
+        using var lab = new Lab(); await lab.LoadAsync();
+        lab.Config.ArrBackendIsolationVersion = 1;
+        using var seerr = new FakeSeerr();
+        using var facts = new SeerrFacts(seerr.Transport);
+        var policy = new RequestPolicy(lab.View, lab.Store, new ArrInstanceLibraries(lab.Store, new FakeLibraryAccess()),
+            new TitleAliases(lab.Store, facts), null!, lab.Arr.Factory, new UnavailableRequestBackend());
+        var input = new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 1 } };
+        using var held = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        var holder = new Thread(() => { lock (SeerrFactTestAccess.Gate) { held.Set(); release.Wait(TimeSpan.FromSeconds(10)); } });
+        holder.Start();
+        Task<(RequestDiskFacts? Pause, bool Known)> read = Task.FromResult<(RequestDiskFacts?, bool)>((null, false));
+        var independent = false;
+        try
+        {
+            Assert.True(held.Wait(TimeSpan.FromSeconds(5)));
+            read = Task.Run(() => policy.Disk(input, lab.Config));
+            independent = await Task.WhenAny(read, Task.Delay(1000)) == read;
+        }
+        finally { release.Set(); holder.Join(TimeSpan.FromSeconds(10)); }
+        var result = await read;
+        Assert.True(independent, "the final JE disk decision waited on the Seerr publication owner");
+        Assert.True(result.Known);
+        Assert.Equal("/tv/Firefly (2002)", result.Pause?.Folder);
+    }
+
     // 4a review round 8 (4a-security-r8-1): the automatic-write check reads both disk answers in its final decision, from
     // one read of each published snapshot, without the snapshot slot's lock. They agree with the guard's own answers.
     [Fact]

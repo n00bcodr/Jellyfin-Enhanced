@@ -68,3 +68,22 @@ stay usable with local JE ownership, while an answer that consumed the previous 
 409 with `configuration_changed` or `backend_disabled` and no stale rows. Composed status, hub,
 Manage, interest and notification reads use the same publication owner outside MVC too. A production
 assembly architecture test rejects references to raw Seerr readers outside the accessor.
+
+Downstream effects retain the dependency through their actual commit: title identity learning and its
+feed, request queueing, fulfilment, and outbox settlement. Adoption drains an admitted effect even when
+it is waiting for the database writer; the backend monitor is released during that wait. A cancelled
+or failed adoption keeps the old configuration and releases the admission fence. Local and arr-only
+work acquires no Seerr admission when it consumes no Seerr facts. Previously committed imported aliases
+remain valid local history.
+
+The fulfilment alias cache keeps the epochs of its original inputs, and list status adapters validate
+the complete multi-read answer. Cached or transformed data cannot become current merely because a
+later consumer reads it after adoption. Integrating configuration/lifecycle writers must drain before
+acquiring their locks and release their own retained effect before requesting a transition.
+
+Backend-neutral JE readers can capture `EffectiveRequestsBackend.Shared.Current` before reading, call
+`Publication.EnlistEffective(capturedSnapshot)`, and use that scope's final `Publish` for a synchronous
+cache/answer commit. It checks the same owner's epoch without requiring submissions or Seerr transport.
+An effective-epoch change, including a change away and back, withholds the old result. Derived cache
+handles retain that epoch. A refused optional Seerr read adds no dependency and cannot invalidate a
+fresh neutral bootstrap; dependencies from previously admitted facts are still enforced.

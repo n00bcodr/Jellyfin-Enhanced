@@ -156,6 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect(ct);
             if (!_ledger.Database.Available) return;
             // Open 4K requests nothing can take now say so (and are released when a 4K target is back).
             foreach (var held in _ledger.HoldWithout4k(_policy.Has4kTarget, _now()))

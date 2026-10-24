@@ -432,6 +432,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
 
         private (bool Done, T Result) WriteCore<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise, FactVersion? version)
         {
+            using var effect = SeerrFacts.BeginEffect();
             ThrowIfUnavailable();
             _writer.Wait();
             try

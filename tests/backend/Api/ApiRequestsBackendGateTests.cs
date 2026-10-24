@@ -270,6 +270,8 @@ public class ApiRequestsBackendGateTests
         var result = await run.WaitAsync(TimeSpan.FromSeconds(10));
         await transition.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.DoesNotContain(cache.Keys.Cast<string>(), key => key.Contains("/api/v1/movie/989988", StringComparison.Ordinal));
+        // Epoch-filtered enumeration proves non-retrieval only; inspect private test storage for non-publication.
+        Assert.DoesNotContain(SeerrFactTestAccess.CacheEntries(cache).Keys.Cast<string>(), key => key.Contains("/api/v1/movie/989988", StringComparison.Ordinal));
         Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
     }
 
@@ -338,6 +340,7 @@ public class ApiRequestsBackendGateTests
         var cacheName = account ? "_userCache" : "_seerrStatusCache";
         var cache = typeof(JellyfinEnhancedController).GetField(cacheName, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
         Assert.Empty((System.Collections.IDictionary)cache!);
+        Assert.Empty(SeerrFactTestAccess.CacheEntries(cache!));
     }
 
     [Fact]

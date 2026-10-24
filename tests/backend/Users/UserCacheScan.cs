@@ -30,6 +30,9 @@ internal static partial class UserCacheScan
 
     private static readonly string[] Containers =
     [
+        "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<",
+        "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.PreparedCache<",
+        "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Derived<",
         "System.Collections.Concurrent.",
         "System.Collections.Generic.Dictionary<",
         "System.Collections.Generic.SortedDictionary<",

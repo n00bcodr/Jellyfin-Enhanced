@@ -145,11 +145,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         /// <summary>Commits a returned provider result only while its captured backend still owns publication.</summary>
         internal bool TryPublishSeerr(long epoch, Action effect)
         {
-            try { return Facts.Publish(epoch, () => { effect(); return true; }); }
+            CancellationToken operationToken = default;
+            try
+            {
+                using var operation = AdmitSeerr(SeerrUse.RequestRead, CancellationToken.None, epoch);
+                operationToken = operation.Token;
+                Facts.Include(epoch);
+                operation.Publish(effect);
+                return true;
+            }
             catch (BackendDisabledException) { return false; }
+            catch (OperationCanceledException) when (operationToken.IsCancellationRequested) { return false; }
         }
         /// <summary>The single fence for cached facts, local effects and returned provider results.</summary>
         internal T PublishSeerr<T>(long epoch, Func<T> result) => Facts.Publish(epoch, result);
+
+        internal T CommitEffective<T>(long epoch, Func<T> result)
+        {
+            lock (_gate)
+            {
+                if (_fenced || Read().Epoch != epoch) throw new BackendDisabledException("configuration_changed");
+                var value = result();
+                if (_fenced || Read().Epoch != epoch) throw new BackendDisabledException("configuration_changed");
+                return value;
+            }
+        }
 
         internal T CommitSeerr<T>(long epoch, Func<T> result)
         {
@@ -188,7 +208,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 foreach (var a in active) a.Cancel();
                 await drain.WaitAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
-                lock (_gate) { commit(); _signature = null; Read(); }
+                // The atomic configuration writer may wait for a lifecycle/configuration lock. Keep admissions
+                // fenced, but never hold the backend monitor while calling that writer (or while draining).
+                commit();
+                lock (_gate) { _signature = null; Read(); }
             }
             finally { lock (_gate) { _fenced = false; _drained = null; } _transitions.Release(); }
         }
@@ -217,7 +240,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             public T Publish<T>(Func<T> result)
             {
                 Token.ThrowIfCancellationRequested();
-                return _owner.PublishSeerr(Epoch, result);
+                // This admission already retains the operation through its caller's effects. Never execute a
+                // database/file/lifecycle wait under the backend monitor: transition cancels/drains outside it.
+                _owner.PublishSeerr(Epoch, () => true);
+                return result();
             }
             public void Dispose()
             {
