@@ -29,6 +29,29 @@ public partial class IntegrationArrAddChoicesTests
         });
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ManagerInheritanceIsNotAnExplicitRoutingEdit(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 5), default));
+        Assert.Equal(200, rig.Ledger.Close(first.RequestId!, rig.Admin, null, rig.Policy, rig.Now).HttpStatus);
+        var pending = await rig.Service.CreateAsync(rig.Kid, new("manager-pending", Input(movie)), default);
+        Assert.Equal("pending", rig.Ledger.Find(pending.RequestId!)!.Status);
+        var before = RoundFiveRecord(rig).ToJsonString();
+        var accepted = await rig.Service.CreateAsync(rig.Manager, new("manager-inherit", Input(movie)), default);
+        Assert.InRange(accepted.HttpStatus, 200, 201);
+        var job = Assert.Single(rig.Ledger.ForWant(pending.RequestId!));
+        Assert.Equal((rig.Kid, (Guid?)rig.Manager), (job.Authorization.Requester, job.Authorization.Approver));
+        Assert.False(job.Authorization.Edited);
+        Assert.Equal(before, RoundFiveRecord(rig).ToJsonString());
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie, 5);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RoundFiveImplicitApprovalInheritsTerminalOwnerWithoutInventingRevision(bool overridden)

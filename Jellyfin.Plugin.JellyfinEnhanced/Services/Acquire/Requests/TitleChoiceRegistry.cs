@@ -89,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static TitleChoiceDecision Override(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestAuthorization auth, long expectedRevision, Guid actor)
         {
             var current = Current(c, t, input, auth);
-            if ((current?.Revision ?? SplitRevision(c, t, input.Key)) != expectedRevision) return new(TitleChoiceResult.StaleVersion, current);
+            if ((current?.Revision ?? SplitConflict(c, t, input.Key).Version) != expectedRevision) return new(TitleChoiceResult.StaleVersion, current);
             if (IdentityFence(c, t, input.Key.ToString()) != null)
                 return ResolveSplit(c, t, input, auth, current, actor);
             if (current == null) return new(TitleChoiceResult.StaleVersion, null);
@@ -215,19 +215,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<SplitFence>(json) : null;
         }
         internal static bool IsIdentityFenced(SqliteConnection c, SqliteTransaction? t, string alias) => IdentityFence(c, t, alias) != null;
-        internal static long SplitRevision(SqliteConnection c, SqliteTransaction? t, string alias)
+        internal static RequestChoice SplitConflict(SqliteConnection c, SqliteTransaction? t, string alias)
         {
             var fence = IdentityFence(c, t, alias);
-            if (fence == null) return 0;
+            if (fence == null) return new RequestChoice(Guid.Empty, 0, null, null);
             var revision = 0L;
             using var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices");
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!;
-                if (fence.Aliases.Contains(record.Title)) revision = Math.Max(revision, record.Revision);
+                if (RequestDestination.ContainsTitle(fence.Aliases, record.Title)) revision = Math.Max(revision, record.Revision);
             }
-            return revision;
+            return new RequestChoice(Guid.Empty, revision, null, null);
         }
         /// <summary>Retains the submitted identity while a contradictory learned mapping is fenced.</summary>
         public bool IdentityFenced(string title) => _db.Available && _db.Read(c => IsIdentityFenced(c, null, title));
@@ -275,39 +275,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var fence = IdentityFence(c, t, input.Key.ToString())!;
             // Contradictory source rows cannot nominate a safe provider pair. Keep the fence until
             // the resolver observes a coherent correction, then require the new revision explicitly.
-            if (fence.Observed.Select(x => TitleKey.Parse(x)!).GroupBy(x => x.Provider).Any(g => g.Count() > 1))
+            if (!RequestDestination.CoherentTitleIds(fence.Observed))
                 return new(TitleChoiceResult.Conflict, current);
-            current ??= new TitleChoiceRecord(RequestLedger.NewId(), fence.Canonical, Destination(input, auth), actor, SplitRevision(c, t, input.Key),
+            current ??= new TitleChoiceRecord(RequestLedger.NewId(), fence.Canonical, Destination(input, auth), actor, SplitConflict(c, t, input.Key).Version,
                 input.ProfileId, input.RootFolder, Array.Empty<int>(), "standard", "released", Conflicted: true);
             var records = new List<TitleChoiceRecord>();
             using (var cmd = RequestLedger.Cmd(c, t, "SELECT value FROM title_choices"))
             using (var r = cmd.ExecuteReader())
-                while (r.Read()) { var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!; if (fence.Aliases.Contains(record.Title)) records.Add(record); }
-            if (records.All(x => x.Destination != current.Destination)) records.Add(current);
+                while (r.Read()) { var record = JsonSerializer.Deserialize<TitleChoiceRecord>(r.GetString(0))!; if (RequestDestination.ContainsTitle(fence.Aliases, record.Title)) records.Add(record); }
+            if (records.All(x => !RequestDestination.SameInstance(x.Destination, current.Destination))) records.Add(current);
             foreach (var record in records)
             {
                 using var cmd = RequestLedger.Cmd(c, t, "SELECT COUNT(*) FROM jobs WHERE title_choice_id=$id AND state NOT IN ('cancelled','succeeded')", ("$id", record.Id));
                 if (Convert.ToInt32(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) != 0) return new(TitleChoiceResult.Conflict, current);
             }
-            var canonical = fence.Observed.OrderBy(x => RequestLedger.Rank(TitleKey.Parse(x)!)).First();
-            var selected = fence.Observed.Contains(input.Key) ? canonical : input.Key;
+            var canonical = RequestDestination.CanonicalTitleId(fence.Observed);
+            var selected = RequestDestination.ContainsTitle(fence.Observed, input.Key) ? canonical : input.Key;
             foreach (var alias in fence.Aliases)
             {
                 RequestLedger.Exec(c, t, "DELETE FROM title_aliases WHERE alias=$a", ("$a", alias));
                 RequestLedger.Exec(c, t, "DELETE FROM title_identity_fences WHERE alias=$a", ("$a", alias));
             }
-            foreach (var alias in fence.Observed.Where(x => x != canonical.ToString()))
+            foreach (var alias in fence.Observed.Where(x => !RequestDestination.SameTitleId(x, canonical)))
                 RequestLedger.Exec(c, t, "INSERT INTO title_aliases(alias,canonical,learned_at) VALUES($a,$c,$at)", ("$a", alias), ("$c", canonical.ToString()), ("$at", RequestLedger.Ms(DateTimeOffset.UtcNow)));
-            var titles = fence.Aliases.Except(fence.Observed).Append(canonical.ToString()).Distinct().ToArray();
+            var titles = RequestDestination.SplitTitleGroups(fence.Aliases, fence.Observed, canonical);
             TitleChoiceRecord? admitted = null;
             foreach (var old in records)
                 RequestLedger.Exec(c, t, "DELETE FROM title_choices WHERE id=$id", ("$id", old.Id));
-            foreach (var group in records.GroupBy(x => x.Destination))
+            foreach (var group in records.GroupBy(x => RequestDestination.InstanceKey(x.Destination)))
             {
                 foreach (var title in titles)
                 {
-                    var accepts = title == selected && group.Key == current.Destination;
-                    var source = accepts ? current : group.FirstOrDefault(x => x.Title == title) ?? group.OrderBy(x => x.Id, StringComparer.Ordinal).First();
+                    var accepts = RequestDestination.SameTitleId(title, selected) && RequestDestination.SameInstance(group.Key, current.Destination);
+                    var source = accepts ? current : group.FirstOrDefault(x => RequestDestination.SameTitleId(x.Title, title)) ?? group.OrderBy(x => x.Id, StringComparer.Ordinal).First();
                     var record = source with { Id = RequestLedger.NewId(), Title = title, Revision = group.Max(x => x.Revision) + 1, Conflicted = !accepts,
                         Owner = accepts ? actor : source.Owner, Owned = accepts || source.Owned, ProfileId = accepts ? input.ProfileId ?? source.ProfileId : source.ProfileId,
                         RootFolder = accepts ? input.RootFolder ?? source.RootFolder : source.RootFolder };

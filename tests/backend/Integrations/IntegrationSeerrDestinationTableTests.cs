@@ -542,8 +542,6 @@ public class IntegrationSeerrDestinationTableTests
     // no longer matches fails too. File, member (Type.Member), code (whitespace normalised, contained), why, requires.
     private static readonly (string File, string Member, string Code, string Why, (string Local, string Rule)? Requires)[] Allowed =
     {
-        ("RequestLedger.cs", "RequestLedger.Withdraw", "RoutingRefusals.Contains(facts.Refusal)",
-            "the policy refusal code alone decides whether stale routing permits withdrawal; no destinations or requests are compared", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "j.Authorization.InstanceId == want.Input.InstanceId",
             "the v2 migration works out which target a legacy request's own jobs went to; coverage after it uses Extra", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "== row.Episodes",
@@ -585,16 +583,18 @@ public class IntegrationSeerrDestinationTableTests
         ["FutureSeasonCharges.FollowSeerrAsync"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
         ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
         ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
-        ["RequestLedger.CheckTitleChoice"] = (new[] { "ScopesOverlap" }, "the same-admin correction compares scopes through the common rule"),
+        // CheckTitleChoice no longer grants a same-admin scope correction: replacing an owned
+        // choice requires the submitted revision, irrespective of overlap. Its admission/approval
+        // authorization is protected by TitleChoiceRegistryArchitectureTests instead.
         ["RequestLedger.TitleChoiceJobs"] = (new[] { "SameTarget" }, "title-wide immutability fences stay within the request destination"),
         ["RequestLedger.ChoiceDiffers"] = (new[] { "ArrChoicesDiffer" }, "title-choice edits use the common destination comparison without owning their values"),
         ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
-        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves", "SameInstance" },
+        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves", "SameInstance", "SameInput" },
             "own dedup and its representative, implicit approval, decline cooldown, shared coverage, confirmed scope"),
         ["RequestLedger.Coverage"] = (new[] { "SameTarget", "SameTarget" }, "shared coverage at a target"),
         ["RequestLedger.Confirmed"] = (new[] { "SameTarget" }, "what went out to a target"),
         ["RequestLedger.ConfirmedScope"] = (new[] { "Extra" }, "an ask already sent"),
-        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
+        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle", "SameInput", "SameInput" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
         ["RequestLedger.RehomeFollowers"] = (new[] { "Extra", "Extra", "SameTarget", "SameTarget" }, "followers moved with a request's target"),
         ["RequestLedger.DemoteUncoveredFollowers"] = (new[] { "Extra", "SameTarget" }, "followers left without coverage wait"),
         ["RequestLedger.ReleasePendingFollowers"] = (new[] { "Extra", "Extra" }, "waiting followers released by coverage"),
@@ -682,6 +682,19 @@ public class IntegrationSeerrDestinationTableTests
         // The input type has no destination comparison of its own.
         Assert.DoesNotContain(typeof(MutationInput).GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic),
             m => m.Name.Contains("Destination", StringComparison.Ordinal) || m.Name.Contains("SameOptions", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("ProfileId")]
+    [InlineData("RootFolder")]
+    public void RegistryRoutingFieldsStillRequireTheDestinationRule(string field)
+    {
+        var mutant = DestinationRuleWalk.Plugin.With("Services/Acquire/Requests/RequestLedger.cs", source => source.Replace(
+            "var conflict = TitleChoiceRegistry.Conflicts(current, input);",
+            $"if (current.{field} != input.{field}) return null;\n var conflict = TitleChoiceRegistry.Conflicts(current, input);", StringComparison.Ordinal));
+        Assert.Empty(mutant.Errors("Services/Acquire/Requests/RequestLedger.cs"));
+        Assert.Contains(Problems(mutant, "RequestLedger.CheckTitleChoice", "RequestLedger.cs"),
+            p => p.StartsWith("not through RequestDestination:", StringComparison.Ordinal));
     }
 
     /// <summary>Each call to the rule in the ledger and charges files, as a mutation: taken out (A) or done by a raw comparison (B).</summary>

@@ -147,6 +147,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="b">Another input.</param>
         internal static bool SameEdition(MutationInput a, MutationInput b) => SameTitle(a, b) && string.Equals(a.Variant, b.Variant, StringComparison.Ordinal);
 
+        // An edit of one request is unchanged only when its complete command fingerprint matches.
+        // This is not coverage: a smaller scope may be served without being the same input.
+        internal static bool SameInput(MutationInput? a, MutationInput? b)
+            => a != null && b != null && string.Equals(a.Fingerprint, b.Fingerprint, StringComparison.Ordinal);
+
+        // Identity maintenance compares already normalized provider ids, without request coverage.
+        internal static bool ContainsTitle(IEnumerable<string> titles, string title)
+            => titles.Contains(title, StringComparer.Ordinal);
+
+        internal static bool SameTitleId(string a, string b) => string.Equals(a, b, StringComparison.Ordinal);
+        internal static string InstanceKey(string instance) => instance.ToLowerInvariant();
+        internal static bool CoherentTitleIds(IEnumerable<string> titles)
+        {
+            var parsed = titles.Select(TitleKey.Parse).ToArray();
+            return parsed.All(x => x != null) && parsed.GroupBy(x => x!.Provider).All(g => g.Count() == 1);
+        }
+        internal static string CanonicalTitleId(IEnumerable<string> titles)
+            => titles.OrderBy(x => RequestLedger.Rank(TitleKey.Parse(x)!)).First();
+        internal static string[] SplitTitleGroups(IEnumerable<string> aliases, IEnumerable<string> observed, string canonical)
+            => aliases.Except(observed, StringComparer.Ordinal).Append(canonical).Distinct(StringComparer.Ordinal).ToArray();
+
         /// <summary>What groups requests by title and edition (the key and the edition).</summary>
         /// <param name="input">An input.</param>
         internal static (string Key, string Variant) Edition(MutationInput input) => (input.Key, input.Variant);

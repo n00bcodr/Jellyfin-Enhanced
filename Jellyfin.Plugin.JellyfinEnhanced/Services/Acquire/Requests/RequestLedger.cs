@@ -556,10 +556,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // Manage Add may authorize a viewer's pending ask instead of creating its own job. Its
                     // explicit profile/root must therefore become that approval's input, while the viewer
                     // keeps their own scope and charge. ApproveCore persists the edits in the want and job.
-                    var edits = admittedInput.HasArrRouting ? pending.Input.WithArrChoices(admittedInput) : null;
+                    var edits = normalized.HasArrRouting ? pending.Input.WithArrChoices(admittedInput) : null;
                     // Coverage ignores add settings. Reconcile them with the actual owner before acknowledging
                     // a follower/duplicate. ApproveCore alone owns authorization, replacement and persistence.
-                    if (pending.Status != "pending" && edits?.Fingerprint == pending.Input.Fingerprint &&
+                    if (pending.Status != "pending" && RequestDestination.SameInput(edits, pending.Input) &&
                         Jobs(c, t, "want_id=$w AND state IN ('queued','retry')", ("$w", pending.Id)).All(j => TitleChoiceRegistry.Check(c, t, j) == null)) continue;
                     var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now, reconcileArrChoices: pending.Status != "pending");
                     if (approved.HttpStatus >= 400 && edits != null)
@@ -826,7 +826,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (allowChanges && overrideVersion != null && TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion.Value, actor).Accepted) return null;
                 return RequestOutcome.Refused("choice_conflict", 409, "conflict") with
                 {
-                    Choice = allowChanges || facts.Role == "Admin" ? new RequestChoice(Guid.Empty, TitleChoiceRegistry.SplitRevision(c, t, input.Key), null, null) : null,
+                    Choice = allowChanges || facts.Role == "Admin" ? TitleChoiceRegistry.SplitConflict(c, t, input.Key) : null,
                     Message = "This title's learned identity changed. Cancel or settle ambiguous work, then explicitly confirm the corrected identity and add choices.",
                 };
             }
@@ -952,7 +952,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$j", ("$input", moved.Canonical), ("$f", moved.Fingerprint), ("$j", job.Id));
                 }
             }
-            else if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            else if (edits != null && !RequestDestination.SameInput(input, want.Input))
             {
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry'))", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed' WHERE want_id=$id AND state IN ('queued','retry')", ("$id", id));
@@ -1004,7 +1004,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var season in followed) FollowJob(c, t, id, season, Authorize(requester, approver, season, false), now);
             Approval(c, t, want, actor, "approve", null, edits, auth, now);
             Record(c, t, id, null, actor, "approve", "accepted", "queued_outage", stored.Key, now);
-            if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            if (edits != null && !RequestDestination.SameInput(input, want.Input))
             {
                 WithdrawFollowers(c, t, want.AcquisitionId, now);
                 if (acquisition != want.AcquisitionId) WithdrawFollowers(c, t, acquisition, now);
