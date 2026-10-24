@@ -61,10 +61,12 @@
      * @param {string} path Path under the plugin.
      * @param {string} method Method.
      * @param {Object} [body] Body.
+     * @param {any} [origin] A write's origin (JE.core.userWrite.origin() taken when the person acted): the write goes out
+     *   only while it is the signed-in session, never as whoever is signed in by then.
      * @returns {Promise<Object>} Answer.
      */
-    function api(path, method, body) {
-        return JE.core.api.plugin(path, { method: method || 'GET', body, skipCache: true, skipRetry: true, timeoutMs: 15000 });
+    function api(path, method, body, origin) {
+        return JE.core.api.plugin(path, { method: method || 'GET', body, skipCache: true, skipRetry: true, timeoutMs: 15000, session: origin });
     }
 
     /**
@@ -86,7 +88,7 @@
      * @param {string} label Label text.
      * @param {string} desc Description text.
      * @param {boolean} checked Checked.
-     * @param {(on: boolean) => void} onChange Change handler.
+     * @param {(on: boolean, origin: any) => void} onChange Change handler (handed the change's origin).
      * @returns {HTMLElement} Row.
      */
     function checkbox(focus, label, desc, checked, onChange) {
@@ -95,7 +97,7 @@
         box.type = 'checkbox';
         box.checked = !!checked;
         box.dataset.jeFocus = focus;
-        box.addEventListener('change', () => onChange(box.checked));
+        box.addEventListener('change', () => onChange(box.checked, JE.core.userWrite.origin()));
         row.appendChild(box);
         const text = el('div');
         text.appendChild(el('div', 'je-arr-alerts-label', label));
@@ -147,7 +149,7 @@
             const group = el('div', 'je-arr-alerts-group je-arr-ready-playlist');
             group.appendChild(el('h4', null, tr('arr_ready_playlist_heading')));
             group.appendChild(checkbox('ready-playlist', tr('arr_ready_playlist_label'), tr('arr_ready_playlist_desc', { days: p.retentionDays }), p.optedIn,
-                on => save(host, { readyPlaylist: on })));
+                (on, origin) => save(host, { readyPlaylist: on }, origin)));
             const state = stateText(p);
             if (state) group.appendChild(el('div', 'je-arr-alerts-desc je-arr-ready-state', state));
             const row = el('div', 'je-arr-alerts-row');
@@ -166,7 +168,7 @@
             const group = el('div', 'je-arr-alerts-group je-arr-ready-messages');
             group.appendChild(el('h4', null, tr('arr_ready_messages_heading')));
             group.appendChild(checkbox('ready-messages', tr('arr_ready_messages_label'), tr('arr_ready_messages_desc'), m.optedIn,
-                on => save(host, { nativeReadyMessages: on })));
+                (on, origin) => save(host, { nativeReadyMessages: on }, origin)));
             const recent = m.recent || {};
             if (m.optedIn && (recent.accepted || recent.suppressed || recent.unknown)) {
                 group.appendChild(el('div', 'je-arr-alerts-desc', tr('arr_ready_messages_recent', { accepted: recent.accepted || 0, suppressed: (recent.suppressed || 0) + (recent.unknown || 0) })));
@@ -200,16 +202,19 @@
                 return;
             }
             armed = 0;
+            // The removal belongs to the press that confirmed it (its session), through the write and its answer.
+            const origin = JE.core.userWrite.origin();
             b.disabled = true;
             const gen = ++generation;
             const at = epoch();
             try {
-                const res = await api('/acquire/ready/remove', 'POST', {});
-                if (!current(host, gen, at)) return;
+                const res = await api('/acquire/ready/remove', 'POST', {}, origin);
+                if (!current(host, gen, at, origin)) return;
                 const notes = { removed: 'arr_ready_removed', kept: 'arr_ready_kept', not_ours: 'arr_ready_not_ours', nothing: 'arr_ready_removed' };
                 render(host, res?.status || host._jeReady, tr(notes[res?.outcome] || 'arr_ready_save_failed'));
-            } catch (_) {
-                if (!current(host, gen, at)) return;
+            } catch (error) {
+                if (!current(host, gen, at, origin)) return;
+                if (unconfirmed(host, host._jeReady, error)) return;
                 render(host, host._jeReady, tr('arr_ready_save_failed'));
             }
         });
@@ -221,29 +226,48 @@
      * @param {HTMLElement} host Pane content.
      * @param {number} gen The request's generation.
      * @param {*} at The account epoch when it started.
+     * @param {any} [origin] A write's origin: its answer belongs on screen only while that is the signed-in session.
      * @returns {boolean} Current.
      */
-    function current(host, gen, at) {
-        return host.isConnected && gen === generation && epoch() === at;
+    function current(host, gen, at, origin) {
+        return host.isConnected && gen === generation && epoch() === at && (!origin || JE.core.userWrite.isBound(origin));
+    }
+
+    /**
+     * A write whose answer was lost (uncertain: it may be stored) is never shown as not saved: the section says it couldn't
+     * confirm it and reads the settings once to show what the server holds (the write is never sent again).
+     * @param {HTMLElement} host Pane content.
+     * @param {Object} shown The state shown until that read answers.
+     * @param {*} error The write's failure.
+     * @returns {boolean} True when it was uncertain (handled here).
+     */
+    function unconfirmed(host, shown, error) {
+        if (JE.core.userWrite.outcome(error) !== 'uncertain') return false;
+        const note = tr('arr_write_unconfirmed');
+        render(host, shown, note);
+        void load(host, note);
+        return true;
     }
 
     /**
      * Saves a change and draws the answer; a failure draws the last good state again (the control goes back).
      * @param {HTMLElement} host Pane content.
      * @param {Object} change Fields.
+     * @param {any} origin The change's origin (JE.core.userWrite.origin() taken at the change).
      * @returns {Promise<void>}
      */
-    async function save(host, change) {
+    async function save(host, change, origin) {
         const before = host._jeReady;
         host.querySelectorAll('input, button').forEach(n => { n.disabled = true; });
         const gen = ++generation;
         const at = epoch();
         try {
-            const res = await api('/acquire/ready', 'PUT', change);
-            if (!current(host, gen, at)) return;
+            const res = await api('/acquire/ready', 'PUT', change, origin);
+            if (!current(host, gen, at, origin)) return;
             render(host, res);
-        } catch (_) {
-            if (!current(host, gen, at)) return;
+        } catch (error) {
+            if (!current(host, gen, at, origin)) return;
+            if (unconfirmed(host, before, error)) return;
             render(host, before, tr('arr_ready_save_failed'));
         }
     }
@@ -251,15 +275,16 @@
     /**
      * Loads the person's settings into the section.
      * @param {HTMLElement} host Pane content.
+     * @param {string} [note] A line to show with what was read (after an unconfirmed write).
      * @returns {Promise<void>}
      */
-    async function load(host) {
+    async function load(host, note) {
         const gen = ++generation;
         const at = epoch();
         try {
             const res = await api('/acquire/ready', 'GET');
             if (!current(host, gen, at)) return;
-            render(host, res);
+            render(host, res, note);
         } catch (_) {
             if (!current(host, gen, at)) return;
             render(host, null);

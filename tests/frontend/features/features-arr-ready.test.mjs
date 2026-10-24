@@ -17,19 +17,22 @@ function answer(overrides = {}) {
 function setup({ config = { ArrReadyPlaylistEnabled: true }, reply = () => answer() } = {}) {
   let epoch = 1;
   const calls = [];
+  const sessions = [];
   const h = createHarness({
     JE: {
       t: (k, p) => (p ? k + JSON.stringify(p) : k),
       pluginConfig: config,
       session: { getEpoch: () => epoch },
-      core: { api: { plugin: (path, options) => { calls.push({ path, method: options.method, body: options.body }); return reply(path, options); } } },
+      core: { api: { plugin: (path, options) => { calls.push({ path, method: options.method, body: options.body }); sessions.push(options.session); return reply(path, options); } } },
     },
   });
+  // Every write takes its origin (JE.core.userWrite, integration je12): the real module, before the section.
+  h.load('core/mutation-queue.js');
   h.load('arr/ready/ready-settings.js');
   const R = h.JE.internals.arrReady;
   h.document.body.innerHTML = R.buildSettingsHtml();
   const host = () => h.document.querySelector('.je-arr-ready');
-  return { ...h, R, calls, host, open: () => R.wireSettings({ help: h.document.body }), switchAccount: () => { epoch++; } };
+  return { ...h, R, calls, sessions, host, open: () => R.wireSettings({ help: h.document.body }), switchAccount: () => { epoch++; } };
 }
 
 test('the section exists only while a Ready feature is on, the playlist one without notifications', () => {
@@ -228,5 +231,55 @@ test('a server that can\'t answer shows a plain message, no controls', async () 
     h.open(); await tick();
     assert.match(h.host().textContent, /arr_ready_panel_unavailable/);
     assert.equal(h.host().querySelector('input'), null);
+  } finally { h.close(); }
+});
+
+// Integration je12 (4f port × rebuild r12, items 36/38/39): a Ready write carries the origin taken at the change, and a lost
+// answer is "couldn't confirm" (one read of what the server holds), never "not saved".
+const lost = () => Promise.reject(Object.assign(new Error('the answer was lost'), { writeOutcome: 'uncertain' }));
+
+test('a Ready change goes out with the origin taken at the change (never as whoever is signed in by then)', async () => {
+  const h = setup();
+  try {
+    h.open(); await tick();
+    const box = h.host().querySelector('[data-je-focus="ready-playlist"]');
+    box.checked = true; box.dispatchEvent(new h.window.Event('change'));
+    await tick();
+    assert.equal(h.calls.at(-1).method, 'PUT');
+    const origin = h.sessions.at(-1);
+    assert.ok(origin && typeof origin === 'object', 'the write names its origin');
+    assert.equal(origin.userId, 'user-a');
+    assert.equal(h.JE.core.userWrite.isBound(origin), true);
+  } finally { h.close(); }
+});
+
+test('a Ready change whose answer was lost says it could not be confirmed and reads the settings again', async () => {
+  let reads = 0;
+  const h = setup({ reply: (path, o) => (o.method === 'PUT' ? lost() : (reads++, answer(reads > 1 ? { playlist: { optedIn: true, state: 'active' } } : {}))) });
+  try {
+    h.open(); await tick();
+    const box = h.host().querySelector('[data-je-focus="ready-playlist"]');
+    box.checked = true; box.dispatchEvent(new h.window.Event('change'));
+    await tick();
+    assert.equal(h.calls.filter(c => c.method === 'PUT').length, 1, 'never sent again');
+    assert.equal(reads, 2, 'one read of what the server holds');
+    assert.doesNotMatch(h.host().textContent, /arr_ready_save_failed/);
+    assert.match(h.host().textContent, /arr_write_unconfirmed/);
+    assert.equal(h.host().querySelector('[data-je-focus="ready-playlist"]').checked, true, 'the stored choice is shown');
+  } finally { h.close(); }
+});
+
+test('a confirmed Remove whose answer was lost is not reported as failed', async () => {
+  let reads = 0;
+  const h = setup({ reply: (path, o) => (o.method === 'POST' ? lost() : (reads++, answer({ playlist: { optedIn: true, state: reads > 1 ? 'removed' : 'active', playlistId: reads > 1 ? null : ID, entries: 2, canRemove: reads === 1 } }))) });
+  try {
+    h.open(); await tick();
+    const remove = () => h.host().querySelector('[data-je-focus="ready-remove"]');
+    remove().click(); remove().click();
+    await tick();
+    assert.equal(h.calls.filter(c => c.method === 'POST').length, 1);
+    assert.equal(reads, 2);
+    assert.doesNotMatch(h.host().textContent, /arr_ready_save_failed/);
+    assert.match(h.host().textContent, /arr_write_unconfirmed/);
   } finally { h.close(); }
 });
