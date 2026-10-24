@@ -272,8 +272,6 @@
 
     /**
      * Append a person_heart chip to a rating overlay container.
-     * Uses the same .rating-tag + .rating-tag-critic structure as the tomato chip,
-     * with a material icon instead of the SVG background.
      */
     function appendUserRatingChip(container, rating) {
         container.querySelector('.je-userreview-tag')?.remove();
@@ -288,7 +286,7 @@
             : '—';
 
         const tag = document.createElement('div');
-        tag.className = 'rating-tag rating-tag-critic je-userreview-tag';
+        tag.className = 'rating-tag rating-tag-userreview je-userreview-tag';
 
         const icon = document.createElement('span');
         icon.className = 'je-userreview-icon';
