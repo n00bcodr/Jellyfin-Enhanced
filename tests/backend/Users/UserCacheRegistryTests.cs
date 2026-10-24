@@ -105,6 +105,41 @@ public class UserCacheRegistryTests
             problems.Add(late.ToString());
         }
 
+        // Round 6: an answer that depends on the person's Seerr account keeps the account authority it was read under (or
+        // is keyed by it), and an instant a cache keeps for its lifetime is on the monotonic clock, like the cache's own.
+        foreach (var cache in found)
+        {
+            if (!rows.TryGetValue(cache.Member, out var row)) continue;
+            var authority = row.Rule("authority").ToList();
+            if ((row.Reason + " " + row.Key).Contains("Seerr account", StringComparison.Ordinal) && authority.Count == 0)
+                problems.Add(cache.Member + ": depends on the person's Seerr account but names no authority: rule (held, or key=Type.Method~text): a cold or held answer outlives a fresh read that finds the link changed");
+            foreach (var rule in authority)
+            {
+                if (rule == "held")
+                {
+                    if (!UserCacheScan.HoldsAuthority(cache)) problems.Add(cache.Member + " (" + cache.Where + "): listed as holding the person's Seerr account authority, but what it keeps holds no SeerrAccountAuthority.Ticket");
+                }
+                else if (rule.StartsWith("key=", StringComparison.Ordinal))
+                {
+                    var via = rule["key=".Length..];
+                    var (method, text) = (via.Split('~')[0], via.Split('~').ElementAtOrDefault(1) ?? string.Empty);
+                    var bodies = Methods(plugin, method);
+                    if (bodies.Count == 0 || text.Length == 0 || !bodies.All(b => b.Contains(text, StringComparison.Ordinal)))
+                        problems.Add(cache.Member + ": its key builder " + method + " no longer keys by the person's Seerr account authority (" + text + ")");
+                }
+                else
+                {
+                    problems.Add(cache.Member + ": unknown authority rule " + rule);
+                }
+            }
+
+            if ((authority.Count > 0 || row.Class == "ticketed") && !row.Rule("wall").Any(w => w.Length > 0))
+            {
+                foreach (var instant in UserCacheScan.WallInstants(cache))
+                    problems.Add(cache.Member + " (" + cache.Where + "): keeps " + instant + " on the wall clock inside a cache counted on the monotonic one: a wall-clock step lengthens or shortens its lifetime; keep MonotonicClock ticks (a calendar date: wall:<reason>)");
+            }
+        }
+
         // Round 4: a decision and its key come from one snapshot.
         var keyed = registry.Where(r => r.Class == "keyed" && (r.Build == "both" || r.Build == Build) && rows.ContainsKey(r.Member)).Select(r => new UserCacheScan.Keyed(r.Member,
             new[] { r.Member[..r.Member.LastIndexOf('.')] }.Concat(r.Reason.Split(',').Select(v => v.Split('~')[0]).Where(m => m.Contains('.')).Select(m => m[..m.LastIndexOf('.')])).Distinct(StringComparer.Ordinal).ToList(),

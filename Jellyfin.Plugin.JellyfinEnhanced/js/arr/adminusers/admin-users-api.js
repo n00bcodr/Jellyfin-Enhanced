@@ -16,11 +16,13 @@
             headers: { Authorization: `MediaBrowser Token="${ApiClient.accessToken()}"`, Accept: 'application/json', 'Content-Type': 'application/json' },
             body: body === undefined ? undefined : JSON.stringify(body)
         });
+        // Taken before the request: its answer's revisions are taken only while nothing newer was (core/access-revision.js).
+        const observation = JE.core?.revision?.begin?.();
         const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
         // Asked with no-store: the server's build now.
         JE.core.build?.noteAnswer?.(response, { fresh: true });
         // The answer carries the person's revisions (core/access-revision.js).
-        JE.core?.revision?.noteResponse(response);
+        JE.core?.revision?.noteResponse(response, observation);
         let value;
         try {
             value = await response.json();

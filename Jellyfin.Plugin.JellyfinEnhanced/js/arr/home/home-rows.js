@@ -116,9 +116,10 @@
         try {
             const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
             if (etag) headers['If-None-Match'] = etag;
+            const observation = JE.core?.revision?.begin?.();
             const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), { headers, signal, cache: 'no-store' });
             // The answer carries the person's revisions (core/access-revision.js).
-            JE.core?.revision?.noteResponse(response);
+            JE.core?.revision?.noteResponse(response, observation);
             if (response.status === 304) return { status: 304, body: null, etag: etag || null };
             let body = null;
             try {

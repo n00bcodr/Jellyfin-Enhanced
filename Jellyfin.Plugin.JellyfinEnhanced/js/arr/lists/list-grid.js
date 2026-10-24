@@ -193,6 +193,7 @@
         const painter = ticket();
         let answer = null;
         try {
+            const observation = JE.core?.revision?.begin?.();
             const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/acquire/lists/summaries'), {
                 method: 'POST',
                 headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json', 'Content-Type': 'application/json' },
@@ -200,7 +201,7 @@
                 cache: 'no-store'
             });
             // The answer carries the person's revisions (core/access-revision.js).
-            JE.core?.revision?.noteResponse(response);
+            JE.core?.revision?.noteResponse(response, observation);
             if (!rule.current()) return;
             answer = response.ok ? await response.json() : null;
             if (!rule.current()) return;

@@ -5,6 +5,7 @@ using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
@@ -38,6 +39,8 @@ public class UserCacheSeerrDeadlineTests
     [Fact]
     public async Task ASeerrAccountIdKeptFromAHeldLookupEndsWithThatLookup()
     {
+        var ticks = TimeSpan.FromHours(2).Ticks;
+        using var clock = MonotonicClock.Use(() => ticks);
         using var plugin = new ApiPluginFixture();
         var user = Guid.NewGuid().ToString("N");
         var config = plugin.Plugin.Configuration;
@@ -49,23 +52,20 @@ public class UserCacheSeerrDeadlineTests
             new JsonObject { ["results"] = new JsonArray(new JsonObject { ["id"] = 38, ["jellyfinUserId"] = user }) }.ToJsonString())));
         var controller = ApiAssetTests.Controller(plugin.Core, transport);
         var type = typeof(JellyfinEnhancedController);
-        var users = (Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)>)type.GetField("_userCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var users = (Dictionary<string, (JellyseerrUser? User, long ReadAt, SeerrAccountAuthority.Ticket Authority)>)type.GetField("_userCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var getter = type.GetMethod("GetJellyseerrUserId", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Task<string?> Read() => (Task<string?>)getter.Invoke(controller, [user])!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         try
         {
             // The person's Seerr user was looked up 29 minutes ago (the limit is 30): the id is worked out from it now.
-            var at = DateTime.UtcNow.AddMinutes(-29);
             var old = new JellyseerrUser { Id = 27, JellyfinUserId = user };
-            users[user] = (old, at);
+            users[user] = (old, ticks - TimeSpan.FromMinutes(29).Ticks, SeerrAccountAuthority.Capture(config, user));
             Assert.Equal("27", await Read());
             Assert.Equal(0, transport.Calls);
-            // Two minutes on (both wall-clock caches aged by two minutes): the lookup is 31 minutes old, and so is the id
-            // worked out from it. Seerr now links the person to account 38.
-            users[user] = (old, at.AddMinutes(-2));
-            ids[user] = (ids[user].JellyseerrUserId, ids[user].CachedAt.AddMinutes(-2));
+            // Two minutes on: the lookup is 31 minutes old, and so is the id worked out from it. Seerr now links the person
+            // to account 38.
+            ticks += TimeSpan.FromMinutes(2).Ticks;
             Assert.Equal("38", await Read());
         }
         finally
@@ -175,22 +175,23 @@ public class UserCacheSeerrDeadlineTests
         var user = Guid.NewGuid();
         var account = new JsonObject { ["id"] = 9, ["jellyfinUserId"] = user.ToString("N"), ["permissions"] = 32 };
         seerr.Users.Add(account);
-        var config = SeerrConfig();
+        var config = SeerrConfig(plugin);
         var now = DateTimeOffset.UtcNow;
         using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var ids = (Dictionary<string, (string JellyseerrUserId, long ReadAt, SeerrAccountAuthority.Ticket Authority)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         try
         {
             await backend.PrepareAsync(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }, default);
             // The legacy proxy holds the person's account id (it acts as that account in Seerr) ...
-            ids[user.ToString()] = ("9", DateTime.UtcNow);
+            ids[user.ToString()] = SeerrSeeds.Id(user.ToString(), "9");
+            Assert.Equal("9", HeldProxyAccount(user.ToString()));
             account["jellyfinUserId"] = Guid.NewGuid().ToString("N");
             await backend.PrepareAsync(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }, default);
             // ... and stops the moment the account is found to belong to someone else.
-            Assert.Empty(ids);
+            Assert.Null(HeldProxyAccount(user.ToString()));
         }
         finally
         {
@@ -205,22 +206,22 @@ public class UserCacheSeerrDeadlineTests
         using var seerr = new FakeSeerr();
         var user = Guid.NewGuid();
         var other = Guid.NewGuid();
-        var config = SeerrConfig();
+        var config = SeerrConfig(plugin);
         var now = DateTimeOffset.UtcNow;
         using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => now);
         var type = typeof(JellyfinEnhancedController);
-        var ids = (Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var ids = (Dictionary<string, (string JellyseerrUserId, long ReadAt, SeerrAccountAuthority.Ticket Authority)>)type.GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
         try
         {
             // The proxy holds account 9 for the person (and 5 for someone else); Seerr links no account to the person now.
-            ids[user.ToString()] = ("9", DateTime.UtcNow);
-            ids[other.ToString()] = ("5", DateTime.UtcNow);
+            ids[user.ToString()] = SeerrSeeds.Id(user.ToString(), "9");
+            ids[other.ToString()] = SeerrSeeds.Id(other.ToString(), "5");
             await backend.PrepareAsync(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }, default);
             Assert.True(backend.Binding(user, new MutationInput { Key = "movie:tmdb:603", Scope = "movie" }).SeerrUnlinked);
-            Assert.False(ids.ContainsKey(user.ToString()), "the proxy no longer acts as an account Seerr doesn't link to the person");
-            Assert.Equal("5", ids[other.ToString()].JellyseerrUserId);
+            Assert.Null(HeldProxyAccount(user.ToString()));
+            Assert.Equal("5", HeldProxyAccount(other.ToString()));
         }
         finally
         {
@@ -228,11 +229,27 @@ public class UserCacheSeerrDeadlineTests
         }
     }
 
+    // The account id the Seerr proxy would act as for the person without reading Seerr (null: none it may use).
+    private static string? HeldProxyAccount(string jellyfinUserId)
+        => (string?)typeof(JellyfinEnhancedController).GetMethod("TryGetCachedJellyseerrUserId", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [jellyfinUserId]);
+
+    // The plugin's own configuration, pointed at the fake Seerr: the proxy and the backend read the same one.
+    private static PluginConfiguration SeerrConfig(ApiPluginFixture plugin)
+    {
+        var c = plugin.Plugin.Configuration;
+        c.ArrIntegrationEnabled = true;
+        c.ArrPhase1Enabled = true;
+        c.JellyseerrEnabled = true;
+        c.JellyseerrUrls = FakeSeerr.Url;
+        c.JellyseerrApiKey = FakeSeerr.Key;
+        return c;
+    }
+
     [Fact]
     public async Task AnAskedProofLivesFromWhenItsReadBegan()
     {
         var now = DateTimeOffset.UtcNow;
-        var cache = new SeerrAskedProofCache(() => now, TimeSpan.FromSeconds(5));
+        var cache = new SeerrAskedProofCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
         var reads = 0;
         IReadOnlySet<(int, string)> answer = new HashSet<(int, string)> { (603, "movie") };
         Task<IReadOnlySet<(int TmdbId, string MediaType)>?> Read()
@@ -257,13 +274,13 @@ public class UserCacheSeerrDeadlineTests
     {
         // The proxy keeps an answer stamped with the time it came in ...
         var stamped = WriteGateWalk.Plugin.With("Controllers/JellyfinEnhancedController.cs", s => s.Replace(
-            "_responseCache[cacheKey] = (json, requestStart);", "_responseCache[cacheKey] = (json, DateTime.UtcNow);"));
+            "_responseCache[cacheKey] = (json, requestStart);", "_responseCache[cacheKey] = (json, Helpers.MonotonicClock.Now());"));
         Assert.Contains(UserCacheScan.LateStamps(stamped, UserCacheScan.Caches(stamped)), l => l.Cache == "JellyfinEnhancedController._responseCache");
         Assert.DoesNotContain(UserCacheScan.LateStamps(WriteGateWalk.Plugin, UserCacheScan.Caches(WriteGateWalk.Plugin)), l => l.Cache == "JellyfinEnhancedController._responseCache");
         // ... or samples its fence after it read the configuration (round 5's COREUC-R5-3 shape).
         var fenced = WriteGateWalk.Plugin.With("Controllers/JellyfinEnhancedController.cs", s => s.Replace(
-            "            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);\n            var requestStart = DateTime.UtcNow;\n            var config = JellyfinEnhanced.Instance?.Configuration;",
-            "            var config = JellyfinEnhanced.Instance?.Configuration;\n            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);\n            var requestStart = DateTime.UtcNow;"));
+            "            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);\n            var requestStart = Helpers.MonotonicClock.Now();\n            var config = JellyfinEnhanced.Instance?.Configuration;",
+            "            var config = JellyfinEnhanced.Instance?.Configuration;\n            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);\n            var requestStart = Helpers.MonotonicClock.Now();"));
         Assert.Contains(UserCacheScan.LateFences(fenced, "JellyfinEnhancedController._responseCache", "_seerrResponseGeneration"), p => p.Contains("ProxyJellyseerrRequestCore", StringComparison.Ordinal));
         Assert.Empty(UserCacheScan.LateFences(WriteGateWalk.Plugin, "JellyfinEnhancedController._responseCache", "_seerrResponseGeneration"));
     }

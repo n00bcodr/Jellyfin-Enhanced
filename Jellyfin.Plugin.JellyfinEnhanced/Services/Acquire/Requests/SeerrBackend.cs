@@ -109,7 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // (Until) and its Seerr settings with their own read (SettingsUntil); the same deadlines are checked on the
         // stored times as well.
         private readonly Helpers.WrittenStateCache<Guid, Prepared> _prepared = new(PreparedFor, 10000);
-        private readonly Helpers.WrittenStateCache<string, (int? Id, DateTimeOffset At)> _ids = new(IdsFor, 10000, StringComparer.Ordinal);
+        private readonly Helpers.WrittenStateCache<string, (int? Id, long At, SeerrAccountAuthority.Ticket Authority)> _ids = new(IdsFor, 10000, StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, ServerList> _serverLists = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, ServerDetails> _serverDetails = new(StringComparer.Ordinal);
         private SettingsRead? _settings;
@@ -170,13 +170,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _findTmdb = findTmdb;
         }
 
-        // At: when the read of Seerr's settings began.
-        private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
+        // At: when the read of Seerr's settings began (monotonic ticks, Helpers.MonotonicClock).
+        private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, long At);
 
         // Until: the earliest deadline of the identity facts (the account mapping and the reads made here); SettingsUntil:
         // Seerr's settings end with their own read (they are the settings this preparation was given, possibly read before it).
+        // Both on the monotonic clock (ticks): the one clock every derived deadline here is counted on (the wall clock is
+        // kept for calendar dates only: quota windows). Authority: the person's Seerr account authority the facts were
+        // worked out under; they are used only while it is current.
         private sealed record Prepared(string Source, int? SeerrUser, long Permissions, SeerrRequestSettings? Settings,
-            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset Until, DateTimeOffset SettingsUntil, bool LinkPending = false);
+            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, long Until, long SettingsUntil, SeerrAccountAuthority.Ticket Authority, bool LinkPending = false);
 
         private enum Delivery
         {
@@ -191,9 +194,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // private: only ever part of the options stamp, so a server repointed under the same name is a changed choice.
         private sealed record ServerEntry(int Id, string Name, bool Is4k, bool IsDefault, int? ActiveProfileId, string? ActiveDirectory, string Connection);
 
-        private sealed record ServerList(IReadOnlyList<ServerEntry> Servers, DateTimeOffset At);
+        private sealed record ServerList(IReadOnlyList<ServerEntry> Servers, long At);
 
-        private sealed record ServerDetails(IReadOnlyList<SeerrProfileOption> Profiles, IReadOnlyList<string> Roots, DateTimeOffset At);
+        private sealed record ServerDetails(IReadOnlyList<SeerrProfileOption> Profiles, IReadOnlyList<string> Roots, long At);
 
         // ---------------- identity, permissions, quota ----------------
 
@@ -205,12 +208,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task PrepareCoreAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
         {
-            // Taken before anything is read: an unlink while this runs ends what it read; its facts live from here.
+            // Taken before anything is read: an unlink while this runs ends what it read; its facts live from here (on the
+            // monotonic clock). The person's Seerr account authority too: a newer read of their account link (here or
+            // anywhere: the proxy, another preparation) ends this one, and nothing it found is kept.
             var ticket = _prepared.Begin();
-            var start = _now();
+            var start = Helpers.MonotonicClock.Now();
             var ticketAt = start;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
+            var authority = SeerrAccountAuthority.Capture(SeerrAccountAuthority.SourceOf(config), SeerrAccountAuthority.PersonOf(user));
             if (config == null || source == null)
             {
                 _prepared.Invalidate(user);
@@ -225,21 +231,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var (settings, settingsAt) = await SettingsReadAsync(config, source, fresh: false, ct).ConfigureAwait(false);
             // The identity facts end with the earliest input: this preparation's own reads, or the account mapping it used.
-            var until = start + PreparedFor;
+            var until = start + PreparedFor.Ticks;
             int? id = null;
             long permissions = 0;
             QuotaProjection? movie = null, tv = null;
             int movieDays = 7, tvDays = 7;
             if (!JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers).Contains(user.ToString("N")))
             {
-                var (found, known, mappedAt) = await UserIdReadAsync(config, source, user, ct).ConfigureAwait(false);
-                // Seerr didn't answer: keep what was known for policy decisions (an unknown identity never grants
-                // anything). Sending never relies on it: the account is confirmed again right before every POST.
+                var (found, known, mappedAt, mappedUnder) = await UserIdReadAsync(config, source, user, authority, ct).ConfigureAwait(false);
+                // Seerr didn't answer (or a newer read of the person's account came in meanwhile): keep what was known for
+                // policy decisions (an unknown identity never grants anything). Sending never relies on it: the account is
+                // confirmed again right before every POST.
                 if (!known) return;
+                authority = mappedUnder;
                 id = found;
                 // No account: that answer is the mapping's own (it ends with it). An account is confirmed below by a read
                 // of it made now.
-                if (found == null && mappedAt + MissingIdFor < until) until = mappedAt + MissingIdFor;
+                if (found == null && mappedAt + MissingIdFor.Ticks < until) until = mappedAt + MissingIdFor.Ticks;
             }
             if (id is int seerrId)
             {
@@ -261,24 +269,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 else
                 {
-                    // The account now belongs to someone else: forget the mapping AND end every preparation running now
-                    // (one that read the account while it was still this person's must not put it back). What this one
-                    // found (no account) is kept under a ticket taken after that end, as short as a missing mapping.
+                    // The account now belongs to someone else: a fresh observation that the person has lost it. Recorded
+                    // with this preparation's authority (refused when a newer read came in meanwhile: nothing is kept then),
+                    // it ends every preparation and lookup running now; the mapping is forgotten. What this one found (no
+                    // account) is kept under the ticket and authority taken after that end, as short as a missing mapping.
+                    if (!SeerrAccountAuthority.Admit(ref authority, null)) return;
                     Reassigned(user, source);
                     ticket = _prepared.Begin();
-                    ticketAt = _now();
+                    ticketAt = Helpers.MonotonicClock.Now();
                     id = null;
-                    if (start + MissingIdFor < until) until = start + MissingIdFor;
+                    if (start + MissingIdFor.Ticks < until) until = start + MissingIdFor.Ticks;
                 }
             }
-            var before = _prepared.TryGet(user, out var held) && held.Source == source ? held : null;
+            // Published only while the person's account authority is still the one these facts were worked out under.
+            if (!SeerrAccountAuthority.IsCurrent(authority, _config())) return;
+            var before = _prepared.TryGet(user, out var held) && held.Source == source && SeerrAccountAuthority.IsCurrent(held.Authority) ? held : null;
             var linkPending = id != null && (before?.SeerrUser != id || before?.LinkPending == true);
-            var settingsUntil = settingsAt + SettingsFor < until ? settingsAt + SettingsFor : until;
-            _prepared.Set(user, ticket, new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, until, settingsUntil, !notifyLinked && linkPending), Life(ticketAt, until));
+            var settingsUntil = settingsAt + SettingsFor.Ticks < until ? settingsAt + SettingsFor.Ticks : until;
+            _prepared.Set(user, ticket, new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, until, settingsUntil, authority, !notifyLinked && linkPending), Life(ticketAt, until));
             // Seerr links an account to the person now (it didn't, or nothing was known since a start): requests that
             // were waiting for one are checked at once.
             if (notifyLinked && linkPending) _linked?.Invoke(user);
         }
+
+        // The prepared facts of a person, when they may be used: the same Seerr, inside their own deadline, and under the
+        // person's current Seerr account authority.
+        private Prepared? Usable(Guid user, string source)
+            => _prepared.TryGet(user, out var p) && p.Source == source && Helpers.MonotonicClock.Now() < p.Until
+               && SeerrAccountAuthority.IsCurrent(p.Authority, _config()) ? p : null;
 
         /// <inheritdoc />
         public RequestBackendBinding Binding(Guid user, MutationInput input)
@@ -286,9 +304,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             var (options, optionsStamp) = source != null && input.HasSeerrOptions ? HeldOptions(source, input) : (null, null);
-            if (source == null || !_prepared.TryGet(user, out var p) || p.Source != source || _now() >= p.Until) return new RequestBackendBinding(Source: source, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
+            if (source == null || Usable(user, source) is not { } p) return new RequestBackendBinding(Source: source, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
             // Seerr's settings end with their own read: past it they aren't known (as when Seerr didn't answer).
-            var known = _now() < p.SettingsUntil ? p.Settings : null;
+            var known = Helpers.MonotonicClock.Now() < p.SettingsUntil ? p.Settings : null;
             var movie = TitleKey.Parse(input.Key)?.IsMovie ?? true;
             bool Has(JellyseerrPermission bit) => (p.Permissions & (long)bit) == (long)bit;
             var admin = Has(JellyseerrPermission.ADMIN);
@@ -356,8 +374,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int server) return (OptionsUnknown, null);
             var kind = ServiceKind(key.IsMovie);
-            var list = _serverLists.TryGetValue(source + "|" + kind, out var heldList) && _now() - heldList.At < ServersFor ? heldList : null;
-            var details = _serverDetails.TryGetValue(source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture), out var heldDetails) && _now() - heldDetails.At < ServersFor ? heldDetails : null;
+            var now = Helpers.MonotonicClock.Now();
+            var list = _serverLists.TryGetValue(source + "|" + kind, out var heldList) && now - heldList.At < ServersFor.Ticks ? heldList : null;
+            var details = _serverDetails.TryGetValue(source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture), out var heldDetails) && now - heldDetails.At < ServersFor.Ticks ? heldDetails : null;
             return CheckOptions(source, kind, input, list, details);
         }
 
@@ -382,9 +401,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<ServerList?> ServerListAsync(PluginConfiguration config, string source, string kind, bool fresh, CancellationToken ct, string? only = null)
         {
             var cacheKey = source + "|" + kind;
-            if (!fresh && _serverLists.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            if (!fresh && _serverLists.TryGetValue(cacheKey, out var held) && Helpers.MonotonicClock.Now() - held.At < ServersFor.Ticks) return held;
             // Counted from the start of the read.
-            var at = _now();
+            var at = Helpers.MonotonicClock.Now();
             if (await GetAsync(config, "/api/v1/service/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } json) return null;
             if (await GetAsync(config, "/api/v1/settings/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } settings) return null;
             var connections = new Dictionary<int, string>();
@@ -419,7 +438,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (source == null || TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int id
                 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(apiKey)) return false;
             var kind = key.IsMovie ? "radarr" : "sonarr";
-            if (!_serverLists.TryGetValue(source + "|" + kind, out var list) || _now() - list.At >= ServersFor) return false;
+            if (!_serverLists.TryGetValue(source + "|" + kind, out var list) || Helpers.MonotonicClock.Now() - list.At >= ServersFor.Ticks) return false;
             var server = list.Servers.SingleOrDefault(s => s.Id == id);
             var connection = MutationInput.Hash(JsonSerializer.Serialize(new object?[]
             {
@@ -433,9 +452,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<ServerDetails?> ServerDetailsAsync(PluginConfiguration config, string source, string kind, int server, bool fresh, CancellationToken ct, string? only = null)
         {
             var cacheKey = source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture);
-            if (!fresh && _serverDetails.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            if (!fresh && _serverDetails.TryGetValue(cacheKey, out var held) && Helpers.MonotonicClock.Now() - held.At < ServersFor.Ticks) return held;
             // Counted from the start of the read.
-            var at = _now();
+            var at = Helpers.MonotonicClock.Now();
             if (await GetAsync(config, "/api/v1/service/" + kind + "/" + server.ToString(CultureInfo.InvariantCulture), ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Object } json) return null;
             var profiles = new List<SeerrProfileOption>();
             if (json.TryGetProperty("profiles", out var p) && p.ValueKind == JsonValueKind.Array)
@@ -508,45 +527,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Known is false when Seerr's user list couldn't be read completely (nothing is concluded then).
         private async Task<(int? Id, bool Known)> UserIdAsync(PluginConfiguration config, string source, Guid user, CancellationToken ct)
         {
-            var (id, known, _) = await UserIdReadAsync(config, source, user, ct).ConfigureAwait(false);
+            var authority = SeerrAccountAuthority.Capture(SeerrAccountAuthority.SourceOf(config), SeerrAccountAuthority.PersonOf(user));
+            var (id, known, _, _) = await UserIdReadAsync(config, source, user, authority, ct).ConfigureAwait(false);
             return (id, known);
         }
 
-        // The same, with when the mapping's read began (a held one's own read; it ends IdsFor, or MissingIdFor for no
-        // account, after that).
-        private async Task<(int? Id, bool Known, DateTimeOffset At)> UserIdReadAsync(PluginConfiguration config, string source, Guid user, CancellationToken ct)
+        // The same, with when the mapping's read began (a held one's own read, on the monotonic clock; it ends IdsFor, or
+        // MissingIdFor for no account, after that) and the person's Seerr account authority it holds under. A held mapping
+        // is served only under the authority it was read under; a fresh one is recorded with the authority the caller took
+        // before reading anything (<paramref name="authority"/>): refused (unknown) when a newer read of the person's
+        // account came in meanwhile, else every lookup and preparation running from before it ends when it changes or
+        // loses the link (a complete list without the person included).
+        private async Task<(int? Id, bool Known, long At, SeerrAccountAuthority.Ticket Authority)> UserIdReadAsync(PluginConfiguration config, string source, Guid user, SeerrAccountAuthority.Ticket authority, CancellationToken ct)
         {
             var cacheKey = source + "|" + user.ToString("N");
             // Taken before Seerr's user list is read, and the read's instant with it.
             var ticket = _ids.Begin();
-            var at = _now();
-            if (_ids.TryGet(cacheKey, out var cached) && _now() - cached.At < (cached.Id == null ? MissingIdFor : IdsFor)) return (cached.Id, true, cached.At);
+            var at = Helpers.MonotonicClock.Now();
+            if (_ids.TryGet(cacheKey, out var cached) && cached.Authority == authority
+                && Helpers.MonotonicClock.Now() - cached.At < (cached.Id == null ? MissingIdFor : IdsFor).Ticks) return (cached.Id, true, cached.At, authority);
             const int take = 100;
             for (var page = 0; page < MaxUserPages; page++)
             {
                 var list = await GetAsync(config, $"/api/v1/user?take={take}&skip={(page * take).ToString(CultureInfo.InvariantCulture)}&sort=created", ct).ConfigureAwait(false);
-                if (list is not { } json || !json.TryGetProperty("results", out var rows) || rows.ValueKind != JsonValueKind.Array) return (null, false, at);
+                if (list is not { } json || !json.TryGetProperty("results", out var rows) || rows.ValueKind != JsonValueKind.Array) return (null, false, at, authority);
                 var count = 0;
                 foreach (var row in rows.EnumerateArray())
                 {
                     count++;
                     if (string.Equals(Str(row, "jellyfinUserId"), user.ToString("N"), StringComparison.OrdinalIgnoreCase) && Int(row, "id") is int id && id > 0)
                     {
-                        _ids.Set(cacheKey, ticket, (id, at), IdsFor);
-                        // What Seerr links now: a lookup of the Seerr proxy that names another account ends.
-                        Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, id);
-                        return (id, true, at);
+                        // What Seerr links now: recorded (a lookup of the Seerr proxy, or a preparation, naming another
+                        // account ends); kept under the authority it holds under.
+                        if (!SeerrAccountAuthority.Admit(ref authority, id)) return (null, false, at, authority);
+                        _ids.Set(cacheKey, ticket, (id, at, authority), IdsFor);
+                        return (id, true, at, authority);
                     }
                 }
                 var total = json.TryGetProperty("pageInfo", out var info) && info.ValueKind == JsonValueKind.Object ? Int(info, "results") : null;
                 if (count < take || total is int t && (page + 1) * take >= t)
                 {
-                    _ids.Set(cacheKey, ticket, (null, at), MissingIdFor);
-                    Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, null);
-                    return (null, true, at);
+                    // Seerr links no account to the person: that ends every lookup and preparation running from before.
+                    if (!SeerrAccountAuthority.Admit(ref authority, null)) return (null, false, at, authority);
+                    _ids.Set(cacheKey, ticket, (null, at, authority), MissingIdFor);
+                    return (null, true, at, authority);
                 }
             }
-            return (null, false, at);
+            return (null, false, at, authority);
         }
 
         /// <summary>How long Seerr's last-read 4K server settings count as known (see <see cref="FourKServer"/>).</summary>
@@ -559,7 +586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             var held = Volatile.Read(ref _settings);
-            if (source == null || held == null || held.Source != source || _now() - held.At > FourKKnownFor) return null;
+            if (source == null || held == null || held.Source != source || Helpers.MonotonicClock.Now() - held.At > FourKKnownFor.Ticks) return null;
             return movie ? held.Settings.Movie4k : held.Settings.Series4k;
         }
 
@@ -579,11 +606,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => (await SettingsReadAsync(config, source, fresh, ct).ConfigureAwait(false)).Settings;
 
         // Seerr's request settings and when their read began (a held read's own instant; they count SettingsFor from it).
-        private async Task<(SeerrRequestSettings? Settings, DateTimeOffset At)> SettingsReadAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
+        private async Task<(SeerrRequestSettings? Settings, long At)> SettingsReadAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {
             var held = Volatile.Read(ref _settings);
-            if (!fresh && held != null && held.Source == source && _now() - held.At < SettingsFor) return (held.Settings, held.At);
-            var at = _now();
+            if (!fresh && held != null && held.Source == source && Helpers.MonotonicClock.Now() - held.At < SettingsFor.Ticks) return (held.Settings, held.At);
+            var at = Helpers.MonotonicClock.Now();
             if (await GetAsync(config, "/api/v1/settings/public", ct).ConfigureAwait(false) is not { } json) return (null, at);
             static bool? Tri(JsonElement e, string name) => e.TryGetProperty(name, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
             var settings = new SeerrRequestSettings(Tri(json, "partialRequestsEnabled"), Tri(json, "enableSpecialEpisodes") == true, Tri(json, "movie4kEnabled") == true, Tri(json, "series4kEnabled") == true);
@@ -591,8 +618,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return (settings, at);
         }
 
-        // How long an entry whose inputs end at until may be kept, from start (never negative).
-        private static TimeSpan Life(DateTimeOffset start, DateTimeOffset until) => until > start ? until - start : TimeSpan.Zero;
+        // How long an entry whose inputs end at until may be kept, from start (monotonic ticks; never negative).
+        private static TimeSpan Life(long start, long until) => until > start ? TimeSpan.FromTicks(until - start) : TimeSpan.Zero;
 
         // ---------------- send ----------------
 
@@ -614,6 +641,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (finalGuard() is { } refusal) return Refused(job, refusal);
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
+            // Taken before the account is read: the POST goes only while it is still the person's account as last read.
+            var authority = SeerrAccountAuthority.Capture(SeerrAccountAuthority.SourceOf(config), SeerrAccountAuthority.PersonOf(job.Authorization.Requester));
             if (config == null || source == null) return BackendResults.Retry("backend_unavailable", "Seerr isn't configured.");
             if (source != job.Authorization.SeerrSource) return BackendResults.Hold("identity_changed", "Seerr's address or API key changed after this request was approved.");
             // The account it goes out as: the one it was approved with or, for a request approved while Seerr didn't say
@@ -679,6 +708,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     : BackendResults.Retry("backend_unavailable", "Seerr couldn't confirm the person's account; nothing was sent.");
             if (!string.Equals(Str(linked, "jellyfinUserId"), job.Authorization.Requester.ToString("N"), StringComparison.OrdinalIgnoreCase))
                 return Unlinked(job.Authorization.Requester, source, "That Seerr account is no longer linked to the person who asked.");
+            // The fresh read is an observation of the person's account: refused when a newer one came in while it ran.
+            if (!SeerrAccountAuthority.Admit(ref authority, seerrUser))
+                return BackendResults.Retry("backend_unavailable", "The person's Seerr account was read again meanwhile; nothing was sent.");
             if (input.HasSeerrOptions)
             {
                 // The account it goes out as must still hold Seerr's advanced-request permission (Seerr applies the
@@ -709,6 +741,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Nothing went out: the POST's budget slot, admitted just above, is given back.
                 admission?.Settled(SendWriteKind.Post, "post", SendWriteResult.NotSent);
                 return BackendResults.Retry("backend_unavailable", "The request couldn't be recorded before sending; nothing was sent.");
+            }
+            // Never as an account that stopped being the person's after it was confirmed (or at another Seerr): checked after
+            // the waits for admission and recording, before the key and the last gate (both read the configuration's secrets).
+            if (!SeerrAccountAuthority.IsCurrent(authority, _config()))
+            {
+                admission?.Settled(SendWriteKind.Post, "post", SendWriteResult.NotSent);
+                return BackendResults.Retry("backend_unavailable", "The person's Seerr account changed before the request went out; nothing was sent.");
             }
             // The key is read before the last gate (reading it can log through a callback), so nothing but the POST follows it.
             var apiKey = config.GetJellyseerrApiKey();
@@ -1020,11 +1059,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // The account prepared for a person (fresh, same Seerr), or null.
         private int? PreparedAccount(Guid user, string source)
-            => _prepared.TryGet(user, out var p) && p.Source == source && _now() < p.Until ? p.SeerrUser : null;
+            => Usable(user, source)?.SeerrUser;
 
         // Fresh prepared facts (same Seerr) say Seerr links no account to the person.
         private bool PreparedUnlinked(Guid user, string source)
-            => _prepared.TryGet(user, out var p) && p.Source == source && _now() < p.Until && p.SeerrUser == null;
+            => Usable(user, source) is { SeerrUser: null };
 
         // The account isn't (or is no longer) the person's: forget the mapping and hold the request for a person.
         private RequestBackendResult Unlinked(Guid user, string source, string message)
@@ -1040,7 +1079,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             _ids.Invalidate(source + "|" + user.ToString("N"));
             _prepared.Invalidate(user);
-            Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, null);
+            // The person's Seerr account authority records the loss (it moves unless an observation of it is already in).
+            SeerrAccountAuthority.Observed(SeerrAccountAuthority.SourceOf(_config()), SeerrAccountAuthority.PersonOf(user), null);
         }
 
         // ---------------- transport ----------------

@@ -267,6 +267,8 @@
          * Reads the client-paged list again (its access revision moved) and brings the section in line in place: the
          * cards of titles the list no longer holds are taken away, the rest stay, and paging continues after the titles
          * already drawn.
+         * Only a read still current when it comes in is put in place: one whose access moved again while it ran is
+         * dropped (nothing of it is kept or drawn) and the list is read again, a few times at most.
          * @param {AbortSignal} [signal]
          * @returns {Promise<boolean>} False when superseded or the list couldn't be read (nothing more is drawn then).
          */
@@ -275,12 +277,18 @@
             const epoch = renderEpoch;
             revalidating = (async () => {
                 try {
-                    const revision = accessRevision();
-                    listStale = false;
-                    const resolved = await spec.resolveItems({ id: /** @type {string} */ (listId), signal: /** @type {AbortSignal} */ (signal) });
-                    if (signal?.aborted || epoch !== renderEpoch || !clientListActive) return false;
+                    let resolved = null;
+                    let revision = null;
+                    for (let attempt = 0; attempt < 3 && resolved === null; attempt++) {
+                        revision = accessRevision();
+                        listStale = false;
+                        const read = await spec.resolveItems({ id: /** @type {string} */ (listId), signal: /** @type {AbortSignal} */ (signal) });
+                        if (signal?.aborted || epoch !== renderEpoch || !clientListActive) return false;
+                        // Read under an access that has moved again since: not the person's list now.
+                        if (accessRevision() === revision) resolved = read || {};
+                    }
+                    if (resolved === null) { listStale = true; return false; }
                     listRevision = revision;
-                    if (accessRevision() !== revision) listStale = true;
                     const items = resolved?.items || [];
                     cachedAllResults = items;
                     const allowed = new Set(items.map(titleKey));
@@ -1273,10 +1281,17 @@
          * @param {string} pageKey
          */
         async function renderClientPaged(id, signal, pageKey) {
-            // Taken before the read: the list is kept under it (and read again once it moves).
-            const revision = accessRevision();
-            const resolved = await spec.resolveItems({ id, signal });
-            if (signal.aborted) return;
+            // Taken before the read: the list is drawn and kept only under the access it was read for (read again,
+            // a few times at most, when it moved while the read ran; nothing is drawn from a superseded read).
+            let revision = null;
+            let resolved = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                revision = accessRevision();
+                resolved = await spec.resolveItems({ id, signal });
+                if (signal.aborted) return;
+                if (accessRevision() === revision) break;
+                resolved = null;
+            }
             if (!resolved || !resolved.items || resolved.items.length === 0) return;
 
             // Store all results for filter switching
@@ -1284,7 +1299,7 @@
             clientListActive = true;
             listId = id;
             listRevision = revision;
-            listStale = accessRevision() !== revision;
+            listStale = false;
 
             // Check if we have both media types
             const hasBoth = JE.discoveryFilter?.resultHasBothTypes(cachedAllResults) || false;
