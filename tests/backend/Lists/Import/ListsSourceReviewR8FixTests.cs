@@ -513,6 +513,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
         };
         w.Answer(R7.SeerrA + at, "{\"message\":\"Not Found\"}", 404);
         w.Answer(R7.SeerrB + at, body);
+        if (path == "metadata series") w.Answer(R7.SeerrA + "tv/1412/season/1", R7.MetaSeasonBody);
         if (path == "metadata season")
         {
             w.Answer(R7.SeerrA + "tv/1412", R7.MetaShowBody);

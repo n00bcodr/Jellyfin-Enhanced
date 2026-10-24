@@ -104,7 +104,7 @@ public class ListsExactSeriesTests
     [InlineData(true, true)]
     public async Task ExactSeriesEpisodesStayPendingAndRetryRejectedAndLaterArrivals(bool recoverIntent, bool lastArrivesAsPrimary)
     {
-        using var h = new ListsHarness();
+        using var h = new ListsHarness(seerr: true);
         var user = h.NewUser("manager", collections: true);
         var list = h.Host.AddCollection();
         var series = h.Host.AddSeries(tmdb: 800);
@@ -122,6 +122,8 @@ public class ListsExactSeriesTests
         var placeholder = Ph("{\"kind\":\"series\",\"tmdbId\":800,\"title\":\"Show\",\"edition\":\"4k\"}", user.Id.ToString("N"));
         placeholder.InProduction = false;
         placeholder.Expected = new() { new() { S = 1, E = 1, AirDate = "2000-01-01" }, new() { S = 1, E = 2, AirDate = "2000-01-02" }, new() { S = 1, E = 3, AirDate = "2000-01-03" } };
+        ReconcileSeries(placeholder, 3);
+        h.AnswerSeries(placeholder, 3);
         var doc = h.Store.LoadForUpdate(list.Info.Id.ToString("N"), ListKinds.Collection);
         doc.Items.Add(placeholder);
         doc.SwapIn = new ListConsent { ByUserId = user.Id.ToString("N"), At = DateTime.UtcNow.ToString("o") };
@@ -147,6 +149,10 @@ public class ListsExactSeriesTests
         }
         h.Host.MediaSources[thirdPrimary] = new[] { new ListMediaSource(third, third.ToString("N"), 3840, 2160, true) };
         await h.Swap.RunListPassAsync(doc.ListId, null, MetadataMode.None, default);
+        Assert.Single(h.Store.Load(doc.ListId)!.Items); // fills alone cannot replace fresh provider confirmation
+        Assert.Empty(h.SeerrCalls);
+        await h.Swap.DrainAsync(default);
+        Assert.Contains("/api/v1/tv/800/season/1", h.SeerrCalls);
         Assert.Empty(h.Store.Load(doc.ListId)!.Items);
         Assert.Equal(new[] { first, second, third }, h.Host.Resolved(list.Info.Id));
     }
