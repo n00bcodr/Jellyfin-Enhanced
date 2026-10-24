@@ -1228,6 +1228,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Minutes after an import before a file Jellyfin still doesn't have is listed under Needs attention ("In Sonarr, not in Jellyfin"). 1-1440, default 10.</summary>
         public int ArrLibraryPendingMinutes { get; set; } = 10;
 
+        // ---- Bridge fix (new imports are hydrated before they are Ready)
+
+        /// <summary>
+        /// Seconds an imported file must stay unchanged (size and last write, looked at twice) before Jellyfin is asked to
+        /// read it, so a copy still being written is never probed. 0-60, default 3; 0 skips the check.
+        /// </summary>
+        public int ArrBridgeStableSeconds { get; set; } = 3;
+
+        /// <summary>
+        /// Minutes a just-imported title waits for its Jellyfin metadata (title, overview, poster, media info) before it is
+        /// shown Ready anyway, with "metadata pending" in the logs (a provider that is down or has nothing). 1-120, default 10.
+        /// </summary>
+        public int ArrBridgeMetadataWaitMinutes { get; set; } = 10;
+
+        // ---- end bridge fix
+
         /// <summary>A Sonarr/Radarr root folder whose disk has less than this share free (percent) is listed under Needs attention. 1-50, default 10.</summary>
         public int ArrLowDiskPercent { get; set; } = 10;
 

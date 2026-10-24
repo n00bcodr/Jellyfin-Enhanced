@@ -149,13 +149,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         private readonly ILibraryManager _library;
         private readonly IUserDataManager _userData;
         private readonly ReadyPlaylistService _service;
+        private readonly BridgeImportReadiness? _readiness;
 
         /// <summary>Creates the listener (DI).</summary>
-        public ReadyLibraryEvents(ILibraryManager library, IUserDataManager userData, ReadyPlaylistService service)
+        public ReadyLibraryEvents(ILibraryManager library, IUserDataManager userData, ReadyPlaylistService service, BridgeImportReadiness? readiness = null)
         {
             _library = library;
             _userData = userData;
             _service = service;
+            _readiness = readiness;
         }
 
         /// <inheritdoc />
@@ -165,6 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             _library.ItemUpdated += OnChanged;
             _library.ItemRemoved += OnRemoved;
             _userData.UserDataSaved += OnUserData;
+            if (_readiness != null) _readiness.Released += OnImportReady;
             return Task.CompletedTask;
         }
 
@@ -175,17 +178,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             _library.ItemUpdated -= OnChanged;
             _library.ItemRemoved -= OnRemoved;
             _userData.UserDataSaved -= OnUserData;
+            if (_readiness != null) _readiness.Released -= OnImportReady;
             return Task.CompletedTask;
         }
 
         private static bool On() => ReadyFlags.Playlist(JellyfinEnhanced.Instance?.Configuration);
 
-        private void OnChanged(object? sender, ItemChangeEventArgs e)
+        // A just-imported copy was published Ready: its title gets a look now (Jellyfin's last update of it may have come
+        // while the readiness gate still held it, and nothing else would wake the playlist for it).
+        private void OnImportReady(ImportReadyRelease release)
+        {
+            foreach (var id in release.ItemIds)
+            {
+                if (_library.GetItemById(id) is { } item) Arrived(item);
+            }
+        }
+
+        private void OnChanged(object? sender, ItemChangeEventArgs e) => Arrived(e?.Item);
+
+        private void Arrived(BaseItem? item)
         {
             try
             {
                 if (!On()) return;
-                var keys = e?.Item switch
+                var keys = item switch
                 {
                     Movie movie => TitleAliases.FromProviderIds(true, movie.GetProviderId(MetadataProvider.Tmdb), null, movie.GetProviderId(MetadataProvider.Imdb)),
                     Episode episode when episode.Series is { } series => TitleAliases.FromProviderIds(false, series.GetProviderId(MetadataProvider.Tmdb), series.GetProviderId(MetadataProvider.Tvdb), series.GetProviderId(MetadataProvider.Imdb)),

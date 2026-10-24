@@ -222,7 +222,15 @@ public class IntegrationArrBridgeTests
             Sonarr.Series.Add(FakeArr.SeriesRow(1, 78874, "Firefly"));
             Radarr.Movies.Add(FakeArr.Movie(1, 438631, "Dune", path: "/data/movies/Dune (2021)"));
             Store = Arr.Store();
-            Bridge = new JellyfinBridge(Store, Library, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20), NewFolderFollowUp = TimeSpan.FromMilliseconds(300) };
+            Bridge = new JellyfinBridge(Store, Library, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, null)
+            {
+                Debounce = TimeSpan.FromMilliseconds(20),
+                StableQuietOverride = TimeSpan.FromMilliseconds(5),
+                HydrationPoll = TimeSpan.FromMilliseconds(20),
+                HydrationAttemptTimeout = TimeSpan.FromMilliseconds(600),
+                HydrationBackoff = new[] { TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(200) },
+                MetadataWaitOverride = TimeSpan.FromSeconds(8),
+            };
             Bridge.Subscribe();
         }
 
@@ -547,31 +555,55 @@ public class IntegrationArrBridgeTests
         Assert.DoesNotContain("/media/tv/Firefly (2002)/Season 01/E1.mkv", refresh.Paths);
     }
 
-    [Fact]
-    public async Task ANewSeriesFolderIsLeftToJellyfinsMonitorAndANewMovieRefreshesTheMovieRoot()
+    /// <summary>The imports the readiness gate published Ready (verified or not), by path.</summary>
+    private static List<ImportReadinessEntry> Published(Rig rig)
+        => rig.Bridge.Readiness.Entries().Where(e => e.State is ImportReadinessState.Ready or ImportReadinessState.ReadyMetadataPending).ToList();
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ANewSeriesFolderIsAddedOnItsOwnAndHydratedInsideItWhateverTheMonitoringAndANewMovieRefreshesTheMovieRoot(bool realtime)
     {
+        // Before: with real-time monitoring off a new series waited for the next library scan; with it on, Jellyfin's
+        // monitor was told (which validates the TV root recursively). Now that one folder is added through Jellyfin's
+        // resolver and hydrated inside it; the TV root is never validated, scanned or reported, either way.
         using var rig = new Rig();
-        rig.Library.SetRealtime("Shows", true);
+        rig.Library.SetRealtime("Shows", realtime);
         await rig.History(rig.Sonarr, "SonarrZ");
         await rig.History(rig.Radarr, "RadarrZ");
-        // A season pack of a new series: three files, one new series folder.
-        for (var e = 1; e <= 3; e++) rig.Sonarr.History.Add(Rig.Import(4 + e, rig.Arr.Now.UtcDateTime, $"/data/tv/Spaced (1999)/Season 01/S01E0{e}.mkv", episode: e));
+        // A season pack of a new series: three files, one new series folder. And a new movie.
+        for (var e = 1; e <= 3; e++)
+        {
+            rig.Library.AddFile($"/media/tv/Spaced (1999)/Season 01/S01E0{e}.mkv", indexed: false);
+            rig.Sonarr.History.Add(Rig.Import(4 + e, rig.Arr.Now.UtcDateTime, $"/data/tv/Spaced (1999)/Season 01/S01E0{e}.mkv", episode: e));
+        }
+        rig.Library.AddFile("/media/movies/Dune (2021)/Dune (2021).mkv", indexed: false, kind: "movie");
         rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime, "/data/movies/Dune (2021)/Dune (2021).mkv", movie: 1));
         await rig.History(rig.Sonarr, "SonarrZ");
         await rig.History(rig.Radarr, "RadarrZ");
-        await Until(() => rig.Bridge.Recent().Count >= 4);
-        // The TV root was not refreshed; Jellyfin's own monitor got the new series folder, once.
+        await Until(() => Published(rig).Count >= 4, 8000);
+
         var tvRoot = rig.Library.Items["/media/tv"].Id;
+        // Only the new series folder was created, under the TV root's folder; the root itself was never refreshed or reported.
+        Assert.Equal(new[] { (tvRoot, "/media/tv/Spaced (1999)") }, rig.Library.Created);
         Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == tvRoot);
-        Assert.Equal(new[] { "/media/tv/Spaced (1999)" }, rig.Library.Reported);
-        // Once Jellyfin's monitor has added the series, that one series gets one metadata refresh
-        // (not one per imported file).
-        var spaced = rig.Library.AddFolder("/media/tv/Spaced (1999)", "series");
-        await Until(() => rig.Library.ItemRefreshes.Count > 0);
-        await Task.Delay(400);
-        Assert.Equal(new[] { spaced.Id }, rig.Library.ItemRefreshes);
-        Assert.Single(rig.Bridge.Recent(), r => r.Outcome == "new_folder_refresh");
-        Assert.Contains(rig.Bridge.Recent(), r => r.Outcome == RefreshOutcome.LibraryRoot && r.Folder == "/media/tv");
+        Assert.Empty(rig.Library.Reported);
+        var spaced = rig.Library.Items["/media/tv/Spaced (1999)"];
+        Assert.Equal("series", spaced.Kind);
+        // One hydration of that series and everything in it (not one per file); nothing of the other series or the root.
+        Assert.Equal(new[] { (spaced.Id, HydrationScope.SeriesTree) }, rig.Library.Hydrations);
+        // Each episode is in Jellyfin under the new series, with its metadata, and was published Ready once.
+        for (var e = 1; e <= 3; e++)
+        {
+            var episode = rig.Library.FindByPath($"/media/tv/Spaced (1999)/Season 01/S01E0{e}.mkv");
+            Assert.NotNull(episode);
+            Assert.Equal(spaced.Id, rig.Library.Metas[episode!.Id].SeriesId);
+            Assert.False(rig.Bridge.Readiness.Pending(episode.Id, null));
+        }
+        Assert.Equal(4, Published(rig).Count);
+        Assert.All(Published(rig), r => Assert.Equal(ImportReadinessState.Ready, r.State));
+        Assert.Contains(rig.Bridge.Recent(), r => r.Outcome == JellyfinBridge.NewFolder && r.Folder == "/media/tv");
+        Assert.All(rig.Bridge.Recent().Where(r => r.JellyfinPath.Contains("Spaced", StringComparison.Ordinal)), r => Assert.Contains(r.Outcome, new[] { JellyfinBridge.NewFolder, RefreshOutcome.Present }));
         // The movie root was refreshed non-recursively with the new movie's paths.
         var movie = Assert.Single(rig.Library.Refreshes);
         Assert.Equal(rig.Library.Items["/media/movies"].Id, movie.Folder);
@@ -579,24 +611,25 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
-    public async Task ANewSeriesInALibraryWithoutRealtimeMonitoringIsNotReportedToJellyfinsMonitor()
+    public async Task ANewSeriesJellyfinsMonitorAddedFirstIsUsedAsItIsWithoutASecondItem()
     {
-        // Jellyfin acts on a reported path whatever the library's setting, by validating the
-        // nearest item it has (the TV root) recursively: a whole-library scan per new series.
         using var rig = new Rig();
+        rig.Library.SetRealtime("Shows", true);
         await rig.History(rig.Sonarr, "SonarrZ");
-        rig.Library.AddFile("/media/tv/Spaced (1999)/Season 01/S01E01.mkv", indexed: false);
+        const string File = "/media/tv/Spaced (1999)/Season 01/S01E01.mkv";
+        rig.Library.AddFile(File, indexed: false);
+        JfPathItem? watcher = null;
+        // Jellyfin's own monitor adds the series between the plan and JE's creation of it.
+        rig.Library.BeforeCreate = path => watcher ??= rig.Library.AddFolder(path, "series");
         rig.Sonarr.History.Add(Rig.Import(5, rig.Arr.Now.UtcDateTime, "/data/tv/Spaced (1999)/Season 01/S01E01.mkv", episode: 1));
         await rig.History(rig.Sonarr, "SonarrZ");
-        await Until(() => rig.Bridge.Recent().Count >= 1);
-        await Task.Delay(400);
-        Assert.Empty(rig.Library.Reported);
-        Assert.Empty(rig.Library.Refreshes);
-        Assert.Empty(rig.Library.ItemRefreshes);
-        var left = Assert.Single(rig.Bridge.Recent());
-        Assert.Equal((JellyfinBridge.LeftToScan, "/media/tv", false), (left.Outcome, left.Folder, left.Found));
-        // It is listed as not in Jellyfin (with Scan now) until the next library scan.
-        Assert.Contains(rig.Bridge.NotInJellyfin(), m => m.JellyfinPath == "/media/tv/Spaced (1999)/Season 01/S01E01.mkv" && m.Problem == "not_scanned");
+        await Until(() => Published(rig).Count >= 1, 8000);
+        Assert.NotNull(watcher);
+        Assert.Same(watcher, rig.Library.Items["/media/tv/Spaced (1999)"]);
+        // Its item is hydrated (it is new) once; the TV root is untouched.
+        Assert.Equal(new[] { (watcher!.Id, HydrationScope.SeriesTree) }, rig.Library.Hydrations);
+        Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == rig.Library.Items["/media/tv"].Id);
+        Assert.NotNull(rig.Library.FindByPath(File));
     }
 
     [Fact]
@@ -886,7 +919,7 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
-    public async Task ScanNowRefreshesTheFolderQueuesALibraryScanForATvRootAndRefusesOutsidePaths()
+    public async Task ScanNowRefreshesTheFolderAddsANewSeriesOnItsOwnAndRefusesOutsidePaths()
     {
         using var rig = new Rig();
         var sonarr = rig.Instance("SonarrZ");
@@ -907,10 +940,21 @@ public class IntegrationArrBridgeTests
         Assert.Equal(("refreshed", true, "/media/tv/Firefly (2002)/Season 01"), (again.Outcome, again.Found, again.Folder));
         Assert.Contains("/media/tv/Firefly (2002)/Season 01/E4.mkv", rig.Library.Refreshes[1].Paths);
 
+        // A new series (real-time monitoring off): that one folder is added and hydrated inside it, never a scan of the
+        // TV library (before: Jellyfin's scan of the whole library was queued).
+        rig.Library.AddFile("/media/tv/Spaced (1999)/Season 01/E1.mkv", indexed: false);
+        var tvRoot = rig.Library.Items["/media/tv"].Id;
         var series = await rig.Bridge.ScanNowAsync(sonarr, "/data/tv/Spaced (1999)/Season 01/E1.mkv", default);
-        Assert.Equal(("library", "Shows"), (series.Outcome, series.Library));
-        Assert.Equal(rig.Library.Libs.Single(l => l.Name == "Shows").Id, Assert.Single(rig.Library.Scans));
-        Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == rig.Library.Items["/media/tv"].Id);
+        Assert.Equal(("added", "Shows", "/media/tv/Spaced (1999)", true), (series.Outcome, series.Library, series.Folder, series.Found));
+        Assert.Equal((tvRoot, "/media/tv/Spaced (1999)"), Assert.Single(rig.Library.Created));
+        Assert.Equal((rig.Library.Items["/media/tv/Spaced (1999)"].Id, HydrationScope.SeriesTree), Assert.Single(rig.Library.Hydrations));
+        Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == tvRoot);
+        Assert.Empty(rig.Library.Reported);
+        // A file loose in the TV library's own folder: nothing JE can add on its own, and it never scans the library for it.
+        rig.Library.AddFile("/media/tv/loose.mkv", indexed: false);
+        var loose = await rig.Bridge.ScanNowAsync(sonarr, "/data/tv/loose.mkv", default);
+        Assert.Equal(("refused", RefreshOutcome.LibraryRoot), (loose.Outcome, loose.Reason));
+        Assert.DoesNotContain(rig.Library.Refreshes, r => r.Folder == tvRoot);
 
         var outside = await rig.Bridge.ScanNowAsync(sonarr, "/srv/elsewhere/E1.mkv", default);
         Assert.Equal(("refused", "outside_library"), (outside.Outcome, outside.Reason));
@@ -1004,44 +1048,50 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
-    public async Task AQuickFollowUpThatEndedDoesNotFreeTheGuardOfTheNewerOneStillRunning()
+    public async Task AnOlderImportsFollowUpNeitherPublishesNorFreesTheNewerImportOfTheSameFile()
     {
-        // The first follow-up of a folder ends at once; the next one waits. The first caller looks at
-        // its work only after it ended and the next one started: it must not free the next one's
-        // guard, or a third would run beside it.
+        // The first import's item stays a skeleton (its hydrations fail); Radarr imports the same path again (an upgrade)
+        // meanwhile. The older follow-up stops; only the newer import is published, once, and each job frees only its own guard.
         using var rig = new Rig();
-        var sonarr = rig.Instance("SonarrZ");
-        var gate = new TaskCompletionSource();
-        var waits = 0;
-        using var bridge = new JellyfinBridge(rig.Store, rig.Library, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now, (_, ct) => Interlocked.Increment(ref waits) == 1 ? Task.CompletedTask : gate.Task.WaitAsync(ct));
-        const string folder = "/media/tv/Spaced (1999)";
-        var interleaved = false;
-        bridge.AfterStart = first =>
-        {
-            if (interleaved) return;
-            interleaved = true;
-            Assert.True(first.Wait(TimeSpan.FromSeconds(10)));
-            bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E01.mkv", folder);
-        };
-        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E01.mkv", folder);
-        bridge.AfterStart = null;
-        await Until(() => Volatile.Read(ref waits) == 2);
-        Assert.Equal(1, bridge.WorkInFlight);
-        // The second is still running: a third is refused.
-        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E02.mkv", folder);
+        rig.Bridge.HydrationAttemptTimeout = TimeSpan.FromSeconds(30);
+        rig.Library.NewItemMeta = FakeLibraryAccess.Skeleton;
+        rig.Library.HydrationWorks = false;
+        const string File = "/media/movies/Dune (2021)/Dune (2021).mkv";
+        rig.Library.AddFile(File, indexed: false, kind: "movie");
+        var releases = new List<ImportReadyRelease>();
+        rig.Bridge.Readiness.Released += r => { lock (releases) releases.Add(r); };
+        await rig.History(rig.Radarr, "RadarrZ");
+        rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime, "/data/movies/Dune (2021)/Dune (2021).mkv", movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Library.Hydrations.Count >= 1);
+        var item = rig.Library.Items[File];
+        Assert.True(rig.Bridge.Readiness.Pending(item.Id, null));
+        Assert.Equal(1, rig.Bridge.HydrationJobsHeld);
+        var first = Assert.Single(rig.Bridge.Readiness.Entries()).Generation;
+
+        // The second import of the same path: a new generation takes over at once.
+        rig.Radarr.History.Add(Rig.Import(10, rig.Arr.Now.UtcDateTime, "/data/movies/Dune (2021)/Dune (2021).mkv", movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Bridge.Readiness.Entries().Any(e => e.Generation != first));
+        var second = rig.Bridge.Readiness.Entries().Single(e => e.State != ImportReadinessState.Ready).Generation;
+        Assert.NotEqual(first, second);
+        await Until(() => rig.Bridge.HydrationJobsHeld == 1 && rig.Library.Hydrations.Count >= 1);
+        Assert.True(rig.Bridge.Readiness.Pending(item.Id, File));
+        Assert.Empty(releases);
+
+        // Jellyfin finishes reading the item: only the newer import is published, once.
+        rig.Library.HydrationWorks = true;
+        var meta = rig.Library.Metas[item.Id];
+        meta.Name = "Dune";
+        meta.Overview = meta.Primary = meta.Backdrop = true;
+        await Until(() => releases.Count > 0);
         await Task.Delay(200);
-        Assert.Equal(2, Volatile.Read(ref waits));
-        Assert.Equal(1, bridge.WorkInFlight);
-        gate.SetResult();
-        await Until(() => bridge.WorkInFlight == 0);
-        // Ended: the next one runs.
-        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E03.mkv", folder);
-        await Until(() => Volatile.Read(ref waits) == 3);
-        Assert.Equal(3, Volatile.Read(ref waits));
-        // Stopped: refused, and its guard is freed (nothing runs to free it).
-        await bridge.StopAsync(default);
-        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E04.mkv", folder);
-        Assert.Equal(0, bridge.FollowUpsHeld);
+        Assert.Single(releases);
+        var done = Assert.Single(rig.Bridge.Readiness.Entries(), e => e.State == ImportReadinessState.Ready);
+        Assert.Equal(second, done.Generation);
+        Assert.DoesNotContain(rig.Bridge.Readiness.Entries(), e => e.Generation == first && e.State == ImportReadinessState.Ready);
+        await Until(() => rig.Bridge.HydrationJobsHeld == 0);
+        Assert.Equal(0, rig.Bridge.HydrationJobsHeld);
     }
 
     [Fact]
@@ -1077,5 +1127,321 @@ public class IntegrationArrBridgeTests
         Assert.Equal(0, rig.Bridge.WorkInFlight);
         rig.Bridge.Dispose();
         rig.Bridge.Dispose();
+    }
+
+    // ------------------------------------------------------------------ a new import is hydrated before it is Ready
+
+    private const string Almanac = "/media/movies/Project Almanac (2015) {tmdb-227719}/Project Almanac (2015).mkv";
+    private const string AlmanacArr = "/data/movies/Project Almanac (2015) {tmdb-227719}/Project Almanac (2015).mkv";
+
+    [Fact]
+    public async Task ANewMovieLeftAsASkeletonIsHydratedOnceAfterItsRefreshEndsAndIsReadyOnlyAfterTheReadBack()
+    {
+        // Jellyfin's first read of the new movie leaves its folder's name ("Project Almanac (2015) {tmdb-227719}"), the
+        // TMDB id parsed from it and its media info, but no overview or artwork. Before: found, Indexed, and Ready.
+        using var rig = new Rig();
+        rig.Library.NewItemMeta = FakeLibraryAccess.Skeleton;
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        await rig.History(rig.Radarr, "RadarrZ");
+        var hydrated = new List<string>();
+        rig.Bridge.Hydrated += k => { lock (hydrated) hydrated.Add(k); };
+        var releases = new List<ImportReadyRelease>();
+        rig.Bridge.Readiness.Released += r => { lock (releases) releases.Add(r); };
+        var hold = new TaskCompletionSource();
+        // Jellyfin indexes the movie at once and is still reading inside the same refresh (a slow provider).
+        rig.Library.DuringRefresh = async _ =>
+        {
+            rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+            await hold.Task;
+        };
+        rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime, AlmanacArr, movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Library.FindByPath(Almanac) != null);
+        var movie = rig.Library.Items[Almanac];
+        // In Jellyfin (as before) but not Ready: held by its path (the view and the list adapter ask with the item's path)
+        // from before the refresh, and no hydration beside the refresh still running.
+        Assert.True(rig.Bridge.Readiness.Pending(movie.Id, Almanac));
+        await Task.Delay(300);
+        Assert.Empty(rig.Library.Hydrations);
+        Assert.Empty(releases);
+
+        hold.SetResult();
+        await Until(() => rig.Bridge.Recent().Any(r => r.Found) && releases.Count > 0);
+        Assert.Contains(rig.Bridge.Recent(), r => r.Found && r.JellyfinPath == Almanac);
+        // One hydration of that movie only (never the movies root), then Ready once, with its key.
+        Assert.Equal(new[] { (movie.Id, HydrationScope.Item) }, rig.Library.Hydrations);
+        var release = Assert.Single(releases);
+        Assert.True(release.Verified);
+        Assert.Equal(new[] { movie.Id }, release.ItemIds);
+        Assert.Equal("movie:tmdb:438631", Assert.Single(hydrated));
+        Assert.False(rig.Bridge.Readiness.Pending(movie.Id, Almanac));
+        Assert.Equal("Canonical Project Almanac (2015)", rig.Library.Metas[movie.Id].Name);
+        await Task.Delay(300);
+        Assert.Single(rig.Library.Hydrations);
+        Assert.Single(releases);
+    }
+
+    [Fact]
+    public async Task AFaultAfterTheMovieWasIndexedStillHasItJudgedAndHydrated()
+    {
+        // The refresh indexes the movie, then fails (a provider error inside it): the useful "found" stays, and the item
+        // is still judged and repaired once the refresh has ended.
+        using var rig = new Rig();
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        await rig.History(rig.Radarr, "RadarrZ");
+        var release = new TaskCompletionSource<ImportReadyRelease>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Bridge.Readiness.Released += r => release.TrySetResult(r);
+        var fail = new TaskCompletionSource();
+        rig.Library.DuringRefresh = async _ =>
+        {
+            rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+            await fail.Task;
+            throw new InvalidOperationException("provider failed");
+        };
+        rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime, AlmanacArr, movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Bridge.Recent().Any(r => r.Found));
+        Assert.Empty(rig.Library.Hydrations);
+        fail.SetResult();
+        var done = await release.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(done.Verified);
+        Assert.Equal((rig.Library.Items[Almanac].Id, HydrationScope.Item), Assert.Single(rig.Library.Hydrations));
+    }
+
+    [Fact]
+    public async Task AStampedSkeletonADefaultScanLeavesAsItIsIsRepairedWhenItsImportIsReplayedAfterARestart()
+    {
+        // The poison case: the first read found nothing yet stamped the item; Jellyfin's default refresh then skips the
+        // remote providers for it (changed providers only), so a scan leaves it with the raw folder name.
+        using var rig = new Rig();
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        var item = rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+        Assert.NotNull(rig.Library.Metas[item.Id].LastRefreshed);
+        await rig.Library.RefreshFolderAsync(rig.Library.Items["/media/movies"].Id, Array.Empty<string>(), default);
+        Assert.Equal("Project Almanac (2015) {tmdb-227719}", rig.Library.Metas[item.Id].Name);
+        Assert.True(BridgeHydration.Judge(rig.Library.ReadFacts(item.Id)!).Skeletal);
+
+        // After a restart, the first history read replays the import (Jellyfin lists the file): the skeleton is repaired
+        // through the same hydration, and held as Almost ready until it is.
+        var released = new TaskCompletionSource<ImportReadyRelease>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Bridge.Readiness.Released += r => released.TrySetResult(r);
+        rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime.AddMinutes(-5), AlmanacArr, movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        var done = await released.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(done.Verified);
+        Assert.Equal((item.Id, HydrationScope.Item), Assert.Single(rig.Library.Hydrations));
+        Assert.Equal("Canonical Project Almanac (2015)", rig.Library.Metas[item.Id].Name);
+        // A replay of an item that is fine does nothing at all (no hydration, nothing held).
+        rig.Library.AddFile("/media/movies/Dune (2021)/Dune (2021).mkv", indexed: true, kind: "movie");
+        rig.Radarr.History.Add(Rig.Import(10, rig.Arr.Now.UtcDateTime, "/data/movies/Dune (2021)/Dune (2021).mkv", movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Task.Delay(300);
+        Assert.Single(rig.Library.Hydrations);
+        Assert.False(rig.Bridge.Readiness.Pending(Guid.Empty, "/media/movies/Dune (2021)/Dune (2021).mkv"));
+    }
+
+    [Fact]
+    public async Task ScanNowRepairsAStampedSkeletonAndAFailingProviderEndsBoundedAsReadyWithMetadataPending()
+    {
+        using var rig = new Rig();
+        var radarr = rig.Instance("RadarrZ");
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        var item = rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+        var releases = new List<ImportReadyRelease>();
+        rig.Bridge.Readiness.Released += r => { lock (releases) releases.Add(r); };
+        // Every hydration fails (a provider down: Jellyfin counts the failure and doesn't stamp the item).
+        rig.Library.HydrationWorks = false;
+        var scan = await rig.Bridge.ScanNowAsync(radarr, AlmanacArr, default);
+        Assert.Equal(("refreshed", true), (scan.Outcome, scan.Found));
+        await Until(() => releases.Count > 0, 10000);
+        // Three hydrations with backoff, never more; then shown Ready with what is missing (not held forever).
+        Assert.Equal(3, rig.Library.Hydrations.Count);
+        Assert.All(rig.Library.Hydrations, h => Assert.Equal((item.Id, HydrationScope.Item), h));
+        var release = Assert.Single(releases);
+        Assert.False(release.Verified);
+        Assert.Contains("metadata pending", release.Reason);
+        Assert.Contains("title", release.Reason);
+        Assert.False(rig.Bridge.Readiness.Pending(item.Id, null));
+        await Task.Delay(400);
+        Assert.Equal(3, rig.Library.Hydrations.Count);
+    }
+
+    [Fact]
+    public async Task AnEpisodeIntoAnExistingSeasonIsHydratedAloneNeverItsSeriesOrTheRoot()
+    {
+        using var rig = new Rig();
+        rig.Library.NewItemMeta = FakeLibraryAccess.Skeleton;
+        await rig.History(rig.Sonarr, "SonarrZ");
+        const string File = "/media/tv/Firefly (2002)/Season 01/Firefly - S01E04.mkv";
+        rig.Library.AddFile(File, indexed: false);
+        var released = new TaskCompletionSource<ImportReadyRelease>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Bridge.Readiness.Released += r => released.TrySetResult(r);
+        rig.Sonarr.History.Add(Rig.Import(5, rig.Arr.Now.UtcDateTime, "/data/tv/Firefly (2002)/Season 01/Firefly - S01E04.mkv"));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        var done = await released.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var episode = rig.Library.Items[File];
+        // Its season's refresh added it (smallest ancestor); its own hydration only; the series' own metadata was fine.
+        Assert.Equal(rig.Library.Items["/media/tv/Firefly (2002)/Season 01"].Id, Assert.Single(rig.Library.Refreshes).Folder);
+        Assert.Equal(new[] { (episode.Id, HydrationScope.Item) }, rig.Library.Hydrations);
+        Assert.Equal((rig.Library.Items["/media/tv/Firefly (2002)"].Id, rig.Library.Items["/media/tv/Firefly (2002)/Season 01"].Id, 4), (rig.Library.Metas[episode.Id].SeriesId, rig.Library.Metas[episode.Id].SeasonId, rig.Library.Metas[episode.Id].Episode));
+        Assert.True(done.Verified);
+        Assert.Equal("tv:tvdb:100:s1:e4", done.Key);
+    }
+
+    [Fact]
+    public async Task AFileStillBeingWrittenIsNotReadByJellyfinUntilItStopsChanging()
+    {
+        using var rig = new Rig();
+        rig.Bridge.StableQuietOverride = TimeSpan.FromMilliseconds(60);
+        const string File = "/media/tv/Firefly (2002)/Season 01/E4.mkv";
+        rig.Library.AddFile(File, indexed: false);
+        var t = new DateTime(2026, 10, 24, 1, 0, 0, DateTimeKind.Utc);
+        // The arr's import record is there, but the copy still grows twice before it settles.
+        rig.Library.StampSequence[File] = new Queue<(long, DateTime)>(new[] { (10L, t), (20L, t.AddSeconds(1)), (30L, t.AddSeconds(2)), (30L, t.AddSeconds(2)) });
+        await rig.History(rig.Sonarr, "SonarrZ");
+        rig.Sonarr.History.Add(Rig.Import(5, rig.Arr.Now.UtcDateTime, "/data/tv/Firefly (2002)/Season 01/E4.mkv"));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        // Held as Almost ready from the start, before any refresh.
+        await Until(() => rig.Bridge.Readiness.Pending(Guid.Empty, File) || rig.Library.Refreshes.Count > 0);
+        Assert.Empty(rig.Library.Refreshes);
+        Assert.True(rig.Bridge.Readiness.Pending(Guid.Empty, File));
+        await Until(() => rig.Bridge.Recent().Any(r => r.Found));
+        // Looked at until two looks agreed (the changes restarted the wait), then refreshed once.
+        Assert.True(rig.Library.StampReads[File] >= 4, rig.Library.StampReads[File].ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Single(rig.Library.Refreshes);
+        await Until(() => !rig.Bridge.Readiness.Pending(Guid.Empty, File));
+        Assert.False(rig.Bridge.Readiness.Pending(Guid.Empty, File));
+    }
+
+    [Fact]
+    public async Task AfterAStopNoHydrationIsAskedAndNothingIsPublished()
+    {
+        using var rig = new Rig();
+        rig.Library.NewItemMeta = FakeLibraryAccess.Skeleton;
+        rig.Library.AddFile(Almanac, indexed: false, kind: "movie");
+        var hold = new TaskCompletionSource();
+        rig.Library.DuringRefresh = async _ =>
+        {
+            rig.Library.Index(Almanac, "movie", FakeLibraryAccess.Skeleton(Almanac, "movie"));
+            await hold.Task;
+        };
+        await rig.History(rig.Radarr, "RadarrZ");
+        rig.Radarr.History.Add(Rig.Import(9, rig.Arr.Now.UtcDateTime, AlmanacArr, movie: 1));
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Bridge.Recent().Any(r => r.Found));
+        var stop = rig.Bridge.StopAsync(default);
+        hold.SetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(200);
+        Assert.Empty(rig.Library.Hydrations);
+        Assert.Equal(0, rig.Bridge.HydrationJobsHeld);
+        Assert.Equal(0, rig.Bridge.WorkInFlight);
+    }
+
+    [Fact]
+    public void TheJudgeCallsAFolderNamedTitleRawUntilAProviderGaveItAnOverviewAndNeverWaitsForOptionalArt()
+    {
+        JfItemFacts Movie(string? name, bool overview = true, bool poster = true, bool probed = true, bool backdrop = true, bool locked = false)
+            => new() { Kind = "movie", Path = Almanac, Name = name, HasOverview = overview, HasPrimary = poster, HasBackdrop = backdrop, Probed = probed, NameLocked = locked };
+        Assert.Equal(new[] { "title", "overview", "poster" }, BridgeHydration.Judge(Movie("Project Almanac (2015) {tmdb-227719}", overview: false, poster: false)).Missing);
+        // The provider tag alone makes the title raw, whatever else is there; a locked title never is.
+        Assert.Contains("title", BridgeHydration.Judge(Movie("Project Almanac (2015) {tmdb-227719}")).Missing);
+        Assert.DoesNotContain("title", BridgeHydration.Judge(Movie("Project Almanac (2015) {tmdb-227719}", locked: true)).Missing);
+        Assert.True(BridgeHydration.Judge(Movie("Project Almanac")).Complete);
+        // Only a backdrop missing: everything it needs is there.
+        Assert.True(BridgeHydration.Judge(Movie("Project Almanac", backdrop: false)).OnlySoftMissing);
+        Assert.Equal(new[] { "media info" }, BridgeHydration.Judge(Movie("Project Almanac", probed: false)).Missing);
+        // An episode: its numbers, season and file, and its series' own title, overview and poster; its own still is optional.
+        var series = new JfItemFacts { Kind = "series", Path = "/media/tv/Spaced (1999)", Name = "Spaced (1999)", Id = Guid.NewGuid() };
+        var episode = new JfItemFacts { Kind = "episode", Path = "/media/tv/Spaced (1999)/Season 01/S01E01.mkv", Name = "S01E01", Season = 1, Episode = 1, SeriesId = series.Id, SeasonId = Guid.NewGuid(), Probed = true, Series = series };
+        var judged = BridgeHydration.Judge(episode);
+        Assert.Equal(new[] { "series title", "series overview", "series poster" }, judged.Missing);
+        Assert.Contains("episode image", judged.SoftMissing);
+        Assert.Contains("episode title", judged.SoftMissing);
+    }
+
+    // ------------------------------------------------------------------ the hydration modes, over the real library access
+
+    /// <summary>
+    /// The parts of Jellyfin 12.2's MetadataService that decide whether a refresh repairs an item that already carries a
+    /// refresh stamp (a first read that found nothing still stamps it) and no file change, decompiled 12.2 under
+    /// .notes/jfsrc/decomp/jf12.2/MediaBrowser.Providers/MediaBrowser.Providers.Manager/MetadataService.cs:
+    /// GetProviders (:504) keeps the remote metadata providers only with ReplaceAllMetadata or FullRefresh (otherwise only
+    /// providers with a change monitor that changed; TmdbMovieProvider has none); GetNonLocalImageProviders (:544–548) keeps
+    /// the remote image providers only with ImageRefreshMode FullRefresh (TmdbMovieImageProvider has no change monitor);
+    /// the merge (:669, :847–849) replaces a non-empty Name only when replaceData = (mode above ValidationOnly AND
+    /// ReplaceAllMetadata) OR (mode Default AND NOT ReplaceAllMetadata), and Default is excluded above for a stamped item.
+    /// </summary>
+    private static bool RepairsStampedSkeleton(MetadataRefreshOptions o)
+    {
+        var remoteMetadata = o.ReplaceAllMetadata || o.MetadataRefreshMode == MetadataRefreshMode.FullRefresh;
+        var remoteImages = o.ImageRefreshMode == MetadataRefreshMode.FullRefresh;
+        var replaceTitle = (o.MetadataRefreshMode > MetadataRefreshMode.ValidationOnly && o.ReplaceAllMetadata) || (o.MetadataRefreshMode == MetadataRefreshMode.Default && !o.ReplaceAllMetadata && remoteMetadata);
+        return remoteMetadata && remoteImages && replaceTitle;
+    }
+
+    [Fact]
+    public void AHydrationAsksJellyfinForRemoteMetadataAndImagesInFullWithTheTitleReplacedAtHighPriorityNeverForALibrary()
+    {
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Path = Almanac, Name = "Project Almanac (2015) {tmdb-227719}" };
+        var series = new Series { Id = Guid.NewGuid(), Path = "/media/tv/Spaced (1999)", Name = "Spaced (1999)" };
+        var root = new Folder { Id = Guid.NewGuid(), Path = "/media/tv" };
+        var collection = new CollectionFolder { Id = Guid.NewGuid(), Path = "/config/root/default/Shows" };
+        var items = new BaseItem[] { movie, series, root, collection }.ToDictionary(i => i.Id);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.GetValueOrDefault(id));
+        library.Setup(l => l.GetVirtualFolders()).Returns(new List<MediaBrowser.Model.Entities.VirtualFolderInfo> { new() { ItemId = collection.Id.ToString("N"), Locations = new[] { "/media/tv", "/media/movies" } } });
+        var queued = new List<(Guid Id, MetadataRefreshOptions Options, RefreshPriority Priority)>();
+        var providers = new Mock<IProviderManager>();
+        providers.Setup(p => p.QueueRefresh(It.IsAny<Guid>(), It.IsAny<MetadataRefreshOptions>(), It.IsAny<RefreshPriority>()))
+            .Callback((Guid id, MetadataRefreshOptions o, RefreshPriority priority) => queued.Add((id, o, priority)));
+        var access = new JellyfinLibraryAccess(library.Object, providers.Object, Mock.Of<IFileSystem>(), Mock.Of<ITaskManager>(), Mock.Of<ILibraryMonitor>());
+
+        Assert.True(access.QueueHydration(movie.Id, HydrationScope.Item));
+        var (id, options, priority) = Assert.Single(queued);
+        Assert.Equal((movie.Id, RefreshPriority.High), (id, priority));
+        Assert.Equal((MetadataRefreshMode.FullRefresh, MetadataRefreshMode.FullRefresh, true, false, false), (options.MetadataRefreshMode, options.ImageRefreshMode, options.ReplaceAllMetadata, options.ReplaceAllImages, options.RemoveOldMetadata));
+        Assert.True(options.RefreshPaths == null || options.RefreshPaths.Length == 0);
+        // Under Jellyfin 12.2's rules the hydration's options repair the stamped skeleton; the weaker ones don't.
+        Assert.True(RepairsStampedSkeleton(options));
+        var directory = Mock.Of<IDirectoryService>();
+        // FullRefresh metadata with default images (the old new-series follow-up): TMDB artwork is skipped.
+        Assert.False(RepairsStampedSkeleton(new MetadataRefreshOptions(directory) { MetadataRefreshMode = MetadataRefreshMode.FullRefresh, ImageRefreshMode = MetadataRefreshMode.Default, ReplaceAllMetadata = true }));
+        // FullRefresh without replacing: the raw folder name (non-empty) is kept.
+        Assert.False(RepairsStampedSkeleton(new MetadataRefreshOptions(directory) { MetadataRefreshMode = MetadataRefreshMode.FullRefresh, ImageRefreshMode = MetadataRefreshMode.FullRefresh }));
+        // A default refresh (a library scan, the old file re-read): nothing remote at all for a stamped item.
+        Assert.False(RepairsStampedSkeleton(new MetadataRefreshOptions(directory)));
+
+        // A series tree only for a series; never a library's folder or a collection folder, nor a folder as one item.
+        Assert.True(access.QueueHydration(series.Id, HydrationScope.SeriesTree));
+        Assert.False(access.QueueHydration(root.Id, HydrationScope.SeriesTree));
+        Assert.False(access.QueueHydration(root.Id, HydrationScope.ItemOnly));
+        Assert.False(access.QueueHydration(collection.Id, HydrationScope.SeriesTree));
+        Assert.False(access.QueueHydration(series.Id, HydrationScope.Item));
+        Assert.False(access.QueueHydration(movie.Id, HydrationScope.SeriesTree));
+        Assert.False(access.QueueHydration(Guid.NewGuid(), HydrationScope.Item));
+        Assert.Equal(new[] { movie.Id, series.Id }, queued.Select(q => q.Id));
+        Assert.All(queued, q => Assert.Equal(RefreshPriority.High, q.Priority));
+    }
+
+    [Fact]
+    public void TheRealAccessReadsBackAMovieAsItsFolderNameUntilAProviderFilledIt()
+    {
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Path = Almanac, Name = "Project Almanac (2015) {tmdb-227719}", RunTimeTicks = 10, DateLastRefreshed = DateTime.UtcNow };
+        MediaBrowser.Model.Entities.ProviderIdsExtensions.SetProviderId(movie, MediaBrowser.Model.Entities.MetadataProvider.Tmdb, "227719");
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
+        var access = new JellyfinLibraryAccess(library.Object, Mock.Of<IProviderManager>(), Mock.Of<IFileSystem>(), Mock.Of<ITaskManager>(), Mock.Of<ILibraryMonitor>());
+        var facts = access.ReadFacts(movie.Id)!;
+        Assert.Equal(("movie", true, true, false, false), (facts.Kind, facts.HasProviderIds, facts.Probed, facts.HasOverview, facts.HasPrimary));
+        Assert.NotNull(facts.LastRefreshed);
+        // A provider id parsed from the folder name proves nothing: still a skeleton.
+        Assert.True(BridgeHydration.Judge(facts).Skeletal);
+        movie.Name = "Project Almanac";
+        movie.Overview = "Teens build a time machine.";
+        movie.SetImage(new MediaBrowser.Controller.Entities.ItemImageInfo { Path = "/config/metadata/poster.jpg", Type = MediaBrowser.Model.Entities.ImageType.Primary }, 0);
+        movie.SetImage(new MediaBrowser.Controller.Entities.ItemImageInfo { Path = "/config/metadata/backdrop.jpg", Type = MediaBrowser.Model.Entities.ImageType.Backdrop }, 0);
+        Assert.True(BridgeHydration.Judge(access.ReadFacts(movie.Id)!).Complete);
+        Assert.Null(access.ReadFacts(Guid.NewGuid()));
     }
 }
