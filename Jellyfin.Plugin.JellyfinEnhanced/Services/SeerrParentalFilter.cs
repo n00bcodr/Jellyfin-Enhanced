@@ -84,17 +84,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Resolved signature per "{mediaType}:{tmdbId}:{region}" — user-neutral.
         // Unresolved = the fetch failed (negative entry, short TTL); Sig with a null
         // Score and Unresolved false = fetched fine but the title is unrated.
-        private readonly ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)> _certCache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)> _certCache = new(StringComparer.Ordinal);
 
         // Titles whose *tag* upgrade recently failed while a good rating-only entry
         // exists: tag-rule callers get "unverified" (hidden) without re-fetching
         // until NegativeCacheTtl passes; rating-only callers are unaffected.
-        private readonly ConcurrentDictionary<string, DateTime> _tagFetchFailedAt = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, DateTime> _tagFetchFailedAt = new(StringComparer.Ordinal);
 
         // Coalesces concurrent fetches of the same title (tag-bearing and
         // rating-only fetches coalesce separately: a rating-only fetch in flight
         // cannot satisfy a caller with tag rules).
-        private readonly ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
         private readonly TimeSpan _overallBudget;
 
         /// <summary>Creates the filter; registered as a singleton so its caches and fetch pool are shared.</summary>
@@ -922,8 +922,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private bool TryGetFreshSignature(string key, bool needTags, out Signature? signature)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             signature = null;
-            if (_certCache.TryGetValue(key, out var cached))
+            if (_certCacheFacts.TryGetValue(key, out var cached))
             {
                 var age = DateTime.UtcNow - cached.CachedAt;
                 if (cached.Unresolved)
@@ -941,14 +942,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (needTags && _tagFetchFailedAt.TryGetValue(key, out var failedAt))
+            if (needTags && _tagFetchFailedAtFacts.TryGetValue(key, out var failedAt))
             {
                 if (DateTime.UtcNow - failedAt < NegativeCacheTtl)
                 {
                     return true; // tag data recently unavailable -> hidden for tag-rule users, no refetch
                 }
 
-                _tagFetchFailedAt.TryRemove(key, out _);
+                _tagFetchFailedAtFacts.TryRemove(key, out _);
             }
 
             return false;
@@ -956,6 +957,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = CacheKey(mediaType, tmdbId, region);
             if (TryGetFreshSignature(key, needTags, out var fresh))
             {
@@ -966,7 +968,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // each caller bounds only its own wait, so one request's budget can't
             // cancel a fetch another request depends on.
             var inFlightKey = needTags ? key + "|tags" : key;
-            var lazy = _inFlight.GetOrAdd(inFlightKey, _ => new Lazy<Task<Signature?>>(
+            var lazy = _inFlightFacts.GetOrAdd(inFlightKey, _ => new Lazy<Task<Signature?>>(
                 () => FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
@@ -988,6 +990,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<Signature?> FetchAndCacheAsync(string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             try
             {
                 JsonElement? detail = null;
@@ -1009,14 +1012,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (needTags)
                     {
-                        _tagFetchFailedAt[key] = now;
+                        _tagFetchFailedAtFacts[key] = now;
                     }
 
                     // Negative entry (retried after NegativeCacheTtl) — unless a fresh
                     // positive entry exists, which a failed *tag* upgrade must not erase:
                     // rating-only users would otherwise lose a title Seerr merely
                     // failed to answer for a moment.
-                    _certCache.AddOrUpdate(
+                    _certCacheFacts.AddOrUpdate(
                         key,
                         _ => (null, true, now),
                         (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < ttl
@@ -1029,7 +1032,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
                 if (hasTagData)
                 {
-                    _tagFetchFailedAt.TryRemove(key, out _);
+                    _tagFetchFailedAtFacts.TryRemove(key, out _);
                 }
 
                 StoreSignature(key, resolved, now, ttl);
@@ -1037,7 +1040,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             finally
             {
-                _inFlight.TryRemove(inFlightKey, out _);
+                _inFlightFacts.TryRemove(inFlightKey, out _);
             }
         }
 
@@ -1052,7 +1055,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private void StoreSignature(string key, Signature resolved, DateTime now, TimeSpan ttl)
         {
-            _certCache.AddOrUpdate(
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            _certCacheFacts.AddOrUpdate(
                 key,
                 _ => (resolved, false, now),
                 (_, current) =>
@@ -1069,6 +1073,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void TrimCache()
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Cheap amortised maintenance: every 500 inserts drop expired entries,
             // and if the cache is still over its hard cap evict the oldest quarter.
             // (Gated on the counter alone: ConcurrentDictionary.Count takes every
@@ -1080,28 +1085,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var now = DateTime.UtcNow;
             var ttl = CacheTtl();
-            foreach (var kv in _certCache)
+            foreach (var kv in _certCacheFacts)
             {
                 var limit = kv.Value.Unresolved ? NegativeCacheTtl : ttl;
                 if (now - kv.Value.CachedAt > limit)
                 {
-                    _certCache.TryRemove(kv.Key, out _);
+                    _certCacheFacts.TryRemove(kv.Key, out _);
                 }
             }
 
-            foreach (var kv in _tagFetchFailedAt)
+            foreach (var kv in _tagFetchFailedAtFacts)
             {
                 if (now - kv.Value > NegativeCacheTtl)
                 {
-                    _tagFetchFailedAt.TryRemove(kv.Key, out _);
+                    _tagFetchFailedAtFacts.TryRemove(kv.Key, out _);
                 }
             }
 
-            if (_certCache.Count >= MaxCacheEntries)
+            if (_certCacheFacts.Count >= MaxCacheEntries)
             {
-                foreach (var kv in _certCache.OrderBy(kv => kv.Value.CachedAt).Take(MaxCacheEntries / 4).ToList())
+                foreach (var kv in _certCacheFacts.OrderBy(kv => kv.Value.CachedAt).Take(MaxCacheEntries / 4).ToList())
                 {
-                    _certCache.TryRemove(kv.Key, out _);
+                    _certCacheFacts.TryRemove(kv.Key, out _);
                 }
             }
         }
@@ -1504,5 +1509,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static string CacheKey(string mediaType, int tmdbId, string region)
             => $"{mediaType}:{tmdbId.ToString(CultureInfo.InvariantCulture)}:{region}";
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)>> _certCacheFactsOwner = new();
+        private ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)> _certCacheFacts { get => _certCacheFactsOwner.Read(ref _certCache, () => new(StringComparer.Ordinal)); set => _certCacheFactsOwner.Store(ref _certCache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _tagFetchFailedAtFactsOwner = new();
+        private ConcurrentDictionary<string, DateTime> _tagFetchFailedAtFacts { get => _tagFetchFailedAtFactsOwner.Read(ref _tagFetchFailedAt, () => new(StringComparer.Ordinal)); set => _tagFetchFailedAtFactsOwner.Store(ref _tagFetchFailedAt, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, Lazy<Task<Signature?>>>> _inFlightFactsOwner = new();
+        private ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlightFacts { get => _inFlightFactsOwner.Read(ref _inFlight, () => new(StringComparer.Ordinal)); set => _inFlightFactsOwner.Store(ref _inFlight, value); }
     }
 }

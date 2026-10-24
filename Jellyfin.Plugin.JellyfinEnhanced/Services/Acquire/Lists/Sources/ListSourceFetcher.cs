@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         private readonly SourceReadLimits _limits;
         private readonly ISourceReadAdmission _admission;
         private readonly SemaphoreSlim _gate;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, CallerBudget> _callers = new(StringComparer.Ordinal);
 
         /// <summary>Creates the fetcher (singleton).</summary>
@@ -171,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <inheritdoc />
         public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Provider switches and credentials are checked before the cache: a provider the admin just turned off stops
             // working at once, and nothing is sent to it.
             if (Unavailable(source, options) is { } unavailable)
@@ -179,7 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var cacheKey = source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
-            if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            if (!options.Fresh && _cacheFacts.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return cached.Result;
             }
@@ -225,7 +226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
                 {
                     PruneCache(result.Items.Count);
-                    _cache[cacheKey] = (readAt + CacheTtl, result);
+                    _cacheFacts[cacheKey] = (readAt + CacheTtl, result);
                 }
                 else if (!result.Ok)
                 {
@@ -538,129 +539,129 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             switch (source.Shape)
             {
                 case "collection":
-                {
-                    var json = await TmdbGetAsync("collection/" + id, string.Empty, key, options, cancellationToken).ConfigureAwait(false);
-                    if (json == null)
                     {
-                        return SourceFetchResult.Fail(source, "not_found", "TMDB has no collection with this id.");
+                        var json = await TmdbGetAsync("collection/" + id, string.Empty, key, options, cancellationToken).ConfigureAwait(false);
+                        if (json == null)
+                        {
+                            return SourceFetchResult.Fail(source, "not_found", "TMDB has no collection with this id.");
+                        }
+
+                        using var doc = JsonDocument.Parse(json);
+                        var read = new SourceRead();
+                        Bind(ResponseContract.TmdbCollection, new AnswerRequest(Id: Number(id)), doc.RootElement, read);
+                        var parts = ListArray(doc.RootElement, "parts").Select(p => read.Row(TmdbRow(p, "movie", "release_date"))).OfType<SourceItem>().ToList();
+                        var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
+                        return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, SourceCompleteness.Whole(read), read);
                     }
 
-                    using var doc = JsonDocument.Parse(json);
-                    var read = new SourceRead();
-                    Bind(ResponseContract.TmdbCollection, new AnswerRequest(Id: Number(id)), doc.RootElement, read);
-                    var parts = ListArray(doc.RootElement, "parts").Select(p => read.Row(TmdbRow(p, "movie", "release_date"))).OfType<SourceItem>().ToList();
-                    var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
-                    return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, SourceCompleteness.Whole(read), read);
-                }
-
                 case "list":
-                {
-                    // Offset pages: an edit while they are read shifts rows between pages. Checked (PageDrift) and read
-                    // once more; still inconsistent → Partial, so a sync adds but never removes on this snapshot. Every
-                    // page reports into the read; SourceCompleteness.OffsetList decides whether the whole list was read.
-                    for (var attempt = 1; ; attempt++)
                     {
-                        var drift = new PageDrift();
-                        var read = new SourceRead();
-                        var items = new List<SourceItem>();
-                        string? title = null;
-                        var total = 0;
-                        for (var page = 1; ; page++)
+                        // Offset pages: an edit while they are read shifts rows between pages. Checked (PageDrift) and read
+                        // once more; still inconsistent → Partial, so a sync adds but never removes on this snapshot. Every
+                        // page reports into the read; SourceCompleteness.OffsetList decides whether the whole list was read.
+                        for (var attempt = 1; ; attempt++)
                         {
-                            var json = await TmdbGetAsync("list/" + id, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false);
-                            if (json == null)
+                            var drift = new PageDrift();
+                            var read = new SourceRead();
+                            var items = new List<SourceItem>();
+                            string? title = null;
+                            var total = 0;
+                            for (var page = 1; ; page++)
                             {
-                                return page == 1 ? SourceFetchResult.Fail(source, "not_found", "TMDB has no public list with this id.") : throw new SourceHttpException("upstream_error", "TMDB stopped answering while reading the list.");
-                            }
-
-                            using var doc = JsonDocument.Parse(json);
-                            // Review round 10 (4c2-R10-1): the page is the list asked for (its `id`) and the page asked for.
-                            Bind(ResponseContract.TmdbListPage, new AnswerRequest(Page: page) { ListId = id }, doc.RootElement, read);
-                            title ??= Str(doc.RootElement, "name");
-                            var itemCount = Int(doc.RootElement, "item_count");
-                            var pages = Int(doc.RootElement, "total_pages");
-                            drift.Total(itemCount);
-                            total = itemCount ?? total;
-                            var rows = ListArray(doc.RootElement, "items").ToList();
-                            foreach (var row in rows)
-                            {
-                                var item = read.Row(TmdbRow(row, null, null));
-                                drift.Row(Str(row, "media_type") is { } mediaType && Int(row, "id") is { } rowId ? mediaType + "|" + rowId.ToString(CultureInfo.InvariantCulture) : item?.Key);
-                                if (item != null)
+                                var json = await TmdbGetAsync("list/" + id, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false);
+                                if (json == null)
                                 {
-                                    items.Add(item);
+                                    return page == 1 ? SourceFetchResult.Fail(source, "not_found", "TMDB has no public list with this id.") : throw new SourceHttpException("upstream_error", "TMDB stopped answering while reading the list.");
+                                }
+
+                                using var doc = JsonDocument.Parse(json);
+                                // Review round 10 (4c2-R10-1): the page is the list asked for (its `id`) and the page asked for.
+                                Bind(ResponseContract.TmdbListPage, new AnswerRequest(Page: page) { ListId = id }, doc.RootElement, read);
+                                title ??= Str(doc.RootElement, "name");
+                                var itemCount = Int(doc.RootElement, "item_count");
+                                var pages = Int(doc.RootElement, "total_pages");
+                                drift.Total(itemCount);
+                                total = itemCount ?? total;
+                                var rows = ListArray(doc.RootElement, "items").ToList();
+                                foreach (var row in rows)
+                                {
+                                    var item = read.Row(TmdbRow(row, null, null));
+                                    drift.Row(Str(row, "media_type") is { } mediaType && Int(row, "id") is { } rowId ? mediaType + "|" + rowId.ToString(CultureInfo.InvariantCulture) : item?.Key);
+                                    if (item != null)
+                                    {
+                                        items.Add(item);
+                                    }
+                                }
+
+                                read.Page(pages, itemCount, answered: Int(doc.RootElement, "page"));
+
+                                if (pages is int last && last >= 0 && page >= last)
+                                {
+                                    drift.End();
+                                    read.Stop(SourceReadEnd.Last);
+                                    break;
+                                }
+
+                                if (pages is not >= 0 || rows.Count == 0)
+                                {
+                                    break; // no page count (or a negative one: review round 9), or an empty page before the last one: stalled
+                                }
+
+                                if (items.Count >= MaxItems)
+                                {
+                                    read.Stop(SourceReadEnd.Cap);
+                                    break;
+                                }
+
+                                if (page >= MaxListPages)
+                                {
+                                    read.Stop(SourceReadEnd.PageLimit);
+                                    break;
                                 }
                             }
 
-                            read.Page(pages, itemCount, answered: Int(doc.RootElement, "page"));
-
-                            if (pages is int last && last >= 0 && page >= last)
+                            if (!drift.Consistent)
                             {
-                                drift.End();
-                                read.Stop(SourceReadEnd.Last);
-                                break;
+                                read.Drift();
                             }
 
-                            if (pages is not >= 0 || rows.Count == 0)
+                            if (drift.Consistent || attempt == 2)
                             {
-                                break; // no page count (or a negative one: review round 9), or an empty page before the last one: stalled
+                                return Done(source, "tmdb", title, items, Math.Max(total, items.Count), SourceCompleteness.OffsetList(read), read);
                             }
 
-                            if (items.Count >= MaxItems)
-                            {
-                                read.Stop(SourceReadEnd.Cap);
-                                break;
-                            }
-
-                            if (page >= MaxListPages)
-                            {
-                                read.Stop(SourceReadEnd.PageLimit);
-                                break;
-                            }
+                            _logger.Debug($"[Lists] TMDB list {id} changed while it was read; reading it again");
                         }
-
-                        if (!drift.Consistent)
-                        {
-                            read.Drift();
-                        }
-
-                        if (drift.Consistent || attempt == 2)
-                        {
-                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), SourceCompleteness.OffsetList(read), read);
-                        }
-
-                        _logger.Debug($"[Lists] TMDB list {id} changed while it was read; reading it again");
                     }
-                }
 
                 default:
-                {
-                    var media = source.Part("media");
-                    var path = source.Shape == "trending"
-                        ? $"trending/{media}/{source.Part("period")}"
-                        : $"{media}/{source.Part("chart").Replace('-', '_')}";
-                    var defaultType = media == "all" ? null : media;
-                    var read = new SourceRead();
-                    var items = new List<SourceItem>();
-                    for (var page = 1; ; page++)
                     {
-                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
-                            ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
-                        using var doc = JsonDocument.Parse(json);
-                        Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);
-                        var rows = ListArray(doc.RootElement, "results").ToList();
-                        var pages = Int(doc.RootElement, "total_pages");
-                        items.AddRange(rows.Select(p => read.Row(TmdbRow(p, defaultType, null))).OfType<SourceItem>().ToList());
-                        read.Page(pages, Int(doc.RootElement, "total_results"), answered: Int(doc.RootElement, "page"));
-                        if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
+                        var media = source.Part("media");
+                        var path = source.Shape == "trending"
+                            ? $"trending/{media}/{source.Part("period")}"
+                            : $"{media}/{source.Part("chart").Replace('-', '_')}";
+                        var defaultType = media == "all" ? null : media;
+                        var read = new SourceRead();
+                        var items = new List<SourceItem>();
+                        for (var page = 1; ; page++)
                         {
-                            break;
+                            var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
+                                ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
+                            using var doc = JsonDocument.Parse(json);
+                            Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);
+                            var rows = ListArray(doc.RootElement, "results").ToList();
+                            var pages = Int(doc.RootElement, "total_pages");
+                            items.AddRange(rows.Select(p => read.Row(TmdbRow(p, defaultType, null))).OfType<SourceItem>().ToList());
+                            read.Page(pages, Int(doc.RootElement, "total_results"), answered: Int(doc.RootElement, "page"));
+                            if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
+                            {
+                                break;
+                            }
                         }
-                    }
 
-                    var chart = items.Take(MaxChartItems).ToList();
-                    return Done(source, "tmdb", null, chart, chart.Count, SourceCompleteness.Chart(read), read);
-                }
+                        var chart = items.Take(MaxChartItems).ToList();
+                        return Done(source, "tmdb", null, chart, chart.Count, SourceCompleteness.Chart(read), read);
+                    }
             }
         }
 
@@ -1125,41 +1126,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             switch (type)
             {
                 case "movie":
-                {
-                    var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
-                    var (tmdb, imdb, _) = TraktIds(movie);
-                    return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
-                }
+                    {
+                        var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
+                        var (tmdb, imdb, _) = TraktIds(movie);
+                        return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
+                    }
 
                 case "show":
-                {
-                    var target = hasShow ? show : element;
-                    var (tmdb, imdb, tvdb) = TraktIds(target);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
-                }
+                    {
+                        var target = hasShow ? show : element;
+                        var (tmdb, imdb, tvdb) = TraktIds(target);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
+                    }
 
                 case "season":
-                {
-                    if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
+                    }
 
                 case "episode":
-                {
-                    if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
-                        || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
+                            || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
+                    }
 
                 default:
                     return SourceRow.Malformed;
@@ -1417,32 +1418,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 case "tvSeries" or "tvMiniSeries":
                     return SourceRow.Of(new SourceItem("tv", null, id, null, title, year, null, null, null));
                 case "tvEpisode":
-                {
-                    if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
-                        || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                     {
-                        return SourceRow.Malformed;
-                    }
-
-                    var showId = ValidImdb(Str(show, "id"));
-                    var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
-                    int? season = null;
-                    int? episode = null;
-                    if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
-                    {
-                        if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                        if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
+                            || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                         {
-                            season = sn;
+                            return SourceRow.Malformed;
                         }
 
-                        if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                        var showId = ValidImdb(Str(show, "id"));
+                        var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
+                        int? season = null;
+                        int? episode = null;
+                        if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
                         {
-                            episode = en;
-                        }
-                    }
+                            if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                            {
+                                season = sn;
+                            }
 
-                    return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
-                }
+                            if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                            {
+                                episode = en;
+                            }
+                        }
+
+                        return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
+                    }
 
                 case "movie" or "tvMovie" or "short" or "tvShort" or "video" or "tvSpecial":
                     return SourceRow.Of(new SourceItem("movie", null, id, null, title, year, null, null, null));
@@ -1836,15 +1837,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // the entry budgets hold (F29: a stream of distinct URLs can't grow the cache without bound).
         private void PruneCache(int incoming)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
             var count = 0;
             var items = incoming;
             var live = new List<KeyValuePair<string, (DateTime ExpiresUtc, SourceFetchResult Result)>>();
-            foreach (var entry in _cache)
+            foreach (var entry in _cacheFacts)
             {
                 if (entry.Value.ExpiresUtc <= now)
                 {
-                    _cache.TryRemove(entry.Key, out _);
+                    _cacheFacts.TryRemove(entry.Key, out _);
                     continue;
                 }
 
@@ -1860,7 +1862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     break;
                 }
 
-                if (_cache.TryRemove(entry.Key, out var removed))
+                if (_cacheFacts.TryRemove(entry.Key, out var removed))
                 {
                     count--;
                     items -= removed.Result.Items.Count;
@@ -2018,5 +2020,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             public int? RetryAfter { get; } = retryAfter;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

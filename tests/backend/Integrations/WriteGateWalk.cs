@@ -148,6 +148,12 @@ internal sealed class WriteGateWalk
     internal SemanticModel ModelOf(SyntaxTree tree) => Model(tree);
 
     private Dictionary<string, List<(SimpleNameSyntax Name, SyntaxTree Tree)>>? _names;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<SyntaxNode, SymbolInfo> _symbolInfo = new();
+
+    // A walk owns one immutable compilation. Expanded memo inventories revisit the same identifiers for
+    // different members/guards; preserve exactly the same binding without repeatedly asking Roslyn to bind it.
+    internal SymbolInfo SymbolAt(SimpleNameSyntax name, SemanticModel model)
+        => _symbolInfo.GetOrAdd(name, node => model.GetSymbolInfo(node));
 
     /// <summary>
     /// Every place <paramref name="member"/> is named in the plugin (by symbol): the whole expression it is part of
@@ -164,7 +170,7 @@ internal sealed class WriteGateWalk
         foreach (var (name, tree) in names)
         {
             var model = Model(tree);
-            var info = model.GetSymbolInfo(name);
+            var info = SymbolAt(name, model);
             var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
             if (symbol is IMethodSymbol { ReducedFrom: { } reduced }) symbol = reduced;
             if (symbol == null || !SymbolEqualityComparer.Default.Equals(symbol.OriginalDefinition, target)) continue;

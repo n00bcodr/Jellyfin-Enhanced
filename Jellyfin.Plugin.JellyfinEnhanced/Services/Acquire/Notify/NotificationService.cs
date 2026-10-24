@@ -87,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly RequestLedger? _ledger;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _titleMeta;
         private readonly IRequestPolicy? _policy;
-        private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
         private readonly RecentArrivals _recentlyAdded;
         private readonly SemaphoreSlim _round = new(1, 1);
         private volatile SeerrFacts.Derived<HashSet<string>> _interest = SeerrFacts.Remember(new HashSet<string>(StringComparer.Ordinal));
@@ -341,6 +341,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private async Task TickAsyncFactsCore(CancellationToken cancellationToken, bool force = false)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!Enabled)
             {
                 NoteAlertsPaused();
@@ -376,7 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     RebuildInterest();
                     lock (_dirtyGate)
                     {
-                        foreach (var key in _interest.Read(new HashSet<string>(StringComparer.Ordinal))) _dirty[key] = 0;
+                        foreach (var key in _interest.Read(new HashSet<string>(StringComparer.Ordinal))) _dirtyFacts[key] = 0;
                         _firstDirty ??= now;
                         _lastDirty = now - QuietDebounce;
                     }
@@ -601,8 +602,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         internal void ScanLedger()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var first = _ledgerCursor == null;
-            if (!first && _ledgerCursor != _storedLedgerCursor && _dirty.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
+            if (!first && _ledgerCursor != _storedLedgerCursor && _dirtyFacts.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
             var after = first ? StoredLedgerCursor() : _ledgerCursor;
             var (cursor, titles) = _ledger!.ChangedTitles(after);
             _ledgerCursor = cursor;
@@ -772,11 +774,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     case NotifyEffect.Leave:
                         return told;
                     case NotifyEffect.Postpone:
-                    {
-                        var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
-                        _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
-                        continue;
-                    }
+                        {
+                            var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
+                            _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
+                            continue;
+                        }
 
                     case NotifyEffect.Suppress:
                         _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
@@ -1814,11 +1816,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         case NotifyEffect.Leave:
                             return false;
                         case NotifyEffect.Postpone:
-                        {
-                            var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id, declinedAt, final.Until!.Value, 0);
-                            _store.InTransaction(tx => tx.AddAlertWait(wait));
-                            break;
-                        }
+                            {
+                                var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id, declinedAt, final.Until!.Value, 0);
+                                _store.InTransaction(tx => tx.AddAlertWait(wait));
+                                break;
+                            }
 
                         case NotifyEffect.Suppress:
                             // Ended: the change is seen with the rest of the list.
@@ -1848,14 +1850,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             case NotifyEffect.Leave:
                                 return false;
                             case NotifyEffect.Postpone:
-                            {
-                                // Seerr's list can't be read now: the ask waits in the wait queue (its own retries, at most a day,
-                                // expiring from the ask's own time), as a Seerr decline does; the change is seen.
-                                var wait = new AlertWait("seerr-ask", server + "|" + r.Id.ToString(CultureInfo.InvariantCulture) + "|" + NotifyValues.Id(admin), admin, NotifyKind.Approval,
-                                    r.Key?.Title.ToString() ?? string.Empty, askKey, JsonSerializer.Serialize(p), r.Id.ToString(CultureInfo.InvariantCulture), askedAt, final.Until!.Value, 0);
-                                _store.InTransaction(tx => tx.AddAlertWait(wait));
-                                break;
-                            }
+                                {
+                                    // Seerr's list can't be read now: the ask waits in the wait queue (its own retries, at most a day,
+                                    // expiring from the ask's own time), as a Seerr decline does; the change is seen.
+                                    var wait = new AlertWait("seerr-ask", server + "|" + r.Id.ToString(CultureInfo.InvariantCulture) + "|" + NotifyValues.Id(admin), admin, NotifyKind.Approval,
+                                        r.Key?.Title.ToString() ?? string.Empty, askKey, JsonSerializer.Serialize(p), r.Id.ToString(CultureInfo.InvariantCulture), askedAt, final.Until!.Value, 0);
+                                    _store.InTransaction(tx => tx.AddAlertWait(wait));
+                                    break;
+                                }
 
                             case NotifyEffect.Suppress:
                                 // Not for this administrator: the change is seen with the rest of the list.
@@ -1921,13 +1923,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private void MarkDirty(IEnumerable<string> titles)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = _now();
             lock (_dirtyGate)
             {
                 var any = false;
                 foreach (var t in titles)
                 {
-                    _dirty[t] = 0;
+                    _dirtyFacts[t] = 0;
                     any = true;
                 }
                 if (!any) return;
@@ -1944,12 +1947,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         private List<string>? TakeDue(DateTimeOffset now, bool force)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_dirtyGate)
             {
                 if (!_firstDirty.HasValue || !(force || now - _lastDirty >= QuietDebounce || now - _firstDirty >= MaxDebounce)) return null;
-                var keys = _dirty.Keys.Take(MaxPerRound).ToList();
-                foreach (var k in keys) _dirty.TryRemove(k, out _);
-                if (_dirty.IsEmpty)
+                var keys = _dirtyFacts.Keys.Take(MaxPerRound).ToList();
+                foreach (var k in keys) _dirtyFacts.TryRemove(k, out _);
+                if (_dirtyFacts.IsEmpty)
                 {
                     AfterTake?.Invoke();
                     _firstDirty = null;
@@ -1965,7 +1969,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>True when changed titles wait for a look and their timer runs (tests).</summary>
         internal bool HasDirty(string title)
         {
-            lock (_dirtyGate) return _dirty.ContainsKey(title) && _firstDirty.HasValue;
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            lock (_dirtyGate) return _dirtyFacts.ContainsKey(title) && _firstDirty.HasValue;
         }
 
         // ================================================================== follows (routes)
@@ -2684,5 +2689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return null;
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, byte>> _dirtyFactsOwner = new();
+        private ConcurrentDictionary<string, byte> _dirtyFacts { get => _dirtyFactsOwner.Read(ref _dirty, () => new(StringComparer.Ordinal)); set => _dirtyFactsOwner.Store(ref _dirty, value); }
     }
 }

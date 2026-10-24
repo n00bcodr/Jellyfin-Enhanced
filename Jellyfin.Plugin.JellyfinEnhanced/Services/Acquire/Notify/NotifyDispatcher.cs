@@ -313,9 +313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
 
             public PluginConfiguration Config { get; }
-
             public NotifyPrefs Prefs { get; }
-
             public DateTimeOffset Now { get; }
         }
 
@@ -355,6 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // it is decided now, not when it was queued.
         private NotifyFinal Outbound(in GateRead read, NotifyAlert alert)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (QuietHours.EndsAt(read.Prefs, read.Now) is { } end) return NotifyFinal.Wait(alert, read.Now, "The recipient's quiet hours.", end);
             var payload = new Dictionary<string, string>(alert.Payload);
             var verdict = Suppression(in read, alert, payload, outbound: true, out var itemId);
@@ -379,6 +378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // settings as they are now.
         private NotifyFinal Display(in GateRead read, NotifyAlert alert)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var payload = new Dictionary<string, string>(alert.Payload);
             if (DisplayReason(in read, alert, payload) is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
             return NotifyFinal.Send(alert, read.Now, payload, alert.ItemId, NotifyTexts.Render(alert.Kind, payload, read.Prefs.HideTitles), null, null, read.Config, read.Prefs);
@@ -449,6 +449,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // A new notification's deliveries, from the person's settings and the channels as they are now.
         private static IReadOnlyList<(string Channel, DateTimeOffset At)> Deliveries(in GateRead read, string kind)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var prefs = read.Prefs;
             var deliveries = new List<(string, DateTimeOffset)>();
             var external = !NotifyKind.IsAdminKind(kind) || prefs.AdminAlerts;
@@ -496,16 +497,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             switch (plan.Alert.Channel)
             {
                 case NotifyChannel.Ntfy:
-                {
-                    var result = await _ntfy.SendAsync(plan.Config!.ArrNtfyServerUrl, plan.Config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), plan.Prefs!.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false);
-                    return (result.Ok, result.Error);
-                }
+                    {
+                        var result = await _ntfy.SendAsync(plan.Config!.ArrNtfyServerUrl, plan.Config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), plan.Prefs!.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false);
+                        return (result.Ok, result.Error);
+                    }
 
                 case NotifyChannel.Email:
-                {
-                    var result = await _email.SendAsync(plan.Config!, plan.Prefs!.EmailAddress!, message, link, SettingsLink(plan.Config), cancellationToken).ConfigureAwait(false);
-                    return (result.Ok, result.Error);
-                }
+                    {
+                        var result = await _email.SendAsync(plan.Config!, plan.Prefs!.EmailAddress!, message, link, SettingsLink(plan.Config), cancellationToken).ConfigureAwait(false);
+                        return (result.Ok, result.Error);
+                    }
 
                 default:
                     return (false, "Unknown channel.");
@@ -605,6 +606,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // which also narrows an episodes payload to what they may be told about).
         private string? DisplayReason(in GateRead read, NotifyAlert alert, Dictionary<string, string> payload)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (_native == null) return "Native messages aren't available on this server.";
             if (!alert.Claimed && _native.Attempted(alert.Delivery)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
             if (read.Now - alert.Queued > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
@@ -710,6 +712,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         private AlertVerdict Suppression(in GateRead read, NotifyAlert alert, Dictionary<string, string> payload, bool outbound, out string? itemId)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             itemId = alert.ItemId;
             var prefs = read.Prefs;
             var kindOff = alert.Kind switch
@@ -884,7 +887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             private readonly NotifyDispatcher _owner;
             private readonly Guid _user;
             private readonly StatusViewer _viewer;
-            private readonly Dictionary<string, Func<Guid, bool>> _titles = new(StringComparer.Ordinal);
+            private Dictionary<string, Func<Guid, bool>> _titles = new(StringComparer.Ordinal);
             private bool _read;
             private Ready.ReadyHides? _rules;
 
@@ -901,17 +904,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             /// </summary>
             public Func<Guid, bool>? Hides(string? titleKey)
             {
-                if (!_read)
+                using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                if (!_readFacts)
                 {
-                    _rules = _owner._native == null ? Ready.ReadyHides.None : _owner._native.Rules(_user);
-                    _read = true;
+                    _rulesFacts = _owner._native == null ? Ready.ReadyHides.None : _owner._native.Rules(_user);
+                    _readFacts = true;
                 }
-                if (_rules is not { } rules) return null;
+                if (_rulesFacts is not { } rules) return null;
                 if (_owner._native == null) return _ => false;
                 var key = titleKey ?? string.Empty;
-                if (_titles.TryGetValue(key, out var check)) return check;
+                if (_titlesFacts.TryGetValue(key, out var check)) return check;
                 if (_owner._native.TitleCheck(_viewer, rules, titleKey) is not { } made) return null;
-                _titles[key] = made;
+                _titlesFacts[key] = made;
                 return made;
             }
 
@@ -1054,11 +1058,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
                 return default;
             }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, Func<Guid, bool>>> _titlesFactsOwner = new();
+            private Dictionary<string, Func<Guid, bool>> _titlesFacts { get => _titlesFactsOwner.Read(ref _titles, () => new(StringComparer.Ordinal)); set => _titlesFactsOwner.Store(ref _titles, value); }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Ready.ReadyHides?> _rulesFactsOwner = new();
+            private Ready.ReadyHides? _rulesFacts { get => _rulesFactsOwner.Read(ref _rules, () => default!); set => _rulesFactsOwner.Store(ref _rules, value); }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<bool> _readFactsOwner = new();
+            private bool _readFacts { get => _readFactsOwner.Read(ref _read, () => default!); set => _readFactsOwner.Store(ref _read, value); }
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>
         private static string? ChannelOff(in GateRead read, string channel)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var config = read.Config;
             var prefs = read.Prefs;
             return channel switch

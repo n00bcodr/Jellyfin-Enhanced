@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
 {
@@ -19,7 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
 
     /// <summary>
     /// Reads live configuration on every check. Version zero adds no restrictions to legacy operations.
-    /// A future central adoption writer can fence, cancel and drain HTTP admissions with TransitionAsync,
+    /// The central configuration writer fences, cancels and drains HTTP admissions with TransitionAsync,
     /// then commit its atomic configuration update; it must not hold ConfigurationLock while draining.
     /// </summary>
     public sealed class EffectiveRequestsBackend : IEffectiveRequestsBackend
@@ -35,8 +36,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         private readonly SemaphoreSlim _transitions = new(1, 1);
         private readonly HashSet<Admission> _active = new();
         private bool _fenced;
+        internal bool FactsFenced => Volatile.Read(ref _fenced);
         private string? _signature;
         private long _epoch;
+        private (string Backend, int Version)? _factsChoice;
         private TaskCompletionSource? _drained;
 
         /// <summary>Creates an owner over a live configuration source (also used by tests).</summary>
@@ -78,9 +81,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         {
             var config = _config();
             var snapshot = Evaluate(config);
+            ObserveFactsChoice(snapshot);
             var signature = $"{snapshot.Backend}|{snapshot.IsolationVersion}|{snapshot.RequestsEnabled}|{config?.JellyseerrEnabled}|{config?.JellyseerrUrls}|{config?.JellyseerrApiKey}";
             if (_signature != signature) { _signature = signature; _epoch++; }
             return snapshot with { Epoch = _epoch };
+        }
+        // One writer-side observation for coordinated adoption and legacy direct configuration replacement.
+        // The registry reads only its volatile clock, so final transport decisions acquire no additional lock.
+        private void ObserveFactsChoice(EffectiveBackendSnapshot snapshot)
+        {
+            var choice = (snapshot.Backend, snapshot.IsolationVersion);
+            if (ReferenceEquals(this, Shared) && _factsChoice is { } previous && previous != choice)
+                UserCacheRegistry.AdvanceFactsGeneration();
+            _factsChoice = choice;
         }
         /// <inheritdoc />
         public BackendDecision CheckSeerr(SeerrUse use, long? expectedEpoch = null)
@@ -137,11 +150,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 var decision = CheckSeerr(use, expectedEpoch);
                 if (!decision.Allowed) LogDenial(use, "admission", decision.Reason!);
                 decision.Demand();
-                var admission = new Admission(this, decision.Epoch, ct);
+                var admission = new Admission(this, decision.Epoch, ct, legacy: Read().IsolationVersion == 0);
                 _active.Add(admission);
                 return admission;
             }
         }
+        // Backend-neutral registry facts use the same drain owner as provider sends. Consuming a local cache
+        // never demands Seerr transport or submission permissions.
+        internal Admission AdmitFacts(long generation, CancellationToken ct)
+        {
+            lock (_gate)
+            {
+                Read();
+                if (_fenced || generation != UserCacheRegistry.FactsGeneration)
+                    throw new BackendDisabledException("configuration_changed");
+                var admission = new Admission(this, generation, ct);
+                _active.Add(admission);
+                return admission;
+            }
+        }
+        internal T CommitFacts<T>(long generation, Func<T> result)
+        {
+            lock (_gate)
+            {
+                Read();
+                if ((_fenced && !SeerrFacts.RetainsFacts) || generation != UserCacheRegistry.FactsGeneration)
+                    throw new BackendDisabledException("configuration_changed");
+                var value = result();
+                Read();
+                if ((_fenced && !SeerrFacts.RetainsFacts) || generation != UserCacheRegistry.FactsGeneration)
+                    throw new BackendDisabledException("configuration_changed");
+                return value;
+            }
+        }
+
         /// <summary>Commits a returned provider result only while its captured backend still owns publication.</summary>
         internal bool TryPublishSeerr(long epoch, Action effect)
         {
@@ -192,15 +234,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         /// Fences admissions, cancels and drains old sends, then calls the central writer's atomic commit.
         /// Cancellation/failure keeps the prior configuration and releases the fence. No global config lock is held here.
         /// </summary>
-        public async Task TransitionAsync(Action commit, CancellationToken ct)
+        public Task TransitionAsync(Action commit, CancellationToken ct) => TransitionAsync(commit, ct, null);
+
+        // Native writers can distinguish unrelated saves under this owner's serialization. Keep this
+        // predicate internal: callers of the public adoption seam always fence, cancel and drain.
+        internal async Task TransitionAsync(Action commit, CancellationToken ct, Func<bool>? requiresDrain)
         {
             await _transitions.WaitAsync(ct).ConfigureAwait(false);
             try
             {
+                // Native unrelated saves retain version-zero send semantics. Decide under the writer's
+                // serialization, outside the backend monitor; only isolation transitions need to interrupt admitted legacy sends.
+                if (requiresDrain != null && !requiresDrain())
+                {
+                    ct.ThrowIfCancellationRequested();
+                    commit();
+                    lock (_gate) Read();
+                    return;
+                }
                 Admission[] active;
                 Task drain;
                 lock (_gate)
                 {
+                    Read();
                     _fenced = true;
                     active = new Admission[_active.Count]; _active.CopyTo(active);
                     drain = active.Length == 0 ? Task.CompletedTask : (_drained = new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
@@ -221,7 +277,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             private readonly EffectiveRequestsBackend _owner;
             private readonly CancellationTokenSource _cancel;
             private bool _disposed;
-            internal Admission(EffectiveRequestsBackend owner, long epoch, CancellationToken ct) { _owner = owner; Epoch = epoch; _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct); }
+            internal bool Legacy { get; }
+            internal Admission(EffectiveRequestsBackend owner, long epoch, CancellationToken ct, bool legacy = false) { _owner = owner; Epoch = epoch; Legacy = legacy; _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct); }
             public long Epoch { get; }
             public CancellationToken Token => _cancel.Token;
             internal void Cancel() { try { _cancel.Cancel(); } catch (ObjectDisposedException) { /* A completed send has already drained. */ } }

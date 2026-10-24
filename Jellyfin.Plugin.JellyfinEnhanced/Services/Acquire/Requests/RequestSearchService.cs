@@ -31,7 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly RequestService _requests;
         private readonly ArrManageService _manage;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<string, DateTimeOffset> _last = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, DateTimeOffset> _last = new(StringComparer.Ordinal);
 
         /// <summary>Creates the service.</summary>
         /// <param name="requests">Request service (policy, ledger).</param>
@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="pages">Synthetic absent pages (a press from one is checked as that page).</param>
         public async Task<(RequestOutcome Outcome, bool? Found)> SearchAsync(StatusViewer viewer, string? key, string? idempotencyKey, CancellationToken ct, PressIntent? expect = null, IAbsentTitlePages? pages = null)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (TitleKey.Parse(key) is not { } scope || (!scope.IsMovie && (scope.Season is < 0 || scope.Episode is < 1 || (scope.Episode != null && scope.Season == null))))
                 return (RequestOutcome.Refused("invalid_input", 400), null);
             if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 64)
@@ -81,7 +82,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? new MutationInput { Key = scope.Title.ToString() }
                 : new MutationInput
                 {
-                    Key = scope.Title.ToString(), Scope = "episodes",
+                    Key = scope.Title.ToString(),
+                    Scope = "episodes",
                     Episodes = part != null ? part.Episodes.Select(e => new RequestEpisode(e.Season, e.Episode)).ToArray()
                         : new[] { new RequestEpisode(scope.Season ?? 1, scope.Episode ?? 1) },
                 });
@@ -160,9 +162,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? part.Episodes.Select(e => (Slot: title.WithEpisode(e.Season, e.Episode).ToString(), Id: (int?)e.Id, Episode: (int?)e.Episode)).ToList()
                 : new List<(string Slot, int? Id, int? Episode)> { ((scope.IsMovie ? title : title.WithEpisode(scope.Season!.Value, scope.Episode!.Value)).ToString(), null, scope.Episode) };
             // Slots of searches older than any looking period are spent: drop them so the map stays small.
-            if (_last.Count > MaxSlots)
+            if (_lastFacts.Count > MaxSlots)
             {
-                foreach (var old in _last.Where(x => now - x.Value >= TimeSpan.FromHours(720))) _last.TryRemove(old);
+                foreach (var old in _lastFacts.Where(x => now - x.Value >= TimeSpan.FromHours(720))) _lastFacts.TryRemove(old);
             }
             var claimed = parts.Where(p => Claim(p.Slot, now, hours)).ToList();
             if (claimed.Count == 0)
@@ -173,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // started, the search runs to the end on its own).
             void Release()
             {
-                foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
+                foreach (var p in claimed) _lastFacts.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
             }
             // Right before the command (after the arr reads): the season page's press worked out again (without one, the viewer
             // the candidates were chosen for must still be the viewer as Jellyfin has them now), and a sent request still covers
@@ -218,19 +220,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Whether a part was searched within this "still looking" period (a peek; <see cref="Claim"/> decides).</summary>
         private bool Searched(string slot, DateTimeOffset now, int hours)
-            => _last.TryGetValue(slot, out var at) && now - at < TimeSpan.FromHours(hours);
-
+        {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _lastFacts.TryGetValue(slot, out var at) && now - at < TimeSpan.FromHours(hours);
+        }
         /// <summary>Takes a part's search slot for this "still looking" period; false when it was searched within it.</summary>
         private bool Claim(string slot, DateTimeOffset now, int hours)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             while (true)
             {
-                if (_last.TryGetValue(slot, out var at))
+                if (_lastFacts.TryGetValue(slot, out var at))
                 {
                     if (now - at < TimeSpan.FromHours(hours)) return false;
-                    if (_last.TryUpdate(slot, now, at)) return true;
+                    if (_lastFacts.TryUpdate(slot, now, at)) return true;
                 }
-                else if (_last.TryAdd(slot, now))
+                else if (_lastFacts.TryAdd(slot, now))
                 {
                     return true;
                 }
@@ -239,5 +244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private static RequestOutcome Skipped(string reason, string message)
             => new() { Outcome = "skipped", Reason = reason, Certainty = ArrActionStatus.Rejected, Message = message, HttpStatus = 200 };
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTimeOffset>> _lastFactsOwner = new();
+        private ConcurrentDictionary<string, DateTimeOffset> _lastFacts { get => _lastFactsOwner.Read(ref _last, () => new(StringComparer.Ordinal)); set => _lastFactsOwner.Store(ref _last, value); }
     }
 }

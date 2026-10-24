@@ -33,6 +33,8 @@ internal static partial class UserCacheScan
         "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<",
         "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.PreparedCache<",
         "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Derived<",
+        "Jellyfin.Plugin.JellyfinEnhanced.Helpers.RegisteredCache<",
+        "Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<",
         "System.Collections.Concurrent.",
         "System.Collections.Generic.Dictionary<",
         "System.Collections.Generic.SortedDictionary<",
@@ -66,6 +68,7 @@ internal static partial class UserCacheScan
     // Always state, whatever the declaration says: made to be written at run time.
     private static readonly string[] Mutable =
     [
+        "Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<",
         "System.Collections.Concurrent.",
         "System.Runtime.CompilerServices.ConditionalWeakTable<",
         "System.Lazy<",
@@ -115,7 +118,7 @@ internal static partial class UserCacheScan
                         }
 
                         break;
-                    case PropertyDeclarationSyntax property when model.GetDeclaredSymbol(property) is IPropertySymbol symbol && Auto(property)
+                    case PropertyDeclarationSyntax property when model.GetDeclaredSymbol(property) is IPropertySymbol { IsAbstract: false } symbol && Auto(property)
                         && symbol.SetMethod is not { DeclaredAccessibility: Accessibility.Public or Accessibility.Internal } && symbol.SetMethod is not { IsInitOnly: true }:
                         if (Holds(plugin, symbol, symbol.Type, symbol.SetMethod == null, property.Initializer?.Value)) found.Add(Of(symbol, symbol.Type, property));
                         break;
@@ -231,7 +234,8 @@ internal static partial class UserCacheScan
         var file = Path.GetRelativePath(Path.Combine(root, "Jellyfin.Plugin.JellyfinEnhanced"), span.Path).Replace(Path.DirectorySeparatorChar, '/');
         // The helper itself (a type nested in it, like its own storage, isn't).
         var stamped = Is(type, Helper) && type is not INamedTypeSymbol { ContainingType: not null };
-        var written = Is(type, WrittenState) && type is not INamedTypeSymbol { ContainingType: not null };
+        var written = Is(type, WrittenState) && type is not INamedTypeSymbol { ContainingType: not null }
+            || Is(type, "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.PreparedCache<");
         return new Cache(Name(symbol), type.ToDisplayString(), file + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), stamped)
         {
             Ticketed = stamped || written,
@@ -256,12 +260,42 @@ internal static partial class UserCacheScan
         // service, not state).
         if (!state && !readOnly && type.TypeKind is not (TypeKind.Interface or TypeKind.Delegate) && Named(member.Name)) return true;
         // A snapshot swapped whole: a mutable field of one of the plugin's own types that holds a collection.
+        if (!state && MemoRecord(type)) return true;
+        if (!state && type.SpecialType == SpecialType.System_Object && !readOnly && Written(plugin, member)) return true;
         if (!state && !readOnly && Snapshot(type)) return true;
+        // A plain-typed verdict/identity/freshness memo is still stored state. Do not infer provenance from its name.
+        if (!state && ScalarMemo(type) && (!readOnly && Written(plugin, member) || readOnly && PreparedScalar(plugin, member))) return true;
         if (!state) return type is IArrayTypeSymbol && !readOnly && Written(plugin, member);
         if (Contains(type, Mutable)) return true;
         if (!readOnly) return true;
         if (Only(type, ReadOnlyViews)) return false;
         return Written(plugin, member);
+    }
+
+    private static bool PreparedScalar(WriteGateWalk plugin, ISymbol member)
+    {
+        if (member is not IFieldSymbol field) return false;
+        var syntax = field.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).OfType<VariableDeclaratorSyntax>().FirstOrDefault();
+        if (syntax?.Initializer?.Value is { } initial && initial is not (LiteralExpressionSyntax or DefaultExpressionSyntax)) return true;
+        return Names(plugin, member).Any(n => n.Name.Ancestors().OfType<AssignmentExpressionSyntax>().Any(a =>
+            a.Left.Span.Contains(n.Name.Span) && a.Ancestors().OfType<ConstructorDeclarationSyntax>().Any()));
+    }
+
+    private static bool ScalarMemo(ITypeSymbol type)
+        => type.IsValueType || type.SpecialType == SpecialType.System_String;
+
+    // A scalar/record memo still retains facts across operations, even if it contains no collection or viewer id.
+    private static bool MemoRecord(ITypeSymbol type) => DataValue(type, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default));
+
+    private static bool DataValue(ITypeSymbol type, HashSet<ITypeSymbol> seen)
+    {
+        if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable) type = nullable.TypeArguments[0];
+        if (type is not INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct } named || named.DeclaringSyntaxReferences.Length == 0) return false;
+        if (named.IsRecord) return true;
+        if (!seen.Add(type)) return false;
+        // A passive plain-class DTO is a memo too; changing 'record' to 'class' must not remove its fence.
+        var fields = named.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic).ToArray();
+        return fields.Length > 0 && fields.All(f => ScalarMemo(f.Type) || f.Type is IArrayTypeSymbol || Contains(f.Type, Containers) || DataValue(f.Type, seen));
     }
 
     // One of the plugin's own classes, records or structs with a field or auto-property that holds a collection.
@@ -309,7 +343,7 @@ internal static partial class UserCacheScan
         if (!_names.TryGetValue(member.Name, out var names)) yield break;
         foreach (var (name, model) in names)
         {
-            var symbol = model.GetSymbolInfo(name).Symbol;
+            var symbol = plugin.SymbolAt(name, model).Symbol;
             if (symbol != null && SymbolEqualityComparer.Default.Equals(symbol.OriginalDefinition, member.OriginalDefinition)) yield return (name, model);
         }
     }

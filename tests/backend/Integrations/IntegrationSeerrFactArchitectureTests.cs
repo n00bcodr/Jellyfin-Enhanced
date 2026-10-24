@@ -42,6 +42,20 @@ public class IntegrationSeerrFactArchitectureTests
         // Escape carriers are recursive: Task/ValueTask, delegates, collections and object/interface boxes.
         // This is a guard against accidental API escape, not against hostile private reflection.
         Assert.Empty(RawEscapes(owner, raw, forbidden));
+        // Retain the original seven effect-owner presence checks as additional static coverage.
+        // Registry closure and runtime effect tests supplement these checks; they do not replace them.
+        foreach (var (typeName, methodName) in new[]
+        {
+            ("Notify.NotificationService", "TickAsync"), ("Notify.NotificationService", "EvaluateAsync"),
+            ("Notify.NotifyDispatcher", "RunOnceAsync"), ("Ready.ReadyPlaylistService", "ReconcileLockedAsync"),
+            ("Stamps.AcquisitionStampFeeder", "TickAsync"), ("Stamps.AcquisitionStampFeeder", "Judge"),
+            ("Requests.FutureSeasonCharges", "FollowSeerrAsync"),
+        })
+        {
+            var type = Plugin.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire." + typeName)!;
+            var method = type.GetMethods(Declared).Single(m => m.Name == methodName);
+            Assert.Contains(PrivacyOutputPathScan.Referenced(method), reference => reference.DeclaringType == owner && reference.Name is "BackgroundAsync" or "Process");
+        }
         // Cache handles may be held by callers, but their raw storage remains private to the owner.
         foreach (var cache in owner.GetNestedTypes(BindingFlags.NonPublic).Where(t => t.Name.StartsWith("Cache`", StringComparison.Ordinal) || t.Name.StartsWith("PreparedCache`", StringComparison.Ordinal)))
             Assert.All(cache.GetFields(Declared), f => Assert.True(f.IsPrivate, cache + "." + f.Name));
@@ -72,8 +86,8 @@ public class IntegrationSeerrFactArchitectureTests
                 if (reference is MethodBase called && Inside(called.DeclaringType, owner) && TouchesRaw(called, seen)) return true;
             }
             // Async bodies live in their state machine's MoveNext; lambda bodies are followed above.
-            var state = method.GetCustomAttribute<System.Runtime.CompilerServices.AsyncStateMachineAttribute>()?.StateMachineType;
-            return state?.GetMethod("MoveNext", Declared) is { } move && TouchesRaw(move, seen);
+            return method.GetCustomAttributes<System.Runtime.CompilerServices.StateMachineAttribute>()
+                .Any(state => state.StateMachineType.GetMethod("MoveNext", Declared) is { } move && TouchesRaw(move, seen));
         }
         return owner.GetMethods(Declared).Where(m => !m.IsPrivate && Carrier(m.ReturnType, raw) && TouchesRaw(m, new()))
             .Select(m => m.Name).ToArray();
@@ -90,6 +104,8 @@ public class IntegrationSeerrFactArchitectureTests
             public sealed class Facade {
                 private sealed class Raw : IFacts { }
                 private readonly Raw _model = new();
+                internal IEnumerable<IFacts> Iterator() { yield return _model; }
+                internal IEnumerable<int> SafeEnumerable() { yield return _model.GetHashCode(); }
                 internal IFacts Direct() => _model;
                 internal object Object() => _model;
                 internal Task<IFacts> Task() => System.Threading.Tasks.Task.FromResult<IFacts>(_model);
@@ -117,7 +133,7 @@ public class IntegrationSeerrFactArchitectureTests
         var assembly = Assembly.Load(bytes.ToArray());
         var owner = assembly.GetType("Facade")!;
         var raw = new HashSet<Type> { owner.GetNestedType("Raw", BindingFlags.NonPublic)! };
-        Assert.Equal(new[] { "Async", "Carrier", "Collection", "Delegate", "Direct", "Generic", "Helper", "Object", "Task", "ValueTask" },
+        Assert.Equal(new[] { "Async", "Carrier", "Collection", "Delegate", "Direct", "Generic", "Helper", "Iterator", "Object", "Task", "ValueTask" },
             RawEscapes(owner, raw, raw).OrderBy(n => n, StringComparer.Ordinal));
     }
 

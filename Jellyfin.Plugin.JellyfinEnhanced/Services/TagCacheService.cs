@@ -34,8 +34,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Memo for LanguageIdentity: a library uses a few dozen distinct codes,
         // and the culture lookup behind it is a linear scan.
-        private readonly ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
-        private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
+        private ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
 
         /// <summary>
@@ -498,8 +498,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public long Version => Interlocked.Read(ref _version);
         public long LastModified => Interlocked.Read(ref _lastModified);
-        public int Count => _cache.Count;
-
+        public int Count
+        {
+            get
+            {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                return _cacheFacts.Count;
+            }
+        }
         private string CacheFilePath =>
             Path.Combine(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tag-cache.json");
 
@@ -586,6 +592,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -714,7 +721,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 lock (_publishLock)
                 {
                     _cacheReleased = false;
-                    _cache = newCache;
+                    _cacheFacts = newCache;
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
@@ -729,7 +736,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             progress?.Report(100);
 
             sw.Stop();
-            _logger.Info($"[TagCache] Full cache build complete: {_cache.Count} entries in {sw.Elapsed.TotalSeconds:F1}s");
+            _logger.Info($"[TagCache] Full cache build complete: {_cacheFacts.Count} entries in {sw.Elapsed.TotalSeconds:F1}s");
 
             SaveToDisk();
         }
@@ -754,6 +761,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void ReconcileCacheCore(IProgress<double>? progress, CancellationToken cancellationToken)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var reconciliationStartedUtc = DateTime.UtcNow;
             var previousTicks = Interlocked.Read(ref _lastReconciledUtcTicks);
 
@@ -761,7 +769,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // few entries" (e.g. from any stray incremental work) must not be
             // mistaken for a complete cache — a delta reconcile of it would serve
             // a near-empty library as if whole.
-            if (_cacheReleased || _cache.IsEmpty)
+            if (_cacheReleased || _cacheFacts.IsEmpty)
             {
                 _logger.Info("[TagCache] Cache is empty; running full build");
                 BuildFullCacheCore(progress, cancellationToken, reconciliationStartedUtc);
@@ -874,7 +882,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // never get their parent repair, with no version bump to make
             // delta-polling clients drop them.
             var keysToSweep = new List<string>();
-            foreach (var cachedKey in _cache.Keys)
+            foreach (var cachedKey in _cacheFacts.Keys)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -1265,6 +1273,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var item = _libraryManager.GetItemById<BaseItem>(id);
             if (item == null) return false; // gone before we processed it; ItemRemoved cleans up
 
@@ -1288,7 +1297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // every scan re-serialize the entire cache to disk every ~30s for the
             // scan's duration. Keeping the existing entry also preserves its
             // LastUpdated stamp, so delta requests (?since=) correctly skip it.
-            if (_cache.TryGetValue(key, out var existing) && TagCacheEntry.ContentEquals(existing, entry))
+            if (_cacheFacts.TryGetValue(key, out var existing) && TagCacheEntry.ContentEquals(existing, entry))
             {
                 return false;
             }
@@ -1307,7 +1316,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private void StoreEntry(string key, TagCacheEntry entry)
         {
-            _cache[key] = entry;
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            _cacheFacts[key] = entry;
             Interlocked.Increment(ref _mutationEpoch);
         }
 
@@ -1318,7 +1328,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private bool TryRemoveEntry(string key, out TagCacheEntry? removed)
         {
-            if (!_cache.TryRemove(key, out removed)) return false;
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (!_cacheFacts.TryRemove(key, out removed)) return false;
             Interlocked.Increment(ref _mutationEpoch);
             return true;
         }
@@ -1587,6 +1598,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private CacheGeneration CaptureGeneration(out bool live)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_publishLock)
             {
                 live = ServerModeEnabled && !_cacheReleased;
@@ -1600,7 +1612,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // still be served, but never short-circuited or shared.
                 var epoch = Interlocked.Read(ref _mutationEpoch);
                 var quiescent = Interlocked.CompareExchange(ref _inPlaceWriters, 0, 0) == 0;
-                var cache = _cache;
+                var cache = _cacheFacts;
                 var version = Interlocked.Read(ref _version);
                 var timestamp = Interlocked.Read(ref _lastModified);
                 var maxLastUpdated = Interlocked.Read(ref _maxLastUpdated);
@@ -1845,9 +1857,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public bool TryGetEntry(Guid itemId, out TagCacheEntry entry)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             entry = null!;
             if (!ServerModeEnabled || _cacheReleased) return false;
-            var cache = _cache; // one volatile read of the current generation
+            var cache = _cacheFacts; // one volatile read of the current generation
             if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
             entry = found;
             return true;
@@ -1927,6 +1940,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         internal void OnServerModeDisabled()
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _rebuildLock.Wait();
             try
             {
@@ -1949,7 +1963,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     lock (_publishLock)
                     {
                         _cacheReleased = true;
-                        _cache = new ConcurrentDictionary<string, TagCacheEntry>();
+                        _cacheFacts = new ConcurrentDictionary<string, TagCacheEntry>();
                         Interlocked.Exchange(ref _maxLastUpdated, 0);
                         Interlocked.Increment(ref _mutationEpoch);
                         ClearSerializedItems();
@@ -1978,7 +1992,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         internal void OnServerModeEnabled()
         {
-            if (_cacheReleased || _cache.IsEmpty)
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (_cacheReleased || _cacheFacts.IsEmpty)
             {
                 LoadFromDisk();
             }
@@ -2009,6 +2024,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void LoadFromDiskCore()
         {
+            using var __factsOperation10 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var path = CacheFilePath;
             if (!File.Exists(path))
             {
@@ -2059,7 +2075,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         lock (_publishLock)
                         {
                             _cacheReleased = false;
-                            _cache = loaded;
+                            _cacheFacts = loaded;
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
@@ -2074,7 +2090,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _logger.Info($"[TagCache] On-disk cache has no reconciliation marker; using cache file timestamp {new DateTime(reconciledTicks, DateTimeKind.Utc):O}");
                     }
                     Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciledTicks);
-                    _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
+                    _logger.Info($"[TagCache] Loaded {_cacheFacts.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
             catch (Exception ex)
@@ -2088,6 +2104,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void SaveToDisk()
         {
+            using var __factsOperation11 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_saveLock)
             {
                 // Released cache must never reach disk: a save timer that passed
@@ -2120,7 +2137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
-                        Items = new Dictionary<string, TagCacheEntry>(_cache)
+                        Items = new Dictionary<string, TagCacheEntry>(_cacheFacts)
                     };
 
                     // Serialize straight to the temp file: building the whole
@@ -2134,7 +2151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     File.Move(tempPath, CacheFilePath, overwrite: true);
 
-                    _logger.Info($"[TagCache] Saved {_cache.Count} entries to disk");
+                    _logger.Info($"[TagCache] Saved {_cacheFacts.Count} entries to disk");
                 }
                 catch (Exception ex)
                 {
@@ -2665,6 +2682,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItem container,
             EpisodeScanMemo? episodeScans)
         {
+            using var __factsOperation12 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Union keeps insertion order (deterministic for a stable library), so
             // the order-sensitive ContentEquals compare stays no-op on re-saves.
             var union = new HashSet<string>();
@@ -2716,7 +2734,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else if (episodeScans?.Pending != null
                             && !episodeScans.Pending.Contains(episode.Id)
-                            && _cache.TryGetValue(episode.Id.ToString("N"), out var cached)
+                            && _cacheFacts.TryGetValue(episode.Id.ToString("N"), out var cached)
                             && string.Equals(cached.Type, "Episode", StringComparison.Ordinal))
                         {
                             // Same "has streams" rule as the episode's own build: its
@@ -3054,7 +3072,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private string LanguageIdentity(string code)
         {
-            return _languageIdentities.GetOrAdd(code, static (raw, localization) =>
+            using var __factsOperation13 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _languageIdentitiesFacts.GetOrAdd(code, static (raw, localization) =>
             {
                 var lowered = raw.ToLowerInvariant();
                 var dash = lowered.IndexOf('-');
@@ -3135,6 +3154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private string[] GetCollectionLanguages(BaseItem collection)
         {
+            using var __factsOperation14 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             try
             {
                 if (collection is not Folder folder) return Array.Empty<string>();
@@ -3152,7 +3172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         // Series entries are built after BoxSets in a full build, so
                         // fall back to scanning the episodes when it isn't cached yet.
-                        if (_cache.TryGetValue(member.Id.ToString("N").ToLowerInvariant(), out var seriesEntry)
+                        if (_cacheFacts.TryGetValue(member.Id.ToString("N").ToLowerInvariant(), out var seriesEntry)
                             && seriesEntry.AudioLanguages != null)
                         {
                             foreach (var lang in seriesEntry.AudioLanguages) languages.Add(lang);
@@ -3215,5 +3235,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public long LastReconciledUtcTicks { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, TagCacheEntry>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, TagCacheEntry> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new()); set => _cacheFactsOwner.Store(ref _cache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, string>> _languageIdentitiesFactsOwner = new();
+        private ConcurrentDictionary<string, string> _languageIdentitiesFacts { get => _languageIdentitiesFactsOwner.Read(ref _languageIdentities, () => new(StringComparer.Ordinal)); set => _languageIdentitiesFactsOwner.Store(ref _languageIdentities, value); }
     }
 }

@@ -24,7 +24,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                     || route.StartsWith("acquire/migration/seerr", StringComparison.OrdinalIgnoreCase)));
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            using var publication = SeerrFacts.BeginPublication();
+            // Configuration writers return the configuration they just committed. Their cache invalidation
+            // must not enlist the old generation into that acknowledgement; readers still use the scope below.
+            if ((context.ActionDescriptor is ControllerActionDescriptor configurationAction
+                && configurationAction.MethodInfo.DeclaringType == typeof(Controllers.ConfigurationPatchController)
+                && configurationAction.MethodInfo.Name == nameof(Controllers.ConfigurationPatchController.Patch))
+                || HostConfigurationRouteFilter.IsJeConfigurationSave(context))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
             var seerrOnly = context.ActionDescriptor is ControllerActionDescriptor action && IsSeerrAction(action);
             var captured = _backend.CheckSeerr(SeerrUse.Diagnostics);
             void Deny(string reason)
@@ -34,9 +43,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 context.Result = new ObjectResult(new { code = reason, error = true }) { StatusCode = 409 };
             }
             if (seerrOnly && !captured.Allowed) { Deny(captured.Reason!); return; }
+            using var publication = SeerrFacts.BeginPublication();
             try
             {
                 var executed = await next().ConfigureAwait(false);
+                // A route name cannot certify an acknowledgement: require the actual service's completed
+                // durable history result. An uncommitted/synthetic result still takes every old-reader check.
+                if (executed.Result is ObjectResult { Value: Requests.SeerrMigrationReply { CommittedHistory: true } }
+                    && context.ActionDescriptor is ControllerActionDescriptor migrationAction
+                    && migrationAction.MethodInfo.DeclaringType == typeof(Controllers.AcquireMigrationController)
+                    && migrationAction.MethodInfo.Name is nameof(Controllers.AcquireMigrationController.Commit)
+                        or nameof(Controllers.AcquireMigrationController.Rollback)) return;
                 try
                 {
                     if (seerrOnly) _backend.Facts.Publish(captured.Epoch, () => true);

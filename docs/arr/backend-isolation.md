@@ -51,8 +51,9 @@ Adoption into version 1 still rejects that old work.
 Admin logs identify denied producers and projection failure categories without connection or person data;
 repeated diagnostic categories are limited to one per minute.
 
-The backend selector, public capability mapper and atomic adoption workflow are separate integration
-work. Until that workflow lands, the isolation version is a server integration setting; the configuration
+The backend selector, public capability mapper and adoption UI are separate integration
+work. The native configuration writer already uses the shared atomic transition; the isolation version
+remains a server integration setting, and the configuration
 page does not expose an adoption control. Provider and client owners must consume the effective backend
 contract before the complete JE experience can be declared independent of Seerr.
 
@@ -73,8 +74,8 @@ Downstream effects retain the dependency through their actual commit: title iden
 feed, request queueing, fulfilment, and outbox settlement. Adoption drains an admitted effect even when
 it is waiting for the database writer; the backend monitor is released during that wait. A cancelled
 or failed adoption keeps the old configuration and releases the admission fence. Local and arr-only
-work acquires no Seerr admission when it consumes no Seerr facts. Previously committed imported aliases
-remain valid local history.
+work acquires no Seerr admission when it consumes no Seerr facts. Previously accepted request/import identities remain valid local history; incidental Seerr aliases follow
+the persisted-origin rule below.
 
 The fulfilment alias cache keeps the epochs of its original inputs, and list status adapters validate
 the complete multi-read answer. Cached or transformed data cannot become current merely because a
@@ -87,3 +88,41 @@ cache/answer commit. It checks the same owner's epoch without requiring submissi
 An effective-epoch change, including a change away and back, withholds the old result. Derived cache
 handles retain that epoch. A refused optional Seerr read adds no dependency and cannot invalidate a
 fresh neutral bootstrap; dependencies from previously admitted facts are still enforced.
+
+Backend or isolation-version changes also retire the registry's process-wide facts generation. Registered
+answer caches keep the generation of their inputs through the common store/lookup envelope. An old entry
+is a miss and is evicted; an old prepared object is withheld. This covers ordinary transformed values,
+including household-rule facts and Peek, rather than requiring a new check on each reader. Unregistered
+scalar, record and plain-class memos fail the inventory guard. A SeerrFree exemption requires a reason
+and compiled producer checks, including iterator and async state machines. Public TMDB-by-id responses
+remain reusable because they contain independent metadata.
+
+The test assembly can enable taint mode for the complete focused backend selection. Successful Seerr
+handouts mark the enclosing operation, and registry envelopes retain that mark across cache hits. A
+plain store that drops the mark fails the run. Live admissions, writer clocks, fixed defaults and work
+queues have a separate explicit control-state inventory; they are not answer-cache exemptions.
+
+Incidental Seerr-derived aliases on disk carry a process identity and facts generation. The common
+alias read view treats a stale origin as unknown after adoption or restart; it keeps the physical
+history rows. An additive schema-4 extension marks existing incidental aliases conservatively on its
+first open (legacy v0 origins remain usable only in that process and generation). Existing accepted
+requests/acquisitions and aliases proved independently by JE remain durable. Explicit acceptance
+promotes only associations still visible as current proof, so asking under a hidden old alias cannot
+reactivate its retired mapping. A current incidental alias read also carries its dependency into the
+publication and downstream write gate.
+
+Native whole-configuration saves, patches and backup restores share the same serialized transition
+owner. An isolation-version change, or a backend change after adoption, cancels and drains old admissions
+before taking the configuration lock and committing the new generation. A version-zero selector
+save keeps its already-admitted legacy sends and still advances the cache generation; old cache
+entries are retired. An unrelated save keeps existing admissions
+and does not advance the facts generation. Configuration write acknowledgements report the committed
+configuration; ordinary read responses still reject facts consumed under an older generation.
+
+The existing migration commit and rollback use the same transition for their backend switch.
+An import releases its own facts admission once the accepted history is durable, before draining
+other old work. Migration write acknowledgements contain accepted history counts and keep their
+Seerr entry gate; preview and status remain fenced readers.
+
+Only a completed durable migration command receives that acknowledgement treatment. An uncommitted
+response on the same route remains subject to the ordinary stale-reader checks.

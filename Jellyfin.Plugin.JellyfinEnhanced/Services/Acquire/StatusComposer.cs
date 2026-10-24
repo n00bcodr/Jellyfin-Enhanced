@@ -244,10 +244,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _unvouched = unvouched;
             return new ArrSeriesEntry
             {
-                Id = series.Id, TvdbId = series.TvdbId, TmdbId = series.TmdbId, ImdbId = series.ImdbId, Title = series.Title, TitleSlug = series.TitleSlug,
-                Monitored = series.Monitored, Path = series.Path, QualityProfileId = series.QualityProfileId, Tags = series.Tags,
-                EpisodeFileCount = seasons.Sum(x => x.EpisodeFileCount), EpisodeCount = seasons.Sum(x => x.EpisodeCount), PercentOfEpisodes = series.PercentOfEpisodes, SizeOnDisk = series.SizeOnDisk,
-                Status = series.Status, NextAiring = seasons.Where(x => x.NextAiring.HasValue).Select(x => x.NextAiring).DefaultIfEmpty(null).Min(), Added = series.Added, Seasons = seasons,
+                Id = series.Id,
+                TvdbId = series.TvdbId,
+                TmdbId = series.TmdbId,
+                ImdbId = series.ImdbId,
+                Title = series.Title,
+                TitleSlug = series.TitleSlug,
+                Monitored = series.Monitored,
+                Path = series.Path,
+                QualityProfileId = series.QualityProfileId,
+                Tags = series.Tags,
+                EpisodeFileCount = seasons.Sum(x => x.EpisodeFileCount),
+                EpisodeCount = seasons.Sum(x => x.EpisodeCount),
+                PercentOfEpisodes = series.PercentOfEpisodes,
+                SizeOnDisk = series.SizeOnDisk,
+                Status = series.Status,
+                NextAiring = seasons.Where(x => x.NextAiring.HasValue).Select(x => x.NextAiring).DefaultIfEmpty(null).Min(),
+                Added = series.Added,
+                Seasons = seasons,
             };
         }
     }
@@ -262,30 +276,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     {
         public TitleFacts(TitleKey key)
         {
-            Key = key;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            _keyFactsStorage = key;
         }
 
         /// <summary>The title (movie or series) key.</summary>
-        public TitleKey Key { get; }
-
+        public TitleKey Key { get => _keyFactsOwner.Read(ref _keyFactsStorage, () => default!); }
         /// <summary>One entry per instance holding the title.</summary>
-        public List<ArrCopyFacts> Copies { get; } = new();
-
+        public List<ArrCopyFacts> Copies { get => _copiesFactsOwner.Read(ref _copiesFactsStorage, () => default!); }
         /// <summary>Instances of the title's kind that could not be read (with "name (kind)" labels).</summary>
-        public List<UnreadableArr> Unreadable { get; } = new();
-
+        public List<UnreadableArr> Unreadable { get => _unreadableFactsOwner.Read(ref _unreadableFactsStorage, () => default!); }
         /// <summary>
         /// Instances whose library is held from an earlier read but whose latest read failed: what
         /// they hold may have changed since, so "no Sonarr/Radarr has it" can't be said.
         /// </summary>
-        public List<ArrConnection> Stale { get; } = new();
-
+        public List<ArrConnection> Stale { get => _staleFactsOwner.Read(ref _staleFactsStorage, () => default!); }
         /// <summary>
         /// Instances of the title's kind whose library could be read (holding the title or not). None:
         /// no Sonarr/Radarr of its kind is set up (or none could be read), so "none has it" can't be said.
         /// </summary>
-        public List<ArrConnection> Checked { get; } = new();
-
+        public List<ArrConnection> Checked { get => _checkedFactsOwner.Read(ref _checkedFactsStorage, () => default!); }
         /// <summary>Request facts (Seerr read model), if any.</summary>
         public RequestFacts? Request { get; set; }
 
@@ -303,6 +313,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// which arr copy owns a Jellyfin copy is judged from these alone, never from a default.
         /// </summary>
         public IReadOnlyList<JfCopy> SeenCopies { get; set; } = Array.Empty<JfCopy>();
+        private List<ArrCopyFacts> _copiesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<ArrCopyFacts>> _copiesFactsOwner = new(prepared: true);
+        private List<UnreadableArr> _unreadableFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<UnreadableArr>> _unreadableFactsOwner = new(prepared: true);
+        private List<ArrConnection> _staleFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<ArrConnection>> _staleFactsOwner = new(prepared: true);
+        private List<ArrConnection> _checkedFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<ArrConnection>> _checkedFactsOwner = new(prepared: true);
+        private TitleKey _keyFactsStorage = default!;
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<TitleKey> _keyFactsOwner = new(prepared: true);
     }
 
     /// <summary>
@@ -494,6 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false,
             IReadOnlyCollection<Guid>? qualifying = null, IReadOnlyList<ArrCopyFacts>? owners = null)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var self = item != null ? new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } : null;
             var jf = copies ?? (self != null ? new[] { self } : Array.Empty<JfCopy>());
             bool Qualifies(JfCopy x) => qualifying?.Contains(x.ItemId) == true;
@@ -666,6 +687,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <returns>Status.</returns>
         public static TitleStatus AbsentSeries(TitleFacts facts, AbsentTitle page, ComposeContext c, Func<int, RequestFacts?>? seasonRequests = null)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var state = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
             var seasons = page.Seasons.Where(s => s.Season > 0).OrderBy(s => s.Season).Select(s => new SeasonStatus
             {
@@ -705,6 +727,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <returns>Status.</returns>
         public static TitleStatus AbsentSeason(TitleFacts facts, AbsentTitle page, RequestFacts? request, ComposeContext c)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = page.Season ?? 0;
             var down = ApplyRequest(NothingKnown(facts), request, c, facts);
             var list = new List<EpisodeStatus>();
@@ -767,6 +790,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <returns>Status.</returns>
         public static TitleStatus AbsentEpisode(TitleFacts facts, AbsentTitle page, JfItemRef item, RequestFacts? request, ComposeContext c)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = page.Season ?? 0;
             var number = page.Episode ?? 0;
             var air = page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate;
@@ -830,6 +854,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A series page (or card): per-season summary and the series pill.</summary>
         public static TitleStatus Series(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfSeason>? jfSeasons, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var (visibleEpisodes, pageHidden) = SplitHidden(jfEpisodes, jfSeasons);
             jfEpisodes = visibleEpisodes;
             var copy = PageRead(facts, page, copies, item, c, pageHidden);
@@ -839,9 +864,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var hasEpisodes = jfEpisodes?.Any(EditionAvailability.Plays) == true;
                 return new TitleStatus
                 {
-                    Key = facts.Key.ToString(), ItemId = Id(item.ItemId), Kind = "series",
+                    Key = facts.Key.ToString(),
+                    ItemId = Id(item.ItemId),
+                    Kind = "series",
                     Stage = hasEpisodes ? StatusStage.Ready : none.Stage,
-                    Reason = Reason(none), Quiet = !none.Attention || hasEpisodes, Attention = none.Attention && !hasEpisodes,
+                    Reason = Reason(none),
+                    Quiet = !none.Attention || hasEpisodes,
+                    Attention = none.Attention && !hasEpisodes,
                     Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null), none) : null,
                 };
             }
@@ -868,12 +897,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : Combine(perSeason.Select(p => p.Summary).ToList());
             total = new StatusSummary
             {
-                Aired = total.Aired, Ready = total.Ready, Downloading = total.Downloading, AlmostReady = total.AlmostReady,
-                Missing = total.Missing, Unknown = total.Unknown, Attention = total.Attention,
-                LongMissing = total.LongMissing, LongMissingSince = total.LongMissingSince, LongMissingSent = total.LongMissingSent,
+                Aired = total.Aired,
+                Ready = total.Ready,
+                Downloading = total.Downloading,
+                AlmostReady = total.AlmostReady,
+                Missing = total.Missing,
+                Unknown = total.Unknown,
+                Attention = total.Attention,
+                LongMissing = total.LongMissing,
+                LongMissingSince = total.LongMissingSince,
+                LongMissingSent = total.LongMissingSent,
                 NextAir = total.NextAir ?? (copy.Series!.NextAiring is DateTime n && n > c.Now ? n : null),
                 NextAirIsDay = total.NextAir.HasValue && total.NextAirIsDay,
-                NextSeason = total.NextSeason, NextEpisode = total.NextEpisode,
+                NextSeason = total.NextSeason,
+                NextEpisode = total.NextEpisode,
                 ReadySeasons = perSeason.Where(p => p.Summary.Aired > 0 && p.Summary.Ready >= p.Summary.Aired && p.Summary.Missing == 0).Select(p => p.Season).ToList(),
             };
             var stage = SummaryStage(total);
@@ -913,6 +950,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null, Func<EpisodeCoverage>? elsewhere = null, RequestFacts? request = null)
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var (visibleEpisodes, pageHidden) = SplitHidden(jfEpisodes, null);
             jfEpisodes = visibleEpisodes;
             var season = item.Season ?? 0;
@@ -922,8 +960,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 return new TitleStatus
                 {
-                    Key = key, ItemId = Id(item.ItemId), Kind = "season", Stage = StatusStage.None,
-                    Reason = Reason(NothingKnown(facts)), Quiet = true,
+                    Key = key,
+                    ItemId = Id(item.ItemId),
+                    Kind = "season",
+                    Stage = StatusStage.None,
+                    Reason = Reason(NothingKnown(facts)),
+                    Quiet = true,
                     Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null) : null,
                 };
             }
@@ -1010,6 +1052,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null)
         {
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = item.Season ?? 0;
             var number = item.Episode ?? 0;
             var copy = PageRead(facts, page, copies, series, c, HiddenParts.None);
@@ -1079,6 +1122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null, IReadOnlyList<JfCopy>? copies = null)
         {
+            using var __factsOperation10 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // The card's own copy, its facts through what Jellyfin hides from the viewer there (read only when its queue has rows).
             var copy = SeriesCopyFor(facts, item.ItemId, copies, item)?.Through(() => hidden ?? c.HiddenOf?.Invoke(item.ItemId));
             var states = copy == null ? new List<(int Season, int Episode, CopyState State)>() : QueuedEpisodes(copy, copy.Facts.HasDownloads ? c.EpisodesOf?.Invoke(item.ItemId) : null, c);
@@ -1131,6 +1175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus SeriesByKey(TitleFacts facts, IReadOnlyList<JfCopy> copies, ComposeContext c, HiddenParts? hidden = null)
         {
+            using var __factsOperation11 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var visible = copies.Any(x => x.Visible);
             // In the library only when a copy the viewer opens plays an episode (D53, edition round 19 part B: the one
             // availability predicate, <see cref="ComposeContext.Holds"/>; not known: none does). A copy that lists only
@@ -1346,7 +1391,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request, c, facts)
                         : Overall(stage, summary) with
                         {
-                            Attention = summary.Attention > 0, Date = summary.NextAir, DateIsDay = summary.NextAirIsDay,
+                            Attention = summary.Attention > 0,
+                            Date = summary.NextAir,
+                            DateIsDay = summary.NextAirIsDay,
                             Progress = stage == StatusStage.Downloading && downloads.Count == 1 ? downloads[0] : null,
                         };
                 }
@@ -1382,6 +1429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </remarks>
         public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK, bool everyEdition = false, IReadOnlyList<JfCopy>? copies = null)
         {
+            using var __factsOperation12 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // "No 4K Radarr has it" is judged on the edition's instances alone: a standard Radarr that can't be read
             // says nothing about the 4K copy (as the Overview's Needs attention list), and the other way round.
             var edition = everyEdition ? EveryEdition(facts) : fourK ? FourKOnly(facts) : StandardOnly(facts);
@@ -1768,11 +1816,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var next = seasons.Where(s => s.NextAir.HasValue).OrderBy(s => s.NextAir).FirstOrDefault();
             return new StatusSummary
             {
-                Aired = seasons.Sum(s => s.Aired), Ready = seasons.Sum(s => s.Ready), Downloading = seasons.Sum(s => s.Downloading),
-                AlmostReady = seasons.Sum(s => s.AlmostReady), Missing = seasons.Sum(s => s.Missing), Unknown = seasons.Sum(s => s.Unknown), Attention = seasons.Sum(s => s.Attention),
-                LongMissing = seasons.Sum(s => s.LongMissing), LongMissingSent = seasons.Sum(s => s.LongMissingSent),
+                Aired = seasons.Sum(s => s.Aired),
+                Ready = seasons.Sum(s => s.Ready),
+                Downloading = seasons.Sum(s => s.Downloading),
+                AlmostReady = seasons.Sum(s => s.AlmostReady),
+                Missing = seasons.Sum(s => s.Missing),
+                Unknown = seasons.Sum(s => s.Unknown),
+                Attention = seasons.Sum(s => s.Attention),
+                LongMissing = seasons.Sum(s => s.LongMissing),
+                LongMissingSent = seasons.Sum(s => s.LongMissingSent),
                 LongMissingSince = seasons.Where(s => s.LongMissingSince.HasValue).Select(s => s.LongMissingSince).DefaultIfEmpty(null).Min(),
-                NextAir = next?.NextAir, NextAirIsDay = next?.NextAirIsDay == true, NextSeason = next?.NextSeason, NextEpisode = next?.NextEpisode,
+                NextAir = next?.NextAir,
+                NextAirIsDay = next?.NextAirIsDay == true,
+                NextSeason = next?.NextSeason,
+                NextEpisode = next?.NextEpisode,
             };
         }
 
@@ -1903,6 +1960,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private static AdminStatus AdminFor(TitleFacts facts, List<(ArrCopyRead Copy, CopyState State, JfCopy? Jf)> variants, List<(ArrCopyRead Copy, int Season, int Episode, CopyState State)>? problems)
         {
+            using var __factsOperation13 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var list = new List<AdminVariant>();
             foreach (var (copy, state, jf) in variants)
             {
@@ -1917,11 +1975,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The series copies other than the primary one (a 4K or anime Sonarr holding the same series).</summary>
         private static IEnumerable<ArrCopyFacts> OtherSeriesCopies(TitleFacts facts, ArrCopyFacts primary)
-            => facts.Copies.Where(x => x.IsSeries && !ReferenceEquals(x, primary)).OrderBy(x => RoleOrder(x.Instance.Role));
-
+        {
+            using var __factsOperation14 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return facts.Copies.Where(x => x.IsSeries && !ReferenceEquals(x, primary)).OrderBy(x => RoleOrder(x.Instance.Role));
+        }
         /// <summary>Every Sonarr copy of the series (the siblings <see cref="MatchCopies"/> tells apart).</summary>
-        internal static List<ArrCopyFacts> SeriesCopies(TitleFacts facts) => facts.Copies.Where(x => x.IsSeries).ToList();
-
+        internal static List<ArrCopyFacts> SeriesCopies(TitleFacts facts)
+        {
+            using var __factsOperation15 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return facts.Copies.Where(x => x.IsSeries).ToList();
+        }
         /// <summary>
         /// Admin lines for the other Sonarr instances holding the series: one line per instance (where
         /// it has got to as a whole, through its own binding: the Jellyfin copy it owns, when
@@ -2178,8 +2241,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static int RoleOrder(string role) => role switch { "standard" => 0, "anime" => 1, "custom" => 2, _ => 3 };
 
         private static ArrCopyFacts? PrimarySeriesCopy(TitleFacts facts)
-            => facts.Copies.Where(c => c.IsSeries).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
-
+        {
+            using var __factsOperation16 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return facts.Copies.Where(c => c.IsSeries).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
+        }
         /// <summary>
         /// The Sonarr copy a page or card of one Jellyfin series copy (<paramref name="page"/>, the series item a
         /// series, season or episode is in) reads its arr facts from: only one that owns that copy's folder for sure,
@@ -2205,6 +2270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies, JfItemRef? own = null, bool soleFallback = true)
         {
+            using var __factsOperation17 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var primary = PrimarySeriesCopy(facts);
             if (primary == null || page is not Guid id) return primary;
             var siblings = SeriesCopies(facts);
@@ -2276,10 +2342,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         private static CopyState NothingKnown(TitleFacts facts)
-            => facts.Unreadable.Count > 0
-                ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
-                : new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr);
-
+        {
+            using var __factsOperation18 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return facts.Unreadable.Count > 0
+                            ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
+                            : new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr);
+        }
         private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null, bool? admin = null)
         {
             if (request == null) return state;
@@ -2336,6 +2404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private static (DateTime At, bool FourK)? OverdueVariant(RequestFacts? request, ComposeContext? c, TitleFacts? facts)
         {
+            using var __factsOperation19 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (request == null || c?.HandoffGrace is not TimeSpan grace) return null;
             if (facts == null || facts.Checked.Count == 0) return null;
             var wait = c.Viewer.IsAdmin ? grace : TimeSpan.FromHours(c.LookingHours);
@@ -2401,6 +2470,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts FourKOnly(TitleFacts facts)
         {
+            using var __factsOperation20 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             fourK.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role == "4k"));
             fourK.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role == "4k"));
@@ -2412,6 +2482,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A copy of the facts (every instance's), for an edition any copy satisfies (see <see cref="RequestedEdition"/>).</summary>
         internal static TitleFacts EveryEdition(TitleFacts facts)
         {
+            using var __factsOperation22 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             every.Copies.AddRange(facts.Copies);
             every.Unreadable.AddRange(facts.Unreadable);
@@ -2426,6 +2497,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts StandardOnly(TitleFacts facts)
         {
+            using var __factsOperation24 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             standard.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role != "4k"));
             standard.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role != "4k"));

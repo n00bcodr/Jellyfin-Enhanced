@@ -86,14 +86,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
     public sealed class RequestedTitlesProjection
     {
         private readonly ILogger<RequestedTitlesProjection>? _logger;
-        private readonly Dictionary<string, DateTime> _diagnostics = new(StringComparer.Ordinal);
+        private Dictionary<string, DateTime> _diagnostics = new(StringComparer.Ordinal);
         private void Diagnostic(string cause)
         {
-            lock (_diagnostics)
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            lock (_diagnosticsFacts)
             {
                 var now = DateTime.UtcNow;
-                if (_diagnostics.TryGetValue(cause, out var at) && now - at < TimeSpan.FromMinutes(1)) return;
-                _diagnostics[cause] = now;
+                if (_diagnosticsFacts.TryGetValue(cause, out var at) && now - at < TimeSpan.FromMinutes(1)) return;
+                _diagnosticsFacts[cause] = now;
                 _logger?.LogInformation("[RequestsBackend] Requested-title projection unavailable: reason={Reason}", cause);
             }
         }
@@ -150,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                     if (tmdb is not > 0) { Incomplete("identity_unresolved"); Diagnostic("identity_unresolved"); continue; }
                     candidates.Add((new(key.IsMovie ? "movie" : "tv", tmdb.Value, _ledger.CanonicalKey(key.Title.ToString()),
                         want.Input.Variant, want.Input.Scope, want.Input.SeasonNumbers.ToArray(), want.Input.Episodes.ToArray())
-                        { Aliases = identities.Select(k => k.Title.ToString()).Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray(), Status = want.Status }, want.Input, input, want.TargetKey));
+                    { Aliases = identities.Select(k => k.Title.ToString()).Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray(), Status = want.Status }, want.Input, input, want.TargetKey));
                 }
                 // Later evidence preparation may have awaited while an earlier candidate's access changed.
                 // Recheck every returned row after the last await; a changed ledger grants no stale ownership.
@@ -165,10 +166,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 var after = _ledger.Revision;
                 if (before != after) { titles.Clear(); Incomplete("requests_changed"); incompleteReason = "requests_changed"; Diagnostic("ledger_changed"); }
                 return new(true, complete && before == after, snapshot.Backend, MutationInput.Hash($"{after}|{snapshot.Backend}|{snapshot.IsolationVersion}|{_view.Revision}|{viewer.PolicyRevision}|{string.Join("|", policyRevisions)}|{JsonSerializer.Serialize(titles)}"),
-                    titles.OrderBy(t => t.MediaType, StringComparer.Ordinal).ThenBy(t => t.TmdbId).ThenBy(t => t.Variant, StringComparer.Ordinal).ThenBy(t => t.Scope, StringComparer.Ordinal).ToArray()) { Reason = complete ? null : incompleteReason };
+                    titles.OrderBy(t => t.MediaType, StringComparer.Ordinal).ThenBy(t => t.TmdbId).ThenBy(t => t.Variant, StringComparer.Ordinal).ThenBy(t => t.Scope, StringComparer.Ordinal).ToArray())
+                { Reason = complete ? null : incompleteReason };
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception) { return Unknown("projection_unavailable"); }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, DateTime>> _diagnosticsFactsOwner = new();
+        private Dictionary<string, DateTime> _diagnosticsFacts { get => _diagnosticsFactsOwner.Read(ref _diagnostics, () => new(StringComparer.Ordinal)); set => _diagnosticsFactsOwner.Store(ref _diagnostics, value); }
     }
 }

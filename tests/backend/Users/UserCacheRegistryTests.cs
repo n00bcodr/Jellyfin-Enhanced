@@ -57,11 +57,13 @@ public class UserCacheRegistryTests
         }
 
         var found = UserCacheScan.Caches(plugin);
+        var unregistered = false;
         foreach (var cache in found)
         {
             if (!rows.TryGetValue(cache.Member, out var row))
             {
                 problems.Add(cache.Member + " (" + cache.Where + ", " + cache.Type + "): a cache nobody listed; declare it as UserAccessCache if a user's access decides what it holds, else list why it doesn't");
+                unregistered = true;
                 continue;
             }
 
@@ -81,6 +83,10 @@ public class UserCacheRegistryTests
                 }
             }
         }
+
+        // The gate already fails. Avoid repeating whole-plugin writer/lifetime analyses for each negative
+        // inventory fixture; a completely registered catalog still has to pass every analysis below.
+        if (unregistered) return problems;
 
         // Round 4: no invalidate-only caches. Dropped outside the code that fills it: the ticket protocol, or a disposition
         // the scan can check (fenced, locked) or a reason why no stale read can be put back.
@@ -171,6 +177,24 @@ public class UserCacheRegistryTests
             "        private static readonly TimeSpan SeasonWatchedCacheTtl",
             "        private Guid _lastViewer;\n        internal void Plant(Guid user) => _lastViewer = user;\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
         Assert.Contains(Problems(field, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._lastViewer (", StringComparison.Ordinal));
+        // Round E1-r5: an ordinary boolean decision must not disappear from the registry just because its type
+        // no longer mentions the Seerr input that produced it.
+        var scalar = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
+            "        private static readonly TimeSpan SeasonWatchedCacheTtl",
+            "        private bool _plantedDecision;\n        internal void PlantDecision(bool decision) => _plantedDecision = decision;\n        internal bool PeekDecision() => _plantedDecision;\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
+        Assert.Contains(Problems(scalar, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedDecision (", StringComparison.Ordinal));
+        var readonlyScalar = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
+            "        private static readonly TimeSpan SeasonWatchedCacheTtl",
+            "        private readonly bool _plantedPreparedDecision = global::Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => true, false);\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
+        Assert.Contains(Problems(readonlyScalar, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedPreparedDecision (", StringComparison.Ordinal));
+        var plainClass = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
+            "        private static readonly TimeSpan SeasonWatchedCacheTtl",
+            "        private sealed class PlantedData { internal bool Allowed { get; set; } }\n        private readonly PlantedData _plantedPlainData = new();\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
+        Assert.Contains(Problems(plainClass, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedPlainData (", StringComparison.Ordinal));
+        var immutableMemo = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
+            "        private static readonly TimeSpan SeasonWatchedCacheTtl",
+            "        private sealed record PlantedMemo(int Tmdb);\n        private readonly PlantedMemo _plantedPrepared = new(603);\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
+        Assert.Contains(Problems(immutableMemo, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedPrepared (", StringComparison.Ordinal));
         // A snapshot swapped whole (round 3): a mutable field of the plugin's own type that holds a dictionary.
         var snapshot = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
             "        private static readonly TimeSpan SeasonWatchedCacheTtl",

@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public const int Order = -1000;
 
         private const int MaxSplitIds = 200;
-        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> BodyProperties = new();
+        private static ConcurrentDictionary<Type, PropertyInfo[]> BodyProperties = new();
 
         private readonly IUserManager _users;
         private readonly ILibraryManager _library;
@@ -134,6 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private static void Scan(string name, object? value, string serverId, bool deep, ref List<(string, SyntheticId)>? hits)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             switch (value)
             {
                 case null:
@@ -161,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             var type = value.GetType();
             if (!deep || type.IsPrimitive || type.IsEnum || value is IEnumerable) return;
-            foreach (var property in BodyProperties.GetOrAdd(type, Properties))
+            foreach (var property in BodyPropertiesFacts.GetOrAdd(type, Properties))
             {
                 object? inner;
                 try
@@ -727,7 +728,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 var hidden = HiddenContentPolicy.Load(_userConfig, viewer.Id, context.HttpContext, _library);
                 hidden.BindLibraryIds(_library, query.Items.Select(i => i.Id));
-                var kept = query.Items.Where(dto => {
+                var kept = query.Items.Where(dto =>
+                {
                     var key = SyntheticId.TryParse(dto.Id, _host.SystemId, out var synthetic) && synthetic.IsTitle
                         ? HiddenContentPolicy.TitleIdentity(synthetic.IsMovie ? "movie" : "tv", synthetic.TmdbId.ToString()) : null;
                     return !hidden.IsHidden(key, dto.Id.ToString(), dto.SeriesId?.ToString(), surface)
@@ -802,6 +804,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private static IActionResult Refuse(string method)
             => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) ? new NotFoundResult() : new StatusCodeResult(StatusCodes.Status403Forbidden);
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Type, PropertyInfo[]>> BodyPropertiesFactsOwner = new();
+        private static ConcurrentDictionary<Type, PropertyInfo[]> BodyPropertiesFacts { get => BodyPropertiesFactsOwner.Read(ref BodyProperties, () => new()); set => BodyPropertiesFactsOwner.Store(ref BodyProperties, value); }
     }
 }
 #endif

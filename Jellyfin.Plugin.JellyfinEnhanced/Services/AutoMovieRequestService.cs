@@ -35,7 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly AutomationWriteGate _gate = new(() => JellyfinEnhanced.Instance?.Configuration);
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
-        private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
+        private Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
         private readonly object _movieCacheLock = new();
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
 
@@ -93,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Event-driven entry point called (from the recipe worker) when a user starts watching a movie.
         // The outcome is typed: a failed TMDB or Seerr lookup is a PreparationFailed, never "not in a collection".
         public Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
-            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => CheckMovieForCollectionRequestAsyncFactsCore(movieItem, userId, token), ct);
+            => AutoRequestOutcome.RunOwnedAsync(token => CheckMovieForCollectionRequestAsyncFactsCore(movieItem, userId, token), ct);
 
         private async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsyncFactsCore(BaseItem movieItem, Guid userId, CancellationToken ct = default)
         {
@@ -119,6 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // One check; null when the direct path stopped for phase 3 and the check has to start again.
         private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
             if (EffectiveRequestsBackend.IsStrictJe(config) && !ledger) return AutoRequestOutcome.Noop("requests_off");
@@ -222,28 +223,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_movieCacheLock)
             {
                 // Clean up expired entries across all users
-                foreach (var cachedUserId in _requestedMovies.Keys.ToList())
+                foreach (var cachedUserId in _requestedMoviesFacts.Keys.ToList())
                 {
-                    var expired = _requestedMovies[cachedUserId]
+                    var expired = _requestedMoviesFacts[cachedUserId]
                         .Where(kvp => (DateTime.Now - kvp.Value).TotalHours >= 1)
                         .Select(kvp => kvp.Key).ToList();
-                    foreach (var k in expired) _requestedMovies[cachedUserId].Remove(k);
-                    if (_requestedMovies[cachedUserId].Count == 0) _requestedMovies.Remove(cachedUserId);
+                    foreach (var k in expired) _requestedMoviesFacts[cachedUserId].Remove(k);
+                    if (_requestedMoviesFacts[cachedUserId].Count == 0) _requestedMoviesFacts.Remove(cachedUserId);
                 }
 
-                if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+                if (!_requestedMoviesFacts.ContainsKey(user.Id.ToString()))
                 {
-                    _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
+                    _requestedMoviesFacts[user.Id.ToString()] = new Dictionary<string, DateTime>();
                 }
 
-                if (_requestedMovies[user.Id.ToString()].ContainsKey(requestKey))
+                if (_requestedMoviesFacts[user.Id.ToString()].ContainsKey(requestKey))
                 {
                     _logger.Debug($"[Auto-Movie-Request] Already requested '{nextMovieInfo.Title}' (cached)");
                     return AutoRequestOutcome.Noop("already_requested", key.ToString());
                 }
 
                 // Reserve the slot so concurrent callers see it immediately
-                _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
+                _requestedMoviesFacts[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
             // Stopped before a POST (see DirectStop), here or right before every POST: with the rollout Shadow override,
@@ -252,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 lock (_movieCacheLock)
                 {
-                    if (_requestedMovies.ContainsKey(user.Id.ToString())) _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    if (_requestedMoviesFacts.ContainsKey(user.Id.ToString())) _requestedMoviesFacts[user.Id.ToString()].Remove(requestKey);
                 }
                 if (stop == AutomationHolds.EngineChanged)
                 {
@@ -293,9 +294,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Remove sentinel so a future attempt can retry
             lock (_movieCacheLock)
             {
-                if (_requestedMovies.ContainsKey(user.Id.ToString()))
+                if (_requestedMoviesFacts.ContainsKey(user.Id.ToString()))
                 {
-                    _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    _requestedMoviesFacts[user.Id.ToString()].Remove(requestKey);
                 }
             }
             _logger.Warning($"[Auto-Movie-Request] ✗ Failed to request '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
@@ -915,11 +916,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Clears the request cache (useful for testing or resetting)
         public void ClearRequestCache()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_movieCacheLock)
             {
-                _requestedMovies.Clear();
+                _requestedMoviesFacts.Clear();
             }
             _logger.Info("[Auto-Movie-Request] Cleared auto movie request cache");
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, Dictionary<string, DateTime>>> _requestedMoviesFactsOwner = new();
+        private Dictionary<string, Dictionary<string, DateTime>> _requestedMoviesFacts { get => _requestedMoviesFactsOwner.Read(ref _requestedMovies, () => new()); set => _requestedMoviesFactsOwner.Store(ref _requestedMovies, value); }
     }
 }

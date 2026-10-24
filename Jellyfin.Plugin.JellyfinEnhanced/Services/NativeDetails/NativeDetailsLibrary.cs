@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly ILibraryManager _library;
         private readonly TitleAliases? _aliases;
         private readonly Func<long>? _revision;
-        private readonly ConcurrentDictionary<string, (long Revision, DateTime At, PhysicalTitle Value)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (long Revision, DateTime At, PhysicalTitle Value)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, (long Revision, DateTime At, bool Value)> _without = new(StringComparer.Ordinal);
 
         /// <summary>Creates the reader.</summary>
@@ -177,14 +177,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private PhysicalTitle Cached(User viewer, string viewerRevision, bool movie, string title, string part, Func<PhysicalTitle> compute)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", title, part);
             var revision = _revision?.Invoke();
-            if (revision is long r && _cache.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
+            if (revision is long r && _cacheFacts.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
             var value = compute();
             if (revision is long now)
             {
-                if (_cache.Count >= MaxEntries) _cache.Clear();
-                _cache[key] = (now, DateTime.UtcNow, value);
+                if (_cacheFacts.Count >= MaxEntries) _cacheFacts.Clear();
+                _cacheFacts[key] = (now, DateTime.UtcNow, value);
             }
 
             return value;
@@ -307,11 +308,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             return new PhysicalTitle
             {
-                Copies = ids, Shown = title.Shown, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes,
-                VisibleSeasons = visibleSeasons, VisibleEpisodes = visibleEpisodes,
+                Copies = ids,
+                Shown = title.Shown,
+                HiddenSeasons = hiddenSeasons,
+                HiddenEpisodes = hiddenEpisodes,
+                HiddenSeriesEpisodes = hiddenSeriesEpisodes,
+                VisibleSeasons = visibleSeasons,
+                VisibleEpisodes = visibleEpisodes,
             };
         }
 
         private bool CanOpen(Guid id, User viewer) => _library.GetItemById<BaseItem>(id, viewer) != null;
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (long Revision, DateTime At, PhysicalTitle Value)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (long Revision, DateTime At, PhysicalTitle Value)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

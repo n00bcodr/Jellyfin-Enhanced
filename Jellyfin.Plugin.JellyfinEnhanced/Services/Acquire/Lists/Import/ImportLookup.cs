@@ -274,8 +274,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private readonly MetadataCallLimiter _limiter;
         private readonly TmdbResponseCache? _tmdb;
         private readonly Logger _logger;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, SharedLookup> _inFlight = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, SharedLookup> _inFlight = new(StringComparer.Ordinal);
 
         /// <summary>Creates the lookup (singleton).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
@@ -365,6 +365,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <inheritdoc />
         public async Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
             if (_tmdb == null || string.IsNullOrWhiteSpace(key) || !Regex.IsMatch(imdbId ?? string.Empty, "^tt[0-9]{5,10}$"))
             {
@@ -375,7 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // the request is the TMDB lookup's own (TmdbCall: its own turn at the limiter, TMDB's find answer read by the
             // same reader, so an answer that isn't a valid, empty list is never a remembered "not found").
             var cacheKey = "tmdb-find|" + Fingerprint(new[] { "tmdb" }, key) + "|" + imdbId;
-            if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            if (_cacheFacts.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return new LookupResult<ImdbEpisodeFind>(cached.Status, cached.Value as ImdbEpisodeFind);
             }
@@ -399,6 +400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             Func<string, LookupAnswer> parse,
             CancellationToken cancellationToken)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
                 return LookupAnswer.Transient;
@@ -406,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var key = Fingerprint(urls, apiKey) + "|" + cacheKey;
             // A definitive answer is reused with its status, without waiting for the limiter (review round 5, 4c2-R5-4).
-            if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            if (_cacheFacts.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid);
             }
@@ -416,7 +418,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             while (true)
             {
                 var mine = new SharedLookup();
-                shared = _inFlight.GetOrAdd(key, mine);
+                shared = _inFlightFacts.GetOrAdd(key, mine);
                 if (shared.TryJoin())
                 {
                     if (ReferenceEquals(shared, mine))
@@ -428,7 +430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
 
                 // Abandoned by its last waiter a moment ago: start a fresh one.
-                _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
+                _inFlightFacts.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
             }
 
             try
@@ -439,7 +441,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 if (shared.Leave())
                 {
-                    _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
+                    _inFlightFacts.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
                 }
 
                 throw;
@@ -448,6 +450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task RunSharedAsync(string key, SharedLookup shared, Func<Task<LookupAnswer>> fetch)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             LookupAnswer answer;
             try
             {
@@ -464,7 +467,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 Remember(key, answer.Status, answer.Value);
             }
 
-            _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
+            _inFlightFacts.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
             shared.Result.TrySetResult(answer);
         }
 
@@ -639,24 +642,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private void Remember(string key, LookupStatus status, object? value)
         {
-            if (_cache.Count >= MaxCacheEntries)
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (_cacheFacts.Count >= MaxCacheEntries)
             {
                 var now = DateTime.UtcNow;
-                foreach (var entry in _cache.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
+                foreach (var entry in _cacheFacts.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
                 {
-                    _cache.TryRemove(entry, out _);
+                    _cacheFacts.TryRemove(entry, out _);
                 }
 
-                if (_cache.Count >= MaxCacheEntries)
+                if (_cacheFacts.Count >= MaxCacheEntries)
                 {
-                    foreach (var entry in _cache.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
+                    foreach (var entry in _cacheFacts.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
                     {
-                        _cache.TryRemove(entry, out _);
+                        _cacheFacts.TryRemove(entry, out _);
                     }
                 }
             }
 
-            _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
+            _cacheFacts[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
         // Seerr's search answer (review rounds 6 and 7: ResponseContract.SeerrSearch, rows by the movie/show row
@@ -771,6 +775,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         // Seerr instance identity (URL list + key hash): a config change never serves another instance's results.
         private static string Fingerprint(string[] urls, string apiKey) => SeerrAddresses.Identity(urls, apiKey);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, SharedLookup>> _inFlightFactsOwner = new();
+        private ConcurrentDictionary<string, SharedLookup> _inFlightFacts { get => _inFlightFactsOwner.Read(ref _inFlight, () => new(StringComparer.Ordinal)); set => _inFlightFactsOwner.Store(ref _inFlight, value); }
     }
 
     /// <summary>

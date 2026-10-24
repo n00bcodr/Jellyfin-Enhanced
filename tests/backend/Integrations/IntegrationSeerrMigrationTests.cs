@@ -17,6 +17,7 @@ namespace JE.Tests;
 /// the import and a crash before the switch each end with every request imported once; the source id
 /// survives a key rotation but not an address change; rollback by batch keeps wants touched since.
 /// </summary>
+[Collection("Plugin singleton")]
 public class IntegrationSeerrMigrationTests
 {
     private const long Request = (long)JellyseerrPermission.REQUEST;

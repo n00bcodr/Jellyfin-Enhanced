@@ -137,10 +137,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly SemaphoreSlim _concurrency = new(4, 4);
-        private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
         private readonly object _inflightGate = new();
-        private readonly Dictionary<string, SharedFetch> _inflight = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, DateTime> _unreachableUntil = new(StringComparer.Ordinal);
+        private Dictionary<string, SharedFetch> _inflight = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, DateTime> _unreachableUntil = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPosters = new(StringComparer.Ordinal);
 
         /// <summary>Creates the service (singleton).</summary>
@@ -376,46 +376,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
-                {
-                    var seasonInfo = seasons.FirstOrDefault(s => s.Number == number);
-                    if (season != null)
                     {
-                        seasonEpisodes = SeasonEpisodes(season, number ?? 0);
-                        poster = season.Poster("posterPath") ?? poster;
-                    }
-                    else
-                    {
-                        // The season read failed (Seerr relays TMDB errors as 500): never derive the expected set from
-                        // the show's details alone, or a hiccup would shrink it and could "complete" an airing season.
-                        partial = true;
-                    }
-
-                    var seasonAir = season?.Date("airDate") ?? seasonInfo?.AirDate;
-                    if (placeholder.Kind == PlaceholderKinds.Season)
-                    {
-                        releaseDate = seasonAir;
-                        if (seasonEpisodes != null)
+                        var seasonInfo = seasons.FirstOrDefault(s => s.Number == number);
+                        if (season != null)
                         {
-                            expected = seasonEpisodes.Select(Copy).ToList();
-                            if (next != null && next.S == number && !expected.Any(e => e.E == next.E))
-                            {
-                                expected.Add(next);
-                            }
-
-                            expected.Sort((a, b) => a.E.CompareTo(b.E));
+                            seasonEpisodes = SeasonEpisodes(season, number ?? 0);
+                            poster = season.Poster("posterPath") ?? poster;
                         }
-                    }
-                    else
-                    {
-                        // C4: the season read's date of the first listed episode wins even when TMDB un-dated it (Apply
-                        // clears the stored one alike); the stored date only stands in when the read didn't list it.
-                        var first = placeholder.Episodes.OrderBy(e => e.E).FirstOrDefault();
-                        var fresh = first == null ? null : seasonEpisodes?.FirstOrDefault(e => e.E == first.E);
-                        releaseDate = (fresh != null ? fresh.AirDate : first?.AirDate) ?? seasonAir;
-                    }
+                        else
+                        {
+                            // The season read failed (Seerr relays TMDB errors as 500): never derive the expected set from
+                            // the show's details alone, or a hiccup would shrink it and could "complete" an airing season.
+                            partial = true;
+                        }
 
-                    break;
-                }
+                        var seasonAir = season?.Date("airDate") ?? seasonInfo?.AirDate;
+                        if (placeholder.Kind == PlaceholderKinds.Season)
+                        {
+                            releaseDate = seasonAir;
+                            if (seasonEpisodes != null)
+                            {
+                                expected = seasonEpisodes.Select(Copy).ToList();
+                                if (next != null && next.S == number && !expected.Any(e => e.E == next.E))
+                                {
+                                    expected.Add(next);
+                                }
+
+                                expected.Sort((a, b) => a.E.CompareTo(b.E));
+                            }
+                        }
+                        else
+                        {
+                            // C4: the season read's date of the first listed episode wins even when TMDB un-dated it (Apply
+                            // clears the stored one alike); the stored date only stands in when the read didn't list it.
+                            var first = placeholder.Episodes.OrderBy(e => e.E).FirstOrDefault();
+                            var fresh = first == null ? null : seasonEpisodes?.FirstOrDefault(e => e.E == first.E);
+                            releaseDate = (fresh != null ? fresh.AirDate : first?.AirDate) ?? seasonAir;
+                        }
+
+                        break;
+                    }
 
                 default:
                     releaseDate = null;
@@ -554,6 +554,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private async Task<CacheEntry?> GetAsync(string apiPath, AnswerRequest asked, TimeSpan maxAge, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
                 return null;
@@ -561,7 +562,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             var scope = Fingerprint(urls, apiKey);
             var key = scope + apiPath;
-            if (_cache.TryGetValue(key, out var cached))
+            if (_cacheFacts.TryGetValue(key, out var cached))
             {
                 var ttl = cached.NotFoundFor ?? (maxAge < CacheTtl ? maxAge : CacheTtl);
                 if (DateTime.UtcNow - cached.FetchedAtUtc < ttl)
@@ -570,7 +571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            if (_unreachableUntil.TryGetValue(scope, out var until) && DateTime.UtcNow < until)
+            if (_unreachableUntilFacts.TryGetValue(scope, out var until) && DateTime.UtcNow < until)
             {
                 return null; // Seerr didn't answer moments ago: fail fast instead of queueing behind the timeout
             }
@@ -581,7 +582,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             SharedFetch shared;
             lock (_inflightGate)
             {
-                if (!_inflight.TryGetValue(key, out shared!))
+                if (!_inflightFacts.TryGetValue(key, out shared!))
                 {
                     var fetch = new SharedFetch();
                     // Shared by every caller: never part of (or stopped by) the continuation of the one that started it.
@@ -589,7 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     {
                         fetch.Task = Task.Run(() => RunAsync(fetch), CancellationToken.None);
                     }
-                    _inflight[key] = shared = fetch;
+                    _inflightFacts[key] = shared = fetch;
                 }
 
                 shared.Waiters++;
@@ -622,12 +623,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, fetch.Cancellation.Token).ConfigureAwait(false);
                     if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
                     {
-                        if (_cache.Count >= MaxCacheEntries)
+                        if (_cacheFacts.Count >= MaxCacheEntries)
                         {
-                            _cache.Clear();
+                            _cacheFacts.Clear();
                         }
 
-                        _cache[key] = fetched;
+                        _cacheFacts[key] = fetched;
                     }
 
                     return fetched;
@@ -649,9 +650,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // Caller holds _inflightGate.
         private void RemoveInflight(string key, SharedFetch fetch)
         {
-            if (_inflight.TryGetValue(key, out var current) && ReferenceEquals(current, fetch))
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (_inflightFacts.TryGetValue(key, out var current) && ReferenceEquals(current, fetch))
             {
-                _inflight.Remove(key);
+                _inflightFacts.Remove(key);
             }
         }
 
@@ -665,6 +667,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // read no server answered at all pauses reads for a minute. Each request takes its own Seerr slot.
         private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, CancellationToken cancellationToken)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var answered = false;
             var only500 = true;
             var schema = SchemaOf(apiPath);
@@ -680,7 +683,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
                     using var response = await BoundedBody.SendAsync(client, request, cts.Token).ConfigureAwait(false);
                     answered = true;
-                    _unreachableUntil.TryRemove(scope, out _);
+                    _unreachableUntilFacts.TryRemove(scope, out _);
                     switch ((int)response.StatusCode)
                     {
                         case 404 when ProviderAbsence.Seerr(404):
@@ -751,7 +754,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (!answered)
             {
-                _unreachableUntil[scope] = DateTime.UtcNow + UnreachableBackoff;
+                _unreachableUntilFacts[scope] = DateTime.UtcNow + UnreachableBackoff;
                 _logger.Debug($"[Lists] Seerr didn't answer; metadata reads pause for {UnreachableBackoff.TotalSeconds:0} s.");
             }
 
@@ -915,5 +918,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         private sealed record SeasonInfo(int Number, int EpisodeCount, string? AirDate);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, CacheEntry>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, CacheEntry> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, SharedFetch>> _inflightFactsOwner = new();
+        private Dictionary<string, SharedFetch> _inflightFacts { get => _inflightFactsOwner.Read(ref _inflight, () => new(StringComparer.Ordinal)); set => _inflightFactsOwner.Store(ref _inflight, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _unreachableUntilFactsOwner = new();
+        private ConcurrentDictionary<string, DateTime> _unreachableUntilFacts { get => _unreachableUntilFactsOwner.Read(ref _unreachableUntil, () => new(StringComparer.Ordinal)); set => _unreachableUntilFactsOwner.Store(ref _unreachableUntil, value); }
     }
 }

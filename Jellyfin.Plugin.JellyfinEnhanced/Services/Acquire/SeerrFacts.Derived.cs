@@ -15,15 +15,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var value = build();
             return Remember(value);
         }
-        internal sealed class Derived<T>
+        internal sealed class Derived<T> : IDerived
         {
             private readonly T _value;
+            private readonly Helpers.UserCacheRegistry.Ticket _generation;
+            public bool Tainted { get; }
             private readonly KeyValuePair<EffectiveRequestsBackend, long>[] _dependencies;
             private readonly KeyValuePair<EffectiveRequestsBackend, long>[] _effective;
-            private Derived(T value, KeyValuePair<EffectiveRequestsBackend, long>[] dependencies, KeyValuePair<EffectiveRequestsBackend, long>[] effective) { _value = value; _dependencies = dependencies; _effective = effective; }
+            private Derived(T value, KeyValuePair<EffectiveRequestsBackend, long>[] dependencies, KeyValuePair<EffectiveRequestsBackend, long>[] effective) { _value = value; _dependencies = dependencies; _effective = effective; _generation = Helpers.UserCacheRegistry.Begin(); Tainted = IsTainted(value) || dependencies.Length > 0; }
             internal static Derived<T> Capture(T value) => new(value, Pending.Value?.Dependencies() ?? Array.Empty<KeyValuePair<EffectiveRequestsBackend, long>>(), Pending.Value?.EffectiveDependencies() ?? Array.Empty<KeyValuePair<EffectiveRequestsBackend, long>>());
             internal T Publish()
             {
+                Helpers.UserCacheRegistry.Use(_generation, Tainted);
+                if (Tainted) Pending.Value?.MarkTainted();
                 T Check(int index) => index == _dependencies.Length ? _value
                     : _dependencies[index].Key.Facts.Publish(_dependencies[index].Value, () => Check(index + 1));
                 T Effective(int index)

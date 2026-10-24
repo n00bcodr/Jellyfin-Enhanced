@@ -23,6 +23,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>Admin-facing migration answer: counts and codes only, never addresses, keys or titles.</summary>
     public sealed record SeerrMigrationReply
     {
+        // Only the service's completed durable command can issue this acknowledgement. It is never
+        // deserialized or exposed as a reusable provider fact; previews/refusals retain the read fence.
+        [JsonIgnore] internal bool CommittedHistory { get; init; }
+
         /// <summary>accepted, or a refusal outcome.</summary>
         [JsonPropertyName("outcome")] public string Outcome { get; init; } = "accepted";
         /// <summary>Stable reason code.</summary>
@@ -127,24 +131,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private bool Switch(string backend, string? addresses = null)
         {
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            var switched = false;
+            // Commit/rollback are backend writers too. The import's own retained effect is released
+            // before this call; drain all other old work before taking the configuration lock.
+            Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() =>
             {
-                var live = _config();
-                if (addresses != null && SeerrFacts.AddressFingerprint(live) != addresses) return false;
-                var before = live.ArrRequestBackend;
-                if (before == backend) return true;
-                live.ArrRequestBackend = backend;
-                try
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
                 {
-                    _save();
+                    var live = _config();
+                    if (addresses != null && SeerrFacts.AddressFingerprint(live) != addresses) return;
+                    var before = live.ArrRequestBackend;
+                    if (before == backend) { switched = true; return; }
+                    live.ArrRequestBackend = backend;
+                    try
+                    {
+                        _save();
+                    }
+                    catch (Exception)
+                    {
+                        live.ArrRequestBackend = before;
+                        return;
+                    }
+                    switched = _config().ArrRequestBackend == backend;
                 }
-                catch (Exception)
+            }, CancellationToken.None, () =>
+            {
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
                 {
-                    live.ArrRequestBackend = before;
-                    return false;
+                    var live = _config();
+                    return live.ArrRequestBackend != backend
+                        && (addresses == null || SeerrFacts.AddressFingerprint(live) == addresses);
                 }
-                return _config().ArrRequestBackend == backend;
-            }
+            }).GetAwaiter().GetResult();
+            return switched;
         }
 
         private static string Handling(string backend) => backend switch
@@ -320,7 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Announce(result.BatchId);
                 return Describe(read, plan, "je", "migrated", result.Imported == 0 ? "Nothing new to move; request handling is Jellyfin Enhanced."
                     : previous == "je" ? "Requests moved; request handling stays Jellyfin Enhanced." : "Requests moved; request handling is now Jellyfin Enhanced.")
-                    with { BatchId = result.BatchId, Imported = result.Imported, Skipped = result.Skipped };
+                    with { BatchId = result.BatchId, Imported = result.Imported, Skipped = result.Skipped, CommittedHistory = true };
             }
             finally
             {
@@ -378,7 +397,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var backend = _config().ArrRequestBackend;
                 return new SeerrMigrationReply
                 {
-                    Reason = "rolled_back", Backend = backend, Removed = result.Removed, Kept = result.Kept,
+                    Reason = "rolled_back", Backend = backend, Removed = result.Removed, Kept = result.Kept, CommittedHistory = true,
                     Message = (result.Kept == 0 ? "Moved requests removed; " : "Moved requests removed, except those changed in Jellyfin Enhanced since; ") + Handling(backend) + ".",
                 };
             }

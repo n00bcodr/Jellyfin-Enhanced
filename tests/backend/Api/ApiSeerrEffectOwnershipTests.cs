@@ -90,11 +90,19 @@ public class ApiSeerrEffectOwnershipTests
         await work.WaitAsync(Limit); await transition.WaitAsync(Limit);
         Assert.False(committedWhileBlocked, "adoption committed before the consumed alias reached its actual SQLite/feed sink");
         Assert.False(feedAfterAdoption);
-        Assert.Equal(Tmdb, r.Lab.Ledger.CanonicalKey(Imdb));
+        Assert.Equal(Tmdb, r.Lab.Db.Read(c =>
+        {
+            using var query = c.CreateCommand();
+            query.CommandText = "SELECT canonical FROM title_aliases WHERE alias=$alias";
+            query.Parameters.AddWithValue("$alias", Imdb);
+            return (string?)query.ExecuteScalar();
+        }));
+        Assert.Equal(Imdb, r.Lab.Ledger.CanonicalKey(Imdb));
         Assert.True(r.Lab.Feed.Cursor > feedAt);
         Assert.Empty(r.Facts.All);
-        // Previously accepted aliases remain durable, and Held reads them without reviving Seerr.
-        Assert.Equal(Tmdb, RequestTitleIdentity.Held(r.Lab.Ledger, r.Aliases, TitleKey.Parse(Imdb)!).ToString());
+        // Round 5 retains this incidental commit physically, but adoption retires its Seerr read authority.
+        // Deliberate request/import acceptance has separate durable-history controls.
+        Assert.Equal(Imdb, RequestTitleIdentity.Held(r.Lab.Ledger, r.Aliases, TitleKey.Parse(Imdb)!).ToString());
     }
 
     [Fact]

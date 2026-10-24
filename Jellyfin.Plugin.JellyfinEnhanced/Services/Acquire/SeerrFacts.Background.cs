@@ -39,7 +39,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             private readonly CancellationTokenSource _cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
             private readonly object _lock = new();
             private readonly Dictionary<EffectiveRequestsBackend, (EffectiveRequestsBackend.Admission Admission, CancellationTokenRegistration Cancel)> _leases = new();
+            private (EffectiveRequestsBackend.Admission Admission, CancellationTokenRegistration Cancel)? _factsLease;
             private bool _disposed;
+            internal void IncludeFacts(long generation)
+            {
+                lock (_lock) if (_disposed || _factsLease != null || _leases.ContainsKey(EffectiveRequestsBackend.Shared)) return;
+                var lease = EffectiveRequestsBackend.Shared.AdmitFacts(generation, Token);
+                var cancel = lease.Token.Register(() => { try { _cancel.Cancel(); } catch (ObjectDisposedException) { } });
+                var keep = false;
+                lock (_lock)
+                {
+                    if (!_disposed && _factsLease == null) { _factsLease = (lease, cancel); Volatile.Write(ref _factsAdmitted, 1); Volatile.Write(ref _admitted, 1); keep = true; }
+                }
+                if (!keep) { cancel.Dispose(); lease.Dispose(); }
+            }
+            private int _admitted;
+            private int _factsAdmitted;
+            private int _legacyAdmitted;
+            internal bool HasLegacyAdmission => Volatile.Read(ref _legacyAdmitted) != 0;
+            internal bool HasFactsAdmission => Volatile.Read(ref _factsAdmitted) != 0;
+            internal bool HasAdmission => Volatile.Read(ref _admitted) != 0;
             internal CancellationToken Token => _cancel.Token;
             internal void Include(EffectiveRequestsBackend owner, long epoch)
             {
@@ -50,14 +69,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var keep = false;
                 lock (_lock)
                 {
-                    if (!_disposed && !_leases.ContainsKey(owner)) { _leases.Add(owner, (lease, cancel)); keep = true; }
+                    if (!_disposed && !_leases.ContainsKey(owner)) { _leases.Add(owner, (lease, cancel)); if (ReferenceEquals(owner, EffectiveRequestsBackend.Shared)) { Volatile.Write(ref _factsAdmitted, 1); if (lease.Legacy) Volatile.Write(ref _legacyAdmitted, 1); } Volatile.Write(ref _admitted, 1); keep = true; }
                 }
                 if (!keep) { cancel.Dispose(); lease.Dispose(); }
             }
             public void Dispose()
             {
                 (EffectiveRequestsBackend.Admission Admission, CancellationTokenRegistration Cancel)[] leases;
-                lock (_lock) { _disposed = true; leases = _leases.Values.ToArray(); _leases.Clear(); }
+                lock (_lock) { _disposed = true; Volatile.Write(ref _admitted, 0); Volatile.Write(ref _factsAdmitted, 0); Volatile.Write(ref _legacyAdmitted, 0); leases = _leases.Values.Concat(_factsLease is { } facts ? new[] { facts } : Array.Empty<(EffectiveRequestsBackend.Admission Admission, CancellationTokenRegistration Cancel)>()).ToArray(); _factsLease = null; _leases.Clear(); }
                 foreach (var lease in leases) { lease.Cancel.Dispose(); lease.Admission.Dispose(); }
                 _cancel.Dispose();
             }

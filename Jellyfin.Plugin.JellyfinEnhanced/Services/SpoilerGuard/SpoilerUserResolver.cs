@@ -27,7 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const string ContextKeyUserState = "__JE_SpoilerBlur_UserState_Shared";
 
         private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedAt = new();
 
         // F7: cross-request in-memory cache of each user's spoiler state, keyed
         // by userId (N-format). An anonymous image burst on a shared IP probes
@@ -51,13 +51,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // automatically (self-invalidating) and two users with the same set share
         // safely. Short TTL bounds staleness from library edits.
         private static readonly TimeSpan CollectionScopeCacheTtl = TimeSpan.FromSeconds(30);
-        private static readonly ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCache
+        private static ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCache
             = new(StringComparer.Ordinal);
 
         static SpoilerUserResolver()
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // A collection's members changed: every memoized membership answer may be stale.
-            PrivacyInputs.CollectionChanged += _ => _collectionScopeCache.Clear();
+            PrivacyInputs.CollectionChanged += _ => _collectionScopeCacheFacts.Clear();
         }
 
         /// <summary>
@@ -88,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // An item's typed TMDB key (a library fact, the same for every viewer), with when it was read and the input tick it
         // was read at: used only while the input log shows no library change of the item since then.
-        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)> _providerTitles = new();
+        private ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)> _providerTitles = new();
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
         private readonly RequestIdentityService _identity;
@@ -113,6 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // rule (and the collection-art lookup) can't drift between them.
         public Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (movieId == Guid.Empty || userState.Collections.Count == 0) return null;
 
             // F6 memo. The static cache serves BOTH within-request repeats (the
@@ -129,7 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var key in userState.Collections.Keys) if (Guid.TryParse(key, out var guid)) reads.Library(guid);
             }
             if (cacheKey != null
-                && _collectionScopeCache.TryGetValue(cacheKey, out var hit)
+                && _collectionScopeCacheFacts.TryGetValue(cacheKey, out var hit)
                 && (now - hit.CachedAt) < CollectionScopeCacheTtl)
             {
                 // The memo's own inputs, as of when it was read.
@@ -164,15 +166,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cacheKey != null && PrivacyInputs.LibraryChangesSince(readAt) is { } changed
                 && !userState.Collections.Keys.Any(k => Guid.TryParse(k, out var guid) && changed.Contains(guid)))
             {
-                _collectionScopeCache[cacheKey] = (result, now, readAt);
+                _collectionScopeCacheFacts[cacheKey] = (result, now, readAt);
                 // Opportunistic eviction, mirroring the season-watched cache in
                 // SpoilerBlurImageFilter: snapshot-free, only removes expired.
-                if (_collectionScopeCache.Count > 1024)
+                if (_collectionScopeCacheFacts.Count > 1024)
                 {
-                    foreach (var kvp in _collectionScopeCache)
+                    foreach (var kvp in _collectionScopeCacheFacts)
                     {
                         if ((now - kvp.Value.CachedAt) >= CollectionScopeCacheTtl)
-                            _collectionScopeCache.TryRemove(kvp.Key, out _);
+                            _collectionScopeCacheFacts.TryRemove(kvp.Key, out _);
                     }
                 }
             }
@@ -238,11 +240,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private bool ProviderScope(UserSpoilerBlur state, Guid id, string kind, IEnumerable<KeyValuePair<string, string>>? providers)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (state.ProviderTitles.Count + state.PendingTmdb.Count == 0) return false;
             if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
             // A remembered key holds while nothing changed the item since it was read; the answer records it as of then, so
             // the delivery gate sees a change after that too. A key read while the item changed is not remembered.
-            if (_providerTitles.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30)
+            if (_providerTitlesFacts.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30)
                 && (PrivacyInputs.Now == hit.Since || PrivacyInputs.LibraryChangesSince(hit.Since) is { } moved && !moved.Contains(id)))
             {
                 PrivacyReadSet.Current?.Library(id, hit.Since);
@@ -254,10 +257,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow, since);
                 if (PrivacyInputs.LibraryChangesSince(since) is { } changed && !changed.Contains(id))
                 {
-                    if (_providerTitles.Count >= 8192) _providerTitles.Clear();
-                    _providerTitles[id] = hit;
+                    if (_providerTitlesFacts.Count >= 8192) _providerTitlesFacts.Clear();
+                    _providerTitlesFacts[id] = hit;
                 }
-                else _providerTitles.TryRemove(id, out _);
+                else _providerTitlesFacts.TryRemove(id, out _);
             }
             return hit.Key != null && (state.ProviderTitles.ContainsKey(hit.Key) || state.PendingTmdb.ContainsKey(hit.Key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
         }
@@ -368,8 +371,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public void WarnRateLimited(string key, string message)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
-            var stored = _warnedAt.AddOrUpdate(key, now,
+            var stored = _warnedAtFacts.AddOrUpdate(key, now,
                 (_, last) => (now - last) >= PerKeyWarnInterval ? now : last);
             if (stored != now) return;
             _logger.Warning(message);
@@ -410,5 +414,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _corruptionLog.TryRemove(userKey, out _);
         }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _warnedAtFactsOwner = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedAtFacts { get => _warnedAtFactsOwner.Read(ref _warnedAt, () => new()); set => _warnedAtFactsOwner.Store(ref _warnedAt, value); }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)>> _collectionScopeCacheFactsOwner = new();
+        private static ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCacheFacts { get => _collectionScopeCacheFactsOwner.Read(ref _collectionScopeCache, () => new(StringComparer.Ordinal)); set => _collectionScopeCacheFactsOwner.Store(ref _collectionScopeCache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)>> _providerTitlesFactsOwner = new();
+        private ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)> _providerTitlesFacts { get => _providerTitlesFactsOwner.Read(ref _providerTitles, () => new()); set => _providerTitlesFactsOwner.Store(ref _providerTitles, value); }
     }
 }

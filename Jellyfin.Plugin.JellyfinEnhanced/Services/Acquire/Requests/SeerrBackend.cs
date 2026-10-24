@@ -582,10 +582,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private bool? FourKServerCore(bool movie)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
-            var held = Volatile.Read(ref _settings);
+            var held = _settingsFacts;
             if (source == null || held == null || held.Source != source || _now() - held.At > FourKKnownFor) return null;
             return movie ? held.Settings.Movie4k : held.Settings.Series4k;
         }
@@ -615,13 +616,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Seerr's request settings and when their read began (a held read's own instant; they count SettingsFor from it).
         private async Task<(SeerrRequestSettings? Settings, DateTimeOffset At)> SettingsReadAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {
-            var held = Volatile.Read(ref _settings);
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var held = _settingsFacts;
             if (!fresh && held != null && held.Source == source && _now() - held.At < SettingsFor) return (held.Settings, held.At);
             var at = _now();
             if (await GetAsync(config, "/api/v1/settings/public", ct).ConfigureAwait(false) is not { } json) return (null, at);
             static bool? Tri(JsonElement e, string name) => e.TryGetProperty(name, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
             var settings = new SeerrRequestSettings(Tri(json, "partialRequestsEnabled"), Tri(json, "enableSpecialEpisodes") == true, Tri(json, "movie4kEnabled") == true, Tri(json, "series4kEnabled") == true);
-            Volatile.Write(ref _settings, new SettingsRead(source, settings, at));
+            _settingsFacts = new SettingsRead(source, settings, at);
             return (settings, at);
         }
 
@@ -703,7 +705,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 payload = new System.Text.Json.Nodes.JsonObject
                 {
-                    ["mediaType"] = "tv", ["mediaId"] = tmdb, ["is4k"] = is4k,
+                    ["mediaType"] = "tv",
+                    ["mediaId"] = tmdb,
+                    ["is4k"] = is4k,
                     ["seasons"] = new System.Text.Json.Nodes.JsonArray(seasons.Select(n => (System.Text.Json.Nodes.JsonNode?)n).ToArray()),
                 };
             }
@@ -786,44 +790,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             switch (raw.Status)
             {
                 case 200 or 201 when raw.Json:
-                {
-                    // Seerr leaves out seasons that are already requested or on their way and creates the rest: the request
-                    // counts once a fresh read shows every sent season covered and this person's new request among them.
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
-                    if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
-                        : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
-                }
+                    {
+                        // Seerr leaves out seasons that are already requested or on their way and creates the rest: the request
+                        // counts once a fresh read shows every sent season covered and this person's new request among them.
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+                        if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
+                            : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
+                    }
                 case 202 when raw.Json && Message(raw.Body) is { } message && message.Contains("no seasons", StringComparison.OrdinalIgnoreCase):
-                {
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
-                        : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
-                }
+                    {
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
+                            : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
+                    }
                 case 409 when raw.Json:
-                {
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
-                        : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
-                }
+                    {
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
+                            : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
+                    }
                 case 202 when raw.Json:
                     return BackendResults.Maybe(job.WantId, "Seerr accepted the request without creating one; a fresh read decides.");
                 case 409:
                     return BackendResults.Failed("seerr_conflict", "Seerr reported a conflict without a readable answer.");
                 case 403 when raw.Json:
-                {
-                    var text = Message(raw.Body) ?? string.Empty;
-                    if (text.Contains("quota", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("quota_exceeded", "Seerr refused: over this person's Seerr quota.");
-                    if (text.Contains("4k", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("requests_4k_required", "Seerr refused: no 4K request permission.");
-                    if (text.Contains("blocklist", StringComparison.OrdinalIgnoreCase) || text.Contains("blacklist", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("blocked", "Seerr refused: the title is on its blocklist.");
-                    return BackendResults.Hold("seerr_refused", "Seerr refused the request for this person.");
-                }
+                    {
+                        var text = Message(raw.Body) ?? string.Empty;
+                        if (text.Contains("quota", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("quota_exceeded", "Seerr refused: over this person's Seerr quota.");
+                        if (text.Contains("4k", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("requests_4k_required", "Seerr refused: no 4K request permission.");
+                        if (text.Contains("blocklist", StringComparison.OrdinalIgnoreCase) || text.Contains("blacklist", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("blocked", "Seerr refused: the title is on its blocklist.");
+                        return BackendResults.Hold("seerr_refused", "Seerr refused the request for this person.");
+                    }
                 case 401 or 403:
                     return BackendResults.Hold("service_down", "Seerr rejected Jellyfin Enhanced's API key.");
                 case 400 or 422:
@@ -1221,5 +1225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static int? Int(JsonElement e, string name) => DirectArrBackend.Int(e, name);
 
         private static string? Str(JsonElement e, string name) => DirectArrBackend.Str(e, name);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<SettingsRead?> _settingsFactsOwner = new();
+        private SettingsRead? _settingsFacts { get => _settingsFactsOwner.Read(ref _settings, () => default!); set => _settingsFactsOwner.Store(ref _settings, value); }
     }
 }

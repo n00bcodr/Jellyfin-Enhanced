@@ -36,7 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ILibraryManager _libraryManager;
 
         // In-memory cache of recently requested seasons to avoid duplicates (keyed by tmdbId_seasonNumber, global across all users)
-        private readonly Dictionary<string, DateTime> _requestedSeasons = new();
+        private Dictionary<string, DateTime> _requestedSeasons = new();
         private readonly object _requestCacheLock = new();
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string Content, DateTime CachedAt)> _seriesDetailsCache = new();
@@ -44,8 +44,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(Task<string?> Task, DateTime StartedAt)> _seriesDetailsInFlight = new();
 
         // Strict JE's direct TMDB answers never enter a Seerr cache. Legacy v0 keeps its existing cache path.
-        private readonly ConcurrentDictionary<string, (string Content, DateTime At)> _jeTmdbDetails = new();
-        private readonly ConcurrentDictionary<string, (Task<string?> Read, DateTime At)> _jeTmdbFlights = new();
+        private ConcurrentDictionary<string, (string Content, DateTime At)> _jeTmdbDetails = new();
+        private ConcurrentDictionary<string, (Task<string?> Read, DateTime At)> _jeTmdbFlights = new();
 
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
@@ -208,16 +208,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<string?> JeTmdbSeriesAsync(string tmdbId, PluginConfiguration config)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (config.JellyseerrDisableCache) return await FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey()).ConfigureAwait(false);
-            if (_jeTmdbDetails.TryGetValue(tmdbId, out var held) && DateTime.UtcNow - held.At < GetSeriesDetailsCacheTtl()) return held.Content;
-            var flight = _jeTmdbFlights.GetOrAdd(tmdbId, _ => (FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey()), DateTime.UtcNow));
+            if (_jeTmdbDetailsFacts.TryGetValue(tmdbId, out var held) && DateTime.UtcNow - held.At < GetSeriesDetailsCacheTtl()) return held.Content;
+            var flight = _jeTmdbFlightsFacts.GetOrAdd(tmdbId, _ => (FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey()), DateTime.UtcNow));
             try
             {
                 var content = await flight.Read.ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(content)) _jeTmdbDetails[tmdbId] = (content, flight.At);
+                if (!string.IsNullOrEmpty(content)) _jeTmdbDetailsFacts[tmdbId] = (content, flight.At);
                 return content;
             }
-            finally { _jeTmdbFlights.TryRemove(new KeyValuePair<string, (Task<string?>, DateTime)>(tmdbId, flight)); }
+            finally { _jeTmdbFlightsFacts.TryRemove(new KeyValuePair<string, (Task<string?>, DateTime)>(tmdbId, flight)); }
         }
 
         // TMDB's series details in the shape the season checks read from Seerr (seasonNumber, episodeCount).
@@ -258,7 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Event-driven entry point called when a user finishes or starts watching an episode.
         // The outcome is typed: a failed details lookup is a PreparationFailed, never "nothing to do".
         public Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
-            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => CheckEpisodeCompletionAsyncFactsCore(episodeItem, userId, token), ct);
+            => AutoRequestOutcome.RunOwnedAsync(token => CheckEpisodeCompletionAsyncFactsCore(episodeItem, userId, token), ct);
 
         private async Task<AutoRequestOutcome> CheckEpisodeCompletionAsyncFactsCore(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
         {
@@ -323,6 +324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Checks if a specific season needs its next season requested
         private async Task<AutoRequestOutcome?> CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user, bool ledger, CancellationToken ct)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
             {
@@ -440,18 +442,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_requestCacheLock)
             {
                 // Clean up expired entries
-                var expiredKeys = _requestedSeasons.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
+                var expiredKeys = _requestedSeasonsFacts.Where(kvp => (DateTime.Now - kvp.Value).TotalHours > 1)
                     .Select(kvp => kvp.Key).ToList();
-                foreach (var key in expiredKeys) _requestedSeasons.Remove(key);
+                foreach (var key in expiredKeys) _requestedSeasonsFacts.Remove(key);
 
-                if (_requestedSeasons.ContainsKey(cacheKey))
+                if (_requestedSeasonsFacts.ContainsKey(cacheKey))
                 {
                     _logger.Debug($"[Auto-Season-Request] Already requested S{nextSeasonNumber} for TMDB {tmdbId} (cached)");
                     return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
                 }
 
                 // Reserve the slot so concurrent callers see it immediately
-                _requestedSeasons[cacheKey] = DateTime.Now;
+                _requestedSeasonsFacts[cacheKey] = DateTime.Now;
             }
 
             // Get episode count for next season to verify it has started
@@ -465,7 +467,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // TMDB updates with the new season's data.
                 lock (_requestCacheLock)
                 {
-                    _requestedSeasons.Remove(cacheKey);
+                    _requestedSeasonsFacts.Remove(cacheKey);
                 }
                 return nextFailed ? AutoRequestOutcome.Failed("details_unavailable") : AutoRequestOutcome.Noop("next_season_not_started", seriesKey?.ToString());
             }
@@ -478,7 +480,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!statusFailed) _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
                 lock (_requestCacheLock)
                 {
-                    _requestedSeasons.Remove(cacheKey);
+                    _requestedSeasonsFacts.Remove(cacheKey);
                 }
                 return statusFailed ? AutoRequestOutcome.Failed("seerr_unavailable") : AutoRequestOutcome.Noop("next_season_unknown", seriesKey?.ToString());
             }
@@ -501,7 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 lock (_requestCacheLock)
                 {
-                    _requestedSeasons.Remove(cacheKey);
+                    _requestedSeasonsFacts.Remove(cacheKey);
                 }
                 if (stop == AutomationHolds.EngineChanged)
                 {
@@ -539,7 +541,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Remove sentinel so a future attempt can retry
             lock (_requestCacheLock)
             {
-                _requestedSeasons.Remove(cacheKey);
+                _requestedSeasonsFacts.Remove(cacheKey);
             }
             _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
             return AutoRequestOutcome.Failed("seerr_request_failed", seriesKey?.ToString());
@@ -963,5 +965,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return null;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, DateTime>> _requestedSeasonsFactsOwner = new();
+        private Dictionary<string, DateTime> _requestedSeasonsFacts { get => _requestedSeasonsFactsOwner.Read(ref _requestedSeasons, () => new()); set => _requestedSeasonsFactsOwner.Store(ref _requestedSeasons, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (string Content, DateTime At)>> _jeTmdbDetailsFactsOwner = new();
+        private ConcurrentDictionary<string, (string Content, DateTime At)> _jeTmdbDetailsFacts { get => _jeTmdbDetailsFactsOwner.Read(ref _jeTmdbDetails, () => new()); set => _jeTmdbDetailsFactsOwner.Store(ref _jeTmdbDetails, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (Task<string?> Read, DateTime At)>> _jeTmdbFlightsFactsOwner = new();
+        private ConcurrentDictionary<string, (Task<string?> Read, DateTime At)> _jeTmdbFlightsFacts { get => _jeTmdbFlightsFactsOwner.Read(ref _jeTmdbFlights, () => new()); set => _jeTmdbFlightsFactsOwner.Store(ref _jeTmdbFlights, value); }
     }
 }

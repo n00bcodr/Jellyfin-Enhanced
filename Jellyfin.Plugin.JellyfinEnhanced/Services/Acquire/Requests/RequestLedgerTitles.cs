@@ -36,7 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         /// <summary>SQL: the canonical key of the key bound to <paramref name="parameter"/> (itself when it isn't a known alias).</summary>
         /// <param name="parameter">A SQL parameter name, e.g. <c>$key</c>.</param>
-        internal static string CanonicalOf(string parameter) => "COALESCE((SELECT canonical FROM title_aliases WHERE alias=" + parameter + ")," + parameter + ")";
+        internal static string CanonicalOf(string parameter) => "COALESCE((SELECT canonical FROM active_title_aliases WHERE alias=" + parameter + ")," + parameter + ")";
 
         /// <summary>SQL: a row's title is the one <c>$key</c> names, by any of its ids.</summary>
         internal static readonly string TitleIs = "title_key=" + CanonicalOf("$key");
@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="t">The transaction, if any.</param>
         /// <param name="key">A title key (any of its ids).</param>
         internal static string Canonical(SqliteConnection c, SqliteTransaction? t, string key)
-            => Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$k", ("$k", key)) ?? key;
+            => Scalar(c, t, "SELECT canonical FROM active_title_aliases WHERE alias=$k", ("$k", key)) ?? key;
 
         // The input under its title's canonical key.
         private static MutationInput Canonical(SqliteConnection c, SqliteTransaction? t, MutationInput input)
@@ -64,11 +64,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var canonical = Canonical(c, null, key.Title.ToString());
             var keys = new HashSet<string>(StringComparer.Ordinal) { canonical, key.Title.ToString() };
-            using var cmd = Cmd(c, null, "SELECT alias FROM title_aliases WHERE canonical=$c", ("$c", canonical));
+            using var cmd = Cmd(c, null, "SELECT alias FROM active_title_aliases WHERE canonical=$c", ("$c", canonical));
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) keys.Add(reader.GetString(0));
             return (IReadOnlyList<TitleKey>)keys.Select(TitleKey.Parse).OfType<TitleKey>().Where(k => k.IsMovie == key.IsMovie).OrderBy(Rank).ToArray();
         });
+
+        // An explicitly accepted local want/import makes currently proved aliases durable history. An old hidden
+        // association is absent from the view and cannot be reactivated merely by asking under its old alias.
+        private static void AcceptActiveAliases(SqliteConnection c, SqliteTransaction t, string key)
+            => Exec(c, t, "DELETE FROM title_alias_origins WHERE alias IN(SELECT alias FROM active_title_aliases WHERE canonical=$k OR alias=$k)", ("$k", key));
 
         /// <summary>Every title key the ledger holds requests under (each once).</summary>
         public IReadOnlyList<string> TitleKeys() => !_db.Available ? Array.Empty<string>() : _db.Read(c =>
@@ -85,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var canonical = Canonical(c, t, input.Key);
             var keys = new HashSet<string>(StringComparer.Ordinal) { input.Key, canonical };
-            using (var cmd = Cmd(c, t, "SELECT alias FROM title_aliases WHERE canonical=$c", ("$c", canonical)))
+            using (var cmd = Cmd(c, t, "SELECT alias FROM active_title_aliases WHERE canonical=$c", ("$c", canonical)))
             using (var r = cmd.ExecuteReader())
                 while (r.Read()) keys.Add(r.GetString(0));
             return keys.Select(k => (input with { Key = k }).Fingerprint).ToHashSet(StringComparer.Ordinal);
@@ -113,10 +118,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="now">Now.</param>
         public TitleMerge? Unify(IEnumerable<string> keys, IRequestPolicy policy, DateTimeOffset now)
         {
+            var seerrOrigin = SeerrFacts.HasSeerrDependency;
+            var factsOrigin = Helpers.UserCacheRegistry.PersistentOrigin(Helpers.UserCacheRegistry.Begin());
             var given = keys.Select(TitleKey.Parse).OfType<TitleKey>().Select(k => k.Title).DistinctBy(k => k.ToString()).ToList();
             if (given.Count < 2 || given.Any(k => k.IsMovie != given[0].IsMovie) || !_db.Available) return null;
-            if (!_db.Read(c => Group(c, null, given) is { } group && Needed(c, null, group))) return null;
-            return _db.Write((c, t) => Group(c, t, given) is { } group && Needed(c, t, group) ? UnifyCore(c, t, group, policy, now) : null);
+            if (!_db.Read(c => Group(c, null, given) is { } group && Needed(c, null, group, seerrOrigin))) return null;
+            return _db.Write((c, t) => Group(c, t, given) is { } group && Needed(c, t, group, seerrOrigin) ? UnifyCore(c, t, group, policy, now, seerrOrigin, factsOrigin) : null);
         }
 
         // The title's keys: the ones given, what the ledger already maps them to, and the aliases it maps to those, with the
@@ -127,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var canonical in keys.Select(k => Canonical(c, t, k)).ToList()) keys.Add(canonical);
             foreach (var canonical in keys.ToList())
             {
-                using var cmd = Cmd(c, t, "SELECT alias FROM title_aliases WHERE canonical=$c", ("$c", canonical));
+                using var cmd = Cmd(c, t, "SELECT alias FROM active_title_aliases WHERE canonical=$c", ("$c", canonical));
                 using var r = cmd.ExecuteReader();
                 while (r.Read()) keys.Add(r.GetString(0));
             }
@@ -137,15 +144,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         // Something to do: an alias not mapped to the canonical key yet, or a row still held under an alias.
-        private static bool Needed(SqliteConnection c, SqliteTransaction? t, List<string> group)
+        private static bool Needed(SqliteConnection c, SqliteTransaction? t, List<string> group, bool seerrOrigin)
         {
             var aliases = group.Skip(1).ToList();
-            if (aliases.Any(a => Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$a", ("$a", a)) != group[0])) return true;
-            if (Scalar(c, t, "SELECT alias FROM title_aliases WHERE alias=$c", ("$c", group[0])) != null) return true;
+            if (!seerrOrigin && aliases.Any(a => Scalar(c, t, "SELECT alias FROM title_alias_origins WHERE alias=$a", ("$a", a)) != null)) return true;
+            if (aliases.Any(a => Scalar(c, t, "SELECT canonical FROM active_title_aliases WHERE alias=$a", ("$a", a)) != group[0])) return true;
+            if (Scalar(c, t, "SELECT alias FROM active_title_aliases WHERE alias=$c", ("$c", group[0])) != null) return true;
             return aliases.Any(a => Scalar(c, t, "SELECT 1 WHERE EXISTS(SELECT 1 FROM wants WHERE title_key=$a) OR EXISTS(SELECT 1 FROM acquisitions WHERE title_key=$a)", ("$a", a)) != null);
         }
 
-        private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IRequestPolicy policy, DateTimeOffset now)
+        private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IRequestPolicy policy, DateTimeOffset now, bool seerrOrigin, string factsOrigin)
         {
             var canonical = group[0];
             var aliases = group.Skip(1).ToList();
@@ -153,6 +161,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "DELETE FROM title_aliases WHERE alias=$c", ("$c", canonical));
             foreach (var alias in aliases)
                 Exec(c, t, "INSERT INTO title_aliases(alias,canonical,learned_at) VALUES($a,$c,$at) ON CONFLICT(alias) DO UPDATE SET canonical=$c,learned_at=$at WHERE canonical<>$c", ("$a", alias), ("$c", canonical), ("$at", Ms(now)));
+            Exec(c, t, "DELETE FROM title_alias_origins WHERE alias=$c", ("$c", canonical));
+            foreach (var alias in aliases)
+            {
+                if (seerrOrigin)
+                    Exec(c, t, "INSERT INTO title_alias_origins(alias,facts_generation) VALUES($a,$g) ON CONFLICT(alias) DO UPDATE SET facts_generation=$g", ("$a", alias), ("$g", factsOrigin));
+                else Exec(c, t, "DELETE FROM title_alias_origins WHERE alias=$a", ("$a", alias));
+            }
             var people = new HashSet<Guid>();
             var moved = new List<RequestWant>();
             foreach (var alias in aliases) moved.AddRange(Wants(c, t, "title_key=$a", ("$a", alias)));
@@ -198,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (survivor.Key != canonical) Exec(c, t, "UPDATE acquisitions SET title_key=$c WHERE id=$s", ("$c", canonical), ("$s", survivor.Id));
                 if (edition.Count() > 1) merged.Add(survivor.Id);
             }
-            Exec(c, t, "UPDATE request_events SET title_key=$c WHERE title_key IN (SELECT alias FROM title_aliases WHERE canonical=$c)", ("$c", canonical));
+            Exec(c, t, "UPDATE request_events SET title_key=$c WHERE title_key IN (SELECT alias FROM active_title_aliases WHERE canonical=$c)", ("$c", canonical));
             var followers = merged.Sum(acquisition => FollowWithin(c, t, acquisition, policy, now));
             Changed(c, t);
             Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", canonical), ("$at", Ms(now)));

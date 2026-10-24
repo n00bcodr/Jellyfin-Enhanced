@@ -156,45 +156,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// </summary>
         internal Services.Secrets.SecretsMigration.Report RestoreConfiguration(PluginConfiguration restored, IReadOnlyCollection<string> restoredSecretNames)
         {
-            lock (AnalyticsCredentialLock)
+            Services.Secrets.SecretsMigration.Report? result = null;
+            Services.Acquire.Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() =>
             {
-                var current = Configuration;
-                if (current != null)
+                lock (AnalyticsCredentialLock)
                 {
-                    restored.AnalyticsEnabled = current.AnalyticsEnabled;
-                    restored.AnalyticsHasBeenConfigured = current.AnalyticsHasBeenConfigured;
-                    restored.AnalyticsInstallId = current.AnalyticsInstallId;
-                    restored.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
-                    restored.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
-                    restored.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
-                    restored.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
-                    restored.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
-                    restored.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
-                    restored.AnalyticsForbiddenSinceLastSuccess = current.AnalyticsForbiddenSinceLastSuccess;
+                    var current = Configuration;
+                    if (current != null)
+                    {
+                        restored.AnalyticsEnabled = current.AnalyticsEnabled;
+                        restored.AnalyticsHasBeenConfigured = current.AnalyticsHasBeenConfigured;
+                        restored.AnalyticsInstallId = current.AnalyticsInstallId;
+                        restored.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                        restored.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
+                        restored.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
+                        restored.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                        restored.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
+                        restored.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
+                        restored.AnalyticsForbiddenSinceLastSuccess = current.AnalyticsForbiddenSinceLastSuccess;
+                    }
+                    var detached = current != null
+                        ? Services.Secrets.SecretsMigration.DetachMovedCredentials(restored, current, restoredSecretNames)
+                        : new List<string>();
+                    var report = Services.Secrets.SecretsMigration.MigrateStored(restored, Secrets);
+                    if (detached.Count > 0)
+                    {
+                        report.NeedsReentry.AddRange(detached);
+                        report.Notes.Add($"Restore: {detached.Count} saved credential(s) were not kept because the backup points them at another server than this install's saved key was for; enter them again.");
+                    }
+                    _restoringConfiguration = true;
+                    try
+                    {
+                        // A configuration write like any other (its generation moves on past the one held now), never the host
+                        // route's: the restored configuration is applied whatever generation the backup recorded.
+                        ApplyConfiguration(_ => restored, coordinated: true);
+                    }
+                    finally
+                    {
+                        _restoringConfiguration = false;
+                    }
+                    LogSecretsReport(report);
+                    result = report;
                 }
-                var detached = current != null
-                    ? Services.Secrets.SecretsMigration.DetachMovedCredentials(restored, current, restoredSecretNames)
-                    : new List<string>();
-                var report = Services.Secrets.SecretsMigration.MigrateStored(restored, Secrets);
-                if (detached.Count > 0)
-                {
-                    report.NeedsReentry.AddRange(detached);
-                    report.Notes.Add($"Restore: {detached.Count} saved credential(s) were not kept because the backup points them at another server than this install's saved key was for; enter them again.");
-                }
-                _restoringConfiguration = true;
-                try
-                {
-                    // A configuration write like any other (its generation moves on past the one held now), never the host
-                    // route's: the restored configuration is applied whatever generation the backup recorded.
-                    ApplyConfiguration(_ => restored);
-                }
-                finally
-                {
-                    _restoringConfiguration = false;
-                }
-                LogSecretsReport(report);
-                return report;
-            }
+            }, CancellationToken.None, () =>
+            {
+                lock (AnalyticsCredentialLock) return RequiresBackendDrain(Configuration, restored);
+            }).GetAwaiter().GetResult();
+            return result!;
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -418,11 +426,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             return result!;
         }
 
+        // Version-zero selectors keep already-admitted legacy sends. The shared choice observer still
+        // advances FactsGeneration for that commit, retiring every old cache without restamping its inputs.
+        private static bool RequiresBackendDrain(PluginConfiguration? current, BasePluginConfiguration next)
+            => next is PluginConfiguration incoming
+                && (current?.ArrBackendIsolationVersion != incoming.ArrBackendIsolationVersion
+                    || incoming.ArrBackendIsolationVersion != 0 && current?.ArrRequestBackend != incoming.ArrRequestBackend);
+
         // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
         // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
-        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build)
+        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build, bool coordinated = false)
         {
-            bool tagCacheWasEnabled, analyticsWasEnabled;
+            bool tagCacheWasEnabled = false, analyticsWasEnabled = false;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -442,49 +457,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            lock (AnalyticsCredentialLock)
+            // Drain before taking the configuration/lifecycle lock. Native saves, patches and restores
+            // share the same writer owner as adoption; its committed choice advances FactsGeneration.
+            void Commit()
             {
-                // Captured BEFORE base.UpdateConfiguration replaces Configuration, so an actual OFF<->ON transition is
-                // distinguishable from an unrelated config save (this runs on every save).
-                tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-                analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
-                NoteHeldGeneration(Configuration as PluginConfiguration);
-                var configuration = build(Configuration as PluginConfiguration);
-                if (configuration is PluginConfiguration gated)
+                lock (AnalyticsCredentialLock)
                 {
-                    gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
-                }
-
-                if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
-                {
-                    // Credentials: placeholders/blanks keep the stored value, the clear token removes
-                    // it, a typed value or import handle replaces it; only placeholders are persisted.
-                    var secretsReport = Services.Secrets.SecretsMigration.ApplyIncoming(incoming, current, Secrets);
-                    LogSecretsReport(secretsReport);
-
-                    // Household and request-handling settings the page didn't change keep what the server holds now.
-                    var kept = Services.Acquire.Requests.ServerOwnedSettings.Merge(incoming, current);
-                    if (kept.Count > 0) _logger.Info("Jellyfin Enhanced: configuration save kept the server's newer " + string.Join(", ", kept) + ".");
-
-                    var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
-                    var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
-                    if (incomingIncomplete && currentComplete)
+                    // Captured BEFORE base.UpdateConfiguration replaces Configuration, so an actual OFF<->ON transition is
+                    // distinguishable from an unrelated config save (this runs on every save).
+                    tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+                    analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+                    NoteHeldGeneration(Configuration as PluginConfiguration);
+                    var configuration = build(Configuration as PluginConfiguration);
+                    if (configuration is PluginConfiguration gated)
                     {
-                        incoming.AnalyticsInstallId = current.AnalyticsInstallId;
-                        incoming.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                        gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
                     }
-                    if (incoming.AnalyticsLastReportedAt == 0 && current.AnalyticsLastReportedAt != 0)
-                    {
-                        incoming.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
-                        incoming.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
-                        incoming.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
-                        incoming.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
-                        incoming.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
-                    }
-                }
 
-                base.UpdateConfiguration(configuration);
+                    if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
+                    {
+                        // Credentials: placeholders/blanks keep the stored value, the clear token removes
+                        // it, a typed value or import handle replaces it; only placeholders are persisted.
+                        var secretsReport = Services.Secrets.SecretsMigration.ApplyIncoming(incoming, current, Secrets);
+                        LogSecretsReport(secretsReport);
+
+                        // Household and request-handling settings the page didn't change keep what the server holds now.
+                        var kept = Services.Acquire.Requests.ServerOwnedSettings.Merge(incoming, current);
+                        if (kept.Count > 0) _logger.Info("Jellyfin Enhanced: configuration save kept the server's newer " + string.Join(", ", kept) + ".");
+
+                        var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
+                        var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
+                        if (incomingIncomplete && currentComplete)
+                        {
+                            incoming.AnalyticsInstallId = current.AnalyticsInstallId;
+                            incoming.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                        }
+                        if (incoming.AnalyticsLastReportedAt == 0 && current.AnalyticsLastReportedAt != 0)
+                        {
+                            incoming.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
+                            incoming.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
+                            incoming.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                            incoming.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
+                            incoming.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
+                        }
+                    }
+
+                    base.UpdateConfiguration(configuration);
+                }
             }
+            if (coordinated) Commit();
+            else Services.Acquire.Backends.EffectiveRequestsBackend.Shared.TransitionAsync(Commit, CancellationToken.None, () =>
+            {
+                // Build is a pure patch/whole-document validation; rebuild at commit against the then-current
+                // configuration so concurrent server bookkeeping cannot be overwritten by this preview.
+                lock (AnalyticsCredentialLock) return RequiresBackendDrain(Configuration, build(Configuration));
+            }).GetAwaiter().GetResult();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try

@@ -428,19 +428,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// </summary>
         private sealed class GroupLibrary(ListImportResolver resolver, IReadOnlyList<User> users)
         {
-            private readonly Dictionary<string, bool> _shows = new(StringComparer.Ordinal);
-            private readonly Dictionary<(string, int), ImportLibraryDto?> _seasons = new();
+            private Dictionary<string, bool> _shows = new(StringComparer.Ordinal);
+            private Dictionary<(string, int), ImportLibraryDto?> _seasons = new();
 
             public ImportLibraryDto? Find(SourceGroup group, CompletedIdentity identity)
             {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
                 var first = group.First;
                 if (first.MediaType == "tv")
                 {
                     var show = identity.Text();
-                    if (!_shows.TryGetValue(show, out var present))
+                    if (!_showsFacts.TryGetValue(show, out var present))
                     {
                         present = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Series, identity, null, null), users, null) != null;
-                        _shows[show] = present;
+                        _showsFacts[show] = present;
                     }
 
                     if (!present)
@@ -450,10 +451,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                     if (first.Season is { } season && group.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes)
                     {
-                        if (!_seasons.TryGetValue((show, season), out var seasonMatch))
+                        if (!_seasonsFacts.TryGetValue((show, season), out var seasonMatch))
                         {
                             seasonMatch = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Season, identity, season, null), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
-                            _seasons[(show, season)] = seasonMatch;
+                            _seasonsFacts[(show, season)] = seasonMatch;
                         }
 
                         if (seasonMatch == null || group.Kind == PlaceholderKinds.Season)
@@ -465,6 +466,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                 return resolver.FindInLibrary(ListSourceGroups.Scope(group, identity), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
             }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, bool>> _showsFactsOwner = new();
+            private Dictionary<string, bool> _showsFacts { get => _showsFactsOwner.Read(ref _shows, () => new(StringComparer.Ordinal)); set => _showsFactsOwner.Store(ref _shows, value); }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(string, int), ImportLibraryDto?>> _seasonsFactsOwner = new();
+            private Dictionary<(string, int), ImportLibraryDto?> _seasonsFacts { get => _seasonsFactsOwner.Read(ref _seasons, () => new()); set => _seasonsFactsOwner.Store(ref _seasons, value); }
         }
     }
 

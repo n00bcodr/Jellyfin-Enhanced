@@ -123,7 +123,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public sealed class Publication : IDisposable
         {
             private readonly Publication? _parent;
+            internal long Generation { get; }
+            internal bool Tainted { get; private set; }
+            internal bool Retained => _background?.HasAdmission == true || _parent?.Retained == true;
+            internal bool LegacyRetained => _background?.HasLegacyAdmission == true || _parent?.LegacyRetained == true;
+            internal bool RetainedGeneration => _background?.HasFactsAdmission == true || _parent?.RetainedGeneration == true;
+            internal void MarkTainted() { Tainted = true; Helpers.UserCacheRegistry.MarkTainted(); _parent?.MarkTainted(); }
             private readonly Background? _background;
+            private long _factsDependency;
+            private int _factsRetainDependency;
+            internal bool FactsRetainDependency => Volatile.Read(ref _factsRetainDependency) != 0 || _parent?.FactsRetainDependency == true;
+            internal long FactsDependency => Volatile.Read(ref _factsDependency) is var own && own != 0 ? own : _parent?.FactsDependency ?? 0;
+            internal void IncludeFacts(long generation, bool tainted)
+            {
+                if (Volatile.Read(ref _factsDependency) == generation && (!tainted || FactsRetainDependency)) return;
+                var inherited = FactsDependency;
+                if (inherited != 0 && inherited != generation) throw new BackendDisabledException("configuration_changed");
+                if (tainted && _parent?.RetainedGeneration != true) _background?.IncludeFacts(generation);
+                _parent?.IncludeFacts(generation, tainted);
+                if (tainted) Volatile.Write(ref _factsRetainDependency, 1);
+                Interlocked.CompareExchange(ref _factsDependency, generation, 0);
+            }
             private readonly Dictionary<EffectiveRequestsBackend, long> _dependencies = new();
             private readonly Dictionary<EffectiveRequestsBackend, long> _effectiveDependencies = new();
             /// <summary>
@@ -142,7 +162,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 lock (_effectiveDependencies) foreach (var pair in _effectiveDependencies) all.TryAdd(pair.Key, pair.Value);
                 return all.ToArray();
             }
-            internal Publication(bool retain = false, CancellationToken ct = default) { _parent = Pending.Value; _background = retain ? new Background(ct) : null; Pending.Value = this; }
+            internal Publication(bool retain = false, CancellationToken ct = default)
+            {
+                _parent = Pending.Value;
+                Generation = _parent?.Generation ?? Helpers.UserCacheRegistry.Begin().Generation;
+                _background = retain ? new Background(ct) : null;
+                // A writer entered after a warm-cache lookup must retain that original input before any wait.
+                try { if (_parent?.FactsRetainDependency == true && _parent?.RetainedGeneration != true && _parent?.FactsDependency is > 0 and var facts) _background?.IncludeFacts(facts); }
+                catch { _background?.Dispose(); throw; }
+                Pending.Value = this;
+            }
             internal CancellationToken Token => _background?.Token ?? CancellationToken.None;
             internal void Include(EffectiveRequestsBackend owner, long epoch)
             {
@@ -169,7 +198,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 T Check(int index) => index == dependencies.Length ? result() : dependencies[index].Key.CommitSeerr(dependencies[index].Value, () => Check(index + 1));
                 var effective = EffectiveDependencies();
                 T CheckEffective(int index) => index == effective.Length ? Check(0) : effective[index].Key.CommitEffective(effective[index].Value, () => CheckEffective(index + 1));
-                return CheckEffective(0);
+                var facts = FactsDependency;
+                // A test/custom provider owner can differ from Shared. Never nest its monitor under Shared's:
+                // durable cache-dependent effects retain the shared admission, while result composition checks both ends.
+                // A native version-zero backend-selector save has no isolation semantics for an already admitted
+                // legacy Seerr send. Cache lookups/stores still reject old tickets; adoption into v1 still rejects it.
+                var legacySend = LegacyRetained && EffectiveRequestsBackend.Shared.Current.IsolationVersion == 0;
+                if (facts != 0 && !legacySend) EffectiveRequestsBackend.Shared.CommitFacts(facts, () => true);
+                var value = CheckEffective(0);
+                if (facts != 0 && !(legacySend && EffectiveRequestsBackend.Shared.Current.IsolationVersion == 0)) EffectiveRequestsBackend.Shared.CommitFacts(facts, () => true);
+                return value;
             }
             public void Dispose() { if (Pending.Value == this) Pending.Value = _parent; _background?.Dispose(); }
         }
@@ -183,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 owner.CheckSeerr(SeerrUse.RequestRead, epoch).Demand();
                 Include(epoch);
                 var admitted = Pending.Value?.Epoch(owner) ?? epoch;
-                return owner.CommitSeerr(admitted, () => owner.CommitSeerr(epoch, result));
+                return owner.CommitSeerr(admitted, () => owner.CommitSeerr(epoch, () => Mark(result()).Value));
             }
             internal T Cached<T>(Func<T> read, T inactive, long? epoch = null)
             {

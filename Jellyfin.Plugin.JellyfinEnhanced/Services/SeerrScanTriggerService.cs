@@ -48,7 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool _disposed;
         // The last address list and its fingerprint (library scans nudge once per added item); one reference, swapped whole.
         private sealed record SourceCache(string? Urls, string Source);
-        private volatile SourceCache? _source;
+        private SourceCache? _source;
 
         // One pending batch of nudges for one Seerr and job.
         private sealed class Owner
@@ -140,10 +140,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The owner key of the configured Seerr: its address set (a key rotation is the same Seerr).
         private string SourceOf(PluginConfiguration config)
         {
-            var cached = _source;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var cached = _sourceFacts;
             if (cached != null && cached.Urls == config.JellyseerrUrls) return cached.Source;
             var source = SeerrFacts.AddressFingerprint(config);
-            _source = new SourceCache(config.JellyseerrUrls, source);
+            _sourceFacts = new SourceCache(config.JellyseerrUrls, source);
             return source;
         }
 
@@ -483,5 +484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public int StatusCode { get; set; }
             public string Body { get; set; } = string.Empty;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<SourceCache?> _sourceFactsOwner = new();
+        private SourceCache? _sourceFacts { get => _sourceFactsOwner.Read(ref _source, () => default!); set => _sourceFactsOwner.Store(ref _source, value); }
     }
 }

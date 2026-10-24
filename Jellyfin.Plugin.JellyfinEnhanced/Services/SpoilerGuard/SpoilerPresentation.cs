@@ -48,6 +48,7 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
     /// <summary>Loads strictly once per request. Unknown policy suppresses sensitive presentation.</summary>
     public SpoilerPresentationContext Load(Guid viewer, HttpContext? http = null)
     {
+        using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         var key = "__JE_SPOILER_PRESENTATION_" + viewer.ToString("N");
         if (http?.Items.TryGetValue(key, out var hit) == true && hit is SpoilerPresentationContext cached)
         {
@@ -79,8 +80,11 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
                     foreach (var batch in ids.Chunk(2000))
                     {
                         PrivacyReadSet.Current?.Library(batch);
-                        var items = library.GetItemList(new InternalItemsQuery { ItemIds = batch,
-                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } });
+                        var items = library.GetItemList(new InternalItemsQuery
+                        {
+                            ItemIds = batch,
+                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } }
+                        });
                         foreach (var item in items)
                         {
                             if (item is not (Movie or Series)) continue;
@@ -100,8 +104,11 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
                     foreach (var batch in members.Chunk(2000))
                     {
                         PrivacyReadSet.Current?.Library(batch);
-                        foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch,
-                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } }))
+                        foreach (var item in library.GetItemList(new InternalItemsQuery
+                        {
+                            ItemIds = batch,
+                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } }
+                        }))
                         {
                             if (item is not Movie || PrivacyIdentities.TitleKey(item) is not { } title) continue;
                             context.AddLibraryTitle(title, PrivacyReads.UserData(userData, person, item)?.Played == true);
@@ -123,6 +130,7 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
     /// </summary>
     public Dictionary<Guid, PrivacyIdentity> Resolve(IEnumerable<Guid> ids, Guid viewer, SpoilerPresentationContext? context)
     {
+        using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         var person = viewer == Guid.Empty ? null : users.GetUserById(viewer);
         var collections = context?.State.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty) ?? [];
         return PrivacyIdentities.Resolve(library, ids, person, userData, collections);
@@ -132,21 +140,38 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
 /// <summary>Effective strip decisions shared by JSON feeds, missing rows, native pages, metadata and art.</summary>
 public sealed class SpoilerPresentationContext
 {
-    private readonly HashSet<string> _titles = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _watched = new(StringComparer.Ordinal);
-    private readonly PluginConfiguration _config;
-    private readonly bool _unavailable;
-    internal bool Unavailable => _unavailable;
-
+    private HashSet<string> _titles = new(StringComparer.Ordinal);
+    private HashSet<string> _watched = new(StringComparer.Ordinal);
+    private PluginConfiguration _config = null!;
+    private bool _unavailable;
+    internal bool Unavailable
+    {
+        get
+        {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _unavailableFacts;
+        }
+    }
     /// <summary>The input tick the context's library facts were read at.</summary>
     internal long ReadAt { get; set; }
-    internal bool Enabled => _config.SpoilerBlurEnabled;
-
+    internal bool Enabled
+    {
+        get
+        {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _configFacts.SpoilerBlurEnabled;
+        }
+    }
     /// <summary>The viewer's state; callers pass it to the existing native DTO stripper.</summary>
-    public UserSpoilerBlur State { get; }
-
+    public UserSpoilerBlur State { get => _stateFactsOwner.Read(ref _stateFactsStorage, () => default!); }
     /// <summary>A fingerprint of the full viewer and admin spoiler policy, stable across restarts.</summary>
-    public string Revision { get; private set; }
+    private string _revisionFactsStorage = null!;
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<string> _revisionFactsOwner = new(prepared: true);
+    public string Revision
+    {
+        get => _revisionFactsOwner.Read(ref _revisionFactsStorage, () => default!);
+        private set => _revisionFactsOwner.Store(ref _revisionFactsStorage, value);
+    }
 
     /// <summary>
     /// The fingerprint of what the viewer's state file and the admin's settings say, before the library facts the context
@@ -156,45 +181,85 @@ public sealed class SpoilerPresentationContext
     public string StateRevision { get; }
 
     /// <summary>The library items whose facts this context read: the guarded titles and collections, and the collections' members.</summary>
-    internal IEnumerable<Guid> LibraryInputs => State.Series.Keys.Concat(State.Movies.Keys).Concat(State.Collections.Keys)
-        .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Concat(_members);
-
+    internal IEnumerable<Guid> LibraryInputs
+    {
+        get
+        {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return State.Series.Keys.Concat(State.Movies.Keys).Concat(State.Collections.Keys)
+                    .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Concat(_members);
+        }
+    }
     /// <summary>Creates a context; no shared upstream objects are modified.</summary>
     public SpoilerPresentationContext(UserSpoilerBlur state, PluginConfiguration config, bool unavailable = false)
     {
+        using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         // Every privacy setting (strip, advanced and next-episode settings included) is part of both revisions.
         var settings = PrivacySettings.Revision(config);
-        State = Newtonsoft.Json.JsonConvert.DeserializeObject<UserSpoilerBlur>(Newtonsoft.Json.JsonConvert.SerializeObject(state))!;
-        _config = new PluginConfiguration { SpoilerBlurEnabled = config.SpoilerBlurEnabled, SpoilerBlurArtwork = config.SpoilerBlurArtwork,
-            SpoilerKeepMoviePosters = config.SpoilerKeepMoviePosters, SpoilerBlurIntensity = config.SpoilerBlurIntensity, SpoilerBlurMode = config.SpoilerBlurMode,
-            SpoilerStripOverview = config.SpoilerStripOverview, SpoilerStripSeriesOverview = config.SpoilerStripSeriesOverview,
-            SpoilerStripRatings = config.SpoilerStripRatings, SpoilerStripCast = config.SpoilerStripCast, SpoilerStripTags = config.SpoilerStripTags,
+        _stateFactsStorage = Newtonsoft.Json.JsonConvert.DeserializeObject<UserSpoilerBlur>(Newtonsoft.Json.JsonConvert.SerializeObject(state))!;
+        _configFacts = new PluginConfiguration
+        {
+            SpoilerBlurEnabled = config.SpoilerBlurEnabled,
+            SpoilerBlurArtwork = config.SpoilerBlurArtwork,
+            SpoilerKeepMoviePosters = config.SpoilerKeepMoviePosters,
+            SpoilerBlurIntensity = config.SpoilerBlurIntensity,
+            SpoilerBlurMode = config.SpoilerBlurMode,
+            SpoilerStripOverview = config.SpoilerStripOverview,
+            SpoilerStripSeriesOverview = config.SpoilerStripSeriesOverview,
+            SpoilerStripRatings = config.SpoilerStripRatings,
+            SpoilerStripCast = config.SpoilerStripCast,
+            SpoilerStripTags = config.SpoilerStripTags,
             SpoilerStripCastMode = config.SpoilerStripCastMode,
-            SpoilerStripPremiereDate = config.SpoilerStripPremiereDate, SpoilerStripTaglines = config.SpoilerStripTaglines,
-            SpoilerStripReviews = config.SpoilerStripReviews, SpoilerReplaceTitle = config.SpoilerReplaceTitle };
-        state = State; config = _config; _unavailable = unavailable;
+            SpoilerStripPremiereDate = config.SpoilerStripPremiereDate,
+            SpoilerStripTaglines = config.SpoilerStripTaglines,
+            SpoilerStripReviews = config.SpoilerStripReviews,
+            SpoilerReplaceTitle = config.SpoilerReplaceTitle
+        };
+        state = State; config = _configFacts; _unavailableFacts = unavailable;
         foreach (var key in state.PendingTmdb.Keys)
         {
             var parts = key.Split(':');
-            if (parts.Length == 2 && HiddenContentPolicy.TitleIdentity(parts[0], parts[1]) is { } title) _titles.Add(title);
+            if (parts.Length == 2 && HiddenContentPolicy.TitleIdentity(parts[0], parts[1]) is { } title) _titlesFacts.Add(title);
         }
-        foreach (var key in state.ProviderTitles.Keys) if (HiddenContentPolicy.CanonicalTitle(key) is { } title) _titles.Add(title);
+        foreach (var key in state.ProviderTitles.Keys) if (HiddenContentPolicy.CanonicalTitle(key) is { } title) _titlesFacts.Add(title);
         // No lists or names go into the public revision, only a one-way policy fingerprint.
-        Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(new {
-            state, config.SpoilerBlurEnabled, config.SpoilerBlurArtwork, config.SpoilerKeepMoviePosters, config.SpoilerBlurIntensity,
-            config.SpoilerBlurMode, config.SpoilerStripOverview, config.SpoilerStripSeriesOverview, config.SpoilerStripRatings,
-            config.SpoilerStripCast, config.SpoilerStripCastMode, config.SpoilerStripTags, config.SpoilerStripPremiereDate, config.SpoilerStripTaglines,
-            config.SpoilerStripReviews, config.SpoilerReplaceTitle, unavailable, settings
+        Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(new
+        {
+            state,
+            config.SpoilerBlurEnabled,
+            config.SpoilerBlurArtwork,
+            config.SpoilerKeepMoviePosters,
+            config.SpoilerBlurIntensity,
+            config.SpoilerBlurMode,
+            config.SpoilerStripOverview,
+            config.SpoilerStripSeriesOverview,
+            config.SpoilerStripRatings,
+            config.SpoilerStripCast,
+            config.SpoilerStripCastMode,
+            config.SpoilerStripTags,
+            config.SpoilerStripPremiereDate,
+            config.SpoilerStripTaglines,
+            config.SpoilerStripReviews,
+            config.SpoilerReplaceTitle,
+            unavailable,
+            settings
         }))));
         StateRevision = Revision;
     }
 
-    internal void Seal() => Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Revision + "|" + string.Join(',', _titles.OrderBy(k => k, StringComparer.Ordinal)) + "|" + string.Join(',', _watched.OrderBy(k => k, StringComparer.Ordinal)))));
-
-    internal void AddLibraryTitle(string key, bool watched) { if (watched) _watched.Add(key); else _titles.Add(key); }
+    internal void Seal()
+    {
+        using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Revision + "|" + string.Join(',', _titlesFacts.OrderBy(k => k, StringComparer.Ordinal)) + "|" + string.Join(',', _watchedFacts.OrderBy(k => k, StringComparer.Ordinal)))));
+    }
+    internal void AddLibraryTitle(string key, bool watched)
+    {
+        using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        if (watched) _watchedFacts.Add(key); else _titlesFacts.Add(key);
+    }
 
     private readonly HashSet<Guid> _members = new();
-    private readonly Dictionary<string, bool> _identities = new(StringComparer.Ordinal);
+    private Dictionary<string, bool> _identities = new(StringComparer.Ordinal);
 
     internal void AddCollectionMembers(IEnumerable<Guid> members) => _members.UnionWith(members);
 
@@ -204,8 +269,9 @@ public sealed class SpoilerPresentationContext
     /// </summary>
     public bool Guarded(PrivacyIdentity identity)
     {
-        if (!_config.SpoilerBlurEnabled) return false;
-        if (_unavailable) return true;
+        using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        if (!_configFacts.SpoilerBlurEnabled) return false;
+        if (_unavailableFacts) return true;
         if (identity.Played == true) return false;
         static string N(Guid id) => id.ToString("N");
         var key = identity.TitleKey;
@@ -227,26 +293,46 @@ public sealed class SpoilerPresentationContext
     /// </summary>
     public string Bind(PrivacyIdentity identity)
     {
+        using var __factsOperation11 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         var key = identity.ProjectionKey;
-        _identities[key] = Guarded(identity);
+        _identitiesFacts[key] = Guarded(identity);
         return key;
     }
 
-    internal bool KnowsTitle(string? title) => title != null && (_titles.Contains(title) || _watched.Contains(title));
-
+    internal bool KnowsTitle(string? title)
+    {
+        using var __factsOperation12 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return title != null && (_titlesFacts.Contains(title) || _watchedFacts.Contains(title));
+    }
     /// <summary>Each result is judged by its own typed identity, never by the seed's guard.</summary>
-    public bool Guarded(string? title) => _config.SpoilerBlurEnabled && (_unavailable || title != null
-        && (_identities.TryGetValue(title, out var bound) ? bound : _titles.Contains(title) && !_watched.Contains(title)));
-
+    public bool Guarded(string? title)
+    {
+        using var __factsOperation13 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return _configFacts.SpoilerBlurEnabled && (_unavailableFacts || title != null
+                && (_identitiesFacts.TryGetValue(title, out var bound) ? bound : _titlesFacts.Contains(title) && !_watchedFacts.Contains(title)));
+    }
     /// <summary>Existing admin caps and per-user opt-outs, including the separate series-description policy.</summary>
     public (bool Title, bool Overview, bool AirDate) MissingRow(string? title)
-        => Guarded(title) ? SpoilerFieldStripFilter.AbsentRowStrip(State, _config) : (false, false, false);
-
+    {
+        using var __factsOperation14 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return Guarded(title) ? SpoilerFieldStripFilter.AbsentRowStrip(State, _configFacts) : (false, false, false);
+    }
     /// <summary>Ratings/reviews/date decorators use the same effective cap and preference decisions.</summary>
-    public bool HidesRatings(string? title) => Guarded(title) && Strip(_config.SpoilerStripRatings, State.Prefs?.HideRatings);
-    public bool HidesReviews(string? title) => Guarded(title) && Strip(_config.SpoilerStripReviews, State.Prefs?.HideReviews);
-    public bool HidesDates(string? title) => Guarded(title) && Strip(_config.SpoilerStripPremiereDate, State.Prefs?.HideAirDate);
-
+    public bool HidesRatings(string? title)
+    {
+        using var __factsOperation16 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return Guarded(title) && Strip(_configFacts.SpoilerStripRatings, State.Prefs?.HideRatings);
+    }
+    public bool HidesReviews(string? title)
+    {
+        using var __factsOperation18 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return Guarded(title) && Strip(_configFacts.SpoilerStripReviews, State.Prefs?.HideReviews);
+    }
+    public bool HidesDates(string? title)
+    {
+        using var __factsOperation20 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return Guarded(title) && Strip(_configFacts.SpoilerStripPremiereDate, State.Prefs?.HideAirDate);
+    }
     /// <summary>Flags for clients and record-based feeds; contains no private rule lists.</summary>
     public JsonObject Flags(string title)
     {
@@ -257,22 +343,26 @@ public sealed class SpoilerPresentationContext
 
     /// <summary>Known provider subresources have distinct schemas and must not bypass the title strip.</summary>
     public string ProjectResource(string json, string? title, string resource, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
-        => !_config.SpoilerBlurEnabled ? json : ProviderPresentationSchema.Project(json, null, this, "discovery", title, resource, fallbackKind, scopeKind, season, episode);
-
+    {
+        using var __factsOperation22 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        return !_configFacts.SpoilerBlurEnabled ? json : ProviderPresentationSchema.Project(json, null, this, "discovery", title, resource, fallbackKind, scopeKind, season, episode);
+    }
     /// <summary>Whether original artwork is protected. Movie posters follow the existing keep-posters option.</summary>
     public bool ProtectArtwork(string? title, string kind, string imageType, int season = 0)
     {
+        using var __factsOperation23 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         if (!Guarded(title)) return false;
         return kind == "episode" && imageType is "Primary" or "Thumb" or "Screenshot"
             || kind == "season" && season > 1 && imageType == "Primary"
-            || kind == "movie" && !_config.SpoilerKeepMoviePosters && imageType is "Primary" or "Thumb"
-            || _config.SpoilerBlurArtwork && imageType is "Backdrop" or "Art" or "Logo";
+            || kind == "movie" && !_configFacts.SpoilerKeepMoviePosters && imageType is "Primary" or "Thumb"
+            || _configFacts.SpoilerBlurArtwork && imageType is "Backdrop" or "Art" or "Logo";
     }
 
     /// <summary>Projects one title/card, its nested season/episode fields and safe effective flags.</summary>
     public void ProjectTitle(JsonObject row, string title, string kind, int season = 0, int episode = 0)
     {
-        if (!_config.SpoilerBlurEnabled) { AddNavigationMetadata(row, title, kind, season, episode); return; }
+        using var __factsOperation24 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+        if (!_configFacts.SpoilerBlurEnabled) { AddNavigationMetadata(row, title, kind, season, episode); return; }
         var projected = JsonNode.Parse(ProviderPresentationSchema.Project(row.ToJsonString(), null, this, "discovery", title, kind is "episode" or "season" ? kind : "title", kind, kind, season, episode))!.AsObject();
         row.Clear();
         foreach (var pair in projected.ToArray()) row[pair.Key] = pair.Value?.DeepClone();
@@ -280,6 +370,7 @@ public sealed class SpoilerPresentationContext
 
     internal void AddNavigationMetadata(JsonObject row, string title, string kind, int season, int episode)
     {
+        using var __factsOperation25 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         // The year is navigation metadata; precise release/air dates still follow the strip policy.
         if (kind is "movie" or "tv" && row["year"] == null)
         {
@@ -302,14 +393,14 @@ public sealed class SpoilerPresentationContext
         var guarded = Guarded(title);
         var exempt = kind == "season" && season <= 1;
         var prefs = State.Prefs;
-        var overview = guarded && !exempt && Strip(kind == "tv" ? (_config.SpoilerStripSeriesOverview ?? _config.SpoilerStripOverview) : _config.SpoilerStripOverview,
+        var overview = guarded && !exempt && Strip(kind == "tv" ? (_configFacts.SpoilerStripSeriesOverview ?? _configFacts.SpoilerStripOverview) : _configFacts.SpoilerStripOverview,
             kind == "tv" ? prefs?.HideSeriesDescriptions : prefs?.HideEpisodeDescriptions);
-        var ratings = guarded && !exempt && Strip(_config.SpoilerStripRatings, prefs?.HideRatings);
-        var dates = guarded && !exempt && Strip(_config.SpoilerStripPremiereDate, prefs?.HideAirDate);
-        var cast = guarded && !exempt && Strip(_config.SpoilerStripCast, prefs?.HideCast);
-        var tags = guarded && !exempt && Strip(_config.SpoilerStripTags, prefs?.HideTags);
-        var reviews = guarded && !exempt && Strip(_config.SpoilerStripReviews, prefs?.HideReviews);
-        var allCast = cast && string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase);
+        var ratings = guarded && !exempt && Strip(_configFacts.SpoilerStripRatings, prefs?.HideRatings);
+        var dates = guarded && !exempt && Strip(_configFacts.SpoilerStripPremiereDate, prefs?.HideAirDate);
+        var cast = guarded && !exempt && Strip(_configFacts.SpoilerStripCast, prefs?.HideCast);
+        var tags = guarded && !exempt && Strip(_configFacts.SpoilerStripTags, prefs?.HideTags);
+        var reviews = guarded && !exempt && Strip(_configFacts.SpoilerStripReviews, prefs?.HideReviews);
+        var allCast = cast && string.Equals(_configFacts.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase);
         var flags = row["jeSpoiler"] as JsonObject ?? new();
         flags["guarded"] = guarded; flags["overview"] = overview; flags["ratings"] = ratings;
         flags["dates"] = dates; flags["cast"] = allCast; flags["tags"] = tags; flags["reviews"] = reviews; flags["revision"] = Revision;
@@ -318,21 +409,35 @@ public sealed class SpoilerPresentationContext
 
     internal bool Suppresses(string? title, string policy, string kind, int season)
     {
+        using var __factsOperation27 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
         if (!Guarded(title) || kind == "season" && season <= 1) return false;
-        return policy switch {
-            "taglines" => Strip(_config.SpoilerStripTaglines, State.Prefs?.HideTaglines),
-            "ratings" => Strip(_config.SpoilerStripRatings, State.Prefs?.HideRatings),
-            "dates" => Strip(_config.SpoilerStripPremiereDate, State.Prefs?.HideAirDate),
-            "reviews" => Strip(_config.SpoilerStripReviews, State.Prefs?.HideReviews),
-            "tags" => Strip(_config.SpoilerStripTags, State.Prefs?.HideTags),
-            "cast" => Strip(_config.SpoilerStripCast, State.Prefs?.HideCast),
-            "all-cast" => Strip(_config.SpoilerStripCast, State.Prefs?.HideCast) && string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase),
-            "plot" => Strip(_config.SpoilerStripOverview, State.Prefs?.HideEpisodeDescriptions),
-            "overview" => Strip(kind == "tv" ? _config.SpoilerStripSeriesOverview ?? _config.SpoilerStripOverview : _config.SpoilerStripOverview,
+        return policy switch
+        {
+            "taglines" => Strip(_configFacts.SpoilerStripTaglines, State.Prefs?.HideTaglines),
+            "ratings" => Strip(_configFacts.SpoilerStripRatings, State.Prefs?.HideRatings),
+            "dates" => Strip(_configFacts.SpoilerStripPremiereDate, State.Prefs?.HideAirDate),
+            "reviews" => Strip(_configFacts.SpoilerStripReviews, State.Prefs?.HideReviews),
+            "tags" => Strip(_configFacts.SpoilerStripTags, State.Prefs?.HideTags),
+            "cast" => Strip(_configFacts.SpoilerStripCast, State.Prefs?.HideCast),
+            "all-cast" => Strip(_configFacts.SpoilerStripCast, State.Prefs?.HideCast) && string.Equals(_configFacts.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase),
+            "plot" => Strip(_configFacts.SpoilerStripOverview, State.Prefs?.HideEpisodeDescriptions),
+            "overview" => Strip(kind == "tv" ? _configFacts.SpoilerStripSeriesOverview ?? _configFacts.SpoilerStripOverview : _configFacts.SpoilerStripOverview,
                 kind == "tv" ? State.Prefs?.HideSeriesDescriptions : State.Prefs?.HideEpisodeDescriptions),
             _ => false
         };
     }
 
     private static bool Strip(bool admin, bool? preference) => admin && preference != false;
+    private UserSpoilerBlur _stateFactsStorage = default!;
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<UserSpoilerBlur> _stateFactsOwner = new(prepared: true);
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<HashSet<string>> _titlesFactsOwner = new(prepared: true);
+    private HashSet<string> _titlesFacts { get => _titlesFactsOwner.Read(ref _titles, () => new(StringComparer.Ordinal)); set => _titlesFactsOwner.Store(ref _titles, value); }
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<PluginConfiguration> _configFactsOwner = new(prepared: true);
+    private PluginConfiguration _configFacts { get => _configFactsOwner.Read(ref _config, () => default!); set => _configFactsOwner.Store(ref _config, value); }
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<bool> _unavailableFactsOwner = new(prepared: true);
+    private bool _unavailableFacts { get => _unavailableFactsOwner.Read(ref _unavailable, () => default!); set => _unavailableFactsOwner.Store(ref _unavailable, value); }
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, bool>> _identitiesFactsOwner = new(prepared: true);
+    private Dictionary<string, bool> _identitiesFacts { get => _identitiesFactsOwner.Read(ref _identities, () => new(StringComparer.Ordinal)); set => _identitiesFactsOwner.Store(ref _identities, value); }
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<HashSet<string>> _watchedFactsOwner = new(prepared: true);
+    private HashSet<string> _watchedFacts { get => _watchedFactsOwner.Read(ref _watched, () => default!); set => _watchedFactsOwner.Store(ref _watched, value); }
 }

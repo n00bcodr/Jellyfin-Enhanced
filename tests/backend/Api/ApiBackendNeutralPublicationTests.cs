@@ -42,6 +42,45 @@ public class ApiBackendNeutralPublicationTests
     }
 
     [Theory]
+    [InlineData("patch")]
+    [InlineData("migration_commit")]
+    [InlineData("migration_rollback")]
+    [InlineData("host")]
+    [InlineData("reader")]
+    public async Task ConfigurationWriteAcknowledgementDoesNotPublishItsInvalidatedInputs(string route)
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.ArrBackendIsolationVersion = 0; config.ArrRequestBackend = "je";
+        var controller = ApiAssetTests.Controller(fixture.Core);
+        var descriptor = new ControllerActionDescriptor
+        {
+            ControllerName = route == "host" ? "Plugins" : "JellyfinEnhanced",
+            ActionName = route == "host" ? "UpdatePluginConfiguration" : "GetBootstrap",
+            MethodInfo = route == "patch" ? typeof(ConfigurationPatchController).GetMethod(nameof(ConfigurationPatchController.Patch))!
+                : route == "migration_commit" ? typeof(AcquireMigrationController).GetMethod(nameof(AcquireMigrationController.Commit))!
+                : route == "migration_rollback" ? typeof(AcquireMigrationController).GetMethod(nameof(AcquireMigrationController.Rollback))!
+                : typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.GetBootstrap))!
+        };
+        controller.HttpContext.Request.Method = route == "host" ? "POST" : "PATCH";
+        var context = new ActionExecutingContext(new(controller.HttpContext, new RouteData(), descriptor), [],
+            new Dictionary<string, object?> { ["pluginId"] = HostConfigurationRouteFilter.PluginId }, controller);
+        ActionExecutedContext? executed = null;
+        await new SeerrIsolationActionFilter(EffectiveRequestsBackend.Shared, fixture.Core.Logger).OnActionExecutionAsync(context, () =>
+        {
+            // Lifecycle work can read an old cache while the configuration save invalidates it.
+            var remembered = SeerrFacts.Remember("old local cache");
+            Assert.Equal("old local cache", remembered.Publish());
+            config.ArrBackendIsolationVersion = 1;
+            _ = EffectiveRequestsBackend.Shared.Current;
+            return Task.FromResult(executed = new ActionExecutedContext(context, [], controller) { Result = new OkResult() });
+        });
+        var result = executed?.Result ?? context.Result;
+        if (route == "reader" || route.StartsWith("migration_", StringComparison.Ordinal)) Assert.Equal(409, Assert.IsType<ObjectResult>(result).StatusCode);
+        else Assert.IsType<OkResult>(result);
+    }
+
+    [Theory]
     [MemberData(nameof(BootstrapCases))]
     public async Task FreshNeutralBootstrapThroughTheGlobalFilterRemainsSuccessfulWithoutSeerrHttp(int version, bool admin, string state)
     {

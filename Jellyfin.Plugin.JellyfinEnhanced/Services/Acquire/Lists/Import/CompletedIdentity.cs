@@ -58,8 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             private readonly IImportPhysicalTitles? _physical;
             private readonly IImportLookup? _lookup;
             private readonly ImportCallContext _context;
-            private readonly ConcurrentDictionary<string, Lazy<Task<CompletedIdentity?>>> _completed = new(StringComparer.Ordinal);
-            private readonly ConcurrentDictionary<string, bool> _beyond = new(StringComparer.Ordinal);
+            private ConcurrentDictionary<string, Lazy<Task<CompletedIdentity?>>> _completed = new(StringComparer.Ordinal);
+            private ConcurrentDictionary<string, bool> _beyond = new(StringComparer.Ordinal);
             private readonly SemaphoreSlim? _lookups;
 
             /// <summary>Creates the step.</summary>
@@ -82,18 +82,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             /// <returns>The completed identity, or null.</returns>
             public Task<CompletedIdentity?> CompleteAsync(ImportIdentity identity, CancellationToken cancellationToken)
             {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
                 if (identity.Keys.Count == 0 || identity.Full || _physical == null)
                 {
                     return Task.FromResult<CompletedIdentity?>(new CompletedIdentity(identity));
                 }
 
-                return _completed.GetOrAdd(identity.Text(), _ => new Lazy<Task<CompletedIdentity?>>(() => RunAsync(identity, cancellationToken))).Value;
+                return _completedFacts.GetOrAdd(identity.Text(), _ => new Lazy<Task<CompletedIdentity?>>(() => RunAsync(identity, cancellationToken))).Value;
             }
 
             private async Task<CompletedIdentity?> RunAsync(ImportIdentity identity, CancellationToken cancellationToken)
             {
+                using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
                 var providers = (identity.Movie ? "m:" : "t:") + string.Join(',', identity.Providers.OrderBy(p => p, StringComparer.Ordinal));
-                if (!_beyond.GetOrAdd(providers, _ => _physical!.HoldsCopiesBeyond(identity)))
+                if (!_beyondFacts.GetOrAdd(providers, _ => _physical!.HoldsCopiesBeyond(identity)))
                 {
                     return new CompletedIdentity(identity); // every copy of this kind carries one of the ids at hand
                 }
@@ -153,6 +155,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     _ => identity.With(tmdb, details.Value?.TvdbId, details.Value?.ImdbId),
                 };
             }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, Lazy<Task<CompletedIdentity?>>>> _completedFactsOwner = new();
+            private ConcurrentDictionary<string, Lazy<Task<CompletedIdentity?>>> _completedFacts { get => _completedFactsOwner.Read(ref _completed, () => new(StringComparer.Ordinal)); set => _completedFactsOwner.Store(ref _completed, value); }
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, bool>> _beyondFactsOwner = new();
+            private ConcurrentDictionary<string, bool> _beyondFacts { get => _beyondFactsOwner.Read(ref _beyond, () => new(StringComparer.Ordinal)); set => _beyondFactsOwner.Store(ref _beyond, value); }
         }
     }
 }

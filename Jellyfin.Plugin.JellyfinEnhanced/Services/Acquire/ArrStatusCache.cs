@@ -32,11 +32,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     public sealed class ArrStatusCache
     {
         private readonly object _lock = new();
-        private readonly Dictionary<string, LinkedListNode<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>> _map = new(StringComparer.Ordinal);
-        private readonly LinkedList<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)> _lru = new();
+        private Dictionary<string, LinkedListNode<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>> _map = new(StringComparer.Ordinal);
+        private LinkedList<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)> _lru = new();
         private readonly int _maxEntries;
         private readonly long _maxBytes;
         private long _bytes;
+        private readonly Helpers.UserCacheRegistry.State<long> _bytesFactsOwner = new();
+        private long _bytesFacts { get => _bytesFactsOwner.Read(ref _bytes, () => 0); set => _bytesFactsOwner.Store(ref _bytes, value); }
 
         /// <summary>A cache of at most <paramref name="maxEntries"/> bodies and <paramref name="maxBytes"/> bytes.</summary>
         public ArrStatusCache(int maxEntries = 4096, long maxBytes = 32L * 1024 * 1024)
@@ -48,18 +50,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Bodies held.</summary>
         public int Count
         {
-            get { lock (_lock) return _map.Count; }
+            get
+            {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                lock (_lock) return _mapFacts.Count;
+            }
         }
 
         /// <summary>The cached body for a key, or null.</summary>
         public StatusBody? Get(string key)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             SeerrFacts.Derived<StatusBody> held;
             lock (_lock)
             {
-                if (!_map.TryGetValue(key, out var node)) return null;
-                _lru.Remove(node);
-                _lru.AddFirst(node);
+                if (!_mapFacts.TryGetValue(key, out var node)) return null;
+                _lruFacts.Remove(node);
+                _lruFacts.AddFirst(node);
                 held = node.Value.Body;
             }
             return held.TryRead(out var body) ? body : null;
@@ -72,25 +79,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public StatusBody Put(string key, byte[] json)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var body = new StatusBody(json, ETagFor(key, json));
             var captured = SeerrFacts.Remember(body);
             if (CopyLookupBound.Reached) return captured.Publish();
             lock (_lock)
             {
-                if (_map.TryGetValue(key, out var existing))
+                if (_mapFacts.TryGetValue(key, out var existing))
                 {
-                    _bytes -= existing.Value.Bytes;
-                    _lru.Remove(existing);
-                    _map.Remove(key);
+                    _bytesFacts -= existing.Value.Bytes;
+                    _lruFacts.Remove(existing);
+                    _mapFacts.Remove(key);
                 }
-                var node = _lru.AddFirst((key, captured, json.Length));
-                _map[key] = node;
-                _bytes += json.Length;
-                while ((_map.Count > _maxEntries || _bytes > _maxBytes) && _lru.Last is { } last && !ReferenceEquals(last, node))
+                var node = _lruFacts.AddFirst((key, captured, json.Length));
+                _mapFacts[key] = node;
+                _bytesFacts += json.Length;
+                while ((_mapFacts.Count > _maxEntries || _bytesFacts > _maxBytes) && _lruFacts.Last is { } last && !ReferenceEquals(last, node))
                 {
-                    _lru.RemoveLast();
-                    _map.Remove(last.Value.Key);
-                    _bytes -= last.Value.Bytes;
+                    _lruFacts.RemoveLast();
+                    _mapFacts.Remove(last.Value.Key);
+                    _bytesFacts -= last.Value.Bytes;
                 }
             }
             return captured.Publish();
@@ -99,11 +107,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Drops everything (configuration saved).</summary>
         public void Clear()
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_lock)
             {
-                _map.Clear();
-                _lru.Clear();
-                _bytes = 0;
+                _mapFacts.Clear();
+                _lruFacts.Clear();
+                _bytesFacts = 0;
             }
         }
 
@@ -116,5 +125,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             hash.AppendData(json);
             return "\"" + Convert.ToHexString(hash.GetHashAndReset(), 0, 16) + "\"";
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, LinkedListNode<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>>> _mapFactsOwner = new();
+        private Dictionary<string, LinkedListNode<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>> _mapFacts { get => _mapFactsOwner.Read(ref _map, () => new(StringComparer.Ordinal)); set => _mapFactsOwner.Store(ref _map, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<LinkedList<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)>> _lruFactsOwner = new();
+        private LinkedList<(string Key, SeerrFacts.Derived<StatusBody> Body, int Bytes)> _lruFacts { get => _lruFactsOwner.Read(ref _lru, () => new()); set => _lruFactsOwner.Store(ref _lru, value); }
     }
 }

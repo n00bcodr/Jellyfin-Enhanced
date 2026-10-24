@@ -82,8 +82,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     {
         internal ListGrant(ListAccess access, PlaceholderVisibility visibility, string policy)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             Access = access;
-            Visibility = visibility;
+            _visibilityFactsStorage = visibility;
             Policy = policy;
         }
 
@@ -91,13 +92,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public ListAccess Access { get; }
 
         /// <summary>The placeholders they may see, checked against their current limits.</summary>
-        public PlaceholderVisibility Visibility { get; }
-
+        public PlaceholderVisibility Visibility { get => _visibilityFactsOwner.Read(ref _visibilityFactsStorage, () => default!); }
         /// <summary>
         /// The caller's policy revision when the grant was made (<see cref="ListGate.Policy"/>): anything composed for them
         /// earlier under another revision (statuses) is not theirs to see now.
         /// </summary>
         public string Policy { get; }
+        private PlaceholderVisibility _visibilityFactsStorage = default!;
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<PlaceholderVisibility> _visibilityFactsOwner = new(prepared: true);
     }
 
     /// <summary>The gate refused a write: what to answer (null for background work, which just stops).</summary>

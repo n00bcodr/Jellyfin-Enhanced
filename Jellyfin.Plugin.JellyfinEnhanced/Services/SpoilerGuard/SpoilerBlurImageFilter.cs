@@ -98,7 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Re-warn at most once per hour per surface so a real Jellyfin upgrade
         // changing the response shape isn't permanently invisible.
         private static readonly TimeSpan ShapeWarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> _warnedShapeAt = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedShapeAt = new();
 
         // Rate-limited warning helper + per-request user-state caching now
         // live on SpoilerUserResolver (single shared HttpContext.Items key
@@ -1212,14 +1212,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void MaybeWarnShapeMismatch(IActionResult result)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = result?.GetType().FullName ?? "(null)";
             var now = DateTime.UtcNow;
-            var stored = _warnedShapeAt.AddOrUpdate(
+            var stored = _warnedShapeAtFacts.AddOrUpdate(
                 key,
                 now,
                 (_, last) => (now - last) >= ShapeWarnInterval ? now : last);
             if (stored != now) return;
             _logger.Warning($"Spoiler Guard: image action produced an unrecognized result type ({key}); blur is no-op for this shape. Re-warns hourly. Likely a Jellyfin upgrade changed the image controller's return type.");
         }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _warnedShapeAtFactsOwner = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedShapeAtFacts { get => _warnedShapeAtFactsOwner.Read(ref _warnedShapeAt, () => new()); set => _warnedShapeAtFactsOwner.Store(ref _warnedShapeAt, value); }
     }
 }

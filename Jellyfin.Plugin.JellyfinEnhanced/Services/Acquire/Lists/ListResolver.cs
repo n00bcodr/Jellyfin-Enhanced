@@ -159,31 +159,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 case PlaceholderKinds.Episodes:
                     return placeholder.Episodes.Count > 0 && placeholder.Episodes.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
                 case PlaceholderKinds.Season:
-                {
-                    if (placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected || placeholder.InProduction == null)
                     {
-                        return false;
-                    }
+                        if (placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected || placeholder.InProduction == null)
+                        {
+                            return false;
+                        }
 
-                    var allAired = placeholder.Expected.All(e => IsAired(e, todayUtc));
-                    var finished = allAired || placeholder.InProduction == false;
-                    var lastAired = placeholder.Expected.Where(e => IsAired(e, todayUtc)).Select(e => e.E).DefaultIfEmpty(0).Max();
-                    var required = placeholder.InProduction == false
-                        ? placeholder.Expected.Where(e => IsAired(e, todayUtc) || (e.AirDate == null && e.E < lastAired)).ToList()
-                        : placeholder.Expected;
-                    return finished && required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
-                }
+                        var allAired = placeholder.Expected.All(e => IsAired(e, todayUtc));
+                        var finished = allAired || placeholder.InProduction == false;
+                        var lastAired = placeholder.Expected.Where(e => IsAired(e, todayUtc)).Select(e => e.E).DefaultIfEmpty(0).Max();
+                        var required = placeholder.InProduction == false
+                            ? placeholder.Expected.Where(e => IsAired(e, todayUtc) || (e.AirDate == null && e.E < lastAired)).ToList()
+                            : placeholder.Expected;
+                        return finished && required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
+                    }
 
                 case PlaceholderKinds.Series:
-                {
-                    if (placeholder.InProduction != false || placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected)
                     {
-                        return false;
-                    }
+                        if (placeholder.InProduction != false || placeholder.Expected.Count == 0 || placeholder.Expected.Count >= MaxExpected)
+                        {
+                            return false;
+                        }
 
-                    var required = placeholder.Expected.Where(e => e.S >= 1 && IsAired(e, todayUtc)).ToList();
-                    return required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
-                }
+                        var required = placeholder.Expected.Where(e => e.S >= 1 && IsAired(e, todayUtc)).ToList();
+                        return required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
+                    }
 
                 default:
                     return false;
@@ -257,11 +257,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     public sealed class ResolveMemo
     {
-        internal Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Movies { get; } = new();
-
-        internal Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Series { get; } = new();
-
-        internal Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> Episodes { get; } = new();
+        internal Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Movies { get => _moviesFactsOwner.Read(ref _moviesFactsStorage, () => default!); }
+        internal Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Series { get => _seriesFactsOwner.Read(ref _seriesFactsStorage, () => default!); }
+        internal Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> Episodes { get => _episodesFactsOwner.Read(ref _episodesFactsStorage, () => default!); }
+        private Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> _moviesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>>> _moviesFactsOwner = new(prepared: true);
+        private Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> _seriesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>>> _seriesFactsOwner = new(prepared: true);
+        private Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> _episodesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>>> _episodesFactsOwner = new(prepared: true);
     }
 
     /// <summary>

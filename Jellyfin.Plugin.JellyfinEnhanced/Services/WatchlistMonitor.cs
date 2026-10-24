@@ -29,7 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int MaxDeferAttempts = 10;
         private static readonly TimeSpan DeferInterval = TimeSpan.FromMinutes(2);
         private readonly SharedRequestFacts? _facts;
-        private readonly ConcurrentDictionary<Guid, int> _deferred = new();
+        private ConcurrentDictionary<Guid, int> _deferred = new();
         private Timer? _deferTimer;
         private int _recheckRunning;
         private readonly ILibraryManager _libraryManager;
@@ -294,6 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<bool> ProcessFromSharedFactsAsyncFactsCore(BaseItem item, int tmdbId, string mediaType, PluginConfiguration config, int attempt)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = SharedRequestFacts.KeyOf(mediaType == "movie", tmdbId, item.ProviderIds.GetValueOrDefault("Tvdb"), item.ProviderIds.GetValueOrDefault("Imdb"));
             if (key == null || _facts == null) return true;
             using var operation = SharedRequestFacts.LedgerAuthority(config) ? null : EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Watchlist, CancellationToken.None);
@@ -310,7 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 users = users.Concat(fromSeerr);
             }
             operation?.DemandCurrent();
-            _deferred.TryRemove(item.Id, out _);
+            _deferredFacts.TryRemove(item.Id, out _);
             var list = users.ToList();
             if (list.Count > 0)
             {
@@ -370,18 +371,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Remembers an item to check again (bounded; gives up after MaxDeferAttempts tries, about 20 minutes).
         private void Defer(Guid itemId, int attempt)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (attempt + 1 >= MaxDeferAttempts)
             {
-                _deferred.TryRemove(itemId, out _);
+                _deferredFacts.TryRemove(itemId, out _);
                 _logger.Info($"[Watchlist] Request facts stayed incomplete; gave up on item {itemId:N} after {MaxDeferAttempts} tries");
                 return;
             }
-            if (!_deferred.ContainsKey(itemId) && _deferred.Count >= MaxDeferred)
+            if (!_deferredFacts.ContainsKey(itemId) && _deferredFacts.Count >= MaxDeferred)
             {
                 _logger.Warning($"[Watchlist] {MaxDeferred} items are already waiting for complete request facts; item {itemId:N} skipped");
                 return;
             }
-            _deferred[itemId] = attempt + 1;
+            _deferredFacts[itemId] = attempt + 1;
             lock (_subscriptionLock)
             {
                 _deferTimer ??= new Timer(_ => { _ = Task.Run(RecheckDeferredAsync); }, null, DeferInterval, DeferInterval);
@@ -389,29 +391,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>Items waiting for complete request facts (tests).</summary>
-        internal int Deferred => _deferred.Count;
-
+        internal int Deferred
+        {
+            get
+            {
+                using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                return _deferredFacts.Count;
+            }
+        }
         // Checks every deferred item again (timer, or tests directly); one pass at a time.
         internal Task RecheckDeferredAsync()
             => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => RecheckDeferredAsyncFactsCore(), CancellationToken.None);
 
         private async Task RecheckDeferredAsyncFactsCore()
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (Interlocked.Exchange(ref _recheckRunning, 1) == 1) return;
             try
             {
                 var config = JellyfinEnhanced.Instance?.Configuration;
                 if (config == null || _facts == null || !config.AddRequestedMediaToWatchlist || !SharedRequestFacts.Active(config))
                 {
-                    _deferred.Clear();
+                    _deferredFacts.Clear();
                     return;
                 }
-                foreach (var (itemId, attempt) in _deferred.ToArray())
+                foreach (var (itemId, attempt) in _deferredFacts.ToArray())
                 {
                     var item = _libraryManager.GetItemById(itemId);
                     if (item?.ProviderIds == null || !item.ProviderIds.TryGetValue("Tmdb", out var raw) || !int.TryParse(raw, out var tmdbId))
                     {
-                        _deferred.TryRemove(itemId, out _);
+                        _deferredFacts.TryRemove(itemId, out _);
                         continue;
                     }
                     await ProcessFromSharedFactsAsync(item, tmdbId, item.GetBaseItemKind() == BaseItemKind.Movie ? "movie" : "tv", config, attempt).ConfigureAwait(false);
@@ -595,5 +604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public string MediaType { get; set; } = string.Empty;
             public string? RequestedByJellyfinUserId { get; set; }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, int>> _deferredFactsOwner = new();
+        private ConcurrentDictionary<Guid, int> _deferredFacts { get => _deferredFactsOwner.Read(ref _deferred, () => new()); set => _deferredFactsOwner.Store(ref _deferred, value); }
     }
 }
