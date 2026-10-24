@@ -274,6 +274,36 @@ Show the top AniList user reviews for anime on movie and series pages. See [AniL
 
     Your Jellyfin server sends the item's AniList ID to AniList's public GraphQL API (`graphql.anilist.co`) and caches the response in memory. No user information is sent.
 
+## Review Translation
+
+Add a **Translate** button to English TMDB and AniList reviews. See [Review Translation](elsewhere-features.md#review-translation) for how it behaves.
+
+!!! warning "Only shown when the user's display language is not English"
+
+    The button appears only for users whose Jellyfin display language is **not English**. Users on an English display language never see it, even with this setting on.
+
+### How to use
+
+1. Turn on **Enable Review Translation** in **Elsewhere & Reviews**.
+2. Optionally enter your **LibreTranslate URL** (and **API Key** if your instance needs one) for browsers without a built-in translator.
+3. Click **Save Settings** and reload the client.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable Review Translation** | Off | Turns the **Translate** button on. The browser's built-in translator needs nothing else. |
+| **LibreTranslate URL (optional)** | Empty | Base address of your LibreTranslate instance, for example `http://localhost:5000`. Used when the browser cannot translate. |
+| **LibreTranslate API Key (optional)** | Empty | Sent with each request to your instance. Needed only if the instance requires a key. |
+
+![Review Translation settings in the Elsewhere & Reviews tab](../images/elsewhere/review-translation-settings.webp)
+
+??? info "Privacy, limits and requirements"
+
+    With the browser's built-in translator, the review text stays on the device. With LibreTranslate, your Jellyfin server sends only the review text (English source, your language as target) to the URL you set. The API key is never sent to the browser, which only learns whether a server is configured.
+
+    The URL goes through the same address checks as the Sonarr and Radarr URLs. Reviews over 20,000 characters are rejected. The button only shows for languages the browser or your instance offers.
+
+    The browser's built-in translator is limited to desktop Chromium browsers (such as Chrome and Edge) on HTTPS or `localhost`. Firefox, Safari, most mobile browsers and the Jellyfin apps do not have it, so set a **LibreTranslate URL** if those users should be able to translate. See [the browser translator's limits](elsewhere-features.md#review-translation).
+
 ## User Reviews
 
 Let viewers share text reviews and/or star ratings on your server. Local reviews need no TMDB API key or enabled provider panel.

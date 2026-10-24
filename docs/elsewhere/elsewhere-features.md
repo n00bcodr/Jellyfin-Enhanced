@@ -205,6 +205,53 @@ AniList cards have a lighter blue border and show the author, review date, the r
 
     Spoiler Guard hides AniList reviews on guarded series the same way it hides TMDB and local reviews.
 
+## Review Translation
+
+Translate English TMDB and AniList reviews into your Jellyfin language. Each review gets a **Translate** button with a translate icon under its text. Click it to read the translation, and click **Show original** to switch back.
+
+!!! warning "Only shown when your display language is not English"
+
+    The **Translate** button appears only for users whose Jellyfin display language is **not English**. With an English display language there is nothing to translate into, so the button is never shown, even when the setting is on. To try it, switch your own display language to another language (for example French) and reload.
+
+| Original review (English) | After clicking **Translate** (French display language) |
+| --- | --- |
+| ![An English review with a Translate button under it](../images/elsewhere/review-translation-original.webp) | ![The same review translated, with a Show original button under it](../images/elsewhere/review-translation-translated.webp) |
+
+### How to use
+
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab, turn on **Enable Review Translation**, and click **Save Settings**.
+2. Optionally set a **LibreTranslate URL** so browsers without a built-in translator can translate too.
+3. Make sure your Jellyfin display language is **not English** (the button never shows for English), then reload the client and expand **Reviews ({count})** on a title that has reviews.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable Review Translation** | Off | Adds the **Translate** button to English TMDB and AniList reviews. |
+| **LibreTranslate URL (optional)** | Empty | Your LibreTranslate instance, used when the browser cannot translate. |
+| **LibreTranslate API Key (optional)** | Empty | Only needed when your instance requires a key. |
+
+!!! note "Only English reviews, into your Jellyfin language"
+
+    Reviews are translated from English only. The target is your Jellyfin display language, so the button never shows when your language is English. It also hides itself when neither translator offers your language. Local user reviews are not translated.
+
+!!! note "Limits of the browser's built-in translator"
+
+    The browser translator is an experimental browser feature, so it is only used where it exists:
+
+    - **Browser:** desktop Chromium browsers only, such as recent Google Chrome (138 or newer) and Microsoft Edge. Firefox, Safari, most mobile browsers, the Jellyfin mobile and TV apps and other embedded web views do not have it.
+    - **Secure page:** it needs HTTPS or `localhost`. On a plain `http://` address (for example `http://server:8096`) the browser does not offer it.
+    - **Language pair:** English to your language must be one the browser supports. A first translation into a language may download a language model, so the button can take a while the first time and needs free disk space on that device.
+    - **Quality:** translations come from a small on-device model and can be rougher than LibreTranslate's.
+
+    Where the browser translator is not available, the button falls back to your LibreTranslate instance. Without one, users in those browsers see no button.
+
+??? info "How translation works"
+
+    Jellyfin Enhanced tries your browser's built-in translator first (Chrome and Edge, over HTTPS or localhost). It runs on your device, nothing is sent anywhere, and the browser may download a language model the first time. If the browser cannot translate, or fails, the review text goes to the LibreTranslate instance you set. If neither is available, the button is not shown.
+
+    Translations are done live and are never stored. The server keeps only a small in-memory cache of recent translations for one hour, which is cleared on restart. Reviews over 20,000 characters are not sent to LibreTranslate.
+
+    The translator receives plain prose, because translators mangle links and formatting. Links in the review are kept where they can be matched: each link is put back on its translated label, or on its original wording when that still appears in the translation (titles and names usually do). A link that matches neither shows as plain text, and italics are not kept in the translation. **Show original** restores the full formatting.
+
 ## Release Dates
 
 See movie release dates or television air dates beside the item's other metadata. Each date chip has an icon and uses your locale's date format.

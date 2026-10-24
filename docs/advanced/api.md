@@ -1138,6 +1138,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | **Enable MDBList Ratings** | `false` | `MdblistRatingsEnabled`; gates MDBList title responses. |
 | **MDBList API Key** | `""` | `MdblistApiKey`; enables upstream lookups. |
 | **Show Content Warnings** | `false` | `DoesTheDogDieEnabled`; also needs a nonblank `DoesTheDogDieApiKey`. |
+| **Enable Review Translation** | `false` | `ReviewTranslationEnabled`; the translate routes also need a nonblank `ReviewTranslationUrl`. `ReviewTranslationApiKey` is optional and never returned to clients. |
 
 | Method | Path | Access | Contract |
 |---|---|---|---|
@@ -1147,6 +1148,8 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
 | GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
+| GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
+| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
