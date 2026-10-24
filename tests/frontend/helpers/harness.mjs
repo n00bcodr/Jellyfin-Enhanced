@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createInstrumenter } from 'istanbul-lib-instrument';
+import { instrumentSource } from './instrumentation.mjs';
 import coverage from 'istanbul-lib-coverage';
 import { repositoryRoot } from './discovery.mjs';
 import { served } from './served-scripts.mjs';
@@ -10,7 +11,7 @@ export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/
 const collected = coverage.createCoverageMap({});
 if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
   mkdirSync(process.env.JE_COVERAGE_DIR, { recursive: true });
-  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}.json`), JSON.stringify(collected));
+  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}-${randomUUID()}.json`), JSON.stringify(collected));
 });
 
 /** Load real classic-script modules into a fresh browser realm; no network is permitted by default. */
@@ -71,7 +72,7 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
       if (planted === source) throw new Error(`The plant does not apply to ${path}`);
       source = planted;
     }
-    if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
+    if (process.env.JE_COVERAGE_DIR) source = instrumentSource(source, file);
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;
   }

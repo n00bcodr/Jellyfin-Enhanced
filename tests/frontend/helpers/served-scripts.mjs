@@ -17,9 +17,9 @@ export function shippedLocales(folder = resolve(jsRoot, 'locales')) {
 }
 
 /** The translations script with the policy written in, as served; other scripts as they are. */
-export function served(path, source, { locales = shippedLocales() } = {}) {
+export function served(path, source, { locales } = {}) {
   if (path !== 'enhanced/translations.js') return source;
   const rule = JSON.parse(readFileSync(resolve(jsRoot, 'language-policy.json'), 'utf8'));
-  const policy = { space: rule.space, reserved: rule.reserved, tag: rule.tag, shipped: locales };
+  const policy = { space: rule.space, reserved: rule.reserved, tag: rule.tag, shipped: locales ?? shippedLocales() };
   return source.replace(MARKER, (_, indent) => `${indent}const LANGUAGE_POLICY = ${JSON.stringify(policy)};`);
 }
