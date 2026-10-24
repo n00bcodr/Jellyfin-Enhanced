@@ -4109,14 +4109,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrUseMoreInfoModal,
                 config.JellyseerrAvailablePosterLinksToJellyfin,
                 // Native details for not-in-library titles: the capability (a Jellyfin 12 build with the
-                // facade registered), the admin switch and Seerr set up (the pages' metadata source);
+                // facade registered), the admin switch and the pages' metadata source ready;
                 // anything else means the modal.
+                // ---- A1: the metadata source is the request mode's (TMDB in Jellyfin Enhanced mode, never Seerr; Seerr
+                // otherwise, as before), and Source tells the client which, so JE mode never falls back to Seerr's window.
                 NativeAbsentDetails = new
                 {
-                    Enabled = NativeAbsentDetailsCapable && config.NativeAbsentDetailsEnabled
-                        && config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrls) && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()),
+                    Enabled = NativeAbsentDetailsCapable && config.NativeAbsentDetailsEnabled && Services.NativeDetails.NativeDetailsPolicy.MetadataReady(config),
                     ContractVersion = 1,
+                    Source = Services.NativeDetails.NativeDetailsPolicy.JeMode(config) ? "tmdb" : "seerr",
                 },
+                // ---- end A1 ----
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,

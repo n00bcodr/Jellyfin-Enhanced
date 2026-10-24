@@ -497,7 +497,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
             // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
             // (synthetic ids are then refused; every other request passes straight through).
-            serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.SeerrNativeDetailsSource>();
+            // ---- A1: the pages' metadata source is the request mode's, picked on every call: TMDB in Jellyfin Enhanced
+            // mode (never Seerr), Seerr in every other mode exactly as before.
+            serviceCollection.AddSingleton<Services.NativeDetails.SeerrNativeDetailsSource>();
+            serviceCollection.AddSingleton(sp => new Services.NativeDetails.TmdbNativeDetailsSource(
+                sp.GetRequiredService<TmdbResponseCache>(),
+                sp.GetRequiredService<Services.Acquire.TitleAliases>(),
+                sp.GetRequiredService<Logger>()));
+            serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.ModeNativeDetailsSource>();
+            // ---- end A1 ----
             serviceCollection.AddSingleton(sp =>
             {
                 var policy = new Services.NativeDetails.NativeDetailsPolicy(

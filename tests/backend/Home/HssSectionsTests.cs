@@ -85,6 +85,7 @@ public class HssSectionsTests
         c.JellyseerrEnabled = true;
         c.JellyseerrUrls = "http://seerr.test";
         c.JellyseerrApiKey = "lab-key";
+        c.TMDB_API_KEY = "lab-tmdb"; // A1: the lab runs Jellyfin Enhanced mode, whose native pages read TMDB
         await lab.Warm();
         await lab.Ask(lab.Emma, new MutationInput { Key = "movie:tmdb:603" });
         await lab.Ask(lab.Kid, new MutationInput { Key = "tv:tvdb:78874", Scope = "seasons", Seasons = new[] { 2 } });

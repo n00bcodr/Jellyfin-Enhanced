@@ -1463,6 +1463,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ModeNativeDetailsSource.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsAllowlist.cs",
       "category": "Services"
     },
@@ -1512,6 +1516,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/SyntheticId.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/TmdbNativeDetailsSource.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/TmdbNativeShape.cs",
       "category": "Services"
     },
     {
@@ -11721,7 +11733,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 731,
+    "files": 734,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,

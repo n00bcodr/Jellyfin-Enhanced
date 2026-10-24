@@ -963,8 +963,9 @@ See [Hidden Content filtering](troubleshooting-support.md#hidden-content-filteri
 
 Your list swap-in agreement changes only when you explicitly choose Yes or No in your own settings. Saving display preferences from another browser, administrator edits, and resetting display defaults preserve your current agreement. An older cached web client must reload to use the explicit agreement control.
 
-HSS sections also require the native absent-title pages and their configured Seerr metadata source. When either is
-unavailable in configuration, JE uses native home injection. The request backend may still be Jellyfin Enhanced.
+HSS sections also require the native absent-title pages and their metadata source: a TMDB key when request handling
+is Jellyfin Enhanced (Seerr may be off completely), Seerr configured and enabled in Seerr mode. When either is
+unavailable in configuration, JE uses native home injection.
 
 Home row and list display choices take effect on the next live refresh. Responses recheck current viewer
 access, parental limits, preferences and follows after slow reads, so a change made while a request is waiting
