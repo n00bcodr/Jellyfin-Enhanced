@@ -139,6 +139,9 @@ const NOT_A_WRITE = [
   ['enhanced/itemdetails/features-details-media-info.js', '/JellyfinEnhanced/tag-data/'],
   // The live updates' long poll (a read of the person's events; ROUTE is the live route).
   ['arr/live/arr-live.js', 'ApiClient.getUrl(ROUTE)'],
+  // List import (4c2, integration je12): resolve and source read entries sent as POST (the entries or the URL in the body);
+  // nothing is stored for the person, and the read's own session binding (bindSession) still cancels an ended one.
+  ['arr/lists/list-import.js', '/JellyfinEnhanced/acquire/lists/import${path}'],
   // The pause screen's item read (its one caller passes GET options).
   ['enhanced/player/pausescreen.js', 'fetch(url, options)'],
   // The configuration page: dry runs (nothing is changed: a preview of the Seerr move, of the usage report).

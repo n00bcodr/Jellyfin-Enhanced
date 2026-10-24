@@ -101,8 +101,10 @@ function fenceViolations(src) {
 function queueViolations(src) {
   const found = [];
   const operation = member(src.store, /const queueOperation = async \(fileName, operation, options = \{\}\) => /);
-  // Round 11: the queue hands the write the session it was made in, and it goes out through JE.core.userWrite with it.
-  if (!operation || !/state\.queue\.send\(async bound => \{/.test(operation) || !/JE\.core\.userWrite\.ajax\(bound, /.test(operation)) found.push('a per-user document write goes out past its queue');
+  // Round 11: the queue hands the write the session it was made in, and it goes out through JE.core.userWrite with it
+  // (integration je12: through the session-bound core transport, whose writes JE.core.userWrite.send sends, with it).
+  if (!operation || !/state\.queue\.send\(async bound => \{/.test(operation)
+    || !/JE\.core\.userWrite\.ajax\(bound, |JE\.core\.api\.ajax\(\{[^}]*\bsession: bound\b/.test(operation)) found.push('a per-user document write goes out past its queue');
   if (/\.chain\.then\(/.test(src.store)) found.push('a per-user document has a chain of its own');
   if (!/state\.queue = JE\.core\.mutationQueue\(`settings:\$\{fileName\}`, \{ isCurrent: \(\) => isActiveDocument\(created\) \}\)/.test(src.store)) found.push('a document\'s queue is not bound to its session');
   // Round 12: the queue's send takes the origin it is handed (it never takes a session of its own).
@@ -137,6 +139,7 @@ const PLANTS = [
   ['scan 6', 'a restored configuration through the host route', 'plugin', '                    ApplyConfiguration(_ => restored);', '                    UpdateConfiguration(restored);'],
   ['scan 6', 'the host route\'s filter unregistered', 'registrator', '                o.Filters.AddService<Services.HostConfigurationRouteFilter>();\n', ''],
   ['scan 7', 'a write sent past its document\'s queue', 'store', 'const save = state.queue.send(async bound => {', 'const save = (async bound => {'],
+  ['scan 7', 'a queued write sent without the origin the queue handed it', 'store', 'session: bound, bound: action.bound(', 'bound: action.bound('],
   ['scan 7', 'a queue that checks the session only after the answer (the R10-1 shape)', 'queue',
     '                const run = chain.then(() => {\n                    if (!current()) {', '                const run = chain.then(() => {\n                    if (false) {'],
   ['scan 7', 'an account switch that leaves the queue running', 'queue', 'JE.session.onUserChange(`mutation-queue:${name}`', 'JE.session.onUserChange?.call(null, `mutation-queue-off:${name}`']

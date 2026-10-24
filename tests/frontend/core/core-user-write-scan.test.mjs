@@ -110,6 +110,8 @@ const NOT_A_PERSONS_WRITE = [
   ['enhanced/itemdetails/features-details-media-info.js', '/JellyfinEnhanced/tag-data/'],
   // The live updates' long poll (a read of the person's events; ROUTE is the live route).
   ['arr/live/arr-live.js', 'fetch(ApiClient.getUrl(ROUTE)'],
+  // List import (4c2, integration je12): resolve and source are reads sent as POST (nothing is stored for the person).
+  ['arr/lists/list-import.js', '/JellyfinEnhanced/acquire/lists/import${path}'],
   // The pause screen's item read (its one caller passes GET options).
   ['enhanced/player/pausescreen.js', 'fetch(url, options)'],
 ];
