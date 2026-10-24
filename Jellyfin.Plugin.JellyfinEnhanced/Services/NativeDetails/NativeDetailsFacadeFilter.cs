@@ -337,8 +337,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     if (person.Data is not { } p) return Failed(person);
                     return NativeDetailsPolicy.PersonAllowed(viewer, p) ? Ok(dtos.Person(page, p)) : new NotFoundResult();
                 case SyntheticKind.Genre:
-                    var movie = await _source.GenresAsync(true, ct).ConfigureAwait(false);
-                    var tv = await _source.GenresAsync(false, ct).ConfigureAwait(false);
+                    var movie = await _source.GenresAsync(true, viewer.Id, ct).ConfigureAwait(false);
+                    var tv = await _source.GenresAsync(false, viewer.Id, ct).ConfigureAwait(false);
                     var genre = GenreName(movie, page.TmdbId) ?? GenreName(tv, page.TmdbId);
                     if (genre != null) return Ok(dtos.NamePage(page, genre));
                     // Not in a list that answered: unknown; a list that couldn't be read: retryable.
@@ -394,7 +394,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, User viewer, SyntheticId title, CancellationToken ct)
         {
-            var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, ct);
+            var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, viewer.Id, ct);
             if (title.IsMovie)
             {
                 var movie = await _source.MovieAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
@@ -430,7 +430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (title.Kind is not (SyntheticKind.Season or SyntheticKind.Episode)) return Ok(Array.Empty<BaseItemDto>());
             var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (series.Data is not { } s) return Failed(series);
-            var logo = await _source.LogoPathAsync(false, title.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             // The parts the viewer can open in the library are themselves (a season of a series Jellyfin has
             // but this season isn't in it), never a stand-in from public data.
             var physical = _policy.Physical(viewer, false, title.TmdbId, null);
@@ -463,7 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (Arg<bool?>(context, "isMissing") == false) return Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
             var data = await _source.SeriesAsync(series.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (data.Data is not { } s) return Failed(data);
-            var logo = await _source.LogoPathAsync(false, series.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, series.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             var special = Arg<bool?>(context, "isSpecialSeason");
             // A season the library has but hides from this viewer is never drawn from public data instead.
             var physical = _policy.Physical(viewer, false, series.TmdbId, null);
@@ -518,7 +518,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (physical.Hidden || physical.HiddenSeasons.Contains(number.Value)) return new NotFoundResult();
             var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, viewer.Id, ct).ConfigureAwait(false);
             if (seasonData.Data is not { } se) return empty;
-            var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             var options = Options(context);
             // An episode the viewer can open in the library is listed as itself; a file holding several episodes
             // (E01-E02) once, at its first, with no stand-in for the others it holds.
@@ -551,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var limit = Math.Clamp(Arg<int?>(context, "limit") ?? 12, 1, 50);
             // Native builds the Similar DTOs with exactly the requested fields (LibraryController.GetSimilarItems).
             var options = new DtoOptions { Fields = Arg<ItemFields[]>(context, "fields") ?? Array.Empty<ItemFields>() };
-            var data = await _source.RecommendationsAsync(title.IsMovie, title.TmdbId, ct).ConfigureAwait(false);
+            var data = await _source.RecommendationsAsync(title.IsMovie, title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (data is not { } d) return Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
             // Parental filtering happens before paging and totals.
             var path = $"/api/v1/{(title.IsMovie ? "movie" : "tv")}/{title.TmdbId}/recommendations?page=1";
@@ -636,7 +636,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
             else if (page.Kind == SyntheticKind.Person)
             {
-                if ((await _source.PersonAsync(page.TmdbId, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
+                if ((await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
             }
             else
             {

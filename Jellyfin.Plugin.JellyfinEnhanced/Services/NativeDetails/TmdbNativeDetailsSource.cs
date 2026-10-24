@@ -65,30 +65,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Upstream reads still running (for tests: none may outlive its read).</summary>
         internal int InFlightCount => _inFlight.Count;
 
+        // Compatibility reads without a viewer share one bounded owner. All HTTP readers pass the
+        // effective viewer explicitly; no new distinct source task can bypass FeedAsync admission.
         /// <inheritdoc />
-        public Task<SourceAnswer> MovieAsync(int tmdb, CancellationToken ct) => GetAsync(MoviePath(tmdb), () => MovieFetch(tmdb), ct);
+        public Task<SourceAnswer> MovieAsync(int tmdb, CancellationToken ct) => Budgeted(MoviePath(tmdb), () => MovieFetch(tmdb), Guid.Empty, ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> SeriesAsync(int tmdb, CancellationToken ct) => GetAsync(SeriesPath(tmdb), () => SeriesFetch(tmdb), ct);
+        public Task<SourceAnswer> SeriesAsync(int tmdb, CancellationToken ct) => Budgeted(SeriesPath(tmdb), () => SeriesFetch(tmdb), Guid.Empty, ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> SeasonAsync(int tmdb, int season, CancellationToken ct) => GetAsync(SeasonPath(tmdb, season), () => SeasonFetch(tmdb, season), ct);
+        public Task<SourceAnswer> SeasonAsync(int tmdb, int season, CancellationToken ct) => Budgeted(SeasonPath(tmdb, season), () => SeasonFetch(tmdb, season), Guid.Empty, ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> PersonAsync(int tmdb, CancellationToken ct) => GetAsync(PersonPath(tmdb), () => PersonFetch(tmdb), ct);
+        public Task<SourceAnswer> PersonAsync(int tmdb, CancellationToken ct) => Budgeted(PersonPath(tmdb), () => PersonFetch(tmdb), Guid.Empty, ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> GenresAsync(bool movie, CancellationToken ct)
+        public Task<SourceAnswer> GenresAsync(bool movie, CancellationToken ct) => GenresAsync(movie, Guid.Empty, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> GenresAsync(bool movie, Guid viewer, CancellationToken ct)
         {
             var path = "genre/" + (movie ? "movie" : "tv") + "/list";
-            return GetAsync(path, () => Fetch(path, string.Empty, body => TmdbNativeShape.Genres(body)), ct);
+            return Budgeted(path, () => Fetch(path, string.Empty, body => TmdbNativeShape.Genres(body)), viewer, ct);
         }
 
         /// <inheritdoc />
-        public Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) => GetAsync(StudioPath(tmdb), () => CompanyFetch(StudioPath(tmdb)), ct);
+        public Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) => Budgeted(StudioPath(tmdb), () => CompanyFetch(StudioPath(tmdb)), Guid.Empty, ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => GetAsync(NetworkPath(tmdb), () => CompanyFetch(NetworkPath(tmdb)), ct);
+        public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => Budgeted(NetworkPath(tmdb), () => CompanyFetch(NetworkPath(tmdb)), Guid.Empty, ct);
 
         /// <inheritdoc />
         public Task<SourceAnswer> MovieAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted(MoviePath(tmdb), () => MovieFetch(tmdb), viewer, ct);
@@ -177,57 +182,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <inheritdoc />
-        public async Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct)
-        {
-            if (tmdb <= 0) return null;
-            var kind = movie ? "movie" : "tv";
-            var path = kind + "/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/recommendations";
-            return (await GetAsync(path + "?page=1", () => Fetch(path, "?page=1", body => TmdbNativeShape.Page(body, kind)), ct).ConfigureAwait(false)).Data;
-        }
+        public Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct)
+            => RecommendationsAsync(movie, tmdb, Guid.Empty, ct);
 
         /// <inheritdoc />
-        public async Task<string?> LogoPathAsync(bool movie, int tmdb, CancellationToken ct)
+        public async Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
+            => (await RelatedAsync(movie, tmdb, "recommendations", 1, viewer, ct).ConfigureAwait(false)).Data;
+
+        /// <inheritdoc />
+        public Task<string?> LogoPathAsync(bool movie, int tmdb, CancellationToken ct)
+            => LogoPathAsync(movie, tmdb, Guid.Empty, ct);
+
+        /// <inheritdoc />
+        public async Task<string?> LogoPathAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
         {
-            var key = _key();
-            if (string.IsNullOrWhiteSpace(key) || tmdb <= 0) return null;
-            try
+            if (tmdb <= 0) return null;
+            var path = (movie ? "movie/" : "tv/") + tmdb.ToString(CultureInfo.InvariantCulture) + "/images";
+            var answer = await Budgeted(path, () => LogoFetch(path), viewer, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data || !data.TryGetProperty("logos", out var logos) || logos.ValueKind != JsonValueKind.Array) return null;
+            string? fallback = null;
+            foreach (var logo in logos.EnumerateArray())
             {
-                TmdbResponseCache.TmdbResponse? response = null;
-                // One retry for a failed first read (a cold start's first TMDB call can time out).
-                for (var attempt = 0; attempt < 2 && (response == null || response.StatusCode >= 500 || response.StatusCode == 429); attempt++)
-                {
-                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeout.CancelAfter(FetchTimeout);
-                    try
-                    {
-                        response = await _tmdb.GetAsync((movie ? "movie/" : "tv/") + tmdb.ToString(CultureInfo.InvariantCulture) + "/images", "?include_image_language=en,null", key, timeout.Token).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (!ct.IsCancellationRequested && attempt == 0)
-                    {
-                        response = null;
-                    }
-                }
-
-                if (response == null || !response.IsSuccess) return null;
-                using var doc = JsonDocument.Parse(response.Content);
-                if (!doc.RootElement.TryGetProperty("logos", out var logos) || logos.ValueKind != JsonValueKind.Array) return null;
-                string? fallback = null;
-                foreach (var logo in logos.EnumerateArray())
-                {
-                    var path = logo.TryGetProperty("file_path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
-                    if (!ProviderMetadata.SafeArtwork(path)) continue;
-                    var lang = logo.TryGetProperty("iso_639_1", out var l) && l.ValueKind == JsonValueKind.String ? l.GetString() : null;
-                    if (lang == "en") return path;
-                    fallback ??= path;
-                }
-
-                return fallback;
+                if (logo.ValueKind != JsonValueKind.Object) return null;
+                var file = logo.TryGetProperty("file_path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+                if (!ProviderMetadata.SafeArtwork(file)) continue;
+                var lang = logo.TryGetProperty("iso_639_1", out var l) && l.ValueKind == JsonValueKind.String ? l.GetString() : null;
+                if (lang == "en") return file;
+                fallback ??= file;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+
+            return fallback;
+        }
+
+        /// <summary>The logo lookup and its one transient-failure retry share one admitted place and their own timeouts.</summary>
+        private async Task<SourceAnswer> LogoFetch(string path)
+        {
+            var answer = await Fetch(path, "?include_image_language=en,null", body => JsonNode.Parse(body.GetRawText())!).ConfigureAwait(false);
+            if (answer.Data == null && !answer.NotFound)
             {
-                _logger.Debug($"Native details (TMDB): no logo for {(movie ? "movie" : "tv")}/{tmdb}: {ex.Message}");
-                return null;
+                answer = await Fetch(path, "?include_image_language=en,null", body => JsonNode.Parse(body.GetRawText())!).ConfigureAwait(false);
             }
+
+            return answer;
+        }
+
+        /// <summary>Provider-key resolution in JE mode uses the same admission owner as page metadata.</summary>
+        internal Task<SourceAnswer> FindAsync(TitleKey title, Guid viewer, CancellationToken ct)
+        {
+            var provider = title.Provider switch { "tvdb" => "tvdb_id", "imdb" => "imdb_id", _ => null };
+            if (provider == null) return Task.FromResult(SourceAnswer.Missing);
+            var path = "find/" + Uri.EscapeDataString(title.Id);
+            var query = "?external_source=" + provider;
+            return Budgeted(path + query, () => Fetch(path, query, body => JsonNode.Parse(body.GetRawText())!), viewer, ct);
         }
 
         /// <inheritdoc />
@@ -334,12 +340,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!_cache.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
             value = hit.Value;
             return true;
-        }
-
-        private Task<SourceAnswer> GetAsync(string path, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
-        {
-            if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            return _inFlight.GetOrAdd(path, p => Shared(p, fetch)).Value.WaitAsync(ct);
         }
 
         /// <summary>

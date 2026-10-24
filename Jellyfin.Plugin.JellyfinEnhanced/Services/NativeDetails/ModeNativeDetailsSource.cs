@@ -94,6 +94,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public Task<SourceAnswer> NetworkAsync(int tmdb, Guid viewer, CancellationToken ct) => Current.NetworkAsync(tmdb, viewer, ct);
 
         /// <inheritdoc />
+        public Task<SourceAnswer> GenresAsync(bool movie, Guid viewer, CancellationToken ct) => Current.GenresAsync(movie, viewer, ct);
+
+        /// <inheritdoc />
+        public Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Current.RecommendationsAsync(movie, tmdb, viewer, ct);
+
+        /// <inheritdoc />
+        public Task<string?> LogoPathAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Current.LogoPathAsync(movie, tmdb, viewer, ct);
+
+        /// <inheritdoc />
         public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Current.RatingsAsync(movie, tmdb, viewer, ct);
 
         /// <inheritdoc />

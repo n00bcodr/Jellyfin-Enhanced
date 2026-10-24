@@ -617,6 +617,9 @@ public partial class ApiNativeDetailsTests
         public Task<SourceAnswer> PersonAsync(int tmdb, Guid viewer, CancellationToken ct) => Note(nameof(PersonAsync));
         public Task<SourceAnswer> StudioAsync(int tmdb, Guid viewer, CancellationToken ct) => Note(nameof(StudioAsync));
         public Task<SourceAnswer> NetworkAsync(int tmdb, Guid viewer, CancellationToken ct) => Note(nameof(NetworkAsync));
+        public Task<SourceAnswer> GenresAsync(bool movie, Guid viewer, CancellationToken ct) => Note(nameof(GenresAsync));
+        public Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) { lock (Calls) Calls.Add(nameof(RecommendationsAsync)); return Task.FromResult<JsonElement?>(null); }
+        public Task<string?> LogoPathAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) { lock (Calls) Calls.Add(nameof(LogoPathAsync)); return Task.FromResult<string?>(null); }
         public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Note(nameof(RatingsAsync));
         public Task<SourceAnswer> RelatedAsync(bool movie, int tmdb, string relation, int page, Guid viewer, CancellationToken ct) => Note(nameof(RelatedAsync));
         public Task<SourceAnswer> CollectionAsync(int collection, Guid viewer, CancellationToken ct) => Note(nameof(CollectionAsync));

@@ -928,6 +928,52 @@ public class ApiArrStatusTests
 
 #if !NET9_0
     [Fact]
+    public async Task TmdbAdmissionNavigatorFindRetainsTheHttpViewerAndRecoversAfterCapacityReturns()
+    {
+        using var rig = new Rig();
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        config.NativeAbsentDetailsEnabled = true;
+        config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "tmdb-test";
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var transport = new IntegrationTransport(async (_, ct) =>
+        {
+            await release.Task.WaitAsync(ct);
+            return IntegrationTransport.Response("""{"tv_results":[{"id":1437}]}""");
+        });
+        using var tmdb = new Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbResponseCache(transport, TimeProvider.System);
+        var source = new Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.TmdbNativeDetailsSource(tmdb, null, rig.Arr.Plugin.Core.Logger) { PageReadWait = TimeSpan.Zero };
+        var host = new Moq.Mock<MediaBrowser.Controller.IServerApplicationHost>();
+        host.SetupGet(h => h.SystemId).Returns("0202511b0eac4284ab045b3ba556d72e");
+        async Task<int> Resolve(int number)
+        {
+            var controller = new NativeDetailsController(rig.Service, host.Object, new TitleAliases(rig.Store, null), tmdb, source)
+            {
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            };
+            controller.HttpContext.User = rig.Controller(rig.Member).HttpContext.User;
+            var result = Assert.IsAssignableFrom<ObjectResult>(await controller.Resolve("tv:tvdb:" + number, null, null, null, CancellationToken.None));
+            if (result.StatusCode == 503) Assert.Equal("1", controller.Response.Headers["Retry-After"]);
+            return result.StatusCode ?? 200;
+        }
+
+        var reads = Enumerable.Range(800000, 80).Select(Resolve).ToArray();
+        try
+        {
+            Assert.Equal(8, source.InFlightCount);
+            Assert.Equal(72, reads.Count(t => t.IsCompletedSuccessfully && t.Result == 503));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await Task.WhenAll(reads);
+        }
+        Assert.Equal(8, reads.Count(t => t.Result == 200));
+        Assert.Equal(200, await Resolve(800079));
+        Assert.Equal(0, source.InFlightCount);
+    }
+
+    [Fact]
     public async Task TheNavigatorOpensACopyTheViewerCanOpenFirstElseTheNativePage()
     {
         using var rig = new Rig();
@@ -942,7 +988,7 @@ public class ApiArrStatusTests
         host.SetupGet(h => h.SystemId).Returns(server);
         Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsController Controller(StatusViewer? viewer)
         {
-            var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsController(rig.Service, host.Object, new TitleAliases(rig.Store, null), tmdb)
+            var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsController(rig.Service, host.Object, new TitleAliases(rig.Store, null), tmdb, new Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.TmdbNativeDetailsSource(tmdb, null, rig.Arr.Plugin.Core.Logger))
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
