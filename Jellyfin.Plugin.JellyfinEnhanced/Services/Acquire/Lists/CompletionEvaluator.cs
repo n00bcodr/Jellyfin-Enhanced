@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <summary>The only owner of evidence reconciliation, persisted positive authority and completion decisions.</summary>
     public static class CompletionEvaluator
     {
-        internal const int EvidenceVersion = 3;
+        internal const int EvidenceVersion = 4;
 
         internal static string Scope(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
@@ -60,13 +60,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 c => c.E.Seasons != null && c.Selected.Count > 0 && c.Seasons.All(s => s.Number >= 0 && s.EpisodeCount >= 0)
                     && c.Seasons.Select(s => s.Number).Distinct().Count() == c.Seasons.Count
                     && c.Selected.All(s => s.EpisodeCount > 0) && c.Selected.Sum(s => (long)s.EpisodeCount) < PlaceholderProgress.MaxExpected),
-            new("show_season_count_contradiction", new[] { "DeclaredSeasonCount", "Seasons[].Number" },
-                c => c.E.DeclaredSeasonCount == null || c.E.DeclaredSeasonCount == c.Seasons.Count(s => s.Number >= 1)),
+            new("show_season_count_contradiction", new[] { "DeclaredSeasonCount", "Seasons[].Number", "DetailSeasons[].Number", "Details[].S", "Last.S", "Next.S", "Season", "ExplicitScope[].S" },
+                c => c.E.DeclaredSeasonCount == null || c.E.DeclaredSeasonCount >= 0
+                    && c.E.DeclaredSeasonCount == c.Seasons.Count(s => s.Number >= 1)
+                    && c.E.DeclaredSeasonCount >= c.MaxReferencedSeason),
+            new("season_range_uncovered", new[] { "DeclaredSeasonCount", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S" },
+                c => c.MaxSeason < PlaceholderProgress.MaxExpected && c.PositiveSeasons.Count(s => s >= 1 && s <= c.MaxSeason) == c.MaxSeason),
             // Keep the existing probe reason: the adapter uses it to fetch the regular-season resources.
             new("series_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
                 c => !c.Series || c.E.Details != null),
             new("season_rows_unavailable", new[] { "Kind", "Details[].S", "DetailSeasons[].Number" },
                 c => c.Series || c.E.Details != null),
+            new("episode_range_uncovered", new[] { "Kind", "Season", "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S", "Details[].E", "Last.S", "Last.E", "Next.S", "Next.E", "ExplicitScope[].S", "ExplicitScope[].E" },
+                c => c.EpisodeBounds.All(p => (c.Series ? p.Key < 1 : p.Key != c.E.Season)
+                    || p.Value > 0 && p.Value < PlaceholderProgress.MaxExpected
+                        && c.RowCoordinates.TryGetValue(p.Key, out var rows) && rows.Count == p.Value
+                        && rows.All(e => e >= 1 && e <= p.Value))),
             new("detail_season_count_contradiction", new[] { "Seasons[].Number", "Seasons[].EpisodeCount", "DetailSeasons[].Number", "DetailSeasons[].EpisodeCount", "Details[].S" },
                 c => c.DetailSeasons.Select(s => s.Number).Distinct().Count() == c.DetailSeasons.Count
                     && c.DetailSeasons.All(d => c.Seasons.Any(s => s.Number == d.Number && d.EpisodeCount >= 0 && d.EpisodeCount <= s.EpisodeCount)
@@ -140,8 +149,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     && RawRows.All(e => Coord(e) != Coord(evidence.Next)) ? RawRows.Append(evidence.Next).ToArray() : RawRows;
                 Selected = Seasons.Where(s => Series ? s.Number >= 1 : s.Number == E.Season).ToArray();
                 Named = new[] { E.Last, E.Next }.OfType<PlaceholderEpisode>().ToArray();
+                // Range bounds include every source, even resources/coordinates absent from the advertised list.
+                // Never enumerate an untrusted ordinal: coverage is a set cardinality within a bounded range.
+                var explicitRows = (E.ExplicitScope ?? Array.Empty<EpisodeCoord>()).ToArray();
+                MaxReferencedSeason = Seasons.Select(s => s.Number).Concat(DetailSeasons.Select(s => s.Number))
+                    .Concat(RawRows.Concat(Named).Select(e => e.S)).Concat(explicitRows.Select(e => e.S))
+                    .Append(E.Season ?? 0).Append(0).Max();
+                MaxSeason = Math.Max(MaxReferencedSeason, E.DeclaredSeasonCount ?? 0);
+                // For an unselected season, an advertised positive episode count proves its existence;
+                // selected scopes additionally require the complete row/coordinate closure below.
+                PositiveSeasons = Seasons.Where(s => s.EpisodeCount > 0).Select(s => s.Number)
+                    .Concat(DetailSeasons.Where(s => s.EpisodeCount > 0).Select(s => s.Number))
+                    .Concat(RawRows.Concat(Named).Where(e => e.E > 0).Select(e => e.S)).ToHashSet();
+                EpisodeBounds = Seasons.Concat(DetailSeasons).Select(s => (S: s.Number, E: s.EpisodeCount))
+                    .Concat(RawRows.Concat(Named).Select(e => (e.S, e.E))).Concat(explicitRows.Select(e => (e.S, e.E)))
+                    .GroupBy(e => e.S).ToDictionary(g => g.Key, g => g.Max(e => e.E));
+                RowCoordinates = Rows.GroupBy(e => e.S).ToDictionary(g => g.Key, g => g.Select(e => e.E).ToHashSet());
             }
 
+            internal int MaxReferencedSeason { get; }
+            internal int MaxSeason { get; }
+            internal HashSet<int> PositiveSeasons { get; }
+            internal IReadOnlyDictionary<int, int> EpisodeBounds { get; }
+            internal IReadOnlyDictionary<int, HashSet<int>> RowCoordinates { get; }
             internal CompletionEvidence E { get; }
             internal bool Series => E.Kind == PlaceholderKinds.Series;
             internal bool RegularPair => E.Last is { S: >= 1 } && E.Next is { S: >= 1 };

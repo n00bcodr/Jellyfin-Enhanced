@@ -30,6 +30,11 @@ public class ListsC1R4TotalityTests(ITestOutputHelper output)
     internal static IEnumerable<(string Id, CompletionEvidence Evidence)> Witnesses()
     {
         var b = Coherent();
+        yield return ("season_range_uncovered", b with { DeclaredSeasonCount = null,
+            Seasons = new[] { new CompletionSeason(3, 2, Past) },
+            DetailSeasons = new[] { new CompletionSeason(3, 2, Past) },
+            Details = new[] { Ep(3, 1, Past), Ep(3, 2, Later) }, Last = Ep(3, 2, Later) });
+        yield return ("episode_range_uncovered", b with { Details = new[] { Ep(1, 1, Past) } });
         yield return ("scope_binding_unknown", b with { Scope = "" });
 #if !C1_R4_BASELINE
         yield return ("specials_policy_invalid", b with { SpecialsPolicy = "include_everything" });
