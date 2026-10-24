@@ -13,7 +13,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             Json = json;
             ETag = etag;
+            EvidenceGeneration = EvidenceRevision.EvidenceGeneration;
         }
+
+        internal long EvidenceGeneration { get; }
 
         /// <summary>UTF-8 JSON.</summary>
         public byte[] Json { get; }
@@ -56,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             lock (_lock)
             {
-                if (!_map.TryGetValue(key, out var node)) return null;
+                if (!_map.TryGetValue(key, out var node) || node.Value.Body.EvidenceGeneration != EvidenceRevision.EvidenceGeneration) return null;
                 _lru.Remove(node);
                 _lru.AddFirst(node);
                 return node.Value.Body;

@@ -109,6 +109,9 @@ public class IntegrationParentalEvidenceReviewTests
         public void Dispose() { Database.Dispose(); Store.Dispose(); Tmdb.Dispose(); Transport.Dispose(); Arr.Dispose(); }
     }
 
+    // Test host mutations use the same input-writer owner as the pinned host events.
+    private static void MoveCountry(Rig rig, string country) => EvidenceRevision.Advance(() => rig.Server.MetadataCountryCode = country);
+
     public static IEnumerable<object[]> RegionalCases()
     {
         foreach (var kind in new[] { "movie", "tv" })
@@ -181,9 +184,9 @@ public class IntegrationParentalEvidenceReviewTests
     {
         using var r = new Rig();
         Assert.Single((await r.Read(search)).Body.GetProperty("answer").GetProperty("results").EnumerateArray());
-        if (change == "credential") r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
-        if (change == "region") r.Server.MetadataCountryCode = "AU";
-        if (change == "backend") r.Arr.Plugin.Plugin.Configuration.ArrRequestBackend = "status_only";
+        if (change == "credential") EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty);
+        if (change == "region") MoveCountry(r, "AU");
+        if (change == "backend") EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.ArrRequestBackend = "status_only");
         // Call the real service for backend changes: the controller separately rejects disabled JE browsing.
         var answer = search ? await r.Discover.SearchAsync(r.Viewer, "family", 1, null, default)
             : await r.Discover.DiscoverAsync(r.Viewer, "trending", "movie", 1, null, default);
@@ -203,8 +206,8 @@ public class IntegrationParentalEvidenceReviewTests
         var pending = r.Read(search);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
-        if (change == "region") r.Server.MetadataCountryCode = "AU";
-        else r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
+        if (change == "region") MoveCountry(r, "AU");
+        else EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty);
         release.SetResult();
         var result = await pending;
         Assert.True(result.Status == 503 || result.Body.GetProperty("answer").GetProperty("results").GetArrayLength() == 0);
@@ -224,7 +227,7 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.False(first.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.True(first.Body.GetProperty("answer").GetProperty("retryAfterSeconds").GetInt32() > 0);
         r.Evidence = (id, _) => Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id));
-        r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "recovered-source";
+        EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "recovered-source");
         var recovered = await r.Read(search);
         Assert.Equal(200, recovered.Status);
         Assert.True(recovered.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
@@ -242,7 +245,7 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.Equal(200, refused.Status);
         Assert.True(refused.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.Empty(refused.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
-        r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "replacement-source";
+        EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "replacement-source");
         r.Evidence = (id, _) => Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id));
         Assert.Single((await r.Read(search)).Body.GetProperty("answer").GetProperty("results").EnumerateArray());
     }
@@ -378,7 +381,7 @@ public class IntegrationParentalEvidenceReviewTests
         using var r = new Rig(); var change = 0;
         r.Evidence = (id, _) =>
         {
-            r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "moving-source-" + ++change;
+            EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "moving-source-" + ++change);
             return Task.FromResult<string?>(IntegrationParentalEvidenceTests.Movie(id));
         };
         var moving = await r.Read(search);
@@ -387,7 +390,7 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.Empty(moving.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
         Assert.Equal("evidence_unavailable", moving.Body.GetProperty("reason").GetString());
         r.Page = null!;
-        r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "failed-list-source";
+        EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "failed-list-source");
         Assert.Equal(503, (await r.Read(search)).Status);
     }
 
@@ -436,7 +439,7 @@ public class IntegrationParentalEvidenceReviewTests
         await Assert.ThrowsAsync<ArrStatusService.ViewerChangedException>(() => status.ForTitlesAsync(r.Viewer, new[] { key }, "review", "same", rows =>
         {
             Assert.Single(rows);
-            r.Server.MetadataCountryCode = "AU";
+            MoveCountry(r, "AU");
             return JsonSerializer.SerializeToUtf8Bytes(new { items = rows.Select(row => row.Status) });
         }, default));
         Assert.Equal(0, status.Cache.Count);
@@ -453,7 +456,7 @@ public class IntegrationParentalEvidenceReviewTests
         r.Arr.Hosts["movies.invalid"].Before = async (_, ct) => { started.TrySetResult(); await release.Task.WaitAsync(ct); };
         var pending = status.ForKeyDetailAsync(r.Viewer, key, default);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        r.Server.MetadataCountryCode = "AU";
+        MoveCountry(r, "AU");
         release.SetResult();
         Assert.Empty(JsonDocument.Parse((await pending).Json).RootElement.GetProperty("items").EnumerateArray());
     }
@@ -493,8 +496,8 @@ public class IntegrationParentalEvidenceReviewTests
         static int Count(byte[] body) => JsonDocument.Parse(body).RootElement.GetProperty("items").GetArrayLength();
         Assert.Equal(refused ? 0 : 1, Count(await Read()));
         Assert.Equal(refused ? 0 : 1, Count(await Read())); // warm cache hit
-        if (change == "country") r.Server.MetadataCountryCode = "AU";
-        else { r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "changed-source"; refused = !refused; }
+        if (change == "country") MoveCountry(r, "AU");
+        else { EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = "changed-source"); refused = !refused; }
         await r.Gate.AbsentVerdictAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default);
         Assert.Equal(change == "refusal-recovery" ? 1 : 0, Count(await Read()));
     }
@@ -539,11 +542,11 @@ public class IntegrationParentalEvidenceReviewTests
         if (change == "projection")
         {
             // RequestPolicy's publication probe re-reads its current native view synchronously.
-            r.View.OnCopies = () => r.Server.MetadataCountryCode = "AU";
+            r.View.OnCopies = () => MoveCountry(r, "AU");
         }
         var pending = c.Season(page.PageId.ToString("N"));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        if (change is "metadata" or "page") r.Server.MetadataCountryCode = "AU";
+        if (change is "metadata" or "page") MoveCountry(r, "AU");
         release.TrySetResult();
         var answer = await pending.WaitAsync(TimeSpan.FromSeconds(5));
         if (change == "stable")
@@ -597,9 +600,10 @@ public class IntegrationParentalEvidenceReviewTests
         var changes = new[] { new ArrFeedChange("movie:tmdb:603", 1, r.Arr.Instance("Movies").Id) };
         Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
         Assert.Single(audience.Visible(r.User.Id, false, changes));
-        r.Server.MetadataCountryCode = "AU";
+        MoveCountry(r, "AU");
         Assert.Empty(audience.Visible(r.User.Id, false, changes));
-        r.Server.MetadataCountryCode = "US";
+        MoveCountry(r, "US");
+        Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
         Assert.Single(audience.Visible(r.User.Id, false, changes));
     }
 
@@ -629,7 +633,7 @@ public class IntegrationParentalEvidenceReviewTests
         var filter = ActivatorUtilities.CreateInstance<TitlePresentationResultFilter>(services, r.Arr.Plugin.Core.Manager, spoilers, r.Library,
             Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!));
         filter.OnResourceExecuting(new ResourceExecutingContext(context, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>()));
-        if (action != "stable") r.Server.MetadataCountryCode = "AU";
+        if (action != "stable") MoveCountry(r, "AU");
         controller.Response.Headers.ETag = "\"old\"";
         IActionResult body = action == "native-image" ? new FileContentResult(new byte[] { 0xff, 0xd8, 0xff }, "image/jpeg")
             : new ContentResult { Content = "{\"title\":\"private\"}", ContentType = "application/json" };
@@ -657,7 +661,7 @@ public class IntegrationParentalEvidenceReviewTests
         var items = new[] { new Placeholder { Id = "p", Kind = PlaceholderKinds.Movie, TmdbId = 603 } };
         var known = await access.Gate.VisibilityAsync(items, r.User, default);
         Assert.True(known.IsVisible(items[0]));
-        r.Server.MetadataCountryCode = "AU";
+        MoveCountry(r, "AU");
         var published = await access.Gate.ProjectAsync(context, items, known, grant => items.Where(grant.Visibility.IsVisible).ToList(), default);
         Assert.NotNull(published);
         Assert.Empty(published);
@@ -672,7 +676,7 @@ public class IntegrationParentalEvidenceReviewTests
         var access = new ListAccessService(host, r.Users, r.Gate, r.Arr.Plugin.Core.Logger);
         var lookup = new FakeImportLookup(); lookup.AddSearch("Allowed", FakeImportLookup.Movie(603, "Allowed", "2000-01-01"));
         var limiter = new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System);
-        var viewer = new MovingImportView(() => r.Server.MetadataCountryCode = "AU");
+        var viewer = new MovingImportView(() => MoveCountry(r, "AU"));
         var resolver = new ListImportResolver(lookup, new FakeLibraryLookup(), access, limiter, r.Arr.Plugin.Core.Logger, viewer);
         if (preview)
         {
@@ -712,15 +716,133 @@ public class IntegrationParentalEvidenceReviewTests
         var moved = false;
         var pending = gaps.ProjectAsync(r.Viewer, box.Id, null, answer =>
         {
-            if (projection && !moved) { moved = true; r.Server.MetadataCountryCode = "AU"; }
+            if (projection && !moved) { moved = true; MoveCountry(r, "AU"); }
             return answer;
         }, default);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        if (!projection) r.Server.MetadataCountryCode = "AU";
+        if (!projection) MoveCountry(r, "AU");
         release.TrySetResult();
         var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.NotNull(result.Gaps);
         Assert.Empty(result.Gaps.Missing);
+    }
+
+    [Theory]
+    [InlineData("credential")] [InlineData("backend")]
+    public async Task R6AllInputRoundTripsInvalidateEveryPreparedDependency(string input)
+    {
+        using var r = new Rig();
+        var owner = r.Gate.CapturePublication(r.User.Id);
+        var gate = new ResponseGate(r.View, () => r.Arr.Plugin.Plugin.Configuration, () => r.Gate.EvidenceRevision);
+        var prepared = gate.Take(r.Viewer);
+        Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+        var fingerprint = r.Gate.EvidenceFingerprint;
+        var config = r.Arr.Plugin.Plugin.Configuration;
+        var old = input == "credential" ? config.TMDB_API_KEY : config.ArrRequestBackend;
+        EvidenceRevision.Advance(() => { if (input == "credential") config.TMDB_API_KEY = "roundtrip-replacement"; else config.ArrRequestBackend = "status_only"; });
+        EvidenceRevision.Advance(() => { if (input == "credential") config.TMDB_API_KEY = old; else config.ArrRequestBackend = old; });
+        Assert.Equal(fingerprint, r.Gate.EvidenceFingerprint);
+        Assert.False(owner.Current);
+        Assert.False(gate.EvidenceCurrent(prepared));
+        Assert.Null(gate.Current(prepared));
+        Assert.False(r.Gate.MaySeeAbsent("movie", 603, r.User.Id.ToString("N"), out _)); // old signature partition is a miss
+        Assert.True(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+        Assert.True(r.Gate.CapturePublication(r.User.Id).Current);
+    }
+
+    [Theory]
+    [InlineData(false, false)] [InlineData(true, false)]
+    [InlineData(false, true)] [InlineData(true, true)]
+    public async Task R6CountryRoundTripCanPublishAnIntermediateAllow(bool roundTrip, bool kestrel)
+    {
+        using var r = new Rig();
+        r.Evidence = (id, _) => Task.FromResult<string?>("{\"id\":" + id + ",\"adult\":false,\"release_dates\":{\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"R\"}]},{\"iso_3166_1\":\"AU\",\"release_dates\":[{\"certification\":\"G\"}]}]}}");
+        var localization = (ILocalizationManager)typeof(SeerrParentalFilter).GetField("_localization", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(r.Gate)!;
+        Mock.Get(localization).Setup(m => m.GetRatingScore("G", "AU")).Returns(new ParentalRatingScore(1, null));
+        Assert.False(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
+        var initial = r.Gate.EvidenceFingerprint;
+        var before = EvidenceRevision.Current;
+        var builder = new WebHostBuilder()
+            .ConfigureServices(services => { services.AddControllers(); services.AddSingleton(r.Gate); })
+            .Configure(app => Microsoft.AspNetCore.Builder.RunExtensions.Run(app, async http =>
+            {
+                http.User = TestCallers.Principal(r.User.Id, false);
+                var action = EndpointRouting.Bind(http);
+                var resource = new ResourceExecutingContext(action, new List<IFilterMetadata>(), new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+                await new PrivacyCommitFilter().OnResourceExecutionAsync(resource, async () =>
+                {
+                    if (roundTrip) EvidenceRevision.Advance(() => r.Server.MetadataCountryCode = "AU");
+                    var controller = ApiAssetTests.Controller(r.Arr.Plugin.Core, r.Tmdb, r.Gate);
+                    controller.ControllerContext = new() { HttpContext = http };
+                    var answer = await controller.ProxyTmdbRequest("movie/603");
+                    if (roundTrip)
+                    {
+                        Assert.True(r.Gate.MaySeeAbsent("movie", 603, r.User.Id.ToString("N"), out _));
+                        EvidenceRevision.Advance(() => r.Server.MetadataCountryCode = "US");
+                    }
+                    var projection = new TitlePresentationResultFilter(r.Arr.Plugin.Core.Manager,
+                        new SpoilerPresentation(r.Arr.Plugin.Core.Manager, r.Library, r.Users, Mock.Of<IUserDataManager>()), r.Library,
+                        Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), new SpoilerFieldStripFilter(null!, r.Library, r.Users, Mock.Of<IUserDataManager>(), null!), parental: r.Gate);
+                    var executing = new ResultExecutingContext(action, new List<IFilterMetadata>(), answer, controller);
+                    projection.OnResultExecuting(executing);
+                    await executing.Result.ExecuteResultAsync(action);
+                    return new ResourceExecutedContext(action, new List<IFilterMetadata>());
+                });
+            }));
+        using var test = !kestrel ? new Microsoft.AspNetCore.TestHost.TestServer(builder) : null;
+        using var server = kestrel ? builder.UseKestrel().UseUrls("http://127.0.0.1:0").Build() : null;
+        if (server != null) await server.StartAsync();
+        using var client = test?.CreateClient() ?? new HttpClient { BaseAddress = new Uri(server!.ServerFeatures.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()!.Addresses.Single()) };
+        using var response = await client.GetAsync("/JellyfinEnhanced/tmdb/movie/603");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(initial, r.Gate.EvidenceFingerprint);
+        Assert.False(r.Gate.MaySeeAbsent("movie", 603, r.User.Id.ToString("N"), out _));
+        if (roundTrip)
+        {
+            Assert.True(EvidenceRevision.Current >= before + 2);
+            if ((int)response.StatusCode == 200) Assert.Contains("\"id\":603", body);
+        }
+        Assert.Equal(roundTrip ? 503 : 403, (int)response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task R6AutomaticCredentialRecoveryMustDrainExistingAdmissions(bool holdAdmission)
+    {
+        using var r = new Rig();
+        var path = Path.Combine(r.Arr.Plugin.Core.Root, "recovery.json");
+        File.WriteAllText(path, "{ unreadable");
+        var now = DateTimeOffset.UtcNow;
+        var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets.SecretsStore(path, now: () => now);
+        typeof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced).GetField("<Secrets>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(r.Arr.Plugin.Plugin, store);
+        EvidenceRevision.Advance(() => r.Arr.Plugin.Plugin.Configuration.TMDB_API_KEY = Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets.SecretValue.Mask("test-restored"));
+        Assert.False(store.IsAvailable);
+        var before = r.Gate.EvidenceRevision;
+        var epoch = EvidenceRevision.Current;
+        using var admission = holdAdmission ? EvidenceRevision.TryAcquire(() => true) : null;
+        Assert.Equal(holdAdmission ? 1 : 0, EvidenceRevision.Outstanding);
+        File.WriteAllText(path, "{\"version\":1,\"secrets\":{\"TMDB_API_KEY\":\"test-restored\"}}");
+        now += Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets.SecretsStore.ReloadInterval;
+        var recovery = Task.Run(() => store.Get("TMDB_API_KEY"));
+        var completedWhileHeld = await Task.WhenAny(recovery, Task.Delay(150)) == recovery;
+        try
+        {
+            if (holdAdmission)
+            {
+                Assert.True(EvidenceRevision.Advancing);
+                Assert.Equal(epoch, EvidenceRevision.Current);
+                Assert.Equal(before, r.Gate.EvidenceRevision);
+                // Final validation is a snapshot; it cannot recover, wait on this writer or mutate its input.
+                Assert.Null(EvidenceRevision.Snapshot(() => store.Get("TMDB_API_KEY")));
+                Assert.Equal(epoch, EvidenceRevision.Current);
+            }
+        }
+        finally { admission?.Dispose(); }
+        Assert.NotNull(await recovery.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(EvidenceRevision.Current > epoch);
+        Assert.True(store.IsAvailable);
+        if (holdAdmission) Assert.False(completedWhileHeld, "Recovery published a credential before draining the existing admission.");
+        else Assert.True(completedWhileHeld);
     }
 
     // Adopted reviewer schedules. The original 503 oracle is retained in reviewer-original-before.trx (3 red/3 controls).
@@ -868,7 +990,7 @@ public class IntegrationParentalEvidenceReviewTests
                         http.Response.OnStarting(() =>
                         {
                             startRan = true;
-                            if (revokeAtCommit) r.Server.MetadataCountryCode = "AU";
+                            if (revokeAtCommit) MoveCountry(r, "AU");
                             return Task.CompletedTask;
                         });
                         await result.Result.ExecuteResultAsync(context);
@@ -933,7 +1055,7 @@ public class IntegrationParentalEvidenceReviewTests
                     };
                     var executing = new ResultExecutingContext(action, filters, result, new object());
                     // Discover and arbitrary POSTs do not need a JSON presentation filter to own HTTP publication.
-                    if (kind == "pre-result") r.Server.MetadataCountryCode = "AU";
+                    if (kind == "pre-result") MoveCountry(r, "AU");
                     // Resolve the optional pre-result hook at runtime: baseline's sealed owner did not implement it.
                     // A compiled interface call against the new owner is not a valid mixed-DLL baseline probe.
                     owner.GetType().GetMethod("OnResultExecuting")?.Invoke(owner, new object[] { executing });
@@ -942,7 +1064,7 @@ public class IntegrationParentalEvidenceReviewTests
                     http.Response.OnStarting(() =>
                     {
                         ran = true;
-                        if (revoke) r.Server.MetadataCountryCode = "AU";
+                        if (revoke) MoveCountry(r, "AU");
                         return Task.CompletedTask;
                     });
                     await executing.Result.ExecuteResultAsync(action);
@@ -1027,7 +1149,7 @@ public class IntegrationParentalEvidenceReviewTests
                     };
                     var executing = new ResultExecutingContext(action, filters, result, new object());
                     // Discover and arbitrary POSTs do not need a JSON presentation filter to own HTTP publication.
-                    if (kind == "pre-result") r.Server.MetadataCountryCode = "AU";
+                    if (kind == "pre-result") MoveCountry(r, "AU");
                     // Resolve the optional pre-result hook at runtime: baseline's sealed owner did not implement it.
                     // A compiled interface call against the new owner is not a valid mixed-DLL baseline probe.
                     owner.GetType().GetMethod("OnResultExecuting")?.Invoke(owner, new object[] { executing });
@@ -1036,7 +1158,7 @@ public class IntegrationParentalEvidenceReviewTests
                     http.Response.OnStarting(() =>
                     {
                         ran = true;
-                        if (revoke) r.Server.MetadataCountryCode = "AU";
+                        if (revoke) MoveCountry(r, "AU");
                         return Task.CompletedTask;
                     });
                     await executing.Result.ExecuteResultAsync(action);
@@ -1090,7 +1212,7 @@ public class IntegrationParentalEvidenceReviewTests
                     var result = await controller.Discover("trending", "movie");
                     http.Response.OnStarting(() =>
                     {
-                        if (revokeAtCommit) r.Server.MetadataCountryCode = "AU";
+                        if (revokeAtCommit) MoveCountry(r, "AU");
                         return Task.CompletedTask;
                     });
                     await result.ExecuteResultAsync(action);
@@ -1115,7 +1237,7 @@ public class IntegrationParentalEvidenceReviewTests
         ImportTestFlags.AllOn(r.Arr.Plugin.Plugin.Configuration);
         var access = new ListAccessService(new FakeListHost(), r.Users, r.Gate, r.Arr.Plugin.Core.Logger);
         var lookup = new FakeImportLookup(); lookup.AddSearch("Allowed", FakeImportLookup.Movie(603, "Allowed", "2000-01-01"));
-        var viewer = new MovingImportView(() => { if (move) r.Server.MetadataCountryCode = "AU"; });
+        var viewer = new MovingImportView(() => { if (move) MoveCountry(r, "AU"); });
         var resolver = new ListImportResolver(lookup, new FakeLibraryLookup(), access,
             new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), r.Arr.Plugin.Core.Logger, viewer);
         var fetcher = new FakeSourceFetcher { Items = new() { new SourceItem("movie", 603, null, null, "Allowed", 2000, null, null, null) } };
@@ -1186,7 +1308,7 @@ public class IntegrationParentalEvidenceReviewTests
                         result = PrivacyResponseGuard.Guarded(new ObjectResult(new { title = "private collage answer" }), guard);
                     }
                     else result = new ContentResult { Content = "{\"title\":\"private collage answer\"}", ContentType = "application/json" };
-                    http.Response.OnStarting(() => { if (revoke) r.Server.MetadataCountryCode = "AU"; return Task.CompletedTask; });
+                    http.Response.OnStarting(() => { if (revoke) MoveCountry(r, "AU"); return Task.CompletedTask; });
                     await result.ExecuteResultAsync(action);
                     return new ResourceExecutedContext(action, filters);
                 };
@@ -1214,7 +1336,7 @@ public class IntegrationParentalEvidenceReviewTests
                 services.AddControllers(options =>
                 {
                     options.Filters.Add(new PrivacyCommitFilter());
-                    if (mode != "unhandled") options.Filters.Add(new R4LifecycleFilter(() => r.Server.MetadataCountryCode = "AU"));
+                    if (mode != "unhandled") options.Filters.Add(new R4LifecycleFilter(() => MoveCountry(r, "AU")));
                     options.Conventions.Add(new R4LifecycleConvention());
                 }).AddApplicationPart(typeof(R4LifecycleController).Assembly);
             })
@@ -1255,7 +1377,7 @@ public class IntegrationParentalEvidenceReviewTests
                 services.AddControllers(options =>
                 {
                     options.Filters.Add(new PrivacyCommitFilter());
-                    if (mode != "unhandled") options.Filters.Add(new R4LifecycleFilter(() => r.Server.MetadataCountryCode = "AU"));
+                    if (mode != "unhandled") options.Filters.Add(new R4LifecycleFilter(() => MoveCountry(r, "AU")));
                     options.Conventions.Add(new R4LifecycleConvention());
                 }).AddApplicationPart(typeof(R4LifecycleController).Assembly);
             })

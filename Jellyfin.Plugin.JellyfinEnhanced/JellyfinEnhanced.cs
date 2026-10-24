@@ -385,6 +385,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // The generation of the configuration last written (or held when the first write came): every write takes the next one.
         private readonly object _generationLock = new();
         private long _writtenGeneration;
+        [ThreadStatic] private static PluginConfiguration? _evidencePreservingConfiguration;
         internal Logger EvidenceLogger => _logger;
 
         /// <summary>
@@ -395,7 +396,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override void SaveConfiguration(PluginConfiguration config)
         {
             ArgumentNullException.ThrowIfNull(config);
-            Services.EvidenceRevision.Advance(() =>
+            void Persist()
             {
                 lock (_generationLock)
                 {
@@ -404,7 +405,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     base.SaveConfiguration(config);
                     _writtenGeneration = next;
                 }
-            }, _logger);
+            }
+            if (ReferenceEquals(config, _evidencePreservingConfiguration)) Persist();
+            else Services.EvidenceRevision.Advance(Persist, _logger);
         }
 
         /// <summary>The generation of the configuration held now counts as written (it was loaded with it).</summary>
@@ -422,18 +425,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         internal ConfigurationPatchResult PatchConfiguration(ConfigurationPatch patch)
         {
             ConfigurationPatchResult? result = null;
+            // No evidence input can be modified by this branch. Unknown fields still follow the normal patch validator.
+            var preserve = patch.Set?.Count > 0 && !(patch.Set?.Keys.Any(f => PluginConfiguration.IsStoredSecretField(f)
+                || Services.EvidenceRevision.IsConfigurationInput(f)
+                || f is nameof(PluginConfiguration.SonarrUrl) or nameof(PluginConfiguration.RadarrUrl)
+                    or nameof(PluginConfiguration.ShokoUrl) or nameof(PluginConfiguration.ArrServerOwnedSeen)) ?? false) && patch.Instances == null;
             ApplyConfiguration(current =>
             {
                 var next = ConfigurationPatcher.Clone(current ?? new PluginConfiguration());
                 result = ConfigurationPatcher.Apply(next, patch);
                 return next;
-            });
+            }, preserve);
             return result!;
         }
 
         // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
         // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
-        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build)
+        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build, bool preserveEvidence = false)
         {
             bool tagCacheWasEnabled = false, analyticsWasEnabled = false;
 
@@ -455,7 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            Services.EvidenceRevision.Advance(() =>
+            void Apply()
             {
                 lock (AnalyticsCredentialLock)
                 {
@@ -470,7 +478,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                         gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
                     }
 
-                    if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
+                    if (!preserveEvidence && !_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                     {
                         // Credentials: placeholders/blanks keep the stored value, the clear token removes
                         // it, a typed value or import handle replaces it; only placeholders are persisted.
@@ -498,9 +506,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                         }
                     }
 
-                    base.UpdateConfiguration(configuration);
+                    var previous = _evidencePreservingConfiguration;
+                    if (preserveEvidence) _evidencePreservingConfiguration = (PluginConfiguration)configuration;
+                    try { base.UpdateConfiguration(configuration); }
+                    finally { _evidencePreservingConfiguration = previous; }
                 }
-            }, _logger);
+            }
+            if (preserveEvidence) Apply();
+            else Services.EvidenceRevision.Advance(Apply, _logger);
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try

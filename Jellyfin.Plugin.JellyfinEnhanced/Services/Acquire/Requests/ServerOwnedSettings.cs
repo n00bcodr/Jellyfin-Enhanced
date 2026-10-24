@@ -14,7 +14,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         private static readonly (string Field, Func<PluginConfiguration, string> Read, Action<PluginConfiguration, PluginConfiguration> Keep)[] Fields =
         {
-            (nameof(PluginConfiguration.ArrRequestBackend), c => c.ArrRequestBackend ?? string.Empty, (to, from) => to.ArrRequestBackend = from.ArrRequestBackend),
+            (nameof(PluginConfiguration.ArrRequestBackend), c => c.ArrRequestBackend ?? string.Empty, (to, from) => EvidenceRevision.Advance(() => to.ArrRequestBackend = from.ArrRequestBackend)),
             (nameof(PluginConfiguration.ArrRequestPreset), c => c.ArrRequestPreset ?? string.Empty, (to, from) => to.ArrRequestPreset = from.ArrRequestPreset),
             (nameof(PluginConfiguration.ArrRequestDefaultRole), c => c.ArrRequestDefaultRole ?? string.Empty, (to, from) => to.ArrRequestDefaultRole = from.ArrRequestDefaultRole),
             (nameof(PluginConfiguration.ArrRequestRoles), c => c.ArrRequestRoles ?? string.Empty, (to, from) => to.ArrRequestRoles = from.ArrRequestRoles),

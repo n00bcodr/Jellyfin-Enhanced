@@ -283,3 +283,11 @@ error status and body.
 Import resolution and source preview keep their title-free `504 parental_pending` response with
 `Retry-After: 2`, so the same import chunk can retry. A busy import keeps its typed 429 retry response.
 These transient errors do not mean that metadata configuration is missing.
+
+
+Parental decisions carry a monotonic evidence generation from preparation through the final HTTP checks and cache entries.
+Changing a rating country, evidence source or credential and changing it back still invalidates an earlier decision;
+a held answer is withheld with the existing bodyless `503`, `no-store` and `Retry-After: 1` contract. A fresh request uses
+the restored settings. The source fingerprint is diagnostic only. Unrelated settings PATCHes preserve the evidence inputs
+and do not invalidate a title response. Automatic recovery of an unreadable credential store uses the same bounded writer
+barrier before publishing recovered credentials; final response validation only reads the published snapshot.

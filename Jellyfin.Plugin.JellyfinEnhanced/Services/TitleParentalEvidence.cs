@@ -29,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Opaque cache partition for the backend and its configuration; contains no credentials.</summary>
         string CacheScope { get; }
 
+        /// <summary>Generation captured before reading any source inputs.</summary>
+        long EvidenceGeneration => EvidenceRevision.EvidenceGeneration;
+
         /// <summary>Reads public evidence, or null when unavailable. Never makes a per-user policy decision.</summary>
         Task<TitleParentalEvidence?> ReadAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct);
 
@@ -57,6 +60,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Captures the selected source and its configuration before a cache lookup or shared fetch.</summary>
         public ITitleParentalEvidence Capture()
+        {
+            JellyfinEnhanced.Instance?.Secrets.RecoverIfNeeded();
+            var generation = EvidenceRevision.EvidenceGeneration;
+            return new Captured(CaptureSource(), generation);
+        }
+
+        private sealed record Captured(ITitleParentalEvidence Source, long EvidenceGeneration) : ITitleParentalEvidence
+        {
+            public string CacheScope => Source.CacheScope;
+            public Task<TitleParentalEvidence?> ReadAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+                => Source.ReadAsync(mediaType, tmdbId, region, needTags, ct);
+            public void Forget(string mediaType, int tmdbId, bool needTags) => Source.Forget(mediaType, tmdbId, needTags);
+        }
+
+        private ITitleParentalEvidence CaptureSource()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null) return new Unavailable("off");

@@ -1547,6 +1547,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 "|",
                 viewer.UserId.ToString("N", CultureInfo.InvariantCulture),
                 viewer.PolicyRevision,
+                EvidenceRevision.EvidenceGeneration.ToString(CultureInfo.InvariantCulture),
                 route,
                 what,
                 factsRevision,

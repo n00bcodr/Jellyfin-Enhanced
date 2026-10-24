@@ -872,3 +872,10 @@ an abandoned update has bounded cleanup. A three-second drain limit keeps settin
 client and logs the outstanding count. Configuration/restore/adoption acknowledgements are explicitly
 independent of title evidence while retaining body ownership. Unhandled MVC errors discard held title
 bytes and restore the original response-body feature for host error handling.
+
+
+`EvidenceRevision` owns the startup-nonce-seeded 64-bit `EvidenceGeneration`. Each `Advance` moves it even when input
+values return to their original contents. `EvidencePublication`, response/preparation stamps, captured evidence providers,
+signature and serialized decision caches retain that generation. The IL writer-inventory architecture test checks direct
+and reflected evidence-input stores, construction and callbacks entering `Advance`, with a planted unowned writer control.
+Secrets recovery enters the same owner before its mutation lock; snapshot validation cannot initiate recovery.

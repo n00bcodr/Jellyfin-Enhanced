@@ -250,7 +250,7 @@ public class ApiNativeDetailsTests
         public string Rating { get; set; } = "PG-13";
         public bool R4JeTransport { get; set; }
         public bool R4IncludePublicationFilter { get; set; }
-        public void R4Country(string country) => _server.Object.Configuration.MetadataCountryCode = country;
+        public void R4Country(string country) => EvidenceRevision.Advance(() => _server.Object.Configuration.MetadataCountryCode = country);
         public TitlePresentationResultFilter R4PublicationFilter() => new(Plugin.Core.Manager,
             new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()),
             Library.Object, _host.Object, _strip, parental: _parental);

@@ -76,7 +76,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// body that carries them, its cleaned TMDB keyword and genre names.
         /// Keywords/Genres null = tag data not fetched (rating-only lookup).
         /// </summary>
-        private sealed record Signature(int? Score, int? SubScore, string[]? Keywords, string[]? Genres, bool? Adult);
+        private sealed record Signature(int? Score, int? SubScore, string[]? Keywords, string[]? Genres, bool? Adult)
+        {
+            internal long EvidenceGeneration { get; init; } = global::Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.EvidenceGeneration;
+        }
 
         // Resolved signature per "{mediaType}:{tmdbId}:{region}" — user-neutral.
         // Unresolved = the fetch failed (negative entry, short TTL); Sig with a null
@@ -140,6 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             HashSet<string> AllowedTags)
         {
             internal Jellyfin.Database.Implementations.Entities.User? NativeUser { get; init; }
+            internal long EvidenceGeneration { get; init; } = global::Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.EvidenceGeneration;
 
             /// <summary>True when the user has any Blocked or Allowed Tags (keyword lookups are then needed).</summary>
             public bool HasTagRules => (BlockedTags?.Count ?? 0) > 0 || (AllowedTags?.Count ?? 0) > 0;
@@ -493,7 +497,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>Verified absent-title rating and tags, retained with a request for later review.</summary>
-        public sealed record AbsentSignature(int? Score, int? SubScore, string[] Keywords, string[] Genres);
+        public sealed record AbsentSignature(int? Score, int? SubScore, string[] Keywords, string[] Genres)
+        {
+            internal long EvidenceGeneration { get; init; } = global::Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.EvidenceGeneration;
+        }
 
         /// <summary>Cache-only absent-title decision. Restricted users require a rated, verified signature.</summary>
         public bool MaySeeAbsent(string mediaType, int tmdbId, string userId, out AbsentSignature? facts)
@@ -513,6 +520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             facts = null;
             if (!policy.IsRestricted) return true;
+            if (policy.EvidenceGeneration != EvidenceGeneration) return false;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
             if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature == null) return false;
@@ -540,6 +548,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public bool? AbsentVerdict(string mediaType, int tmdbId, Policy policy)
         {
             if (!policy.IsRestricted) return true;
+            if (policy.EvidenceGeneration != EvidenceGeneration) return null;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
             if (!TryGetTitleSignature(type, tmdbId, Region(), policy.HasTagRules, out var signature) || signature == null) return null;
@@ -566,6 +575,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<bool?> AbsentVerdictAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
         {
             if (!policy.IsRestricted) return true;
+            if (policy.EvidenceGeneration != EvidenceGeneration) return null;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
             try
@@ -583,11 +593,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool JeEvidence => string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Nonsecret revision of evidence source, configuration, country and decision semantics.</summary>
-        public string EvidenceRevision => "parental-v2|" + JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend + "|" + _evidence.Capture().CacheScope + "|" + Region();
+        public string EvidenceFingerprint => "parental-v2|" + JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend + "|" + _evidence.Capture().CacheScope + "|" + Region();
+
+        /// <summary>The monotonic provenance of every parental decision; input fingerprints are diagnostics only.</summary>
+        public long EvidenceGeneration => global::Jellyfin.Plugin.JellyfinEnhanced.Services.EvidenceRevision.EvidenceGeneration;
+
+        /// <summary>Compatibility stamp for downstream policy/cache keys; never a content fingerprint.</summary>
+        public string EvidenceRevision => EvidenceGeneration.ToString(CultureInfo.InvariantCulture);
 
         /// <summary>Captures the evidence used by a JE publication; legacy backend behavior is unchanged.</summary>
-        internal Acquire.EvidencePublication CapturePublication(Guid? viewer = null) => new(() =>
-            string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase) ? EvidenceRevision : "-", viewer);
+        internal Acquire.EvidencePublication CapturePublication(Guid? viewer = null)
+        {
+            JellyfinEnhanced.Instance?.Secrets.RecoverIfNeeded();
+            return new(() => string.Equals(JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase) ? EvidenceRevision : "-", viewer);
+        }
 
         /// <summary>Current native entitlement for a broad consumer; absent-title checks never use this exemption.</summary>
         internal bool MayOpenLocal(string kind, int tmdb, string userId)
@@ -1065,6 +1084,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
         {
+            var generation = EvidenceGeneration;
             var source = _evidence.Capture();
             var key = CacheKey(source, mediaType, tmdbId, region);
             if (TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var fresh))
@@ -1083,7 +1103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var resolved = await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
-                if (source.CacheScope != _evidence.Capture().CacheScope) return null;
+                if (generation != EvidenceGeneration) return null;
                 return TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var merged) ? merged : resolved;
             }
             catch (Exception ex)
@@ -1114,6 +1134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId} ({ex.GetType().Name}).");
                 }
 
+                if (source.EvidenceGeneration != EvidenceGeneration) return null;
                 var now = DateTime.UtcNow;
                 if (detail == null)
                 {
@@ -1136,7 +1157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return null;
                 }
 
-                var resolved = SignatureFromEvidence(detail);
+                var resolved = SignatureFromEvidence(detail) with { EvidenceGeneration = source.EvidenceGeneration };
                 if (source.CacheScope.StartsWith("je:", StringComparison.Ordinal) && resolved.Adult != true && resolved.Score == null)
                     source.Forget(mediaType, tmdbId, needTags);
                 if (resolved.Keywords != null && resolved.Genres != null)
@@ -1508,6 +1529,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             => CacheKey(_evidence.Capture(), mediaType, tmdbId, region);
 
         private static string CacheKey(ITitleParentalEvidence source, string mediaType, int tmdbId, string region)
-            => $"{source.CacheScope}:{mediaType}:{tmdbId.ToString(CultureInfo.InvariantCulture)}:{region}";
+            => $"{source.CacheScope}:g{source.EvidenceGeneration}:{mediaType}:{tmdbId.ToString(CultureInfo.InvariantCulture)}:{region}";
     }
 }

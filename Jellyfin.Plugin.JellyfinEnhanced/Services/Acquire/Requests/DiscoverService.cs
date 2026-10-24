@@ -299,13 +299,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var hidden = Hidden(viewer.UserId);
                 var stamp = _gate.Take(viewer, hidden.Stamp);
-                var cacheKey = CacheKey(viewer, what, hidden) + "|" + stamp.Evidence;
+                var cacheKey = CacheKey(viewer, what, hidden) + "|" + stamp.Evidence + "|g" + stamp.EvidenceGeneration;
                 Prepared? prepared;
-                if (Cached(cacheKey) is { } cached) prepared = cached;
+                if (Cached(cacheKey) is { } cached && cached.EvidenceGeneration == stamp.EvidenceGeneration) prepared = cached;
                 else
                 {
                     prepared = await prepare(viewer, hidden, budget).ConfigureAwait(false);
                     if (prepared == null) return null;
+                    prepared = prepared with { EvidenceGeneration = stamp.EvidenceGeneration };
                 }
                 lastRead = prepared;
                 var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
@@ -413,6 +414,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>A page prepared ahead of publication: its rows (or "because" groups) and the rating checks of absent titles.</summary>
         internal sealed record Prepared(string List, string Type, int Page, int TotalPages, IReadOnlyList<Row> Rows, IReadOnlyList<PreparedGroup>? Groups, IReadOnlyDictionary<string, bool?> Ratings)
         {
+            internal long EvidenceGeneration { get; init; }
             /// <summary>Every title key of the page.</summary>
             public IEnumerable<string> Keys => Rows.Concat(Groups?.SelectMany(g => g.Rows) ?? Enumerable.Empty<Row>()).Select(r => r.Key);
         }
