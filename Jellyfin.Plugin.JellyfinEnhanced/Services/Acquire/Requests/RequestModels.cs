@@ -53,6 +53,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal bool HasSeerrOptions => SeerrServerId != null || SeerrProfileId != null || SeerrRootFolder != null || SeerrOptions != null;
         /// <summary>True when the input names an arr instance, profile or root folder (Jellyfin Enhanced mode routing).</summary>
         internal bool HasArrRouting => InstanceId != null || ProfileId != null || RootFolder != null;
+        /// <summary>
+        /// Applies an approver's explicit arr choices to this pending scope. The shared request keeps its
+        /// own title, edition and seasons/episodes; omitted choices keep its existing settings or defaults.
+        /// Used for both prerequisite preparation and the ledger's durable approval.
+        /// </summary>
+        internal MutationInput WithArrChoices(MutationInput choices) => this with
+        {
+            InstanceId = choices.InstanceId ?? InstanceId,
+            ProfileId = choices.ProfileId ?? ProfileId,
+            RootFolder = choices.RootFolder ?? RootFolder,
+        };
         /// <summary>Creates a stable canonical input, or null when invalid.</summary>
         public MutationInput? Normalize()
         {
@@ -247,7 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
     /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
     /// </summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null);
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null, long? OverrideChoiceVersion = null);
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);
     /// <summary>A decline explanation shown to the requester as plain text.</summary>
@@ -274,7 +285,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0)
+    {
+        /// <summary>
+        /// Refresh approval authority without making a new choice or losing a previous send binding.
+        /// Keep legacy null/zero choice stamps as stored; ledger readers retain their existing inference.
+        /// </summary>
+        public RequestAuthorization CarryForward(RequestAuthorization refreshed)
+            => refreshed with
+            {
+                ChoiceOwner = ChoiceOwner,
+                ChoiceVersion = ChoiceVersion,
+                SeerrUser = SeerrUser ?? refreshed.SeerrUser,
+                SeerrSeasons = SeerrSeasons,
+            };
+    }
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>
@@ -283,6 +308,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
         string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
+    /// <summary>The current title-wide add choice, exposed only to an administrator submitting routing.</summary>
+    public sealed record RequestChoice(
+        [property: JsonPropertyName("owner")] Guid Owner,
+        [property: JsonPropertyName("version")] long Version,
+        [property: JsonPropertyName("profileId")] int? ProfileId,
+        [property: JsonPropertyName("rootFolder")] string? RootFolder);
     /// <summary>The request API outcome contract; messages are safe household wording.</summary>
     public sealed record RequestOutcome
     {
@@ -308,6 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// (<c>rule_review</c>): the conditions and their family-safe facts. Null when the rules said nothing.
         /// </summary>
         [JsonPropertyName("rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HouseholdRuleVerdict? Rules { get; init; }
+        /// <summary>Administrator-only current title add settings when a choice conflicts.</summary>
+        [JsonPropertyName("choice"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestChoice? Choice { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
         /// <summary>Constructs a success result.</summary>
@@ -317,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             Outcome = outcome, Reason = reason, HttpStatus = status,
             Certainty = status == 503 ? ArrActionStatus.Failed : ArrActionStatus.Rejected,
-            Message = status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
+            Message = reason == "invalid_choice" ? "The selected quality profile or root folder is no longer usable. Choose current values in Manage → Add to." : status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
         };
     }
     /// <summary>

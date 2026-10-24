@@ -83,7 +83,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Target(job, key, out var hold) is not { } target) return hold!;
             var (instance, client) = target;
             var run = new Run(job, instance, client, key, finalGuard, admission, ct);
-            return key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
+            ChoiceNames(run, _store.PeekSystem(instance.Id));
+            var result = key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
+            return result with { AddChoiceDetails = run.AddChoiceDetails };
         }
 
         /// <inheritdoc />
@@ -108,13 +110,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.");
         }
 
-        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct);
+        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
+        {
+            public Dictionary<string, string> AddChoiceDetails { get; } = new();
+        }
 
         // The add settings, checked against a current system snapshot. Only an add needs them: merges are
         // field-scoped monitoring edits that never send a profile, folder or tag.
         private async Task<(ArrAddDefaults? Defaults, RequestBackendResult? Stop)> DefaultsAsync(Run run)
         {
-            var system = await ArrAddRules.FreshSystemAsync(_store, run.Instance, run.Ct).ConfigureAwait(false);
+            // The sheet's five-minute system cache is appropriate for options, not for dispatch.
+            // Load once if cold, then await a new refresh after any older in-flight read finishes.
+            await _store.GetSystemAsync(run.Instance, run.Ct).ConfigureAwait(false);
+            if (!await _store.RefreshForEventAsync(run.Instance.Id, ArrSnapshotKind.System, force: true).WaitAsync(run.Ct).ConfigureAwait(false))
+                return (null, BackendResults.Retry("backend_unavailable", "The instance's add settings could not be revalidated."));
+            var system = await _store.GetSystemAsync(run.Instance, run.Ct).ConfigureAwait(false);
             IReadOnlyDictionary<int, string>? tags = null;
             if (run.Instance.Defaults?.Tags is { Count: > 0 })
             {
@@ -122,8 +132,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (read.Ok) tags = read.Value!.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().Label ?? string.Empty);
             }
             var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder);
+            ChoiceNames(run, system.Value);
+            // A refused add still audits the effective candidate, including a saved fallback.
+            if ((run.Job.Input.ProfileId ?? run.Instance.Defaults?.QualityProfileId) is { } candidateProfile)
+                run.AddChoiceDetails["qualityProfileId"] = candidateProfile.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if ((run.Job.Input.RootFolder ?? run.Instance.Defaults?.RootFolderPath) is { } candidateRoot)
+                run.AddChoiceDetails["rootFolder"] = candidateRoot;
             if (check.Defaults != null) return (check.Defaults, null);
-            return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold("invalid_defaults", check.Message));
+            return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold(check.Reason!, check.Message));
+        }
+
+        private static void ChoiceNames(Run run, ArrSystemSnapshot? system)
+        {
+            run.AddChoiceDetails["instanceName"] = run.Instance.Name;
+            if ((run.Job.Input.ProfileId ?? run.Instance.Defaults?.QualityProfileId) is { } profile && system?.QualityProfiles.FirstOrDefault(p => p.Id == profile) is { } named)
+                run.AddChoiceDetails["qualityProfileName"] = named.Name;
+            // Arr root folders are identified/displayed by path in the shared snapshot.
+            if ((run.Job.Input.RootFolder ?? run.Instance.Defaults?.RootFolderPath) is { } root)
+                run.AddChoiceDetails["rootFolderName"] = system?.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.SamePath(r.Path, root))?.Path ?? root;
         }
 
         /// <summary>The opaque tag on every title Jellyfin Enhanced adds to Sonarr or Radarr (never a person's name).</summary>
@@ -732,7 +758,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var defaults = error.Validation.Any(v => v.Property is "QualityProfileId" or "RootFolderPath" or "Path" or "Tags");
                     return partial
                         ? BackendResults.Maybe(job.WantId, $"{instance.Name} refused part of the change: {error.Message}")
-                        : BackendResults.Failed(defaults ? "invalid_defaults" : "instance_rejected", $"{instance.Name} refused the add: {error.Message}");
+                        : BackendResults.Failed(defaults ? "invalid_choice" : "instance_rejected", $"{instance.Name} refused the add: {error.Message}");
                 case ArrErrorKind.NotFound:
                     return BackendResults.Hold("service_down", $"{instance.Name} answered 'not found'; check its URL base.");
                 default:

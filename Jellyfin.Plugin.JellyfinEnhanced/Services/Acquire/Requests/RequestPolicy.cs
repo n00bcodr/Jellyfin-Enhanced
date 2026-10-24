@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var system = instance == null ? null : _store.PeekSystem(instance.Id);
                 if (system == null || (input.ProfileId.HasValue && !system.QualityProfiles.Any(p => p.Id == input.ProfileId)) ||
-                    (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_defaults";
+                    (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_choice";
             }
             // Seerr options (administrators, Seerr mode): checked against Seerr's servers as last read, never guessed.
             if (refusal == null && input.HasSeerrOptions) refusal = SeerrOptionsRefusal(config, binding);
@@ -619,7 +619,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         internal static int RefusalStatus(string reason) => reason switch
         {
-            "invalid_defaults" or "invalid_instance" or "seerr_options_invalid" => 400,
+            "invalid_defaults" or "invalid_choice" or "invalid_instance" or "seerr_options_invalid" => 400,
             "instance_changed" or "seerr_options_changed" => 409,
             "backend_unavailable" => 503,
             _ => 403,

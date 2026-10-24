@@ -1103,3 +1103,15 @@ test('a tab retry is never sent after another account signs in', async t => {
   await wait(30);
   assert.equal(reads, before, 'the retry is not sent for the new account');
 });
+
+
+test('Admin Audit displays the actual request.dispatch profile and root message', t => {
+  const h = setup(t);
+  const entry = JSON.parse(readFileSync(process.env.JE_ARRADD_RENDER_RECEIPT || resolve(import.meta.dirname, '../../fixtures/arr-add-dispatch-audit.json'), 'utf8'));
+  const panel = h.document.createElement('div');
+  h.JE.internals.arrHub.admin.renderAudit(panel, { entries: [entry] });
+  assert.match(panel.textContent, /5 \(Ultra-HD\)/);
+  assert.match(panel.textContent, /\/selected/);
+  assert.match(panel.textContent, /Radarr/);
+  assert.equal(entry.action, 'request.dispatch');
+});

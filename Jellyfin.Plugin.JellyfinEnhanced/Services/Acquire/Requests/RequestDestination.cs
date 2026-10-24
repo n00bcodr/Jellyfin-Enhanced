@@ -171,6 +171,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static bool Serves(MutationInput wanted, string wantedTarget, MutationInput other, string otherTarget)
             => SameTarget(wantedTarget, otherTarget) && Serves(wanted, other);
 
+        /// <summary>A supplied administrator add choice changes the current profile or root.</summary>
+        internal static bool ArrChoiceDiffers(MutationInput current, MutationInput proposed)
+            => proposed.ProfileId.HasValue && proposed.ProfileId != current.ProfileId || proposed.RootFolder != null && proposed.RootFolder != current.RootFolder;
+
+        /// <summary>Both requests explicitly choose different administrator add settings.</summary>
+        internal static bool ArrChoiceConflicts(MutationInput current, MutationInput proposed)
+            => current.ProfileId.HasValue && proposed.ProfileId.HasValue && proposed.ProfileId != current.ProfileId ||
+                current.RootFolder != null && proposed.RootFolder != null && proposed.RootFolder != current.RootFolder;
+
+        /// <summary>The existing administrator correction concerns overlapping scopes of the title's add settings.</summary>
+        internal static bool ArrChoiceScopesOverlap(MutationInput current, MutationInput proposed) => current.Overlaps(proposed);
+
         /// <summary>Any routing choice differs between the two inputs (arr instance, profile, folder, or Seerr options).</summary>
         /// <param name="input">The new input.</param>
         /// <param name="original">The original input.</param>

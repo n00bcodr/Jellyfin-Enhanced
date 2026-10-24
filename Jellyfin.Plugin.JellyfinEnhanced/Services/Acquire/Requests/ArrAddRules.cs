@@ -18,7 +18,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
     /// <summary>The outcome of checking add settings: the settings, or why they can't be used.</summary>
     /// <param name="Defaults">The checked settings, when usable.</param>
-    /// <param name="Reason">Null, <c>defaults_unverified</c> (no current system facts) or <c>invalid_defaults</c>.</param>
+    /// <param name="Reason">Null, <c>defaults_unverified</c> (no current facts), <c>invalid_defaults</c>
+    /// (a required value is missing), or <c>invalid_choice</c> (a supplied/saved value is unusable; Message names its field).</param>
     /// <param name="Message">Administrator wording (no paths beyond the instance's own folders, never a key).</param>
     public sealed record ArrAddCheck(ArrAddDefaults? Defaults, string? Reason, string Message);
 
@@ -65,27 +66,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var saved = instance.Defaults;
             var profile = profileId ?? saved?.QualityProfileId;
             var root = rootFolder ?? saved?.RootFolderPath;
-            if (profile is not > 0 || string.IsNullOrWhiteSpace(root))
+            if (profile == null || root == null)
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} has no quality profile and root folder set for adding titles. Set them in the instance's add defaults.");
+                return new ArrAddCheck(null, "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
             }
             if (!system.Value.QualityProfiles.Any(p => p.Id == profile))
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} no longer has the quality profile chosen for adding titles (id {profile}).");
+                return new ArrAddCheck(null, "invalid_choice", $"{name} no longer has the quality profile chosen for adding titles (id {profile}).");
             }
             var folder = system.Value.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.Safe(root!) && BridgePaths.SamePath(r.Path, root!));
             if (folder == null)
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} doesn't list the root folder chosen for adding titles.");
+                return new ArrAddCheck(null, "invalid_choice", $"{name} doesn't list the root folder chosen for adding titles.");
             }
             if (folder.Accessible == false)
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} reports its root folder {folder.Path} as not accessible.");
+                return new ArrAddCheck(null, "invalid_choice", $"{name} reports its root folder {folder.Path} as not accessible.");
             }
             var wanted = (saved?.Tags ?? new List<int>()).Distinct().ToArray();
             if (wanted.Length > 0 && (tags == null || wanted.Any(t => !tags.ContainsKey(t))))
             {
-                return new ArrAddCheck(null, tags == null ? "defaults_unverified" : "invalid_defaults", $"{name} doesn't have every tag set in its add defaults.");
+                return new ArrAddCheck(null, tags == null ? "defaults_unverified" : "invalid_choice", $"{name} doesn't have every tag set in its add defaults.");
             }
             var availability = Availability.FirstOrDefault(a => string.Equals(a, saved?.MinimumAvailability, StringComparison.OrdinalIgnoreCase)) ?? "released";
             var seriesType = SeriesTypes.FirstOrDefault(s => string.Equals(s, saved?.SeriesType, StringComparison.OrdinalIgnoreCase))

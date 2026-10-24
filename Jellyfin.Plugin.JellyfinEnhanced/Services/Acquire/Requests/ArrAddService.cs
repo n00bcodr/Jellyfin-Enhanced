@@ -26,6 +26,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Root folder (null: the instance's add default).</summary>
         [JsonPropertyName("rootFolder")] public string? RootFolder { get; set; }
 
+        /// <summary>Explicitly replace the observed title-wide choice while it is still known unsent.</summary>
+        [JsonPropertyName("overrideChoiceVersion")] public long? OverrideChoiceVersion { get; set; }
+
         /// <summary>Series only: the seasons to monitor.</summary>
         [JsonPropertyName("seasons")] public int[]? Seasons { get; set; }
 
@@ -245,12 +248,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 seasons = (body.Seasons ?? Array.Empty<int>()).Distinct().OrderBy(s => s).ToArray();
                 if (seasons.Length is 0 or > 200 || seasons.Any(s => s is < 0 or > 10000)) return RequestOutcome.Refused("invalid_input", 400);
             }
+            ArrAddDefaults? effective = null;
             if (body.ProfileId != null || body.RootFolder != null)
             {
                 var system = await ArrAddRules.FreshSystemAsync(_store, instance, ct).ConfigureAwait(false);
                 var check = ArrAddRules.Check(instance, system, await TagsAsync(instance, ct).ConfigureAwait(false), body.ProfileId, body.RootFolder);
                 if (check.Defaults == null)
-                    return RequestOutcome.Refused(check.Reason == "defaults_unverified" ? "defaults_unverified" : "invalid_defaults", check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
+                    return RequestOutcome.Refused(check.Reason!, check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
+                effective = check.Defaults;
             }
             var input = new MutationInput
             {
@@ -259,10 +264,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Variant = instance.Role == ArrInstanceRole.FourK ? "4k" : "standard",
                 Seasons = seasons,
                 InstanceId = instance.Id,
-                ProfileId = body.ProfileId,
-                RootFolder = body.RootFolder,
+                ProfileId = effective?.ProfileId ?? body.ProfileId,
+                RootFolder = effective?.RootFolder ?? body.RootFolder,
             };
-            return await _requests.CreateAsync(admin, new CreateRequest("je-add-" + body.IdempotencyKey.Trim(), input), ct).ConfigureAwait(false);
+            return await _requests.CreateAsync(admin, new CreateRequest("je-add-" + body.IdempotencyKey.Trim(), input, OverrideChoiceVersion: body.OverrideChoiceVersion), ct).ConfigureAwait(false);
         }
 
         // Tag ids and labels: from the library snapshot in memory, else one read of the instance's tags.
