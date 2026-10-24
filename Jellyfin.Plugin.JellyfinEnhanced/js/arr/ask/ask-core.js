@@ -610,6 +610,8 @@
      */
     function toast(text, ms) {
         if (!text) return;
+        // A translation's {{icon:…}} arrives as JE's emoji markup: shown as its emoji, never as escaped tags.
+        text = String(text).replace(/<span class="je-emoji">([^<]*)<\/span>/g, '$1');
         const safe = typeof JE.escapeHtml === 'function' ? JE.escapeHtml(text) : String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
         if (typeof JE.toast === 'function') JE.toast(safe, ms || 3500);
         announce(text);

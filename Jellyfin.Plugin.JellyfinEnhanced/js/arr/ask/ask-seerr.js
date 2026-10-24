@@ -193,18 +193,16 @@
         }
         const id = Number.parseInt(String(collectionId ?? ''), 10);
         const modal = JE.jellyseerrModal;
-        const fetchDetails = JE.jellyseerrAPI?.fetchCollectionDetails;
-        if (!Number.isInteger(id) || id <= 0 || typeof modal?.create !== 'function' || typeof fetchDetails !== 'function') {
+        const fetchPublic = JE.jellyseerrAPI?.fetchPublic;
+        if (!Number.isInteger(id) || id <= 0 || typeof modal?.create !== 'function' || typeof fetchPublic !== 'function') {
             JE.arrAsk.toast(JE.arrAsk.tr('arr_seerr_collection_one_by_one'));
             return;
         }
         let details = null;
         try {
-            // A viewer Seerr won't answer for (no linked account, or Seerr turned off for them): the collection's
-            // public details from Jellyfin Enhanced, its movies judged for them on the server.
-            details = await JE.jellyseerrAPI?.accountRefusal?.().catch(() => null)
-                ? await JE.jellyseerrAPI.fetchPublic(`/collection/${id}`)
-                : await fetchDetails(id);
+            // JE mode never reads Seerr (D88; A1): the collection's public details from Jellyfin Enhanced (TMDB in this
+            // mode, so Seerr may be off completely), its movies judged for the viewer on the server.
+            details = await fetchPublic(`/collection/${id}`);
         } catch {
             details = null;
         }
