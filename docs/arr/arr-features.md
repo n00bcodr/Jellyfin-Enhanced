@@ -678,7 +678,9 @@ Administrators can see why a title is where it is, and fix it, without leaving J
       that app's add page. With phase 3 on and Jellyfin Enhanced handling requests, it becomes an **Add to Radarr 4K**
       button (the link stays next to it): a small sheet with that instance's quality profiles, root folders (with free
       space) and, for a series, the seasons to monitor. Only the instance's saved add defaults are preselected; nothing
-      else is picked for you. **Add** records the add as your request routed to that instance, so it goes through the
+      else is picked for you. You can choose a profile and folder even when the instance has no saved add defaults.
+      **Add** records the add as your request routed to that instance (or approves a matching pending request with
+      your choices), so it goes through the
       same outgoing queue as every request (one key per sheet, re-check, read-back, audit), and the sheet follows it until
       the instance confirms it ("Added to Radarr 4K…") or says why it is held;
     - a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
@@ -1520,7 +1522,7 @@ Approved requests go out through the request handling the administrator chose: s
 
     | Reason | Meaning | Fix |
     |---|---|---|
-    | `invalid_defaults` | The instance's add defaults are missing or no longer valid | Set them on the settings page, then approve again |
+    | `invalid_defaults` | The add has no profile/folder choice or defaults, or a selected value is no longer valid | Choose valid values in Manage › Add to, or set instance defaults and approve again |
     | `instance_changed` | The instance was disabled, changed role, or its address/key changed | Approve again (with edits) |
     | `not_aired` | Sonarr doesn't list the season or episode yet | Nothing: the series is refreshed and the request checked again every 6 hours (only a request that already wrote part of its change waits for an approval) |
     | `title_not_found` | The instance (or Seerr) doesn't know the title by its id | Check the title; add it in the app |

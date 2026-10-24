@@ -53,6 +53,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal bool HasSeerrOptions => SeerrServerId != null || SeerrProfileId != null || SeerrRootFolder != null || SeerrOptions != null;
         /// <summary>True when the input names an arr instance, profile or root folder (Jellyfin Enhanced mode routing).</summary>
         internal bool HasArrRouting => InstanceId != null || ProfileId != null || RootFolder != null;
+        /// <summary>
+        /// Applies an approver's explicit arr choices to this pending scope. The shared request keeps its
+        /// own title, edition and seasons/episodes; omitted choices keep its existing settings or defaults.
+        /// Used for both prerequisite preparation and the ledger's durable approval.
+        /// </summary>
+        internal MutationInput WithArrChoices(MutationInput choices) => this with
+        {
+            InstanceId = choices.InstanceId ?? InstanceId,
+            ProfileId = choices.ProfileId ?? ProfileId,
+            RootFolder = choices.RootFolder ?? RootFolder,
+        };
         /// <summary>Creates a stable canonical input, or null when invalid.</summary>
         public MutationInput? Normalize()
         {

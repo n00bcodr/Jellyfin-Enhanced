@@ -67,7 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var root = rootFolder ?? saved?.RootFolderPath;
             if (profile is not > 0 || string.IsNullOrWhiteSpace(root))
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} has no quality profile and root folder set for adding titles. Set them in the instance's add defaults.");
+                return new ArrAddCheck(null, "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
             }
             if (!system.Value.QualityProfiles.Any(p => p.Id == profile))
             {

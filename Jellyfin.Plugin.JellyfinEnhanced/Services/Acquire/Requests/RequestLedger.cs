@@ -545,7 +545,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
                     .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
                 {
-                    var approved = ApproveCore(c, t, pending.Id, user, null, policy, now);
+                    // Manage Add may authorize a viewer's pending ask instead of creating its own job. Its
+                    // explicit profile/root must therefore become that approval's input, while the viewer
+                    // keeps their own scope and charge. ApproveCore persists the edits in the want and job.
+                    var edits = normalized.HasArrRouting ? pending.Input.WithArrChoices(normalized) : null;
+                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now);
                     if (approved.HttpStatus != 200) continue;
                 }
             }

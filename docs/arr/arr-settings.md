@@ -602,8 +602,10 @@ same controls appear on those pages (see [Titles that aren't in the library](arr
     title*: the quality profile, root folder and tags new titles get, plus Radarr's minimum availability or Sonarr's
     series type. Open the card of a saved instance to load its own profiles, folders and tags; values the instance no
     longer lists are shown as "(not in Radarr now)" rather than swapped for something else. In Jellyfin Enhanced mode a
-    request for a title the instance doesn't have yet waits for an administrator until both a profile and a folder are
-    set. Manage › Add to preselects these defaults.
+    request for a title the instance doesn't have yet waits for an administrator when neither the request nor the
+    instance supplies a valid profile and folder. Manage › Add to preselects saved defaults; you can also choose the
+    profile and folder in the sheet without saving instance defaults. These choices are kept when the add approves
+    a viewer's pending request and when the outgoing queue retries it.
 
 **Move requests from Seerr...** checks and then moves Seerr's pending and in-progress requests into Jellyfin Enhanced
 and switches `ArrRequestBackend` to `je` (see [Moving requests from Seerr](arr-features.md#moving-requests-from-seerr)).

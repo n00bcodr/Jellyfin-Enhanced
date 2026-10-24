@@ -81,7 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (_policy.Evaluate(user, input).CanCreate)
             {
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
-                    await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
+                    await _policy.PrepareAsync(pending.UserId, pending.Input.WithArrChoices(input), ct).ConfigureAwait(false);
             }
             string? target = null;
             if (press != null)
