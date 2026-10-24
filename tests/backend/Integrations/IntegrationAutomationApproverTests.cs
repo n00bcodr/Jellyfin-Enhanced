@@ -34,6 +34,9 @@ public class IntegrationAutomationApproverTests
         public Race(bool engine = true)
         {
             E = new IntegrationAutomationTests.Engine(engine);
+            // Admission records these defaults before dispatch; both fixtures share the configured destination.
+            E.C.RadarrInstances = Lab.Config.RadarrInstances;
+            E.C.SonarrInstances = Lab.Config.SonarrInstances;
             var instance = Lab.Instance("Radarr").Id;
             var generation = Lab.Arr.Factory.ConnectionGeneration(instance)!;
             E.R.Policy.Adjust = (_, _, facts) => facts with { InstanceId = instance, ConnectionGeneration = generation };

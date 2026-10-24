@@ -320,6 +320,9 @@ public class IntegrationAutomationWriteGateTests
         }
         else
         {
+            // The registry must claim the configured defaults before the transport race starts.
+            c.RadarrInstances = lab.Config.RadarrInstances;
+            c.SonarrInstances = lab.Config.SonarrInstances;
             var fixture = Fixture(lab, site);
             input = fixture.Input;
             var instance = lab.Instance(movie ? "Radarr" : "Sonarr").Id;
