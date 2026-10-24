@@ -511,10 +511,10 @@ UserSpoilerBlur._pendingTmdb	both	independent	per value	fields of the person's S
 UserSpoilerBlur._providerTitles	both	independent	document	part of one person's spoilerblur.json document as read (the document itself, not a cache)
 UserSpoilerBlur._series	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
 ViewerBudget._budgets	jf12	independent	viewer	a rate limit per viewer
+ViewerMetadataAdmission._tasks	both	independent	metadata path	public metadata tasks; effective viewer controls admission only; single atomic owner removes each task when its read ends	write:own-state
 WatchlistMonitor._deferred	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping; deferred items, consumed when processed	write:own-state
 WatchlistMonitor._requestsCache	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
 WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
 WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 WrittenStateCache._entries	both	independent	key	the written-state helper's own storage: its ledger refuses and stops serving every entry read before an invalidation	write:own-state
-ViewerMetadataAdmission._tasks	both	independent	metadata path	public metadata tasks; effective viewer controls admission only; single atomic owner removes each task when its read ends	write:own-state
