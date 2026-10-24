@@ -148,7 +148,11 @@ public class ApiConfigurationTests
             using var embedded = fixture.Plugin.GetType().Assembly.GetManifestResourceStream(page.EmbeddedResourcePath);
             Assert.NotNull(embedded);
             using var reader = new StreamReader(embedded!);
-            Assert.NotEmpty(await reader.ReadToEndAsync());
+            var html = await reader.ReadToEndAsync();
+            Assert.NotEmpty(html);
+            // jellyfin-web's globalize.translateHtml rewrites every "${...}" in plugin page HTML
+            // (inline scripts included) as a translation lookup, mangling JS template literals.
+            Assert.False(html.Contains("${", StringComparison.Ordinal), $"{page.EmbeddedResourcePath} contains \"${{\"");
         }
         foreach (var view in fixture.Plugin.GetViews())
         {
