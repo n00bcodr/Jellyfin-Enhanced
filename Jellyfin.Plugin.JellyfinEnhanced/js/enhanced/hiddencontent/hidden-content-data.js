@@ -204,6 +204,10 @@
         };
         /** Persists before acknowledging the action and leaves a retryable failure on the control. */
         async function run(owner) {
+            // Disabled while it saves, a focused control drops the browser's focus to the page (a confirmation that just
+            // closed gave it back to this control, D46S2-R14-1): once the save settles the control takes it back, for a
+            // press whose owner is still current, unless the viewer moved it meanwhile or the control has gone or is covered.
+            const focused = document.activeElement === button;
             button.disabled = true;
             try {
                 const hidden = !hiddenTmdbIdSet.has(title.key);
@@ -213,7 +217,14 @@
                 delete button.dataset.jeHideIcon;
                 button.textContent = JE.t('hidden_content_save_failed_persistent');
                 button.setAttribute('aria-label', button.textContent);
-            } finally { button.disabled = false; }
+            } finally {
+                button.disabled = false;
+                const active = document.activeElement;
+                if (focused && button.isConnected && (!active || active === document.body) && !JE.isCovered?.(button) &&
+                    JE.effectOwner(owner, 'the Hide control\'s focus')) {
+                    try { button.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
+                }
+            }
         }
         // The owner remounts copied nodes; this property never survives cloneNode.
         button.jeHiddenPaint = paint;

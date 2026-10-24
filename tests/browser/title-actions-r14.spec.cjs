@@ -41,22 +41,27 @@ async function managedInfo(page, isMobile) {
   await page.evaluate(() => {
     const JE = window.JellyfinEnhanced; const hc = JE.internals.hiddenContent; hc.refreshNativeCardVisibility = () => {};
     JE.hiddenContent = { buildTitleControl: hc.buildTitleControl };
+    // The rule write answers after a network round trip (a few frames), as a real server does.
+    const fetch = window.fetch;
+    window.fetch = async (url, options = {}) => { if ((options.method || 'GET') !== 'GET' && String(url).includes('/hidden-content/rule/')) await new Promise(r => setTimeout(r, 300)); return fetch(url, options); };
   });
   await press(page, page.locator('#openInfo'), isMobile);
   await page.locator('.je-more-info-modal.active [data-mount="je-secondary-actions"] .je-detail-hide-btn').waitFor({ state: 'attached' });
   await page.locator('.je-more-info-modal.active .je-actions-more').waitFor();
 }
 
-// More → Hide is the viewer's path to More Info's own Hide: its row is compact (as on 12.2's More Info at every width
-// checked live), so the original is kept but not shown. 'its original Hide (constructed: shown)' shows that original as a
-// wider row would and presses it, the action bar's bound direct path.
+// More → Hide is the viewer's path to More Info's own Hide while its row is compact (this page's More Info always is),
+// the original kept but not shown; 'its original Hide (constructed: shown)' shows that original as a wider row does and
+// presses it: the action bar's bound direct path.
 for (const via of ['its original Hide (constructed: shown)', 'More → Hide']) {
   test(`Hide from More Info via ${via}: one PUT, and its Undo inside More Info is in the accessibility tree, takes focus and undoes`, async ({ page, isMobile }) => {
     const host = await boot(page);
     await managedInfo(page, isMobile);
     const original = page.locator('.je-more-info-modal.active [data-mount="je-secondary-actions"] .je-detail-hide-btn').first();
     if (via.startsWith('its original Hide')) {
-      await page.evaluate(() => document.querySelector('.je-more-info-modal.active [data-mount="je-secondary-actions"] .je-detail-hide-btn').classList.remove('je-actions-external-original'));
+      // Shown as a wider row shows it (12.2's desktop More Info does, checked live), and kept shown across the bar's passes.
+      await page.addStyleTag({ content: '.je-more-info-modal .je-detail-hide-btn.je-actions-external-original { display: inline-flex !important; }' });
+      await original.waitFor();
       await press(page, original, isMobile);
     } else {
       expect(await original.isVisible()).toBe(false);
@@ -68,6 +73,9 @@ for (const via of ['its original Hide (constructed: shown)', 'More → Hide']) {
     await expect.poll(() => writes('PUT')).toBe(1);
     const undo = page.locator('.je-more-info-modal.active .je-undo-toast .je-undo-btn');
     await undo.waitFor();
+    // Focus is back inside More Info once the confirmation closed and the write settled (never left on the page's body,
+    // which a disabled-while-saving control would otherwise leave it on).
+    await expect.poll(() => page.evaluate(() => !!document.querySelector('.je-more-info-modal.active')?.contains(document.activeElement))).toBe(true);
     expect(await page.evaluate(() => !document.querySelector('.je-undo-toast').closest('[inert]'))).toBe(true);
     const cdp = await page.context().newCDPSession(page);
     const { nodes } = await cdp.send('Accessibility.getFullAXTree'); await cdp.detach();

@@ -552,6 +552,7 @@ export const SITES = {
     'rebuildSets state rulesGeneration': [1, 'module', 'lifecycle: the viewer\'s rules changed (state, read by the filter)'],
     'refresh state hiddenData': [1, 'module', 'cache'],
     'resetFromUserConfig state hiddenData': [1, 'module', 'cache'],
+    'run focus focus': [1, 'press', 'effect'],
     'run write saveTitleRule': [1, 'press', 'transport'],
     'saveTitleRule feedback showUndoToast': [1, 'press', 'effect'],
     'saveTitleRule state hiddenData': [1, 'module', 'cache'],

@@ -232,6 +232,28 @@ test('R14-1 core: an origin that closed while its operation is still current nam
   assert.equal(h.JE.surfaceOf(operation), null);
 });
 
+test('R14-1: focus that fell to the page while More Info\'s own Hide saved comes back to it; a move the viewer made meanwhile is kept', async t => {
+  for (const moved of [false, true]) {
+    const h = setup(t, { asks: false }); hiddenContent(h);
+    const info = await managedInfo(h);
+    const gate = h.hold('PUT', '/user-settings/');
+    const original = info.querySelector('[data-mount="je-secondary-actions"] .je-detail-hide-btn');
+    original.focus();
+    h.click(original); await delivered();
+    h.click(h.document.querySelector('.je-hide-confirm-hide')); await delivered();
+    assert.equal(h.document.activeElement, original, 'the closing confirmation gave the focus back to Hide');
+    // Chromium drops the focus of a control disabled while it saves (seen live on 12.2); jsdom does not (nor blurs a
+    // disabled control), so the page is given the focus here the way jsdom does it: a focused node that leaves.
+    const drop = h.document.createElement('button'); info.append(drop); drop.focus(); drop.remove();
+    assert.equal(h.document.activeElement, h.document.body);
+    const other = info.querySelector('.modal-refresh') || info.querySelector('button:not(.je-detail-hide-btn)');
+    if (moved) other.focus();
+    gate.resolve(); await delivered();
+    assert.equal(h.sent('PUT', '/user-settings/').length, 1);
+    assert.equal(h.document.activeElement, moved ? other : original, moved ? 'the viewer\'s own move is kept' : 'Hide has the focus again, inside More Info');
+  }
+});
+
 test('R14-1: a newer form over More Info covers the managed Undo; closing it uncovers it', async t => {
   const h = setup(t, { asks: false }); hiddenContent(h);
   const info = await managedInfo(h);
