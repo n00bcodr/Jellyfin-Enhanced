@@ -1744,6 +1744,11 @@ folder or path.
 ### Native details pages
 
 The native page's own requests are answered by the facade and never touch the library.
+Their metadata source is the request backend's: with `ArrRequestBackend` `je` (rollout switches on or not, Seerr
+settings stored or not) every route below reads TMDB with
+Jellyfin Enhanced's own key and never contacts Seerr (shapes unchanged; ratings answer `null`; "Seerr can't answer"
+below then means TMDB can't), in Seerr mode Seerr. The public config's `NativeAbsentDetails` carries `Enabled` (switch on
+and that source ready) and `Source` (`tmdb` or `seerr`).
 
 | Method | Path | Access and contract |
 |---|---|---|

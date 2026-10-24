@@ -1272,6 +1272,23 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), where a
     title opens the library copy or its own native page again.
 
+??? info "JE mode: the pages read TMDB, never Seerr"
+    With request handling set to **Jellyfin Enhanced**, these pages, their seasons and episodes, artwork, cast and crew
+    (with their people's pages and filmographies), *More like this*, similar and recommended titles and the movie's
+    collection are read from TMDB with Jellyfin Enhanced's own TMDB key, so Seerr can be turned off completely (no Seerr
+    address or key, every Seerr feature off) and the pages still work for everyone their rules let in. The pages need the
+    switch and a TMDB key; whatever Seerr settings remain are never read in this mode (the request backend alone decides,
+    with or without its rollout switches). Seerr's More Info window reads the same public details there, also when the
+    server answers Seerr's own routes with `backend_disabled`. A series TMDB doesn't link to TVDB or
+    IMDb takes the ids Sonarr or Radarr know it by, so the page carries the same identity as its status and requests.
+    What only Seerr has is left out: Seerr's Rotten Tomatoes and IMDb scores (TMDB's own score still shows) and Seerr's
+    request records (the request controls and status come from Jellyfin Enhanced anyway). A title TMDB doesn't know shows
+    the page's *not available* message; while TMDB can't be reached the page says it can't be loaded right now and offers
+    Back (or Home). Seerr's More Info window is never opened in its place. The same privacy rules apply as in Seerr mode:
+    Hidden Content, Spoiler Guard, the library's own hidden copies and the parental limit. A person with Allowed or
+    Blocked Tags is still refused titles that aren't in the library while Seerr is off, because their tags can't be
+    checked yet without Seerr.
+
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 
 ### Discover and search (JE mode)
@@ -2219,7 +2236,7 @@ restarts, removed files and restores. Both home rows and badges use the same fir
 an earlier Jellyfin creation date cannot make that first source look like an upgrade.
 
 Spoiler Guard preserves request controls, quota warnings and parental-rating assessments. Calendar entries keep their source, season and episode numbers and availability state, so filtering to **Available** still works while episode names are protected. Precise dates follow your Spoiler Guard date preference.
-The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native absent-title pages and their Seerr metadata source configured and enabled. Successful
+The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native absent-title pages and their metadata source ready (a TMDB key in JE mode; Seerr configured and enabled in Seerr mode). Successful
 registration of all three sections is required. A missing or incompatible registration API, or registration failure,
 uses the native home rows. Jellyfin 10.11 uses native injection because it has no native absent-title pages. Section
 placement and activation remain in HSS's own settings; individual users can still hide each row in JE's panel.

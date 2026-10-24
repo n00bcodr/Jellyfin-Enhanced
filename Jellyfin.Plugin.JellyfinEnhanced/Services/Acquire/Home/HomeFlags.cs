@@ -35,13 +35,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <returns>Whether they are on.</returns>
         public static bool CollectionGaps(PluginConfiguration? config) => AutomationFlags.Phase4WithRequests(config) && config!.ArrPhase4CollectionGapsEnabled;
 
-        /// <summary>The native pages for titles not in the library are on (they exist on Jellyfin 12 only).</summary>
+        /// <summary>
+        /// The native pages for titles not in the library are on (they exist on Jellyfin 12 only): the switch, and the request
+        /// mode's metadata source ready (TMDB in Jellyfin Enhanced mode, Seerr otherwise; A1).
+        /// </summary>
         /// <param name="config">Configuration.</param>
         /// <returns>Whether they are on.</returns>
         public static bool NativePages(PluginConfiguration? config)
         {
 #if JF12
-            return NativeDetails.NativeDetailsPolicy.FeatureEnabled(config) && NativeDetails.NativeDetailsPolicy.SeerrConfigured(config!);
+            return NativeDetails.NativeDetailsPolicy.FeatureEnabled(config) && NativeDetails.NativeDetailsPolicy.MetadataReady(config!);
 #else
             return false;
 #endif

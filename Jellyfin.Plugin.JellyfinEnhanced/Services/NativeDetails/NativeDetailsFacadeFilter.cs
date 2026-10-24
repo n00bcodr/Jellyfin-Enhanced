@@ -319,7 +319,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return Task.FromResult(LinkDiscovery.None);
+            // The request mode's metadata source answers those pages (TMDB in Jellyfin Enhanced mode, A1; Seerr otherwise).
+            if (config == null || !NativeDetailsPolicy.MetadataReady(config)) return Task.FromResult(LinkDiscovery.None);
             return Task.FromResult(new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, config.JellyseerrShowTagDiscovery));
         }
 

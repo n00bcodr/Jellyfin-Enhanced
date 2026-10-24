@@ -18,7 +18,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static readonly Regex Pattern = new(
             @"^(movie|tv):(tmdb|tvdb|imdb):(tt[0-9]{1,12}|[0-9]{1,12})(?::s([0-9]{1,4})(?::e([0-9]{1,5}))?)?$",
             RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
-            TimeSpan.FromMilliseconds(100));
+            // Parse caps input at 64 characters and every repetition above is bounded. Allow a
+            // scheduling/GC pause on a busy host without failing a valid key mid-import.
+            TimeSpan.FromSeconds(1));
 
         private TitleKey(bool movie, string provider, string id, int? season, int? episode)
         {

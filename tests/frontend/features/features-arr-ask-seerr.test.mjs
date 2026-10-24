@@ -28,7 +28,7 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
   const posts = [];
   const checks = [];
   const toasts = [];
-  const seerr = { movie: [], seasons: [], collection: [], advanced: 0, details: [], modals: [] };
+  const seerr = { movie: [], seasons: [], collection: [], advanced: 0, details: [], publicReads: [], modals: [] };
   const h = createHarness({
     url: 'http://jellyfin.test/web/index.html#/search.html',
     fetch: async (url, init = {}) => {
@@ -64,19 +64,21 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
       },
       jellyseerrAPI: {
         shouldShowAdvanced: () => { seerr.advanced++; return false; },
-        fetchCollectionDetails: async (id) => {
-          seerr.details.push(id);
-          return { id, name: 'The Matrix Collection', parts: [
-            { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', posterPath: '/m.jpg', mediaInfo: { status: 5 } },
-            { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' },
-            { id: 605, title: 'The Matrix <Revolutions>', releaseDate: '2003-11-05', posterPath: '/x" onerror="evil()' }
-          ] };
-        }
+        // Seerr's own collection (JE mode must never read it, A1) and Jellyfin Enhanced's public one.
+        fetchCollectionDetails: async (id) => { seerr.details.push(id); return matrix(id); },
+        fetchPublic: async (path) => { seerr.publicReads.push(path); return matrix(Number(/^\/collection\/(\d+)$/.exec(path)?.[1])); }
       },
       // Seerr's request window (recorded; its body is the HTML the window would show).
       jellyseerrModal: { create: (options) => { const m = { options, shown: 0, closed: 0 }; seerr.modals.push(m); return { show: () => { m.shown++; }, close: () => { m.closed++; } }; } }
     }
   });
+  function matrix(id) {
+    return { id, name: 'The Matrix Collection', parts: [
+      { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', posterPath: '/m.jpg', mediaInfo: { status: 5 } },
+      { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' },
+      { id: 605, title: 'The Matrix <Revolutions>', releaseDate: '2003-11-05', posterPath: '/x" onerror="evil()' }
+    ] };
+  }
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
   return { ...h, get NATIVE() { return h.NATIVE; }, posts, toasts, seerr, checks };
@@ -184,7 +186,8 @@ test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced 
   click(h, button);
   await settle();
   assert.equal(seerrRan, 0);
-  assert.deepEqual(h.seerr.details, [10]);
+  assert.deepEqual(h.seerr.publicReads, ['/collection/10']);
+  assert.deepEqual(h.seerr.details, [], 'JE mode never reads Seerr\'s collection');
   const modal = h.seerr.modals.at(-1);
   assert.equal(modal.shown, 1);
   assert.equal(modal.options.subtitle, 'The Matrix Collection');
@@ -209,7 +212,7 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
   const h = setup(t);
   // One movie is here; 22 could be asked for.
   const parts = [{ id: 1, title: 'Dr. No', releaseDate: '1962-10-05', mediaInfo: { status: 5 } }, ...Array.from({ length: 22 }, (_, i) => ({ id: 100 + i, title: `Bond ${i + 1}`, releaseDate: `${1963 + i}-01-01` }))];
-  h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 645, name: 'James Bond Collection', parts });
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 645, name: 'James Bond Collection', parts });
   let modalElement = null;
   let options = null;
   h.JE.jellyseerrModal.create = (o) => {
@@ -252,7 +255,7 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
 test('JE mode: the collection picker leaves out movies that are not out yet (no date or a later one), as a collection page does', async t => {
   const h = setup(t);
   const later = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-  h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 2344, name: 'Avatar Collection', parts: [
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 2344, name: 'Avatar Collection', parts: [
     { id: 19995, title: 'Avatar', releaseDate: '2009-12-15' },
     { id: 76600, title: 'Avatar: The Way of Water', releaseDate: '2022-12-14', mediaInfo: { status: 5 } },
     { id: 83533, title: 'Avatar: Fire and Ash', releaseDate: later },
@@ -654,11 +657,11 @@ test('JE mode: a viewer without a Seerr account gets the collection picker from 
   assert.match(body, /data-tmdb-id="604"[^>]*data-je-askable="1" checked/);
   assert.equal(h.toasts.length, 0);
 
-  // With a Seerr account: Seerr's own collection, as before.
+  // With a Seerr account, or Seerr off altogether: still Jellyfin Enhanced's public collection (JE mode never reads Seerr, A1).
   h.JE.jellyseerrAPI.accountRefusal = async () => null;
   await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
   await settle();
-  assert.deepEqual([publicReads.length, h.seerr.details], [1, [2344]]);
+  assert.deepEqual([publicReads, h.seerr.details], [['/collection/2344', '/collection/2344'], []]);
 });
 
 test('JE mode: the more-info window with public details says in one line that Seerr\'s own request details need a Seerr account', async t => {
@@ -671,4 +674,13 @@ test('JE mode: the more-info window with public details says in one line that Se
   internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: { status: 1 } }, 'movie');
   await settle();
   assert.equal(note(), null, 'details read through the viewer\'s own account: no line');
+});
+
+test('a request toast shows a translation\'s icon as its emoji, never as escaped markup (A1 live finding)', async t => {
+  const h = setup(t);
+  h.JE.arrAsk.toast('<span class="je-emoji">❌</span> Failed to load collection details');
+  assert.equal(h.toasts.at(-1), '❌ Failed to load collection details');
+  // Anything else stays text.
+  h.JE.arrAsk.toast('<b>bold</b>');
+  assert.equal(h.toasts.at(-1), '<b>bold</b>');
 });

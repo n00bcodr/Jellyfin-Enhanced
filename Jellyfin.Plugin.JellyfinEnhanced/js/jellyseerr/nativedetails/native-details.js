@@ -189,6 +189,15 @@
         return !!cap && cap.Enabled === true && cap.ContractVersion === CONTRACT && !!serverId();
     }
 
+    /**
+     * True when the pages read TMDB (Jellyfin Enhanced request mode, A1): Seerr's More Info window is no
+     * fallback then (it reads Seerr), so a page that can't be loaded says so on the page instead.
+     * @returns {boolean} TMDB source.
+     */
+    function tmdbSource() {
+        return JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+    }
+
     // ------------------------------------------------------------------ navigator
 
     /**
@@ -238,7 +247,8 @@
      * @returns {boolean} Seerr refuses the viewer.
      */
     function seerrRefusesViewer() {
-        return !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
+        // The JE backend's pages read TMDB (A1/BEH-02): no Seerr account is ever asked for.
+        return !tmdbSource() && !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
     }
 
     /**
@@ -349,6 +359,15 @@
             }
         }
         if (options.modal === false || !action.owner) return false;
+        if (available() && tmdbSource()) {
+            // JE mode: no Seerr window. A title whose TMDB id is known opens its page (which says so when its details
+            // can't be had); one without stays with the caller.
+            const tmdb = Number(options.tmdbId || tmdbOfKey(key));
+            const id = tmdb > 0 ? idOf(tmdb, mediaType, options) : null;
+            if (!id || !action.current() || !JE.effectOwner(action.owner, 'openKey')) return false;
+            go(id);
+            return true;
+        }
         return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, action.owner);
     }
 
@@ -1028,7 +1047,8 @@
             return;
         }
         if (parts.kind !== 'movie' && parts.kind !== 'series') return;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
+        // Seerr's own Request window is no fallback for the JE backend (A1/BEH-02), whatever Seerr settings remain.
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
         const b = pageButton('add', JE.t('jellyseerr_btn_request'), 'button-submit je-native-absent-legacy-request');
         b.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1118,7 +1138,7 @@
      */
     async function titleData(state) {
         const internal = JE.internals?.moreInfoModal;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
         try {
             return await internal.fetchMediaDetails(state.parts.tmdbId, state.mediaType);
         } catch {
@@ -1369,7 +1389,8 @@
                 refuse(page, 'native_details_page_failed');
                 return;
             }
-            if (fellBackFrom === id) {
+            if (fellBackFrom === id || tmdbSource()) {
+                // A second failure soon after, or JE mode (no Seerr window to fall back to): the page says so.
                 refuse(page, 'native_details_failed');
                 return;
             }

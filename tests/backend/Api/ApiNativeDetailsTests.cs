@@ -73,7 +73,7 @@ public class NativeDetailsIdTests
 
 #if !NET9_0
 [Collection("Plugin singleton")]
-public class ApiNativeDetailsTests
+public partial class ApiNativeDetailsTests
 {
     private const string Server = "0202511b0eac4284ab045b3ba556d72e";
     private static readonly Guid MoviesLib = Guid.NewGuid();
@@ -259,6 +259,14 @@ public class ApiNativeDetailsTests
         /// <summary>Library revision handed to the physical-title reader (null: no cache).</summary>
         public Func<long>? LibraryRevision { get; set; }
 
+        /// <summary>Every read that reached Seerr through the rig's transport (the parental filter's and any source's): host and path.</summary>
+        public List<string> SeerrReads { get; } = new();
+
+        /// <summary>The source the policy, facade and feeds read (<see cref="Source"/> unless the rig was made over another).</summary>
+        public INativeDetailsSource Used => _source ?? Source;
+
+        private readonly INativeDetailsSource? _source;
+
         /// <summary>While set, the parental filter's rating lookups wait for it.</summary>
         public TaskCompletionSource? RatingGate { get; set; }
 
@@ -266,7 +274,7 @@ public class ApiNativeDetailsTests
         /// A rig; with <paramref name="stateDir"/> the grant key and session epochs are kept there (restart
         /// tests); <paramref name="parentalBudget"/> is how long a list waits for its rating lookups.
         /// </summary>
-        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null)
+        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null, Func<Rig, INativeDetailsSource>? source = null)
         {
             _stateDir = stateDir;
             var c = Plugin.Plugin.Configuration;
@@ -295,6 +303,7 @@ public class ApiNativeDetailsTests
             });
             Seerr = new IntegrationTransport(async (req, _) =>
             {
+                if (req.RequestUri!.Host != "api.themoviedb.org") lock (SeerrReads) SeerrReads.Add(req.RequestUri.Host + req.RequestUri.AbsolutePath);
                 if (RatingGate is { } gate) await gate.Task;
                 return IntegrationTransport.Response(JsonSerializer.Serialize(new
                 {
@@ -318,6 +327,7 @@ public class ApiNativeDetailsTests
             _spoilerUsers = new SpoilerUserResolver(Plugin.Core.Manager, loose.Object, Plugin.Core.Logger, null!);
             _next = new SpoilerNextUnwatchedService(loose.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object, Plugin.Core.Logger);
             _strip = new SpoilerFieldStripFilter(_spoilerUsers, loose.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object, _next);
+            _source = source?.Invoke(this);
             Restart();
         }
 
@@ -329,10 +339,10 @@ public class ApiNativeDetailsTests
         {
             if (forgetRatings) _parental = _newParental();
             Artwork = new NativeDetailsArtwork(Images, _stateDir);
-            Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
-            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
+            Policy = new NativeDetailsPolicy(_parental, Used, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
+            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Used, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
                 new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision), new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object), new ImageBlurService(Plugin.Core.Logger));
-            Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
+            Feeds = new NativeDetailsFeeds(Used, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
         }
 
         /// <summary>The feeds over another source (the policy still admits titles from <see cref="Source"/>).</summary>
@@ -1827,6 +1837,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         var unlinked = rig.Person(linked: false);
         LibraryName(rig, unlinked, "genre", "Science Fiction", true, () => true);
         var forUnlinked = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
@@ -2003,6 +2014,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Jellyfin Enhanced mode: the page opens without one, and so does its filmography.
         Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Person(3810)) })).Result));
         Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.FilmographyAsync(unlinked, 3810, CancellationToken.None))));
@@ -2229,6 +2241,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Jellyfin Enhanced mode: the page opens without an account, and so do its extras, read with JE's key.
         var movie = Body(await rig.Feeds.TitleAsync(unlinked, true, 693134, CancellationToken.None));
         Assert.Equal("Dune: Part Two", movie.GetProperty("title").GetString());
@@ -2279,6 +2292,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
     }
 
     private static Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController FeedsFor(Rig rig, System.Security.Claims.ClaimsPrincipal user) => new(rig.Feeds, rig.Callers.Users.Object)
@@ -2347,8 +2361,10 @@ public class ApiNativeDetailsTests
         Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(disabled, true, 693134, ct)).Outcome);
         Assert.Equal(403, Status(await FeedsFor(rig, new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Collection(726871, ct)));
 
-        // Seerr not set up: nothing to read.
+        // A1: Jellyfin Enhanced mode's metadata is TMDB's, not Seerr's: Seerr not set up changes nothing; no TMDB key, nothing to read.
         rig.Plugin.Plugin.Configuration.JellyseerrUrls = string.Empty;
+        Assert.Equal(FeedOutcome.Ok, (await rig.Feeds.TitleAsync(unlinked, true, 693134, ct)).Outcome);
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
         Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(unlinked, true, 693134, ct)).Outcome);
     }
 
@@ -2540,6 +2556,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Only id and name of real keywords leave the server.
         Assert.Equal("""{"results":[{"id":161919,"name":"adult animation"}]}""", (await rig.Feeds.KeywordsAsync(unlinked, "adult animation", CancellationToken.None)).Json);
         Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.KeywordsAsync(unlinked, " ", CancellationToken.None)).Outcome);

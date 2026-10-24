@@ -63,6 +63,27 @@ function jeMode() {
 }
 
 /**
+ * True when the window reads the title's public details and never Seerr (A1/BEH-02): Jellyfin Enhanced handles
+ * requests, or is the request backend at all (the native pages read TMDB then; public config
+ * NativeAbsentDetails.Source "tmdb"), whatever Seerr settings remain stored.
+ * @returns {boolean}
+ */
+function jeDetails() {
+    return jeMode() || JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+}
+
+/**
+ * True for the server's refusal of every Seerr route while Jellyfin Enhanced is the only backend
+ * (HTTP 409 `{ code: "backend_disabled" }`): not an account refusal, and not an error to show; the public details are
+ * the window's source then.
+ * @param {any} error The core client's error.
+ * @returns {boolean}
+ */
+function backendDisabled(error) {
+    return error?.status === 409 && error?.responseJSON?.code === 'backend_disabled';
+}
+
+/**
  * The error a window gets when Seerr won't answer through the viewer's own account and there is no other way
  * (Seerr handles requests): `seerrAccount` says why, so the window says that instead of "try again".
  * @param {'unlinked'|'blocked'} reason Why.
@@ -75,21 +96,18 @@ function accountError(reason) {
 }
 
 /**
- * The title's public details from Jellyfin Enhanced's own route (see JE.jellyseerrAPI.fetchPublic), marked
- * `jePublicDetails` so the window leaves out what only the viewer's Seerr account has. A failure is marked
- * `jePublic` (the window says what it means; it's not logged as an error); a server without the route
- * (Jellyfin 10.11 answers a bare 404) is Seerr's refusal again.
+ * The title's public details from Jellyfin Enhanced's own route (see JE.jellyseerrAPI.fetchPublic; TMDB when Jellyfin
+ * Enhanced is the backend), marked `jePublicDetails` so the window leaves out what only a Seerr account has. A
+ * failure is marked `jePublic` (the window says what it means; it's not logged as an error).
  * @param {number} tmdbId TMDB id.
  * @param {string} mediaType 'movie' or 'tv'.
- * @param {'unlinked'|'blocked'} refusal Why Seerr won't answer for the viewer.
  * @returns {Promise<Object>}
  */
-async function fetchPublicDetails(tmdbId, mediaType, refusal) {
+async function fetchPublicDetails(tmdbId, mediaType) {
     let data;
     try {
         data = await JE.jellyseerrAPI.fetchPublic(`/title/${mediaType === 'movie' ? 'movie' : 'tv'}/${tmdbId}`);
     } catch (error) {
-        if (error?.status === 404 && !error.responseJSON?.code) throw accountError(refusal);
         if (error && typeof error === 'object') error.jePublic = true;
         throw error;
     }
@@ -98,15 +116,19 @@ async function fetchPublicDetails(tmdbId, mediaType, refusal) {
 }
 
 /**
- * Fetch media details from Jellyseerr API via proxy. A viewer Seerr won't answer for (no linked account, or
- * Seerr turned off for them) gets the title's public details instead while Jellyfin Enhanced handles requests,
- * and an error saying why (`seerrAccount`) otherwise.
+ * The title's details for the window. Jellyfin Enhanced as the backend (or a server refusing Seerr's routes with
+ * `backend_disabled`) reads the public details and never Seerr (A1/BEH-02). In Seerr mode they come through the
+ * viewer's Seerr account, and a viewer Seerr won't answer for (no linked account, or Seerr turned off for them) gets
+ * an error saying why (`seerrAccount`).
  * @param {number} tmdbId TMDB id.
  * @param {string} mediaType 'movie' or 'tv'.
  * @returns {Promise<Object|null>}
  */
 async function fetchMediaDetails(tmdbId, mediaType) {
     const api = JE?.jellyseerrAPI;
+    // The JE backend never reads Seerr (D88; A1/BEH-02): straight to the public details (TMDB there), before any
+    // Seerr account or status logic.
+    if (jeDetails() && typeof api?.fetchPublic === 'function') return fetchPublicDetails(tmdbId, mediaType);
     // Known from the user status: no read through the viewer's account that the proxy would refuse.
     let refusal = typeof api?.accountRefusal === 'function' ? await api.accountRefusal().catch(() => null) : null;
     try {
@@ -133,14 +155,15 @@ async function fetchMediaDetails(tmdbId, mediaType) {
         if (data && typeof data === 'object') data.jePublicDetails = false;
         return data;
     } catch (error) {
+        // A server where Jellyfin Enhanced is the only backend refuses Seerr's routes: its public details instead.
+        if (backendDisabled(error) && typeof api?.fetchPublic === 'function') return fetchPublicDetails(tmdbId, mediaType);
         refusal = error?.seerrAccount || api?.accountRefusalOf?.(error) || null;
         if (!refusal) {
             console.error(`${logPrefix} Failed to fetch ${mediaType} details for TMDB ID ${tmdbId}:`, error);
             throw error;
         }
     }
-    if (!jeMode()) throw accountError(refusal);
-    return fetchPublicDetails(tmdbId, mediaType, refusal);
+    throw accountError(refusal);
 }
 
 /**

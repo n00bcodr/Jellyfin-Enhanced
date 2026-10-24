@@ -73,7 +73,8 @@ for (const [label, status] of [['without a linked Seerr account', UNLINKED], ['S
     assert.deepEqual([movie.title, movie.jePublicDetails], ['Dune: Part Two', true]);
     const series = await h.internal.fetchMediaDetails(83867, 'tv');
     assert.deepEqual([series.name, series.jePublicDetails], ['Andor', true]);
-    assert.deepEqual(h.reads, ['/jellyseerr/user-status', '/native-details/title/movie/693134', '/native-details/title/tv/83867']);
+    // JE mode never reads Seerr (A1/BEH-02): not even the user status.
+    assert.deepEqual(h.reads, ['/native-details/title/movie/693134', '/native-details/title/tv/83867']);
   });
 }
 
@@ -97,15 +98,15 @@ test('a refusal the user status could not tell yet (the proxy\'s own "unlinked")
   } });
   const data = await h.internal.fetchMediaDetails(1, 'movie');
   assert.deepEqual([data.title, data.jePublicDetails], ['Public', true]);
-  assert.deepEqual(h.reads, ['/jellyseerr/user-status', '/jellyseerr/movie/1', '/native-details/title/movie/1']);
+  assert.deepEqual(h.reads, ['/native-details/title/movie/1']);
 
   const seerr = setup(t, { jeMode: false, routes: { '/jellyseerr/user-status': status, '/jellyseerr/movie/1': unlinkedError } });
   await assert.rejects(seerr.internal.fetchMediaDetails(1, 'movie'), error => error.seerrAccount === 'unlinked');
   assert.deepEqual(seerr.reads, ['/jellyseerr/user-status', '/jellyseerr/movie/1']);
 });
 
-test('a linked viewer still reads through their own account, with Seerr\'s per-account part, and other failures stay errors', async t => {
-  const h = setup(t, { routes: {
+test('Seerr mode: a linked viewer still reads through their own account, with Seerr\'s per-account part, and other failures stay errors', async t => {
+  const h = setup(t, { jeMode: false, routes: {
     '/jellyseerr/user-status': LINKED,
     '/jellyseerr/movie/1': { id: 1, title: 'Mine', mediaInfo: { status: 5, jellyfinMediaId: 'abc' } },
     '/jellyseerr/movie/2': () => httpError(500, { code: 'UpstreamError' })
@@ -275,15 +276,59 @@ test('a title page\'s similar and recommended rows: public and judged on the ser
 });
 
 
-test('Jellyfin 10.11 (no public routes: a bare 404): the window says the Seerr account isn\'t linked, not that the title is unavailable', async t => {
+test('JE mode on a server without the public route (a bare 404): the window says it can\'t load, never a Seerr account message', async t => {
   const h = setup(t, { routes: {
     '/jellyseerr/user-status': UNLINKED,
     '/native-details/title/movie/1': () => Object.assign(new Error('HTTP 404'), { status: 404 })
   } });
   let failure = null;
   await assert.rejects(h.internal.fetchMediaDetails(1, 'movie'), error => { failure = error; return true; });
-  assert.equal(h.internal.errorKey(failure, 'jellyseerr_modal_load_failed'), 'jellyseerr_modal_seerr_unlinked');
+  assert.equal(h.internal.errorKey(failure, 'jellyseerr_modal_load_failed'), 'jellyseerr_modal_load_failed');
   assert.equal(h.internal.isExplained(failure), true);
+  assert.deepEqual(h.reads, ['/native-details/title/movie/1']);
+});
+
+// A1/BEH-02: the JE backend's window reads the public (TMDB) details, whatever Seerr settings remain and whoever is linked.
+test('JE mode with Seerr still configured and a linked viewer: the public details, never a Seerr read', async t => {
+  const h = setup(t, { routes: {
+    '/jellyseerr/user-status': LINKED,
+    '/jellyseerr/movie/1': { id: 1, title: 'Seerr copy', mediaInfo: { status: 5 } },
+    '/native-details/title/movie/1': { id: 1, title: 'Public' }
+  } });
+  const data = await h.internal.fetchMediaDetails(1, 'movie');
+  assert.deepEqual([data.title, data.jePublicDetails], ['Public', true]);
+  assert.deepEqual(h.reads, ['/native-details/title/movie/1']);
+});
+
+test('the JE backend without its request rollout (native source "tmdb") reads the public details too', async t => {
+  const h = setup(t, { jeMode: false, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } }, routes: {
+    '/jellyseerr/user-status': LINKED,
+    '/native-details/title/tv/83867': { id: 83867, name: 'Andor', seasons: [] }
+  } });
+  const data = await h.internal.fetchMediaDetails(83867, 'tv');
+  assert.deepEqual([data.name, data.jePublicDetails], ['Andor', true]);
+  assert.deepEqual(h.reads, ['/native-details/title/tv/83867']);
+});
+
+test('a server refusing Seerr\'s routes (409 backend_disabled) is not an account refusal: the window reads the public details, no console error', async t => {
+  const disabled = () => httpError(409, { code: 'backend_disabled', error: true });
+  const h = setup(t, { jeMode: false, routes: {
+    '/jellyseerr/user-status': LINKED,
+    '/jellyseerr/movie/1': disabled,
+    '/native-details/title/movie/1': { id: 1, title: 'Public' }
+  } });
+  const data = await h.internal.fetchMediaDetails(1, 'movie');
+  assert.deepEqual([data.title, data.jePublicDetails], ['Public', true]);
+  assert.deepEqual(h.reads, ['/jellyseerr/user-status', '/jellyseerr/movie/1', '/native-details/title/movie/1']);
+  // Its own failure is explained like any public read, not logged.
+  const down = setup(t, { jeMode: false, routes: { '/jellyseerr/user-status': LINKED, '/jellyseerr/movie/2': disabled, '/native-details/title/movie/2': () => httpError(503, { code: 'unavailable' }) } });
+  let failure = null;
+  await assert.rejects(down.internal.fetchMediaDetails(2, 'movie'), error => { failure = error; return error.jePublic === true; });
+  assert.equal(down.internal.isExplained(failure), true);
+  // Any other 409 stays an error.
+  const other = setup(t, { jeMode: false, routes: { '/jellyseerr/user-status': LINKED, '/jellyseerr/movie/3': () => httpError(409, { code: 'conflict' }) } });
+  other.expectConsoleError(/Failed to fetch movie details for TMDB ID 3/);
+  await assert.rejects(other.internal.fetchMediaDetails(3, 'movie'), error => error.status === 409 && !error.jePublic);
 });
 
 test('Jellyfin 10.11 (no public routes): a title page\'s rows are left out quietly for a viewer without a Seerr account', async t => {
