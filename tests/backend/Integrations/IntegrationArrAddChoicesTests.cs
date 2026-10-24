@@ -716,4 +716,229 @@ public class IntegrationArrAddChoicesTests
         Assert.Equal(3, Assert.Single(rig.Ledger.ForWant(accepted.RequestId!)).Authorization.ChoiceVersion);
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task HeldResumePreservesChoiceOwnerAndFinalDispatch(bool movie, bool stampOnly)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var other = rig.Add("Admin");
+        var third = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        var replace = Sheet(lab, movie, id: "owner-b");
+        replace.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, other).Add(replace, default)).HttpStatus, 200, 201);
+        var original = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        Assert.Equal((other, 2L), (original.Authorization.ChoiceOwner, original.Authorization.ChoiceVersion));
+        var charge = Charges(rig, first.RequestId!);
+        Assert.True(rig.Ledger.Claim(original, rig.Db.Generation, rig.Now));
+        Assert.True(rig.Ledger.Complete(original, rig.Db.Generation, RequestBackendResult.Uncertain(original.WantId) with { Parked = true }, rig.Now));
+        Assert.Equal(200, (await rig.Service.ApproveAsync(original.WantId, rig.Admin, null, default)).HttpStatus);
+        rig.Reopen();
+        var resumed = Assert.Single(rig.Ledger.ForWant(original.WantId), j => j.State == "maybe_sent");
+        Assert.Equal(original.Id, resumed.Id);
+        Assert.Equal(original.Authorization.Requester, resumed.Authorization.Requester);
+        Assert.Equal(rig.Admin, resumed.Authorization.Approver);
+        Assert.Equal(original.Input.Canonical, resumed.Input.Canonical);
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        if (stampOnly)
+        {
+            Assert.Equal((other, 2L), (resumed.Authorization.ChoiceOwner, resumed.Authorization.ChoiceVersion));
+            return;
+        }
+        // Real direct-backend read-back establishes that nothing landed; the job becomes known-unsent.
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Assert.Equal("retry", rig.Ledger.ForWant(original.WantId).Single(j => j.Id == original.Id).State);
+        var reverted = Outcome(await Controller(lab, rig, third).Add(Sheet(lab, movie, 4, id: "unconfirmed-third-admin"), default));
+        rig.Reopen();
+        rig.Now = rig.Now.AddHours(1);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        var write = JsonNode.Parse(Assert.Single(host.Writes, w => w.Method == "POST" && w.Path == (movie ? "/api/v3/movie" : "/api/v3/series")).Body)!;
+        Assert.True(reverted.HttpStatus == 409 && reverted.Reason == "choice_conflict",
+            $"Unconfirmed third administrator got {reverted.HttpStatus}/{reverted.Reason}; dispatched profile={(int)write["qualityProfileId"]!} (owned profile was 5).");
+        Assert.Equal((other, 2L, 5, "/selected"), (reverted.Choice!.Owner, reverted.Choice.Version, reverted.Choice.ProfileId, reverted.Choice.RootFolder));
+        Assert.Equal(5, (int)write["qualityProfileId"]!);
+        Assert.Equal(charge, Charges(rig, first.RequestId!));
+        var audit = Assert.Single(rig.Audit.ReadRecent(20), e => e.Action == "request.dispatch" && e.Message?.Contains("Choice override version: 2") == true);
+        Assert.Contains("Choice override version: 2", audit.Message);
+    }
+
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HeldResumeRequiresCurrentOverrideVersionAfterKnownUnsentReadBack(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var owner = rig.Add("Admin");
+        var third = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        var replacement = Sheet(lab, movie, id: "owned-replacement");
+        replacement.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, owner).Add(replacement, default)).HttpStatus, 200, 201);
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        var charge = Charges(rig, job.WantId);
+        Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, RequestBackendResult.Uncertain(job.WantId) with { Parked = true }, rig.Now));
+        Assert.Equal(200, (await rig.Service.ApproveAsync(job.WantId, rig.Admin, null, default)).HttpStatus);
+        rig.Reopen();
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Assert.Equal("retry", rig.Ledger.Job(job.Id)!.State);
+        rig.Reopen();
+        var stale = Sheet(lab, movie, 4, id: "stale-after-resume");
+        stale.OverrideChoiceVersion = 1;
+        var refused = Outcome(await Controller(lab, rig, third).Add(stale, default));
+        Assert.Equal((409, "choice_conflict"), (refused.HttpStatus, refused.Reason));
+        Assert.Equal((owner, 2L), (refused.Choice!.Owner, refused.Choice.Version));
+        Assert.Equal(charge, Charges(rig, job.WantId));
+        stale.IdempotencyKey = "confirmed-after-resume";
+        stale.OverrideChoiceVersion = 2;
+        Assert.InRange(Outcome(await Controller(lab, rig, third).Add(stale, default)).HttpStatus, 200, 201);
+        rig.Reopen();
+        var next = Assert.Single(rig.Ledger.ForWant(job.WantId), j => j.State == "queued");
+        Assert.Equal((third, 3L), (next.Authorization.ChoiceOwner, next.Authorization.ChoiceVersion));
+        Assert.Equal(charge, Charges(rig, job.WantId));
+        Assert.False(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie, 4);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HistoricalChoicePrefersActiveLegacyInferenceOverCancelledVersionOne(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, movie);
+        var owner = rig.Add("Admin");
+        var third = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        var replacement = Sheet(lab, movie, id: "legacy-owner");
+        replacement.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, owner).Add(replacement, default)).HttpStatus, 200, 201);
+        var active = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        // Old JSON has no choice fields: preserve null/0 in storage and infer approver + version 1.
+        rig.Db.Write((c, t) =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.Transaction = t;
+            cmd.CommandText = "UPDATE jobs SET authorization_context=json_remove(authorization_context,'$.ChoiceOwner','$.ChoiceVersion') WHERE id=$id";
+            cmd.Parameters.AddWithValue("$id", active.Id);
+            return cmd.ExecuteNonQuery();
+        });
+        rig.Reopen();
+        var legacy = rig.Ledger.Job(active.Id)!;
+        Assert.Null(legacy.Authorization.ChoiceOwner);
+        Assert.Equal(0, legacy.Authorization.ChoiceVersion);
+        var conflict = Outcome(await Controller(lab, rig, third).Add(Sheet(lab, movie, 4, id: "legacy-conflict"), default));
+        Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
+        Assert.Equal((owner, 1L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HeldResumeKeepsLegacyNullStampAndExistingApproverInference(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, movie);
+        var approver = rig.Add("Admin");
+        var third = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie), default));
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!));
+        rig.Db.Write((c, t) =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.Transaction = t;
+            cmd.CommandText = "UPDATE jobs SET authorization_context=json_remove(authorization_context,'$.ChoiceOwner','$.ChoiceVersion') WHERE id=$id";
+            cmd.Parameters.AddWithValue("$id", job.Id);
+            return cmd.ExecuteNonQuery();
+        });
+        job = rig.Ledger.Job(job.Id)!;
+        Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, RequestBackendResult.Uncertain(job.WantId) with { Parked = true }, rig.Now));
+        Assert.Equal(200, (await rig.Service.ApproveAsync(job.WantId, approver, null, default)).HttpStatus);
+        rig.Reopen();
+        var resumed = rig.Ledger.Job(job.Id)!;
+        Assert.Equal((approver, (Guid?)null, 0L), (resumed.Authorization.Approver, resumed.Authorization.ChoiceOwner, resumed.Authorization.ChoiceVersion));
+        await rig.Runner(lab.Direct).TickAsync(default);
+        var conflict = Outcome(await Controller(lab, rig, third).Add(Sheet(lab, movie, 4, id: "legacy-resume-conflict"), default));
+        Assert.Equal((409, "choice_conflict"), (conflict.HttpStatus, conflict.Reason));
+        Assert.Equal((approver, 1L, 5), (conflict.Choice!.Owner, conflict.Choice.Version, conflict.Choice.ProfileId));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChoiceStampSurvivesFieldScopedIdentityRevocation(bool requesterDeleted)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        Title(lab, true);
+        var owner = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, true, 4), default));
+        var replacement = Sheet(lab, true, id: "before-identity-revocation");
+        replacement.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, owner).Add(replacement, default)).HttpStatus, 200, 201);
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        if (requesterDeleted)
+        {
+            Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+            rig.Ledger.Recover(rig.Now);
+        }
+        rig.Ledger.PurgeUser(requesterDeleted ? rig.Admin : owner);
+        rig.Reopen();
+        var retained = rig.Ledger.Job(job.Id)!;
+        Assert.Equal((owner, 2L), (retained.Authorization.ChoiceOwner, retained.Authorization.ChoiceVersion));
+        Assert.Equal(job.Input.Canonical, retained.Input.Canonical);
+        if (requesterDeleted)
+        {
+            Assert.NotEqual(rig.Admin, retained.Authorization.Requester);
+            Assert.Equal("maybe_sent", retained.State);
+        }
+        else
+        {
+            Assert.Null(retained.Authorization.Approver);
+            Assert.Equal("parked", retained.State);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ChoiceStampSurvivesStartupRecoveryReadBackAndCreateReplay(bool movie)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(defaults: false);
+        using var rig = Requests(lab);
+        var host = Title(lab, movie);
+        var owner = rig.Add("Admin");
+        var first = Outcome(await Controller(lab, rig).Add(Sheet(lab, movie, 4), default));
+        var replacement = Sheet(lab, movie, id: "replay-owned-choice");
+        replacement.OverrideChoiceVersion = 1;
+        Assert.InRange(Outcome(await Controller(lab, rig, owner).Add(replacement, default)).HttpStatus, 200, 201);
+        var job = Assert.Single(rig.Ledger.ForWant(first.RequestId!), j => j.State == "queued");
+        var charge = Charges(rig, job.WantId);
+        Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        rig.Reopen();
+        rig.Ledger.Recover(rig.Now);
+        Assert.Equal("maybe_sent", rig.Ledger.Job(job.Id)!.State);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        rig.Reopen();
+        var retry = rig.Ledger.Job(job.Id)!;
+        Assert.Equal(("retry", owner, 2L), (retry.State, retry.Authorization.ChoiceOwner, retry.Authorization.ChoiceVersion));
+        var replay = Outcome(await Controller(lab, rig, owner).Add(replacement, default));
+        Assert.InRange(replay.HttpStatus, 200, 201);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(retry), System.Text.Json.JsonSerializer.Serialize(rig.Ledger.Job(job.Id)));
+        Assert.Equal(charge, Charges(rig, job.WantId));
+        rig.Now = rig.Now.AddHours(1);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Added(host, movie);
+    }
 }

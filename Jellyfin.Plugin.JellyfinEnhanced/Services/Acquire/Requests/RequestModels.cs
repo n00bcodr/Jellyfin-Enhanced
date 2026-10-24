@@ -285,7 +285,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0)
+    {
+        /// <summary>
+        /// Refresh approval authority without making a new choice or losing a previous send binding.
+        /// Keep legacy null/zero choice stamps as stored; ledger readers retain their existing inference.
+        /// </summary>
+        public RequestAuthorization CarryForward(RequestAuthorization refreshed)
+            => refreshed with
+            {
+                ChoiceOwner = ChoiceOwner,
+                ChoiceVersion = ChoiceVersion,
+                SeerrUser = SeerrUser ?? refreshed.SeerrUser,
+                SeerrSeasons = SeerrSeasons,
+            };
+    }
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>

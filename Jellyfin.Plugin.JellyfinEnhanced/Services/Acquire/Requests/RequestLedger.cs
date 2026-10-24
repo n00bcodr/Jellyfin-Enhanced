@@ -808,8 +808,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 current.RootFolder != null && proposed.RootFolder != null && proposed.RootFolder != current.RootFolder;
         private static Guid ChoiceOwner(RequestJob job) => job.Authorization.ChoiceOwner ?? job.Authorization.Approver ?? job.Authorization.Requester;
         private static long ChoiceVersion(RequestJob job) => Math.Max(1, job.Authorization.ChoiceVersion);
+        // Legacy null/zero stamps mean version one. Prefer active work at that same version,
+        // but keep a genuinely newer cancelled choice as the stale-confirmation fence.
         private static RequestJob? TitleChoice(IEnumerable<RequestJob> jobs)
-            => jobs.Where(j => HasChoice(j.Input)).OrderByDescending(j => j.Authorization.ChoiceVersion).ThenBy(j => j.Id, StringComparer.Ordinal).FirstOrDefault();
+            => jobs.Where(j => HasChoice(j.Input)).OrderByDescending(ChoiceVersion).ThenBy(j => j.State == "cancelled").ThenBy(j => j.Id, StringComparer.Ordinal).FirstOrDefault();
         private static RequestOutcome? CheckTitleChoice(SqliteConnection c, SqliteTransaction t, Guid actor, MutationInput input, RequestPolicyFacts facts, long? overrideVersion, string? correctionWant = null, bool allowChanges = true)
         {
             if (facts.Backend != "je" || !HasChoice(input)) return null;
@@ -855,6 +857,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Exec(c, t, "UPDATE reservations SET job_id=$job WHERE id=(SELECT id FROM reservations WHERE want_id=$w AND state='charged' AND job_id IS NULL AND (scope='initial' OR scope LIKE 'approval:%') ORDER BY rowid DESC LIMIT 1)", ("$job", id), ("$w", wantId));
             return id;
         }
+        // Every whole-record authorization rewrite of an existing job carries its durable choice and send
+        // binding through this boundary. New identities instead go through AddJob/StampTitleChoice.
+        private static void ReauthorizeJob(SqliteConnection c, SqliteTransaction t, RequestJob job, RequestAuthorization refreshed, DateTimeOffset now)
+            => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
+                ("$auth", JsonSerializer.Serialize(job.Authorization.CarryForward(refreshed))), ("$at", Ms(now)), ("$j", job.Id));
         /// <summary>Approves one pending row with fresh requester and approver checks in the transaction.</summary>
         public RequestOutcome Approve(string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now)
             => _db.Write((c, t) =>
@@ -953,8 +960,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // A job waiting for something only a person can fix (a Seerr account) is checked again at once.
             Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE want_id=$id AND state='retry' AND next_attempt>$at", ("$at", Ms(now)), ("$id", id));
             foreach (var resume in held)
-                Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
-                    ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
+                ReauthorizeJob(c, t, resume, Authorize(requester, approver, resume.Input, edits != null), now);
             var own = Wants(c, t, "user_id=$u AND id<>$id", ("$u", Id(want.UserId)), ("$id", id));
             var covered = Wants(c, t, TitleIs + " AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
             // (maybe_sent here: only the held jobs resumed above.)
