@@ -430,6 +430,11 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var read = PrivacySurfaceRegistry.IsRead(context.HttpContext);
         var viewer = UserHelper.GetCurrentUserId(context.HttpContext.User);
         if (viewer == null || viewer == Guid.Empty) return;
+        if (MediaResponseContract.MasterPlaylist(context.ActionDescriptor))
+        {
+            DeliverMasterPlaylist(context, viewer.Value);
+            return;
+        }
         // Native endpoints (any verb: PlaybackInfo is also POSTed) are classified by the one surface registry.
         var entry = PrivacySurfaceRegistry.Find(context);
         var answer = context.Result as ObjectResult;
@@ -539,6 +544,49 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         final = null;
         return null;
+    }
+
+    private void DeliverMasterPlaylist(ResultExecutingContext context, Guid viewer)
+    {
+        // Unlike a transport playlist this generated file carries MediaStream.DisplayTitle and trickplay references.
+        // It uses the same live identity, title-family reveal and final read-set as PlaybackInfo's MediaSources.
+        if (context.Result is StatusCodeResult) return;
+        if (context.Result is not FileContentResult file
+            || !Guid.TryParse(context.RouteData.Values["itemId"]?.ToString(), out var id)) { Withhold(context); return; }
+        try
+        {
+            var inputs = context.HttpContext.Items.TryGetValue(InputsMark, out var mark) && mark is long tick ? tick : PrivacyInputs.Now;
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                if (attempt > 0) PrivacyDelivery.Discard(context.HttpContext, viewer);
+                using var scope = PrivacyReadSet.Begin(attempt == 0 ? inputs : null);
+                var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+                var identity = spoilers.Resolve([id], viewer, final.Spoilers).GetValueOrDefault(id);
+                if (identity == null && PolicyApplies(final)) { Withhold(context); return; }
+                if (identity != null) final.Hidden.Bind(identity);
+                var hidden = identity != null && final.Hidden.IsHidden(identity, "library");
+                var presentation = final.Spoilers;
+                var guarded = presentation is { Enabled: true } && (presentation.Unavailable
+                    || identity != null && strip?.Protects(identity, presentation.State, viewer) == true);
+                var reveal = !hidden && guarded && presentation is { Unavailable: false } && identity != null
+                    && JellyfinEnhanced.Instance?.Configuration is { } config && strip != null
+                    ? strip.RevealFor(identity, presentation.State, config, viewer) : PrivacyReveal.None;
+                var bytes = GeneratedPlaylistPrivacy.Project(file.FileContents, !hidden && (!guarded || reveal.TitleFamily), !hidden && !guarded);
+                if (bytes == null) { Withhold(context); return; }
+                InstallFinalReads(context.HttpContext, scope.Reads);
+                if (!scope.Reads.Valid()) continue;
+                context.Result = new FileContentResult(bytes, file.ContentType);
+                context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+                context.HttpContext.Response.Headers.Remove("ETag");
+                context.HttpContext.Response.Headers.Remove("Last-Modified");
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or ArgumentException or InvalidOperationException)
+        {
+            logger?.Warning($"Presentation gate: generated master withheld ({ex.GetType().Name}).");
+        }
+        Withhold(context);
     }
 
     private static bool IsJellyfinEnhanced(ActionContext context)

@@ -56,6 +56,7 @@ public class ListsRound6Tests
         removed.Id = made.Info.Id;
         removed.Path = made.Path;
         h.Host.Lists.Remove(made.Info.Id);
+        h.TrackRemovedListCleanup(made.Info.Id);
         library.Raise(l => l.ItemRemoved += null, library.Object, new ItemChangeEventArgs { Item = removed });
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(2);
         while (DateTime.UtcNow < until)

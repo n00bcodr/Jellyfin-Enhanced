@@ -16,3 +16,67 @@ Every cache the plugin keeps (a dictionary, set, list, queue, MemoryCache, Condi
 Reuse fixtures in `Support/` for disposable storage, the plugin singleton and controlled HTTP. Tests changing the singleton must use `[Collection("Plugin singleton")]`. Keep single-feature fakes with their tests. Assert public responses, persistence and observable side effects; do not turn a production implementation into its own expected-value oracle.
 
 Real Jellyfin installations belong to `../host/`, not this project. History replay manifests select these same tests rather than maintaining duplicate implementations.
+
+## Response ownership and media streaming
+
+`PrivacyCommitFilter` attaches the outer HTTP commit owner before resource projections. Unknown routes retain that
+owner: JSON, HTML, native title DTOs, lists, status and classified images cannot emit bytes before final validation.
+An existing response guard or a route admitted by `PrivacyResponseGuard.Owns` also retains ownership.
+
+`Services/MediaResponseContract.cs` lists the only exception: actual `Jellyfin.Api` controller methods delivering raw
+playback bytes or transport playlists. Controller/action strings, binary MIME types and body contents cannot select
+the exception. There is no extra buffer or size threshold on these responses; transport writes and flushes remain
+progressive. Host authentication, parental admission to playback and range handling remain the host's responsibility.
+
+There are 19 unconditional transport actions and two conditional raw-file actions. Master playlists remain
+owned: `TitlePresentationResultFilter` resolves the same live identity and title-family reveal as PlaybackInfo,
+rebuilds protected subtitle labels, omits protected trickplay references and installs its read-set before validation.
+The outer owner validates again after the executor and resource projections finish. Malformed host title quoting
+is withheld. Every other image, trickplay image manifest and image-info result also remains owned.
+
+| Pinned host action | Why its body can stream |
+| --- | --- |
+| Audio.GetAudioStream | AudioHelper file/progressive/transcode payload; no presentation DTO |
+| Audio.GetAudioStreamByContainer | Same audio payload in the requested container |
+| Videos.GetVideoStream | Video file/transcode bytes and ranges; no generated title document |
+| Videos.GetVideoStreamByContainer | Delegates to the same video payload |
+| UniversalAudio.GetUniversalAudioStream | AudioHelper payload or host redirect |
+| DynamicHls.GetLiveHlsStream | Generated segment timing/URLs; no title-family labels |
+| DynamicHls.GetVariantHlsVideoPlaylist | Main transport durations/URLs/codecs; no track titles |
+| DynamicHls.GetVariantHlsAudioPlaylist | Same main transport generator; no title fields |
+| DynamicHls.GetHlsVideoSegment | File/transcode video segment bytes |
+| DynamicHls.GetHlsAudioSegment | File/transcode audio segment bytes |
+| HlsSegment.GetHlsAudioSegmentLegacy | Validated transcode-file audio bytes |
+| HlsSegment.GetHlsPlaylistLegacy | Rewritten FFmpeg transport timing/URLs; no free-form labels |
+| HlsSegment.GetHlsVideoSegmentLegacy | Validated video segment-file bytes |
+| LiveTv.GetLiveRecordingFile | Progressive recording-file bytes, no programme DTO |
+| LiveTv.GetLiveStreamFile | Progressive live-source bytes, no programme DTO |
+| Subtitle.GetRemoteSubtitles | Provider subtitle content, not subtitle search metadata |
+| Subtitle.GetSubtitle | Encoded subtitle events, graphical file/ranges or timestamp-mapped VTT |
+| Subtitle.GetSubtitleWithTicks | Same subtitle content with a start tick |
+| Subtitle.GetSubtitlePlaylist | VTT segment duration/range/URL manifest, no free-form labels |
+| Library.GetDownload (conditional) | Only the range-enabled PhysicalFileResult matching a native Audio/Video item's path and audio/video file type; photos, books, metadata and installed classifications retain ownership |
+| Library.GetFile (conditional) | Same native physical audio/video and range contract; every other file result remains owned |
+
+The mixed download contract is selected explicitly at resource entry and resolved at its concrete file executor,
+before any file byte. It cannot release previously written bytes or an existing privacy/evidence dependency. MIME
+alone grants no exception. Host download authorization and the MVC file executor retain their range/HEAD behavior.
+`PrivacyGeneratedPlaylistTests` executes the pinned host's shared subtitle generator for both master actions;
+`PrivacyRawDownloadTests` executes the actual native download action and its physical-file executor. The architecture
+oracle distinguishes generated masters and the generic audio/video file annotation, while both planted label errors
+remain findings. Host upgrades require re-auditing these body contracts, not merely accepting playlist annotations.
+
+`PrivacyMediaStreamingTests` uses deterministic transport ordering and a counting sink. Its 200 MiB cases measure
+the largest outstanding byte count after every write and bound allocations while reusing one input block. It also
+executes MVC file/stream/range and pipe writers through the legacy collage wrapper. Metadata controls change a
+privacy dependency before completion and require zero transport bytes and a withheld response, including when the
+metadata declares a video MIME type.
+
+The authenticated non-seekable `FileStreamResult` controls retain the round-8 reviewer's producer shape, with both
+ordinary flush and explicit `StartAsync`. An awaitable flush barrier checks server transport start and then reads the
+client's four-byte prefix while the producer remains open; the assertion uses no sleep or delay race.
+
+`MediaResponseContractArchitectureTests` checks both directions against the pinned host assembly's independent
+audio/video/playlist annotations and subtitle file declarations. Its planted controls reject a media action classified
+as metadata and a metadata action classified as media. A host upgrade or a new media action must update and review
+the explicit contract. Route prefixes, MIME declarations and file extensions alone never grant the exception.
