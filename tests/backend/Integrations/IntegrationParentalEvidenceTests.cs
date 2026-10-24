@@ -190,7 +190,7 @@ public class IntegrationParentalEvidenceTests
         Assert.False(await gate.MaySeeAbsentAsync("movie", 603, user.Id.ToString("N"), default));
         Assert.Null(gate.AbsentVerdict("movie", 603, user.Id.ToString("N")));
         Assert.Null(await new ListAccessService(new FakeListHost(), Mock.Of<IUserManager>(), gate, plugin.Core.Logger)
-            .CheckTitleAsync("movie", 603, SeerrParentalFilter.PolicyFor(user), default));
+            .CheckTitleAsync("movie", 603, SeerrParentalFilter.PolicyFor(user), user.Id, default));
         Assert.Equal(1, transport.Calls);
     }
 
@@ -358,7 +358,7 @@ public class IntegrationParentalEvidenceTests
             Assert.Equal(id == 605, result.VisibilityUnknown);
             Assert.Equal(id == 603, libraries.MaySeeAbsent(viewer, TitleKey.Parse(input.Key)!));
             Assert.Equal(id == 603, statuses.MayFollow(viewer, TitleKey.Parse(input.Key)!));
-            Assert.Equal(id == 605 ? null : id == 603, await lists.CheckTitleAsync("movie", id, SeerrParentalFilter.PolicyFor(user), default));
+            Assert.Equal(id == 605 ? null : id == 603, await lists.CheckTitleAsync("movie", id, SeerrParentalFilter.PolicyFor(user), user.Id, default));
         }
         var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.AcquireRequestsController(requests)
             { ControllerContext = new() { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() } };

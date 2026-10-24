@@ -16,6 +16,9 @@ def project_calls(source):
         # byte projection (images closed PR #936 drew, withheld; no title presentation).
         if match[1] in ('QuotaProjector', 'ListOrder', 'LegacyCollageProjection'):
             continue
+        # The native playlist rewriter consumes a typed native-item privacy context, not a provider resource.
+        if match[1] == 'GeneratedPlaylistPrivacy' and match[2] == 'Project':
+            continue
         depth, args, start = 1, [], match.end()
         for index in range(start, len(source)):
             char = source[index]
@@ -71,3 +74,8 @@ class PresentationResourceTests(unittest.TestCase):
         self.assertEqual([('caller', 'Project', ['Serialize(row, options)', 'literal'])],
                          list(project_calls('caller.Project(Serialize(row, options), "requests")')))
         self.assertEqual([], list(project_calls('// caller.Project(raw)\nQuotaProjector.Project(raw)')))
+        self.assertEqual([], list(project_calls('GeneratedPlaylistPrivacy.Project(context, playlist)')))
+        self.assertEqual([('GeneratedPlaylistPrivacy', 'ProjectResource', ['raw'])],
+                         list(project_calls('GeneratedPlaylistPrivacy.ProjectResource(raw)')))
+        self.assertEqual([('OtherPlaylistPrivacy', 'Project', ['context', 'playlist'])],
+                         list(project_calls('OtherPlaylistPrivacy.Project(context, playlist)')))

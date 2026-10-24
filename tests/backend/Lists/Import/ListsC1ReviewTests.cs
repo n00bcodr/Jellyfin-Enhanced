@@ -74,10 +74,10 @@ public class ListsC1ReviewTests
         using var transport = new IntegrationTransport((r, _) => Task.FromResult(IntegrationTransport.Response(
             r.RequestUri!.AbsolutePath.EndsWith("/season/1", StringComparison.Ordinal) ? Season : Show.Replace("\"episode_count\":8", "\"episode_count\":2", StringComparison.Ordinal))));
         using var cache = new TmdbResponseCache(transport, clock);
-        await cache.GetAsync("tv/1399", "?append_to_response=external_ids", "test", default);
+        await cache.GetListMetadataAsync("tv/1399", "?append_to_response=external_ids", "test", default, refresh: false);
         var oldest = clock.Now.UtcDateTime;
         clock.Now += TimeSpan.FromMinutes(5);
-        await cache.GetAsync("tv/1399/season/1", "", "test", default);
+        await cache.GetListMetadataAsync("tv/1399/season/1", "", "test", default, refresh: false);
         clock.Now = DateTimeOffset.UtcNow;
         var source = new TmdbListMetadataSource(cache, h.Plugin.Core.Logger);
         var p = new Placeholder { Kind = PlaceholderKinds.Season, TmdbId = 1399, SeasonNumber = 1 };

@@ -151,7 +151,7 @@ public class IntegrationParentalEvidenceReviewTests
         await r.Policy.PrepareVisibilityAsync(r.User.Id, new MutationInput { Key = kind + ":tmdb:603" }, default);
         Assert.True(r.Policy.Evaluate(r.User.Id, new MutationInput { Key = kind + ":tmdb:603" }).VisibilityUnknown);
         Assert.Null(await new ListAccessService(new FakeListHost(), Mock.Of<IUserManager>(), r.Gate, r.Arr.Plugin.Core.Logger)
-            .CheckTitleAsync(kind, 603, SeerrParentalFilter.PolicyFor(r.User), default));
+            .CheckTitleAsync(kind, 603, SeerrParentalFilter.PolicyFor(r.User), r.User.Id, default));
         Assert.False(r.Libraries.MaySeeAbsent(r.Viewer, TitleKey.Parse(kind + ":tmdb:603")!));
         Assert.Empty((await r.Discover.DiscoverAsync(r.Viewer, "trending", kind, 1, null, default))!.Results);
         Assert.Empty((await r.Discover.SearchAsync(r.Viewer, "family", 1, null, default))!.Results);
@@ -276,7 +276,7 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.False(await r.Gate.MaySeeAbsentAsync("movie", 603, r.User.Id.ToString("N"), default));
         Assert.False(r.Gate.AbsentVerdict("movie", 603, r.User.Id.ToString("N")));
         Assert.False(await new ListAccessService(new FakeListHost(), Mock.Of<IUserManager>(), r.Gate, r.Arr.Plugin.Core.Logger)
-            .CheckTitleAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), default));
+            .CheckTitleAsync("movie", 603, SeerrParentalFilter.PolicyFor(r.User), r.User.Id, default));
         var answer = await r.Read(); Assert.Equal(200, answer.Status);
         Assert.True(answer.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
     }

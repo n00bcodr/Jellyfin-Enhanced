@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(Timeout);
-                var response = await _tmdb.GetAsync(path, query, Key, timeout.Token, refresh: fresh).ConfigureAwait(false);
+                var response = await _tmdb.GetListMetadataAsync(path, query, Key, timeout.Token, refresh: fresh).ConfigureAwait(false);
                 if (!response.IsSuccess)
                 {
                     return null;

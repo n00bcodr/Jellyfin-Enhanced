@@ -386,13 +386,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return await shared.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Public list reconciliation has an explicit autonomous owner when it runs in the background.
+        /// Interactive list reads retain their authenticated effective viewer and existing admission.
+        /// Fresh public facts and pending reads remain free, including joins to a forced refresh.
+        /// </summary>
+        internal Task<TmdbResponse> GetListMetadataAsync(string apiPath, string query, string apiKey, CancellationToken ct, bool refresh)
+        {
+            if (Joined(apiKey, UpstreamUrl(apiPath, query), out var joined, skipCache: refresh))
+                return joined.WaitAsync(ct);
+            if (Services.MetadataAdmission.Current != null || NativeDetails.ViewerMetadataAdmission.EffectiveViewer != null)
+                return GetAsync(apiPath, query, apiKey, ct, refresh: refresh);
+            return AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.ListImport,
+                () => GetAsync(apiPath, query, apiKey, CancellationToken.None, refresh: refresh), ct).WaitAsync(ct);
+        }
+
         // A fresh cached answer or the upstream call in flight for this URL, if there is one.
-        private bool Joined(string apiKey, string upstreamUrl, out Task<TmdbResponse> joined)
+        private bool Joined(string apiKey, string upstreamUrl, out Task<TmdbResponse> joined, bool skipCache = false)
         {
             lock (_lock)
             {
                 var key = GetKeyHash(apiKey) + "|" + upstreamUrl;
-                if (TryGetFreshLocked(key, out var cached))
+                if (!skipCache && TryGetFreshLocked(key, out var cached))
                 {
                     joined = Task.FromResult(cached);
                     return true;

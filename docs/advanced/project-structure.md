@@ -898,7 +898,7 @@ An unowned JE raw read fails with 503 rather than creating external work.
 | Admission owner | Bound and purpose |
 |---|---|
 | `ViewerMetadataAdmission` | 8 outstanding per effective viewer; 8 running + 40 queued server-wide; cancellation ends only the waiter |
-| `AutonomousMetadataAdmission.ListImport` | 4 running server-wide; existing import/source pacing and final configuration gates retained |
+| `AutonomousMetadataAdmission.ListImport` | 4 running server-wide; background list reconciliation plus existing import/source pacing and final configuration gates retained |
 | `ListMetadataService.TmdbPosterAsync` | Existing 4-place list poster semaphore; same source client, bounded body and continuation behavior |
 | `AutonomousMetadataAdmission.Automation` | 2 running server-wide; background playback and rule-fact revalidation metadata |
 | `AutonomousMetadataAdmission.Legacy` | 4 running server-wide; retained non-JE metadata; never a fallback for an unowned JE viewer |
