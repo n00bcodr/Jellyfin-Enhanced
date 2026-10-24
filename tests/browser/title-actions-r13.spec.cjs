@@ -204,7 +204,9 @@ for (const version of ['12.2', '10.11.11']) {
         expect(await page.evaluate(() => location.hash)).toBe('#/search?query=matrix');
         server.command('Back');
         await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/home');
-        expect(await page.evaluate(() => window.backs)).toBe(2);
+        // The first command was consumed before the router's gate and took no router step (round 14); the second is
+        // the router's own, and it completes.
+        expect(await page.evaluate(() => window.backs)).toBe(1);
         expect(host.errors).toEqual([]);
       } finally { await server.close(); }
     });

@@ -111,13 +111,14 @@ for (const host of HOSTS) {
   });
 
   test(`R11-11 control: jellyfin-web ${host} with no JE surface open: Back still reaches the host router`, async t => {
-    const h = setup(t, { asks: false }); const input = hostInput(h, host, { tv: true });
+    // A router that can go back (the page has history); the gate itself is covered by the round-14 cells.
+    const h = setup(t, { asks: false }); const input = hostInput(h, host, { tv: true, canGoBack: true });
     h.key(h.document.body, 'Unidentified', { keyCode: 10009 }); await delivered();
     assert.equal(input.back, 1);
   });
 
   test(`R11-10/11: jellyfin-web ${host}: with a host dialog over More Info, TV Back is the host's (More Info stays)`, async t => {
-    const h = setup(t, { asks: false }); const input = hostInput(h, host, { tv: true });
+    const h = setup(t, { asks: false }); const input = hostInput(h, host, { tv: true, canGoBack: true });
     const info = await openInfo(h);
     await h.JE.jellyseerrUI.showQuotaErrorDialog({ status: 403, responseJSON: { code: 'quota_exceeded' } }, 'movie', h.JE.ownerOf(info));
     await delivered();

@@ -13,8 +13,7 @@
     const CARD_SLICE = 200;
     let cardPass = null;
     let cardFrame = 0;
-    // Host changes of a card's title (D46S2-R13-2): a count per card, so a press made before a change never acts after it.
-    const retitled = new WeakMap();
+    // The attributes a card's identity is read from (cardContext): on the card, or on its [data-tmdb-id] element.
     const IDENTITY = ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title'];
     const rows = new Map();
     const hosts = new Map();
@@ -76,21 +75,27 @@
      * The card's mount is the one it has now: recycled for another title (even back to this one) is another.
      */
     async function openCard(card, opener, expected = null) {
+        settleMutations();
         const c = cardContext(card); if (!c || !enabled()) return;
-        // A delayed opening (a long press, D46S2-R13-2) acts only for the mount it was made on: never a newer one.
+        // A delayed opening (a long press, D46S2-R13-2) acts only for the incarnation it was made on: never a newer one.
         if (!expected) mountCard(card);
         const mounted = cards.get(card);
-        if (!mounted || mounted.key !== c.key || (expected && (mounted !== expected || !expected.mount.current()))) return;
+        if (!mounted || mounted.key !== c.key || (expected && mounted !== expected)) return;
+        // The card's incarnation, captured once (D46S2-R14-3): the same immutable handle through admission, the entry
+        // reads and the sheet's publication; a removal or recycle meanwhile (even back to this title) ended it for good.
+        const mount = mounted.mount;
+        if (!mount.current()) return;
         // The OPENING (D46S2-R12-8): an offer of the card's stable mount, finished on every terminal path — rejected,
         // failed, superseded by a newer opening, or the sheet it showed closing. What the viewer submits from the sheet
         // belongs to the card's mount, not to this opening (it outlives the sheet).
-        const owner = A.generation(() => mounted.mount.current());
+        const owner = A.generation(() => mount.current());
         const newest = sheetOpening(owner);
+        const live = () => { settleMutations(); return owner.current(); };
         let shown = false;
         try {
-            if (!await A.admit(c, owner)) return;
+            if (!await A.admit(c, owner) || !live()) return;
             const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount: mounted.mount, onClose: () => A.finish(owner) });
+            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
         finally { if (!shown) A.finish(owner); }
     }
@@ -103,9 +108,14 @@
         const life = () => pass ? (pass.life || (pass.life = cardLife())) : cardLife();
         if (prior?.key === c.key && prior.button.parentNode === card) {
             card.querySelectorAll(':scope > .je-card-more').forEach(n => { if (n !== prior.button) n.remove(); });
-            // A card the host keeps and shows again (another route, then back): its mount is this route's now.
             const now = life();
-            if (prior.life !== now || prior.mount.ended()) prior.mount = cardMount(card, prior, now);
+            if (prior.life === now && !prior.mount.ended()) return;
+            // A card the host keeps and shows again (another route, then back; or put back after a removal): a NEW
+            // incarnation (D46S2-R14-3). The old record and its mount stay ended; nothing captured from them revives.
+            prior.mount.end();
+            const record = { key: c.key, button: prior.button, mount: null, life: null };
+            record.mount = cardMount(card, record, now);
+            cards.set(card, record); drawn.add(card);
             return;
         }
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
@@ -134,6 +144,8 @@
             },
             /** Seen ended (no check now). */
             ended: () => ended,
+            /** Ends it for good (the card was removed, recycled or re-titled: noteMutations). */
+            end() { ended = true; },
         };
     }
 
@@ -617,17 +629,37 @@
     function schedule(records) {
         if (records && !records.some(r => !ownClassChange(r) && (copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
             (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more'))))))) return;
-        if (records) noteRetitled(records);
         if (queued || disposed) return; queued = true; frame = requestAnimationFrame(scan);
     }
 
-    /** Counts the host's changes of a card's title in `records` (see retitled). */
-    function noteRetitled(records) {
+    /** The observer's callback: incarnations end first (every record), then a pass is queued for what changed. */
+    function observed(records) { noteMutations(records); schedule(records); }
+
+    /**
+     * Ends the incarnation of every drawn card `records` show removed (itself or an ancestor), or re-identified (an
+     * identity attribute changed, or an element carrying one was added or removed inside it) — D46S2-R14-3. Our own
+     * adapter nodes and every other change (classes, images, text) leave it alone.
+     */
+    function noteMutations(records) {
+        const endCard = card => { if (card) cards.get(card)?.mount.end(); };
         for (const r of records) {
-            if (r.type !== 'attributes' || !IDENTITY.includes(r.attributeName)) continue;
-            const card = r.target.closest?.(CARD);
-            if (card) retitled.set(card, (retitled.get(card) || 0) + 1);
+            if (r.type === 'attributes') { if (IDENTITY.includes(r.attributeName)) endCard(r.target.closest?.(CARD)); continue; }
+            if (r.type !== 'childList') continue;
+            for (const node of r.removedNodes) {
+                if (node.nodeType !== 1 || ours.has(node)) continue;
+                if (cards.has(node)) endCard(node);
+                else node.querySelectorAll?.(CARD).forEach(endCard);
+            }
+            const holder = r.target.nodeType === 1 ? r.target.closest?.(CARD) : null;
+            if (holder && [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !ours.has(n) && (n.matches('[data-tmdb-id], [data-id]') || n.querySelector('[data-tmdb-id], [data-id]'))))
+                endCard(holder);
         }
+    }
+
+    /** Takes the observer's pending records into account now (before a long press or an opening acts). */
+    function settleMutations() {
+        const pending = observer?.takeRecords();
+        if (pending?.length) observed(pending);
     }
 
     /** Stops a long press when scrolling, releasing or cancelling the pointer. */
@@ -636,7 +668,7 @@
     /** Starts host hooks after the bundle has initialized its existing feature owners. */
     function initialize() {
         if (started) return; started = true;
-        observer = new MutationObserver(schedule); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
+        observer = new MutationObserver(observed); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
         document.addEventListener('contextmenu', e => {
             const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card) || !JE.ownerOf(e)) return;
             e.preventDefault(); e.stopImmediatePropagation(); cancelTouch(); openCard(card);
@@ -650,16 +682,16 @@
             // back to this one; a change still pending included) or removed opens nothing.
             const owner = JE.ownerOf(e);
             if (!owner) return;
+            settleMutations();
             mountCard(card);
             const record = cards.get(card);
             if (!record) return;
-            const stamp = retitled.get(card) || 0;
             cancelTouch(); touch = { x: e.clientX, y: e.clientY, timer: setTimeout(() => {
                 cancelTouch();
                 if (!JE.effectOwner(owner, 'a long press')) return;
-                const pending = observer.takeRecords();
-                if (pending.length) schedule(pending);
-                if ((retitled.get(card) || 0) !== stamp || cards.get(card) !== record || !record.mount.current()) return;
+                // Changes still pending end the incarnation first (a removal, a recycle — even back to this title).
+                settleMutations();
+                if (cards.get(card) !== record || !record.mount.current()) return;
                 consumed = card; openCard(card, null, record);
             }, 550) };
         }, true);

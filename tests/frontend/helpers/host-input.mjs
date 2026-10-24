@@ -20,18 +20,40 @@ function inert() {
 
 /**
  * Loads the host's input modules for `host` into harness `h` and enables its keyboard navigation (as the app does at
- * start-up). `tv`: jellyfin-web's TV layout (Escape is Back there). Returns { back: the router's back() calls,
- * handleCommand, focusManager, gamepad(pad) } — gamepad() loads the gamepad-to-key chunk with `pad` as the only gamepad
+ * start-up). `tv`: jellyfin-web's TV layout (Escape is Back there). `canGoBack`: the router's availability — by default
+ * the real routers' own gate (12.2 and 10.11.11, read from their bundles: false on /home, /login and /selectserver while
+ * no `.dialogContainer` is in the document, else history.length > 1); a boolean forces it. `exit`: the app host supports
+ * Exit (inputManager's Back exits when the router cannot go back). `exposeRouter`: the router is published as
+ * `window.Emby.Page`, as both hosts' router module does (default true). Returns { back: the router's back() calls,
+ * exits, handleCommand, focusManager, gamepad(pad) } — gamepad() loads the gamepad-to-key chunk with `pad` as the only gamepad
  * (pad.buttons[i].pressed is read on each of the host's own 20 ms polls).
  */
-export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
+/**
+ * jellyfin-web's router as a real host publishes it: its router module runs at start-up, before any plugin script, and
+ * publishes a class instance (`window.Emby.Page=j`, 12.2 and 10.11.11) whose methods come from its prototype. Call it
+ * before Jellyfin Enhanced loads (setup's `beforeLoad`); a later {@link hostInput} supplies what the router does.
+ */
+export function publishRouterEarly(window) {
+  class AppRouter {}
+  for (const name of ['canGoBack', 'back', 'goHome', 'showSettings', 'showSearch', 'showFavorites', 'showGuide', 'showLiveTV', 'showRecordedTV', 'showNowPlaying'])
+    AppRouter.prototype[name] = function (...args) { return this.impl[name](...args); };
+  window.Emby = window.Emby || {};
+  window.Emby.Page = new AppRouter();
+  early.add(window.Emby.Page);
+}
+const early = new WeakSet();
+
+export function hostInput(h, host, { tv = false, canGoBack = null, exit = false, exposeRouter = true } = {}) {
   const { window } = h;
-  const calls = { back: 0, home: 0 };
+  const calls = { back: 0, home: 0, exit: 0 };
+  const START = ['/home', '/login', '/selectserver'];
+  const available = () => typeof canGoBack === 'boolean' ? canGoBack
+    : !(!window.document.querySelector('.dialogContainer') && START.includes(window.location.hash.replace(/^#!?/, '').split('?')[0] || '/')) && window.history.length > 1;
   // The router's back() as jellyfin-web's appRouter does it (12.2 and 10.11.11): one pending back at a time, settled
   // when its history step lands (the history's next change); a back() while one is pending waits on it, so a step
   // that never lands leaves every later Back stuck.
   let pending = null;
-  const appRouter = { canGoBack: () => canGoBack, goHome() { calls.home++; },
+  const appRouter = { canGoBack: () => available(), goHome() { calls.home++; },
     back() {
       calls.back++;
       if (pending) return pending;
@@ -42,6 +64,10 @@ export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
       return pending;
     },
     showSettings() {}, showSearch() {}, showFavorites() {}, showGuide() {}, showLiveTV() {}, showRecordedTV() {}, showNowPlaying() {} };
+  // A router published before Jellyfin Enhanced loaded (publishRouterEarly) is the one inputManager asks; it acts as above.
+  const published = early.has(window.Emby?.Page) ? window.Emby.Page : null;
+  if (published) published.impl = appRouter;
+  const router = published || appRouter;
   const dom = {
     addEventListener: (target, type, handler, options) => target.addEventListener(type, handler, options),
     removeEventListener: (target, type, handler, options) => target.removeEventListener(type, handler, options),
@@ -51,8 +77,8 @@ export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
     },
   };
   const stubs = {
-    22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } },
-    70267: { appRouter },
+    22622: { g: { supports: feature => exit && feature === 'Exit', exit() { calls.exit++; }, getWindowState: () => 'Normal' } },
+    70267: { appRouter: router },
     97339: { Y: { Exit: 'Exit' } },
     36300: { Ay: dom, default: dom },
     34789: { A: { tv, edgeUwp: false, hisense: false, vidaa: false }, default: { tv } },
@@ -85,8 +111,12 @@ export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
   const keyboard = require(74550);
   (keyboard.Ay || keyboard.default).enable();
   const input = require(38490);
+  // The router module publishes its router as window.Emby.Page (both hosts: `window.Emby=window.Emby||{},window.Emby.Page=j`).
+  if (exposeRouter && !published) { window.Emby = window.Emby || {}; window.Emby.Page = appRouter; }
   return {
     get back() { return calls.back; },
+    get exits() { return calls.exit; },
+    appRouter: router,
     handleCommand: (...args) => (input.Ay || input.default).handleCommand(...args),
     /**
      * Another Jellyfin client's remote control (Q-D46S2FIX12-1): the server's WebSocket, as the host reads it. A

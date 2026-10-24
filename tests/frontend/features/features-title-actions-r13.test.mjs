@@ -513,7 +513,8 @@ for (const version of HOSTS) {
     assert.equal(h.window.location.hash, '#/search?query=matrix');
     await remote.command('Back'); await wait(30); await delivered();
     assert.equal(h.window.location.hash, '#/home');
-    assert.equal(input.back, 3);
+    // The two consumed commands took no router step (round 14: decided before the router's gate); the third is the router's.
+    assert.equal(input.back, 1);
   });
 
   test(`R13-7: remote Back closes a nested request form (its own history entry) and leaves More Info open (${version})`, async t => {

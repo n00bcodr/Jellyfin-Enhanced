@@ -23,14 +23,18 @@ const HOST_INPUT = Object.fromEntries(['12.2', '10.11.11'].map(host => [host, {
   gamepad: read(`tests/fixtures/host-input/${host}/gamepadtokey.chunk.js`),
 }]));
 
-/** The mock host page with the production modules, the title actions started and two search cards (603, 604). */
-async function boot(page, { layout = 'desktop' } = {}) {
+/**
+ * The mock host page with the production modules, the title actions started and two search cards (603, 604). `home`:
+ * the page is Home (the search page an entry behind it), as the modules load and the cards are drawn.
+ */
+async function boot(page, { layout = 'desktop', home = false } = {}) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/*', route => route.request().isNavigationRequest()
     ? route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html class="layout-${layout}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><div id="page" class="page mainAnimatedPage"><button id="pagePlay">Page play</button><div class="mainDetailButtons"></div></div></body></html>` })
     : route.abort());
   await page.goto('http://title-actions.invalid/web/index.html#/search?query=matrix');
+  if (home) await page.evaluate(() => history.pushState(null, '', '#/home'));
   await page.evaluate(en => {
     const movie = id => ({ id, title: 'Movie ' + id, mediaInfo: { id: 70 + id % 10, status: 1, status4k: 1 } });
     window.sent = [];
@@ -98,10 +102,17 @@ const press = async (page, locator, isMobile) => (isMobile ? locator.tap() : loc
  * GeneralCommand into inputManager.handleCommand. `history`: its router's back() goes back in the browser's history
  * (jellyfin-web's appRouter does), else it only counts (window.backs). Resolves once the socket is open.
  */
-async function loadHost(page, version, { tv = false, remote = null, history = false } = {}) {
-  await page.evaluate(async ({ modules, version, tv, remote, history }) => {
-    // `history`: the router goes back through the browser's history, as jellyfin-web's appRouter.back() does.
-    const stubs = { 22622: { g: { supports: () => false, exit() {}, getWindowState: () => 'Normal' } }, 70267: { appRouter: { canGoBack: () => true, back() {
+async function loadHost(page, version, { tv = false, remote = null, history = false, exit = false } = {}) {
+  await page.evaluate(async ({ modules, version, tv, remote, history, exit }) => {
+    // `history`: the router goes back through the browser's history, as jellyfin-web's appRouter.back() does, and its
+    // availability is the real routers' gate (false on /home, /login, /selectserver without a .dialogContainer, else
+    // history.length > 1); without it the router only counts and can always go back. `exit`: the app host supports Exit
+    // (counted in window.exits). The router is published as window.Emby.Page, as both hosts' router module does.
+    const start = ['/home', '/login', '/selectserver'];
+    window.exits = 0;
+    const stubs = { 22622: { g: { supports: feature => exit && feature === 'Exit', exit() { window.exits++; }, getWindowState: () => 'Normal' } }, 70267: { appRouter: {
+      canGoBack: () => !history || (!(!document.querySelector('.dialogContainer') && start.includes(location.hash.replace(/^#!?/, '').split('?')[0] || '/')) && window.history.length > 1),
+      back() {
       // jellyfin-web's appRouter.back(): one pending back at a time, settled when its history step lands.
       window.backs = (window.backs || 0) + 1;
       if (!history) return undefined;
@@ -118,6 +129,7 @@ async function loadHost(page, version, { tv = false, remote = null, history = fa
     require.d = (t, g) => { for (const k of Object.keys(g)) if (!(k in t)) Object.defineProperty(t, k, { enumerable: true, get: g[k] }); };
     require.n = m => () => m; require.o = (o, k) => Object.prototype.hasOwnProperty.call(o, k); require.e = () => Promise.resolve();
     for (const text of modules) { const box = new Function(`const module = {}; ${text.replace(/^\/\/.*\n/, '')}\n return module.exports;`)(); factories[box.id] = box.module; }
+    window.Emby = window.Emby || {}; window.Emby.Page = stubs[70267].appRouter;
     const keyboard = require(74550); (keyboard.Ay || keyboard.default).enable();
     const input = require(38490);
     window.hostInput = (input.Ay || input.default);
@@ -138,7 +150,7 @@ async function loadHost(page, version, { tv = false, remote = null, history = fa
     (notifications.D || notifications.initializeServerConnections)();
     window.remoteMessages = 0;
     socket.addEventListener('message', () => { window.remoteMessages++; });
-  }, { modules: HOST_INPUT[version].modules, version, tv, remote, history });
+  }, { modules: HOST_INPUT[version].modules, version, tv, remote, history, exit });
 }
 
 /** A loopback WebSocket server (this process): send(command) delivers GeneralCommand `command` to every client. */

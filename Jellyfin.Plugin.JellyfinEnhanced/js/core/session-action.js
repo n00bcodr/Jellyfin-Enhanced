@@ -463,10 +463,13 @@
      * bound to `source` and to this one dispatch (D46S2-R12-2): once it is over, the event names no one, here or on any
      * other node it is dispatched on again.
      */
-    JE.press = function (source, owner) {
+    JE.press = function (source, owner, { origin } = {}) {
         if (!source || source.disabled) return false;
         const resolved = JE.effectOwner(owner, 'press');
         if (!resolved) return false;
+        // Where the press started (D46S2-R14-1): the surface it was made in (`origin`, given by a caller whose control
+        // is in a sheet that closes first; else the source's own), kept for its owner before anything it starts closes.
+        originate(resolved, origin === undefined ? surfaceRootOf(source) : origin);
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
         const press = { owner: resolved, target: source, active: true };
         presses.set(event, press);
@@ -881,6 +884,54 @@
         history.go = historyStep(history.go, args => Number(args[0]) < 0);
     }
 
+    // Remote Back before the router's own gate (D46S2-R14-2): jellyfin-web's inputManager decides
+    // `appRouter.canGoBack() ? appRouter.back() : Exit` before any history step, and its router cannot go back on its
+    // start pages (Home) while no host dialog is open, so the history step above never comes there. Both hosts' router
+    // module publishes the router inputManager asks as window.Emby.Page (`window.Emby.Page=j`, 12.2 and 10.11.11), so
+    // the router is adapted where it is published: inside another client's remote Back with a JE surface on top,
+    // canGoBack() consumes the command (the top surface is dismissed once, as Back dismisses it; a form with a history
+    // entry of its own takes that entry back itself) and answers true, so the app does not exit, and the router's back()
+    // for that command takes no step (nothing waits on one). Every other call — the header's Back, a page's, a script's,
+    // a command with a host dialog on top or no JE surface — is the router's own, unchanged.
+    const consumedBacks = new WeakSet();
+    function consumeRemoteBack(message) {
+        if (consumedBacks.has(message)) return true;
+        if (handledBacks.has(message)) return false;
+        const top = topmost();
+        if (!top || top.host) return false;
+        consumedBacks.add(message);
+        handledBacks.add(message);
+        dismissing = true;
+        try { if (top.dismiss) top.dismiss(message); else top.close(); } finally { dismissing = false; }
+        return true;
+    }
+    const adaptedRouters = new WeakSet();
+    function adaptRouter(router) {
+        if (!router || typeof router !== 'object' || adaptedRouters.has(router)) return;
+        const canGoBack = router.canGoBack;
+        const back = router.back;
+        if (typeof canGoBack !== 'function' || typeof back !== 'function') return;
+        adaptedRouters.add(router);
+        router.canGoBack = function (...args) {
+            const message = remoteCommand('Back');
+            if (message && consumeRemoteBack(message)) return true;
+            return canGoBack.apply(this, args);
+        };
+        router.back = function (...args) {
+            const message = remoteCommand('Back');
+            if (message && consumedBacks.has(message)) return Promise.resolve();
+            return back.apply(this, args);
+        };
+    }
+    (function watchRouter() {
+        const emby = window.Emby = window.Emby || {};
+        const published = Object.getOwnPropertyDescriptor(emby, 'Page');
+        if (published && !published.configurable) { adaptRouter(emby.Page); return; }
+        let page = emby.Page;
+        adaptRouter(page);
+        Object.defineProperty(emby, 'Page', { configurable: true, enumerable: true, get: () => page, set: value => { page = value; adaptRouter(value); } });
+    })();
+
     /** True while `root` is the topmost open surface: Escape and Back act on it only (D46S2 audit S2). */
     JE.isTopmostSurface = root => topmost()?.root === root;
     /**
@@ -889,15 +940,42 @@
      * keys and accessibility, and goes with it. Null when the owner has none open (the page's own feedback).
      */
     JE.surfaceOf = owner => {
-        const token = ownerOf(owner);
-        const surfaces = token ? scopes.get(token) : null;
-        let newest = null;
-        for (const entry of surfaces || []) {
-            if (!entry.root || entry.closed || entry.modal === false || !entry.root.isConnected) continue;
-            if (!newest || stack.indexOf(entry) > stack.indexOf(newest)) newest = entry;
+        // The owner's own open modal surface (newest), else the surface its press started in (D46S2-R14-1: a submitted
+        // operation's own confirmation has closed by the time it answers; the window it was pressed in is its origin),
+        // walking up its ancestry (a publication's operation). An origin that has closed names none: the feedback is
+        // the page's, never another window's.
+        for (let token = ownerOf(owner); token; token = records.get(token)?.parent || null) {
+            let newest = null;
+            for (const entry of scopes.get(token) || []) {
+                if (!entry.root || entry.closed || entry.modal === false || !entry.root.isConnected) continue;
+                if (!newest || stack.indexOf(entry) > stack.indexOf(newest)) newest = entry;
+            }
+            if (newest) return newest.root;
+            if (origins.has(token)) return openOrigin(origins.get(token));
         }
-        return newest?.root || null;
+        return null;
     };
+    /** The registered surface root `node` is in, while that surface is open (null otherwise). */
+    function surfaceRootOf(node) {
+        for (let n = node; n && n.nodeType; n = n.parentNode || n.host) if (owners.has(n)) return n._jeClosed ? null : n;
+        return null;
+    }
+    JE.surfaceRootOf = surfaceRootOf;
+    // Origins (D46S2-R14-1): the surface each submitted owner's press started in, separate from the surfaces the owner
+    // opens itself. Weakly held: it never keeps an owner or a window alive.
+    const origins = new WeakMap();
+    /** Records `root` (an open registered surface, or null for the page) as `owner`'s origin, once. */
+    function originate(owner, root) {
+        if (!owner || origins.has(owner)) return;
+        origins.set(owner, root && owners.has(root) && !root._jeClosed ? root : null);
+    }
+    JE.originate = (owner, root) => { const token = ownerOf(owner); if (token) originate(token, root); };
+    /** `root` while it is still an open surface of a current owner on the stack, else null. */
+    function openOrigin(root) {
+        if (!root || root._jeClosed || !root.isConnected) return null;
+        const entry = stack.find(item => item.root === root && !item.closed);
+        return entry && isCurrent(entry.owner) ? root : null;
+    }
     /** True once `root` (a surface) has closed: it is terminal, no input reaches it. */
     JE.surfaceClosed = root => !!root?._jeClosed;
 

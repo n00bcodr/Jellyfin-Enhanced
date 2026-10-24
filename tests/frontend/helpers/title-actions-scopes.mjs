@@ -16,7 +16,7 @@ const MOVIE = { id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 1, st
 export const SHOW = { id: 1399, name: 'Game of Thrones', mediaInfo: { id: 78, status: 1, status4k: 1 }, externalIds: { tvdbId: 121361 },
   seasons: [{ seasonNumber: 1, episodeCount: 10, airDate: '2011-04-17', posterPath: '/p.jpg' }] };
 
-export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false, stage = 'notHere', plants = {} } = {}) {
+export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false, stage = 'notHere', plants = {}, beforeLoad = null } = {}) {
   let user = 'user-a';
   const requests = []; const gates = []; const toasts = []; const feeds = []; const overrides = []; const alerts = [];
   async function answer(method, path, body) {
@@ -83,6 +83,8 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
     setTimeout(() => h.document.body.append(container), 0);
   } };
   t.after(() => { h.JE.titleActions?.dispose?.(); h.JE.arrManage?.close?.(); h.JE.arrAskSheet?.close?.(); h.JE.jellyseerrMoreInfo?.close?.(); h.close(); });
+  // What the host did before any Jellyfin Enhanced script ran (its router's publication, for example).
+  beforeLoad?.(h);
   // Planted constructs (D46S2-R9): a module named in `plants` loads through its transform, now or whenever a test loads it.
   const load = h.load;
   h.load = m => load(m, plants[m]);

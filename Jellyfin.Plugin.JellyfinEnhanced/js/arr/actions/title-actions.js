@@ -41,7 +41,7 @@
     let lifecycle = 0;
     const live = new Set();
     /** Ends every operation started so far (a user switch, the feature going off, disposal). */
-    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
+    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); JE.endScopes?.(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
     /**
      * Releases every operation that has ended (D46S2-R11-13): each route change and each reconciliation pass (once per
@@ -140,11 +140,20 @@
     /**
      * Presses an owner's control for a submitted operation: the click carries it (JE.press), and owners whose write
      * follows a confirmation or an await (Spoiler Guard, Hide, Report) take it from their event and recheck it right
-     * before writing.
+     * before writing. `origin`: the surface the press started in (default: the one the source is in), kept for the
+     * operation's feedback (D46S2-R14-1).
+     *
+     * One bounded dispatch lifetime (D46S2-R14-4): the press is one synchronous dispatch (JE.press returns once every
+     * listener has run), so the registry's strong hold on the operation ends with it — `release`, never `end`. What the
+     * press handed on keeps the operation by its own reference and lifetime: a confirmation is a surface registered for
+     * it (core scopes), a write carries its binding (checked at the send), a handler's continuation holds what it
+     * captured (JE.captureSubmitted); each still ends with the operation's session, route, mount and the bar's
+     * lifecycle, which do not depend on the registry.
      */
-    function dispatch(source, operation) {
+    function dispatch(source, operation, origin) {
         pressing.add(source);
-        try { return JE.press(source, operation); } finally { pressing.delete(source); }
+        try { return JE.press(source, operation, origin === undefined ? undefined : { origin }); }
+        finally { pressing.delete(source); release(operation); }
     }
 
     /**
@@ -181,13 +190,17 @@
      * once its run has settled (D46S2-R12-8).
      */
     async function invoke(c, entry, opener, operation = generation()) {
+        // Its origin (D46S2-R14-1): the surface its opener is in (More Info for its row and its More sheet), taken before
+        // the offer closes, so its feedback never lands in the closing sheet or a confirmation.
+        const origin = opener ? JE.surfaceRootOf?.(opener) ?? null : undefined;
+        if (origin !== undefined) JE.originate?.(operation, origin);
         try {
             if (!operation.current() || entry.disabled) return false;
             if (entry.source) {
                 if (c?.absent && !await admit(c, operation)) return false;
                 if (!operation.current() || !pressable(entry)) return false;
                 entry.beforeRun?.();
-                dispatch(entry.source, operation);
+                dispatch(entry.source, operation, origin);
                 return true;
             }
             if (!await admit(c, operation) || !operation.current()) return false;
