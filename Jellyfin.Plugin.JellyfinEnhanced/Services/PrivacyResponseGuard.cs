@@ -638,7 +638,7 @@ public sealed class PrivacyResponseGuard : IDisposable
 }
 
 /// <summary>
-/// The commit at the end of every MVC answer, outside every resource filter including legacy collage projection. Only
+/// The commit at the end of every protected MVC answer, outside every resource filter including legacy collage projection. Only
 /// this owner's outermost held body starts the transport, after the result and every inner projection completed. Local
 /// guarded results may hand their bytes to a projection, but cannot mark that handoff as an HTTP commit.
 /// </summary>
@@ -651,10 +651,13 @@ public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IAlwaysRunResult
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         var http = context.HttpContext;
-        // An unclassified host action can still return title-bearing DTOs that the final privacy gate protects.
-        // Install its transport boundary before every inner projection, even when it has no parental admission.
-        PrivacyResponseGuard.Of(http).OwnTransport();
-        if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
+        // Unknown/unclassified host actions can return title DTOs: they still need an outer commit owner. Only the
+        // host's explicit raw-media contract may stream without one, decided here before content type or body exists.
+        // An existing guard or privacy/evidence admission always takes precedence over the streaming exception.
+        var owns = PrivacyResponseGuard.Owns(context.ActionDescriptor);
+        if (owns || PrivacyResponseGuard.Find(http) != null || !MediaResponseContract.Streams(context.ActionDescriptor))
+            PrivacyResponseGuard.Of(http).OwnTransport();
+        if (owns)
         {
             // Admission precedes evidence reads; the token spans all remaining host callbacks and transport completion.
             PrivacyResponseGuard.AdmitAction(http, context.ActionDescriptor, http.RequestServices.GetService<SeerrParentalFilter>(), UserHelper.GetCurrentUserId(http.User));

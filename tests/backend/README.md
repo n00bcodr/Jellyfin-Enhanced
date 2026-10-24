@@ -16,3 +16,39 @@ Every cache the plugin keeps (a dictionary, set, list, queue, MemoryCache, Condi
 Reuse fixtures in `Support/` for disposable storage, the plugin singleton and controlled HTTP. Tests changing the singleton must use `[Collection("Plugin singleton")]`. Keep single-feature fakes with their tests. Assert public responses, persistence and observable side effects; do not turn a production implementation into its own expected-value oracle.
 
 Real Jellyfin installations belong to `../host/`, not this project. History replay manifests select these same tests rather than maintaining duplicate implementations.
+
+## Response ownership and media streaming
+
+`PrivacyCommitFilter` attaches the outer HTTP commit owner before resource projections. Unknown routes retain that
+owner: JSON, HTML, native title DTOs, lists, status and classified images cannot emit bytes before final validation.
+An existing response guard or a route admitted by `PrivacyResponseGuard.Owns` also retains ownership.
+
+`Services/MediaResponseContract.cs` lists the only exception: actual `Jellyfin.Api` controller methods delivering raw
+playback bytes or transport playlists. Controller/action strings, binary MIME types and body contents cannot select
+the exception. There is no extra buffer or size threshold on these responses; transport writes and flushes remain
+progressive. Host authentication, parental admission to playback and range handling remain the host's responsibility.
+
+| Host controller | Streaming actions | Reason |
+| --- | --- | --- |
+| Audio, Videos | GetAudioStream/GetVideoStream and their ByContainer variants (4) | Raw audio/video, including transcode output and byte ranges |
+| UniversalAudio | GetUniversalAudioStream (1) | Raw audio or host redirect |
+| DynamicHls | GetLiveHlsStream, GetMasterHlsAudioPlaylist/GetMasterHlsVideoPlaylist, GetVariantHlsAudioPlaylist/GetVariantHlsVideoPlaylist, GetHlsAudioSegment/GetHlsVideoSegment (7) | Playback manifests and media segments |
+| HlsSegment | GetHlsAudioSegmentLegacy, GetHlsPlaylistLegacy, GetHlsVideoSegmentLegacy (3) | Legacy playback manifests and segments |
+| LiveTv | GetLiveRecordingFile, GetLiveStreamFile (2) | Live/recorded video bytes |
+| Subtitle | GetRemoteSubtitles, GetSubtitle, GetSubtitleWithTicks, GetSubtitlePlaylist (4) | Subtitle bytes and transport manifest |
+| All other host actions and every JE action | Owned | Protected unless explicitly proven to be raw playback; artwork/trickplay images, title metadata and unknown routes stay conservative |
+
+`PrivacyMediaStreamingTests` uses deterministic transport ordering and a counting sink. Its 200 MiB cases measure
+the largest outstanding byte count after every write and bound allocations while reusing one input block. It also
+executes MVC file/stream/range and pipe writers through the legacy collage wrapper. Metadata controls change a
+privacy dependency before completion and require zero transport bytes and a withheld response, including when the
+metadata declares a video MIME type.
+
+The authenticated non-seekable `FileStreamResult` controls retain the round-8 reviewer's producer shape, with both
+ordinary flush and explicit `StartAsync`. An awaitable flush barrier checks server transport start and then reads the
+client's four-byte prefix while the producer remains open; the assertion uses no sleep or delay race.
+
+`MediaResponseContractArchitectureTests` checks both directions against the pinned host assembly's independent
+audio/video/playlist annotations and subtitle file declarations. Its planted controls reject a media action classified
+as metadata and a metadata action classified as media. A host upgrade or a new media action must update and review
+the explicit contract, rather than broadening it by route prefixes, file extensions or content sniffing.

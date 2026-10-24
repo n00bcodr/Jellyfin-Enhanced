@@ -1459,6 +1459,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MediaResponseContract.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
       "category": "Services"
     },
@@ -11729,7 +11733,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 733,
+    "files": 734,
     "routes": 311,
     "configuration_properties": 661,
     "storage_references": 106,
