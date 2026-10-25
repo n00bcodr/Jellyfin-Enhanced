@@ -84,7 +84,8 @@
             populateAdvancedOptions(modalElement, data, 'movie', is4k);
         } catch (error) {
             console.error(`${logPrefix} Failed to load advanced options:`, error);
-            JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
+            // Said only while the form's owner is current (D46S2-R11-8).
+            if (JE.captureSubmitted(owner).current()) JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
         }
 
 
@@ -104,6 +105,8 @@
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { fetchCollectionDetails, requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
         const submitted = JE.captureSubmitted(options?.operation);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening.
+        if (!submitted.current()) return;
         const newest = collectionOpening(submitted);
 
         // Fetch collection details

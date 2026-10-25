@@ -45,7 +45,10 @@ for(const method of ['GET','POST','DELETE'])for(const mode of ['both','server','
  h.JE.core.api.manager.CONFIG.retry.baseDelayMs=1;
  const pending=h.JE.core.api.plugin('/retry',{method});const outcome=pending.then(v=>({v}),e=>({e}));
  h.switchUser(mode);first.resolve(jsonResponse({},503));const result=await outcome;
- assert.equal(result.e?.name,'AbortError');assert.equal(sent.length,1,'only the original A request reaches transport');
+ assert.equal(sent.length,1,'only the original A request reaches transport');
+ // A read is aborted; a sent write keeps what happened to it (D46S2-R12-4): sent, answered 503, never "unsent".
+ if(method==='GET')assert.equal(result.e?.name,'AbortError');
+ else {assert.equal(result.e?.status,503);assert.equal(result.e?.jeSent,true);assert.deepEqual({...h.JE.core.api.writeOutcome(result.e)},{outcome:'failed',sent:true});}
 });
 /** Finds raw mutating calls, treating dynamic methods/options as potential writes. */
 function nonCoreWrites(source,file) {
@@ -149,10 +152,12 @@ for(const mode of ['identity','server','token'])test(`unobserved ${mode} transit
  assert.equal((await h.JE.core.api.plugin('/private',{cacheKey:'private'})).call,1);
  h.switchUser(mode);assert.equal((await h.JE.core.api.plugin('/private',{cacheKey:'private'})).call,2);
 });
-for(const responseMode of ['json','status'])test(`${responseMode} rejected body under a stale session is AbortError`,async t=>{
+for(const responseMode of ['json','status'])test(`${responseMode} rejected body of a sent write under a stale session stays sent (no answer)`,async t=>{
  const body=deferred(),started=deferred();const h=setup(t,async()=>({ok:true,status:200,text(){started.resolve();return body.promise;}}));
  const outcome=h.JE.core.api.plugin('/body-error',{responseMode,method:'POST',skipRetry:true}).then(value=>({value}),error=>({error}));
- await started.promise;h.switchUser();body.reject(new TypeError('Failed to fetch'));assert.equal((await outcome).error?.name,'AbortError');
+ await started.promise;h.switchUser();body.reject(new TypeError('Failed to fetch'));
+ // A sent write whose answer was lost: sent, with no answer (never "unsent", never a fresh AbortError: D46S2-R12-4).
+ const {error}=await outcome;assert.equal(error?.jeSent,true);assert.deepEqual({...h.JE.core.api.writeOutcome(error)},{outcome:'failed',sent:true});
 });
 test('public authHeaders keeps its no-argument contract for the read-only change feed',t=>{
  const h=setup(t,async()=>jsonResponse({}));assert.equal(h.JE.core.api.authHeaders()['X-Emby-Token'],'token-a');

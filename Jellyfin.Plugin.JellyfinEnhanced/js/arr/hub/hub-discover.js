@@ -301,6 +301,9 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             const title = { key: card.key, kind: series ? 'series' : 'movie', name: card.title, year: card.year ?? null, poster: card.poster ?? null };
             if (series && Array.isArray(card.mineSeasons)) title.askedSeasons = card.mineSeasons.slice();
             const operation = JE.ownerOf(e);
+            // A press with no owner (a script's click) asks for nothing (D46S2-R11-1).
+            if (!operation) return;
+            const submitted = JE.captureSubmitted(operation);
             const options = left.variant ? { opener: button, variant: left.variant, operation } : { opener: button, operation };
             button.setAttribute('aria-busy', 'true');
             if (!series && !words) text.textContent = tr('arr_ask_asking');
@@ -310,15 +313,16 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
                 if (series || words) result = await sheet.open(title, options);
                 else if (typeof sheet?.openOrAsk === 'function') result = await sheet.openOrAsk(title, options);
                 else {
-                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(card.key));
+                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(card.key), { bound: submitted.bound() });
                     if (!result.stale && started === epoch()) {
                         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('movie') : null;
-                        JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
+                        // The answer is a page effect (D46S2-R11-8): said only while the press's owner is current.
+                        if (submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
                     }
                 }
             } catch (err) {
                 result = { ok: false, state: 'failed' };
-                if (started === epoch()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
+                if (started === epoch() && submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
             }
             if (result?.stale || started !== epoch()) return;
             if (applyResult(card, result)) {

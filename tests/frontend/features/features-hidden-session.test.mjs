@@ -33,14 +33,14 @@ test(`${host} confirmation is dismissed and cannot write after ${mode} changes`,
   await h.viewerPress(button);
   const dialog=h.document.querySelector('.je-hide-confirm-overlay');
   assert.ok(dialog);const confirm=dialog.querySelector('.je-hide-confirm-hide');
-  h.switchUser(mode);confirm.click();await tick();
+  h.switchUser(mode);h.click(confirm);await tick();
   assert.equal(h.writes.length,0,'neither outgoing nor incoming viewer receives a write');
   assert.equal(dialog.isConnected,false,'title-bearing dialog closes');
 });
 
 test('Undo captured before a user switch cannot unhide for the incoming viewer',async t=>{
   const h=setup(t);h.api.showUndoToast('Private title','movie:tmdb:42');
-  const undo=h.document.querySelector('.je-undo-btn');h.switchUser();undo.click();await tick();
+  const undo=h.document.querySelector('.je-undo-btn');h.switchUser();h.click(undo);await tick();
   assert.equal(h.writes.length,0);assert.equal(h.document.querySelector('.je-undo-toast'),null);
 });
 
@@ -48,7 +48,7 @@ test('manager unhide confirmation cannot call a deferred write after a user swit
   const h=setup(t);h.load('enhanced/hiddencontent/hidden-content-page-state.js');
   h.JE.internals.hiddenContentPage.showUnhideConfirmation('Unhide?',()=>h.api.unhideItem('movie:tmdb:42'),'Private title');
   const dialog=h.document.querySelector('.je-hide-confirm-overlay');const confirm=dialog.querySelector('.je-hide-confirm-hide');
-  h.switchUser();confirm.click();await tick();
+  h.switchUser();h.click(confirm);await tick();
   assert.equal(h.writes.length,0);assert.equal(dialog.isConnected,false);
 });
 
@@ -57,7 +57,7 @@ for(const detail of [false,true]) test(`provider Spoiler Guard confirmation cann
   Object.assign(h.JE.internals.spoilerGuard,{isTmdbEnabled:()=>true,whenLoaded:async()=>{},confirmDisableSpoiler:()=>pending.promise,
     disableForTmdb:async()=>h.writes.push({spoiler:true})});
   const button=h.JE.internals.spoilerGuard.buildSeerrToggle({id:42,title:'Private title'},'movie',{detail});
-  h.document.body.append(button);button.click();h.switchUser();pending.resolve(true);await tick();
+  h.document.body.append(button);h.click(button);h.switchUser();pending.resolve(true);await tick();
   assert.equal(h.writes.length,0);
 });
 
@@ -99,7 +99,7 @@ for(const kind of ['movie','series','collection']) test(`native ${kind} guard co
     disableForMovie:async()=>h.writes.push({kind}),disableForSeries:async()=>h.writes.push({kind}),disableForCollection:async()=>h.writes.push({kind})});
   h.document.body.innerHTML='<div id="itemDetailPage"><div class="detailButtons"></div></div>';
   h.JE.internals.spoilerGuard.addSpoilerBlurButton('real',h.document.querySelector('#itemDetailPage'),kind);
-  h.document.querySelector('button').click();h.switchUser();pending.resolve(true);await tick();
+  h.click(h.document.querySelector('button'));h.switchUser();pending.resolve(true);await tick();
   assert.equal(h.writes.length,0);
 });
 
@@ -109,7 +109,7 @@ test('guard dialog is dismissed and cannot snooze or confirm across a session ch
   const result=h.JE.internals.spoilerGuard.confirmDisableSpoiler(h.NATIVE);await tick();
   const dialog=h.document.querySelector('.je-spoiler-confirm-dialog');assert.ok(dialog);
   dialog.querySelector('input').checked=true;const confirm=dialog.querySelector('.je-spoiler-confirm-accept');
-  h.switchUser();confirm.click();assert.equal(await result,false);assert.equal(dialog.isConnected,false);assert.equal(h.writes.length,0);
+  h.switchUser();h.click(confirm);assert.equal(await result,false);assert.equal(dialog.isConnected,false);assert.equal(h.writes.length,0);
 });
 
 test('guard preference loading cannot resume a previous viewer gesture',async t=>{

@@ -122,7 +122,8 @@ const card = (h, id) => h.document.querySelector(`.je-sheet-card[data-choice="${
 const costText = (h, id) => card(h, id).querySelector('.je-sheet-card-cost').textContent;
 // The viewer's click: a trusted event, as the browser dispatches it (native owners are minted only from those).
 const click = (h, node) => h.trusted(node, new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-const key = (h, k, shift = false) => (h.document.activeElement || h.document.body).dispatchEvent(new h.window.KeyboardEvent('keydown', { key: k, shiftKey: shift, bubbles: true, cancelable: true }));
+// The viewer's key (a script's key event is no one's: D46S2-R12-3).
+const key = (h, k, shift = false) => h.key(h.document.activeElement || h.document.body, k, { shiftKey: shift });
 
 const SERIES = {
   key: 'tv:tvdb:393199', kind: 'series', name: 'Andor', year: 2022, poster: '/andor.jpg',
@@ -266,7 +267,7 @@ test('next season, future and the pickers send the scope the card names', async 
   assert.equal(asks.length, before);
   assert.equal(h.document.querySelector('.je-sheet-message').textContent, 'Choose at least one first.');
   boxes[2].checked = true;
-  boxes[2].dispatchEvent(new h.window.Event('change', { bubbles: true }));
+h.trusted(boxes[2], new h.window.Event('change', { bubbles: true }));
   click(h, primary(h));
   await pending;
   assert.deepEqual([...asks[asks.length - 1].seasons], [3]);

@@ -91,7 +91,7 @@ test('control: a Guard toggle for a current owner announces, strips its own page
   h.page.id = 'itemDetailPage'; h.page.insertAdjacentHTML('afterbegin', '<h1 class="itemName">Old movie</h1><section class="tmdb-reviews-section">Reviews</section>');
   const elsewhere = h.document.createElement('section'); elsewhere.className = 'tmdb-reviews-section'; h.document.body.prepend(elsewhere);
   sg.addSpoilerBlurButton('lib1', h.page, 'Movie');
-  h.page.querySelector('.je-spoiler-blur-btn').click(); await delivered(); await wait(20); await delivered();
+  h.click(h.page.querySelector('.je-spoiler-blur-btn')); await delivered(); await wait(20); await delivered();
   assert.equal(h.sent('POST', '/spoiler-blur/movies/lib1').length, 1);
   assert.ok(h.toasts.includes('spoiler_blur_enabled_movie_toast'));
   assert.equal(h.page.querySelector('.tmdb-reviews-section'), null, 'its page\'s reviews go');
@@ -103,7 +103,7 @@ test('control: a viewer\'s own Seerr request from a search card still goes out a
   const h = await searchPage(t);
   const card = requestCard(h, { id: 603, mediaType: 'movie', title: 'Movie A', mediaInfo: { status: 1 } });
   const gate = h.hold('GET', '/jellyseerr/overrideRule');
-  card.querySelector('.jellyseerr-request-button').click(); await delivered();
+  h.click(card.querySelector('.jellyseerr-request-button')); await delivered();
   await h.leave(); gate.resolve(); await delivered();
   assert.equal(posts(h).length, 1);
 });
@@ -137,18 +137,18 @@ test('R10-9: standard and 4K series requests answering close together → both e
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   const modal = moreInfo(h); assert.ok(modal.querySelector('.jellyseerr-split-main'));
   const standard = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-split-main').click(); await delivered(); await wait(120);
+  h.click(modal.querySelector('.jellyseerr-split-main')); await delivered(); await wait(120);
   const form = seerrModal(h); assert.ok(form);
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);
-  form.querySelector('.jellyseerr-modal-button-secondary').click(); await wait(30); await delivered();
-  modal.querySelector('.jellyseerr-split-arrow').click(); await delivered();
-  h.document.querySelector('.je-4k-popup-item').click(); await delivered(); await wait(120);
+  h.click(form.querySelector('.jellyseerr-modal-button-secondary')); await wait(30); await delivered();
+  h.click(modal.querySelector('.jellyseerr-split-arrow')); await delivered();
+  h.click(h.document.querySelector('.je-4k-popup-item')); await delivered(); await wait(120);
   const fourk = seerrModal(h); assert.notEqual(fourk, form);
   const firstRead = h.hold('GET', '/jellyseerr/tv/1399');
   standard.resolve(); await delivered();
   h.respond('GET', '/jellyseerr/tv/1399', [200, { ...SHOW, mediaInfo: { id: 78, status: 2, status4k: 2 } }]);
-  fourk.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(fourk.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 2); assert.equal(posts(h)[1][3].is4k, true);
   firstRead.resolve({ ...SHOW, mediaInfo: { id: 78, status: 2, status4k: 1 } }); await wait(30); await delivered();
   const chips = modal.querySelector('[data-mount="je-status-chip"]').textContent;
@@ -203,7 +203,7 @@ test('AX2-4: the narrow More Info row keeps its adapted Follow and Report after 
   const kinds = () => [...row.querySelectorAll('.je-actions-adapted')].map(n => n.dataset.jeActionKind).sort();
   const before = kinds();
   assert.deepEqual(before, ['follow', 'report']);
-  row.querySelector('.jellyseerr-request-button').click(); await delivered(); h.a.scan(); await delivered();
+  h.click(row.querySelector('.jellyseerr-request-button')); await delivered(); h.a.scan(); await delivered();
   assert.equal(posts(h).length, 1);
   assert.deepEqual(kinds(), before);
 });
@@ -215,11 +215,11 @@ test('AX2-11: a request for one season of two keeps the card\'s Request offered 
   h.respond('GET', '/jellyseerr/settings/partial-requests', [200, { partialRequestsEnabled: true }]);
   const card = requestCard(h, item);
   const request = card.querySelector('.jellyseerr-request-button'); assert.equal(request.disabled, false);
-  request.click(); await wait(120);
+  h.click(request); await wait(120);
   const form = seerrModal(h); assert.ok(form);
   const boxes = [...form.querySelectorAll('.jellyseerr-season-item input[type=checkbox]')];
   assert.equal(boxes.length, 2); boxes.forEach((box, i) => { box.checked = i === 0; });
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.deepEqual(posts(h)[0][3].seasons, [1]);
   assert.equal(request.disabled, false, 'season 2 can still be requested');
   assert.match(request.textContent, /jellyseerr_btn_request_more/);
@@ -232,10 +232,10 @@ test('control: a request for every season marks the card Requested', async t => 
   h.respond('GET', '/jellyseerr/settings/partial-requests', [200, { partialRequestsEnabled: true }]);
   const card = requestCard(h, item);
   const request = card.querySelector('.jellyseerr-request-button');
-  request.click(); await wait(120);
+  h.click(request); await wait(120);
   const form = seerrModal(h);
   [...form.querySelectorAll('.jellyseerr-season-item input[type=checkbox]')].forEach(box => { box.checked = true; });
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(request.disabled, true);
   assert.match(request.textContent, /jellyseerr_btn_requested/);
 });
@@ -246,9 +246,9 @@ test('AX2-14: the search 4K arrow toggles its popup closed; Escape closes it wit
   const h = await searchPage(t, { seerr4k: true });
   const card = requestCard(h, { id: 603, mediaType: 'movie', title: 'Movie A', mediaInfo: { status: 1, status4k: 1 } });
   const arrow = card.querySelector('.jellyseerr-split-arrow');
-  arrow.focus(); arrow.click(); await delivered();
+  arrow.focus(); h.click(arrow); await delivered();
   assert.ok(h.document.querySelector('.jellyseerr-4k-popup'));
-  arrow.click(); await delivered();
+  h.click(arrow); await delivered();
   assert.equal(h.document.querySelector('.jellyseerr-4k-popup'), null, 'the second press closes it');
   // A keyboard (or remote) press: a click without a pointer.
   h.trusted(arrow, new h.window.MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); await delivered();
@@ -258,7 +258,7 @@ test('AX2-14: the search 4K arrow toggles its popup closed; Escape closes it wit
   assert.equal(popup.isConnected, false);
   assert.equal(h.document.activeElement, arrow, 'focus is back on the arrow');
   // A remote's Back key closes it too.
-  arrow.click(); await delivered();
+  h.click(arrow); await delivered();
   h.key(arrow, 'GoBack'); await delivered();
   assert.equal(h.document.querySelector('.jellyseerr-4k-popup'), null);
 });
@@ -281,7 +281,7 @@ test('AX2-15: at a phone\'s bottom edge the popup opens above its button, inside
   const card = requestCard(h, { id: 603, mediaType: 'movie', title: 'Movie A', mediaInfo: { status: 1, status4k: 1 } });
   let top = 800;
   layout(h, { anchor: () => ({ left: 360, top, width: 240, height: 36 }), popup: { width: 240, height: 40 }, viewport: { width: 390, height: 844 } });
-  card.querySelector('.jellyseerr-split-arrow').click(); await delivered();
+  h.click(card.querySelector('.jellyseerr-split-arrow')); await delivered();
   const popup = h.document.querySelector('.jellyseerr-4k-popup');
   const at = () => ({ top: parseFloat(popup.style.top), left: parseFloat(popup.style.left), width: parseFloat(popup.style.width) });
   assert.equal(popup.dataset.jePlacement, 'above');
@@ -296,7 +296,7 @@ test('control: on a desktop with room below, the popup opens below its button at
   const h = await searchPage(t, { seerr4k: true });
   const card = requestCard(h, { id: 603, mediaType: 'movie', title: 'Movie A', mediaInfo: { status: 1, status4k: 1 } });
   layout(h, { anchor: () => ({ left: 400, top: 300, width: 240, height: 36 }), popup: { width: 240, height: 40 }, viewport: { width: 1440, height: 1000 } });
-  card.querySelector('.jellyseerr-split-arrow').click(); await delivered();
+  h.click(card.querySelector('.jellyseerr-split-arrow')); await delivered();
   const popup = h.document.querySelector('.jellyseerr-4k-popup');
   assert.equal(popup.dataset.jePlacement, 'below');
   assert.equal(popup.style.top, '340px'); assert.equal(popup.style.left, '400px'); assert.equal(popup.style.width, '240px');

@@ -13,6 +13,7 @@
 
     /** How long the undo toast stays visible. */
     const UNDO_TOAST_DURATION = 8000;
+    let dismissUndo = null;
     /** How long the "don't ask again" suppression lasts (15 minutes). */
     const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
     /**
@@ -40,9 +41,15 @@
      * Automatically dismisses after {@link UNDO_TOAST_DURATION}.
      * @param {string} itemName Display name of the hidden item.
      * @param {string} itemId Storage key used to unhide if the user clicks Undo.
+     * @param {Object} [owner] The owner the Hide was written for. Hidden from inside a window (More Info), the toast is
+     *     that window's (D46S2-R13-9): it is shown inside it, so its Undo is live, focusable and pressable while the
+     *     window is the topmost surface, covered with it by a newer one, and gone when it closes. Else the page's.
      */
-    function showUndoToast(itemName, itemId) {
-        const action = JE.createSessionAction();
+    function showUndoToast(itemName, itemId, owner) {
+        // Feedback keeps the Hide's lifetime; the later Undo press supplies its own write authority.
+        const action = owner ? JE.createSessionAction({ owner }) : JE.createSessionAction();
+        if (!action.current()) return;
+        dismissUndo?.();
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
         const themeVars = JE.themer?.getThemeVariables() || {};
@@ -73,35 +80,66 @@
         });
         undoBtn.textContent = JE.t('hidden_content_undo');
         let dismissTimer;
-        const release = action.onCancel(() => { clearTimeout(dismissTimer); toast.remove(); });
-        undoBtn.addEventListener('click', async () => {
-            if (!action.current()) return;
+        let removeTimer;
+        let terminal = false;
+        let focusedUndo = false;
+        const surface = owner ? JE.surfaceOf?.(owner) : null;
+        // Remember a deliberate move even if its destination later loses focus too.
+        const moved = e => { if (!toast.contains(e.target) && e.target !== document.body) focusedUndo = false; };
+        document.addEventListener('focusin', moved, true);
+        /** Removes this feedback and repairs only focus lost by its own control disappearing. */
+        function remove() {
+            const active = document.activeElement;
+            const lost = toast.contains(active) || (focusedUndo && (!active || active === document.body));
+            clearTimeout(dismissTimer); clearTimeout(removeTimer);
+            release();
+            document.removeEventListener('focusin', moved, true);
+            toast.remove();
+            if (dismissUndo === dismiss) dismissUndo = null;
+            if (lost && surface?.isConnected && action.current() && JE.isTopmostSurface?.(surface)) {
+                for (const node of surface.querySelectorAll('button, [href], input, select, textarea, [tabindex]')) {
+                    if (node.disabled || node.closest('[hidden], [inert], .hide, .je-actions-external-original') || node.style.display === 'none') continue;
+                    if (JE.focusIn(surface, node)) return;
+                }
+                JE.focusIn(surface, surface);
+            }
+        }
+        /** Ends activation immediately; normal expiry/success retains the existing fade. */
+        function dismiss(animate = false) {
+            terminal = true;
+            clearTimeout(dismissTimer);
+            if (animate) {
+                toast.classList.remove('je-visible');
+                removeTimer = setTimeout(remove, 300);
+            } else remove();
+        }
+        const release = action.onCancel(() => dismiss());
+        dismissUndo = dismiss;
+        undoBtn.addEventListener('click', async (e) => {
+            // Undo is the press's write (D46S2-R11-4): a click no one made undoes nothing.
+            const owner = JE.ownerOf(e);
+            if (!owner) return;
+            if (terminal || !toast.isConnected || !action.current()) { dismiss(); return; }
+            focusedUndo = document.activeElement === undoBtn;
             clearTimeout(dismissTimer);
             undoBtn.disabled = true;
             try {
-                if (await unhideItem(itemId) === false) throw new Error('Undo failed');
+                if (await unhideItem(itemId, undefined, owner) === false) throw new Error('Undo failed');
                 if (!action.current()) return;
-                release();
-                toast.classList.remove('je-visible');
-                setTimeout(() => toast.remove(), 300);
+                dismiss(true);
             } catch (_) {
-                textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
+                if (!terminal && action.current()) textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
             } finally {
                 undoBtn.disabled = false;
             }
         });
         toast.appendChild(undoBtn);
 
-        document.body.appendChild(toast);
-        requestAnimationFrame(() => toast.classList.add('je-visible'));
+        if (surface) surface.appendChild(toast);
+        else document.body.appendChild(toast);
+        requestAnimationFrame(() => { if (!terminal && action.current()) toast.classList.add('je-visible'); });
 
-        dismissTimer = setTimeout(() => {
-            release();
-            if (toast.parentNode) {
-                toast.classList.remove('je-visible');
-                setTimeout(() => toast.remove(), 300);
-            }
-        }, UNDO_TOAST_DURATION);
+        dismissTimer = setTimeout(() => dismiss(true), UNDO_TOAST_DURATION);
     }
 
     // ============================================================
@@ -318,7 +356,11 @@
      *     press it comes from.
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
-        const action = JE.createSessionAction({ owner: dialogOptions.owner });
+        // Admitted first (D46S2-R12-7): an owner that is not current now (an ended press or operation) opens nothing and
+        // leaves the confirmation shown so far alone.
+        const admitted = JE.admitSurface(dialogOptions.owner, 'the hide confirmation');
+        if (!admitted) return;
+        const action = JE.createSessionAction({ owner: admitted });
         if (!action.owner) return;
         onConfirm = action.bind(onConfirm);
         dialogOptions = { ...dialogOptions };
@@ -357,11 +399,11 @@
             release();
             releaseScope?.();
             overlay.remove();
-            document.removeEventListener('keydown', escHandler);
         };
         const release = action.onCancel(closeDialog);
-        // Asked for a title action: the confirmation is in that operation's scope and closes once it ends.
-        const releaseScope = JE.openSurface(overlay, closeDialog, action.owner);
+        // Asked for a title action: the confirmation is in that operation's scope and closes once it ends. The stack
+        // announces it as a named modal dialog, covers the page and takes its Escape (D46S2-R12-11, -3).
+        const releaseScope = JE.openSurface(overlay, closeDialog, action.owner, { dialog });
         overlay.jeDismiss = closeDialog;
         // Also reject detached old buttons, including the suppression checkbox write.
         overlay.addEventListener('click', event => {
@@ -381,11 +423,6 @@
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) closeDialog();
         });
-
-        const escHandler = (e) => {
-            if (e.key === 'Escape') closeDialog();
-        };
-        document.addEventListener('keydown', escHandler);
 
         document.body.appendChild(overlay);
     }

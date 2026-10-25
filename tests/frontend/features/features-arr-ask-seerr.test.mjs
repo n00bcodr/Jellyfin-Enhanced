@@ -202,7 +202,7 @@ test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced 
   const save = h.document.createElement('button');
   let closed = 0;
   h.JE.openSurface(body, () => {}, modal.options.operation); // as the real modal shell registers it
-  await modal.options.onSave(body, save, () => { closed++; }, { type: 'click', target: body });
+  await h.pressIn(body, e => modal.options.onSave(body, save, () => { closed++; }, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:604', 'movie:tmdb:605']);
   assert.equal(closed, 1);
@@ -243,12 +243,12 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
   boxes[20].checked = true;
   let closed = 0;
   h.JE.openSurface(modalElement, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, { type: 'click', target: modalElement });
+  await h.pressIn(modalElement, e => options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, e));
   assert.deepEqual([h.posts.length, closed, h.toasts.at(-1)], [0, 0, translate('arr_seerr_collection_cap', { n: 20 })]);
   boxes[20].checked = false;
   change(boxes[20]);
   h.JE.openSurface(modalElement, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, { type: 'click', target: modalElement });
+  await h.pressIn(modalElement, e => options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, e));
   await settle(60);
   assert.deepEqual(h.posts.map(p => p.body.input.key), [...boxes.slice(1, 20), boxes[21]].map(b => `movie:tmdb:${b.dataset.tmdbId}`));
   assert.equal(closed, 1);
@@ -274,7 +274,7 @@ test('JE mode: the collection picker leaves out movies that are not out yet (no 
     [['19995', false, true, true], ['76600', true, false, false], ['83533', true, false, false], ['216527', true, false, false]]);
   assert.deepEqual(rows.map(r => r.lastElementChild.textContent), ['', translate('jellyseerr_btn_available'), translate('arr_collection_not_out'), translate('arr_collection_not_out')]);
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:19995'], 'only the movie that is out is asked for');
   const { released } = h.JE.internals.arrAskSeerr;
@@ -302,7 +302,7 @@ test('JE mode: the collection picker says Paused for movies whose drive is full,
   assert.equal(notes[0].querySelector('.je-ask-paused-title').textContent, translate('arr_ask_paused_storage'));
   assert.equal(notes[0].querySelector('.je-ask-paused-text').textContent, translate('arr_ask_paused_storage_text', { contact: 'Dad' }));
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605'], 'the paused movie is not asked for');
 
@@ -344,7 +344,7 @@ test('JE mode: the collection picker shows a movie already asked for (on its way
   assert.equal(rows[1].lastElementChild.textContent, translate('arr_status_looking'));
   assert.deepEqual(reads, ['/acquire/status?keys=movie%3Atmdb%3A604,movie%3Atmdb%3A605'], 'one status read for the movies that could be asked for');
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605']);
 });
@@ -372,7 +372,7 @@ test('JE mode: the collection picker still offers a movie whose status is unknow
   assert.equal(body.querySelector('.je-arr-collection-known'), null, 'no status words for a movie nobody asked for');
   assert.deepEqual(h.checks.map(c => c.key), ['movie:tmdb:604', 'movie:tmdb:605'], 'the title check decides');
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:604', 'movie:tmdb:605']);
 });

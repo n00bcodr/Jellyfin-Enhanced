@@ -106,7 +106,7 @@ function uiSetup(t, options) {
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
 for (const [active, linked] of [[false, true], [true, false]]) test(`request button blocks offline/unlinked state ${active}/${linked}`, async t => {
-  const h = uiSetup(t); h.configure(active, linked); h.button.click(); await flush();
+  const h = uiSetup(t); h.configure(active, linked); h.click(h.button); await flush();
   assert.equal(h.button.disabled, true); assert.equal(h.calls.length, 0);
 });
 
@@ -115,7 +115,7 @@ const mainButton = (h, split) => split ? h.document.querySelector('.jellyseerr-s
 for (const split of [false, true]) test(`rapid repeated clicks submit one movie request and update status on success (split=${split})`, async t => {
   const pending = deferred(); const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: () => pending.promise }); h.configure();
   const button = mainButton(h, split);
-  button.click(); button.click(); assert.equal(button.disabled, true); await flush(); assert.equal(h.calls.length, 1);
+  h.click(button); h.click(button); assert.equal(button.disabled, true); await flush(); assert.equal(h.calls.length, 1);
   // The standard half requests this movie in standard quality: no is4k flag.
   assert.deepEqual(h.calls[0][1].body, { mediaType: 'movie', mediaId: 42 });
   pending.resolve({ id: 7 }); await flush();
@@ -127,14 +127,14 @@ for (const split of [false, true]) test(`request failure escapes message and per
   let tries = 0;
   const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { if (++tries === 1) throw { status: 500, responseJSON: { message: '<img src=x onerror=evil()>' } }; return { id: 7 }; } });
   h.configure(); const button = split ? h.document.querySelector('.jellyseerr-split-main') : h.button;
-  button.click(); await flush(); assert.equal(button.disabled, false); assert.equal(button.querySelector('img'), null); assert.ok(button.textContent.includes('<img'));
-  button.click(); await flush(); assert.equal(h.calls.length, 2); assert.equal(button.disabled, true);
+  h.click(button); await flush(); assert.equal(button.disabled, false); assert.equal(button.querySelector('img'), null); assert.ok(button.textContent.includes('<img'));
+  h.click(button); await flush(); assert.equal(h.calls.length, 2); assert.equal(button.disabled, true);
 });
 
 for (const split of [false, true]) test(`quota rejection shows escaped dialog and restores request button (split=${split})`, async t => {
   const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { throw { status: 403, responseJSON: { message: 'Movie Quota exceeded. <img src=x>' } }; }, get: async () => ({ movie: { limit: 2, used: 2, restricted: true } }) });
   const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) }; h.configure();
-  const button = mainButton(h, split); button.click(); await flush();
+  const button = mainButton(h, split); h.click(button); await flush();
   assert.equal(dialogs.length, 1); assert.ok(dialogs[0].message.includes('&lt;img')); assert.equal(button.disabled, false); assert.equal(h.events.length, 0);
   // Back to the idle label exactly (not the in-flight "requesting" one) with no spinner.
   assert.equal(button.textContent.trim(), 'jellyseerr_btn_request'); assert.equal(button.querySelector('.jellyseerr-button-spinner'), null);
@@ -151,13 +151,13 @@ test('quota detection distinguishes permission errors and honors feature toggle'
 });
 
 test('reconfiguring a request button does not duplicate submission handlers', async t => {
-  const h = uiSetup(t); h.configure(); h.configure(); h.button.click(); await flush();
+  const h = uiSetup(t); h.configure(); h.configure(); h.click(h.button); await flush();
   assert.equal(h.calls.length, 1);
 });
 
 test('reconfigured button submits the new media rather than stale item data', async t => {
   const h = uiSetup(t); h.configure(); h.item = { id: 99, title: 'New film', mediaType: 'movie' }; h.configure();
-  h.button.click(); await flush(); assert.equal(h.calls.length, 1); assert.equal(h.calls[0][1].body.mediaId, 99);
+  h.click(h.button); await flush(); assert.equal(h.calls.length, 1); assert.equal(h.calls[0][1].body.mediaId, 99);
 });
 
 test('a results refresh updates only its own section and matches the media type as well as the exact id', async t => {
@@ -189,21 +189,21 @@ test('a results refresh updates only its own section and matches the media type 
   assert.equal(otherMain.disabled, false); assert.equal(JSON.parse(otherMain.dataset.searchResultItem).mediaInfo.status, 1);
   // The overview outside the section keeps its split styling and its own request handler.
   assert.ok(overviewMain.classList.contains('jellyseerr-split-main'));
-  overviewMain.click(); await flush(); otherMain.click(); await flush();
+  h.click(overviewMain); await flush(); h.click(otherMain); await flush();
   assert.deepEqual(h.calls.map(call => call[1].body), [{ mediaType: 'movie', mediaId: 42 }, { mediaType: 'movie', mediaId: 420 }]);
 });
 
 for (const split of [false, true]) test(`advanced-permission UI opens options without prematurely submitting (split=${split})`, async t => {
   const h = uiSetup(t, { config: { JellyseerrShowAdvanced: true, JellyseerrEnable4KRequests: split }, get: async () => ({ active: true, userFound: true, canRequestAdvanced: true }) });
   await h.api.checkUserStatus(); const opened = []; h.JE.jellyseerrUI.showMovieRequestModal = (...args) => opened.push(args);
-  h.configure(); mainButton(h, split).click(); await flush(); assert.equal(h.calls.length, 0); assert.equal(opened.length, 1); assert.equal(opened[0][0], 42);
+  h.configure(); h.click(mainButton(h, split)); await flush(); assert.equal(h.calls.length, 0); assert.equal(opened.length, 1); assert.equal(opened[0][0], 42);
   // The standard half opens the standard-quality options, never the 4K ones.
   assert.equal(opened[0][3], false);
 });
 
 for (const split of [false, true]) for (const code of ['no_request_permission', 'request_4k_forbidden']) test(`typed permission denial ${code} is shown without success state (split=${split})`, async t => {
   const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { throw { status: 403, responseJSON: { code } }; } });
-  h.configure(); const button = mainButton(h, split); button.click(); await flush();
+  h.configure(); const button = mainButton(h, split); h.click(button); await flush();
   assert.ok(button.textContent.includes(`jellyseerr_err_${code}`)); assert.equal(h.events.length, 0); assert.equal(h.item.mediaInfo, undefined);
 });
 
@@ -230,7 +230,7 @@ test('disabled quota feature makes no network request', async t => {
 for (const split of [false, true]) for (const succeeds of [true, false]) test(`late request ${succeeds ? 'success' : 'failure'} cannot overwrite a refreshed offline button (split=${split})`, async t => {
   const pending = deferred(); const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: () => pending.promise }); h.configure();
   if (split) h.button = h.document.querySelector('.jellyseerr-split-main');
-  h.button.click(); await flush(); h.configure(false, true);
+  h.click(h.button); await flush(); h.configure(false, true);
   const offlineLabel = h.button.textContent;
   if (succeeds) pending.resolve({ id: 7 }); else pending.reject({ status: 500, responseJSON: { message: 'old failure' } });
   await flush(); assert.equal(h.button.disabled, true); assert.equal(h.button.textContent, offlineLabel);
@@ -241,7 +241,7 @@ for (const split of [false, true]) for (const succeeds of [true, false]) test(`l
 for (const split of [false, true]) for (const [label, status, disabled] of [['pending', 2, true], ['requested', 3, true], ['partial', 4, true], ['available', 5, true], ['blocked', 6, true], ['deleted', 7, false]]) {
   test(`movie ${label} status ${disabled ? 'renders a disabled button that cannot submit' : 'stays requestable'} (split=${split})`, async t => {
     const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split } }); h.item.mediaInfo = { status }; h.configure();
-    const button = mainButton(h, split); button.click(); await flush();
+    const button = mainButton(h, split); h.click(button); await flush();
     assert.equal(button.disabled, true); assert.equal(h.calls.length, disabled ? 0 : 1);
     if (disabled) assert.equal(button.classList.contains('jellyseerr-button-request'), false);
   });
@@ -268,7 +268,7 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
     h.document.body.append(el); h.JE.openSurface(el, () => {}, o.operation); modal = { el, o }; return { modalElement: el, show() {} }; } };
   await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.NATIVE);
   const requestBtn = h.document.createElement('button');
-  return { ...h, get NATIVE() { return h.NATIVE; }, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}, { type: 'click', target: modal.el }) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, el: modal.el, requestBtn, save: () => h.pressIn(modal.el, e => modal.o.onSave(modal.el, requestBtn, () => {}, e)) };
 }
 const seasonCheckbox = (h, number) => h.el.querySelector(`.jellyseerr-season-checkbox[data-season-number="${number}"]`);
 const tvSeasons = [{ seasonNumber: 0, name: 'Specials', episodeCount: 2, airDate: '2020-01-01' }, { seasonNumber: 1, name: '<img src=x onerror=evil()>', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, episodeCount: 3, airDate: '2021-01-01' }];
@@ -331,7 +331,7 @@ function requestModals(t, options) {
     create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); h.JE.openSurface(el, () => {}, o.operation); current = { el, o }; return { modalElement: el, show() {} }; } };
   h.requestBtn = h.document.createElement('button');
   h.modal = () => current.el;
-  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {}, { type: 'click', target: current.el });
+  h.save = () => h.pressIn(current.el, e => current.o.onSave(current.el, h.requestBtn, () => {}, e));
   return h;
 }
 

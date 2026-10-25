@@ -41,8 +41,14 @@
     let lifecycle = 0;
     const live = new Set();
     /** Ends every operation started so far (a user switch, the feature going off, disposal). */
-    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
+    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); JE.endScopes?.(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
+    /**
+     * Releases every operation that has ended (D46S2-R11-13): each route change and each reconciliation pass (once per
+     * pass, D46S2-R13-1) prunes the registry.
+     */
+    const prune = () => { for (const token of live) if (!token.current()) live.delete(token); };
+    for (const type of ['hashchange', 'popstate', 'je:navigate']) window.addEventListener(type, () => queueMicrotask(prune));
     // Leaving the document (pagehide, freeze) and coming back (pageshow from the cache, resume) end every operation in
     // core; the hosts reconcile fresh controls for the new one (no new view is shown on a restore).
     const own = event => event.target?.nodeType !== 1;
@@ -62,10 +68,28 @@
      */
     function generation(mount = () => true) {
         const born = lifecycle;
+        // Bounded (D46S2-R11-13): the registry holds only operations that are still current; an ended one (its route,
+        // session, document or mount gone) leaves it as the next one is minted, so it never grows with reconciliation
+        // passes or navigation.
+        for (const token of live) if (!token.current()) live.delete(token);
         const token = JE.operation({ mount: () => lifecycle === born && mount() !== false });
+        // Ending it releases it at once (D46S2-R12-8): an offer that closed, failed or was superseded is not kept until
+        // the next mint or route change.
+        const end = token.end;
+        token.end = () => { live.delete(token); end(); };
         live.add(token);
         return token;
     }
+    /**
+     * Finishes an owner (D46S2-R12-8): an OFFER (a menu's opening, a sheet's lease) ends on every terminal path — its
+     * normal close, a rejected or failed opening, a newer opening superseding it — and leaves the registry with it.
+     */
+    function finish(token) { if (token) token.end(); }
+    /**
+     * Releases a SUBMITTED operation from the registry once its run has settled (D46S2-R12-8): it is not ended (what it
+     * opened, a sheet or a drawer, lives on with its own scope and closes with it), but the registry no longer holds it.
+     */
+    function release(token) { if (token) live.delete(token); }
 
     /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
     const cancelled = error => error?.name === 'AbortError';
@@ -116,11 +140,20 @@
     /**
      * Presses an owner's control for a submitted operation: the click carries it (JE.press), and owners whose write
      * follows a confirmation or an await (Spoiler Guard, Hide, Report) take it from their event and recheck it right
-     * before writing.
+     * before writing. `origin`: the surface the press started in (default: the one the source is in), kept for the
+     * operation's feedback (D46S2-R14-1).
+     *
+     * One bounded dispatch lifetime (D46S2-R14-4): the press is one synchronous dispatch (JE.press returns once every
+     * listener has run), so the registry's strong hold on the operation ends with it — `release`, never `end`. What the
+     * press handed on keeps the operation by its own reference and lifetime: a confirmation is a surface registered for
+     * it (core scopes), a write carries its binding (checked at the send), a handler's continuation holds what it
+     * captured (JE.captureSubmitted); each still ends with the operation's session, route, mount and the bar's
+     * lifecycle, which do not depend on the registry.
      */
-    function dispatch(source, operation) {
+    function dispatch(source, operation, origin) {
         pressing.add(source);
-        try { return JE.press(source, operation); } finally { pressing.delete(source); }
+        try { return JE.press(source, operation, origin === undefined ? undefined : { origin }); }
+        finally { pressing.delete(source); release(operation); }
     }
 
     /**
@@ -137,6 +170,9 @@
             const { owner: live, native: own } = presses.get(node);
             if (pressing.has(node) || (own && !live.current())) return;
             event.preventDefault(); event.stopImmediatePropagation();
+            // Only a press someone made becomes the row's operation (D46S2-R11-1): the viewer's own (a trusted or the
+            // host's verified activation) or a title action's; a script's click is no one's and does nothing.
+            if (!JE.ownerOf(event)) return;
             // A fresh event (JE.press): click() is a no-op while this element's own click is still in progress.
             if (live.current()) dispatch(node, generation(() => live.current()));
         }, true);
@@ -148,20 +184,30 @@
         return (source === entry.control || source.isConnected) && !source.disabled && source.getAttribute('aria-disabled') !== 'true';
     }
 
-    /** One submitted operation, carried through admission, the owner's run and its confirmations. */
+    /**
+     * One submitted operation, carried through admission, the owner's run and its confirmations. It has a lifetime of
+     * its own (its session, route and mount), independent of the offer that showed the choice, and leaves the registry
+     * once its run has settled (D46S2-R12-8).
+     */
     async function invoke(c, entry, opener, operation = generation()) {
-        if (!operation.current() || entry.disabled) return false;
-        if (entry.source) {
-            if (c?.absent && !await admit(c, operation)) return false;
-            if (!operation.current() || !pressable(entry)) return false;
+        // Its origin (D46S2-R14-1): the surface its opener is in (More Info for its row and its More sheet), taken before
+        // the offer closes, so its feedback never lands in the closing sheet or a confirmation.
+        const origin = opener ? JE.surfaceRootOf?.(opener) ?? null : undefined;
+        if (origin !== undefined) JE.originate?.(operation, origin);
+        try {
+            if (!operation.current() || entry.disabled) return false;
+            if (entry.source) {
+                if (c?.absent && !await admit(c, operation)) return false;
+                if (!operation.current() || !pressable(entry)) return false;
+                entry.beforeRun?.();
+                dispatch(entry.source, operation, origin);
+                return true;
+            }
+            if (!await admit(c, operation) || !operation.current()) return false;
             entry.beforeRun?.();
-            dispatch(entry.source, operation);
-            return true;
-        }
-        if (!await admit(c, operation) || !operation.current()) return false;
-        entry.beforeRun?.();
-        const result = await entry.run(opener, operation);
-        return operation.current() && result !== false;
+            const result = await entry.run(opener, operation);
+            return operation.current() && result !== false;
+        } finally { release(operation); }
     }
 
     /** Registers a lazy capability (4c3b: provider returns null until permitted). No list storage lives here. */
@@ -272,5 +318,7 @@
         }
         return action.current() ? out : [];
     }
-    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
+    /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
+    const registrySize = () => live.size;
+    Object.assign(A, { context, fromKey, routeKey, generation, finish, release, end, prune, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
 })(window.JellyfinEnhanced);

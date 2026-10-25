@@ -951,11 +951,12 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (scope && season?.itemId !== scope) return;
+            const owner = JE.ownerOf(e);
+            if (!owner || (scope && season?.itemId !== scope)) return;
             // Checked at the press: the episode's button as the server and the caller's capabilities say now; the server is sent
             // what it was drawn to do and works it out again.
             const now = fresh => rowIntent((fresh.episodes || []).find(x => x.episode === ep.episode), fresh);
-            act(btn, pressScope([ep.episode], btn), now, intent => (mode === 'search' ? searchEpisode(ep, btn, scope, intent) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent)));
+            act(btn, pressScope([ep.episode], btn), now, intent => (mode === 'search' ? searchEpisode(ep, btn, scope, intent, owner) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent, owner)));
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -984,11 +985,13 @@
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope, intent) {
+    async function searchEpisode(ep, button, scope, intent, owner) {
         const target = season;
-        if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        if (!owner || !target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
         const started = JE.arrAsk.epoch();
@@ -1006,6 +1009,9 @@
             // binding without its administrator's instance or a household Search that reaches it, nothing runs (no other
             // edition or instance in its place): the controls are drawn again.
             result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent }) : null;
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             busy.delete(ep.episode);
         }
@@ -1015,12 +1021,14 @@
             // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
             // edition of its binding, only while that ask reaches the copy.
             if (season?.itemId !== target.itemId) return;
-            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null);
+            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null, owner);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) searched.set(ep.episode, { chip: result.chip, tone: result.tone, at: Date.now() });
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
@@ -1046,12 +1054,14 @@
      * @param {string|null} [variant] The edition asked for (a copy's binding; default standard).
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): the ask is exactly that (a whole-series
      * ask only when it was drawn as one, never widened at the press), and the server is sent it to work out again.
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope, variant, intent) {
+    async function getEpisodes(episodes, button, search, scope, variant, intent, owner) {
         const target = season;
         const rows = target?.rows;
-        if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        if (!owner || !rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
         const place = button?.closest('.listItem, .je-arr-banner') || null;
         const placeEpisode = place?.classList.contains('je-ask-row') ? place.dataset.jeAskEpisode : null;
         // Seerr mode: the button asks for the whole season, so every episode of it waits for the answer.
@@ -1075,7 +1085,7 @@
                 if (!input) result = { ok: false, state: rounded ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
             const expect = intent ? { ...intent, mode: 'get', episodes: [...episodes].sort((a, b) => a - b), seasons: input?.scope === 'seasons' ? input.seasons : intent.seasons } : null;
-            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input, expect ? { expect } : undefined);
+            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input, { ...(expect ? { expect } : {}), bound: submitted.bound() });
         } finally {
             affected.forEach(n => busy.delete(n));
         }
@@ -1091,6 +1101,8 @@
             const shown = result.state === 'waiting' ? 'waiting' : result.state === 'nothing' ? null : result.state === 'declined' ? 'declined' : 'asked';
             if (shown && stillHere) affected.forEach(n => local.set(n, { state: shown, at: Date.now(), search: !!search }));
         }
+        // The answer is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(words.text);
         JE.arrAsk.toast(words.text);
         if (stillHere) {
@@ -1300,7 +1312,8 @@
         if (still) image.style.backgroundImage = `url("https://image.tmdb.org/t/p/w300${still}")`;
         else image.appendChild(S.icon('tv', 'je-ask-row-placeholder'));
         if (spoiler) image.classList.add('je-ask-row-spoiler');
-        image.addEventListener('click', () => openDetails(ep, ctx));
+        // Every entry path opens the episode's details only for a press someone made (D46S2-R12-5).
+        image.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         content.appendChild(image);
 
         const body = S.el('div', 'listItemBody je-ask-row-body');
@@ -1312,7 +1325,7 @@
         bdi.textContent = `${ep.episode}. ${title}`;
         open.appendChild(bdi);
         open.title = tr('arr_ask_row_open', { episode: ep.episode });
-        open.addEventListener('click', () => openDetails(ep, ctx));
+        open.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         heading.appendChild(open);
         body.appendChild(heading);
 
@@ -1342,7 +1355,7 @@
         infoButton.title = tr('arr_ask_row_open', { episode: ep.episode });
         infoButton.setAttribute('aria-label', tr('arr_ask_row_open', { episode: ep.episode }));
         infoButton.appendChild(S.icon('info_outline'));
-        infoButton.addEventListener('click', () => openDetails(ep, ctx));
+        infoButton.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         buttons.appendChild(infoButton);
         content.appendChild(buttons);
         row.appendChild(content);
@@ -1378,7 +1391,7 @@
         for (const type of ['contextmenu', 'mousedown', 'pointerdown', 'touchstart']) row.addEventListener(type, (e) => e.stopPropagation());
         row.addEventListener('click', (e) => {
             e.stopPropagation();
-            openDetails(ep, ctx);
+            if (JE.ownerOf(e)) openDetails(ep, ctx, e);
         });
         const image = S.el('div', 'listItemImage listItemImage-large listItemImage-large-tv je-ask-row-image');
         const still = typeof meta.still === 'string' && STILL.test(meta.still) ? meta.still : null;
@@ -1537,9 +1550,10 @@
             btn.dataset.intent = plan.intent;
             // Checked at the press: the banner's button as the server and the caller's capabilities say now; the server is sent
             // what it was drawn to do and works it out again.
-            btn.addEventListener('click', () => {
-                if (season?.itemId !== scope) return;
-                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, intent => (search ? searchBanner(offerEps, status, btn, intent) : getEpisodes(offer, btn, false, scope, binding?.variant, intent)));
+            btn.addEventListener('click', (e) => {
+                const owner = JE.ownerOf(e);
+                if (!owner || season?.itemId !== scope) return;
+                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, intent => (search ? searchBanner(offerEps, status, btn, intent, owner) : getEpisodes(offer, btn, false, scope, binding?.variant, intent, owner)));
             });
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
@@ -1559,12 +1573,14 @@
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button, intent) {
+    async function searchBanner(eps, status, button, intent, owner) {
         const target = season;
         const numbers = eps.map(ep => ep.episode);
-        if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        if (!owner || !target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        const submitted = JE.captureSubmitted(owner);
         const key = eps.length === 1 ? eps[0].key : status.key;
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
@@ -1579,7 +1595,7 @@
         try {
             if (instanceId) {
                 // Exactly the episodes it names (one EpisodeSearch for several, never the whole season).
-                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent });
+                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent, bound: submitted.bound() });
             } else if (binding && !binding.search) {
                 // Neither its administrator's instance nor a household Search reaches this copy: nothing runs (no ask in
                 // another edition or on another instance in its place); the controls are drawn again below.
@@ -1598,6 +1614,10 @@
                 }
                 result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
             }
+        } catch (error) {
+            // Never sent (its owner ended first): nothing to say.
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
@@ -1609,14 +1629,16 @@
         const asks = intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks);
+            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks, owner);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks);
+        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks, owner);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
@@ -1632,14 +1654,19 @@
 
     /**
      * The episode's status details (from a JE row): title, air date, runtime, overview, the status
-     * pill and journey, and Get it. A focus-trapped dialog; Escape or Close returns focus. It closes
-     * by itself when the page changes (navigation, another season, a sign-out).
+     * pill and journey, and Get it. A surface on the one stack (D46S2-R12-5): admitted for the press that opened it
+     * BEFORE the dialog shown so far is touched, registered with openSurface (only while it is the topmost surface
+     * does it take Escape, Back, Tab, the D-pad and focus; the page behind is covered), and closed once: Close, Escape,
+     * its owner ending, or the page changing (navigation, another season, a sign-out). Focus goes back to its opener.
      * @param {Object} ep Episode status.
      * @param {Object} ctx Response context.
+     * @param {Event|Object} press The press (or the owner) it opens for.
      * @returns {void}
      */
-    function openDetails(ep, ctx) {
+    function openDetails(ep, ctx, press) {
         const S = JE.arrStatus;
+        const owner = JE.admitSurface(press, 'the episode details');
+        if (!owner) return;
         closeDialog();
         const opener = document.activeElement;
         const meta = metaOf(ep.episode) || {};
@@ -1691,58 +1718,47 @@
         actions.appendChild(closeBtn);
         dialog.appendChild(actions);
         backdrop.appendChild(dialog);
+        // Escape, Back and Tab are the surface stack's. TV remotes' arrows move between the dialog's buttons only (the
+        // page behind stays put), only while it is the topmost surface and for the viewer's key (D46S2-R12-6).
         const onKey = (e) => {
-            if (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack' || (e.key === 'Backspace' && !/input|textarea/i.test(e.target?.tagName || ''))) {
-                e.preventDefault();
-                e.stopPropagation();
-                close();
-            } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                // TV remotes: move between the dialog's buttons only (the page behind stays put).
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const at = focusables.indexOf(document.activeElement);
-                const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
-                focusables[(at + step + focusables.length) % focusables.length].focus();
-            } else if (e.key === 'Tab') {
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                const first = focusables[0];
-                const last = focusables[focusables.length - 1];
-                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-            }
+            if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) || !JE.surfaceInput(backdrop, e)) return;
+            const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
+            if (!focusables.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const at = focusables.indexOf(document.activeElement);
+            const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
+            focusables[(at + step + focusables.length) % focusables.length].focus();
         };
         const shownAt = location.href;
         const offNavigate = JE.core?.navigation?.onNavigate?.(() => { if (location.href !== shownAt) close(false); });
+        let release = null;
         /**
-         * Closes the dialog and (unless the page changed under it) returns focus to what opened it.
-         * @param {boolean} [restore] Return focus to the opener (default true).
+         * Closes the dialog; the stack gives focus back (its opener while live, else the page).
          * @returns {void}
          */
-        function close(restore) {
+        function close() {
             if (shownDialog?.close === close) shownDialog = null;
-            document.removeEventListener('keydown', onKey, true);
+            backdrop.removeEventListener('keydown', onKey);
             if (typeof offNavigate === 'function') offNavigate();
-            if (!backdrop.isConnected) return;
-            backdrop.remove();
-            if (restore !== false && opener && document.contains(opener) && typeof opener.focus === 'function') opener.focus();
+            release?.();
+            if (backdrop.isConnected) backdrop.remove();
         }
+        release = JE.openSurface(backdrop, () => close(), owner, { opener });
+        if (!release) { if (typeof offNavigate === 'function') offNavigate(); return; }
         shownDialog = { itemId: season?.itemId || null, close };
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-        document.addEventListener('keydown', onKey, true);
+        backdrop.addEventListener('keydown', onKey);
         document.body.appendChild(backdrop);
         (actions.querySelector('button') || closeBtn).focus();
     }
 
     /**
-     * Closes the episode dialog if one is shown, without moving focus to its opener (the page it
-     * was opened from is gone or belongs to someone else).
+     * Closes the episode dialog if one is shown (its page went, or another dialog replaces it).
      * @returns {void}
      */
     function closeDialog() {
-        if (shownDialog) shownDialog.close(false);
+        if (shownDialog) shownDialog.close();
     }
 
     /**

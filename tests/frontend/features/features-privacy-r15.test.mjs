@@ -77,9 +77,9 @@ const WRITERS={
  'title-confirm':{node:'library',rules:['none'],act:r=>r.click(),want:()=>true},
  'confirm-hide':{node:'idonly',rules:['none'],act:r=>r.click(),want:()=>true},
  'scoped-off':{node:'nextup',rules:['none'],settings:{filterNextUp:false},
-  act:async r=>{await r.click();r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide').click();},want:()=>false},
+  act:async r=>{await r.click();r.h.click(r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide'));},want:()=>false},
  'scoped-on':{node:'nextup',rules:['none'],
-  act:async r=>{await r.click();r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide').click();},want:()=>true},
+  act:async r=>{await r.click();r.h.click(r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide'));},want:()=>true},
  restore:{node:'library',rules:['legacy-id','provider','both'],extra:true,act:r=>r.api.unhideItem('x1'),want:()=>true},
  inactive:{node:'library',rules:['legacy-id','provider'],act:r=>r.api.updateSettings({enabled:false}),want:()=>false},
  session:{node:'title',rules:['legacy-id','provider'],act:(r,rules)=>r.switchUser(RULES[rules]),want:()=>true}

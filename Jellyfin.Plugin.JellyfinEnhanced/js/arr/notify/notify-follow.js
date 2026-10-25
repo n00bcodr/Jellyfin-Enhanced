@@ -93,13 +93,16 @@
      * @returns {Promise<void>}
      */
     async function toggle(button, owner) {
-        if (button.getAttribute('aria-busy') === 'true') return;
+        // A press with no owner (a script's click) follows nothing (D46S2-R11-1).
+        if (!owner || button.getAttribute('aria-busy') === 'true') return;
         const key = button.dataset.key;
         const on = !JE.arrNotify.isFollowing(key);
         button.setAttribute('aria-busy', 'true');
         const res = await JE.arrNotify.setFollow(key, on, owner);
         button.removeAttribute('aria-busy');
-        if (!res.ok) {
+        // Feedback is a page effect (D46S2-R11-8): a Follow never sent says nothing, and a refusal is said only while its
+        // owner is current (never on the page the viewer moved on to).
+        if (!res.ok && res.code !== 'cancelled' && JE.effectOwner(owner, 'Follow')) {
             const msg = res.code === 'not_allowed' ? 'arr_notify_follow_not_allowed' : res.code === 'too_many' ? 'arr_notify_follow_too_many' : 'arr_notify_follow_failed';
             if (typeof JE.toast === 'function') JE.toast(JE.escapeHtml ? JE.escapeHtml(JE.arrNotify.tr(msg)) : JE.arrNotify.tr(msg), 3000);
         }
@@ -117,6 +120,8 @@
         const button = el('button', cls + ' je-notify-follow');
         button.type = 'button';
         button.dataset.key = key;
+        // Drawn for this session, route and document (D46S2-R11-1).
+        JE.mountControl?.(button);
         if (style === 'icon') {
             const content = el('div', 'detailButton-content');
             content.appendChild(icon('notifications_none', 'detailButton-icon je-notify-follow-icon'));
@@ -145,6 +150,7 @@
         const who = contact || JE.arrNotify.tr('arr_contact_default');
         const button = el('button', 'je-notify-remind');
         button.type = 'button';
+        JE.mountControl?.(button);
         button.appendChild(icon('campaign'));
         const text = el('span', null, JE.arrNotify.tr('arr_notify_remind_button', { contact: who }));
         button.appendChild(text);
@@ -153,8 +159,12 @@
             e.stopPropagation();
             if (button.getAttribute('aria-disabled') === 'true') return;
             const owner = JE.ownerOf(e);
+            if (!owner) return;
             button.setAttribute('aria-disabled', 'true');
             const res = await JE.arrNotify.remind(status.key, itemId, owner);
+            // The inline answer is a page effect (D46S2-R11-8): only while the press's owner is current; never sent or
+            // taken after it ended, the button just comes back.
+            if (res.code === 'cancelled' || res.accepted || !JE.effectOwner(owner, 'Remind')) { button.removeAttribute('aria-disabled'); return; }
             if (res.ok) text.textContent = JE.arrNotify.tr('arr_notify_reminded', { contact: who });
             else if (res.code === 'too_soon') text.textContent = JE.arrNotify.tr('arr_notify_reminded_already', { contact: who });
             else {

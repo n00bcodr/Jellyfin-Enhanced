@@ -89,7 +89,7 @@
                 console.warn(`${logPrefix} reviews cleanup failed:`, e);
             }
 
-            internal.scheduleFullReload();
+            internal.scheduleFullReload(owner);
         }).catch(function(err) {
             if (!action.current()) return;
             console.error(`${logPrefix} toggle failed:`, err);
@@ -143,6 +143,8 @@
         }
         if (!button) {
             button = document.createElement('button');
+            // Drawn for this session, route and document (D46S2-R11-1).
+            JE.mountControl?.(button);
             drawnButtons.add(button);
             button.setAttribute('is', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';

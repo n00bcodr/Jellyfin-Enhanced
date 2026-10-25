@@ -369,6 +369,9 @@
     async function open(title, options) {
         const action = JE.createSessionAction();
         const submitted = JE.captureSubmitted(options?.operation);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening, so the
+        // viewer's pending opening stays the newest.
+        if (!submitted.current()) return null;
         // Only the newest opening builds its sheet: an older one whose reads answer later is dropped (D46S2-R6).
         const newest = opening(submitted);
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
@@ -387,7 +390,7 @@
             if (state) finish(state, null);
         };
         const off = listTicket?.onRevoke(cancel);
-        const live = () => !cancelled && action.current() && newest() && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        const live = () => !cancelled && submitted.current() && action.current() && newest() && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
         pendingOpens.add(cancel);
         try {
             if (!live()) return null;
@@ -920,7 +923,9 @@
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
-        if (!state.action.current()) return;
+        // Feedback is a page effect (D46S2-R11-8): said only while the owner is current (closed by the viewer, the
+        // answer still reaches them; ended by a navigation, it toasts nothing on the newer page).
+        if (!state.action.current() || !state.submitted.current()) { if (!state.done) finish(state, null); return; }
         if (state.listTicket && (state.done || !state.listTicket.current())) return;
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
@@ -953,33 +958,20 @@
     }
 
     /**
-     * Keyboard: Escape (and Back on TV) closes, Tab stays inside the sheet.
+     * Keyboard: Backspace outside a text field closes (Escape, Back and Tab are the surface stack's).
      * @param {Object} state Sheet state.
      * @param {KeyboardEvent} e Event.
      * @returns {void}
      */
     function onKey(state, e) {
         if (state.done) return;
+        // Escape, Back and Tab are the surface stack's (the topmost surface, the viewer's key: D46S2-R12-3, -6). The
+        // sheet's own extra: Backspace outside a text field closes it, only while it is the topmost surface.
         const typing = /input|textarea|select/i.test(e.target?.tagName || '') && e.target?.type !== 'checkbox';
-        if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || (e.key === 'Backspace' && !typing)) {
+        if (e.key === 'Backspace' && !typing && JE.surfaceInput(state.backdrop, e)) {
             e.preventDefault();
             e.stopPropagation();
             finish(state, null);
-            return;
-        }
-        if (e.key !== 'Tab') return;
-        const focusables = [...state.sheet.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
-            .filter(n => !n.disabled && !n.hidden && !n.closest('[hidden]'));
-        if (!focusables.length) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const inside = state.sheet.contains(document.activeElement);
-        if (e.shiftKey && (document.activeElement === first || !inside)) {
-            e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
-            e.preventDefault();
-            first.focus();
         }
     }
 
@@ -1004,16 +996,18 @@
      * @returns {void}
      */
     function restoreFocus(state) {
+        // Never under a surface that is now on top (a host dialog that arrived, the window below: the stack has given
+        // it focus, D46S2-R12-6).
         const opener = state.opener;
         if (opener && document.contains(opener) && typeof opener.focus === 'function') {
-            opener.focus();
+            if (!JE.isCovered?.(opener)) opener.focus();
             return;
         }
         const same = state.focusId ? [...document.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === state.focusId) : null;
         const holder = (state.openerPath || []).find(n => document.contains(n) && (n.tabIndex >= 0 || n.hasAttribute('tabindex')));
         const main = document.querySelector('.mainAnimatedPage:not(.hide)') || document.querySelector('main, [role="main"]');
         const target = same || holder || main;
-        if (!target) return;
+        if (!target || JE.isCovered?.(target)) return;
         if (target === main && !main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
         target.focus({ preventScroll: true });
     }
@@ -1079,7 +1073,8 @@
             const caps = await JE.arrAsk.me();
             if (!mayAsk()) return null;
             if (!JE.arrAsk.canAsk(caps, 'movie')) {
-                JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
+                // Feedback is a page effect (D46S2-R11-8): only while the owner is current.
+                if (submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
                 return null;
             }
             const quota = await JE.arrAsk.quota('movie');
@@ -1087,8 +1082,11 @@
             if (needsSheet(caps, quota, 'movie')) return { sheet: true, caps, quota };
             const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() });
             if (result.stale) return null;
+            // The answer is the viewer's (their write went out); saying so is a page effect, shown only while its owner is
+            // current (an answer after the viewer moved on toasts nothing on the newer page; D46S2-R11-8).
+            if (!submitted.current()) return result;
             const allowance = result.state === 'quota' ? (await JE.arrAsk.quota('movie')) || quota : quota;
-            JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
+            if (submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
             return result;
         })();
         const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, operation: submitted.owner, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
@@ -1302,19 +1300,19 @@
                     if (instanceId) {
                         label.textContent = tr('arr_ask_searching');
                         const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId, { bound: submitted.bound() });
-                        JE.arrAsk.toast(result.text);
+                        if (submitted.current()) JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
                     } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key, { bound: submitted.bound() }))) {
                         // Requests already sent it: search for it again instead of asking.
-                        JE.arrAsk.toast(searched.text);
+                        if (submitted.current()) JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else if (submitted.current()) {
                         const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() }) : await open(title, { opener: b, operation: submitted.owner });
                         if (result?.stale) { /* its operation ended before the send: nothing was sent */ } else if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);
-                            if (kind === 'movie') JE.arrAsk.toast(said.text);
+                            if (kind === 'movie' && submitted.current()) JE.arrAsk.toast(said.text);
                             words = said.chip ? { chip: said.chip, tone: said.tone } : null;
-                        } else if (result && kind === 'movie') {
+                        } else if (result && kind === 'movie' && submitted.current()) {
                             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
                         }
                     }

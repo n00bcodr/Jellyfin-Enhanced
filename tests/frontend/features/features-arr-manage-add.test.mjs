@@ -106,7 +106,7 @@ test('the add sheet preselects only the saved defaults, sends one idempotency ke
   assert.equal(button(h, 'add-r4').textContent, 'add_circle_outlineAdd to Radarr 4K');
   // The link to the arr stays next to it as a fallback.
   assert.equal(button(h, 'addlink-r4').getAttribute('href'), 'http://radarr4k:7878/add/new?term=tmdb%3A961');
-  button(h, 'add-r4').click();
+  h.click(button(h, 'add-r4'));
   await until(() => button(h, 'add-profile-r4'));
   const optionsCall = h.calls.find(c => c.path.startsWith('/arr/admin/manage/add-options'));
   assert.equal(optionsCall.path, '/arr/admin/manage/add-options?instanceId=r4&key=movie%3Atmdb%3A961');
@@ -116,14 +116,14 @@ test('the add sheet preselects only the saved defaults, sends one idempotency ke
   // A folder the arr can't write to can't be chosen; free space is shown.
   const folders = [...button(h, 'add-folder-r4').options].map(o => [o.textContent, o.disabled]);
   assert.deepEqual(JSON.parse(JSON.stringify(folders)), [['Choose…', false], ['/data/movies4k · 383.7 GB free', false], ['/data/old · 954 MB free', true]]);
-  button(h, 'add-submit-r4').click();
-  button(h, 'add-submit-r4').click();   // a second tap while sending does nothing
+  h.click(button(h, 'add-submit-r4'));
+  h.click(button(h, 'add-submit-r4'));   // a second tap while sending does nothing
   await until(() => h.document.querySelector('.je-manage-add-message')?.textContent === 'Added to Radarr 4K. It\'s monitored and being searched for.');
   assert.equal(posts.length, 1);
   assert.deepEqual({ ...posts[0], idempotencyKey: 'k' }, { instanceId: 'r4', key: 'movie:tmdb:961', profileId: 5, rootFolder: '/data/movies4k', seasons: undefined, idempotencyKey: 'k' });
   assert.ok(posts[0].idempotencyKey.length > 8);
   assert.equal(h.document.querySelector('.je-manage-add-message').getAttribute('role'), 'status');
-  button(h, 'add-cancel-r4').click();
+  h.click(button(h, 'add-cancel-r4'));
   await until(() => !h.document.querySelector('.je-manage-add'));
 });
 
@@ -140,7 +140,7 @@ test('a series sheet lists the seasons (specials off by default) and nothing is 
   });
   await h.JE.arrManage.open({ key: 'tv:tvdb:75565:s2' }, { operation: h.NATIVE });
   await until(() => button(h, 'add-r4'));
-  button(h, 'add-r4').click();
+  h.click(button(h, 'add-r4'));
   await until(() => button(h, 'add-profile-r4'));
   assert.match(h.document.querySelector('.je-manage-add-warn').textContent, /saved add defaults can't be used: Radarr 4K no longer has the quality profile/);
   assert.equal(button(h, 'add-profile-r4').value, '');
@@ -148,18 +148,18 @@ test('a series sheet lists the seasons (specials off by default) and nothing is 
   assert.deepEqual(seasonBoxes.map(b => b.checked), [false, true, true]);
   assert.deepEqual(JSON.parse(JSON.stringify([...h.document.querySelectorAll('.je-manage-add-season')].map(l => l.textContent))), ['Specials', 'Season 1', 'Season 2']);
   // Nothing chosen: no request, a plain explanation.
-  button(h, 'add-submit-r4').click();
+  h.click(button(h, 'add-submit-r4'));
   assert.equal(posts.length, 0);
   assert.equal(h.document.querySelector('.je-manage-add-message').textContent, 'Choose a quality profile and a root folder.');
   const profile = button(h, 'add-profile-r4');
   profile.value = '4';
-  profile.dispatchEvent(new h.window.Event('change'));
+h.trusted(profile, new h.window.Event('change', { bubbles: true }));
   const folder = button(h, 'add-folder-r4');
   folder.value = '/data/movies4k';
-  folder.dispatchEvent(new h.window.Event('change'));
+h.trusted(folder, new h.window.Event('change', { bubbles: true }));
   seasonBoxes[2].checked = false;
-  seasonBoxes[2].dispatchEvent(new h.window.Event('change'));
-  button(h, 'add-submit-r4').click();
+h.trusted(seasonBoxes[2], new h.window.Event('change', { bubbles: true }));
+  h.click(button(h, 'add-submit-r4'));
   await until(() => posts.length === 1 && /Couldn't add it/.test(h.document.querySelector('.je-manage-add-message')?.textContent || ''));
   assert.deepEqual(posts[0].seasons, [1]);
   assert.equal(posts[0].profileId, 4);
@@ -176,7 +176,7 @@ test('when the server says a direct add is not offered, the sheet explains and l
   });
   await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.NATIVE });
   await until(() => button(h, 'add-r4'));
-  button(h, 'add-r4').click();
+  h.click(button(h, 'add-r4'));
   await until(() => h.document.querySelector('.je-manage-add-warn'));
   assert.equal(h.document.querySelector('.je-manage-add-warn').textContent, "Radarr 4K's profiles and root folders couldn't be read just now.");
   assert.equal(button(h, 'add-sheetlink-r4').getAttribute('href'), 'http://radarr4k:7878/add/new?term=tmdb%3A961');
@@ -194,9 +194,9 @@ test('a held add says why (the request is parked for the administrator)', async 
   });
   await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.NATIVE });
   await until(() => button(h, 'add-r4'));
-  button(h, 'add-r4').click();
+  h.click(button(h, 'add-r4'));
   await until(() => button(h, 'add-submit-r4'));
-  button(h, 'add-submit-r4').click();
+  h.click(button(h, 'add-submit-r4'));
   await until(() => h.document.querySelector('.je-manage-add-failed'));
   assert.equal(h.document.querySelector('.je-manage-add-failed').textContent, "Couldn't add it: Radarr 4K doesn't know this title");
   assert.equal(button(h, 'add-sheetlink-r4').tagName, 'A');

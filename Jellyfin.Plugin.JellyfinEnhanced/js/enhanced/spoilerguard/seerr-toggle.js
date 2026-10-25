@@ -28,6 +28,8 @@
         const detail = options?.detail === true;
         const viewAction = JE.createSessionAction();
         const button = document.createElement('button');
+        // Drawn for this session, route and document (D46S2-R11-1).
+        JE.mountControl?.(button);
         button.type = 'button';
         button.className = detail ? 'button-flat detailButton emby-button je-spoiler-pending-detail' : 'je-spoiler-pending-btn';
         if (detail) button.setAttribute('is', 'emby-button');

@@ -47,7 +47,6 @@
 
     let current = null; // { target, root, opener, unsubscribe, reloadTimer, generation, data, result, searching, queueBusy }
     let generation = 0;
-    let refocusing = false;
 
     /** Closes a drawer whose operation ended (another page, mount or feature-off); a user switch closes it anyway. */
     function ended(state) {
@@ -195,9 +194,9 @@
         root.tabIndex = -1;
         overlay.appendChild(root);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-        root.addEventListener('keydown', onKey);
+        // Escape, Back, Tab and focus are the surface stack's (D46S2-R12-6): only the topmost surface takes them, so a
+        // host dialog or the Remove dialog above the drawer keeps its own focus and keys.
         document.body.appendChild(overlay);
-        document.addEventListener('focusin', keepFocus, true);
         // The session that opened the drawer, and the operation it was opened for (if any), own every read, re-read,
         // retry and write of it; the transport checks both right before each send.
         const session = JE.createSessionAction();
@@ -214,56 +213,8 @@
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
-        root.focus();
+        JE.focusIn(overlay, root);
         await load(mine);
-    }
-
-    /**
-     * Esc closes; Tab stays inside the drawer (from the drawer itself, or anything that isn't one of
-     * its controls, Tab goes to the first control and Shift+Tab to the last).
-     * @param {KeyboardEvent} e Event.
-     * @returns {void}
-     */
-    function onKey(e) {
-        if (e.key === 'Escape') {
-            e.stopPropagation();
-            close();
-            return;
-        }
-        if (e.key !== 'Tab' || !current) return;
-        const focusable = [...current.root.querySelectorAll('button, a[href], select, input, [tabindex="0"]')].filter(n => !n.disabled);
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        const active = document.activeElement;
-        if (!focusable.includes(active)) {
-            e.preventDefault();
-            (e.shiftKey ? last : first).focus();
-        } else if (e.shiftKey && active === first) {
-            e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && active === last) {
-            e.preventDefault();
-            first.focus();
-        }
-    }
-
-    /**
-     * The drawer is modal: focus that lands outside it while it is open (a control removed by a
-     * re-render, a click on the page behind on TV) comes back to the drawer, so Esc/Back and Tab
-     * keep working.
-     * @param {FocusEvent} e Event.
-     * @returns {void}
-     */
-    function keepFocus(e) {
-        // The hub's dialogs (Remove…) open above the drawer and keep focus themselves.
-        if (!current || refocusing || current.overlay.contains(e.target) || e.target?.closest?.('.je-ops-dialog-overlay')) return;
-        refocusing = true;
-        try {
-            current.root.focus();
-        } finally {
-            refocusing = false;
-        }
     }
 
     /**
@@ -360,11 +311,10 @@
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
         stopRetry(state);
-        document.removeEventListener('focusin', keepFocus, true);
         // The Remove dialog it opened (in the hub's dialog layer) goes with it.
         JE.internals.arrHub?.admin?.closeDialog?.('drawer');
         state.overlay.remove();
-        if (state.opener && typeof state.opener.focus === 'function' && document.contains(state.opener)) state.opener.focus();
+        // Focus went back through the stack as the drawer was released (its opener while live, else the page).
     }
 
     /**
@@ -391,7 +341,7 @@
         root.appendChild(head);
         if (!data) {
             root.appendChild(el('div', 'je-manage-empty', tr(failed ? 'arr_manage_error' : 'arr_manage_loading')));
-            if (hadFocus && !root.contains(document.activeElement)) root.focus();
+            if (hadFocus && !root.contains(document.activeElement)) refocus(root, root);
             return;
         }
         const chips = el('div', 'je-manage-chips');
@@ -423,8 +373,20 @@
         // Focus stays where it was (the same control after the re-render), else on the drawer.
         if (hadFocus && !root.contains(document.activeElement)) {
             const again = focused ? [...root.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === focused) : null;
-            (again || root).focus();
+            refocus(root, again || root);
         }
+    }
+
+    /**
+     * Focuses `node` of the drawer `root` only while the drawer is the topmost surface (D46S2-R12-6): a re-render or a
+     * delayed answer never takes focus from a dialog above it.
+     * @param {HTMLElement} root Drawer.
+     * @param {HTMLElement} node Control.
+     * @returns {void}
+     */
+    function refocus(root, node) {
+        const overlay = root.parentElement;
+        if (overlay) JE.focusIn(overlay, node);
     }
 
     /**
@@ -623,7 +585,7 @@
      */
     function focusOn(id) {
         const target = current ? [...current.root.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === id) : null;
-        target?.focus?.();
+        if (target) refocus(current.root, target);
     }
 
     /**

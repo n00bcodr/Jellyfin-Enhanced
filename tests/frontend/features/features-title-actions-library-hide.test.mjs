@@ -75,13 +75,13 @@ for (const kind of ['Movie', 'Series', 'Episode']) {
     const h = setup(t, kind);
     browserEventTiming(h);
     const row = await mountRow(h);
-    row.querySelector('.je-actions-wide-more, .je-actions-more').click(); await settle();
+    h.click(row.querySelector('.je-actions-wide-more, .je-actions-more')); await settle();
     const entry = h.document.querySelector('.je-actions-entry[data-action="hide"]');
     assert.ok(entry, 'the sheet offers Hide');
-    entry.click(); await settle();
+    h.click(entry); await settle();
     assert.ok(dialog(h), 'the confirmation stays open');
     const confirm = dialog(h).querySelector('.je-hide-confirm-hide, .je-hide-confirm-episode, button.je-hide-confirm-primary') || [...dialog(h).querySelectorAll('button')].at(-1);
-    confirm.click(); await settle();
+    h.click(confirm); await settle();
     assert.ok(h.writes.length > 0, 'the hide was saved');
   });
 }
@@ -90,21 +90,21 @@ test('control: the row\'s own Hide button (a direct press) asks and hides', asyn
   const h = setup(t, 'Movie');
   browserEventTiming(h);
   const row = await mountRow(h);
-  row.querySelector('.je-detail-hide-btn').click(); await settle();
+  h.click(row.querySelector('.je-detail-hide-btn')); await settle();
   assert.ok(dialog(h), 'the confirmation is open');
-  [...dialog(h).querySelectorAll('button')].at(-1).click(); await settle();
+  h.click([...dialog(h).querySelectorAll('button')].at(-1)); await settle();
   assert.ok(h.writes.length > 0, 'the hide was saved');
 });
 
 test('the confirmation still belongs to the press\'s operation: the row re-renders while it is open → it closes, nothing hidden', async t => {
   const h = setup(t, 'Movie');
   const row = await mountRow(h);
-  row.querySelector('.je-actions-wide-more, .je-actions-more').click(); await settle();
-  h.document.querySelector('.je-actions-entry[data-action="hide"]').click(); await settle();
+  h.click(row.querySelector('.je-actions-wide-more, .je-actions-more')); await settle();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="hide"]')); await settle();
   assert.ok(dialog(h), 'the confirmation is open');
   const button = dialog(h).querySelectorAll('button');
   row.replaceWith(row.cloneNode(true)); h.JE.titleActions.scan(); await settle();
   assert.equal(dialog(h), null, 'closed with its operation');
-  [...button].at(-1).click(); await settle();
+  h.click([...button].at(-1)); await settle();
   assert.equal(h.writes.length, 0);
 });

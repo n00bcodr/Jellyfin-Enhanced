@@ -98,7 +98,7 @@ const PLANTED = {
   'R6-4: the Share fallback link sheet without its operation': ['arr/actions/title-actions.js',
     s => s.replace('else JE.titleActions.showLink?.(url, submitted);', 'else JE.titleActions.showLink?.(url);'), /title-actions\.js:\d+ showLink\(…\) without an owner/],
   'an inferred owner ({ submitted: true }) reintroduced': ['enhanced/hiddencontent/hidden-content-dialogs.js',
-    s => s.replace('const action = JE.createSessionAction({ owner: dialogOptions.owner });', 'const action = JE.createSessionAction({ submitted: true });'), /hidden-content-dialogs\.js:\d+ createSessionAction\(\{ submitted \}\) infers its owner/],
+    s => s.replace('const action = JE.createSessionAction({ owner: admitted });', 'const action = JE.createSessionAction({ submitted: true });'), /hidden-content-dialogs\.js:\d+ createSessionAction\(\{ submitted \}\) infers its owner/],
   'a sheet opened without its host': ['arr/actions/title-actions-hosts.js',
     s => s.replace('if (newest()) A.show({ ...state.c, name: title }, entries, opener, action);', 'if (newest()) A.show({ ...state.c, name: title }, entries, opener);'), /title-actions-hosts\.js:\d+ show\(…\) without an owner/],
   'a Manage drawer opened without its operation': ['arr/actions/title-actions.js',

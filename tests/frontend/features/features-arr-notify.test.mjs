@@ -55,7 +55,9 @@ function setup(t, { config = {}, routes = {}, hash = '#/home', clock } = {}) {
             calls.push({ path, method: options.method || 'GET', body: options.body });
             const route = Object.keys(routes).find(r => path.startsWith(r));
             if (route) return routes[route](path, options, state);
-            if (path.startsWith('/acquire/notify/inbox')) return JSON.parse(JSON.stringify(state.inbox));
+            // An older page (`before=`) answers from `olderInbox` when a test sets one, so a first-page refresh still in flight
+            // answers the first page.
+            if (path.startsWith('/acquire/notify/inbox')) return JSON.parse(JSON.stringify(path.includes('before=') && state.olderInbox ? state.olderInbox : state.inbox));
             if (path === '/acquire/follows' && !options.method) return state.follows;
             if (path === '/acquire/follows') {
               const list = new Set(state.follows.follows.map(f => f.key));
@@ -122,7 +124,7 @@ test('OK\'d requests read in family words (on its way when someone else asked), 
   await until(() => h.document.getElementById('je-notify-bell'));
   await h.JE.arrNotify.loadPrefs();
   await h.JE.arrNotify.refresh();
-  h.document.getElementById('je-notify-bell').click();
+  h.click(h.document.getElementById('je-notify-bell'));
   const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
   assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
     "Dad OK'd Firefly S1E4",
@@ -159,7 +161,7 @@ test('an ask or a reminder whose title is withheld from the administrator reads 
   h.JE.initializeArrNotify();
   await until(() => h.document.getElementById('je-notify-bell'));
   await h.JE.arrNotify.refresh();
-  h.document.getElementById('je-notify-bell').click();
+  h.click(h.document.getElementById('je-notify-bell'));
   const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')].map(r => r.querySelector('.je-notify-text').textContent);
   assert.match(rows[0], /^Robin asked for a title\./);
   assert.match(rows[1], /^Robin .*a title/);
@@ -183,7 +185,7 @@ test('the bell shows the unread count and an inbox with titles as text, Play for
   const bell = h.document.getElementById('je-notify-bell');
   assert.equal(bell.querySelector('.je-notify-badge').textContent, '2');
   assert.equal(bell.getAttribute('aria-label'), 'Notifications (2 new)');
-  bell.click();
+  h.click(bell);
   const panel = h.document.querySelector('.je-notify-panel');
   assert.ok(panel);
   assert.equal(h.document.activeElement, panel);
@@ -205,14 +207,14 @@ test('the bell shows the unread count and an inbox with titles as text, Play for
   assert.equal(panel.querySelector('.je-notify-new').textContent, '2 new');
   assert.match(panel.querySelector('.je-notify-foot-text').textContent, /Phone alerts: on \(ntfy\) · Quiet hours 22:00–07:00/);
   assert.ok(panel.querySelector('.je-notify-more'));
-  panel.querySelector('.je-notify-markall').click();
+  h.click(panel.querySelector('.je-notify-markall'));
   await until(() => h.calls.some(c => c.path === '/acquire/notify/read'));
   assert.deepEqual(plain(h.calls.find(c => c.path === '/acquire/notify/read').body), { all: true });
   await until(() => bell.querySelector('.je-notify-badge').hidden);
   // Opening an item marks it read and goes to its page; Escape closes and focus returns to the bell.
-  h.document.querySelector('.je-notify-panel .je-notify-body').click();
+  h.click(h.document.querySelector('.je-notify-panel .je-notify-body'));
   assert.match(h.window.location.hash, /#\/details\?id=b{32}/);
-  bell.click();
+  h.click(bell);
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.document.querySelector('.je-notify-panel'), null);
   assert.equal(h.document.activeElement, bell);
@@ -229,7 +231,7 @@ test('a new notification arriving through the feed shows a toast, but never duri
   const toast = h.document.querySelector('.je-notify-toast');
   assert.equal(toast.querySelector('.je-notify-toast-text').textContent, 'Dune: Part Two is ready');
   assert.ok(toast.querySelector('.je-notify-toast-play'));
-  toast.querySelector('.je-notify-toast-close').click();
+  h.click(toast.querySelector('.je-notify-toast-close'));
   assert.equal(h.document.querySelector('.je-notify-toast'), null);
 
   // During playback: no toast; after leaving the player, one summary toast.
@@ -263,7 +265,7 @@ test('Notify me on details pages, in the more-info window and on Requests rows s
   assert.ok(icon);
   await until(() => icon.getAttribute('aria-label') === 'Notify me about new episodes');
   assert.equal(icon.getAttribute('aria-pressed'), 'false');
-  icon.click();
+  h.click(icon);
   await until(() => icon.getAttribute('aria-pressed') === 'true');
   assert.deepEqual(plain(h.calls.find(c => c.method === 'PUT').body), { key: 'tv:tvdb:7', on: true });
   assert.equal(icon.getAttribute('aria-label'), 'Following new episodes');
@@ -300,11 +302,11 @@ test('Remind shows for family members on stuck titles only, and says when it was
   h.N.attachDetails(page, { key: 'movie:tmdb:5', kind: 'movie', attention: true, itemId: 'f'.repeat(32) }, { contact: 'Dad' });
   const remind = block.querySelector('.je-notify-remind');
   assert.equal(remind.textContent, 'campaignRemind Dad');
-  remind.click();
+  h.click(remind);
   await until(() => remind.textContent.includes('Reminded'));
   assert.deepEqual(plain(h.calls.find(c => c.path === '/acquire/remind').body), { key: 'movie:tmdb:5', itemId: 'f'.repeat(32) });
   h.N.attachDetails(page, { key: 'movie:tmdb:5', kind: 'movie', attention: true, itemId: 'f'.repeat(32) }, { contact: 'Dad' });
-  block.querySelector('.je-notify-remind').click();
+  h.click(block.querySelector('.je-notify-remind'));
   await until(() => block.querySelector('.je-notify-remind').textContent.includes('Already reminded today'));
   // Administrators have the arr's own words and the Manage drawer instead.
   h.N.attachDetails(page, { key: 'movie:tmdb:5', kind: 'movie', attention: true, admin: { variants: [] } }, { contact: 'Dad' });
@@ -342,18 +344,18 @@ test('the Requests & alerts settings save each change with the time zone, make u
   assert.match(host.textContent, /subscribe on server https:\/\/ntfy\.example to the topic je-abcdefghijkl/);
   const link = host.querySelector('.je-arr-alerts-link');
   assert.equal(link.href, 'https://ntfy.example/je-abcdefghijkl');
-  [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Make up a new topic').click();
+  h.click([...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Make up a new topic'));
   await until(() => host.textContent.includes('je-newrandomtopic'));
   // E-mail: ask for a code, a wrong one, then the right one.
   const address = host.querySelector('input[type="email"]');
   address.value = 'emma@home.test';
-  [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Send me a code').click();
+  h.click([...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Send me a code'));
   await until(() => host.querySelector('.je-arr-alerts-code'));
   host.querySelector('.je-arr-alerts-code').value = '000000';
-  [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Confirm').click();
+  h.click([...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Confirm'));
   await until(() => host.querySelector('.je-arr-alerts-note')?.textContent === "That code isn't right.");
   host.querySelector('.je-arr-alerts-code').value = '123456';
-  [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Confirm').click();
+  h.click([...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Confirm'));
   await until(() => host.textContent.includes('To emma@home.test'));
 });
 
@@ -498,7 +500,7 @@ test('keyboard and TV focus stays on the control after each settings change and 
   // A button that changes its label keeps focus too.
   const make = [...host.querySelectorAll('.je-arr-alerts-btn')].find(b => b.textContent === 'Make up a new topic');
   make.focus();
-  make.click();
+  h.click(make);
   await clock.until(() => !make.isConnected);
   assert.equal(h.document.activeElement.dataset.jeFocus, 'phone-generate');
 
@@ -509,16 +511,16 @@ test('keyboard and TV focus stays on the control after each settings change and 
   // Wait for the delayed startup read before replacing the mock's newest page with an older page.
   await clock.until(() => h.subscriptions.some(subscription => subscription.active));
   await h.JE.arrNotify.refresh();
-  h.document.getElementById('je-notify-bell').click();
+  h.click(h.document.getElementById('je-notify-bell'));
   const panel = h.document.querySelector('.je-notify-panel');
   panel.querySelector('.je-notify-markall').focus();
-  panel.querySelector('.je-notify-markall').click();
+  h.click(panel.querySelector('.je-notify-markall'));
   await clock.until(() => panel.querySelector('.je-notify-markall').disabled);
   assert.ok(panel.contains(h.document.activeElement) && h.document.activeElement !== h.document.body);
   assert.equal(h.document.activeElement, panel.querySelector('.je-notify-body'));
-  h.state.older = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
+  h.state.olderInbox = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
   panel.querySelector('.je-notify-more').focus();
-  panel.querySelector('.je-notify-more').click();
+  h.click(panel.querySelector('.je-notify-more'));
   await clock.until(() => panel.querySelectorAll('.je-notify-item').length === 3);
   assert.equal(h.document.activeElement.closest('.je-notify-item')?.dataset.id, '2');
   // Focus outside the panel: Tab brings it back in.
@@ -574,17 +576,17 @@ test('a notice about a title that is not in the library opens its native page; a
   await until(() => h.document.getElementById('je-notify-bell'));
   await h.JE.arrNotify.loadPrefs();
   await h.JE.arrNotify.refresh();
-  const row = n => { h.document.getElementById('je-notify-bell').click(); return [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][n].querySelector('.je-notify-body'); };
-  row(0).click();
-  row(1).click();
+  const row = n => { h.click(h.document.getElementById('je-notify-bell')); return [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][n].querySelector('.je-notify-body'); };
+  h.click(row(0));
+  h.click(row(1));
   await wait(5);
   assert.deepEqual(keyed, [['movie:tmdb:693134', null, null, false], ['tv:tvdb:393189', 1, 3, false]]);
-  row(2).click();
+  h.click(row(2));
   assert.equal(h.window.location.hash, '#/requests?tab=overview');
   assert.equal(keyed.length, 2);
   // Nowhere to open it (the navigator answered no): the Requests page as before.
   answer = false;
-  row(0).click();
+  h.click(row(0));
   await wait(5);
   assert.equal(h.window.location.hash, '#/requests');
 });
@@ -602,18 +604,18 @@ test('administrators\' Needs attention alerts read like the Overview row and ope
   await until(() => h.document.getElementById('je-notify-bell'));
   await h.JE.arrNotify.loadPrefs();
   await h.JE.arrNotify.refresh();
-  h.document.getElementById('je-notify-bell').click();
+  h.click(h.document.getElementById('je-notify-bell'));
   const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
   assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
     'Severance S02E05 needs a manual import in Sonarr',
     "Dune (4K) was OK'd in Seerr, but none of the 4K Sonarr/Radarr Jellyfin Enhanced watches has it",
     'Low disk space on Radarr: /data/movies has 4% free (40 GB)'
   ]);
-  rows[0].querySelector('.je-notify-body').click();
+  h.click(rows[0].querySelector('.je-notify-body'));
   assert.equal(h.window.location.hash, '#/requests?tab=overview');
   // A link that isn't one of the Requests page's own tabs is never followed.
-  h.document.getElementById('je-notify-bell').click();
-  [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][2].querySelector('.je-notify-body').click();
+  h.click(h.document.getElementById('je-notify-bell'));
+  h.click([...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][2].querySelector('.je-notify-body'));
   assert.equal(h.window.location.hash, '#/requests');
 });
 

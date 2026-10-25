@@ -84,7 +84,7 @@ test('R9-1: a 4K request\'s delayed refresh, then a newer search → the newer r
   await wait(450);
   assert.deepEqual(h.searches, ['old'], 'the page searched its query');
   const { popupItem } = cardWithPopup(h);
-  popupItem.click(); await delivered();
+  h.click(popupItem); await delivered();
   assert.equal(posts(h).length, 1);
   const input = h.document.querySelector('#searchTextInput');
   input.value = 'new'; h.window.history.replaceState({}, '', '#/search?query=new'); input.dispatchEvent(new h.window.Event('input'));
@@ -124,7 +124,7 @@ test('control: a 4K request and the same search still standing → its results r
   const h = await searchPage(t, { query: 'old' });
   await wait(450);
   const { popupItem } = cardWithPopup(h);
-  popupItem.click(); await delivered();
+  h.click(popupItem); await delivered();
   assert.equal(posts(h).length, 1);
   await wait(1100); await delivered();
   assert.deepEqual(h.searches, ['old', 'old'], 'refreshed once');
@@ -136,11 +136,11 @@ test('control: a 4K request and the same search still standing → its results r
 test('R9-2: advanced on, a card\'s 4K popup → the form → Save → that card\'s 4K arrow shows the request (not offered again)', async t => {
   const h = await searchPage(t, { advanced: true });
   const { main, arrow, popupItem } = cardWithPopup(h);
-  popupItem.click(); await delivered(); await wait(150);
+  h.click(popupItem); await delivered(); await wait(150);
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened');
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.equal(posts(h)[0][3].is4k, true);
   assert.equal(arrow.disabled, true, 'the 4K arrow no longer offers the request');
@@ -163,15 +163,15 @@ test('R9-2: a real search card whose overview closed while its 4K form answers �
   toggleOverview(h, card);
   const arrow = card.querySelector('.jellyseerr-split-arrow');
   assert.ok(arrow, 'the overview draws the split Request');
-  arrow.click(); await settle();
+  h.click(arrow); await settle();
   // A phone's tap on the popup closes the card's overview first (the split button goes with it), then the popup acts.
   toggleOverview(h, card);
   assert.equal(card.querySelector('.jellyseerr-split-arrow'), null, 'the overview closed');
-  h.document.querySelector('.jellyseerr-4k-popup-item[data-action="request4k"]').click(); await delivered(); await wait(150);
+  h.click(h.document.querySelector('.jellyseerr-4k-popup-item[data-action="request4k"]')); await delivered(); await wait(150);
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened');
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);
   toggleOverview(h, card);
   const again = card.querySelector('.jellyseerr-split-arrow');
@@ -183,9 +183,9 @@ test('R9-2: a real search card whose overview closed while its 4K form answers �
 test('R9-2: a series card\'s 4K popup → the season form → Save → that card\'s 4K arrow shows the request', async t => {
   const h = await searchPage(t);
   const { main, arrow, popupItem } = cardWithPopup(h, 1399, 'tv');
-  popupItem.click(); await delivered(); await wait(150);
+  h.click(popupItem); await delivered(); await wait(150);
   const form = seerrModal(h); assert.ok(form, 'the season form opened');
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.equal(posts(h)[0][3].is4k, true);
   assert.ok(arrow.classList.contains('jellyseerr-4k-pending'), 'the series card\'s 4K arrow shows the request');
@@ -198,7 +198,7 @@ test('R9-2: a 4K popup whose origin is unknown → refused: nothing opens or is 
   const popup = h.document.createElement('div'); popup.className = 'jellyseerr-4k-popup';
   popup.innerHTML = '<button class="jellyseerr-4k-popup-item" data-tmdb-id="603" data-media-type="movie" data-action="request4k">4K</button>';
   h.document.body.append(popup);
-  popup.firstChild.click(); await delivered(); await wait(150);
+  h.click(popup.firstChild); await delivered(); await wait(150);
   assert.equal(posts(h).length, 0, 'nothing sent');
   assert.equal(seerrModal(h), null, 'no form');
   assert.ok(refusals().some(m => /has no origin/.test(m)), 'refused: ' + JSON.stringify(refusals()));
@@ -210,9 +210,9 @@ test('R9-3: the window\'s standard Request held, its Request in 4K answers first
   const h = setup(t, { asks: false, seerr4k: true });
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-split-main').click(); await settle();
-  modal.querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
-  h.document.querySelector('.je-actions-entry[data-action="request-4k"]').click(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await settle();
+  h.click(modal.querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="request-4k"]')); await delivered();
   assert.equal(posts(h).length, 2);
   held.resolve(); await delivered();
   const now = moreInfo(h);
@@ -228,12 +228,12 @@ test('control: both requests held, then a Refresh of the window → neither answ
   const modal = await nativeWindow(h);
   const first = h.hold('POST', '/jellyseerr/request');
   const second = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-split-main').click(); await settle();
-  modal.querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
-  h.document.querySelector('.je-actions-entry[data-action="request-4k"]').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await settle();
+  h.click(modal.querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="request-4k"]')); await settle();
   assert.equal(posts(h).length, 2);
   h.manager.clearCache();
-  modal.querySelector('.modal-refresh').click(); await delivered();
+  h.click(modal.querySelector('.modal-refresh')); await delivered();
   const refreshed = moreInfo(h).querySelector('.jellyseerr-split-main');
   first.resolve(); second.resolve(); await delivered();
   assert.equal(refreshed.disabled, false, 'the Refresh superseded both writes');
@@ -276,7 +276,7 @@ test('control: a viewer\'s own click on a native opener (no operation acting) �
   const h = setup(t, { asks: false });
   h.load('jellyseerr/nativedetails/native-details.js');
   const node = plantHandler(h, 'native-show', 'JE.titleDetails.show(603, \'movie\', undefined, JE.ownerOf(e));');
-  node.click(); await delivered();
+  h.click(node); await delivered();
   assert.equal(moreInfo(h)?.dataset.tmdbId, '603');
   assert.equal(h.JE.ownerOf(moreInfo(h)).native, true);
 });
@@ -297,7 +297,7 @@ test('R8-1 (plant executed): a captured operation reaching a native window in a 
   const refusals = recordRefusals(h);
   h.a.initialize(); await settle();
   const node = plantHandler(h, 'hub-entry', 'const op = JE.titleActions.generation(); setTimeout(() => { if (op.current()) JE.jellyseerrMoreInfo.open(603, \'movie\', undefined, JE.NATIVE); });');
-  node.click(); await wait(20); await delivered();
+  h.click(node); await wait(20); await delivered();
   assert.equal(moreInfo(h), null);
   assert.ok(refusals().some(m => /without an owner/.test(m)));
 });
@@ -316,7 +316,7 @@ test('R7-1 (plant executed): the window\'s Request handler names itself native; 
     '            const owner = JE.NATIVE;') } });
   const refusals = recordRefusals(h);
   const modal = await nativeWindow(h);
-  modal.querySelector('.je-actions-primary').click(); await delivered();
+  h.click(modal.querySelector('.je-actions-primary')); await delivered();
   assert.equal(posts(h).length, 0, 'no request sent for a dropped owner');
   assert.ok(refusals().some(m => /without an owner|inside an operation/.test(m)), JSON.stringify(refusals()));
 });
@@ -327,7 +327,7 @@ test('R7-1 (plant executed): the window\'s Request handler takes its owner from 
     '            const owner = JE.ownerOf(mainButton);') } });
   const refusals = recordRefusals(h);
   const modal = await nativeWindow(h);
-  modal.querySelector('.je-actions-primary').click(); await delivered();
+  h.click(modal.querySelector('.je-actions-primary')); await delivered();
   assert.equal(posts(h).length, 0);
   assert.ok(refusals().some(m => /native owner inside an operation/.test(m)), JSON.stringify(refusals()));
 });
@@ -335,7 +335,7 @@ test('R7-1 (plant executed): the window\'s Request handler takes its owner from 
 test('control: the bar presses the window\'s Request (its press carries the operation) → sent, bound to it', async t => {
   const h = setup(t, { asks: false, seerr4k: true });
   const modal = await nativeWindow(h);
-  modal.querySelector('.je-actions-primary').click(); await delivered();
+  h.click(modal.querySelector('.je-actions-primary')); await delivered();
   assert.equal(posts(h).length, 1);
 });
 
@@ -352,7 +352,7 @@ test('R8-3 (plant executed): nested destructuring of the transport, an unbound P
 test('control: the same unbound POST from a viewer\'s own click (native) → sent', async t => {
   const h = setup(t, { asks: false });
   const node = plantHandler(h, 'native-post', 'const { core: { api } } = JE; api.plugin(\'/arr/x\', { method: \'POST\', body: {} }).catch(() => {});');
-  node.click(); await delivered();
+  h.click(node); await delivered();
   assert.equal(h.sent('POST', '/arr/x').length, 1);
 });
 
@@ -378,8 +378,8 @@ test('R8-2 (plant executed): a raw completion listener marking cards by title id
   h.window.eval("document.addEventListener('jellyseerr-media-requested', e => { for (const b of document.querySelectorAll(`.jellyseerr-request-button[data-tmdb-id=\"${e.detail.tmdbId}\"]`)) b.disabled = true; });");
   const card = h.document.createElement('div'); card.className = 'jellyseerr-card'; card.innerHTML = CARD(); h.document.body.prepend(card);
   await nativeWindow(h);
-  moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
-  h.document.querySelector('.je-actions-entry[data-action="request-4k"]').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="request-4k"]')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.equal(card.querySelector('.jellyseerr-split-main').disabled, false, 'the standard Request stays');
   assert.ok(card.querySelector('.jellyseerr-split-arrow').classList.contains('jellyseerr-4k-pending'), 'the 4K arrow follows the publication');

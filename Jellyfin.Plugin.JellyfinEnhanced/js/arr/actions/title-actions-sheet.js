@@ -49,17 +49,17 @@
         const node = el('span', 'material-icons', name || 'more_horiz'); node.setAttribute('aria-hidden', 'true'); return node;
     }
 
-    /** Closes the current sheet (only when `owner` opened it, if given) and restores a live opener. */
-    function close(restore = true, owner) {
+    /**
+     * Closes the current sheet (only when `owner` opened it, if given). The stack restores the page behind it and then
+     * focus (its opener while live, else the nearest live part of the page: D46S2-R12-10); its offer finishes.
+     */
+    function close(_restore = true, owner) {
         if (!current || (owner && current.owner !== owner)) return;
         const state = current; current = null;
-        const live = state.action.current();
-        state.lease.open = false; state.release?.(); state.releaseScope?.(); state.observer.disconnect(); state.backdrop.remove();
-        for (const [node, before] of state.inert) node.inert = before;
-        if (restore && live) {
-            const target = state.opener?.isConnected ? state.opener : state.returnHost?.querySelector('.je-actions-more, .je-card-more');
-            target?.focus();
-        }
+        state.lease.open = false; state.release?.();
+        state.releaseScope?.(); state.observer.disconnect(); state.backdrop.remove();
+        A.finish(state.action);
+        state.onClose?.();
     }
 
     /** Closes one particular sheet if it is still the open one (a later sheet is left alone). */
@@ -93,13 +93,16 @@
      * owned by the session, the route and that host, so it outlives the sheet (D53). The opening is admitted first
      * (D46S2 audit S2): an owner that is not current opens nothing and leaves the current sheet alone (false).
      */
-    function show(c, entries, opener, owner) {
+    function show(c, entries, opener, owner, { mount = null, onClose = null } = {}) {
         const host = JE.admitSurface(owner, 'the title actions sheet');
         if (!host) return false;
         close(false); styles();
         opener = opener || document.activeElement;
         const lease = { open: true };
         const action = A.generation(() => lease.open && host.current() !== false);
+        // What a press submits belongs to the stable mount the offer was shown for (a card's or a row's), not to the
+        // offer: it outlives the sheet closing (D46S2-R12-8).
+        const base = mount || host;
         const backdrop = el('div', 'je-actions-backdrop');
         const sheet = el('section', 'je-actions-sheet focuscontainer');
         sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', JE.t('title_actions_more'));
@@ -124,9 +127,10 @@
                 button.append(icon(entry.icon), label, el('span', 'je-actions-state'));
                 if (entry.control) { entry.control.classList.add('je-actions-control'); sheet.append(entry.control); }
                 sync(entry, button); pairs.push([entry, button]);
-                button.onclick = async () => {
-                    if (!action.current() || button.disabled) return;
-                    const operation = A.generation(() => host.current() !== false);
+                button.onclick = async e => {
+                    // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
+                    if (!JE.ownerOf(e) || !action.current() || button.disabled) return;
+                    const operation = A.generation(() => base.current() !== false);
                     // Close before opening the owner's modal; that modal owns focus from this point.
                     try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
                     catch (_) { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); }
@@ -135,27 +139,25 @@
             }
         }
         backdrop.append(sheet);
-        const inert = [...document.body.children].filter(n => n.tagName !== 'SCRIPT' && n.tagName !== 'STYLE').map(n => [n, n.inert]);
-        inert.forEach(([n]) => { n.inert = true; });
+        // The page behind is covered by the surface stack (inert, out of the accessibility tree, D46S2-R12-11).
         document.body.append(backdrop);
         pairs.forEach(([entry]) => {
             if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(entry.control, c.tmdbId, c.type, action.current);
         });
         const observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button)));
         pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) observer.observe(source, { subtree: true, childList: true, attributes: true }); });
-        current = { backdrop, opener, action, owner: host, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
+        current = { backdrop, opener, action, owner: host, observer, lease, onClose, release: action.onCancel(() => close(false)) };
         dismiss.onclick = () => close();
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
         // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
         // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
-        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener });
+        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener, dismiss: () => close() });
         if (!current.releaseScope) { close(false); return false; }
+        // Escape and every Back key reach the sheet through the surface stack only (the topmost surface, the viewer's key).
         sheet.addEventListener('keydown', e => {
-            if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) {
-                if (!JE.isTopmostSurface(backdrop)) return;
-                e.preventDefault(); e.stopImmediatePropagation(); close(); return;
-            }
             if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            // Only the topmost surface moves focus, and only for the viewer's key (D46S2-R12-6).
+            if (!JE.surfaceInput(backdrop, e)) return;
             const buttons = [...sheet.querySelectorAll('button:not(:disabled)')].filter(n => !n.closest('.je-actions-control'));
             const index = buttons.indexOf(document.activeElement);
             const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.shiftKey || ['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1) + buttons.length) % buttons.length;

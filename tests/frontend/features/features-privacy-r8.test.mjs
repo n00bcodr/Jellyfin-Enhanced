@@ -48,7 +48,7 @@ function mountPrefs(h){
 test('accepted guard with both rereads failing stays truthful, refreshes the page and recovers',async t=>{
  const h=sgSetup(t);await h.api.loadState();const timers=controlTimers(h,slow);
  h.api.addSpoilerBlurButton('aabb',h.page(),'Movie');const button=h.document.querySelector('.je-spoiler-blur-btn');
- h.setGets('down');const before=h.reads();button.click();await until(()=>!button.disabled,'toggle settles');
+ h.setGets('down');const before=h.reads();h.click(button);await until(()=>!button.disabled,'toggle settles');
  assert.ok(h.server.Movies.aabb,'server accepted the guard');assert.equal(h.reads()-before,2,'both reread attempts failed');
  assert.equal(button.getAttribute('aria-pressed'),'true','control shows the accepted guard, not the stale OFF');
  assert.equal(h.reloads(),1,'native refresh still happens after an accepted write');
@@ -65,7 +65,7 @@ test('accepted guard with both rereads failing stays truthful, refreshes the pag
 test('accepted provider guard with failing rereads keeps the pending control truthful',async t=>{
  const h=sgSetup(t);await h.api.loadState();controlTimers(h,slow);
  const button=h.api.buildSeerrToggle({id:42,title:'Title'},'movie',{detail:true});h.document.body.append(button);
- h.setGets('down');button.click();await until(()=>!button.disabled,'toggle settles');
+ h.setGets('down');h.click(button);await until(()=>!button.disabled,'toggle settles');
  assert.ok(h.server.PendingTmdb['movie:42']);assert.equal(button.getAttribute('aria-pressed'),'true');
  assert.deepEqual(h.toasts,['spoiler_blur_pending_enabled_toast']);
 });
@@ -80,7 +80,7 @@ test('preferences saved while the reread fails are kept and the box is not rever
 test('a refused guard write leaves the control, state and page unchanged',async t=>{
  const h=sgSetup(t);await h.api.loadState();controlTimers(h,slow);
  h.api.addSpoilerBlurButton('aabb',h.page(),'Movie');const button=h.document.querySelector('.je-spoiler-blur-btn');
- h.setWrites(503);button.click();await until(()=>!button.disabled,'toggle settles');
+ h.setWrites(503);h.click(button);await until(()=>!button.disabled,'toggle settles');
  assert.equal(button.getAttribute('aria-pressed'),'false');assert.equal(h.reloads(),0);assert.equal(h.api.isLoadOk(),true);
  assert.deepEqual(h.toasts,['spoiler_blur_error_toast']);
 });
@@ -103,7 +103,7 @@ test('after a failed state read the native control shows retrying, not a guessed
  const h=sgSetup(t);h.server.Movies.aabb={};const timers=controlTimers(h,slow);h.setGets('down');await h.api.loadState();
  h.api.addSpoilerBlurButton('aabb',h.page(),'Movie');const button=h.document.querySelector('.je-spoiler-blur-btn');
  assert.equal(button.getAttribute('aria-pressed'),null);assert.equal(button.getAttribute('aria-busy'),'true');assert.equal(button.disabled,true);
- assert.equal(button.title,'spoiler_blur_state_retrying');assert.equal(button.querySelector('.material-icons').textContent,'sync','not drawn as OFF');button.click();await tick();assert.equal(h.calls.filter(c=>c.method!=='GET').length,0,'unknown state cannot be toggled');
+ assert.equal(button.title,'spoiler_blur_state_retrying');assert.equal(button.querySelector('.material-icons').textContent,'sync','not drawn as OFF');h.click(button);await tick();assert.equal(h.calls.filter(c=>c.method!=='GET').length,0,'unknown state cannot be toggled');
  h.setGets('up');timers.fire();await until(()=>h.api.isLoadOk(),'recovery');
  assert.equal(button.getAttribute('aria-pressed'),'true','recovered control shows the server guard');assert.equal(button.disabled,false);
 });
@@ -147,12 +147,12 @@ test('manager panel Unhide keeps the card, count and rule when the DELETE fails,
  const heading=()=>h.document.querySelector('.je-hidden-management-header h2').textContent;
  const card=[...h.document.querySelectorAll('.je-hidden-item-card')].find(c=>c.querySelector('.je-hidden-item-name').textContent==='Title');
  const button=card.querySelector('.je-hidden-item-unhide');
- button.click();assert.equal(timers.fire(),1);await until(()=>h.ajaxCalls.length===1&&!button.disabled,'unhide settles');await tick();
+ h.click(button);assert.equal(timers.fire(),1);await until(()=>h.ajaxCalls.length===1&&!button.disabled,'unhide settles');await tick();
  assert.equal(card.isConnected,true,'card restored');assert.equal(card.classList.contains('je-hidden-item-removing'),false);
  assert.match(heading(),/\(2\)/,'count unchanged');assert.equal(h.document.querySelector('.je-hidden-management-empty'),null);
  assert.equal(button.textContent,'hidden_content_unhide_failed_retry','visible error that retries');
  assert.equal(h.internal.getHiddenCount(),2,'rule preserved');
- fail=false;button.click();timers.fire();await until(()=>!card.isConnected,'retry removes the card');
+ fail=false;h.click(button);timers.fire();await until(()=>!card.isConnected,'retry removes the card');
  assert.match(heading(),/\(1\)/);assert.equal(h.internal.getHiddenCount(),1);
  const search=h.document.querySelector('.je-hidden-management-search');search.value='Title';search.dispatchEvent(new h.window.Event('input'));
  assert.equal(h.document.querySelectorAll('.je-hidden-item-card').length,0,'a confirmed unhide does not reappear in the panel search');
@@ -160,7 +160,7 @@ test('manager panel Unhide keeps the card, count and rule when the DELETE fails,
 test('manager panel removes the card only once the unhide is confirmed',async t=>{
  const h=hcSetup(t,{items:{'movie:tmdb:42':providerRule['movie:tmdb:42']},ajax:()=>({items:{},revision:'r2'})});
  const timers=controlTimers(h);h.internal.showManagementPanel();
- h.document.querySelector('.je-hidden-item-unhide').click();timers.fire();
+ h.click(h.document.querySelector('.je-hidden-item-unhide'));timers.fire();
  await until(()=>!h.document.querySelector('.je-hidden-item-card'),'card removed');
  assert.match(h.document.querySelector('.je-hidden-management-header h2').textContent,/\(0\)/);
  assert.ok(h.document.querySelector('.je-hidden-management-empty'));assert.equal(h.internal.getHiddenCount(),0);
@@ -168,7 +168,7 @@ test('manager panel removes the card only once the unhide is confirmed',async t=
 test('manager panel Unhide submitted before closing still completes for the same viewer',async t=>{
  const h=hcSetup(t,{items:{'movie:tmdb:42':providerRule['movie:tmdb:42']},ajax:()=>({items:{},revision:'r2'})});
  const timers=controlTimers(h);h.internal.showManagementPanel();
- h.document.querySelector('.je-hidden-item-unhide').click();h.document.querySelector('.je-hidden-management-close').click();
+ h.click(h.document.querySelector('.je-hidden-item-unhide'));h.click(h.document.querySelector('.je-hidden-management-close'));
  timers.fire();await until(()=>h.internal.getHiddenCount()===0,'unhide completes');assert.equal(h.ajaxCalls[0].type,'DELETE');
 });
 
@@ -189,13 +189,13 @@ for(const host of ['standard card','group card','group item'])test(`manager page
  const timers=controlTimers(h);h.page.renderPage(h.container);
  const selector=host==='standard card'?'.je-hidden-item-unhide':host==='group card'?'.je-hidden-group-unhide':'.je-hidden-group-item-unhide';
  const button=h.container.querySelector(selector);const entry=host==='standard card'?button.closest('.je-hidden-item-card'):host==='group card'?button.closest('.je-hidden-group-card'):button.closest('.je-hidden-group-item');
- button.click();assert.equal(timers.fire(),1);await until(()=>h.ajaxCalls.length===1,'unhide sent');for(let i=0;i<10;i++)await tick();
+ h.click(button);assert.equal(timers.fire(),1);await until(()=>h.ajaxCalls.length===1,'unhide sent');for(let i=0;i<10;i++)await tick();
  assert.equal(entry.isConnected,true);assert.equal(entry.classList.contains('je-hidden-item-removing'),false,'fade removed');assert.equal(entry.style.opacity,'','opacity restored');
  assert.equal(button.textContent,'hidden_content_unhide_failed_retry');
 });
 test('manager page bulk unhide reports a failed write',async t=>{
  const h=pageSetup(t,{items:{},ajax:unavailable,admin:episodes});h.page.renderPage(h.container);
- h.container.querySelector('.je-hidden-content-page-unhide-all').click();
+ h.click(h.container.querySelector('.je-hidden-content-page-unhide-all'));
  await until(()=>h.ajaxCalls.length>=1,'bulk write');for(let i=0;i<10;i++)await tick();
  assert.deepEqual(h.toasts,['hidden_content_unhide_failed_retry'],'bulk failure is visible');
 });
@@ -203,9 +203,9 @@ test('the manager page is dismissed on an identity change and its controls canno
  const h=pageSetup(t,{items:{...providerRule},ajax:()=>({items:{},revision:'r2'})});
  const timers=controlTimers(h);h.page.renderPage(h.container);
  const button=h.container.querySelector('.je-hidden-item-unhide');assert.ok(button);
- button.click();h.switchUser();
+ h.click(button);h.switchUser();
  assert.equal(h.container.querySelector('.je-hidden-item-card'),null,'outgoing viewer\'s list is gone');
- button.click();timers.fire();for(let i=0;i<10;i++)await tick();assert.equal(h.ajaxCalls.length,0,'no write from the dismissed view');
+ h.click(button);timers.fire();for(let i=0;i<10;i++)await tick();assert.equal(h.ajaxCalls.length,0,'no write from the dismissed view');
 });
 
 /** Admin Add modal with the real core transport; records each request's credentials. */
@@ -237,7 +237,7 @@ test('identity change dismisses the admin Add modal; its search and captured res
  assert.equal(h.document.querySelector('.je-hidden-admin-add-overlay'),null,'modal dismissed');
  assert.equal(h.document.body.style.overflow,'','page scroll restored');
  assert.equal(h.timers.live().length,0,'pending search timer cancelled');
- h.timers.fire();hide.click();for(let i=0;i<20;i++)await tick();
+ h.timers.fire();h.click(hide);for(let i=0;i<20;i++)await tick();
  assert.equal(h.sent.filter(s=>s.url.endsWith('/Items')).length,searchesBefore,'no search after the switch');
  assert.equal(h.sent.filter(s=>s.url.endsWith('/hide')).length,0,'captured title is never hidden for anyone');
  assert.equal(h.sent.filter(s=>s.token==='token-b').length,0);
@@ -251,7 +251,7 @@ test('a search reply that lands after an identity change is not published',async
 test('a Hide submitted in the session completes after the Add modal closes',async t=>{
  const h=addSetup(t);h.page.openAdminAddModal();await h.search('Captured');h.timers.fire();
  await until(()=>h.document.querySelector('.je-hidden-admin-add-overlay .je-hidden-item-card'),'results');
- const gate=h.gate();h.document.querySelector('.je-hidden-admin-add-overlay .je-hidden-item-unhide').click();
+ const gate=h.gate();h.click(h.document.querySelector('.je-hidden-admin-add-overlay .je-hidden-item-unhide'));
  await until(()=>h.sent.some(s=>s.url.endsWith('/hide')),'hide submitted');
  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown',{key:'Escape'}));
  assert.equal(h.document.querySelector('.je-hidden-admin-add-overlay'),null);

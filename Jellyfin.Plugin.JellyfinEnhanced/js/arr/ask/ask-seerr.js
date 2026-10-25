@@ -87,7 +87,8 @@
                 : await sheet.open(title, { opener, variant, operation });
         } catch (err) {
             console.warn(`${logPrefix} the request sheet could not open (${err?.message || err})`);
-            JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
+            // Said only while the press's owner is current (D46S2-R11-8).
+            if (operation && JE.effectOwner(operation, 'the request sheet')) JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
         // The opener changes only through the publication, checked as it does (D46S2-R9-5).
@@ -193,6 +194,8 @@
      */
     async function collectionAsk(collectionId, collectionName, options) {
         const submitted = JE.captureSubmitted(options?.operation);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening.
+        if (!submitted.current()) return;
         // Only the newest opening opens its picker (D46S2-R6): an older one whose reads answer later is dropped.
         const newest = pickerOpening(submitted);
         const caps = await JE.arrAsk.me();

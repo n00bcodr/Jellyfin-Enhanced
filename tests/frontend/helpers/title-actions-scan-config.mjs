@@ -7,9 +7,7 @@ import { scanTransport, scanOwners, scanPublications } from './bundle-scan.mjs';
 export const EXCLUDED_MODULES = {
   'core/api-client.js': 'implements the transport entry points: its own fetch calls are the transport; every caller\'s call is the site',
   'arr/admin/admin-tabs.js': null, // in scope (removeDialog and its helpers); the hub-only functions are excused by site below
-  'arr/ask/ask-actions.js': 'the details page\'s smart actions under the status block (Get Season N, Get 4K, Search): outside the action row, never pressed by the bar',
   'arr/ask/ask-collection.js': 'a collection page\'s "Get the N missing" block: no details row, never pressed by the bar',
-  'arr/ask/ask-episodes.js': 'a season page\'s episode rows and their dialog: the request sheet never opens them',
   'arr/calendar/calendar-page-data.js': 'the Calendar page (no title action)',
   'arr/hub/hub-approvals.js': 'the Requests hub\'s approvals tab (no title action)',
   'arr/hub/hub-discover.js': 'the Requests hub\'s Discover cards\' own Request buttons (the bar\'s card sheet opens the bound request sheet instead)',
@@ -222,13 +220,13 @@ export const HOST_DIALOG_MODULES = {
 
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
-  'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2,
-  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 5,
-  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 16, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 4, 'arr/hub/hub-page.js': 4,
+  'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 11,
+  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 6,
+  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 5, 'arr/hub/hub-page.js': 4,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
-  'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 8,
-  'enhanced/hiddencontent/hidden-content-dialogs.js': 3, 'enhanced/hiddencontent/hidden-content-page-cards.js': 2,
+  'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 11,
+  'enhanced/hiddencontent/hidden-content-dialogs.js': 4, 'enhanced/hiddencontent/hidden-content-page-cards.js': 2,
   'enhanced/hiddencontent/hidden-content-panel.js': 2, 'enhanced/itemdetails/features-details-page.js': 4,
   'enhanced/spoilerguard/detail-button.js': 12, 'enhanced/spoilerguard/dialog.js': 3,
   'enhanced/spoilerguard/seerr-toggle.js': 4, 'enhanced/spoilerguard/settings-tab.js': 1,
@@ -237,7 +235,7 @@ export const OWNER_SITES = {
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
   'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
   'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
-  'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 9,
+  'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 10,
   'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,
   'core/session-action.js': 1,
   'jellyseerr/ui/ui-popover.js': 2,

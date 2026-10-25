@@ -184,7 +184,7 @@ test('JE mode: the window opens with the public details and their ratings for a 
   assert.equal(modal.querySelector('[data-mount="ratings"]').textContent, JSON.stringify({ rt: { criticsScore: 92 } }));
   assert.ok(!h.reads.some(path => path.startsWith('/jellyseerr/') && path !== '/jellyseerr/user-status'));
   // Refresh stays on the public route.
-  modal.querySelector('.modal-refresh').click();
+  h.click(modal.querySelector('.modal-refresh'));
   for (let i = 0; i < 5; i++) await nextTurn();
   assert.equal(h.reads.filter(path => path === '/native-details/title/movie/693134').length, 2);
   assert.ok(!h.toasts.some(text => String(text).startsWith('jellyseerr_modal_')));
