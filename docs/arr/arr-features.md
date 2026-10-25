@@ -2279,6 +2279,8 @@ Where the details action row would overflow, a compact row keeps the primary Pla
 
 `Services/TmdbTransport.cs` is the only TMDB HTTP sender. Every send requires a live typed
 `MetadataAdmission`; there is no send overload without it and no anonymous viewer allowance.
+Its factory selector names only the default client and the list-source constant, rejects any
+other name, and applies the same `PluginHttp.CheckedClient` runtime egress wrapper to both.
 The raw response cache admits a cold viewer read before registering its task. Native and
 parental reads reuse their live admission; cache hits and joins remain free. One admission
 serializes sends through body disposal and drains retained raw reads before releasing its place. An authenticated
@@ -2286,6 +2288,18 @@ MVC scope captures the viewer for person enrichment, proxy/company lookup, watch
 batches, Discover/search, hub/home, and rule preparation; native delegated reads retain their
 effective viewer. Captured-policy discovery and list evidence carry that viewer explicitly.
 An unowned JE raw read fails with 503 rather than creating external work.
+
+JE person enrichment (`people/info`, at most 100 IDs per chunk, and `person/{id}`)
+uses one viewer admission per cold chunk, rather than one per cast member. Up to eight
+workers share that live capability; its send turn still serializes through body disposal,
+so all running viewer tasks together send at most eight requests at once. Raw per-person
+flights coalesce overlapping chunks and concurrent viewers. Entirely cached chunks bypass
+admission, including when the viewer is full. Cancelling a browser waiter leaves the owned
+batch to finish and cache every person. Excess chunks return quiet HTTP 503 with
+`Retry-After: 1`, `pending: true`, `reason: metadata_busy`, and `outcome: unavailable`;
+the existing cast retry path retries the chunk. Refusals are neither cached nor logged as
+upstream warnings, and JE optional person failures use debug logging. Legacy enrichment
+keeps its existing behavior. Public cached facts never contain viewer access decisions.
 
 | Admission owner | Bound and purpose |
 |---|---|

@@ -2864,7 +2864,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
-                return Ok(await BuildPersonInfoAsync(person, itemPremiereDate, HttpContext.RequestAborted));
+                var responses = await PersonBatchAsync(new[] { person }, HttpContext.RequestAborted).ConfigureAwait(false);
+                if (JePersonEnrichment && responses == null) return PersonEnrichmentPending();
+                return Ok(await BuildPersonInfoAsync(person, itemPremiereDate, HttpContext.RequestAborted, responses));
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -2877,10 +2879,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        private bool JePersonEnrichment => JellyfinEnhanced.Instance?.Configuration is { } config
+            && Services.NativeDetails.NativeDetailsPolicy.JeBackend(config) && !string.IsNullOrEmpty(config.GetTmdbApiKey());
+
+        private Task<IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>?> PersonBatchAsync(IEnumerable<BaseItem> people, CancellationToken ct)
+        {
+            if (!JePersonEnrichment) return Task.FromResult<IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>?>(null);
+            var ids = people.Select(p => p.ProviderIds != null && p.ProviderIds.TryGetValue("Tmdb", out var value)
+                && int.TryParse(value, out var id) ? id : 0);
+            return _tmdbResponseCache.GetPeopleAsync(ids, JellyfinEnhanced.Instance!.Configuration.GetTmdbApiKey(),
+                UserHelper.GetCurrentUserId(User) ?? Guid.Empty, ct);
+        }
+
+        private IActionResult PersonEnrichmentPending()
+        {
+            Response.Headers["Retry-After"] = "1";
+            return StatusCode(503, new { outcome = "unavailable", reason = "metadata_busy", pending = true,
+                certainty = "Failed", message = "Person details are pending; try again shortly." });
+        }
+
+        private void PersonLookupWarning(string message)
+        {
+            if (JePersonEnrichment) _logger.Debug(message);
+            else _logger.Warning(message);
+        }
+
         private const int MaxPeopleInfoBatchSize = 100;
-        // Per request; TmdbResponseCache caps the upstream calls in flight
-        // across all requests (and multiplexes them over one HTTP/2
-        // connection), so a cast row resolves in about one TMDB round trip.
+        // Legacy per-request fanout. JE batches prefetch under one viewer admission;
+        // formatting their cached public facts does not allocate person admissions.
         private const int PeopleInfoTmdbConcurrency = 16;
         // One slow TMDB lookup must not hold a whole cast batch (or a single
         // person request) hostage: past this, fall back to Jellyfin-only data.
@@ -2933,13 +2959,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Resolved once for the whole batch rather than per person.
                 var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
 
+                var responses = await PersonBatchAsync(people, ct).ConfigureAwait(false);
+                if (JePersonEnrichment && responses == null) return PersonEnrichmentPending();
+
                 using var tmdbGate = new SemaphoreSlim(PeopleInfoTmdbConcurrency);
                 var tasks = people.Select(async person =>
                 {
                     await tmdbGate.WaitAsync(ct).ConfigureAwait(false);
                     try
                     {
-                        return (Key: person.Id.ToString("N"), Info: await BuildPersonInfoAsync(person, itemPremiereDate, ct).ConfigureAwait(false));
+                        return (Key: person.Id.ToString("N"), Info: await BuildPersonInfoAsync(person, itemPremiereDate, ct, responses).ConfigureAwait(false));
                     }
                     finally
                     {
@@ -3013,7 +3042,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// Shared response object for person/{id} and people/info. The shape
         /// is part of the client contract (peopletags.js, person-discovery.js).
         /// </summary>
-        private async Task<object> BuildPersonInfoAsync(BaseItem person, DateTime? itemPremiereDate, CancellationToken cancellationToken)
+        private async Task<object> BuildPersonInfoAsync(BaseItem person, DateTime? itemPremiereDate, CancellationToken cancellationToken, IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>? responses = null)
         {
             // Get TMDB ID from provider IDs if available
             string? tmdbId = null;
@@ -3036,7 +3065,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     // _logger.Info($"Fetching TMDB data for person {person.Id} (TMDB ID: {tmdbPersonId})");
-                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, tmdbTimeout.Token).ConfigureAwait(false);
+                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, tmdbTimeout.Token, responses != null && responses.TryGetValue(tmdbPersonId, out var prefetched) ? prefetched : null).ConfigureAwait(false);
                     if (tmdbPersonData != null)
                     {
                         // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
@@ -3062,22 +3091,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     else
                     {
-                        _logger.Warning($"No TMDB data returned for person {person.Id} (TMDB ID: {tmdbPersonId})");
+                        PersonLookupWarning($"No TMDB data returned for person {person.Id} (TMDB ID: {tmdbPersonId})");
                     }
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && tmdbTimeout.IsCancellationRequested)
                 {
-                    _logger.Warning($"TMDB lookup for person {person.Id} (TMDB ID: {tmdbPersonId}) exceeded {PersonTmdbTimeout.TotalSeconds:0}s; using Jellyfin data only");
+                    PersonLookupWarning($"TMDB lookup for person {person.Id} (TMDB ID: {tmdbPersonId}) exceeded {PersonTmdbTimeout.TotalSeconds:0}s; using Jellyfin data only");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.Warning($"Failed to enrich person {person.Id} with TMDB data: {ex.Message}");
+                    PersonLookupWarning($"Failed to enrich person {person.Id} with TMDB data: {ex.Message}");
                     // Continue with Jellyfin data only
                 }
             }
             else
             {
-                // _logger.Debug($"No TMDB ID available for person {person.Id}");
+                // PersonLookupWarning($"No TMDB ID available for person {person.Id}");
             }
 
             int? currentAge = null;
@@ -3122,7 +3151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
         }
 
-        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId, CancellationToken cancellationToken = default)
+        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId, CancellationToken cancellationToken = default, Services.TmdbResponseCache.TmdbResponse? prefetched = null)
         {
             try
             {
@@ -3130,16 +3159,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var config = JellyfinEnhanced.Instance?.Configuration;
                 if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
-                    _logger.Warning("TMDB API key not configured in plugin settings");
+                    _logger.Debug("TMDB API key not configured in plugin settings");
                     return null;
                 }
 
                 // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
-                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.GetTmdbApiKey(), cancellationToken);
+                var response = prefetched ?? await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.GetTmdbApiKey(), cancellationToken);
 
                 if (!response.IsSuccess)
                 {
-                    _logger.Warning($"TMDB API request failed with status {(System.Net.HttpStatusCode)response.StatusCode}");
+                    PersonLookupWarning($"TMDB API request failed with status {(System.Net.HttpStatusCode)response.StatusCode}");
                     return null;
                 }
 
@@ -3192,7 +3221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Failed to get TMDB person data for ID {tmdbPersonId}: {ex.Message}");
+                PersonLookupWarning($"Failed to get TMDB person data for ID {tmdbPersonId}: {ex.Message}");
                 return null;
             }
         }
