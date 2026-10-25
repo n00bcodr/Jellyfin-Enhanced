@@ -25,8 +25,15 @@ internal static class SeerrFreeProducerProof
             var method = item.Method;
             if (!seen.Add((method.Module, method.MetadataToken))) continue;
             if (forbidden(method.DeclaringType)) { violations.Add(item.Path); continue; }
+            // C# field/property initializers also live in .cctor. Conservatively include it for
+            // every reachable method's type, including roots and beforefieldinit types.
+            if (method.DeclaringType?.TypeInitializer is { } initializer)
+                pending.Push((initializer, item.Path + " -> " + initializer.DeclaringType!.Name + ".cctor"));
             foreach (var reference in PrivacyOutputPathScan.Referenced(method))
             {
+                if (reference is FieldInfo { IsStatic: true, DeclaringType: { } owner }
+                    && owner.Assembly == assembly && owner.TypeInitializer is { } fieldInitializer)
+                    pending.Push((fieldInitializer, item.Path + " -> static field " + reference.Name + " -> " + owner.Name + ".cctor"));
                 if (forbidden(reference.DeclaringType) || reference is FieldInfo field && ForbiddenType(field.FieldType, forbidden))
                 { violations.Add(item.Path + " -> " + reference.DeclaringType?.FullName + "." + reference.Name); continue; }
                 if (reference is FieldInfo callback && callbacks.TryGetValue((callback.Module, callback.MetadataToken), out var assignments))
@@ -83,13 +90,13 @@ internal static class SeerrFreeProducerProof
         var bad = new Dictionary<(Module, int), string>();
         var dispatch = new Dictionary<(Module, int), MethodBase[]>();
         var callbacks = CallbackAssignments(assembly);
-        void Edge(MethodBase from, MethodBase to)
+        void Edge(MethodBase from, MethodBase to, bool producerCall = true)
         {
             if (to.DeclaringType?.Assembly != assembly) return;
             var key = (to.Module, to.MetadataToken);
             if (!reverse.TryGetValue(key, out var parents)) reverse[key] = parents = new();
             parents.Add((from.Module, from.MetadataToken));
-            if (ComputationOwner(from.DeclaringType) == ComputationOwner(to.DeclaringType))
+            if (producerCall && ComputationOwner(from.DeclaringType) == ComputationOwner(to.DeclaringType))
             {
                 if (!producers.TryGetValue(key, out var callers)) producers[key] = callers = new();
                 callers.Add((from.Module, from.MetadataToken));
@@ -97,10 +104,15 @@ internal static class SeerrFreeProducerProof
         }
         foreach (var method in methods)
         {
+            // Initialization is reachable computation, but calling a type's member does not make
+            // that caller a producer of every field initialized by the type's .cctor.
+            if (method.DeclaringType?.TypeInitializer is { } initializer) Edge(method, initializer, producerCall: false);
             var key = (method.Module, method.MetadataToken);
             if (Seerr(method.DeclaringType)) bad.TryAdd(key, method.DeclaringType!.FullName + "." + method.Name);
             foreach (var reference in PrivacyOutputPathScan.Referenced(method))
             {
+                if (reference is FieldInfo { IsStatic: true, DeclaringType: { } owner }
+                    && owner.TypeInitializer is { } fieldInitializer) Edge(method, fieldInitializer, producerCall: false);
                 if (Seerr(reference.DeclaringType) || reference is FieldInfo field && ForbiddenType(field.FieldType, Seerr))
                     bad.TryAdd(key, method.DeclaringType!.FullName + "." + method.Name + " -> " + reference.DeclaringType?.FullName + "." + reference.Name);
                 if (reference is FieldInfo callback && callbacks.TryGetValue((callback.Module, callback.MetadataToken), out var assignments))
