@@ -137,11 +137,11 @@ public class ApiRequestsBackendGateTests
         new PluginServiceRegistrator().RegisterServices(services, null!);
         services.AddSingleton(f.Core.Logger);
         var trap = new Trap();
-        foreach (var name in new[] { "", SeerrHttpHelper.NamedClient })
+        foreach (var name in new[] { PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient })
             services.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => trap);
         using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IHttpClientFactory>();
-        foreach (var name in new[] { "", SeerrHttpHelper.NamedClient })
+        foreach (var name in new[] { PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient })
         {
             using var client = factory.CreateClient(name);
             await Assert.ThrowsAsync<BackendDisabledException>(() => client.GetAsync("http://seerr.test/avatar.png"));
@@ -149,9 +149,9 @@ public class ApiRequestsBackendGateTests
         Assert.Equal(0, trap.Calls);
         var fallback = new Mock<IHttpClientFactory>();
         fallback.Setup(f => f.CreateClient(SeerrHttpHelper.NamedClient)).Throws(new InvalidOperationException("named unavailable"));
-        fallback.Setup(f => f.CreateClient("")).Returns(() => factory.CreateClient(""));
-        using var unnamed = SeerrHttpHelper.CreateClient(fallback.Object);
-        await Assert.ThrowsAsync<BackendDisabledException>(() => unnamed.GetAsync("http://seerr.test/api/v1/status"));
+        fallback.Setup(f => f.CreateClient(PluginHttp.DefaultClient)).Returns(() => factory.CreateClient(PluginHttp.DefaultClient));
+        using var ownedFallback = SeerrHttpHelper.CreateClient(fallback.Object);
+        await Assert.ThrowsAsync<BackendDisabledException>(() => ownedFallback.GetAsync("http://seerr.test/api/v1/status"));
         Assert.Equal(0, trap.Calls);
     }
 

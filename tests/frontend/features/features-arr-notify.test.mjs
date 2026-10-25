@@ -483,7 +483,7 @@ test('the follow state follows the user\'s own requests and the "follow what I r
 test('keyboard and TV focus stays on the control after each settings change and in the inbox', async t => {
   // "Show older" reads its own page, so an inbox refresh that lands meanwhile still returns the first one.
   const clock = fakeClock();
-  const h = setup(t, { clock, routes: { '/acquire/notify/inbox?limit=20&before=': (path, options, state) => JSON.parse(JSON.stringify(state.older)) } });
+  const h = setup(t, { clock, routes: { '/acquire/notify/inbox?limit=20&before=': (path, options, state) => JSON.parse(JSON.stringify(state.olderInbox)) } });
   h.document.body.insertAdjacentHTML('beforeend', `<div id="jellyfin-enhanced-panel">${h.N.buildSettingsHtml()}</div>`);
   const help = h.document.getElementById('jellyfin-enhanced-panel');
   h.N.wireSettings({ help });

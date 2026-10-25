@@ -34,7 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly Func<TitleKey, IReadOnlyList<TitleKey>>? _aliases;
         private readonly Logger _logger;
         private readonly Func<string?> _key;
-        private readonly ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
+    private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)>> _cacheFactsOwner = new();
+    private ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cacheFacts => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal));
         private readonly ViewerMetadataAdmission _admission;
         private readonly ViewerBudget _feedBudget;
 
@@ -340,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private bool TryCached(string path, out SourceAnswer value)
         {
             value = default;
-            if (!_cache.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
+            if (!_cacheFacts.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
             value = hit.Value;
             return true;
         }
@@ -362,15 +364,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             // A busy answer was never read: nothing to remember.
             if (value.Busy) return value;
-            if (_cache.Count >= MaxEntries)
+            if (_cacheFacts.Count >= MaxEntries)
             {
-                foreach (var old in _cache.OrderBy(e => e.Value.At).Take(MaxEntries / 10).ToList())
+                foreach (var old in _cacheFacts.OrderBy(e => e.Value.At).Take(MaxEntries / 10).ToList())
                 {
-                    _cache.TryRemove(old.Key, out _);
+                    _cacheFacts.TryRemove(old.Key, out _);
                 }
             }
 
-            _cache[path] = (value, DateTime.UtcNow);
+            _cacheFacts[path] = (value, DateTime.UtcNow);
             return value;
         }
     }

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 3: the Approvals tab of the Requests page (#/requests?tab=approvals),
 // rendered by the real modules from server answers: cards in the Manager shape, approve, decline
 // with a reason chip or a note, approve with changes, bulk approve with per-item outcomes, the
@@ -140,13 +141,13 @@ test('Approve says how it went honestly, and administrators find the reason code
   h.JE.initializeArrStatus();
   const page = h.page();
   await until(() => page.querySelectorAll('.je-approval').length === 2);
-  page.querySelector(`[data-je-focus="approve:${id(1)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="approve:${id(1)}"]`));
   await until(() => page.querySelectorAll('.je-approval').length === 1);
   assert.deepEqual(h.calls('POST', `/acquire/requests/${id(1)}/approve`).map(c => c.body), [{}]);
   assert.equal(page.querySelector('.je-approvals-banner').textContent, "Film 1 (2026): Approved. It's on its way.");
   assert.equal(page.querySelector('.je-approvals-banner').getAttribute('role'), 'status');
 
-  page.querySelector(`[data-je-focus="approve:${id(2)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="approve:${id(2)}"]`));
   await until(() => page.querySelector('.je-approval-result')?.textContent.includes('changed'));
   assert.equal(page.querySelector('.je-approval-result').textContent, 'That changed while you looked. Showing the latest.');
   const details = page.querySelector('.je-approval details.je-approval-admin');
@@ -168,7 +169,7 @@ test('an approval of unknown outcome is never called done', async t => {
   });
   h.JE.initializeArrStatus();
   await until(() => h.page().querySelector('.je-approval-approve'));
-  h.page().querySelector('.je-approval-approve').click();
+  clickAsViewer(h.page().querySelector('.je-approval-approve'));
   await until(() => h.page().querySelector('.je-approval-result'));
   assert.equal(h.page().querySelector('.je-approval-result').textContent, translate('arr_approvals_result_unknown'));
   // The banner (the card may leave the list) says the same, never "on its way".
@@ -192,7 +193,7 @@ test('Decline opens the reasons; a chip declines with its words, a note goes wit
   await until(() => page.querySelectorAll('.je-approval').length === 2);
   const decline = page.querySelector(`[data-je-focus="decline:${id(1)}"]`);
   decline.focus();
-  decline.click();
+  clickAsViewer(decline);
   // The redraw keeps focus on the same button, now expanded.
   assert.equal(h.document.activeElement.dataset.jeFocus, `decline:${id(1)}`);
   assert.equal(h.document.activeElement.getAttribute('aria-expanded'), 'true');
@@ -202,13 +203,13 @@ test('Decline opens the reasons; a chip declines with its words, a note goes wit
   assert.equal(note.maxLength, 200);
   note.value = 'maybe at the weekend';
   note.dispatchEvent(new h.window.Event('input'));
-  page.querySelector(`[data-je-focus="reason:${id(1)}:0"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="reason:${id(1)}:0"]`));
   await until(() => declines.length === 1);
   assert.deepEqual(declines[0], [`/acquire/requests/${id(1)}/decline`, { reason: 'Not for kids · maybe at the weekend' }]);
 
   // Declining without a reason still says something kind.
-  page.querySelector(`[data-je-focus="decline:${id(2)}"]`).click();
-  page.querySelector(`[data-je-focus="plain:${id(2)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="decline:${id(2)}"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="plain:${id(2)}"]`));
   await until(() => declines.length === 2);
   assert.deepEqual(declines[1][1], { reason: 'Not this time' });
   await until(() => page.querySelector('.je-approvals-banner'));
@@ -219,7 +220,7 @@ test('on TV the decline reasons are buttons only (no text field)', async t => {
   const h = setupHub(t, { hash: '#/requests?tab=approvals', layoutTv: true, routes: (m, path) => (path === '/acquire/requests/approvals' ? approvals([card(1)]) : null) });
   h.JE.initializeArrStatus();
   await until(() => h.page().querySelector('.je-approval-decline'));
-  h.page().querySelector('.je-approval-decline').click();
+  clickAsViewer(h.page().querySelector('.je-approval-decline'));
   assert.equal(h.page().querySelectorAll('.je-approval-reasons input').length, 0);
   assert.equal(h.page().querySelectorAll('.je-approval-reason').length, 4);
   assert.ok([...h.page().querySelectorAll('.je-approval-reasons button')].every(b => b.type === 'button'));
@@ -246,25 +247,25 @@ test('Change and approve narrows seasons, switches to 4K only when the approver 
   await until(() => page.querySelectorAll('.je-approval').length === 3);
   // A movie the approver can't switch has nothing to change.
   assert.equal(page.querySelector(`[data-je-focus="edit:${id(2)}"]`), null);
-  page.querySelector(`[data-je-focus="edit:${id(1)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="edit:${id(1)}"]`));
   const sheet = () => page.querySelector(`[data-request-id="${id(1)}"] .je-approval-sheet`);
   assert.deepEqual([...sheet().querySelectorAll('legend')].map(l => l.textContent), ['Seasons', 'Quality']);
-  for (const n of [1, 2, 3]) page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season ${n}"]`).click();
+  for (const n of [1, 2, 3]) clickAsViewer(page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season ${n}"]`));
   assert.equal(sheet().querySelector('.je-approval-result').textContent, 'Pick at least one.');
   assert.ok(page.querySelector(`[data-je-focus="edit-approve:${id(1)}"]`).disabled);
-  page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season 3"]`).click();
-  page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season 1"]`).click();
-  page.querySelector(`[data-je-focus="edit-variant:${id(1)}:4k"]`).click();
-  page.querySelector(`[data-je-focus="edit-approve:${id(1)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season 3"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-season:${id(1)}:Season 1"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-variant:${id(1)}:4k"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-approve:${id(1)}"]`));
   await until(() => posts.length === 1);
   assert.deepEqual(posts[0], [`/acquire/requests/${id(1)}/approve`, { input: { key: 'tv:tvdb:1', scope: 'seasons', variant: '4k', seasons: [1, 3], episodes: [] } }]);
 
   // Episodes narrow the same way (no quality switch for this approver).
-  page.querySelector(`[data-je-focus="edit:${id(3)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="edit:${id(3)}"]`));
   const third = page.querySelector(`[data-request-id="${id(3)}"] .je-approval-sheet`);
   assert.deepEqual([...third.querySelectorAll('legend')].map(l => l.textContent), ['Episodes']);
-  page.querySelector(`[data-je-focus="edit-episode:${id(3)}:S1E4"]`).click();
-  page.querySelector(`[data-je-focus="edit-approve:${id(3)}"]`).click();
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-episode:${id(3)}:S1E4"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="edit-approve:${id(3)}"]`));
   await until(() => posts.length === 2);
   assert.deepEqual(posts[1][1].input.episodes, [{ season: 1, episode: 7 }]);
 });
@@ -290,7 +291,7 @@ test('bulk approve sends the selected ids once; a 207 puts each card\'s own outc
   h.JE.initializeArrStatus();
   const page = h.page();
   await until(() => page.querySelectorAll('.je-approval').length === 3);
-  page.querySelector('[data-je-focus="approvals:select"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:select"]'));
   assert.equal(page.querySelector('[data-je-focus="approvals:select"]').getAttribute('aria-pressed'), 'true');
   assert.ok(page.querySelector('[data-je-focus="approvals:bulk"]').disabled);
   for (const n of [1, 2]) {
@@ -299,7 +300,7 @@ test('bulk approve sends the selected ids once; a 207 puts each card\'s own outc
     box.dispatchEvent(new h.window.Event('change'));
   }
   assert.equal(page.querySelector('[data-je-focus="approvals:bulk"]').textContent, 'done_allApprove 2 selected');
-  page.querySelector('[data-je-focus="approvals:bulk"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:bulk"]'));
   await until(() => page.querySelectorAll('.je-approval').length === 2);
   assert.deepEqual(bulk, [{ ids: [id(1), id(2)] }]);
   assert.equal(page.querySelector('.je-approvals-banner').textContent, '1 approved · 1 not approved');
@@ -315,7 +316,7 @@ test('bulk approve allows at most 20 at once', async t => {
   h.JE.initializeArrStatus();
   const page = h.page();
   await until(() => page.querySelectorAll('.je-approval').length === 22);
-  page.querySelector('[data-je-focus="approvals:select"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:select"]'));
   for (let n = 1; n <= 20; n++) {
     const box = page.querySelector(`[data-je-focus="select:${id(n)}"]`);
     box.checked = true;
@@ -342,7 +343,7 @@ test('cards the approver can\'t act on are read-only, and ?show=stuck lists only
   assert.match(stuck.querySelector('.je-approval-chip-stuck').textContent, /Stuck · needs a look$/);
   assert.equal(stuck.querySelector('.je-approval-readonly').textContent, 'Needs Jake to OK');
   assert.equal(stuck.querySelectorAll('button').length, 0);
-  page.querySelector('[data-je-focus="approvals:all"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:all"]'));
   await until(() => page.querySelectorAll('.je-approval').length === 2);
   assert.equal(h.window.location.hash, '#/requests?tab=approvals');
 });
@@ -384,8 +385,8 @@ test('intent tokens: an older read answering last, or an answer for the previous
   await until(() => page.querySelector('.je-approval-title')?.textContent === 'This user (2026)');
 
   // Leaving the tab drops the read under way; coming back reads again.
-  h.page().querySelector('.je-hub-tab[data-tab="mine"]').click();
-  h.page().querySelector('.je-hub-tab[data-tab="approvals"]').click();
+  clickAsViewer(h.page().querySelector('.je-hub-tab[data-tab="mine"]'));
+  clickAsViewer(h.page().querySelector('.je-hub-tab[data-tab="approvals"]'));
   await until(() => reads.length === 5);
   reads[4].resolve(approvals([card(5, { title: 'Back again' })]));
   await until(() => page.querySelector('.je-approval-title')?.textContent === 'Back again (2026)');
@@ -411,7 +412,7 @@ test('keyboard and D-pad focus stays on the same control across a re-read, and m
   assert.equal(h.document.activeElement.dataset.jeFocus, `decline:${id(3)}`);
   const second = page.querySelector(`[data-je-focus="approve:${id(2)}"]`);
   second.focus();
-  second.click();
+  clickAsViewer(second);
   await until(() => page.querySelectorAll('.je-approval').length === 2);
   assert.ok(page.contains(h.document.activeElement));
   assert.match(h.document.activeElement.dataset.jeFocus, /^approve:/);
@@ -542,14 +543,14 @@ test('an approve, decline or bulk answer that arrives after someone else signed 
   await until(() => page.querySelectorAll('.je-approval').length === 3);
   const S = h.JE.internals.arrHub.approvals.state;
   // Approve one, decline another and bulk-approve the third, all still out when the user changes.
-  page.querySelector(`[data-je-focus="approve:${id(1)}"]`).click();
-  page.querySelector(`[data-je-focus="decline:${id(2)}"]`).click();
-  page.querySelector('.je-approval-reason').click();
-  page.querySelector('[data-je-focus="approvals:select"]').click();
+  clickAsViewer(page.querySelector(`[data-je-focus="approve:${id(1)}"]`));
+  clickAsViewer(page.querySelector(`[data-je-focus="decline:${id(2)}"]`));
+  clickAsViewer(page.querySelector('.je-approval-reason'));
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:select"]'));
   const box = page.querySelector(`[data-je-focus="select:${id(3)}"]`);
   box.checked = true;
   box.dispatchEvent(new h.window.Event('change'));
-  page.querySelector('[data-je-focus="approvals:bulk"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="approvals:bulk"]'));
   await until(() => pending.length === 3);
   list = [card(4, { title: 'Theirs' })];
   h.switchUser();

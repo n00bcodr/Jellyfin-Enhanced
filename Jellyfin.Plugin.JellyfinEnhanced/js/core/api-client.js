@@ -321,6 +321,9 @@
      */
     async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null, afterSend = assertSession) {
         const startTime = performance.now();
+        // A completed write keeps its answer after its operation ends. Response metadata still
+        // belongs only to the session that sent it, independently of that operation's lifetime.
+        const responseSession = captureSession();
         let lastError;
         let lastStatus;
 
@@ -342,11 +345,13 @@
             try {
                 if (onSend) onSend();
                 const response = await fetch(url, options);
-                // Every JE answer names the server's build: another one than this page booted against asks for a reload.
-                build.noteAnswer(response);
+                let currentResponse = true;
+                try { responseSession(); } catch (_) { currentResponse = false; }
+                if (currentResponse) {
+                    build.noteAnswer(response);
+                    JE.core?.revision?.noteResponse(response);
+                }
                 afterSend();
-                // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
-                JE.core?.revision?.noteResponse(response);
 
                 if (response.ok || acceptHttpErrors) {
                     if (metrics.enabled) {

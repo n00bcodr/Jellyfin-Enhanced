@@ -132,7 +132,7 @@ const PLANTS = [
   ['scan 6', 'the host route applying an earlier generation (the R10-2 shape)', 'plugin',
     'if (configuration is PluginConfiguration incoming && current != null && incoming.ConfigurationGeneration != current.ConfigurationGeneration)', 'if (false)'],
   ['scan 6', 'a configuration write that keeps the generation', 'plugin', '                config.ConfigurationGeneration = next;\n', ''],
-  ['scan 6', 'a restored configuration through the host route', 'plugin', '                    ApplyConfiguration(_ => restored);', '                    UpdateConfiguration(restored);'],
+  ['scan 6', 'a restored configuration through the host route', 'plugin', '                    ApplyConfiguration(_ => restored, coordinated: true);', '                    UpdateConfiguration(restored);'],
   ['scan 6', 'the host route\'s filter unregistered', 'registrator', '                o.Filters.AddService<Services.HostConfigurationRouteFilter>();\n', ''],
   ['scan 7', 'a write sent past its document\'s queue', 'store', 'const save = state.queue.send(async () => {', 'const save = (async () => {'],
   ['scan 7', 'a queue that checks the session only after the answer (the R10-1 shape)', 'queue',

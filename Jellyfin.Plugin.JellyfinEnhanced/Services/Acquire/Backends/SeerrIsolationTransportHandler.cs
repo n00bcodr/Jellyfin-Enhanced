@@ -140,19 +140,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
 
     }
 }
-
-namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
-{
-    /// <summary>
-    /// The unnamed fallback keeps its original redirect behavior in v0. In isolated mode redirects
-    /// are returned to the caller, preventing an underlying handler from bypassing per-send admission.
-    /// </summary>
-    public sealed class BackendFallbackTransport : HttpMessageHandler
-    {
-        private readonly HttpMessageInvoker _legacy = new(new HttpClientHandler());
-        private readonly HttpMessageInvoker _isolated = new(new HttpClientHandler { AllowAutoRedirect = false });
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => (EffectiveRequestsBackend.Shared.Current.IsolationVersion == 0 ? _legacy : _isolated).SendAsync(request, ct);
-        protected override void Dispose(bool disposing) { if (disposing) { _legacy.Dispose(); _isolated.Dispose(); } base.Dispose(disposing); }
-    }
-}

@@ -145,23 +145,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Interlocked.CompareExchange(ref _factsDependency, generation, 0);
             }
             private readonly Dictionary<EffectiveRequestsBackend, long> _dependencies = new();
-            private readonly Dictionary<EffectiveRequestsBackend, long> _effectiveDependencies = new();
+            private readonly EffectiveReadScope _effectiveScope = new();
             /// <summary>
             /// Enlists a backend-neutral read admitted under EffectiveRequestsBackend.Shared.Current. Unlike a Seerr
             /// dependency this permits strict-JE metadata/history reads with submissions off, but rejects epoch changes.
             /// </summary>
             public void EnlistEffective(EffectiveBackendSnapshot snapshot) => IncludeEffective(EffectiveRequestsBackend.Shared, snapshot.Epoch);
-            internal void IncludeEffective(EffectiveRequestsBackend owner, long epoch)
-            {
-                _parent?.IncludeEffective(owner, epoch);
-                lock (_effectiveDependencies) _effectiveDependencies.TryAdd(owner, epoch);
-            }
-            internal KeyValuePair<EffectiveRequestsBackend, long>[] EffectiveDependencies()
-            {
-                var all = _parent?.EffectiveDependencies().ToDictionary(e => e.Key, e => e.Value) ?? new Dictionary<EffectiveRequestsBackend, long>();
-                lock (_effectiveDependencies) foreach (var pair in _effectiveDependencies) all.TryAdd(pair.Key, pair.Value);
-                return all.ToArray();
-            }
+            internal void IncludeEffective(EffectiveRequestsBackend owner, long epoch) => _effectiveScope.Include(owner, epoch);
+            internal KeyValuePair<EffectiveRequestsBackend, long>[] EffectiveDependencies() => _effectiveScope.Dependencies();
             internal Publication(bool retain = false, CancellationToken ct = default)
             {
                 _parent = Pending.Value;
@@ -169,7 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _background = retain ? new Background(ct) : null;
                 // A writer entered after a warm-cache lookup must retain that original input before any wait.
                 try { if (_parent?.FactsRetainDependency == true && _parent?.RetainedGeneration != true && _parent?.FactsDependency is > 0 and var facts) _background?.IncludeFacts(facts); }
-                catch { _background?.Dispose(); throw; }
+                catch { _background?.Dispose(); _effectiveScope.Dispose(); throw; }
                 Pending.Value = this;
             }
             internal CancellationToken Token => _background?.Token ?? CancellationToken.None;
@@ -191,6 +182,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 lock (_dependencies) return _dependencies.TryGetValue(owner, out var epoch) ? epoch : _parent?.Epoch(owner);
             }
+            internal BackendPublicationStamp CaptureCommitStamp()
+            {
+                Publish(() => true);
+                return new(Dependencies(), EffectiveDependencies(), FactsDependency, LegacyRetained);
+            }
             public T Publish<T>(Func<T> result)
             {
                 KeyValuePair<EffectiveRequestsBackend, long>[] dependencies;
@@ -209,7 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (facts != 0 && !(legacySend && EffectiveRequestsBackend.Shared.Current.IsolationVersion == 0)) EffectiveRequestsBackend.Shared.CommitFacts(facts, () => true);
                 return value;
             }
-            public void Dispose() { if (Pending.Value == this) Pending.Value = _parent; _background?.Dispose(); }
+            public void Dispose() { if (Pending.Value == this) Pending.Value = _parent; _background?.Dispose(); _effectiveScope.Dispose(); }
         }
 
         /// <summary>One epoch-aware implementation for async reads, cache reads, snapshots and publication effects.</summary>

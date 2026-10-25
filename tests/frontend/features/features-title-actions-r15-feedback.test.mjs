@@ -177,7 +177,7 @@ for (const owned of [false, true]) {
  test(`R15-B1 library Hide forwards ${owned ? 'its supplied feedback owner' : 'the intentional ownerless lifetime'}`, async t => {
   const h=setup(t,{asks:false});h.JE.userConfig={hiddenContent:{items:{},settings:{enabled:true}}};
   h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
-  const hc=h.JE.internals.hiddenContent;let saves=0;hc.debouncedSave=()=>{saves++;};hc.refreshNativeCardVisibility=()=>{};
+  const hc=h.JE.internals.hiddenContent;let saves=0;hc.persist=()=>{saves++;};hc.refreshNativeCardVisibility=()=>{};
   h.a.initialize();
   hc.hideItem({itemId:'library-1',name:'Library title',type:'Movie'},owned?h.a.generation():null);
   const undo=h.document.querySelector('.je-undo-btn');assert.ok(undo);assert.equal(saves,1);

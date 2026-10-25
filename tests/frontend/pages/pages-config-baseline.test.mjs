@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { configPage } from '../helpers/config-page.mjs';
@@ -61,7 +62,7 @@ test('R8-5: a confirmed reset of an unreadable Radarr list is saved; the banner 
   const p = open(t, { RadarrInstances: CORRUPT, RadarrUrl: 'http://old.test', RadarrApiKey: 'old', SonarrInstances: CORRUPT });
   await p.pageshow();
   assert.ok(p.$('#radarrInstancesList .arr-corrupt-banner'));
-  p.$('#radarrInstancesList .arr-corrupt-banner button').click();
+  clickAsViewer(p.$('#radarrInstancesList .arr-corrupt-banner button'));
   await wait(p, 600);
   assert.ok(dirty(p), 'the confirmed reset shows as unsaved');
   await p.save();
@@ -77,8 +78,8 @@ test('R8-5: a confirmed reset of an unreadable Radarr list is saved; the banner 
 test('R8-5: a reset followed by a new instance in the same save stores that instance', async t => {
   const p = open(t, { RadarrInstances: CORRUPT });
   await p.pageshow();
-  p.$('#radarrInstancesList .arr-corrupt-banner button').click();
-  p.$('#addRadarrInstance').click();
+  clickAsViewer(p.$('#radarrInstancesList .arr-corrupt-banner button'));
+  clickAsViewer(p.$('#addRadarrInstance'));
   const card = p.$('#radarrInstancesList .arr-instance-card');
   p.choose(card.querySelector('.arr-instance-name'), 'New');
   p.choose(card.querySelector('.arr-instance-url'), 'http://new.test');
@@ -91,7 +92,7 @@ test('R8-5: a reset followed by a new instance in the same save stores that inst
 test('R8-5: a reset is not applied over a list another writer repaired meanwhile; the page says so', async t => {
   const p = open(t, { RadarrInstances: CORRUPT });
   await p.pageshow();
-  p.$('#radarrInstancesList .arr-corrupt-banner button').click();
+  clickAsViewer(p.$('#radarrInstancesList .arr-corrupt-banner button'));
   const repaired = radarr({ Id: R2, Name: 'Repaired' });
   p.server.beforeWrite = server => { server.config.RadarrInstances = repaired; };
   p.server.beforeWrite = (fn => { let done = false; return s => { if (!done) { done = true; fn(s); } }; })(p.server.beforeWrite);
@@ -114,7 +115,7 @@ test('R8-5 control: saving other settings never touches an unreadable list nobod
 test('R8-6: an instance removed right after the page loaded shows as unsaved, and the save removes it', async t => {
   const p = open(t, { RadarrInstances: radarr({ Id: R1, Name: 'One' }, { Id: R2, Name: 'Two' }) });
   await p.pageshow();
-  p.$('#radarrInstancesList .arr-instance-card .arr-instance-remove').click();
+  clickAsViewer(p.$('#radarrInstancesList .arr-instance-card .arr-instance-remove'));
   await wait(p, 800);
   assert.ok(dirty(p), 'the removal shows as unsaved');
   await p.save();

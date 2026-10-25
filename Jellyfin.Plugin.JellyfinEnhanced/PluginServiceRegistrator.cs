@@ -596,9 +596,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton(sp => Services.Acquire.Backends.EffectiveRequestsBackend.Shared.WithLogger(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Services.Acquire.Backends.EffectiveRequestsBackend>>()));
             serviceCollection.AddSingleton<Services.Acquire.Backends.IEffectiveRequestsBackend>(sp => sp.GetRequiredService<Services.Acquire.Backends.EffectiveRequestsBackend>());
             serviceCollection.AddTransient<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
-            foreach (var name in new[] { string.Empty, Helpers.Jellyseerr.SeerrHttpHelper.NamedClient })
-                serviceCollection.AddHttpClient(name).AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
-            serviceCollection.AddHttpClient(string.Empty).ConfigurePrimaryHttpMessageHandler(() => new Services.Acquire.Backends.BackendFallbackTransport());
+            // PluginHttp maps the plugin's fallback acquisition to its owned constant name.
+            // Keep E1's gate and v0 fallback behavior there without reconfiguring Jellyfin's unnamed client.
+            serviceCollection.AddHttpClient(PluginHttp.DefaultClient)
+                .AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>()
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler());
+            serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
+                .AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
             serviceCollection.AddSingleton<Services.Acquire.Backends.RequestedTitlesProjection>();
             serviceCollection.AddSingleton<Services.Acquire.Backends.SeerrIsolationActionFilter>();
             serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Backends.SeerrIsolationActionFilter>(int.MinValue + 100));

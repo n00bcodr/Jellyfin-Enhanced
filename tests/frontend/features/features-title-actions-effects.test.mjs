@@ -151,3 +151,16 @@ test('R12 (B41): a decoy owner word or a guard in another branch is no check; an
   write[file] = write[file].replace('    function syncAll() {', "    function plantedWrite() { JE.core.api.plugin('/acquire/requests', { method: 'POST', body: {} }); }\n    function syncAll() {");
   assert.ok(lint(write).some(f => f.startsWith(`${file}: plantedWrite write transport POST /acquire/requests`)));
 });
+
+test('M4 shared publisher boundaries retain every effect in their caller callbacks', () => {
+  for (const body of [
+    "await Promise.resolve(); JE.internals.arrListPages.gate.paint(ticket, () => JE.toast('planted'));",
+    "const queue = JE.core.mutationQueue('planted'); queue.send(() => JE.core.api.pluginResponse('/planted', {method: 'POST'}));"
+  ]) {
+    const sources = readSources();
+    const file = 'arr/ask/ask-sheet.js';
+    sources[file] = sources[file].replace('    function sheetPaint(ticket, fn) {', `    async function plantedBoundaryCallback(ticket) { ${body} }\n    function sheetPaint(ticket, fn) {`);
+    assert.notEqual(sources[file], readSources()[file], 'the caller plant applies');
+    assert.ok(lint(sources).some(f => f.includes('plantedBoundaryCallback')), 'the publisher boundary never excuses its caller effect');
+  }
+});

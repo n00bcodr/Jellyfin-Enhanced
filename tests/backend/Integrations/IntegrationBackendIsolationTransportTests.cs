@@ -100,10 +100,13 @@ public class IntegrationBackendIsolationTransportTests
         await Call(typeof(HouseholdRulesService), "SeerrAsync", transport, CancellationToken.None);
         var native = new SeerrNativeDetailsSource(transport, null!, f.Core.Logger);
         await Call(native, "FetchAsync", "/api/v1/movie/603", CancellationToken.None);
-        var parental = new SeerrParentalFilter(transport, users, null!, null!, f.Core.Logger);
-        await Call(parental, "FetchDetailFromSeerrAsync", "movie", 603, c, CancellationToken.None);
+        // The A2 provider owns this physical path now; an old captured Seerr source still cannot send in JE.
+        using var parentalCache = new TmdbResponseCache(transport, TimeProvider.System);
+        var parentalType = typeof(TitleParentalEvidenceProvider).GetNestedType("Seerr", BindingFlags.NonPublic)!;
+        var parental = (ITitleParentalEvidence)Activator.CreateInstance(parentalType, transport, parentalCache, string.Empty, "http://seerr.test", "test")!;
+        Assert.Null(await parental.ReadAsync("movie", 603, "US", true, CancellationToken.None));
         var metadata = new ListMetadataService(transport, f.Core.Logger);
-        await Call(metadata, "FetchFromSeerrAsync", new[] { "http://seerr.test" }, "test", "/api/v1/movie/603", null, "scope", CancellationToken.None);
+        await Call(metadata, "FetchFromSeerrAsync", new[] { "http://seerr.test" }, "test", "/api/v1/movie/603", null, "scope", ListMetadataEpoch.Capture(), CancellationToken.None);
         var limiter = new MetadataCallLimiter(1, TimeSpan.Zero, TimeProvider.System);
         var lookup = new SeerrImportLookup(transport, limiter, f.Core.Logger);
         await lookup.SearchAsync("title", new ImportCallContext(user, false), default);

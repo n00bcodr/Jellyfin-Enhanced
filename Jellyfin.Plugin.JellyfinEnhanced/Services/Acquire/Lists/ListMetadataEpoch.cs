@@ -29,11 +29,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // Lifecycle precedes this lock when both are needed; configuration commits never acquire Lifecycle.
         internal T Publish<T>(Func<T> effect, Func<T> refused)
         {
-            using var publication = SeerrFacts.BeginPublication();
-            publication.EnlistEffective(Backend);
+            // Same neutral dependency owner used by Publication.EnlistEffective; retain this
+            // read's original snapshot in the enclosing composition and eventual HTTP stamp.
+            EffectiveReadScope.Enlist(EffectiveRequestsBackend.Shared, Backend.Epoch);
             try
             {
-                return publication.Publish(() =>
+                return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () =>
                 {
                     lock (JellyfinEnhanced.AnalyticsCredentialLock)
                         return IsCurrent ? effect() : refused();

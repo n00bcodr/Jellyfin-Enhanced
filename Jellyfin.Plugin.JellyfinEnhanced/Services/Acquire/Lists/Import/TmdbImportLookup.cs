@@ -43,7 +43,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private readonly TmdbResponseCache _tmdb;
         private readonly MetadataCallLimiter _limiter;
         private readonly Logger _logger;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); }
+
 
         /// <summary>Creates the lookup (singleton).</summary>
         /// <param name="tmdb">JE's TMDB response cache.</param>
@@ -337,7 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // A definitive answer is reused with its status, and without waiting for the limiter (review round 5, 4c2-R5-4:
             // a budgeted review that met the same stale ids again re-spent its budget on them and never got further).
             var key = Fingerprint(apiKey) + "|" + cacheKey + "|" + epoch.Generation;
-            if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            if (_cacheFacts.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return epoch.Publish(() => new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid), () => LookupAnswer.Transient);
             }
@@ -352,24 +355,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private void Remember(string key, LookupStatus status, object? value)
         {
-            if (_cache.Count >= MaxCacheEntries)
+            if (_cacheFacts.Count >= MaxCacheEntries)
             {
                 var now = DateTime.UtcNow;
-                foreach (var entry in _cache.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
+                foreach (var entry in _cacheFacts.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
                 {
-                    _cache.TryRemove(entry, out _);
+                    _cacheFacts.TryRemove(entry, out _);
                 }
 
-                if (_cache.Count >= MaxCacheEntries)
+                if (_cacheFacts.Count >= MaxCacheEntries)
                 {
-                    foreach (var entry in _cache.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
+                    foreach (var entry in _cacheFacts.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
                     {
-                        _cache.TryRemove(entry, out _);
+                        _cacheFacts.TryRemove(entry, out _);
                     }
                 }
             }
 
-            _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
+            _cacheFacts[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
         // Key identity (a hash, never the key or its length): another key never reuses this one's answers.

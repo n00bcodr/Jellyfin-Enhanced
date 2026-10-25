@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness, deferred, plain} from '../helpers/harness.mjs';
@@ -185,7 +186,7 @@ test('Play of an episode the server found by its number opens that episode, not 
   h.JE.core.api.plugin = async () => null;
   h.document.body.innerHTML = '<button class="je-calendar-play-btn" data-event-id="by-number"></button>';
   h.document.body.addEventListener('click', h.P.handleEventClick);
-  h.document.querySelector('button').click();
+  clickAsViewer(h.document.querySelector('button'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.window.location.hash, '#/details?id=episode-id');
 });

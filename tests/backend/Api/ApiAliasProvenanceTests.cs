@@ -106,6 +106,26 @@ public class ApiAliasProvenanceTests
     }
 
     [Fact]
+    public void RefusedIncidentalJoinCannotFenceIndependentRequestTitleChoices()
+    {
+        using var lab = new IntegrationRequestArrivalsTests.Lab();
+        lab.Config.ArrBackendIsolationVersion = 0;
+        Join(lab, false, Imdb, Tmdb);
+        var accepted = lab.Ledger.Create(lab.Emma.UserId,
+            new CreateRequest("independent-tvdb", new MutationInput { Key = Tvdb, Scope = "seasons", Seasons = [2] }), lab.Policy, lab.Arr.Now);
+        Assert.True(accepted.HttpStatus < 300, accepted.Reason);
+        using (var effect = SeerrFacts.BeginEffect())
+        {
+            Assert.True(SeerrFacts.ReadSeerrCached(() => true, false));
+            Assert.Null(lab.Ledger.Unify([Tmdb, Tvdb], lab.Policy, lab.Arr.Now));
+        }
+        foreach (var id in new[] { Imdb, Tmdb, Tvdb }) Assert.False(lab.Ledger.Choices.IdentityFenced(id));
+        Assert.Equal(Tmdb, lab.Ledger.CanonicalKey(Imdb));
+        Assert.Equal(Tvdb, lab.Ledger.CanonicalKey(Tvdb));
+        Assert.Equal(accepted.RequestId, Assert.Single(lab.Ledger.ForTitle(Tvdb)).Id);
+    }
+
+    [Fact]
     public async Task AllThreeAliasesLearnedBeforeAcceptanceStayAccepted()
     {
         using var lab = new IntegrationRequestArrivalsTests.Lab();

@@ -213,6 +213,7 @@ public class ApiFactsGenerationTests
             return Task.FromResult(IntegrationTransport.Response("{\"id\":603,\"title\":\"The Matrix\"}"));
         });
         using var cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbResponseCache(transport, TimeProvider.System);
+        using var viewer = Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.ViewerMetadataAdmission.ForViewer(lab.Emma.UserId);
         var before = await cache.GetAsync("movie/603", "", "test-tmdb", default);
         await EffectiveRequestsBackend.Shared.TransitionAsync(() => lab.Config.ArrBackendIsolationVersion = 1, default);
         var after = await cache.GetAsync("movie/603", "", "test-tmdb", default);

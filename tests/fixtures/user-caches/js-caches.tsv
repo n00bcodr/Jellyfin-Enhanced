@@ -23,6 +23,8 @@ arr/adminusers/admin-users.js	request	state	the abort controller of the read in 
 arr/adminusers/admin-users.js	summary	state	an administrator's own page (the users list it draws), read when the page opens and cleared when it closes or the route changes; the server refuses every read and save once they are no longer an administrator
 arr/arr-links.js	slugCache	shared	arr title slugs and instance matches by id: the arr's own data, the same for every viewer (the links are an administrator's only)
 arr/arr-tag-links.js	processedItems	state	items whose links were drawn this visit (DOM bookkeeping), not an answer
+arr/ask/ask-actions.js	busy	state	in-flight action bookkeeping, cleared by completion or session change
+arr/ask/ask-actions.js	done	state	per-action feedback for this session, not an access decision or title metadata; the action is authorized again at its next press
 arr/ask/ask-collection.js	answered	state	which collection this page has an answer for (the answer itself is drawn, not kept)
 arr/ask/ask-collection.js	intent	state	which open collection page may show an answer (a request intent), not an answer
 arr/ask/ask-core.js	checks	revisioned	title checks, 30 s: dropped when the server's access revision moves; the server decides every ask again
@@ -59,7 +61,10 @@ arr/status/status-cards.js	cache	revisioned	status and badge per card, 60 s: eve
 arr/status/status-cards.js	flushTimer	state	a timer
 arr/status/status-cards.js	inFlight	uncached	cards being read (in flight only)
 arr/status/status-details.js	current	state	the details panel being drawn (its read is made on each open)
+arr/status/status-episodes.js	pendingRows	uncached	only the current native row reads in flight, removed on completion and cleared with the page
+arr/status/status-episodes.js	rowsByEpisode	state	DOM row identities on the current season page, discarded when the page changes
 core/access-revision.js	probing	uncached	the revision probe in flight (one at a time); its answer is the revision itself
+core/session-action.js	gestures	state	weak event ownership for one actual gesture; contains no server answer
 elsewhere/elsewhere.js	availableProviders	shared	TMDB's watch providers of the region, the same for everyone
 elsewhere/elsewhere.js	availableRegions	shared	TMDB's watch regions, the same for everyone
 elsewhere/elsewhere.js	seasonFallbackInFlight	state	season pages whose fallback lookup is running (in-flight bookkeeping)
@@ -78,6 +83,7 @@ enhanced/hiddencontent/hidden-content-buttons.js	titlesRetryAt	state	when a fail
 enhanced/hiddencontent/hidden-content-data.js	loadedRevision	state	the document revision the rules were read under (compared with every revision seen; a move reads the rules again)
 enhanced/hiddencontent/hidden-content-data.js	revalidating	uncached	the read of the rules after a document revision, in flight only
 enhanced/hiddencontent/hidden-content-data.js	ruleWrites	state	title rule writes in flight per title (each waits for the one before), not an answer
+enhanced/hiddencontent/hidden-content-dialogs.js	dismissUndo	state	dismiss callback for the current feedback toast, not hidden-title authority
 enhanced/hiddencontent/hidden-content-filter.js	nodeClaims	state	the newest filter pass that read each card's inputs (an older result never replaces it), not an answer
 enhanced/hiddencontent/hidden-content-filter.js	parentSeriesCache	item	an episode's series id (Jellyfin's own item structure)
 enhanced/hiddencontent/hidden-content-filter.js	parentTitlesChecked	state	which series' title identity this tab resolved, under the native decision scope it was resolved in (cleared when the scope moves and on a user switch): bookkeeping, no access answer
@@ -141,8 +147,8 @@ jellyseerr/discovery/discovery-base.js	processedPages	state	pages this discovery
 jellyseerr/discovery/discovery-base.js	revalidating	uncached	the read of the client-paged list after an access revision, in flight only
 jellyseerr/discovery/discovery-filter-utils.js	keptPages	revisioned	Discover pages (a load's prefetched pages, a page shown again), kept under the access revision they were asked under and the user: used only while both still hold (checked at use), dropped when the revision moves, 2 minutes at most from the request
 jellyseerr/discovery/discovery-filter-utils.js	sessionStorage:storageKey	shared	TMDB's genre list (the same for everyone)
-jellyseerr/discovery/genre-discovery.js	tmdbGenreCache	shared	TMDB's genre list (the same for everyone)
 jellyseerr/discovery/genre-discovery.js	nativeGenreCache	shared	TMDB's genre list from the server's native route (the same for everyone; kept apart from Seerr's, A1)
+jellyseerr/discovery/genre-discovery.js	tmdbGenreCache	shared	TMDB's genre list (the same for everyone)
 jellyseerr/discovery/tag-discovery.js	keywordIdCache	shared	TMDB keyword ids by name (the same for everyone)
 jellyseerr/issue-reporter.js	cachedUserCanReport	account	whether the person's Seerr account may report issues; the server checks it again on every report
 jellyseerr/item-details.js	currentAbortController	state	an abort controller

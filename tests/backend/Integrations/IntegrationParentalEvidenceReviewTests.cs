@@ -94,13 +94,14 @@ public class IntegrationParentalEvidenceReviewTests
         }
         public async Task<(int Status, JsonElement Body, AcquireDiscoverController Controller)> Read(bool search = false, string query = "family", EvidenceClock? clock = null)
         {
+            using var metadataViewer = Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.ViewerMetadataAdmission.ForViewer(Viewer.UserId);
             var c = new AcquireDiscoverController(Discover) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
             c.HttpContext.User = TestCallers.Principal(User.Id, false);
             c.HttpContext.Request.Method = "GET";
             c.HttpContext.Request.Path = "/JellyfinEnhanced/acquire/" + (search ? "search" : "discover");
             var result = clock == null ? search ? await c.Search(query) : await c.Discover("trending", "movie")
                 : (IActionResult)typeof(AcquireDiscoverController).GetMethod("Send", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(c, new object?[] { Viewer, await clock.Read(this, search), search ? "search" : "discover" })!;
+                    .Invoke(c, new object?[] { Viewer, await clock.Read(this, search), search ? "search" : "discover", metadataViewer.Refused })!;
             var context = new Microsoft.AspNetCore.Mvc.Filters.ResultExecutingContext(EndpointRouting.Bind(c.HttpContext),
                 new List<Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata>(), result, c);
             new Jellyfin.Plugin.JellyfinEnhanced.Helpers.RequestOutcomeFilterAttribute().OnResultExecuting(context);

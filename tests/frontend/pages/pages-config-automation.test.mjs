@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -160,11 +161,11 @@ test('the status panel lists the guard, budgets with their time, breakers, held 
     assert.match(text, /Managers keep their automatic requests going ahead .*Dad/);
     const buttons = [...h.document.querySelectorAll('#arrAutomationStatus button')];
     assert.equal(buttons.length, 2);
-    buttons[0].click();
+    clickAsViewer(buttons[0]);
     await new Promise(r => setTimeout(r, 0));
     assert.deepEqual(JSON.parse(calls.find(c => c.type === 'POST').data), { target: 'r1' });
     assert.equal(calls.find(c => c.type === 'POST').url, '/JellyfinEnhanced/arr/admin/automation/breakers/reset');
-    buttons[1].click();
+    clickAsViewer(buttons[1]);
     await new Promise(r => setTimeout(r, 0));
     assert.ok(calls.some(c => c.type === 'POST' && c.url === '/JellyfinEnhanced/arr/admin/automation/notice/dismiss'));
 });

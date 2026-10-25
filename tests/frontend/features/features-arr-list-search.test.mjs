@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Phase 4c3b1: list authoring search and metadata. JE households search through the existing acquire/search route,
 // Seerr households through the existing Seerr proxy; Import being off changes neither. A person JE search refuses
 // (a Watcher) gets custom entries only, with the reason, and no new role. Typed facts only: complete, partial or
@@ -155,7 +156,7 @@ test('the search presenter draws only the newest query: a reversed answer and an
   assert.deepEqual([...root.querySelectorAll('[data-je-candidate]')].map(n => n.textContent.includes('Movie 2')), [true]);
   assert.equal(root.textContent.includes('Movie 1'), false);
   // Choosing a result gives its typed candidate.
-  root.querySelector('[data-je-candidate]').click();
+  clickAsViewer(root.querySelector('[data-je-candidate]'));
   assert.deepEqual(search.selected().identity, { mediaType: 'movie', tmdbId: 2 });
   search.destroy();
 });
@@ -186,7 +187,7 @@ test('arr results without TMDB are labelled custom-only; a revoked ticket draws 
   assert.equal(rows.length, 3);
   const oldRow = rows.find(r => r.textContent.includes('Old Show'));
   assert.match(oldRow.textContent, /Custom entry only/);
-  oldRow.click();
+  clickAsViewer(oldRow);
   assert.equal(search.selected().inert, true);
   assert.equal(search.selected().identity, null);
   live = false;

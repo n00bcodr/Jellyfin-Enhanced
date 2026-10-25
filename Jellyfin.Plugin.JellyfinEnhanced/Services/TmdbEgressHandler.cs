@@ -147,6 +147,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 for (var count = 0; ; count++)
                 {
                     var response = await base.SendAsync(current, cancellationToken).ConfigureAwait(false);
+                    // E1's isolated fallback refuses redirects; legacy v0 still follows them only through
+                    // the A1 guard on every hop. No hidden primary-handler redirect can escape either owner.
+                    if (Acquire.Backends.EffectiveRequestsBackend.Shared.Current.IsolationVersion != 0) return response;
                     if (TmdbEgressHandler.HasCapability(request) || count >= 20 || response.StatusCode is not (System.Net.HttpStatusCode.MovedPermanently or System.Net.HttpStatusCode.Found
                             or System.Net.HttpStatusCode.SeeOther or System.Net.HttpStatusCode.TemporaryRedirect or System.Net.HttpStatusCode.PermanentRedirect)
                         || response.Headers.Location is not { } location) return response;

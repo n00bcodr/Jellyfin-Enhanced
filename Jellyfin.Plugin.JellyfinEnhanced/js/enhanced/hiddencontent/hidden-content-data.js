@@ -13,7 +13,7 @@
     // Late-bound cross-module references (defined in the later-loaded
     // hidden-content-save/dialogs/filter modules).
     const persist = (...args) => internal.persist(...args);
-    const showUndoToast = (...args) => internal.showUndoToast(...args);
+    const showUndoToast = (itemName, itemId, owner) => internal.showUndoToast(itemName, itemId, owner);
     const refreshNativeCardVisibility = (...args) => internal.refreshNativeCardVisibility(...args);
 
     // ============================================================
@@ -162,7 +162,7 @@
                 JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: established, remove: [...removed] },
                     authoritative ? (reply?.revision || reply?.Revision || undefined) : undefined);
             }
-            if (hidden) showUndoToast(item.name, title.key);
+            if (hidden && (!owner || submitted.current())) showUndoToast(item.name, title.key, owner ? submitted.owner : null);
             if (accepted) return false;
             return true;
         }));
@@ -523,7 +523,7 @@
         };
 
         persist({ upsert: { [key]: newItem } });
-        showUndoToast(name || 'Item', key);
+        showUndoToast(name || 'Item', key, owner);
     }
 
     /**

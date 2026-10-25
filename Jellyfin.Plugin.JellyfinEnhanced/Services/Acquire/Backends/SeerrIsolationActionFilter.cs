@@ -58,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
                 {
                     if (seerrOnly) _backend.Facts.Publish(captured.Epoch, () => true);
                     publication.Publish(() => true);
-                    PrivacyResponseGuard.BackendPublication(context.HttpContext, publication);
+                    PrivacyResponseGuard.BackendPublication(context.HttpContext, publication.CaptureCommitStamp());
                 }
                 catch (BackendDisabledException ex)
                 {

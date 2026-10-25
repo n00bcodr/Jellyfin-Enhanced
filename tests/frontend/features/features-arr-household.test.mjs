@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 3: the Household tab (Managers read, administrators edit roles,
 // limits and house rules with a confirmation), the request ledger's rows in My requests (merged
 // with the page's own entries, with Cancel) and the Managers' chip bar on the home page, rendered
@@ -88,10 +89,10 @@ test('an administrator edits roles, limits and house rules; Save confirms, sends
   pick('household:default-role', 'kid');
   pick('household:default-role', 'member');
 
-  page.querySelector('[data-je-focus="household:save"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="household:save"]'));
   assert.equal(page.querySelector('.je-household-confirm').textContent, translate('arr_household_confirm'));
   assert.equal(saved, null, 'nothing is sent before the confirmation');
-  page.querySelector('[data-je-focus="household:confirm"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="household:confirm"]'));
   await until(() => saved !== null);
   assert.deepEqual(saved, { preset: 'approve_everything', roles: { kid: { quotaLimit: null } }, users: { [pid(1)]: { role: 'kid', quotaLimit: -1 } } });
   await until(() => reads === 2);
@@ -119,8 +120,8 @@ test('a refused save keeps the edits and shows the administrator the reason code
   assert.equal(role.value, 'member');
   role.value = '';
   role.dispatchEvent(new h.window.Event('change'));
-  page.querySelector('[data-je-focus="household:save"]').click();
-  page.querySelector('[data-je-focus="household:confirm"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="household:save"]'));
+  clickAsViewer(page.querySelector('[data-je-focus="household:confirm"]'));
   await until(() => page.querySelector('.je-household-save .je-approval-result'));
   assert.equal(page.querySelector('.je-household-save .je-approval-result').textContent, "Some of those changes can't be saved. (unknown_user)");
   assert.ok(page.querySelector('[data-je-focus="household:save"]'), 'the edits are still there to fix or undo');
@@ -159,7 +160,7 @@ test('household reads: a feed change re-reads a clean tab, never throws away uns
   assert.equal(page.querySelector('.je-hub-note-warn').textContent, translate('arr_household_changed'));
   assert.equal(reads.length, 2);
   // Undo reads the latest.
-  page.querySelector('[data-je-focus="household:discard"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="household:discard"]'));
   await until(() => reads.length === 3);
   reads[2].resolve(household([person(1, { name: 'Latest' })], settings()));
   await until(() => page.querySelector('.je-household-name')?.textContent === 'Latest');
@@ -217,7 +218,7 @@ test('My requests merges the ledger with the page\'s entries: one row per title,
 
   const cancel = rows[0].querySelector('.je-hub-cancel');
   assert.equal(cancel.getAttribute('aria-label'), 'Cancel the request for Own 1 (2026)');
-  cancel.click();
+  clickAsViewer(cancel);
   await until(() => h.toasts.length === 1);
   assert.deepEqual(cancels, [own(1).id]);
   assert.equal(h.toasts[0], 'Request cancelled.');
@@ -244,7 +245,7 @@ test('My requests: a row the server merged (an ask and the request linked to it)
   h.JE.initializeArrStatus();
   const page = h.page();
   await until(() => page.querySelectorAll('.je-hub-row').length === 1);
-  page.querySelector('.je-hub-cancel').click();
+  clickAsViewer(page.querySelector('.je-hub-cancel'));
   await until(() => cancels.length === 2);
   assert.deepEqual(cancels.sort(), [own(11).id, own(12).id].sort());
 });
@@ -313,7 +314,7 @@ test('a cancel the server refuses says so honestly and the row stays', async t =
   h.JE.initializeArrStatus();
   const page = h.page();
   await until(() => page.querySelector('.je-hub-cancel'));
-  page.querySelector('.je-hub-cancel').click();
+  clickAsViewer(page.querySelector('.je-hub-cancel'));
   await until(() => h.toasts.length === 1);
   assert.equal(h.toasts[0], translate('arr_ask_toast_changed'));
   assert.ok(page.querySelector('.je-hub-row[data-je-arr-key="movie:tmdb:1"]'));
@@ -402,7 +403,7 @@ test('a chip opens the Approvals tab (stuck: only the stuck cards)', async t => 
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-chipbar-stuck'));
-  h.document.querySelector('.je-chipbar-stuck').click();
+  clickAsViewer(h.document.querySelector('.je-chipbar-stuck'));
   await until(() => h.page() && !h.page().classList.contains('hide') && h.page().querySelector('.je-approvals-filter'));
   assert.equal(h.window.location.hash, '#/requests?tab=approvals&show=stuck');
   assert.equal(h.page().querySelector('.je-hub-tab[aria-selected="true"]').dataset.tab, 'approvals');
@@ -489,7 +490,7 @@ test('a request that arrived and was removed since says so in its own group, and
   const again = row.querySelector('.je-hub-again');
   assert.equal(again.textContent, 'replayGet it again');
   assert.equal(again.getAttribute('aria-label'), 'Get Gone Show (2020) again');
-  again.click();
+  clickAsViewer(again);
   await until(() => h.toasts.length === 1);
   assert.deepEqual(posts.map(i => ({ key: i.key, scope: i.scope, variant: i.variant, seasons: i.seasons, episodes: i.episodes })), [
     { key: 'tv:tvdb:7', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] },
@@ -517,7 +518,7 @@ test('Seerr mode: a removed request with single episodes is asked for again as t
   await until(() => page.querySelector('.je-hub-again'));
   const again = page.querySelector('.je-hub-again');
   assert.equal(again.textContent, 'replayGet Seasons 1, 2', 'says it asks for whole seasons before it is pressed');
-  again.click();
+  clickAsViewer(again);
   await until(() => h.toasts.length === 1);
   assert.deepEqual(posts.map(i => ({ key: i.key, scope: i.scope, seasons: i.seasons, episodes: i.episodes })), [
     { key: 'tv:tvdb:7', scope: 'seasons', seasons: [1, 2], episodes: [] }
@@ -583,7 +584,7 @@ for (const cancel4k of [false, true]) {
     assert.equal(new Set(rows.map(r => r.dataset.jeFocus)).size, 2, 'focus identity keeps the edition');
     const row = rows.find(r => [...r.querySelectorAll('.je-hub-chip')].some(c => c.textContent === translate('arr_hub_4k')) === cancel4k);
     assert.ok(row, 'the edition is labelled');
-    row.querySelector('.je-hub-cancel').click();
+    clickAsViewer(row.querySelector('.je-hub-cancel'));
     await until(() => h.toasts.length > 0);
     assert.deepEqual(cancels, [cancel4k ? uhd.id : standard.id]);
   });

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
@@ -440,7 +441,7 @@ test('JE handling does not tell a person Seerr linkage is required to enable req
 // request controls off, a card offers no request (Seerr's own button would ask Seerr); Seerr mode keeps its button.
 test('JE backend with its request controls off: a card\'s request button is hidden and inert; Seerr mode keeps it', async t => {
   const h = uiSetup(t, { config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } } });
-  h.configure(); h.button.click(); await flush();
+  h.configure(); clickAsViewer(h.button); await flush();
   assert.deepEqual([h.button.hidden, h.button.style.display, h.button.disabled, h.button.classList.contains('je-request-off'), h.calls.length], [true, 'none', true, true, 0]);
   // JE's request controls on: the button is offered (ask-seerr.js takes the press).
   h.JE.internals = { ...h.JE.internals, arrAskSeerr: { jeMode: () => true } };

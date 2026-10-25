@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -112,7 +113,7 @@ test('R7-3: an unchanged card keeps what another writer changed (links, add defa
 test('R7-3: another writer added an instance and this page removed one: both happen; one this page changed but another writer removed is reported', async t => {
   const p = open(t, { RadarrInstances: radarr({ Id: R1, Name: 'Radarr' }, { Id: R2, Name: 'Radarr 4K' }) });
   await p.pageshow();
-  p.document.querySelector('#radarrInstancesList .arr-instance-card .arr-instance-remove').click(); // removes R1
+  clickAsViewer(p.document.querySelector('#radarrInstancesList .arr-instance-card .arr-instance-remove')); // removes R1
   assert.equal(p.document.querySelectorAll('#radarrInstancesList .arr-instance-card').length, 1);
   p.choose(p.document.querySelector('#radarrInstancesList .arr-instance-name'), 'Changed');
   const R3 = '33333333-3333-4333-8333-333333333333';
@@ -153,7 +154,7 @@ test('R7-5: Import Users Now whose save fails imports nothing and says so', asyn
   const p = open(t, { ...SEERR, JellyseerrImportBlockedUsers: 'aa11' });
   await p.pageshow();
   p.server.failWrites = true;
-  p.$('#btnImportJellyseerrUsers').click();
+  clickAsViewer(p.$('#btnImportJellyseerrUsers'));
   await p.flush(30);
   assert.equal(importCalls(p).length, 0);
   assert.match(p.$('#importUsersResult').textContent, /Import was not attempted/);
@@ -166,7 +167,7 @@ test('R7-5: Import Users Now during a running save waits for it, then saves and 
   const release = p.server.holdWrite();
   submit(p);
   await p.flush();
-  p.$('#btnImportJellyseerrUsers').click();
+  clickAsViewer(p.$('#btnImportJellyseerrUsers'));
   await p.flush(30);
   assert.equal(importCalls(p).length, 0, 'not while the save runs');
   release();
@@ -183,7 +184,7 @@ test('Apply to all users: a failing save resets nobody; during a running save it
   await p.pageshow();
   const resets = () => p.posts.filter(x => x.url.includes('reset-all-users-settings')).length;
   p.server.failWrites = true;
-  p.$('#resetAllUserSettingsBtn').click();
+  clickAsViewer(p.$('#resetAllUserSettingsBtn'));
   await p.flush(30);
   assert.equal(resets(), 0);
   p.server.failWrites = false;
@@ -191,7 +192,7 @@ test('Apply to all users: a failing save resets nobody; during a running save it
   const release = p.server.holdWrite();
   submit(p);
   await p.flush();
-  p.$('#resetAllUserSettingsBtn').click();
+  clickAsViewer(p.$('#resetAllUserSettingsBtn'));
   await p.flush(30);
   assert.equal(resets(), 0, 'not while the save runs');
   release();

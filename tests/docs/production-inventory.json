@@ -639,6 +639,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/BackendPublicationStamp.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/EffectiveReadScope.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/EffectiveRequestsBackend.cs",
       "category": "Services"
     },
@@ -11916,7 +11924,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 766,
+    "files": 768,
     "routes": 312,
     "configuration_properties": 667,
     "storage_references": 106,

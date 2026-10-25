@@ -142,11 +142,27 @@ public class TmdbEgressTests
             || d.ServiceType == typeof(IHttpMessageHandlerFactory) || d.ServiceType == typeof(HttpMessageHandlerBuilder)
             || d.ServiceType == typeof(IHttpMessageHandlerBuilderFilter)
             || d.ServiceType.Namespace?.StartsWith("Microsoft.Extensions.", StringComparison.Ordinal) == true
-            || d.ServiceType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationTransportHandler))) ((IServiceCollection)services).Add(d);
+            || d.ServiceType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationTransportHandler)
+            || d.ServiceType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.SeerrIsolationTransportHandler)
+            || d.ServiceType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend))) ((IServiceCollection)services).Add(d);
         services.AddLogging();
         services.AddMetrics();
         configure?.Invoke(services);
         return services.BuildServiceProvider();
+    }
+
+    [Fact]
+    public void ProductionPluginNamesLeaveTheHostUnnamedRedirectPolicyIndependent()
+    {
+        using var services = ProductionHttp();
+        HttpMessageHandler handler = services.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler(string.Empty);
+        while (handler is DelegatingHandler delegating) handler = delegating.InnerHandler!;
+        Assert.True(handler switch
+        {
+            HttpClientHandler http => http.AllowAutoRedirect,
+            SocketsHttpHandler sockets => sockets.AllowAutoRedirect,
+            _ => throw new InvalidOperationException("Unreviewed host primary: " + handler.GetType().Name),
+        });
     }
 
     [Theory]

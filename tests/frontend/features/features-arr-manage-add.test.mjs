@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 3: the Manage drawer's direct "Add to {instance}" — a sheet with the
 // instance's own profiles, folders and the title's seasons (GET /arr/admin/manage/add-options), the
 // add through the request outbox (POST /arr/admin/manage/add) followed until it settles, and the
@@ -222,9 +223,9 @@ async function conflictSheet(t, respond = () => choiceError(queuedChoice()), use
   });
   await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.NATIVE });
   await until(() => button(h, 'add-r4'));
-  button(h, 'add-r4').click();
+  clickAsViewer(button(h, 'add-r4'));
   await until(() => button(h, 'add-submit-r4'));
-  button(h, 'add-submit-r4').click();
+  clickAsViewer(button(h, 'add-submit-r4'));
   await until(() => posts.length === 1 && button(h, 'add-submit-r4')?.getAttribute('aria-disabled') !== 'true');
   return { h, posts };
 }
@@ -247,20 +248,20 @@ test('replacing requires a separate confirmation and a stale confirmation must s
     n === 2 ? choiceError(queuedChoice(2, { owner: 'admin-c' })) : { outcome: 'accepted' },
     path => ({ name: path.endsWith('admin-c') ? 'Casey' : 'Alex' }));
   assert.ok(button(h, 'add-replace-r4'));
-  button(h, 'add-replace-r4').click();
+  clickAsViewer(button(h, 'add-replace-r4'));
   assert.equal(posts.length, 1);
   assert.match(h.document.querySelector('.je-manage-add-confirm').textContent, /Replace this title's queued profile and folder\?/);
   assert.match(h.document.querySelector('.je-manage-add-confirm').textContent, /Ultra-HD/);
   assert.equal(button(h, 'add-profile-r4').disabled, true);
-  button(h, 'add-confirm-r4').click();
+  clickAsViewer(button(h, 'add-confirm-r4'));
   await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Casey'));
   assert.equal(posts[1].overrideChoiceVersion, 1);
   assert.equal(posts[1].profileId, 5);
   assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Version 2/);
   assert.equal(button(h, 'add-confirm-r4'), null);
   assert.equal(posts.length, 2);
-  button(h, 'add-replace-r4').click();
-  button(h, 'add-confirm-r4').click();
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-confirm-r4'));
   await until(() => h.document.querySelector('.je-manage-add-message')?.textContent.includes("hasn't confirmed it yet"));
   assert.equal(posts[2].overrideChoiceVersion, 2);
   assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
@@ -270,7 +271,7 @@ test('using queued settings submits matching fields with no override and preserv
   const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice()) : { outcome: 'accepted' }, undefined, 'tv');
   assert.ok(button(h, 'add-use-r4'));
   assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Profile and folder apply to the whole series. Season selections stay separate./);
-  button(h, 'add-use-r4').click();
+  clickAsViewer(button(h, 'add-use-r4'));
   await until(() => posts.length === 2);
   assert.equal(posts[1].profileId, 4);
   assert.equal(posts[1].rootFolder, '/data/movies4k');
@@ -281,11 +282,11 @@ test('using queued settings submits matching fields with no override and preserv
 test('cancelling confirmation sends nothing and a normal submit never retains the override', async t => {
   const { h, posts } = await conflictSheet(t);
   assert.ok(button(h, 'add-replace-r4'));
-  button(h, 'add-replace-r4').click();
-  button(h, 'add-keep-r4').click();
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-keep-r4'));
   assert.equal(posts.length, 1);
   assert.equal(button(h, 'add-profile-r4').disabled, false);
-  button(h, 'add-submit-r4').click();
+  clickAsViewer(button(h, 'add-submit-r4'));
   await until(() => posts.length === 2);
   assert.equal(posts[1].overrideChoiceVersion, undefined);
 });
@@ -294,17 +295,17 @@ for (const teardown of ['sheet', 'drawer', 'navigation', 'account', 'title', 'in
   test(`a pending replacement cannot survive ${teardown} changes or a detached confirmation click`, async t => {
     const { h, posts } = await conflictSheet(t);
     assert.ok(button(h, 'add-replace-r4'));
-    button(h, 'add-replace-r4').click();
+    clickAsViewer(button(h, 'add-replace-r4'));
     const confirm = button(h, 'add-confirm-r4');
-    if (teardown === 'sheet') button(h, 'add-cancel-r4').click();
+    if (teardown === 'sheet') clickAsViewer(button(h, 'add-cancel-r4'));
     else if (teardown === 'drawer') h.JE.arrManage.close();
     else if (teardown === 'navigation') h.document.dispatchEvent(new h.window.Event('viewshow'));
     else if (teardown === 'account') h.switchUser();
-    else if (teardown === 'instance') button(h, 'add-other').click();
+    else if (teardown === 'instance') clickAsViewer(button(h, 'add-other'));
     else {
   await h.JE.arrManage.open({ key: 'movie:tmdb:962' }, { operation: h.NATIVE });
     }
-    confirm.click();
+    clickAsViewer(confirm);
     await wait(30);
     assert.equal(posts.length, 1);
     assert.equal(h.document.querySelector('.je-manage-add-confirm'), null);
@@ -332,8 +333,8 @@ test('a late owner lookup cannot repaint a closed drawer or replace a newer conf
   const firstOwner = new Promise(resolve => { resolveOwner = resolve; });
   const { h } = await conflictSheet(t, n => choiceError(queuedChoice(n, { owner: n === 1 ? 'admin-a' : 'admin-b' })),
     path => path.endsWith('admin-a') ? firstOwner : { name: 'Blair' });
-  button(h, 'add-replace-r4').click();
-  button(h, 'add-confirm-r4').click();
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-confirm-r4'));
   await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Blair'));
   resolveOwner({ name: 'Outdated admin' });
   await wait(30);
@@ -346,11 +347,11 @@ test('an immutable queued request retains server guidance and drops the previous
   const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice()) : Object.assign(new Error('HTTP 409'), {
     status: 409, responseJSON: { reason: 'request_in_flight', message: 'Already sending. Check the title in Manage.' }
   }));
-  button(h, 'add-replace-r4').click();
-  button(h, 'add-confirm-r4').click();
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-confirm-r4'));
   await until(() => h.document.querySelector('.je-manage-add-message')?.textContent.includes('Already sending.'));
   assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
-  button(h, 'add-submit-r4').click();
+  clickAsViewer(button(h, 'add-submit-r4'));
   await until(() => posts.length === 3);
   assert.equal(posts[1].overrideChoiceVersion, 1);
   assert.equal(posts[2].overrideChoiceVersion, undefined);

@@ -7,6 +7,18 @@ import coverage from 'istanbul-lib-coverage';
 import { repositoryRoot, speedProfile } from './discovery.mjs';
 import { served } from './served-scripts.mjs';
 
+/** Dispatches a browser viewer gesture explicitly; ordinary script click() stays untrusted. */
+export function clickAsViewer(node) {
+  if (node.matches(':disabled')) return true;
+  const window = node.ownerDocument.defaultView;
+  const implOf = object => object[Object.getOwnPropertySymbols(object).find(symbol => String(symbol) === 'Symbol(impl)')];
+  const event = new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 });
+  const impl = implOf(event);
+  impl.isTrusted = true;
+  implOf(node)._dispatch(impl);
+  return !impl._canceledFlag;
+}
+
 export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 const collected = coverage.createCoverageMap({});
 if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
@@ -93,15 +105,6 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     if (node.matches(':disabled')) return true;
     return dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 }));
   }
-  const syntheticClick = window.HTMLElement.prototype.click;
-  const clicking = new WeakSet();
-  window.HTMLElement.prototype.click = function () {
-    if (fromProduction()) return syntheticClick.call(this);
-    if (this.matches(':disabled') || clicking.has(this)) return;
-    clicking.add(this);
-    try { dispatchTrusted(this, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 })); }
-    finally { clicking.delete(this); }
-  };
   // Deferred feature actions use the shared identity primitive in the real bundle, and every document a feature writes
   // has its session-bound write queue (core/mutation-queue.js loads before every feature module in the bundle).
   load('core/session-action.js');

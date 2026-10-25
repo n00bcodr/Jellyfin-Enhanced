@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
@@ -41,15 +42,15 @@ test('history PR 658 pending season remains approvable on an available series', 
 test('history PR 658 rerendering requests dispatches one approval or navigation per click', t => {
   const h = requests(t); h.state.requests = [pending];
   for (let i = 0; i < 5; i++) h.P.renderPage();
-  h.document.querySelector('.je-request-approve-btn .material-icons').click();
+  clickAsViewer(h.document.querySelector('.je-request-approve-btn .material-icons'));
   assert.deepEqual(h.actions, [['42', 'approve']]);
-  h.document.querySelector('.je-request-decline-btn').click();
+  clickAsViewer(h.document.querySelector('.je-request-decline-btn'));
   assert.deepEqual(h.actions, [['42', 'approve'], ['42', 'decline']]);
-  h.document.querySelector('.je-request-watch-btn').click();
+  clickAsViewer(h.document.querySelector('.je-request-watch-btn'));
   assert.deepEqual(h.navigations, ['series-a']);
   const custom = h.document.createElement('section'); h.document.body.append(custom);
   for (let i = 0; i < 3; i++) h.P.renderPage(custom);
-  custom.querySelector('.je-request-approve-btn').click();
+  clickAsViewer(custom.querySelector('.je-request-approve-btn'));
   assert.deepEqual(h.actions, [['42', 'approve'], ['42', 'decline'], ['42', 'approve']]);
 });
 

@@ -706,20 +706,25 @@
             if (entry.closed) return;
             entry.closed = true;
             root._jeClosed = true;
-            root.setAttribute('inert', '');
+            if (root.isConnected) root.setAttribute('inert', '');
             surfaces.delete(entry);
             if (!surfaces.size && scopes.get(resolved) === surfaces) scopes.delete(resolved);
             const index = stack.indexOf(entry);
             if (index >= 0) stack.splice(index, 1);
-            // Inert at once while it is still shown (a root its owner already took away needs no mark).
-            if (root.isConnected) root.setAttribute('inert', '');
-            root._jeClosed = true;
             // (Its input guard stays: a closed surface is terminal, its detached controls take nothing.)
             // The page (or the surface below) is live again first, then focus goes back to it.
-            applyBackground();
-            const focused = document.activeElement;
-            if (!focused || focused === document.body || root.contains(focused) || !focused.isConnected) restoreFocus(entry);
-            entry.opener = entry.holder = entry.path = null;
+            const restore = () => {
+                if (!document?.defaultView?.document) { entry.opener = entry.holder = entry.path = null; return; }
+                applyBackground();
+                const focused = document.activeElement;
+                if (!focused || focused === document.body || root.contains(focused) || !focused.isConnected) restoreFocus(entry);
+                entry.opener = entry.holder = entry.path = null;
+            };
+            // A caller can erase its owned surface before releasing it (Lists' revoked-ticket teardown).
+            // Retire input synchronously; let the global stack owner repair the remaining background/focus
+            // after that bounded removal, without making a stale list ticket repaint any page.
+            if (root.isConnected) restore();
+            else queueMicrotask(restore);
         };
         entry.close = () => { if (entry.closed) return; entry.release(); close(); };
         // Chronological (D46S2-R13-3): a host dialog that arrived (or left) before this opening is taken into account

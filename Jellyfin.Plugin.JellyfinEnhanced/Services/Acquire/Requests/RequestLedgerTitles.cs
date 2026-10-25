@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="t">The transaction, if any.</param>
         /// <param name="key">A title key (any of its ids).</param>
         internal static string Canonical(SqliteConnection c, SqliteTransaction? t, string key)
-            => TitleChoiceRegistry.IsIdentityFenced(c, t, key) ? key : Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$k", ("$k", key)) ?? key;
+            => TitleChoiceRegistry.IsIdentityFenced(c, t, key) ? key : Scalar(c, t, "SELECT canonical FROM active_title_aliases WHERE alias=$k", ("$k", key)) ?? key;
 
         // The input under its title's canonical key.
         private static MutationInput Canonical(SqliteConnection c, SqliteTransaction? t, MutationInput input)
@@ -131,12 +131,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (given.Count < 2 || given.Any(k => k.IsMovie != given[0].IsMovie) || !_db.Available) return null;
             if (_db.Read(c => given.Any(k => TitleChoiceRegistry.IsIdentityFenced(c, null, k.ToString()))))
                 return _db.Write<TitleMerge?>((c, t) => { TitleChoiceRegistry.FenceSplit(c, t, given); return null; });
-            if (!_db.Read(c => Group(c, null, given, seerrOrigin) is not { } group || Needed(c, null, group, given, seerrOrigin))) return null;
+            if (!_db.Read(c =>
+            {
+                var group = Group(c, null, given, seerrOrigin, out var identityConflict);
+                return group == null ? identityConflict : Needed(c, null, group, given, seerrOrigin);
+            })) return null;
             return _db.Write((c, t) =>
             {
-                if (Group(c, t, given, seerrOrigin) is not { } group)
+                if (Group(c, t, given, seerrOrigin, out var identityConflict) is not { } group)
                 {
-                    TitleChoiceRegistry.FenceSplit(c, t, given);
+                    // Refusing a lower-authority alias is not proof of a contradictory provider pair.
+                    if (identityConflict) { TitleChoiceRegistry.FenceSplit(c, t, given); }
                     return null;
                 }
                 return Needed(c, t, group, given, seerrOrigin) ? UnifyCore(c, t, group, given, policy, now, seerrOrigin, factsOrigin) : null;
@@ -145,8 +150,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // The title's keys: the ones given, what the ledger already maps them to, and the aliases it maps to those, with the
         // canonical one first. Null when two ids of one provider disagree.
-        private static List<string>? Group(SqliteConnection c, SqliteTransaction? t, IReadOnlyList<TitleKey> given, bool seerrOrigin)
+        private static List<string>? Group(SqliteConnection c, SqliteTransaction? t, IReadOnlyList<TitleKey> given, bool seerrOrigin, out bool identityConflict)
         {
+            identityConflict = false;
             var keys = new HashSet<string>(given.Select(k => k.ToString()), StringComparer.Ordinal);
             foreach (var canonical in keys.Select(k => Canonical(c, t, k)).ToList()) keys.Add(canonical);
             foreach (var canonical in keys.ToList())
@@ -156,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 while (r.Read()) keys.Add(r.GetString(0));
             }
             var parsed = keys.Select(TitleKey.Parse).OfType<TitleKey>().ToList();
-            if (parsed.GroupBy(k => k.Provider).Any(g => g.Count() > 1)) return null;
+            if (parsed.GroupBy(k => k.Provider).Any(g => g.Count() > 1)) { identityConflict = true; return null; }
             var ordered = parsed.OrderBy(Rank).Select(k => k.ToString()).ToList();
             if (seerrOrigin)
             {

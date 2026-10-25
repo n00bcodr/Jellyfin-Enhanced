@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 4a: the administrator Overview's Automation card (admin-automation.js),
 // rendered by the real modules from crafted GET /arr/admin/automation/status bodies, its two actions
 // (breaker reset, migration notice dismiss), and how the Overview tab reads and redraws it.
@@ -225,14 +226,14 @@ test('an open breaker says until when and Try again now resets it, then the stat
   assert.equal(button.textContent, 'Try again now');
   assert.equal(button.dataset.jeFocus, 'automation:breaker:s1');
   assert.equal(card.querySelectorAll('button').length, 1);
-  button.click();
+  clickAsViewer(button);
   // Busy while the POST runs; a second press sends nothing.
   card = h.A.automationCard();
   const busy = card.querySelector('[data-je-focus="automation:breaker:s1"]');
   assert.equal(busy.getAttribute('aria-disabled'), 'true');
   assert.equal(busy.textContent, 'Working…');
-  busy.click();
-  button.click();
+  clickAsViewer(busy);
+  clickAsViewer(button);
   gate.resolve();
   for (let i = 0; i < 20 && h.A.automationCard()?.querySelector('button'); i++) await wait(5);
   const posts = h.calls.filter(c => c.options?.method === 'POST');
@@ -270,7 +271,7 @@ test('the migration notice names the Managers kept on Auto and Got it dismisses 
   assert.equal(card.querySelectorAll('i').length, 0);
   const got = card.querySelector('[data-je-focus="automation:notice"]');
   assert.equal(got.textContent, 'Got it');
-  got.click();
+  clickAsViewer(got);
   for (let i = 0; i < 20 && h.A.automationCard(); i++) await wait(5);
   const post = h.calls.find(c => c.options?.method === 'POST');
   assert.equal(post.path, '/arr/admin/automation/notice/dismiss');
@@ -289,14 +290,14 @@ test('a failed action keeps the card, says so beside the button and lets it be p
   await h.A.refreshAutomation(() => {});
   assert.ok(lines(h.A.automationCard()).includes('Automatic requests were moved to recipe modes: next season Off, next movie Auto.'));
   assert.ok(!lines(h.A.automationCard()).some(s => s.startsWith('These Managers')));
-  h.A.automationCard().querySelector('[data-je-focus="automation:notice"]').click();
+  clickAsViewer(h.A.automationCard().querySelector('[data-je-focus="automation:notice"]'));
   for (let i = 0; i < 20 && !h.A.automationCard().querySelector('.je-ops-bad[role="status"]'); i++) await wait(5);
   const card = h.A.automationCard();
   assert.equal(card.querySelector('.je-ops-auto-notice .je-ops-bad').textContent, 'That didn\'t go through. Try again in a moment.');
   assert.equal(card.querySelector('[data-je-focus="automation:notice"]').getAttribute('aria-disabled'), null);
   assert.ok(h.warnings.some(w => w.includes('automation action failed (503)')));
   fail = false;
-  card.querySelector('[data-je-focus="automation:notice"]').click();
+  clickAsViewer(card.querySelector('[data-je-focus="automation:notice"]'));
   for (let i = 0; i < 20 && h.A.automationCard()?.querySelector('.je-ops-bad'); i++) await wait(5);
   assert.equal(h.A.automationCard().querySelector('.je-ops-bad'), null);
 });
@@ -457,15 +458,15 @@ test('the Overview reads the automation status with its tab, shows the card firs
 
   // Other tabs never read it.
   const before = h.calls.filter(c => c.path === STATUS).length;
-  h.document.querySelector('.je-hub-tab[data-tab="activity"]').click();
+  clickAsViewer(h.document.querySelector('.je-hub-tab[data-tab="activity"]'));
   await until(() => h.calls.some(c => c.path === '/arr/admin/hub/activity'));
   await wait(20);
   assert.equal(h.calls.filter(c => c.path === STATUS).length, before);
 
   // Back on the Overview, Try again now resets the breaker and the card redraws without it.
-  h.document.querySelector('.je-hub-tab[data-tab="overview"]').click();
+  clickAsViewer(h.document.querySelector('.je-hub-tab[data-tab="overview"]'));
   await until(() => h.document.querySelector('[data-je-focus="automation:breaker:s1"]'));
-  h.document.querySelector('[data-je-focus="automation:breaker:s1"]').click();
+  clickAsViewer(h.document.querySelector('[data-je-focus="automation:breaker:s1"]'));
   await until(() => !h.document.querySelector('[data-je-focus="automation:breaker:s1"]'));
   assert.ok(h.calls.some(c => c.path === '/arr/admin/automation/breakers/reset' && c.options.body.target === 's1'));
   assert.ok(h.document.querySelector('.je-ops-automation'));

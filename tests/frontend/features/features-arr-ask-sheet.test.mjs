@@ -1875,7 +1875,7 @@ test('one season at a time: no "Everything" for several seasons, and picking a s
   const boxes = [...panel.querySelectorAll('input[type=checkbox]')];
   for (const i of [1, 2]) {
     boxes[i].checked = true;
-    boxes[i].dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    h.trusted(boxes[i], new h.window.Event('change', { bubbles: true }));
   }
   assert.deepEqual(boxes.map(b => b.checked), [false, false, true]);
   click(h, primary(h));

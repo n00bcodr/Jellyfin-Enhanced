@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
@@ -13,7 +14,7 @@ test('sparse scroll historical regression: nonempty pages with no measured growt
   const h=setup(t);let loads=0;h.P.setupInfiniteScroll(h.state,'#feed',async()=>{loads++;return {pages:1,rendered:1};},()=>true,()=>false);
   await nextTurn();assert.equal(loads,h.P.CONFIG.maxStuckFills);assert.ok(h.document.querySelector('.je-retry-row button'));
   h.observers[0].fn([{isIntersecting:true}]);await nextTurn();assert.equal(loads,h.P.CONFIG.maxStuckFills);
-  h.document.querySelector('.je-retry-row button').click();await nextTurn();assert.equal(loads,2*h.P.CONFIG.maxStuckFills);
+  clickAsViewer(h.document.querySelector('.je-retry-row button'));await nextTurn();assert.equal(loads,2*h.P.CONFIG.maxStuckFills);
 });
 test('empty page budget pauses without dropping continuation and supplies remaining budget',async t=>{
   const h=setup(t);h.P.CONFIG.maxConsecutiveEmptyPages=4;const budgets=[];

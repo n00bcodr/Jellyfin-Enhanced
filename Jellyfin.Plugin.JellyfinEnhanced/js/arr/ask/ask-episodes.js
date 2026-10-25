@@ -1008,7 +1008,7 @@
             // A household Search runs on the standard request target: never for a copy it doesn't reach. Under a copy's
             // binding without its administrator's instance or a household Search that reaches it, nothing runs (no other
             // edition or instance in its place): the controls are drawn again.
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent }) : null;
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent, bound: submitted.bound() }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent, bound: submitted.bound() }) : null;
         } catch (error) {
             if (error?.name === 'AbortError') return;
             throw error;
@@ -1602,11 +1602,11 @@
                 result = null;
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent }) : null;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent, bound: submitted.bound() }) : null;
                 if (JE.arrAsk.epoch() !== started) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined }) : null;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined, bound: submitted.bound() }) : null;
                     if (JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);

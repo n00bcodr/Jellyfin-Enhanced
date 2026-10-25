@@ -145,7 +145,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly object _inflightGate = new();
         private Dictionary<string, SharedFetch> _inflight = new(StringComparer.Ordinal);
         private ConcurrentDictionary<string, DateTime> _unreachableUntil = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPosters = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPosters = new(StringComparer.Ordinal);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)>> _tmdbPostersFactsOwner = new();
+        private ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPostersFacts { get => _tmdbPostersFactsOwner.Read(ref _tmdbPosters, () => new(StringComparer.Ordinal)); }
+
 
         /// <summary>Creates the service (singleton).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
@@ -874,7 +877,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             var epoch = ListMetadataEpoch.Capture();
             var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
-            if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
+            if (_tmdbPostersFacts.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
             {
                 return epoch.Publish(() => (cached.Poster, true, false), () => ((string?)null, false, false));
             }
@@ -917,14 +920,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var poster = read.Poster("poster_path"); // the contract's typed value (review round 8)
-                if (_tmdbPosters.Count >= MaxCacheEntries)
+                if (_tmdbPostersFacts.Count >= MaxCacheEntries)
                 {
-                    _tmdbPosters.Clear();
+                    _tmdbPostersFacts.Clear();
                 }
 
                 return epoch.Publish(() =>
                 {
-                    _tmdbPosters[key] = (poster, readAt);
+                    _tmdbPostersFacts[key] = (poster, readAt);
                     return (poster, true, false);
                 }, () => ((string?)null, false, false));
             }

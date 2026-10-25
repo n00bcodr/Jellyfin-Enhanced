@@ -1,10 +1,11 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,{settings={},ajax=async()=>({Items:[{Id:'picked',Type:'Movie'}]}),getItem=async()=>null}={}){
  const paths=[],toasts=[],timers=[],intervals=new Set();const h=createHarness({html:'<div id="tray"></div>',apiClient:{ajax:options=>{paths.push(options.url);return ajax(options);},getItem},globals:{setInterval:fn=>{intervals.add(fn);return fn;},clearInterval:fn=>intervals.delete(fn),setTimeout:fn=>{timers.push(fn);return fn;}},JE:{currentSettings:{randomButtonEnabled:true,randomIncludeMovies:true,randomIncludeShows:true,...settings},t:key=>key,toast:text=>toasts.push(text),icon:()=>'',IconName:{ERROR:'error'},escapeHtml:text=>text,helpers:{}}});
  h.JE.helpers.getHeaderButtonTray=()=>h.document.getElementById('tray');h.load('enhanced/features-random-button.js');t.after(()=>h.close());
- return {...h,get NATIVE(){return h.NATIVE;},paths,toasts,intervals,async click(){h.document.getElementById('randomItemButton').click();await new Promise(done=>setImmediate(done));while(timers.length)timers.shift()();}};
+ return {...h,get NATIVE(){return h.NATIVE;},paths,toasts,intervals,async click(){clickAsViewer(h.document.getElementById('randomItemButton'));await new Promise(done=>setImmediate(done));while(timers.length)timers.shift()();}};
 }
 test('random button repeated mounting stays single and disabling removes it',t=>{
  const h=setup(t);h.JE.addRandomButton();h.JE.addRandomButton();assert.equal(h.document.querySelectorAll('#randomItemButton').length,1);h.JE.currentSettings.randomButtonEnabled=false;h.JE.addRandomButton();assert.equal(h.document.querySelector('#randomItemButton'),null);

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
@@ -173,7 +174,7 @@ test('regression F3: sibling updates retain the focused pill, journey and both a
   const pill = h.document.querySelector('.je-arr-pill');
   const journey = h.document.querySelector('.je-arr-journey');
   const art = [...h.document.querySelectorAll('.je-arr-art')];
-  pill.focus(); pill.click(); h.reset();
+  pill.focus(); clickAsViewer(pill); h.reset();
   for (let n = 1; n <= 6; n++) { await h.change([`${base}:s1:e${n}`]); await h.advance(200); }
   assert.equal(h.document.activeElement, pill);
   assert.equal(h.document.querySelector('.je-arr-journey'), journey);
@@ -185,7 +186,7 @@ test('regression F3: sibling updates retain the focused pill, journey and both a
   assert.equal(h.document.querySelector('.je-arr-pill'), pill);
   assert.equal(h.document.querySelector('.je-arr-journey'), journey);
   assert.deepEqual([...h.document.querySelectorAll('.je-arr-art')], art);
-  pill.click(); assert.ok(!journey.hidden, 'retained listener operates the retained journey');
+  clickAsViewer(pill); assert.ok(!journey.hidden, 'retained listener operates the retained journey');
 });
 
 for (const interaction of ['pointer', 'touch', 'scroll']) test(`regression F1: ${interaction} activity holds the coalesced refresh`, async t => {

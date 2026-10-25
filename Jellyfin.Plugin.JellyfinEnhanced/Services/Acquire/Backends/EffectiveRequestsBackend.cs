@@ -43,8 +43,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         private TaskCompletionSource? _drained;
 
         /// <summary>Creates an owner over a live configuration source (also used by tests).</summary>
-        public EffectiveRequestsBackend(Func<PluginConfiguration?> config) { _config = config; Facts = new(this); }
-        internal SeerrFacts.Access Facts { get; }
+        public EffectiveRequestsBackend(Func<PluginConfiguration?> config) { _config = config; }
+        private SeerrFacts.Access? _facts;
+        internal SeerrFacts.Access Facts => LazyInitializer.EnsureInitialized(ref _facts, () => new SeerrFacts.Access(this));
         // Only synchronous cache read/invalidation blocks use this; no awaited work holds the gate.
         internal FactLock LockFacts()
         {

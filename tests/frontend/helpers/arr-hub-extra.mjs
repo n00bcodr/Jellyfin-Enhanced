@@ -4,10 +4,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { createHarness, jsRoot } from './harness.mjs';
+import { createHarness, jsonResponse, jsRoot } from './harness.mjs';
 
 export const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 export const HUB_MODULES = [
+  'core/api-client.js',
   'arr/status/status-core.js', 'arr/status/status-styles.js',
   'arr/hub/hub-styles.js', 'arr/hub/hub-render.js',
   'arr/hub/hub-extra-core.js', 'arr/hub/hub-extra-styles.js', 'arr/hub/hub-approvals.js', 'arr/hub/hub-household.js', 'arr/household/household-rules.js',
@@ -49,14 +50,14 @@ export function setupHub(t, { hash = '#/requests', html = '', me = { role: 'mana
     const method = options.method || 'GET';
     const body = options.body ? JSON.parse(options.body) : null;
     fetches.push({ method, path, body });
-    let answer = path === '/acquire/requests/me' ? { status: me ? 200 : 403, body: me ? { me } : { reason: 'feature_disabled' } } : null;
+    let answer = path === '/acquire/hub' ? { status: 200, body: hub || { contact: 'Dad', seerr: { configured: true, loaded: true }, mine: [], soon: [], ready: [] } } : path === '/acquire/requests/me' ? { status: me ? 200 : 403, body: me ? { me } : { reason: 'feature_disabled' } } : null;
     answer = (await routes(method, path, body, fetches.length)) || answer || { status: 404, body: { outcome: 'denied', reason: 'not_found' } };
-    return { status: answer.status, text: async () => (answer.body == null ? '' : JSON.stringify(answer.body)) };
+    return jsonResponse(answer.body, answer.status);
   };
   const h = createHarness({
     html: `<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage">${html}</div></div>`,
     url: `http://jellyfin.test/web/index.html${hash}`,
-    apiClient: { getCurrentUserId: () => USER, getImageUrl: (id, o) => `/Items/${id}/Images/${o.type}` },
+    apiClient: { getUrl: path => `http://jellyfin.test/${path.replace(/^\//, '')}`, serverAddress: () => 'http://jellyfin.test', getCurrentUserId: () => USER, getImageUrl: (id, o) => `/Items/${id}/Images/${o.type}` },
     fetch,
     JE: {
       pluginConfig: { ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrRequestsEnabled: true, ...config },
@@ -84,6 +85,11 @@ export function setupHub(t, { hash = '#/requests', html = '', me = { role: 'mana
   // Reads still answering when a test ends settle before the window closes.
   t.after(async () => { await wait(50); h.close(); });
   for (const m of HUB_MODULES) h.load(m);
+  // The hub DTO is this fixture's explicit read input; ledger/request paths use the real status-preserving client.
+  const plugin = h.JE.core.api.plugin;
+  h.JE.core.api.plugin = (path, options) => path === '/acquire/hub'
+    ? Promise.resolve(hub || { contact: 'Dad', seerr: { configured: true, loaded: true }, mine: [], soon: [], ready: [] })
+    : plugin(path, options);
   return {
     ...h, fetches, subscriptions, navigation, toasts,
     /** A viewer's native owner minted now (the harness getter, kept live through the spread). */

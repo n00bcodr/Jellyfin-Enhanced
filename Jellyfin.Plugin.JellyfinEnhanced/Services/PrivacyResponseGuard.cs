@@ -37,7 +37,7 @@ public sealed class PrivacyResponseGuard : IDisposable
     private GuardedBody? _body;
     private GuardedBody? _transportBody;
     private EvidencePublication? _evidence;
-    private SeerrFacts.Publication? _backendPublication;
+    private Acquire.Backends.BackendPublicationStamp? _backendPublication;
     private string? _backendFailure;
     private int _backendFailureSent;
     private bool _titleFreeTransient;
@@ -117,17 +117,18 @@ public sealed class PrivacyResponseGuard : IDisposable
     /// <summary>A long-poll takes no token while idle; each message/batch starts a fresh evidence dependency.</summary>
     // Retain the consumed original backend dependencies after the action scope ends. The same
     // body/header owner checks them during serialization, OnStarting and the final byte commit.
-    internal static void BackendPublication(HttpContext http, SeerrFacts.Publication publication)
+    internal static void BackendPublication(HttpContext http, Acquire.Backends.BackendPublicationStamp publication)
     {
+        if (!publication.HasDependencies) return;
         var guard = Find(http) ?? Of(http);
         lock (guard._lock) guard._backendPublication = publication;
     }
 
     private bool BackendHolds()
     {
-        SeerrFacts.Publication? publication;
+        Acquire.Backends.BackendPublicationStamp? publication;
         lock (_lock) publication = _backendPublication;
-        try { publication?.Publish(() => true); return true; }
+        try { publication?.DemandCurrent(); return true; }
         catch (Acquire.Backends.BackendDisabledException ex)
         {
             lock (_lock) _backendFailure = ex.Reason;

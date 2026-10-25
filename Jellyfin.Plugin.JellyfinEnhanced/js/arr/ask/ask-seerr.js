@@ -354,7 +354,7 @@
         } catch {
             details = null;
         }
-        if (!isNewest()) return;
+        if (!submitted.current() || !isNewest()) return;
         if (!details) {
             toast(t('jellyseerr_toast_collection_fetch_failed'));
             return;
@@ -402,6 +402,7 @@
             if (!row) return;
             e.preventDefault();
             const owner = JE.ownerOf(e);
+            if (!owner || !submitted.current() || !isNewest()) return;
             const copy = row.getAttribute('data-library-id');
             const tmdbId = Number.parseInt(row.getAttribute('data-tmdb-id') || '', 10);
             // The library's copy opens itself; any other movie its own page (or, without native pages, its details window).

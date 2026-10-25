@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, plain } from '../helpers/harness.mjs';
@@ -199,8 +200,8 @@ async function migrate(h,group){
   h.JE.core={...h.JE.core,api:{...h.JE.core.api,fetch:async()=>({Items:[replacement]})}};h.JE.helpers={getItemCached:async()=>replacement};h.window.ApiClient.getImageUrl=()=>'';
   h.load('enhanced/bookmarks/bookmarks-library-replacements.js');
   await h.JE.internals.bookmarksLibrary.findAndOfferReplacement(group,h.document.createElement('button'));
-  h.document.querySelector('.replacement-option').click();
-  h.document.querySelector('.je-bookmark-btn-submit').click();
+  clickAsViewer(h.document.querySelector('.replacement-option'));
+  clickAsViewer(h.document.querySelector('.je-bookmark-btn-submit'));
 }
 const orphanGroup=bookmarks=>({details:{itemId:'old-item-0000000000000000',tmdbId:'42',mediaType:'movie',name:'Old cut'},bookmarks:Object.entries(bookmarks).map(([id,bm])=>({id,...bm}))});
 test('failed bookmark migration keeps the old group, and the next save still persists it',async t=>{
@@ -242,9 +243,9 @@ test('player bookmark modal reports a failed edit or delete instead of success',
   h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
   h.expectConsoleError(/Failed to update bookmark/);h.expectConsoleError(/Failed to delete bookmark/);
   await h.api.showModal('edit',{id:'one',...h.JE.userConfig.bookmark.bookmarks.one});
-  h.document.querySelector('.je-bookmark-btn-submit').click();
+  clickAsViewer(h.document.querySelector('.je-bookmark-btn-submit'));
   await settle(()=>h.toasts.length===1);
-  h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="one"]').click();
+  clickAsViewer(h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="one"]'));
   await settle(()=>h.toasts.length===2);
   assert.deepEqual(h.toasts,['toast_bookmark_save_failed','toast_bookmark_delete_failed']);
   assert.equal(h.JE.userConfig.bookmark.bookmarks.one.label,'old');
@@ -315,7 +316,7 @@ test('library delete-all reports a failed save and keeps every bookmark',async t
   const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'two',mediaType:'movie',timestamp:2}},async()=>{throw new Error('offline');});
   h.expectConsoleError(/Failed to delete all bookmarks/);h.expectConsoleError(/Delete failed/);
   const container=await renderLibrary(h);const button=container.querySelector('.btnDeleteAllBookmarks');
-  button.click();assert.equal(button.disabled,true);
+  clickAsViewer(button);assert.equal(button.disabled,true);
   await settle(()=>h.toasts.length===1);
   assert.deepEqual(h.toasts,['bookmark_delete_failed']);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(),['a','b']);
@@ -346,7 +347,7 @@ test('a delete button for a bookmark already removed elsewhere shows no toast',a
   assert.equal(await h.api.delete('a'),true);assert.equal(await h.api.delete('b'),true);
   const card=container.querySelector('.btnDeleteBookmark[data-bookmark-id="a"]');
   const player=h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="b"]');
-  card.click();player.click();await ticks();
+  clickAsViewer(card);clickAsViewer(player);await ticks();
   assert.equal(card.disabled,false);assert.equal(player.disabled,false);
   assert.deepEqual(h.toasts,[]);
 });
@@ -356,7 +357,7 @@ test('library and player delete buttons are disabled while their delete is in fl
   h.expectConsoleError(/Failed to delete bookmark/);
   const container=await renderLibrary(h);
   const card=container.querySelector('.btnDeleteBookmark[data-bookmark-id="a"]');
-  card.click();card.click();assert.equal(card.disabled,true);
+  clickAsViewer(card);clickAsViewer(card);assert.equal(card.disabled,true);
   (await saves.next(1)).resolve();
   await settle(()=>h.toasts.length===1);await ticks();
   assert.deepEqual(h.toasts,['toast_bookmark_deleted']);assert.equal(saves.calls.length,1);
@@ -365,7 +366,7 @@ test('library and player delete buttons are disabled while their delete is in fl
   h.routes.items=async()=>({Items:[{Id:'one',Name:'Movie',Type:'Movie'}]});
   await h.api.showModal('edit',{id:'b',...h.JE.userConfig.bookmark.bookmarks.b});
   const player=h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="b"]');
-  player.click();player.click();assert.equal(player.disabled,true);
+  clickAsViewer(player);clickAsViewer(player);assert.equal(player.disabled,true);
   (await saves.next(2)).reject(new Error('offline'));
   await settle(()=>h.toasts.length===2);await ticks();
   assert.deepEqual(h.toasts,['toast_bookmark_deleted','toast_bookmark_delete_failed']);

@@ -86,7 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var run = new Run(job, instance, client, key, finalGuard, admission, ct);
             ChoiceNames(run, _store.PeekSystem(instance.Id));
             var result = key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
-            return result with { AddChoiceDetails = run.AddChoiceDetails };
+            return result with { AddChoiceDetails = run.AddChoiceDetailsFacts };
         }
 
         /// <inheritdoc />
@@ -112,9 +112,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.");
         }
 
-        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
+        private sealed record Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
         {
-            public Dictionary<string, string> AddChoiceDetails { get; } = new();
+            public Dictionary<string, string> AddChoiceDetails = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, string>> AddChoiceDetailsFactsOwner = new(prepared: true);
+            public Dictionary<string, string> AddChoiceDetailsFacts => AddChoiceDetailsFactsOwner.Read(ref AddChoiceDetails, () => new());
         }
 
         // The add settings, checked against a current system snapshot. Only an add needs them: merges are
@@ -137,21 +139,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             ChoiceNames(run, system.Value);
             // A refused add still audits the effective candidate, from the admitted record, without a later saved fallback.
             if (run.Job.Input.ProfileId is { } candidateProfile)
-                run.AddChoiceDetails["qualityProfileId"] = candidateProfile.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                run.AddChoiceDetailsFacts["qualityProfileId"] = candidateProfile.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (run.Job.Input.RootFolder is { } candidateRoot)
-                run.AddChoiceDetails["rootFolder"] = candidateRoot;
+                run.AddChoiceDetailsFacts["rootFolder"] = candidateRoot;
             if (check.Defaults != null) return (check.Defaults, null);
             return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold(check.Reason!, check.Message));
         }
 
         private static void ChoiceNames(Run run, ArrSystemSnapshot? system)
         {
-            run.AddChoiceDetails["instanceName"] = run.Instance.Name;
+            run.AddChoiceDetailsFacts["instanceName"] = run.Instance.Name;
             if (run.Job.Input.ProfileId is { } profile && system?.QualityProfiles.FirstOrDefault(p => p.Id == profile) is { } named)
-                run.AddChoiceDetails["qualityProfileName"] = named.Name;
+                run.AddChoiceDetailsFacts["qualityProfileName"] = named.Name;
             // Arr root folders are identified/displayed by path in the shared snapshot.
             if (run.Job.Input.RootFolder is { } root)
-                run.AddChoiceDetails["rootFolderName"] = system?.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.SamePath(r.Path, root))?.Path ?? root;
+                run.AddChoiceDetailsFacts["rootFolderName"] = system?.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.SamePath(r.Path, root))?.Path ?? root;
         }
 
         /// <summary>The opaque tag on every title Jellyfin Enhanced adds to Sonarr or Radarr (never a person's name).</summary>

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 1: the status pill, journey, admin lines, series/season summaries,
 // episode chips + banner and poster badges, rendered by the real modules from server responses.
 import test from 'node:test';
@@ -201,7 +202,7 @@ test('the pill has an icon, words and a progress bar; the journey opens on tap; 
   assert.equal(block.querySelector('[role=progressbar]').getAttribute('aria-valuenow'), '42');
   const journey = block.querySelector('.je-arr-journey');
   assert.equal(journey.hidden, true);
-  pill.click();
+  clickAsViewer(pill);
   assert.equal(journey.hidden, false);
   assert.equal(pill.getAttribute('aria-expanded'), 'true');
   same([...journey.querySelectorAll('.je-arr-stop-label')].map(e => e.textContent), ['Asked by someone in your household', "OK'd", 'Downloading', 'Almost ready', 'Ready']);
@@ -931,7 +932,7 @@ test('D95: a title on its way opens with its journey and its poster shows the do
   assert.equal(h.document.querySelector('.je-arr-art-text').textContent, '50%');
 
   // Closed by the viewer: it stays closed for this page view, through updates.
-  pill().click();
+  clickAsViewer(pill());
   assert.ok(!open());
   percent = 60;
   h.S.refresh(['movie:tmdb:1']);

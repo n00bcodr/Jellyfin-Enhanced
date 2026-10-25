@@ -134,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var switched = false;
             // Commit/rollback are backend writers too. The import's own retained effect is released
             // before this call; drain all other old work before taking the configuration lock.
-            Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() =>
+            Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() => EvidenceRevision.Advance(() =>
             {
                 lock (JellyfinEnhanced.AnalyticsCredentialLock)
                 {
@@ -154,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     }
                     switched = _config().ArrRequestBackend == backend;
                 }
-            }, CancellationToken.None, () =>
+            }), CancellationToken.None, () =>
             {
                 lock (JellyfinEnhanced.AnalyticsCredentialLock)
                 {

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Phase 4d (S01): the home rows "Your requests", "Coming soon for you" and "Just arrived for you", drawn from
 // GET /JellyfinEnhanced/acquire/home on Jellyfin's home page; Home Screen Sections decoration instead of
 // injection; the administrators' ops strip; live re-reads through the change feed.
@@ -171,8 +172,8 @@ test('draws the three rows after My Media, with native-looking cards, their word
   assert.equal(h.document.getElementById('je-arr-home-styles') !== null, true);
 
   // Opening: the Jellyfin item when there is one, else native details by TMDB id.
-  arrived[1].click();
-  cards[0].click();
+  clickAsViewer(arrived[1]);
+  clickAsViewer(cards[0]);
   assert.deepEqual(h.opened, [['item', ID('e')], ['tmdb', 1, 'movie']]);
 });
 

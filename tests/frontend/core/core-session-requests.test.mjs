@@ -184,3 +184,20 @@ for(const kind of ['discovery','ratings']) for(const mode of ['identity','server
 for(const kind of ['discovery','ratings'])test(`${kind} reader still publishes the same session body`,async t=>{
  const h=setup(t,async()=>jsonResponse({score:99}));const result=await legacyReader(h,kind)();assert.equal((kind==='ratings'?result.rt:result).score,99);
 });
+
+for (const mode of ['same', 'both', 'epoch', 'server']) test(`write response metadata belongs to its submitting session (${mode})`, async t => {
+ const response = deferred();
+ const h = setup(t, () => response.promise);
+ let revisions = 0, builds = 0;
+ h.JE.core.revision = { noteResponse: () => revisions++ };
+ h.JE.core.build.noteAnswer = () => builds++;
+ const pending = h.JE.core.api.pluginResponse('/acquire/requests', { method: 'POST', body: {} }).then(value => ({value}), error => ({error}));
+ await tick();
+ if (mode !== 'same') h.switchUser(mode);
+ response.resolve(jsonResponse({ok: true}, 201));
+ const result = await pending;
+ if (mode === 'same') assert.equal(result.value.body.ok, true);
+ else assert.equal(h.JE.core.api.writeOutcome(result.error).outcome, 'accepted', 'the sent write retains its real answer');
+ assert.equal(revisions, mode === 'same' ? 1 : 0, 'old response revisions never reach a different session');
+ assert.equal(builds, mode === 'same' ? 1 : 0, 'old response build feedback never reaches a different session');
+});

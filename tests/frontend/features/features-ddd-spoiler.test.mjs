@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -39,7 +40,7 @@ for (const id of ['library-movie', '4a45ad110017d47e000000007a4c25fc']) test(`DD
   assert.ok(section, 'a guarded title keeps a neutral warning control'); assert.equal(section.open, false);
   assert.match(section.textContent, /Content warnings.*hidden by Spoiler Guard.*Show/);
   assert.ok(!h.document.body.textContent.includes(topic));
-  section.querySelector('summary').click(); await new Promise(r => setTimeout(r, 30));
+  clickAsViewer(section.querySelector('summary')); await new Promise(r => setTimeout(r, 30));
   assert.match(h.document.body.textContent, /A major character dies/);
   assert.ok(h.calls.some(c => c.path.includes('reveal=true') && c.path.includes('policyRevision=p1')));
 });
@@ -56,7 +57,7 @@ test('DDD unguarded topics stay expanded, and a policy change removes them witho
 test('DDD a reveal request in flight cannot render for the incoming viewer', async t => {
   const h = await setup(t); const gate = deferred(); h.pending.push(gate);
   const show = h.document.querySelector('.je-ddd-section summary'); assert.ok(show, 'a real reveal control must exist');
-  show.click(); assert.ok(h.calls.at(-1).path.includes('reveal=true'), 'the reveal is actually in flight');
+  clickAsViewer(show); assert.ok(h.calls.at(-1).path.includes('reveal=true'), 'the reveal is actually in flight');
   h.switchUser(); gate.resolve();
   await new Promise(r => setTimeout(r, 30)); assert.ok(!h.document.body.textContent.includes(topic));
 });

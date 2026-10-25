@@ -323,7 +323,10 @@ public class IntegrationBackendIsolationProjectionTests
         {
             Assert.Equal("api.themoviedb.org", request.RequestUri!.Host);
             await release.Task.WaitAsync(ct);
-            return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = "G" } } } } }));
+            return IntegrationTransport.Response(JsonSerializer.Serialize(new {
+                id = int.Parse(request.RequestUri.AbsolutePath.Split('/').Last()), adult = false,
+                release_dates = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = "G" } } } } }
+            }));
         });
         var parental = new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(metadata, users.Object, localization.Object, server.Object, lab.Arr.Plugin.Core.Logger);
         var aliases = new TitleAliases(lab.Store, null);

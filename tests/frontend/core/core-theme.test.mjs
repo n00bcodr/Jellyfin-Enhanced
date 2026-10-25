@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
@@ -18,5 +19,5 @@ test('daily-theme preference toggles accessibly without rerolling an already sel
  const h=setup(t);const RealDate=h.window.Date,now=RealDate.UTC(2026,0,1,23,59,59,999);
  h.window.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
  h.window.localStorage.setItem('user-a-lastRandomThemeDate',new h.window.Date().toISOString().split('T')[0]);h.JE.initializeThemeSelector();h.change();h.flush(100);const button=h.document.querySelector('#random-theme-button');
- assert.equal(button.getAttribute('aria-pressed'),'false');button.click();assert.equal(button.getAttribute('aria-pressed'),'true');assert.equal(h.window.localStorage.getItem('user-a-randomThemeEnabled'),'true');button.click();assert.equal(button.getAttribute('aria-pressed'),'false');
+ assert.equal(button.getAttribute('aria-pressed'),'false');clickAsViewer(button);assert.equal(button.getAttribute('aria-pressed'),'true');assert.equal(h.window.localStorage.getItem('user-a-randomThemeEnabled'),'true');clickAsViewer(button);assert.equal(button.getAttribute('aria-pressed'),'false');
 });
