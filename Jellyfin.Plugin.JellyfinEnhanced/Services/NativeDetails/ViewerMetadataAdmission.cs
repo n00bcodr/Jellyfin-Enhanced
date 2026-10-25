@@ -59,6 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 var hit = cached();
                 if (hit.Hit) return Task.FromResult(hit.Value);
                 if (_tasks.TryGetValue(path, out var running)) return ((Task<T>)running).WaitAsync(ct);
+                // An expired evidence/slot waiter owns no cold work. Check after the cache probe
+                // and free join, before capacity or budget can turn its deadline into a busy answer.
+                // Existing owners keep their places and continue warming the cache independently.
+                ct.ThrowIfCancellationRequested();
                 if (viewer == Guid.Empty || !_scheduler.TryAdmit(viewer))
                 {
                     Viewer.Value?.Refuse();
