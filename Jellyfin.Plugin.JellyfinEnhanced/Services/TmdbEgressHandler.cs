@@ -182,7 +182,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var ownedName = string.IsNullOrEmpty(name) ? DefaultClient : name;
             if (!Owns(ownedName)) throw new ArgumentException("HTTP client must use a registered plugin pipeline.", nameof(name));
-            var inner = factory.CreateClient(ownedName);
+            return CheckedClient(factory.CreateClient(ownedName));
+        }
+
+        // Explicit factory names in the sole TMDB transport still use the same runtime wrapper.
+        internal static HttpClient CheckedClient(HttpClient inner)
+        {
             var client = new HttpClient(new TmdbEgressHandler { InnerHandler = new FactoryClientHandler(inner) })
             {
                 BaseAddress = inner.BaseAddress,

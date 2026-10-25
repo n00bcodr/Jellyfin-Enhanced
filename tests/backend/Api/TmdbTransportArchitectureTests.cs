@@ -114,7 +114,12 @@ public class TmdbTransportArchitectureTests
                 if (model.GetSymbolInfo(call).Symbol is not IMethodSymbol method) continue;
                 var caller = model.GetEnclosingSymbol(call.SpanStart)?.ContainingType;
                 if (method.Name == "CreateClient" && method.ContainingType.ToDisplayString() is "System.Net.Http.IHttpClientFactory" or "System.Net.Http.HttpClientFactoryExtensions"
-                    && caller?.ToDisplayString() != "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp")
+                    && caller?.ToDisplayString() != "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp"
+                    // The sole typed transport selects only the two inventoried, registered clients.
+                    && !(SymbolEqualityComparer.Default.Equals(caller, transport) && Transport.Contains(Identity(call, model))
+                        && call.Ancestors().OfType<InvocationExpressionSyntax>().Any(wrapper =>
+                            (model.GetSymbolInfo(wrapper).Symbol as IMethodSymbol)?.GetDocumentationCommentId()
+                                == "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CheckedClient(System.Net.Http.HttpClient)")))
                     errors.Add("factory acquisition outside runtime egress: " + Identity(call, model));
                 if (method.Name == "CopyOptions" && method.ContainingType.ToDisplayString() == "Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbEgressHandler"
                     && (model.GetEnclosingSymbol(call.SpanStart) as IMethodSymbol)?.GetDocumentationCommentId()

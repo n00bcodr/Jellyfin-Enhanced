@@ -58,7 +58,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 if (!admission.Active) throw new InvalidOperationException("TMDB admission ended while waiting to send.");
-                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(factory, clientName);
+                // Keep the checked-client inventory explicit; both clients retain the TMDB egress handler.
+                var client = PluginHttp.CheckedClient(clientName switch
+                {
+                    "" => factory.CreateClient(),
+                    Acquire.Lists.Sources.SourceHttp.ClientName => factory.CreateClient(Acquire.Lists.Sources.SourceHttp.ClientName),
+                    _ => throw new InvalidOperationException("TMDB transport allows only the default or list-source HTTP client."),
+                });
                 TmdbEgressHandler.Attach(request, admission);
                 beforeSend?.Invoke();
                 NativeDetails.MetadataTaskProbe.Emit(new(null, request.RequestUri.AbsolutePath, "transport", admission));

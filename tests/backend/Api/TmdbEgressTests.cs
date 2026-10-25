@@ -294,7 +294,13 @@ public class TmdbEgressTests
                 var enclosing = model.GetEnclosingSymbol(node.SpanStart)?.ContainingType?.ToDisplayString();
                 var identity = TmdbTransportArchitectureTests.Identity(node, model);
                 if (type is "System.Net.Http.IHttpClientFactory" or "System.Net.Http.HttpClientFactoryExtensions")
-                    Assert.Equal("Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp", enclosing);
+                {
+                    if (enclosing == "Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbTransport")
+                        Assert.Contains(node.Ancestors().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>(), wrapper =>
+                            (model.GetSymbolInfo(wrapper).Symbol as IMethodSymbol)?.GetDocumentationCommentId()
+                                == "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CheckedClient(System.Net.Http.HttpClient)");
+                    else Assert.Equal("Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp", enclosing);
+                }
                 if (construction)
                 {
                     Assert.True(enclosing is "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp" or "Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live.ArrLiveService", identity);
