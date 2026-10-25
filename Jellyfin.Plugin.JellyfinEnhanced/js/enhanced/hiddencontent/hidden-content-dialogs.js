@@ -13,6 +13,7 @@
 
     /** How long the undo toast stays visible. */
     const UNDO_TOAST_DURATION = 8000;
+    let dismissUndo = null;
     /** How long the "don't ask again" suppression lasts (15 minutes). */
     const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
     /**
@@ -45,7 +46,10 @@
      *     window is the topmost surface, covered with it by a newer one, and gone when it closes. Else the page's.
      */
     function showUndoToast(itemName, itemId, owner) {
-        const action = JE.createSessionAction();
+        // Feedback keeps the Hide's lifetime; the later Undo press supplies its own write authority.
+        const action = owner ? JE.createSessionAction({ owner }) : JE.createSessionAction();
+        if (!action.current()) return;
+        dismissUndo?.();
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
         const themeVars = JE.themer?.getThemeVariables() || {};
@@ -76,39 +80,66 @@
         });
         undoBtn.textContent = JE.t('hidden_content_undo');
         let dismissTimer;
-        const release = action.onCancel(() => { clearTimeout(dismissTimer); toast.remove(); });
+        let removeTimer;
+        let terminal = false;
+        let focusedUndo = false;
+        const surface = owner ? JE.surfaceOf?.(owner) : null;
+        // Remember a deliberate move even if its destination later loses focus too.
+        const moved = e => { if (!toast.contains(e.target) && e.target !== document.body) focusedUndo = false; };
+        document.addEventListener('focusin', moved, true);
+        /** Removes this feedback and repairs only focus lost by its own control disappearing. */
+        function remove() {
+            const active = document.activeElement;
+            const lost = toast.contains(active) || (focusedUndo && (!active || active === document.body));
+            clearTimeout(dismissTimer); clearTimeout(removeTimer);
+            release();
+            document.removeEventListener('focusin', moved, true);
+            toast.remove();
+            if (dismissUndo === dismiss) dismissUndo = null;
+            if (lost && surface?.isConnected && action.current() && JE.isTopmostSurface?.(surface)) {
+                for (const node of surface.querySelectorAll('button, [href], input, select, textarea, [tabindex]')) {
+                    if (node.disabled || node.closest('[hidden], [inert], .hide, .je-actions-external-original') || node.style.display === 'none') continue;
+                    if (JE.focusIn(surface, node)) return;
+                }
+                JE.focusIn(surface, surface);
+            }
+        }
+        /** Ends activation immediately; normal expiry/success retains the existing fade. */
+        function dismiss(animate = false) {
+            terminal = true;
+            clearTimeout(dismissTimer);
+            if (animate) {
+                toast.classList.remove('je-visible');
+                removeTimer = setTimeout(remove, 300);
+            } else remove();
+        }
+        const release = action.onCancel(() => dismiss());
+        dismissUndo = dismiss;
         undoBtn.addEventListener('click', async (e) => {
             // Undo is the press's write (D46S2-R11-4): a click no one made undoes nothing.
             const owner = JE.ownerOf(e);
-            if (!owner || !action.current()) return;
+            if (!owner) return;
+            if (terminal || !toast.isConnected || !action.current()) { dismiss(); return; }
+            focusedUndo = document.activeElement === undoBtn;
             clearTimeout(dismissTimer);
             undoBtn.disabled = true;
             try {
                 if (await unhideItem(itemId, undefined, owner) === false) throw new Error('Undo failed');
                 if (!action.current()) return;
-                release();
-                toast.classList.remove('je-visible');
-                setTimeout(() => toast.remove(), 300);
+                dismiss(true);
             } catch (_) {
-                textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
+                if (!terminal && action.current()) textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
             } finally {
                 undoBtn.disabled = false;
             }
         });
         toast.appendChild(undoBtn);
 
-        const surface = owner ? JE.surfaceOf?.(owner) : null;
         if (surface) surface.appendChild(toast);
         else document.body.appendChild(toast);
-        requestAnimationFrame(() => toast.classList.add('je-visible'));
+        requestAnimationFrame(() => { if (!terminal && action.current()) toast.classList.add('je-visible'); });
 
-        dismissTimer = setTimeout(() => {
-            release();
-            if (toast.parentNode) {
-                toast.classList.remove('je-visible');
-                setTimeout(() => toast.remove(), 300);
-            }
-        }, UNDO_TOAST_DURATION);
+        dismissTimer = setTimeout(() => dismiss(true), UNDO_TOAST_DURATION);
     }
 
     // ============================================================

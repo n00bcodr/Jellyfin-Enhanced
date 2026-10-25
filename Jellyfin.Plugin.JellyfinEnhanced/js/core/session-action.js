@@ -2,6 +2,8 @@
 (function (JE) {
     'use strict';
     const dismissals = new Set();
+    // Non-surface feedback follows its owner through the same lifecycle sweep as registered surfaces.
+    const ownedDismissals = new Set();
     // Operation scopes (D46S2-R5): the UI each owner opened (its surfaces), and the owner each such surface belongs to.
     const scopes = new Map();
     const owners = new WeakMap();
@@ -979,8 +981,13 @@
     /** True once `root` (a surface) has closed: it is terminal, no input reaches it. */
     JE.surfaceClosed = root => !!root?._jeClosed;
 
-    /** Closes every registered surface whose owner has ended; each lifecycle step (route, user, document, mount) calls it. */
+    /** Closes registered surfaces and feedback whose owners ended; each lifecycle step (route, user, document, mount) calls it. */
     JE.endScopes = function () {
+        for (const entry of [...ownedDismissals]) {
+            if (entry.current()) continue;
+            ownedDismissals.delete(entry);
+            try { entry.dismiss(); } catch (error) { console.error('Jellyfin Enhanced: closing ended feedback failed', error); }
+        }
         for (const [owner, surfaces] of [...scopes]) {
             if (isCurrent(owner)) continue;
             for (const entry of [...surfaces]) { try { entry.close(); } catch (error) { console.error('Jellyfin Enhanced: closing an ended surface failed', error); } }
@@ -1313,6 +1320,13 @@
             bind: callback => (...args) => current() ? callback(...args) : false,
             /** Registers owned UI cleanup; returns a release function for normal dismissal. */
             onCancel: dismiss => {
+                if (owned) {
+                    const entry = { current, dismiss };
+                    ownedDismissals.add(entry);
+                    // Registration can race a queued route or mount reconciliation.
+                    sweep();
+                    return () => ownedDismissals.delete(entry);
+                }
                 dismissals.add(dismiss);
                 return () => dismissals.delete(dismiss);
             }

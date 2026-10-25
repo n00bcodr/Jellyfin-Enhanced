@@ -13,7 +13,8 @@
     // Late-bound cross-module references (defined in the later-loaded
     // hidden-content-save/dialogs/filter modules).
     const debouncedSave = (...args) => internal.debouncedSave(...args);
-    const showUndoToast = (...args) => internal.showUndoToast(...args);
+    /** Forwards feedback with its original lifetime as well as the hidden title. */
+    const showUndoToast = (itemName, itemId, owner) => internal.showUndoToast(itemName, itemId, owner);
     const refreshNativeCardVisibility = (...args) => internal.refreshNativeCardVisibility(...args);
 
     // ============================================================
@@ -509,7 +510,7 @@
         rebuildSets();
         debouncedSave();
         emitChange();
-        showUndoToast(name || 'Item', key);
+        showUndoToast(name || 'Item', key, owner);
         refreshNativeCardVisibility();
     }
 

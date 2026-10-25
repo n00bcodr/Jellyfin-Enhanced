@@ -13,8 +13,10 @@
     const CARD_SLICE = 200;
     let cardPass = null;
     let cardFrame = 0;
-    // The attributes a card's identity is read from (cardContext): on the card, or on its [data-tmdb-id] element.
-    const IDENTITY = ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title'];
+    // Every identity source read by cardContext, including the real Discover renderer's title identity.
+    // The observer and child-node checks share this list so they cannot omit a supported producer.
+    const IDENTITY = ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'data-key'];
+    const identityNodes = IDENTITY.map(name => `[${name}]`).join(', ');
     const rows = new Map();
     const hosts = new Map();
     const homes = new WeakMap();
@@ -651,7 +653,7 @@
                 else node.querySelectorAll?.(CARD).forEach(endCard);
             }
             const holder = r.target.nodeType === 1 ? r.target.closest?.(CARD) : null;
-            if (holder && [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !ours.has(n) && (n.matches('[data-tmdb-id], [data-id]') || n.querySelector('[data-tmdb-id], [data-id]'))))
+            if (holder && [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !ours.has(n) && (n.matches(identityNodes) || n.querySelector(identityNodes))))
                 endCard(holder);
         }
     }
@@ -668,12 +670,14 @@
     /** Starts host hooks after the bundle has initialized its existing feature owners. */
     function initialize() {
         if (started) return; started = true;
-        observer = new MutationObserver(observed); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
+        observer = new MutationObserver(observed); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: [...IDENTITY, 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
         document.addEventListener('contextmenu', e => {
             const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card) || !JE.ownerOf(e)) return;
             e.preventDefault(); e.stopImmediatePropagation(); cancelTouch(); openCard(card);
         }, true);
         document.addEventListener('pointerdown', e => {
+            // A new gesture never belongs to the previous long press, even if the host reuses its pointer id.
+            consumed = null;
             if (e.pointerType === 'mouse' || !enabled()) return;
             const card = e.target.closest?.(CARD); if (!cardContext(card) || (e.target.closest('button') && !e.target.closest('.je-discover-poster-box'))) return;
             // The long press is the viewer's gesture: its menu opens 550 ms later only while that gesture's owner is
@@ -692,13 +696,16 @@
                 // Changes still pending end the incarnation first (a removal, a recycle — even back to this title).
                 settleMutations();
                 if (cards.get(card) !== record || !record.mount.current()) return;
-                consumed = card; openCard(card, null, record);
+                consumed = { card, pointerId: e.pointerId }; openCard(card, null, record);
             }, 550) };
         }, true);
         document.addEventListener('pointermove', e => { if (touch && Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 10) cancelTouch(); }, true);
         ['pointerup', 'pointercancel', 'scroll'].forEach(name => document.addEventListener(name, cancelTouch, true));
         document.addEventListener('click', e => {
-            if (consumed && consumed.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); consumed = null; return; }
+            // Chromium can retarget the release click to the sheet's covering backdrop. It is still the same
+            // touch gesture, consumed once; the next pointerdown clears it before any deliberate new tap.
+            if (consumed && (consumed.card.contains(e.target) ||
+                (e.pointerType === 'touch' && Number.isFinite(e.pointerId) && e.pointerId === consumed.pointerId))) { e.preventDefault(); e.stopImmediatePropagation(); consumed = null; return; }
             consumed = null;
             const nativeMenu = e.target.closest?.('[data-action="menu"], .btnCardMenu, .cardMenuButton');
             const card = nativeMenu?.closest(CARD);
