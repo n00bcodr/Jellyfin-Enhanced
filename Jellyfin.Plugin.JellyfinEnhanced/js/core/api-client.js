@@ -978,7 +978,7 @@
 
     /**
      * @typedef {Object} CoreFetchOptions
-     * @property {'json'|'status'} [responseMode='json'] - Status mode returns {status, body} for every HTTP answer, without retries, dedup or caching.
+     * @property {'json'|'status'} [responseMode='json'] - Status mode returns {status, body, retryAfterMs?} for every HTTP answer, without retries, dedup or caching.
      * @property {string} [method='GET'] - HTTP method.
      * @property {Record<string, string>} [headers] - Extra/override headers.
      * @property {*} [body] - Request body. Non-string values are JSON.stringify'd.
@@ -1141,7 +1141,10 @@
                     data = text ? JSON.parse(text) : {};
                 }
                 assertPresentation();
-                if (withStatus) return { status: response.status, body: data };
+                if (withStatus) {
+                    const retryAfter = retryAfterMs(response);
+                    return { status: response.status, body: data, ...(retryAfter > 0 ? { retryAfterMs: retryAfter } : {}) };
+                }
 
                 if (isGet && cacheKey) setCache(scope + cacheKey, data);
                 return data;

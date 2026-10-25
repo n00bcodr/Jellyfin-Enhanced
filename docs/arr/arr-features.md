@@ -2369,6 +2369,10 @@ A season's Complete authority cannot retire a series placeholder or provide a wh
 
 `Services/TmdbTransport.cs` is the only TMDB HTTP sender. Every send requires a live typed
 `MetadataAdmission`; there is no send overload without it and no anonymous viewer allowance.
+Its factory selector names only `TmdbTransport.ClientName` (`JellyfinEnhanced.Tmdb`) and the
+list-source constant, rejects any other name, and applies the same `PluginHttp.CheckedClient`
+runtime egress wrapper to both. Both owned primaries disable automatic redirects and carry
+the outermost egress handler; an admitted redirect remains an unavailable upstream response.
 The raw response cache admits a cold viewer read before registering its task. Native and
 parental reads reuse their live admission; cache hits and joins remain free. One admission
 serializes sends through body disposal and drains retained raw reads before releasing its place. An authenticated
@@ -2376,6 +2380,21 @@ MVC scope captures the viewer for person enrichment, proxy/company lookup, watch
 batches, Discover/search, hub/home, and rule preparation; native delegated reads retain their
 effective viewer. Captured-policy discovery and list evidence carry that viewer explicitly.
 An unowned JE raw read fails with 503 rather than creating external work.
+
+JE person enrichment (`people/info`, at most 100 IDs per chunk, and `person/{id}`)
+uses one viewer admission per cold chunk, rather than one per cast member. Up to eight
+workers share that live capability; its send turn still serializes through body disposal,
+so all running viewer tasks together send at most eight requests at once. Raw per-person
+flights coalesce overlapping chunks and concurrent viewers. Entirely cached chunks bypass
+admission, including when the viewer is full. Cancelling a browser waiter leaves the owned
+batch to finish and cache every person. A prefetch wait also ends after the existing six-second
+optional-enrichment window: every cast entry returns with its Jellyfin data while the admitted
+batch keeps its place and warms the next read. This fallback is not cached as a negative fact.
+Excess chunks return quiet HTTP 503 with
+`Retry-After: 1`, `pending: true`, `reason: metadata_busy`, and `outcome: unavailable`;
+the existing cast retry path retries the chunk. Refusals are neither cached nor logged as
+upstream warnings, and JE optional person failures use debug logging. Legacy enrichment
+keeps its existing behavior. Public cached facts never contain viewer access decisions.
 
 | Admission owner | Bound and purpose |
 |---|---|
@@ -2400,13 +2419,30 @@ and status contracts remain unchanged. Seerr-mode source selection is retained.
 
 `TmdbTransportArchitectureTests` scans all production HTTP send/client/request sites by
 fully qualified Roslyn symbols (containing type and full signature), retaining every body.
-Reviewed non-TMDB helpers have exact-symbol, body-pinned exceptions in
-`tests/fixtures/tmdb-nonmetadata-http.tsv`; any new or changed site requires host review.
-Admission construction is allowed only in the exact documented owner symbols. API/image-host
-senders, same-name sender overloads and foreign classes named like an owner are covered by
-compiled plant controls. Every HTTP sink is scanned regardless of literal host spelling, so
-image aliases and dynamically built URLs receive the same review. The fixture contains only
-genuinely non-TMDB traffic. This replaces the starter-enumeration architecture test.
+`TmdbEgressHandler` enforces admission at runtime on every plugin HTTP acquisition and
+named pipeline, including the arr live invoker. `PluginHttp.CreateClient` also protects supplied
+factories. Only `TmdbTransport` attaches the private, live, exact-request/URI capability after acquiring
+the send turn; only its single internal forwarding copy can reuse that value. Copied Options
+on another request are refused, and a Host override cannot substitute a TMDB target or image kind; ambient ownership alone does not authorize a generic request. API/image hosts
+(`api.themoviedb.org`, `image.tmdb.org`, historical `images.tmdb.org`) are case/IDN normalized.
+Both upstream URLs are fixed in this version; adding configurable base/image URLs requires
+adding their hosts to this policy before sending. No DNS alias or CDN availability is assumed.
+
+Generic tools keep their non-TMDB targets. The administrator URL probe refuses TMDB targets
+with HTTP 400, `outcome=unavailable`, `reason`/`code=tmdb_admission_required`, and the existing
+message field: “TMDB hosts are checked through the metadata source; use the TMDB test instead”.
+It does not allocate admission, touch the metadata limiter or open a socket. The existing TMDB
+credential test continues through the raw cache and transport under its authenticated viewer.
+A counter records each refusal with a bounded route label. Only en.json adds the English string.
+
+The filter applies to JE-owned names, leaving Jellyfin's own clients independent. Named service
+clients retain their no-redirect policy. Default redirects re-enter the egress guard on
+every hop and strip Authorization/cookie headers; admitted TMDB requests never follow redirects. The source scan
+is a second line: it checks factory acquisition/capability attachment and exact-symbol owners,
+and rejects direct-client plants. Runtime tests enumerate construction/acquisition sites, execute
+the production named pipelines and live invoker, and plant a bare client in a supplied factory.
+The remaining body pins in `tests/fixtures/tmdb-nonmetadata-http.tsv` describe guarded generic
+or fixed non-TMDB readers; they grant no TMDB exemption. The URL probe row is deleted.
 
 Local metadata saturation returns a typed `503` (`outcome: unavailable`, `reason: metadata_busy`,
 `certainty: Failed`) with safe page retry text and `Retry-After: 1` on company proxy and

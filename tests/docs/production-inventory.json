@@ -1867,6 +1867,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbEgressHandler.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs",
       "category": "Services"
     },
@@ -11825,7 +11829,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 747,
+    "files": 748,
     "routes": 311,
     "configuration_properties": 666,
     "storage_references": 106,

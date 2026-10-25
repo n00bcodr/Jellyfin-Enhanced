@@ -185,6 +185,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal NativeDetails.ViewerMetadataAdmission MetadataAdmission { get; }
 
         /// <summary>
+        /// Enrich a cast chunk under one viewer place. Cache hits need no admission; overlapping
+        /// chunks join the raw per-person flight. Eight workers bound raw work and the live
+        /// admission still serializes actual sends through response-body disposal.
+        /// A null answer is local pending, never an upstream failure or a cached refusal.
+        /// </summary>
+        internal Task<IReadOnlyDictionary<int, TmdbResponse>?> GetPeopleAsync(IEnumerable<int> people, string apiKey,
+            Guid viewer, CancellationToken ct)
+        {
+            var ids = people.Where(id => id > 0).Distinct().OrderBy(id => id).ToArray();
+            if (ids.Length > 100) throw new ArgumentOutOfRangeException(nameof(people));
+            (bool Hit, IReadOnlyDictionary<int, TmdbResponse>? Value) Cached()
+            {
+                var answers = new Dictionary<int, TmdbResponse>();
+                foreach (var id in ids)
+                {
+                    if (!TryGetCached("person/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, apiKey, out var answer))
+                        return (false, null);
+                    answers.Add(id, answer);
+                }
+                return (true, answers);
+            }
+
+            var identity = "people:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)))
+                + ":" + string.Join(",", ids);
+            return MetadataAdmission.Read<IReadOnlyDictionary<int, TmdbResponse>?>(identity, viewer, Cached,
+                async () =>
+                {
+                    var answers = new System.Collections.Concurrent.ConcurrentDictionary<int, TmdbResponse>();
+                    await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (id, _) =>
+                    {
+                        answers[id] = await GetAsync("person/" + id.ToString(CultureInfo.InvariantCulture), string.Empty,
+                            apiKey, CancellationToken.None).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+                    return answers;
+                }, null, ct);
+        }
+
+
+        /// <summary>
         /// Returns the TMDB response for <c>https://api.themoviedb.org/3/{apiPath}{query}</c>,
         /// from cache when fresh. <paramref name="query"/> is "" or starts with '?'
         /// and must not contain the API key (it is appended here). apiPath may

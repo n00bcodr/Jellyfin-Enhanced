@@ -108,19 +108,30 @@ internal sealed class WriteGateWalk
             var model = Model(tree);
             foreach (var node in tree.GetRoot().DescendantNodes())
             {
+                if (node is not BaseObjectCreationExpressionSyntax
+                    && node is not InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "CreateClient" } or IdentifierNameSyntax { Identifier.Text: "CreateClient" } }) continue;
+                // Enumerate consumers of the acquisition boundary. Its factory/forwarding
+                // construction is independently executed by TmdbEgressTests for every pipeline.
+                var caller = model.GetEnclosingSymbol(node.SpanStart) as IMethodSymbol;
+                if (caller?.GetDocumentationCommentId() is "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(System.Net.Http.IHttpClientFactory,System.String)"
+                    or "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CheckedClient(System.Net.Http.HttpClient)") continue;
                 if (node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "CreateClient" } or IdentifierNameSyntax { Identifier.Text: "CreateClient" } } call
                     && model.GetSymbolInfo(call).Symbol is IMethodSymbol method)
                 {
                     var declared = (method.ReducedFrom ?? method).ContainingType.ToDisplayString();
-                    if (declared == "System.Net.Http.HttpClientFactoryExtensions") found.Add((Where(call), string.Empty));
+                    if (declared == "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp")
+                    {
+                        var name = call.ArgumentList.Arguments.Count < 2 ? Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.DefaultClient
+                            : model.GetConstantValue(call.ArgumentList.Arguments[1].Expression) is { HasValue: true, Value: string value } ? value : null;
+                        found.Add((Where(call), name));
+                    }
+                    else if (declared == "System.Net.Http.HttpClientFactoryExtensions") found.Add((Where(call), string.Empty));
                     else if (declared == "System.Net.Http.IHttpClientFactory")
                         found.Add((Where(call), call.ArgumentList.Arguments.Count == 1 && model.GetConstantValue(call.ArgumentList.Arguments[0].Expression) is { HasValue: true, Value: string name } ? name : null));
                 }
                 else if (node is BaseObjectCreationExpressionSyntax created && (node is ImplicitObjectCreationExpressionSyntax || created.ToString().Contains("HttpClient", StringComparison.Ordinal))
                     && model.GetTypeInfo(created).Type?.ToDisplayString() == "System.Net.Http.HttpClient")
-                {
                     found.Add((Where(created), "new"));
-                }
             }
         }
         return found;

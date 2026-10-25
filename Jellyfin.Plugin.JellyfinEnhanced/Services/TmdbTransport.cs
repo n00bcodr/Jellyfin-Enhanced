@@ -44,6 +44,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <summary>The sole TMDB HTTP sender. A live admission is mandatory, including retries and autonomous reads.</summary>
     internal static class TmdbTransport
     {
+        internal const string ClientName = "JellyfinEnhanced.Tmdb";
+
         internal static async Task<HttpResponseMessage> SendAsync(IHttpClientFactory factory, HttpRequestMessage request,
             MetadataAdmission admission, CancellationToken ct, string clientName = "", Action? beforeSend = null)
         {
@@ -58,14 +60,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 if (!admission.Active) throw new InvalidOperationException("TMDB admission ended while waiting to send.");
-                // Every CreateClient name is inventoried by IntegrationAutomationTransportTests: TMDB traffic may use only the
-                // plugin's default client or the list-source client, both pinned to public provider hosts; never Sonarr/Radarr/Seerr.
-                var client = clientName switch
+                // Keep the checked-client inventory explicit; both clients retain the TMDB egress handler.
+                var client = PluginHttp.CheckedClient(clientName switch
                 {
-                    "" => factory.CreateClient(), // the plugin's default (checked) client; string.Empty is not a compile-time constant for the inventory walker
+                    "" => factory.CreateClient(ClientName),
                     Acquire.Lists.Sources.SourceHttp.ClientName => factory.CreateClient(Acquire.Lists.Sources.SourceHttp.ClientName),
-                    _ => throw new InvalidOperationException("TMDB transport allows only the default or list-source HTTP client."),
-                };
+                    _ => throw new InvalidOperationException("TMDB transport allows only the metadata or list-source HTTP client."),
+                });
+                TmdbEgressHandler.Attach(request, admission);
                 beforeSend?.Invoke();
                 NativeDetails.MetadataTaskProbe.Emit(new(null, request.RequestUri.AbsolutePath, "transport", admission));
                 var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);

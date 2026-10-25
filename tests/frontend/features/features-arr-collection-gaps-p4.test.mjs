@@ -53,6 +53,8 @@ function setup(t, { gaps, config = {}, discovery = false, seerr = null, me = MEM
   const opened = [];
   let reads = 0;
   let spec = null;
+  const userChanges = [];
+  const navigations = [];
   const h = createHarness({
     html: BOX_PAGE,
     url: 'http://jellyfin.test/web/index.html#/details?id=box1',
@@ -65,7 +67,8 @@ function setup(t, { gaps, config = {}, discovery = false, seerr = null, me = MEM
       }
       gets.push(path);
       if (path.startsWith('/acquire/requests/collection/')) {
-        const body = await gaps(path, ++reads);
+        const body = await gaps(path, ++reads, init.signal);
+        if (body instanceof Response) return body;
         return body ? jsonResponse({ outcome: 'accepted', reason: 'collection', collection: body }) : jsonResponse({ outcome: 'denied', reason: 'collection_unknown' }, 404);
       }
       if (path === '/acquire/requests/me') return jsonResponse({ outcome: 'accepted', reason: 'me', me });
@@ -84,10 +87,10 @@ function setup(t, { gaps, config = {}, discovery = false, seerr = null, me = MEM
       },
       core: {
         api: { plugin: async () => null },
-        navigation: { onNavigate: () => () => {}, onViewPage: () => () => {} },
+        navigation: { onNavigate: fn => { navigations.push(fn); return () => {}; }, onViewPage: () => () => {} },
         lifecycle: { register: () => ({ track: x => x }) }
       },
-      session: { epoch: 0, getEpoch() { return this.epoch; }, isCurrent: () => true, onUserChange: () => {} },
+      session: { epoch: 0, getEpoch() { return this.epoch; }, isCurrent: () => true, onUserChange: (name, fn) => userChanges.push(fn) },
       titleDetails: { show: (tmdb, type) => { opened.push([tmdb, type]); return true; } },
       jellyseerrAPI: {
         checkUserStatus: async () => ({ active: true }),
@@ -120,6 +123,8 @@ function setup(t, { gaps, config = {}, discovery = false, seerr = null, me = MEM
   if (discovery) h.load('jellyseerr/discovery/collection-discovery.js');
   return {
     ...h, gets, posts, seerrCalls, opened,
+    navigate() { navigations.forEach(fn => fn()); },
+    changeUser() { h.JE.session.epoch++; userChanges.forEach(fn => fn()); },
     get reads() { return reads; },
     get spec() { return spec; },
     page: () => h.document.getElementById('itemDetailPage'),
@@ -344,4 +349,136 @@ test('phase 4 switch off: the Seerr row and the gaps block both show, exactly as
   assert.equal(row.querySelector('h2').textContent, 'Missing from Saga (1/2)');
   assert.deepEqual([...row.querySelectorAll('.card')].map(c => c.dataset.id), ['11']);
   assert.equal(h.JE.internals.arrAskCollection.covers('box1'), false);
+});
+
+
+/** The backend's fail-closed answer for cold collections with more than eight absent parts. */
+function unavailable(retryAfter = '1', extra = {}) {
+  return new Response(JSON.stringify({ outcome: 'unavailable', reason: 'metadata_unavailable', certainty: 'Failed', ...extra }), {
+    status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': retryAfter }
+  });
+}
+
+test('metadata unavailable: collection-load message, three bounded retries, then manual recovery without partial titles', async t => {
+  let ready = false;
+  const h = setup(t, { gaps: () => ready ? GAPS : unavailable('1', { collection: GAPS }), config: { ArrCollectionGapsPhase4: true } });
+  await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+  const retry = () => block(h)?.querySelector('.je-ask-coll-retry');
+  assert.ok(block(h), 'a temporary metadata failure must never silently omit the collection block');
+  assert.match(block(h).textContent, /This collection can't be loaded right now/);
+  assert.equal(block(h).querySelector('.je-ask-coll-list'), null, 'never publish even a supplied partial collection');
+  assert.equal(getButton(h), null);
+  assert.equal(h.JE.internals.arrAskCollection.covers('box1'), true, 'the older missing row must stay away');
+  for (const [index, delay] of [1000, 2000, 5000].entries()) {
+    assert.deepEqual(h.delays(), [delay]);
+    assert.equal(retry().disabled, true);
+    click(h, retry());
+    assert.equal(h.reads, index + 1, 'cannot bypass the delay by tapping');
+    h.runHeld();
+    await settle();
+  }
+  assert.equal(h.reads, 4, 'one original read and three automatic retries');
+  assert.equal(retry().disabled, true, 'last Retry-After also applies to manual retry');
+  h.runHeld();
+  assert.deepEqual(h.delays(), []);
+  assert.equal(retry().disabled, false);
+  assert.equal(retry().textContent, 'refreshTry again');
+  click(h, retry());
+  await settle();
+  assert.equal(h.reads, 5);
+  assert.deepEqual(h.delays(), [1000], 'manual failure retains Retry-After without restarting the automatic budget');
+  h.runHeld();
+  assert.equal(h.reads, 5);
+  assert.deepEqual(h.delays(), []);
+  ready = true;
+  click(h, retry());
+  await settle();
+  assert.equal(h.reads, 6);
+  assert.equal(block(h).querySelector('.je-ask-coll-retry'), null);
+  assert.equal(block(h).querySelectorAll('.je-ask-coll-part').length, GAPS.missing.length);
+  assert.equal(h.posts.length, 0);
+  assert.equal(h.errors.length, 0);
+});
+
+test('metadata retry honours longer Retry-After seconds and HTTP dates through the production transport', async t => {
+  for (const retryAfter of ['12', new Date(Date.now() + 20000).toUTCString()]) {
+    const h = setup(t, { gaps: () => unavailable(retryAfter) });
+    h.load('core/api-client.js');
+    await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+    assert.ok(block(h));
+    assert.equal(h.reads, 1, 'status-preserving transport must not add hidden retries');
+    assert.equal(h.delays().length, 1);
+    assert.ok(h.delays()[0] >= (retryAfter === '12' ? 12000 : 18000));
+  }
+});
+
+test('metadata retries disappear on navigation, item change, account change, detached page, and feature off', async t => {
+  for (const change of ['navigation', 'item', 'account', 'detached', 'off']) {
+    const h = setup(t, { gaps: () => unavailable() });
+    await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+    const oldRetry = block(h)?.querySelector('.je-ask-coll-retry');
+    assert.ok(oldRetry);
+    if (change === 'navigation') { h.window.location.hash = '#/home'; h.navigate(); }
+    if (change === 'item') { h.window.location.hash = '#/details?id=other'; h.navigate(); }
+    if (change === 'account') h.changeUser();
+    if (change === 'detached') h.page().remove();
+    if (change === 'off') { h.JE.pluginConfig.ArrRequestsEnabled = false; await h.JE.internals.arrAskCollection.attach(h.page(), 'box1'); }
+    h.runHeld();
+    click(h, oldRetry);
+    await settle();
+    assert.equal(h.reads, 1, change);
+    assert.equal(h.document.querySelector('.je-ask-coll'), null, change);
+    assert.deepEqual(h.delays(), [], change);
+  }
+});
+
+test('metadata unavailable: administrators and Watchers see the retry without request controls', async t => {
+  for (const me of [{ ...MEMBER, role: 'admin', canApprove: true }, { ...MEMBER, role: 'watcher', canRequest: false }]) {
+    const h = setup(t, { gaps: () => unavailable(), me });
+    await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+    assert.ok(block(h)?.querySelector('.je-ask-coll-retry'));
+    assert.equal(getButton(h), null);
+    assert.equal(h.gets.some(path => path.includes('/quota')), false, 'no request quota is needed to retry metadata');
+  }
+});
+
+test('metadata unavailable replaces an earlier complete block; a verified refusal remains separate and never retries', async t => {
+  let response = GAPS;
+  const h = setup(t, { gaps: () => response });
+  await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+  assert.ok(getButton(h));
+  response = unavailable();
+  await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+  assert.equal(getButton(h), null);
+  assert.equal(block(h)?.querySelector('.je-ask-coll-list'), null);
+  assert.ok(block(h)?.querySelector('.je-ask-coll-retry'));
+  response = null;
+  await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+  assert.equal(block(h), null);
+  assert.deepEqual(h.delays(), []);
+});
+
+test('metadata read resolving after navigation or account change cannot render or retry', async t => {
+  for (const change of ['navigation', 'account']) {
+    const pending = deferred();
+    let signal;
+    const h = setup(t, { gaps: (path, n, bound) => { signal = bound; return pending.promise; } });
+    const attaching = h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+    await settle();
+    if (change === 'account') h.changeUser();
+    else { h.window.location.hash = '#/details?id=other'; h.navigate(); }
+    assert.equal(signal.aborted, true, 'obsolete page reads are aborted');
+    pending.resolve(unavailable());
+    await attaching;
+    assert.equal(block(h), null);
+    assert.deepEqual(h.delays(), []);
+  }
+});
+
+test('requests off: a cold collection starts no metadata read or retry UI', async t => {
+  const h = setup(t, { gaps: () => unavailable(), config: { ArrRequestsEnabled: false } });
+  await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
+  assert.equal(h.reads, 0);
+  assert.equal(block(h), null);
+  assert.deepEqual(h.delays(), []);
 });

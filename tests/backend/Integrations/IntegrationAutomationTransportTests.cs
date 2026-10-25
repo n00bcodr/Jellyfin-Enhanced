@@ -21,10 +21,11 @@ public class IntegrationAutomationTransportTests
 {
     // The clients a Sonarr/Radarr or Seerr request leaves through. Every HttpClient the plugin gets is one of these, or is
     // named in NotChecked with the reason it can't carry an automatic request.
-    private static readonly string[] Checked = { ArrHttp.ClientName, SeerrHttpHelper.NamedClient, string.Empty };
+    private static readonly string[] Checked = { ArrHttp.ClientName, SeerrHttpHelper.NamedClient, Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.DefaultClient };
 
     private static readonly Dictionary<string, string> NotChecked = new(StringComparer.Ordinal)
     {
+        [Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbTransport.ClientName] = "TMDB metadata/images: fixed hosts api.themoviedb.org/image.tmdb.org, redirects refused, admission-gated; never a request to Sonarr, Radarr or Seerr",
         [NotifyEndpoints.ClientName] = "notifications to people (ntfy, webhooks): never a request to Sonarr, Radarr or Seerr",
         [Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceHttp.ClientName] =
             "list-source reads (MDBList, TMDB, Trakt, IMDb, Chronolists; 4c2): pinned provider hosts, public addresses only, no redirects: never a request to Sonarr, Radarr or Seerr",
@@ -58,9 +59,18 @@ public class IntegrationAutomationTransportTests
         var clients = WriteGateWalk.Plugin.HttpClients();
         Assert.Contains(clients, c => c.Name == ArrHttp.ClientName);
         Assert.Contains(clients, c => c.Name == SeerrHttpHelper.NamedClient);
-        Assert.Contains(clients, c => c.Name == string.Empty);
+        Assert.Contains(clients, c => c.Name == Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.DefaultClient);
         var unknown = clients.Where(c => c.Name == null || !(Checked.Contains(c.Name) || NotChecked.ContainsKey(c.Name))).Select(c => c.Where + " " + (c.Name ?? "(name not a constant)")).ToList();
         Assert.True(unknown.Count == 0, "HttpClients without the transport check: " + string.Join(", ", unknown));
+    }
+
+    [Fact]
+    public void HttpClientInventoryStillDetectsAPlantedBareClient()
+    {
+        var planted = WriteGateWalk.Plugin.With("Services/CdnAssetService.cs", source => source +
+            "\nnamespace InventoryPlant { class RawClient { void Create() { using var client = new System.Net.Http.HttpClient(); } } }");
+        Assert.Empty(planted.Errors("Services/CdnAssetService.cs"));
+        Assert.Contains(planted.HttpClients(), client => client.Name == "new" && client.Where.Contains("CdnAssetService.cs", StringComparison.Ordinal));
     }
 
     // A person's own request is never an automatic write: every automation stop on (kill switches, the Shadow override,

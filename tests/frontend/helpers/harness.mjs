@@ -57,7 +57,9 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     });
     let body = null;
     try { const text = await response.text(); body = text ? JSON.parse(text) : null; } catch (_) { /* malformed fixture body */ }
-    return { status: response.status, body };
+    const value = response.headers.get('Retry-After');
+    const retryAfterMs = value ? Math.max(0, Number.isFinite(Number(value)) ? Number(value) * 1000 : Date.parse(value) - Date.now()) : 0;
+    return { status: response.status, body, ...(retryAfterMs > 0 ? { retryAfterMs } : {}) };
   });
   window.structuredClone = structuredClone;
   Object.assign(window, globals);

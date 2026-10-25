@@ -40,6 +40,23 @@ public class TmdbTransportArchitectureTests
         return Location(node) + "|" + (symbol?.GetDocumentationCommentId() ?? symbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "<unbound>");
     }
 
+    // A generic sender needs no host exemption when its immutable local receiver is obtained
+    // through the runtime guard. This rule is structural, not a method-name/body exception.
+    private static bool GuardedSender(SyntaxNode node, SemanticModel model)
+    {
+        if (Body(node) is not { } body) return false;
+        var sends = body.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(call =>
+            (model.GetSymbolInfo(call).Symbol as IMethodSymbol)?.ContainingType.ToDisplayString() == "System.Net.Http.HttpClient"
+            && (model.GetSymbolInfo(call).Symbol as IMethodSymbol)?.Name != "Dispose").ToArray();
+        if (sends.Length == 0) return false;
+        return sends.All(call => call.Expression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax receiver }
+            && model.GetSymbolInfo(receiver).Symbol is ILocalSymbol local
+            && local.DeclaringSyntaxReferences.Single().GetSyntax() is VariableDeclaratorSyntax { Initializer.Value: InvocationExpressionSyntax acquisition }
+            && (model.GetSymbolInfo(acquisition).Symbol as IMethodSymbol)?.ContainingType.ToDisplayString() is
+                "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp" or "Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr.SeerrHttpHelper"
+            && !body.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any(a => SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(a.Left).Symbol, local)));
+    }
+
     internal static Dictionary<string, string> HttpSites(CSharpCompilation compilation)
     {
         var bodies = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -57,6 +74,7 @@ public class TmdbTransportArchitectureTests
                     or "System.Net.Http.Json.HttpClientJsonExtensions";
                 var isBodySend = type == "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.BoundedBody" && symbol?.Name == "SendAsync";
                 if (!isHttp && !isBodySend) continue;
+                if (GuardedSender(node, model)) continue;
                 var identity = Identity(node, model);
                 var body = (SyntaxNode?)Body(node) ?? node;
                 var owner = Body(node) is { } declaration ? model.GetDeclaredSymbol(declaration) : null;
@@ -90,6 +108,26 @@ public class TmdbTransportArchitectureTests
                 if (SymbolEqualityComparer.Default.Equals(owner?.ContainingType, transport) && method.Identifier.ValueText is "SendAsync" or "GetAsync")
                     if (owner == null || !owner.Parameters.Any(p => !p.IsOptional && SymbolEqualityComparer.Default.Equals(p.Type, admission)))
                         errors.Add("transport send lacks required typed admission: " + Identity(method, model));
+            }
+            foreach (var call in tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (model.GetSymbolInfo(call).Symbol is not IMethodSymbol method) continue;
+                var caller = model.GetEnclosingSymbol(call.SpanStart)?.ContainingType;
+                if (method.Name == "CreateClient" && method.ContainingType.ToDisplayString() is "System.Net.Http.IHttpClientFactory" or "System.Net.Http.HttpClientFactoryExtensions"
+                    && caller?.ToDisplayString() != "Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp"
+                    // The sole typed transport selects only the two inventoried, registered clients.
+                    && !(SymbolEqualityComparer.Default.Equals(caller, transport) && Transport.Contains(Identity(call, model))
+                        && call.Ancestors().OfType<InvocationExpressionSyntax>().Any(wrapper =>
+                            (model.GetSymbolInfo(wrapper).Symbol as IMethodSymbol)?.GetDocumentationCommentId()
+                                == "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CheckedClient(System.Net.Http.HttpClient)")))
+                    errors.Add("factory acquisition outside runtime egress: " + Identity(call, model));
+                if (method.Name == "CopyOptions" && method.ContainingType.ToDisplayString() == "Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbEgressHandler"
+                    && (model.GetEnclosingSymbol(call.SpanStart) as IMethodSymbol)?.GetDocumentationCommentId()
+                        != "M:Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.FactoryClientHandler.Copy(System.Net.Http.HttpRequestMessage)")
+                    errors.Add("egress wire copy outside private adapter: " + Identity(call, model));
+                if (method.Name == "Attach" && method.ContainingType.ToDisplayString() == "Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbEgressHandler"
+                    && !SymbolEqualityComparer.Default.Equals(caller, transport))
+                    errors.Add("egress capability outside transport: " + Identity(call, model));
             }
             foreach (var node in tree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
                 if (SymbolEqualityComparer.Default.Equals((model.GetSymbolInfo(node).Symbol as IMethodSymbol)?.ContainingType, admission) && !Owners.Contains(Identity(node, model)))
