@@ -25,7 +25,7 @@ public class IntegrationAutomationTransportTests
 
     private static readonly Dictionary<string, string> NotChecked = new(StringComparer.Ordinal)
     {
-        [""] = "TmdbTransport's default client; fixed API/image hosts, wrapped by PluginHttp.CheckedClient with a required capability, never an arr/Seerr write",
+        [Jellyfin.Plugin.JellyfinEnhanced.Services.TmdbTransport.ClientName] = "TMDB metadata/images: fixed hosts api.themoviedb.org/image.tmdb.org, redirects refused, admission-gated; never a request to Sonarr, Radarr or Seerr",
         [NotifyEndpoints.ClientName] = "notifications to people (ntfy, webhooks): never a request to Sonarr, Radarr or Seerr",
         [Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceHttp.ClientName] =
             "list-source reads (MDBList, TMDB, Trakt, IMDb, Chronolists; 4c2): pinned provider hosts, public addresses only, no redirects: never a request to Sonarr, Radarr or Seerr",

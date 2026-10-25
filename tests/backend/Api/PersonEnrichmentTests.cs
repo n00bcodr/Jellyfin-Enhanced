@@ -84,6 +84,56 @@ public class PersonEnrichmentTests
         Assert.All(people, p => Assert.Equal("Fixture city", p.Value.GetProperty("birthPlace").GetString()));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PersonR7SlowPrefetchReturnsJellyfinFallbackAndWarmsNextRead(bool single)
+    {
+        await using var rig = new Rig(3);
+        foreach (var person in rig.People)
+        {
+            person.PremiereDate = new DateTime(1970, 2, 3);
+            person.ProductionLocations = new[] { "Library city" };
+        }
+        var viewer = Guid.NewGuid();
+        var selected = single ? rig.People.Take(1).ToArray() : rig.People;
+        var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var observation = MetadataTaskProbe.Observe(e => { if (e.Kind == "completed") drained.TrySetResult(); });
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var read = rig.Read(viewer, selected, single);
+        try
+        {
+            // Assert completion separately so a baseline failure is the missing fallback,
+            // rather than an upstream timeout or a fixture teardown failure.
+            await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(7.5)));
+            Assert.True(read.IsCompleted, "Optional person prefetch exceeded the six-second fallback window.");
+            var json = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await read).Value);
+            var entries = single ? new[] { json } : json.GetProperty("people").EnumerateObject().Select(p => p.Value).ToArray();
+            Assert.Equal(selected.Length, entries.Length);
+            Assert.All(entries, p => {
+                Assert.Equal("Library city", p.GetProperty("birthPlace").GetString());
+                Assert.Equal("1970-02-03", p.GetProperty("birthDate").GetString());
+                Assert.False(string.IsNullOrEmpty(p.GetProperty("name").GetString()));
+            });
+            Assert.InRange(clock.Elapsed.TotalSeconds, 5, 7.5);
+            Assert.Equal(1, rig.Admission.Count()); // returning fallback must not release live work
+            Assert.False(drained.Task.IsCompleted);
+        }
+        finally { rig.Release.TrySetResult(); }
+        await drained.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, rig.Admission.Count());
+        var next = await rig.Read(viewer, selected, single);
+        if (single)
+        {
+            var json = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(next).Value);
+            Assert.Equal("Fixture city", json.GetProperty("birthPlace").GetString());
+        }
+        else Full(next, selected.Length);
+        Assert.Equal(selected.Length, rig.Sends.Count);
+        Assert.All(rig.Sends.Values, n => Assert.Equal(1, n));
+        Assert.Equal(0, rig.Warnings);
+    }
+
     [Fact]
     public async Task PersonLargeCastUsesOnePlacePerChunkAndEventuallyFillsAll120()
     {

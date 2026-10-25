@@ -44,6 +44,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <summary>The sole TMDB HTTP sender. A live admission is mandatory, including retries and autonomous reads.</summary>
     internal static class TmdbTransport
     {
+        internal const string ClientName = "JellyfinEnhanced.Tmdb";
+
         internal static async Task<HttpResponseMessage> SendAsync(IHttpClientFactory factory, HttpRequestMessage request,
             MetadataAdmission admission, CancellationToken ct, string clientName = "", Action? beforeSend = null)
         {
@@ -61,9 +63,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Keep the checked-client inventory explicit; both clients retain the TMDB egress handler.
                 var client = PluginHttp.CheckedClient(clientName switch
                 {
-                    "" => factory.CreateClient(),
+                    "" => factory.CreateClient(ClientName),
                     Acquire.Lists.Sources.SourceHttp.ClientName => factory.CreateClient(Acquire.Lists.Sources.SourceHttp.ClientName),
-                    _ => throw new InvalidOperationException("TMDB transport allows only the default or list-source HTTP client."),
+                    _ => throw new InvalidOperationException("TMDB transport allows only the metadata or list-source HTTP client."),
                 });
                 TmdbEgressHandler.Attach(request, admission);
                 beforeSend?.Invoke();

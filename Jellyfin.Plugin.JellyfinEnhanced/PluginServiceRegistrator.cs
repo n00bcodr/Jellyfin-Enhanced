@@ -39,6 +39,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // request can leave through (the arr and Seerr clients below, and the default one Seerr falls back to). It
             // only acts on writes made in an automation context (AutomationTransportContext); everything else passes.
             serviceCollection.AddTransient<Services.Acquire.Automation.AutomationTransportHandler>();
+            // TMDB must never follow a redirect beneath the fixed-host/admission guard.
+            // TmdbEgressFilter installs the outermost handler on this owned constant name.
+            serviceCollection.AddHttpClient(TmdbTransport.ClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
             serviceCollection.AddHttpClient(PluginHttp.DefaultClient)
                 .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>();
 

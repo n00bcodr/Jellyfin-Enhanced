@@ -2882,13 +2882,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private bool JePersonEnrichment => JellyfinEnhanced.Instance?.Configuration is { } config
             && Services.NativeDetails.NativeDetailsPolicy.JeBackend(config) && !string.IsNullOrEmpty(config.GetTmdbApiKey());
 
-        private Task<IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>?> PersonBatchAsync(IEnumerable<BaseItem> people, CancellationToken ct)
+        private async Task<IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>?> PersonBatchAsync(IEnumerable<BaseItem> people, CancellationToken ct)
         {
-            if (!JePersonEnrichment) return Task.FromResult<IReadOnlyDictionary<int, Services.TmdbResponseCache.TmdbResponse>?>(null);
+            if (!JePersonEnrichment) return null;
             var ids = people.Select(p => p.ProviderIds != null && p.ProviderIds.TryGetValue("Tmdb", out var value)
                 && int.TryParse(value, out var id) ? id : 0);
-            return _tmdbResponseCache.GetPeopleAsync(ids, JellyfinEnhanced.Instance!.Configuration.GetTmdbApiKey(),
-                UserHelper.GetCurrentUserId(User) ?? Guid.Empty, ct);
+            // Only the optional wait expires. ViewerMetadataAdmission retains the live
+            // capability and drains the shared work, warming the raw cache for the next read.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(PersonTmdbTimeout);
+            try
+            {
+                return await _tmdbResponseCache.GetPeopleAsync(ids, JellyfinEnhanced.Instance!.Configuration.GetTmdbApiKey(),
+                UserHelper.GetCurrentUserId(User) ?? Guid.Empty, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Empty prefetched facts mean format every person from Jellyfin data;
+                // null remains reserved for admission refusal and its typed pending response.
+                return new Dictionary<int, Services.TmdbResponseCache.TmdbResponse>();
+            }
         }
 
         private IActionResult PersonEnrichmentPending()
@@ -3058,7 +3071,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
 
             // Try to enrich with TMDB data if available
-            if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
+            if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId)
+                && (responses == null || responses.ContainsKey(tmdbPersonId)))
             {
                 using var tmdbTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 tmdbTimeout.CancelAfter(PersonTmdbTimeout);

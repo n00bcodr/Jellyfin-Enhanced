@@ -2279,8 +2279,10 @@ Where the details action row would overflow, a compact row keeps the primary Pla
 
 `Services/TmdbTransport.cs` is the only TMDB HTTP sender. Every send requires a live typed
 `MetadataAdmission`; there is no send overload without it and no anonymous viewer allowance.
-Its factory selector names only the default client and the list-source constant, rejects any
-other name, and applies the same `PluginHttp.CheckedClient` runtime egress wrapper to both.
+Its factory selector names only `TmdbTransport.ClientName` (`JellyfinEnhanced.Tmdb`) and the
+list-source constant, rejects any other name, and applies the same `PluginHttp.CheckedClient`
+runtime egress wrapper to both. Both owned primaries disable automatic redirects and carry
+the outermost egress handler; an admitted redirect remains an unavailable upstream response.
 The raw response cache admits a cold viewer read before registering its task. Native and
 parental reads reuse their live admission; cache hits and joins remain free. One admission
 serializes sends through body disposal and drains retained raw reads before releasing its place. An authenticated
@@ -2295,7 +2297,10 @@ workers share that live capability; its send turn still serializes through body 
 so all running viewer tasks together send at most eight requests at once. Raw per-person
 flights coalesce overlapping chunks and concurrent viewers. Entirely cached chunks bypass
 admission, including when the viewer is full. Cancelling a browser waiter leaves the owned
-batch to finish and cache every person. Excess chunks return quiet HTTP 503 with
+batch to finish and cache every person. A prefetch wait also ends after the existing six-second
+optional-enrichment window: every cast entry returns with its Jellyfin data while the admitted
+batch keeps its place and warms the next read. This fallback is not cached as a negative fact.
+Excess chunks return quiet HTTP 503 with
 `Retry-After: 1`, `pending: true`, `reason: metadata_busy`, and `outcome: unavailable`;
 the existing cast retry path retries the chunk. Refusals are neither cached nor logged as
 upstream warnings, and JE optional person failures use debug logging. Legacy enrichment

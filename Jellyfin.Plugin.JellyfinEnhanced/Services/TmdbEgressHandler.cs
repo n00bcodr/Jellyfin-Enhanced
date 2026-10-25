@@ -175,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     internal static class PluginHttp
     {
         internal const string DefaultClient = "JellyfinEnhanced.Http";
-        internal static bool Owns(string? name) => name is DefaultClient or Helpers.Jellyseerr.SeerrHttpHelper.NamedClient
+        internal static bool Owns(string? name) => name is DefaultClient or TmdbTransport.ClientName or Helpers.Jellyseerr.SeerrHttpHelper.NamedClient
             or Arr.ArrHttp.ClientName or Acquire.Notify.NotifyEndpoints.ClientName or Acquire.Lists.Sources.SourceHttp.ClientName;
 
         internal static HttpClient CreateClient(IHttpClientFactory factory, string? name = null)

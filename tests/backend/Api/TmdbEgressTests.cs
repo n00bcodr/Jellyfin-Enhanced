@@ -150,6 +150,7 @@ public class TmdbEgressTests
     }
 
     [Theory]
+    [InlineData("JellyfinEnhanced.Tmdb")]
     [InlineData("JellyfinEnhanced.Http")]
     [InlineData("JellyfinEnhancedSeerr")]
     [InlineData("JellyfinEnhanced.Arr")]
@@ -164,6 +165,75 @@ public class TmdbEgressTests
         var error = await Record.ExceptionAsync(() => client.GetAsync("https://api.themoviedb.org/3/movie/1"));
         Assert.Equal("TmdbEgressRefusedException", error?.GetType().Name);
         Assert.Equal(0, recorder.Sends);
+    }
+
+    private sealed class TmdbPipelineProbe : IHttpMessageHandlerBuilderFilter
+    {
+        internal readonly List<(string Name, bool Redirects, bool GuardFirst)> Pipelines = new();
+        internal readonly List<HttpRequestMessage> Sent = new();
+        internal bool Redirect = true;
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+        {
+            next(builder);
+            var redirects = builder.PrimaryHandler switch {
+                HttpClientHandler h => h.AllowAutoRedirect,
+                SocketsHttpHandler h => h.AllowAutoRedirect,
+                _ => throw new InvalidOperationException("Expected the actual production primary.")
+            };
+            Pipelines.Add((builder.Name!, redirects, builder.AdditionalHandlers.FirstOrDefault() is TmdbEgressHandler));
+            builder.PrimaryHandler.Dispose();
+            builder.PrimaryHandler = new Sink(this);
+        };
+        private sealed class Sink(TmdbPipelineProbe owner) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            {
+                Assert.True(TmdbEgressHandler.HasCapability(request));
+                owner.Sent.Add(request);
+                var response = IntegrationTransport.Response("{}", owner.Redirect ? 302 : owner.Sent.Count == 1 ? 503 : 200);
+                if (owner.Redirect) response.Headers.Location = new Uri("https://redirect-target.invalid/escaped");
+                return Task.FromResult(response);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TmdbR7ActualSelectedPipelineRefusesCrossHostRedirects(bool images)
+    {
+        var probe = new TmdbPipelineProbe();
+        // Capture AFTER every production builder/filter has configured its real primary.
+        using var services = ProductionHttp(s => s.Insert(0, ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter>(probe)));
+        var factory = services.GetRequiredService<IHttpClientFactory>();
+        using var admission = new MetadataAdmission("r7-redirect", images);
+        using var response = await TmdbTransport.GetAsync(factory,
+            images ? "https://image.tmdb.org/t/p/w300/fixture.jpg" : "https://api.themoviedb.org/3/person/1", admission, default);
+        var pipeline = Assert.Single(probe.Pipelines);
+        Assert.False(pipeline.Redirects, "The actual transport-selected primary must never follow redirects below the guard.");
+        Assert.True(pipeline.GuardFirst);
+        Assert.Equal("JellyfinEnhanced.Tmdb", pipeline.Name);
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode); // unavailable upstream, never a successful fact
+        Assert.Single(probe.Sent);
+        Assert.NotEqual("redirect-target.invalid", probe.Sent[0].RequestUri!.Host);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("JellyfinEnhanced.ListSources")]
+    public async Task TmdbR7EveryRetryHasAFreshCapabilityThroughProductionGuards(string clientName)
+    {
+        var probe = new TmdbPipelineProbe { Redirect = false };
+        using var services = ProductionHttp(s => s.Insert(0, ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter>(probe)));
+        var factory = services.GetRequiredService<IHttpClientFactory>();
+        using var admission = new MetadataAdmission("r7-retry");
+        using (var first = await TmdbTransport.GetAsync(factory, "https://api.themoviedb.org/3/person/1", admission, default, clientName))
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, first.StatusCode);
+        using (var retry = await TmdbTransport.GetAsync(factory, "https://api.themoviedb.org/3/person/1", admission, default, clientName))
+            Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal(2, probe.Sent.Count);
+        Assert.NotSame(probe.Sent[0], probe.Sent[1]);
+        Assert.All(probe.Sent, r => Assert.True(TmdbEgressHandler.HasCapability(r)));
     }
 
     private sealed class RecordingPrimaryFilter : IHttpMessageHandlerBuilderFilter
@@ -314,7 +384,7 @@ public class TmdbEgressTests
                 inventory.Add(new { identity, line = node.GetLocation().GetLineSpan().StartLinePosition.Line + 1, handler = true });
             }
         }
-        Assert.Equal(new[] { PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient,
+        Assert.Equal(new[] { TmdbTransport.ClientName, PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrHttp.ClientName,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotifyEndpoints.ClientName,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceHttp.ClientName }.Order(), registered.Order());
@@ -346,7 +416,7 @@ public class TmdbEgressTests
     {
         using var services = ProductionHttp();
         var factory = services.GetRequiredService<IHttpMessageHandlerFactory>();
-        foreach (var name in new[] { PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient,
+        foreach (var name in new[] { TmdbTransport.ClientName, PluginHttp.DefaultClient, SeerrHttpHelper.NamedClient,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrHttp.ClientName,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotifyEndpoints.ClientName,
             Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceHttp.ClientName })
