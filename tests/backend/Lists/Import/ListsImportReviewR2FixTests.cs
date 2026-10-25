@@ -64,6 +64,7 @@ public class ListsImportReviewR2FixTests
         public ApiPluginFixture Plugin { get; } = new();
         public List<HttpRequestMessage> Requests { get; } = new();
         public Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> Routes { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>> AsyncRoutes { get; } = new(StringComparer.Ordinal);
         public IntegrationTransport Transport { get; }
         public NamedFactory Factory { get; }
         public CountingAdmission Admission { get; } = new();
@@ -78,6 +79,17 @@ public class ListsImportReviewR2FixTests
                 lock (Requests)
                 {
                     Requests.Add(request);
+                }
+
+                if (AsyncRoutes.TryGetValue(request.RequestUri!.GetLeftPart(UriPartial.Path), out var asyncAnswer))
+                {
+                    return ReadAsync();
+
+                    async Task<HttpResponseMessage> ReadAsync()
+                    {
+                        var reply = await asyncAnswer(request, _);
+                        return RealShapes ? RealProviders.Shape(request, reply) : reply;
+                    }
                 }
 
                 var key = request.RequestUri!.GetLeftPart(UriPartial.Path);
