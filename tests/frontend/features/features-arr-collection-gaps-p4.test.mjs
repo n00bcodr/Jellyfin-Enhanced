@@ -401,8 +401,10 @@ test('metadata unavailable: collection-load message, three bounded retries, then
 });
 
 test('metadata retry honours longer Retry-After seconds and HTTP dates through the production transport', async t => {
-  for (const retryAfter of ['12', new Date(Date.now() + 20000).toUTCString()]) {
-    const h = setup(t, { gaps: () => unavailable(retryAfter) });
+  for (const asDate of [false, true]) {
+    let retryAfter;
+    // The server's date starts at its response, after harness/module instrumentation has finished.
+    const h = setup(t, { gaps: () => unavailable(retryAfter = asDate ? new Date(Date.now() + 20000).toUTCString() : '12') });
     h.load('core/api-client.js');
     await h.JE.internals.arrAskCollection.attach(h.page(), 'box1');
     assert.ok(block(h));

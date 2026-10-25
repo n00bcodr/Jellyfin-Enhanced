@@ -586,6 +586,15 @@ internal sealed class NotifyGateWalk
             {
                 var declaration = reference.GetSyntax();
                 var model = Model(declaration.SyntaxTree);
+                // The scoped forwarder returns a task without awaiting it. Follow its private body
+                // only when the existing all-references proof identifies this exact wrapper as owner.
+                foreach (var call in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    if (model.GetSymbolInfo(call).Symbol is IMethodSymbol body &&
+                        (Is(body.ContainingType, Dispatcher) || Is(body.ContainingType, Service)) &&
+                        body.Name != method.Name && ScopedOwnerName(body) == method.Name)
+                        pending.Push(body.OriginalDefinition);
+                }
                 var awaits = declaration.DescendantNodes().OfType<AwaitExpressionSyntax>()
                     .Where(a => !a.Ancestors().TakeWhile(x => x != declaration).Any(x => x is AnonymousFunctionExpressionSyntax))
                     .Select(a => (Await: a, Call: Awaited(a.Expression))).ToList();
@@ -598,7 +607,7 @@ internal sealed class NotifyGateWalk
                     return clash ? m.ContainingType.Name + "." + m.Name : m.Name;
                 }
 
-                var labels = named.Select(n => method.Name + ":" + Callee(n.Symbol, n.Call)).ToList();
+                var labels = named.Select(n => ScopedOwnerName(method) + ":" + Callee(n.Symbol, n.Call)).ToList();
                 for (var i = 0; i < labels.Count; i++)
                 {
                     var same = labels.Count(l => l == labels[i]);

@@ -430,11 +430,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         internal ConfigurationPatchResult PatchConfiguration(ConfigurationPatch patch)
         {
             ConfigurationPatchResult? result = null;
-            // No evidence input can be modified by this branch. Unknown fields still follow the normal patch validator.
+            // No evidence input or backend choice can be modified by this branch. Unknown fields still follow the normal patch validator.
             var preserve = patch.Set?.Count > 0 && !(patch.Set?.Keys.Any(f => PluginConfiguration.IsStoredSecretField(f)
                 || Services.EvidenceRevision.IsConfigurationInput(f)
                 || f is nameof(PluginConfiguration.SonarrUrl) or nameof(PluginConfiguration.RadarrUrl)
-                    or nameof(PluginConfiguration.ShokoUrl) or nameof(PluginConfiguration.ArrServerOwnedSeen)) ?? false) && patch.Instances == null;
+                    or nameof(PluginConfiguration.ShokoUrl) or nameof(PluginConfiguration.ArrServerOwnedSeen)
+                    or nameof(PluginConfiguration.ArrBackendIsolationVersion)) ?? false) && patch.Instances == null;
             ApplyConfiguration(current =>
             {
                 var next = ConfigurationPatcher.Clone(current ?? new PluginConfiguration());
