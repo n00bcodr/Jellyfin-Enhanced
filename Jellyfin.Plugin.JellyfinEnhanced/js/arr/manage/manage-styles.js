@@ -76,6 +76,11 @@
 .je-manage-add-message:empty { display: none; }
 .je-manage-add-failed { color: #fca5a5; }
 .je-manage-add .je-manage-actions { margin-top: 0.2em; }
+.je-manage-add-conflict { padding: 0.8em; border: 1px solid #b59cf6; border-radius: 8px; display: flex; flex-direction: column; gap: 0.45em; font-size: 0.9em; overflow-wrap: anywhere; }
+.je-manage-add-choice-root { font-family: monospace; }
+.je-manage-add-confirm { padding-top: 0.6em; border-top: 1px solid rgba(255,255,255,0.2); display: flex; flex-direction: column; gap: 0.5em; }
+.je-manage-add-conflict p { margin: 0; }
+.je-manage-add-conflict .je-manage-btn { white-space: normal; text-align: start; max-width: 100%; }
 @media (max-width: 600px) {
   .je-manage-overlay { align-items: flex-end; }
   .je-manage { width: 100vw; height: auto; max-height: 88vh; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.5); }
