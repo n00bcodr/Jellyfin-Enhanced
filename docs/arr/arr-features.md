@@ -590,6 +590,8 @@ Follow every request through to **Ready to watch**, on the title's own page and 
 | **Tell me, and admin essentials (phase 2)** | Off | [Admin tools](#admin-tools-phase-2) and [notifications](#notifications-phase-2). |
 | **Ask for it (durable requests, phase 3)** | Off | [Request controls](#asking-for-titles) on Jellyfin's own pages, approvals, the household, and requests sent through Seerr or by Jellyfin Enhanced itself. |
 
+When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
+
 ### Where things have got to
 
 Every title speaks one status language, for family members and administrators alike.

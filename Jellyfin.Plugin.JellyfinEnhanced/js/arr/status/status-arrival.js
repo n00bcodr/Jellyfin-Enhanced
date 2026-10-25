@@ -5,12 +5,12 @@
  * available, the page either moves to that item in its own history entry (Jellyfin gives a missing
  * episode or season a new id once its file is there, a native page's title gets its library item, and
  * a movie or episode whose file became a version of a new item moves to that item), or, for the same
- * item (also when Jellyfin adds a version to it), has Jellyfin reload its own page, so Play, badges,
+ * item (also when Jellyfin adds a version to it), permits one coalesced Jellyfin redraw per view, so Play, badges,
  * media info and the version picker are Jellyfin's own. It follows the page's status reads (status-details hands each one over; JE's change
  * feed starts them) and Jellyfin's LibraryChanged message about the page's item, season or series,
  * whichever comes first. A change waits while the viewer types, plays or has a dialog open, is checked
  * again right before it happens (a move reads its destination again as the viewer first), happens once
- * (reloads of one page are spaced out), and is dropped when the viewer leaves the page or the user
+ * per page view, and is dropped when the viewer leaves the page or the user
  * changes. A page Jellyfin restores as it was drawn catches up on what arrived while it was away.
  */
 (function (JE) {
@@ -56,6 +56,35 @@
     let generation = 0;
     /** Jellyfin's message subscription: { client, off }. */
     let socket = null;
+    /** Pointer ids held on screen, plus a quiet period after scrolling/release. */
+    const pressed = new Set();
+    let interactingUntil = 0;
+    let touching = false;
+    let stopInteraction = null;
+
+    /** Records interaction without cancelling or consuming any host input. @returns {void} */
+    function trackInteraction() {
+        if (stopInteraction) return;
+        const bindings = [];
+        const bind = (type, fn) => {
+            window.addEventListener(type, fn, { capture: true, passive: true });
+            bindings.push([type, fn]);
+        };
+        const quiet = () => { interactingUntil = Date.now() + 350; };
+        bind('pointerdown', e => { pressed.add(e.pointerId); });
+        for (const type of ['pointerup', 'pointercancel']) bind(type, e => { pressed.delete(e.pointerId); quiet(); });
+        bind('touchstart', () => { touching = true; });
+        for (const type of ['touchend', 'touchcancel']) bind(type, e => { touching = !!e.touches?.length; quiet(); });
+        bind('mousedown', () => { pressed.add('mouse'); });
+        bind('mouseup', () => { pressed.delete('mouse'); quiet(); });
+        for (const type of ['scroll', 'wheel']) bind(type, quiet);
+        bind('blur', () => { pressed.clear(); touching = false; quiet(); });
+        stopInteraction = () => {
+            for (const [type, fn] of bindings) window.removeEventListener(type, fn, { capture: true });
+            stopInteraction = null;
+            pressed.clear(); touching = false; interactingUntil = 0;
+        };
+    }
     /**
      * The scope key (and series item) each item's page showed lately (item id -> { key, series }): a page
      * shown again after Jellyfin deleted its item (the viewer was on other pages meanwhile) still finds
@@ -139,6 +168,7 @@
      * @returns {'typing'|'dialog'|'playing'|null} Reason.
      */
     function busy() {
+        if (pressed.size || touching || Date.now() < interactingUntil) return 'interaction';
         const a = document.activeElement;
         if (a && a !== document.body && (a.isContentEditable || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'
             || (a.tagName === 'INPUT' && !NOT_TYPING.has(String(a.type || 'text').toLowerCase())))) return 'typing';
@@ -204,7 +234,13 @@
             base: shownBefore?.base || null, pending: null, timer: null, probeTimer: null, checking: false,
             lostTimer: null, lostTries: 0, reloadedAt: shownBefore?.reloadedAt || 0, tried: new Set(), parents: new Set([norm(itemId)])
         };
+        state.refreshed = false;
+        state.settleTimer = null;
+        state.endSettle = null;
         page = state;
+        trackInteraction();
+        state.onHide = () => { if (page === state && !state.refreshing) drop(); };
+        view.addEventListener('viewbeforehide', state.onHide);
         generation++;
         if (enabled()) {
             listen();
@@ -270,6 +306,10 @@
         clearTimeout(state.timer);
         clearTimeout(state.probeTimer);
         clearTimeout(state.lostTimer);
+        clearTimeout(state.settleTimer);
+        state.endSettle?.();
+        state.view.removeEventListener('viewbeforehide', state.onHide);
+        stopInteraction?.();
         page = null;
         generation++;
     }
@@ -459,6 +499,11 @@
     function plan(state, action) {
         if (page !== state) return;
         if (action.kind === 'replace' && state.tried.has(action.target)) return;
+        if (action.kind === 'reload' && state.refreshed) {
+            state.base = higher(state.base, action.base);
+            drew(state);
+            return;
+        }
         const prior = state.pending;
         if (action.kind === 'reload' && prior?.kind === 'replace') return;
         if (action.kind !== 'reload' || !listPage(state)) {
@@ -623,7 +668,7 @@
      * then the page gets the view events a fresh show sends (its controller reads the item again and
      * draws Play, badges, media info and versions; the hide first releases what its last show
      * subscribed). Only the page hears them (they don't bubble: no theme music, no router). Once it has
-     * redrawn, JE's page handlers run on it again, the status is read again, and the viewer's scroll
+     * redrawn, JE reuses its accepted status before its page handlers run again, and the viewer's scroll
      * position and focus stay, unless they moved meanwhile.
      * @param {Object} state Page state.
      * @param {{ready: boolean, count: number|null, versions: number|null}} base What the page shows from now on.
@@ -631,6 +676,7 @@
      */
     function reload(state, base) {
         state.base = base;
+        state.refreshed = true;
         state.reloadedAt = Date.now();
         drew(state);
         const scroller = document.scrollingElement || document.documentElement;
@@ -639,6 +685,7 @@
         let moved = false;
         const mark = () => { moved = true; };
         INTENTS.forEach(type => window.addEventListener(type, mark, { capture: true, passive: true }));
+        state.endSettle = () => INTENTS.forEach(type => window.removeEventListener(type, mark, { capture: true }));
         try {
             const refreshed = JE.helpers?.getItemCached?.(state.id, { forceRefresh: true });
             if (refreshed && typeof refreshed.catch === 'function') refreshed.catch(() => { /* Jellyfin reads it itself */ });
@@ -646,18 +693,24 @@
             // Jellyfin reads the item itself.
         }
         const detail = { type: state.view.getAttribute('data-type'), isRestored: false, params: Object.fromEntries(hashParams()) };
+        state.refreshing = true;
         state.view.dispatchEvent(new CustomEvent('viewbeforehide', { detail, bubbles: false, cancelable: false }));
         state.view.dispatchEvent(new CustomEvent('viewshow', { detail, bubbles: false, cancelable: false }));
-        setTimeout(() => {
-            INTENTS.forEach(type => window.removeEventListener(type, mark, { capture: true }));
+        state.refreshing = false;
+        state.settleTimer = setTimeout(() => {
+            state.settleTimer = null;
+            state.endSettle?.();
+            state.endSettle = null;
             if (page !== state || !shown(state)) return;
             if (!moved && scroller.scrollTop !== top) scroller.scrollTop = top;
             const active = document.activeElement;
             if (focused && focused.isConnected && (!active || active === document.body)) focused.focus({ preventScroll: true });
+            JE.internals?.arrStatusDetails?.repaint?.();
             JE.core?.navigation?.replayViewShow?.(state.view);
-            JE.internals?.arrStatusDetails?.update?.(true);
         }, timing.settle);
     }
+
+    JE.core?.navigation?.onNavigate?.(() => { if (page && !shown(page)) drop(); });
 
     JE.session?.onUserChange?.('arr-status-arrival', () => {
         drop();
@@ -667,5 +720,5 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrStatusArrival = { seen, vanished, open, busy, timing, state: () => page };
+    JE.internals.arrStatusArrival = { seen, vanished, open, busy, drop, timing, state: () => page };
 })(window.JellyfinEnhanced);

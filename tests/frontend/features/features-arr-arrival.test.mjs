@@ -194,14 +194,15 @@ test('the same item becoming available reloads Jellyfin\'s own page once, keepin
   assert.equal(h.host.shows[0].bubbles, false, 'only the page hears it (no theme music, no router)');
   assert.equal(h.host.bubbled, 0);
   assert.ok(h.itemReads.some(r => r.id === OLD && r.options.forceRefresh), 'JE\'s item cache is refreshed for the page');
-  assert.ok(await until(() => h.replays.includes(h.view)), 'JE\'s page handlers run again on the redrawn page');
+  assert.ok(await until(() => scroller.scrollTop === 400), 'the accepted status is repainted after host settlement');
+  assert.equal(h.replays.length, 1, 'one replay after cached status reconciliation');
   assert.equal(scroller.scrollTop, 400, 'the viewer stays where they were');
   // The reload's own reads and repeated change events are the same arrival: nothing more.
   const reads = h.statusReads();
   h.S.refresh([KEY]);
   h.S.refresh([KEY]);
-  await until(() => h.statusReads() >= reads + 2);
   await sleep(40);
+  assert.equal(h.statusReads(), reads + 2, 'only the two explicit status notifications read again');
   assert.equal(h.host.shows.length, 1);
 });
 
@@ -219,15 +220,16 @@ test('a version Jellyfin adds to the movie the page shows (its version picker) r
   h.S.refresh([MOVIE_KEY]);
   assert.ok(await until(() => h.host.shows.length === 1), 'a second version arrived: Jellyfin draws its page again');
   assert.equal(h.host.shows[0].detail.isRestored, false);
-  assert.ok(await until(() => h.replays.includes(h.view)));
+  await sleep(20);
+  assert.equal(h.replays.length, 1);
   const reads = h.statusReads();
   h.S.refresh([MOVIE_KEY]);
-  await until(() => h.statusReads() > reads);
   await sleep(40);
+  assert.equal(h.statusReads(), reads + 1, 'only the explicit status notification reads again');
   assert.equal(h.host.shows.length, 1, 'one reload per change');
   versions = 1;
   h.S.refresh([MOVIE_KEY]);
-  await until(() => h.statusReads() > reads + 1);
+  await h.D.update(true);
   await sleep(40);
   assert.equal(h.host.shows.length, 1, 'a version going away is no arrival');
   assert.equal(h.id(), OLD, 'the page never moves for a version');
@@ -256,7 +258,7 @@ test('a movie whose file Jellyfin now keeps as a version of another item moves t
   assert.equal(h.host.shows.length, 0, 'moved, not reloaded');
 });
 
-test('a season gaining episodes reloads once per change; downloads moving along never do', async t => {
+test('a season gaining episodes gets one host refresh per view; subsequent arrivals patch in place', async t => {
   let ready = 1;
   let stage = 'downloading';
   const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready, { stage }) });
@@ -273,7 +275,8 @@ test('a season gaining episodes reloads once per change; downloads moving along 
   assert.equal(h.host.shows.length, 1, 'the same count again is no new arrival');
   ready = 3;
   h.S.refresh(['tv:tvdb:75932:s1']);
-  assert.ok(await until(() => h.host.shows.length === 2));
+  await sleep(40);
+  assert.equal(h.host.shows.length, 1, 'later arrivals leave the same host view in place');
 });
 
 test('a season page waits for a burst of arrivals (and Jellyfin tidying up after them) to settle, then reloads once', async t => {
@@ -303,30 +306,17 @@ test('a season page waits for a burst of arrivals (and Jellyfin tidying up after
   assert.equal(h.host.shows.length, 1, 'one reload for the burst');
 });
 
-test('reloads of one page are spaced out: a burst of arrivals gets one more reload after the gap', async t => {
+test('a later arrival burst in the same view never triggers another host redraw', async t => {
   let ready = 1;
   const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
-  // The gap is measured between the reloads themselves, not from when the test notices the first one: on a busy
-  // host the poll can notice late, and a reload after a gap that has truly passed is correct.
-  const at = [];
-  h.view.addEventListener('viewshow', () => at.push(performance.now()));
-  h.A.timing.gap = 300;
   await h.D.update(false);
   ready = 2;
-  h.S.refresh(['tv:tvdb:75932:s1']);
+  await h.D.update(true);
   assert.ok(await until(() => h.host.shows.length === 1));
-  ready = 3;
-  h.S.refresh(['tv:tvdb:75932:s1']);
-  ready = 4;
-  await sleep(10);
-  h.S.refresh(['tv:tvdb:75932:s1']);
-  assert.ok(await until(() => h.host.shows.length === 2, 3000), 'the burst reloads once more');
-  // The module times the gap from the start of each reload; its synchronous redraw before each viewshow can take a
-  // few ms on a loaded host (seen: 292 ms apart under the full suite). A reload inside the gap comes ~10 ms after the
-  // burst, so 250 still tells the two apart.
-  assert.ok(at[1] - at[0] >= 250, `not again within the gap (${Math.round(at[1] - at[0])} ms apart)`);
-  await sleep(400);
-  assert.equal(h.host.shows.length, 2, 'the burst is one more reload');
+  for (ready = 3; ready <= 6; ready++) await h.D.update(true);
+  await sleep(40);
+  assert.equal(h.host.shows.length, 1);
+  assert.equal(h.A.state().base.count, 6, 'accepted availability advances without a redraw');
 });
 
 test('an open dialog, typing or playback holds the change until it ends; it is checked again right before', async t => {

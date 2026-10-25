@@ -18,6 +18,10 @@
     let started = false;
     /** D95: the page view whose journey the viewer closed ({page, itemId}), or null. */
     let collapsed = null;
+    /** Rendered fields per retained details page. */
+    let rendered = new WeakMap();
+    /** Positioning is measured once per poster host, ahead of any overlay writes. */
+    const posterPositions = new WeakMap();
 
     /**
      * The details page currently shown, or null.
@@ -82,6 +86,8 @@
      * @returns {void}
      */
     function clear(root) {
+        if (root) rendered.delete(root);
+        else rendered = new WeakMap();
         (root || document).querySelectorAll(`.je-arr-status[data-je-arr-surface="${SURFACE}"], .je-arr-art[data-je-arr-surface="${SURFACE}"]`).forEach(n => n.remove());
     }
 
@@ -104,12 +110,16 @@
      * @returns {void}
      */
     function paintPoster(page, status) {
-        if (!JE.arrStatus.artworkEnabled?.() || !JE.arrStatus.buildArtworkProgress?.(status)) return;
-        for (const host of postersOf(page)) {
-            const art = JE.arrStatus.buildArtworkProgress(status);
-            if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-            art.dataset.jeArrSurface = SURFACE;
-            host.appendChild(art);
+        const shown = JE.arrStatus.artworkEnabled?.() && !status.quiet && !JE.arrStatus.settled?.(status) ? status : null;
+        const hosts = postersOf(page);
+        if (shown && JE.arrStatus.artworkSpec(shown)) {
+            for (const host of hosts) if (!posterPositions.has(host)) posterPositions.set(host, getComputedStyle(host).position === 'static');
+        }
+        for (const host of hosts) {
+            if (posterPositions.get(host)) host.style.position = 'relative';
+            JE.arrStatus.paintArtwork(host, shown);
+            const art = host.querySelector(':scope > .je-arr-art');
+            if (art) art.dataset.jeArrSurface = SURFACE;
         }
     }
 
@@ -124,14 +134,20 @@
         // A live update re-draws the block: the pill keeps the keyboard/D-pad focus it had.
         const before = page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`);
         const refocus = !!before && before.contains(document.activeElement) && document.activeElement.classList.contains('je-arr-pill');
-        clear(page);
         const episodes = JE.internals?.arrStatusEpisodes;
         if (status.kind === 'season' && episodes) episodes.render(page, status, ctx);
         else if (episodes) episodes.clear();
         // D95: a title that is ready, with nothing on its way, shows nothing from JE (no pill, journey or arr line).
-        if (JE.arrStatus.settled?.(status)) return null;
-        if (status.quiet && !status.admin) return null;
-        if (!status.quiet) paintPoster(page, status);
+        paintPoster(page, status);
+        const { episodes: ignored, ...fields } = status;
+        const signature = JSON.stringify([fields, ctx?.contact, JE.arrStatus.detailsOptions(), navigator.language, JE.arrStatus.detailsOptions().admin && JE.arrStatus.adminLines(status)]);
+        const prior = rendered.get(page);
+        if (prior?.signature === signature && (!prior.block || prior.block.isConnected)) return prior.block;
+        if (JE.arrStatus.settled?.(status) || (status.quiet && !status.admin)) {
+            before?.remove();
+            rendered.set(page, { signature, block: null });
+            return null;
+        }
         let block = null;
         // The ready/missing counts and the administrators' Sonarr/Radarr lines only when switched on
         // (D92): with neither, a summary with nothing on its way draws no block, so no space either.
@@ -154,11 +170,23 @@
         } else if (options.admin && JE.arrStatus.adminLines(status).length) {
             block = JE.arrStatus.buildPill(status, ctx, options);
         }
-        if (!block) return null;
+        if (!block) {
+            before?.remove();
+            rendered.set(page, { signature, block: null });
+            return null;
+        }
         block.dataset.jeArrSurface = SURFACE;
         const anchor = anchorOf(page);
         if (!anchor) return null;
-        anchor.insertBefore(block, anchor.firstChild);
+        // Keep the pill and journey referenced by its click listener together when their shape agrees.
+        const samePill = before?.querySelector('.je-arr-pill')?.tagName === block.querySelector('.je-arr-pill')?.tagName;
+        if (before && samePill && !!before.querySelector('.je-arr-journey') === !!block.querySelector('.je-arr-journey')) {
+            block = JE.arrStatus.retain(before, block);
+        } else {
+            before?.remove();
+            anchor.insertBefore(block, anchor.firstChild);
+        }
+        rendered.set(page, { signature, block });
         if (refocus) block.querySelector('button.je-arr-pill')?.focus({ preventScroll: true });
         return block;
     }
@@ -201,14 +229,14 @@
         const kept = previous ? previous.unsubscribe : null;
         const retries = previous ? previous.retries : 0;
         if (previous) previous.unsubscribe = null;
-        stop();
+        stop(true);
         const controller = new AbortController();
         // A re-read keeps the session of the read it repeats; a switch ends it (the page is reset by the session hook).
         const action = previous?.action || JE.createSessionAction?.() || null;
         const state = {
             page, itemId, controller, epoch: JE.session?.getEpoch?.(),
             userId: window.ApiClient?.getCurrentUserId?.(), serverId: serverIdentity(),
-            loading: true, dirty: false, quiet: false, unsubscribe: kept, retries, retryTimer: null, action
+            loading: true, dirty: false, quiet: false, unsubscribe: kept, retries, retryTimer: null, action, answer: previous?.answer || null
         };
         current = state;
         try {
@@ -246,6 +274,7 @@
                 }
                 // Nothing to show (a person, collection or album page, an item without provider ids, or the
                 // status surfaces were switched off): don't ask again for this page view, and drop what was shown.
+                state.answer = null;
                 state.quiet = true;
                 clear();
                 JE.internals?.arrStatusEpisodes?.clear?.();
@@ -260,6 +289,7 @@
                 release();
                 return;
             }
+            state.answer = data;
             const block = render(livePage, status, data);
             state.quiet = !block;
             // Administrators (only they get the admin block) get the Manage button in the action row.
@@ -285,10 +315,25 @@
     }
 
     /**
+     * Reapplies the accepted answer after Jellyfin finishes its single coalesced redraw.
+     * @returns {void}
+     */
+    function repaint() {
+        if (!current?.answer || !sameContext(current)) return;
+        const status = current.answer.items[0];
+        const { page, answer } = current;
+        render(page, status, answer);
+        JE.internals?.arrManage?.attachDetails?.(page, status);
+        JE.internals?.arrNotify?.attachDetails?.(page, status, answer);
+        JE.internals?.arrAskActions?.attachDetails?.(page, status, answer);
+    }
+
+    /**
      * Forgets the current item (navigation away).
      * @returns {void}
      */
-    function stop() {
+    function stop(keepArrival) {
+        if (!keepArrival) JE.internals?.arrStatusArrival?.drop?.();
         if (!current) return;
         current.controller.abort();
         if (current.retryTimer) clearTimeout(current.retryTimer);
@@ -343,6 +388,6 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrStatusDetails = { render, update, stop, anchorOf };
+    JE.internals.arrStatusDetails = { render, update, stop, anchorOf, repaint };
     JE.initializeArrStatusDetails = initialize;
 })(window.JellyfinEnhanced);

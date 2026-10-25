@@ -118,9 +118,11 @@
      * @param {string|null} [stamp] Acquisition stamp (phase 4e).
      * @returns {void}
      */
-    function paint(card, status, stamp) {
-        const art = paintArt(card, artworkOn() ? status : null);
+    function paint(card, status, stamp, measuredBottom) {
         const host = card.querySelector('.cardScalable') || card.querySelector('.cardBox') || card;
+        const corner = badgeCorner();
+        const bottom = corner.includes('raised') ? (measuredBottom ?? raisedBottom(card, host)) : '';
+        const art = paintArt(card, artworkOn() ? status : null);
         const old = host.querySelector(':scope > .je-arr-badge');
         const shown = statusBadgesOn() ? status : null;
         const badge = shown || stamp ? JE.arrStatus.buildBadge(shown || null, stamp || null, { art }) : null;
@@ -128,19 +130,21 @@
             if (old) old.remove();
             return;
         }
-        for (const part of badgeCorner().split(' ')) badge.classList.add(`je-arr-badge-${part}`);
+        for (const part of corner.split(' ')) badge.classList.add(`je-arr-badge-${part}`);
         const raised = badge.classList.contains('je-arr-badge-raised');
-        if (raised && old?.style.bottom) badge.style.bottom = old.style.bottom;
+        if (raised && bottom) badge.style.bottom = bottom;
         if (old && old.outerHTML === badge.outerHTML) {
-            if (raised) raise(card, host, old);
             return;
         }
         if (old) old.remove();
         host.appendChild(badge);
         if (!raised) return;
-        raise(card, host, badge);
         // The tags may draw after the badge (their data still loading): measure once more.
-        setTimeout(() => { if (badge.isConnected) raise(card, host, badge); }, 1500);
+        setTimeout(() => {
+            if (!badge.isConnected || card.closest('.page.hide, .view.hide, [hidden]')) return;
+            const next = raisedBottom(card, host);
+            if (badge.style.bottom !== next) badge.style.bottom = next;
+        }, 1500);
     }
 
     /**
@@ -152,16 +156,7 @@
     function paintArt(card, status) {
         const host = card.querySelector('.cardImageContainer') || card.querySelector('.cardScalable');
         if (!host) return false;
-        const old = host.querySelector(':scope > .je-arr-art');
-        const art = status ? JE.arrStatus.buildArtworkProgress(status) : null;
-        if (!art) {
-            if (old) old.remove();
-            return false;
-        }
-        if (old && old.dataset.jeArrArt === art.dataset.jeArrArt) return true;
-        if (old) old.replaceWith(art);
-        else host.appendChild(art);
-        return true;
+        return JE.arrStatus.paintArtwork(host, status);
     }
 
     /** JE's poster tag groups. */
@@ -177,7 +172,7 @@
      * @param {HTMLElement} badge Badge.
      * @returns {void}
      */
-    function raise(card, host, badge) {
+    function raisedBottom(card, host) {
         const box = host.getBoundingClientRect();
         let top = Infinity;
         card.querySelectorAll(TAG_GROUPS).forEach(group => {
@@ -188,7 +183,19 @@
         });
         const lift = Number.isFinite(top) ? Math.ceil(box.bottom - top) + 4 : 0;
         const bottom = lift > 34 ? `${lift}px` : '';
-        if (badge.style.bottom !== bottom) badge.style.bottom = bottom;
+        return bottom;
+    }
+
+    /**
+     * Cards in visible views only; Jellyfin retains hidden pages in the document for Back.
+     * @param {string} [selector] Native card selector.
+     * @returns {Element[]} Visible-view cards.
+     */
+    function visibleCards(selector = '.card[data-id]') {
+        const pages = [...document.querySelectorAll('.page:not(.hide)')];
+        const roots = pages.length ? pages : [document];
+        return roots.flatMap(root => [...root.querySelectorAll(selector)])
+            .filter(card => !card.closest('.page.hide, .view.hide, [hidden]'));
     }
 
     /**
@@ -197,11 +204,12 @@
      * @returns {void}
      */
     function paintAll(ids) {
-        document.querySelectorAll('.card[data-id]').forEach(card => {
-            const id = cardId(card);
-            if (!id || !ids.has(id)) return;
-            const entry = cache.get(id);
-            paint(card, entry?.status || null, entry?.stamp || null);
+        const cards = visibleCards().filter(card => ids.has(cardId(card)));
+        const raised = badgeCorner().includes('raised');
+        const measured = cards.map(card => raised ? raisedBottom(card, card.querySelector('.cardScalable') || card.querySelector('.cardBox') || card) : '');
+        cards.forEach((card, index) => {
+            const entry = cache.get(cardId(card));
+            paint(card, entry?.status || null, entry?.stamp || null, measured[index]);
         });
     }
 
@@ -289,7 +297,7 @@
      */
     function idsOnPage() {
         const ids = new Set();
-        document.querySelectorAll('.card[data-id]').forEach(card => {
+        visibleCards().forEach(card => {
             const id = cardId(card);
             if (id) ids.add(id);
         });
@@ -365,7 +373,7 @@
     function scan() {
         if (!statusReadsOn() && !stampsOn()) return;
         if (!io) return;
-        document.querySelectorAll('.card[data-id][data-type]').forEach(card => {
+        visibleCards('.card[data-id][data-type]').forEach(card => {
             if (seen.has(card)) return;
             seen.add(card);
             if (!CARD_TYPES.has(card.getAttribute('data-type'))) return;
@@ -482,7 +490,7 @@
         const changed = new Set(list.map(u => (typeof u?.ItemId === 'string' ? u.ItemId.replace(/-/g, '').toLowerCase() : '')).filter(Boolean));
         const playback = list.some(u => u?.Played === true || !!u?.LastPlayedDate);
         let any = false;
-        document.querySelectorAll('.card[data-id]').forEach(card => {
+        visibleCards().forEach(card => {
             const id = cardId(card);
             if (!id) return;
             const type = card.getAttribute('data-type');
@@ -579,7 +587,7 @@
         started = true;
         io = new IntersectionObserver((entries) => {
             for (const entry of entries) {
-                if (!entry.isIntersecting) continue;
+                if (!entry.isIntersecting || entry.target.closest('.page.hide, .view.hide, [hidden]')) continue;
                 io.unobserve(entry.target);
                 const id = cardId(entry.target);
                 if (id) want(entry.target, id);
@@ -589,7 +597,9 @@
         const schedule = JE.helpers?.debounce ? JE.helpers.debounce(scan, 150) : scan;
         const handle = JE.helpers?.onBodyMutation?.('arr-status-cards', (mutations) => {
             for (const m of mutations) {
-                if (m.addedNodes && m.addedNodes.length) {
+                if (m.target?.closest?.('.page.hide, .view.hide, [hidden]')) continue;
+                if ([...(m.addedNodes || [])].some(node => node.nodeType === 1 &&
+                    (node.matches('.card[data-id]') || node.querySelector('.card[data-id]')))) {
                     schedule();
                     return;
                 }
@@ -597,7 +607,12 @@
         });
         if (lifecycle && handle) lifecycle.track(handle);
         // Leaving a page drops the titles only it showed (after the new page has rendered its cards).
-        const onNav = JE.core?.navigation?.onNavigate?.(() => setTimeout(() => prune(), 1000));
+        const onNav = JE.core?.navigation?.onNavigate?.(() => {
+            prune();
+            io.disconnect();
+            seen = new WeakSet();
+            schedule();
+        });
         if (lifecycle && onNav) lifecycle.track(onNav);
         listenUserData();
         setTimeout(scan, 400);

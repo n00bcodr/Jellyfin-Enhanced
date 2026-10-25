@@ -459,3 +459,20 @@ test('a retained card\'s sheet whose card was recycled for another title: a pres
   assert.equal(h.document.querySelector('.je-actions-sheet'), null);
   assert.equal(h.document.querySelector('.jellyseerr-season-modal'), null, 'no Report form');
 });
+
+test('arrival bursts: status-owned mutations do not rescan action hosts, while native mutations still do', async t => {
+  const h=setup(t);h.a.initialize();mount(h);await settle();
+  const frame=async()=>{await new Promise(resolve=>h.window.requestAnimationFrame(resolve));await settle();};
+  await frame();await frame();
+  let scans=0;const query=h.document.querySelectorAll.bind(h.document);
+  h.document.querySelectorAll=selector=>{if(selector.includes('.jellyseerr-card'))scans++;return query(selector);};
+  const status=h.document.createElement('div');status.className='je-arr-status';h.document.body.append(status);
+  await frame();assert.equal(scans,0,'a status block is unrelated to action hosts');
+  const art=h.document.createElement('div');art.className='je-arr-art';status.append(art);await frame();
+  art.classList.add('je-arr-art-almost');art.setAttribute('aria-label','Almost ready');await frame();
+  status.remove();await frame();
+  const badge=h.document.createElement('div');badge.className='je-arr-badge';h.document.body.append(badge);await frame();badge.remove();await frame();
+  assert.equal(scans,0,'ring changes and ready cleanup do not enqueue global scans');
+  const native=h.document.createElement('div');native.className='native-host-change';h.document.body.append(native);await frame();
+  assert.ok(scans>0,'native host changes still reconcile');
+});
