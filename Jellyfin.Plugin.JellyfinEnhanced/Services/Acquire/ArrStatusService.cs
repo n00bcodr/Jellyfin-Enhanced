@@ -74,7 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
             _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
             _responseGate = new ResponseGate(view, _config, () => _libraries.Parental?.EvidenceRevision ?? "-");
-            _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
+            _aliases = new TitleAliases(store, requests as SeerrFacts);
             // Edition availability credits only what a finished lookup found (Ready and fulfilment never ride on a guess).
             Editions = new EditionAvailability(view, _config, (key, viewer) => CopiesOf(key, viewer).Display);
         }
@@ -102,7 +102,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// cannot see are left out) and titles by key (movie and series keys).
         /// </summary>
         public Task<StatusBody> ForBatchAsync(StatusViewer viewer, IReadOnlyList<Guid> ids, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForBatchAsyncFactsCore(viewer, ids, keys, cancellationToken));
+
+        private Task<StatusBody> ForBatchAsyncFactsCore(StatusViewer viewer, IReadOnlyList<Guid> ids, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var titleKeys = keys.Where(k => !k.Season.HasValue).Distinct().ToList();
             return GatedAsync(
                 viewer,
@@ -130,6 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The cards body from gathered facts, for the viewer past the final gate.</summary>
         private StatusBody BatchBody(StatusViewer viewer, List<JfItemRef> items, List<TitleKey> titleKeys, Gathered gather)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var cacheKey = CacheKey(viewer, "batch", string.Join(",", items.Select(i => i.ItemId.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal))
                 + "|" + string.Join(",", titleKeys.Select(k => k.ToString()).OrderBy(x => x, StringComparer.Ordinal)), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
@@ -208,6 +213,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// details page of a person, collection or album costs one cheap request and no error.
         /// </summary>
         public Task<StatusBody> ForItemAsync(StatusViewer viewer, Guid itemId, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForItemAsyncFactsCore(viewer, itemId, cancellationToken));
+
+        private Task<StatusBody> ForItemAsyncFactsCore(StatusViewer viewer, Guid itemId, CancellationToken cancellationToken)
             => GatedAsync(
                 viewer,
                 v => PrepareItemAsync(v, itemId, load: true, cancellationToken),
@@ -228,8 +236,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The item as the viewer (past the final gate) can open it now, when its facts were read; else null.</summary>
         private JfItemRef? ItemNow(StatusViewer viewer, Guid itemId, Gathered gather)
-            => _view.Resolve(itemId, viewer) is { Key: not null } item && gather.Facts.ContainsKey(item.Key.Title) ? item : null;
-
+        {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _view.Resolve(itemId, viewer) is { Key: not null } item && gather.Facts.ContainsKey(item.Key.Title) ? item : null;
+        }
         /// <summary>The details-page body of one item from gathered facts, for the viewer past the final gate.</summary>
         private StatusBody ItemBody(StatusViewer viewer, JfItemRef item, Gathered gather)
         {
@@ -275,6 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The details-page status of one resolved item from gathered facts (no caching).</summary>
         private TitleStatus ComposeItem(StatusViewer viewer, JfItemRef item, Gathered gather)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var title = item.Key!.Title;
             ApplyRequests(gather, viewer);
             var c = Context(viewer);
@@ -291,21 +302,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             switch (item.Kind)
             {
                 case "movie":
-                {
-                    var copies = Shown(facts, CopiesOf(title, viewer));
-                    status = StatusComposer.Movie(facts, item, copies, c, detail: true, qualifying: Playing(viewer, copies));
-                    // Get 4K is pointless when a copy the viewer can open (this one or another library's) has a 4K source.
-                    if (Editions.Movie(viewer, copies, Edition.FourK).Count > 0) status.FourK = true;
-                    break;
-                }
+                    {
+                        var copies = Shown(facts, CopiesOf(title, viewer));
+                        status = StatusComposer.Movie(facts, item, copies, c, detail: true, qualifying: Playing(viewer, copies));
+                        // Get 4K is pointless when a copy the viewer can open (this one or another library's) has a 4K source.
+                        if (Editions.Movie(viewer, copies, Edition.FourK).Count > 0) status.FourK = true;
+                        break;
+                    }
                 case "series":
-                {
-                    // The page's own folder, read once for the page and every binding of it (a Sonarr sharing the folder).
-                    var folder = c.FolderOf!(item.ItemId);
-                    status = StatusComposer.Series(facts, item, c.EpisodesOf!(item.ItemId), folder.Seasons, c, detail: true, seriesCopies, page);
-                    status.AskedSeasons = AskedSeasons(facts);
-                    break;
-                }
+                    {
+                        // The page's own folder, read once for the page and every binding of it (a Sonarr sharing the folder).
+                        var folder = c.FolderOf!(item.ItemId);
+                        status = StatusComposer.Series(facts, item, c.EpisodesOf!(item.ItemId), folder.Seasons, c, detail: true, seriesCopies, page);
+                        status.AskedSeasons = AskedSeasons(facts);
+                        break;
+                    }
                 case "season":
                     status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? c.FolderOf!(sid).EpisodesOf(item.Season, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies, page, seriesItem,
                         elsewhere: item.SeriesId is Guid own && item.Season is int number ? () => PlayedElsewhere(seriesCopies, own, number, viewer) : null);
@@ -423,7 +434,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var numbers = (intent.Episodes ?? Array.Empty<int>()).Distinct().OrderBy(n => n).ToArray();
                 var command = new PressCommand
                 {
-                    Route = route, Page = itemId, Title = pressed, Season = season, Episodes = numbers, Copy = bound?.Role, Edition = edition,
+                    Route = route,
+                    Page = itemId,
+                    Title = pressed,
+                    Season = season,
+                    Episodes = numbers,
+                    Copy = bound?.Role,
+                    Edition = edition,
                     Seasons = seerr && route == PressChecks.Ask ? input!.Seasons.Distinct().OrderBy(n => n).ToArray() : null,
                     Declared = route switch { PressChecks.Ask => intent.Dest, PressChecks.Admin => intent.Instance, _ => null },
                 };
@@ -433,12 +450,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         if (!seerr && destination == null) return PressProof.Changed;
                         return new PressProof(null, command with { Instance = destination });
                     case PressChecks.Household:
-                    {
-                        // The binding's own Sonarr; a title-wide Search runs where its caller chose (one of the title's copies).
-                        var on = bound?.Route ?? destination;
-                        if (on == null || (destination != null && !string.Equals(on, destination, StringComparison.OrdinalIgnoreCase))) return PressProof.Changed;
-                        return Searched(gather, command with { Instance = on }, subset);
-                    }
+                        {
+                            // The binding's own Sonarr; a title-wide Search runs where its caller chose (one of the title's copies).
+                            var on = bound?.Route ?? destination;
+                            if (on == null || (destination != null && !string.Equals(on, destination, StringComparison.OrdinalIgnoreCase))) return PressProof.Changed;
+                            return Searched(gather, command with { Instance = on }, subset);
+                        }
                     default:
                         return destination == null ? PressProof.Changed : Searched(gather, command with { Instance = destination }, null);
                 }
@@ -486,6 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private static PressProof Searched(Gathered gather, PressCommand command, IReadOnlyCollection<int>? subset)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var numbers = subset?.Distinct().OrderBy(n => n).ToArray() ?? command.Episodes.ToArray();
             if (numbers.Length == 0 || numbers.Any(n => !command.Episodes.Contains(n))) return PressProof.Changed;
             // Only the lists this check read from the instance itself (never one held from before the check).
@@ -563,6 +581,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// may not ask about it by key (see <see cref="MayAskByKey"/>).
         /// </summary>
         public Task<StatusBody> ForKeyDetailAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForKeyDetailAsyncFactsCore(viewer, key, cancellationToken));
+
+        private Task<StatusBody> ForKeyDetailAsyncFactsCore(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
         {
             var title = key.Title;
             return GatedAsync(
@@ -587,6 +608,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// viewer may not ask about the title by key.
         /// </summary>
         public Task<StatusBody> ForAbsentAsync(StatusViewer viewer, AbsentTitle page, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForAbsentAsyncFactsCore(viewer, page, cancellationToken));
+
+        private Task<StatusBody> ForAbsentAsyncFactsCore(StatusViewer viewer, AbsentTitle page, CancellationToken cancellationToken)
         {
             var title = page.Title.Title;
             // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer as they
@@ -621,7 +645,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <param name="episodes">Single episodes.</param>
         /// <param name="fourK">The 4K edition.</param>
         /// <param name="cancellationToken">Cancellation.</param>
-        internal async Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
+        internal Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForPartAsyncFactsCore(viewer, key, seasons, episodes, fourK, cancellationToken));
+
+        private async Task<StatusBody> ForPartAsyncFactsCore(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
         {
             var title = key.Title;
             return await GatedAsync(viewer,
@@ -649,6 +676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private TitleStatus? ComposeAbsent(StatusViewer viewer, AbsentTitle page, Gathered gather, RequestFacts? episodeRequests)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var title = page.Title.Title;
             var lookup = CopiesOf(title, viewer);
             if (!MayAskByKey(viewer, title, lookup)) return null;
@@ -856,6 +884,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The answer of <see cref="SearchableInstanceAsync"/> from gathered facts, for the viewer past the final gate.</summary>
         private (string? InstanceId, bool Sent) SearchableInstance(StatusViewer viewer, TitleKey key, string? instanceId, Gathered gather)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var title = key.Title;
             ApplyRequests(gather, viewer);
             if (!gather.Facts.TryGetValue(title, out var facts)) return (null, false);
@@ -973,6 +1002,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The answer of <see cref="SearchableEpisodesAsync"/> from gathered facts, for the viewer past the final gate.</summary>
         private IReadOnlyList<SearchableEpisodes> SearchableEpisodesOf(StatusViewer viewer, TitleKey key, int max, Func<int, int, bool>? searched, SearchView view, Gathered gather, ComposeContext c)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var result = new List<SearchableEpisodes>();
             var title = key.Title;
             ApplyRequests(gather, viewer);
@@ -1007,7 +1037,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// where Sonarr has got to with that season or episode, not the whole series. Reads the
         /// series' episodes from the arr when they aren't in memory (administrators only).
         /// </summary>
-        internal async Task<StatusBody> ForScopeKeyAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        internal Task<StatusBody> ForScopeKeyAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForScopeKeyAsyncFactsCore(viewer, key, cancellationToken));
+
+        private async Task<StatusBody> ForScopeKeyAsyncFactsCore(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
         {
             if (key.IsMovie || key.Season is not int season) return await ForKeyDetailAsync(viewer, key, cancellationToken).ConfigureAwait(false);
             var title = key.Title;
@@ -1021,6 +1054,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The answer of <see cref="ForScopeKeyAsync"/> from gathered facts, for the viewer past the final gate.</summary>
         private StatusBody ScopeKeyBody(StatusViewer viewer, TitleKey key, int season, Gathered gather)
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var title = key.Title;
             var cacheKey = CacheKey(viewer, "scope", key.ToString(), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
@@ -1088,7 +1122,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// tells the caller to prepare it again. <paramref name="responseGate"/> wraps the cache lookup and the build
         /// (a caller's own final gate).
         /// </remarks>
-        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
+        internal Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForTitlesAsyncFactsCore(viewer, keys, route, what, build, cancellationToken, scopes, loadEpisodes, presentation, presentationRevision, responseGate, editions));
+
+        private async Task<StatusBody> ForTitlesAsyncFactsCore(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null, Func<Func<StatusBody>, StatusBody>? responseGate = null, IReadOnlyDictionary<(TitleKey Key, bool FourK), RequestScope>? editions = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
             // As in GatedAsync: a page composed from a lookup that reached its bound is answered, never cached.
@@ -1144,6 +1181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private KeyedStatus Scoped(StatusViewer viewer, Gathered gather, KeyedStatus whole, RequestScope scope, ComposeContext? context = null)
         {
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var whose = gather.Facts[whole.Key];
             var c = context ?? Context(viewer);
             var lookup = CopiesOf(whole.Key, viewer);
@@ -1291,6 +1329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null, ComposeContext? context = null)
         {
+            using var __factsOperation10 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var facts = gather.Facts[key];
             var lookup = CopiesOf(key, viewer);
             if (!MayAskByKey(viewer, key, lookup)) return null;
@@ -1485,6 +1524,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private void ApplyRequests(Gathered gathered, StatusViewer viewer)
         {
+            using var __factsOperation11 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             foreach (var (key, facts) in gathered.Facts) facts.Request = _requests.For(key, viewer);
         }
 
@@ -1571,7 +1611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private string HandoffEpoch(StatusViewer viewer, PluginConfiguration? config)
         {
-            if (HandoffGrace(config) is not TimeSpan grace || _requests is not SeerrRequestReadModel model) return string.Empty;
+            if (HandoffGrace(config) is not TimeSpan grace || _requests is not SeerrFacts model) return string.Empty;
             var wait = viewer.IsAdmin ? grace : TimeSpan.FromHours(Math.Clamp(config?.ArrStatusLookingHours ?? 24, 1, 720));
             var before = _now().UtcDateTime - wait;
             var count = 0;
@@ -1613,11 +1653,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private sealed class Gathered
         {
-            public Dictionary<TitleKey, TitleFacts> Facts { get; } = new();
-
+            public Dictionary<TitleKey, TitleFacts> Facts { get => _factsFactsOwner.Read(ref _factsFactsStorage, () => default!); }
             /// <summary>The Jellyfin copies of each title, as the viewer the facts were gathered for could open them.</summary>
-            public Dictionary<TitleKey, CopyLookup> Copies { get; } = new();
-
+            public Dictionary<TitleKey, CopyLookup> Copies { get => _copiesFactsOwner.Read(ref _copiesFactsStorage, () => default!); }
             public string Revision { get; set; } = string.Empty;
 
             /// <summary>A press's check couldn't read completely now an arr fact of an instance it depends on (see <see cref="GatherAsync"/>).</summary>
@@ -1627,7 +1665,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             /// A press's check: the episode lists read from the arrs for it (instance id, Sonarr series id, the list), the only
             /// source of a Search command's episode ids (D53, edition round 21); never shown to anyone.
             /// </summary>
-            public List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)> CheckedEpisodes { get; } = new();
+            public List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)> CheckedEpisodes { get => _checkedEpisodesFactsOwner.Read(ref _checkedEpisodesFactsStorage, () => default!); }
+            private Dictionary<TitleKey, TitleFacts> _factsFactsStorage = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<TitleKey, TitleFacts>> _factsFactsOwner = new(prepared: true);
+            private Dictionary<TitleKey, CopyLookup> _copiesFactsStorage = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<TitleKey, CopyLookup>> _copiesFactsOwner = new(prepared: true);
+            private List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)> _checkedEpisodesFactsStorage = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)>> _checkedEpisodesFactsOwner = new(prepared: true);
         }
 
         /// <summary>
@@ -1642,6 +1686,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct, Func<ArrConnection, bool>? fresh = null)
         {
+            using var __factsOperation12 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var result = new Gathered();
             var distinct = titles.Distinct().ToList();
             foreach (var t in distinct) result.Facts[t] = new TitleFacts(t);

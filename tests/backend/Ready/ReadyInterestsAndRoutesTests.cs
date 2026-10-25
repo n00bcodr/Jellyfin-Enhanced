@@ -30,7 +30,7 @@ public class ReadyInterestsAndRoutesTests
         var notify = new NotifyStore(r.Db);
         var config = JeMode();
         using var seerr = new FakeSeerr();
-        var model = new SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(() => r.Now), null, () => config, () => r.Now);
+        var model = new SeerrFacts(seerr.Transport, new ArrChangeFeed(() => r.Now), null, () => config, () => r.Now);
         var source = new ReadyInterestSource(r.Ledger, model, notify, null, () => config);
 
         r.Policy.People[r.Member] = r.Policy.People[r.Member] with { Can4k = true };

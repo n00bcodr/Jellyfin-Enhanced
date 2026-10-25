@@ -76,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect(ct);
             // The guard runs before any upstream contact, and again right before every write and search.
             if (finalGuard() is { } refusal) return AutomationHolds.IsWait(refusal) ? BackendResults.Held(job.WantId, false, refusal, "Automatic requests are held (" + refusal + ").", AutomationHolds.WaitFor(refusal)) : RequestBackendResult.Hold(refusal);
             var key = TitleKey.Parse(job.Input.Key);
@@ -91,6 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public async Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect(ct);
             var key = TitleKey.Parse(job.Input.Key);
             if (key == null) return BackendResults.Maybe(job.WantId, "The request's title key can't be read back.", "invalid_input");
             // Read-back uses the original connection: a changed URL or key can't prove anything about it.

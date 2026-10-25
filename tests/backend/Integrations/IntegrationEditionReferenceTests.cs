@@ -160,7 +160,7 @@ public class IntegrationEditionReferenceTests
             "no 4K" => new JsonArray(standard),
             _ => null,
         };
-        var model = new SeerrRequestReadModel(fake.Transport, null, null, () => config, () => rig.Arr.Now);
+        var model = new SeerrFacts(fake.Transport, null, null, () => config, () => rig.Arr.Now);
         var service = WithSeerr(rig, new SeerrBackend(fake.Transport, model, null, () => config, () => rig.Arr.Now));
 
         var fourK = CopyOf(await Page(service, rig.Member, M.SeasonPage(rig, rig.UhdCopy)));

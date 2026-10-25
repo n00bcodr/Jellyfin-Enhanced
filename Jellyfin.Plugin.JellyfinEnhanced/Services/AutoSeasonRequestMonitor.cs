@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,7 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True when the feature can act: Seerr requests (phase 3 off) or the request ledger (phase 3 on).
         private bool CanRun(PluginConfiguration? config)
-            => config is { AutoSeasonRequestEnabled: true } && (config.JellyseerrEnabled || (_recorder != null && AutoRequestRecorder.Active(config)));
+            => config is { AutoSeasonRequestEnabled: true } && ((EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled) || (_recorder != null && AutoRequestRecorder.Active(config)));
 
         private readonly object _subscriptionLock = new();
         private bool _subscribed;
@@ -103,7 +104,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // The recipe worker: one trigger at a time; the gate's cooldown starts only after a definitive outcome.
-        private async Task ProcessAsync(PlaybackTrigger trigger, CancellationToken ct)
+        private Task ProcessAsync(PlaybackTrigger trigger, CancellationToken ct)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => ProcessAsyncFactsCore(trigger, token), ct);
+
+        private async Task ProcessAsyncFactsCore(PlaybackTrigger trigger, CancellationToken ct)
         {
             if (!_gate.TryBegin(trigger.Key)) return;
             var outcome = AutoRequestOutcome.Cancelled();

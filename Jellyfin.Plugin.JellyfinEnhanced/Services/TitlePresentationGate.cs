@@ -29,8 +29,8 @@ public static class TitlePresentationGate
     public static TitlePresentationPolicy Read(UserConfigurationManager manager, SpoilerPresentation? spoilers, Guid viewer, ILibraryManager? library = null)
     {
         lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
-        lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
-            return new(HiddenContentPolicy.Load(manager, viewer, library: library), spoilers?.Load(viewer));
+            lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
+                return new(HiddenContentPolicy.Load(manager, viewer, library: library), spoilers?.Load(viewer));
     }
 
     /// <summary>
@@ -40,8 +40,8 @@ public static class TitlePresentationGate
     public static string Revision(UserConfigurationManager manager, SpoilerPresentation? spoilers, Guid viewer)
     {
         lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
-        lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
-            return HiddenContentPolicy.Load(manager, viewer).Revision + "|" + spoilers?.StateRevision(viewer);
+            lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
+                return HiddenContentPolicy.Load(manager, viewer).Revision + "|" + spoilers?.StateRevision(viewer);
     }
 }
 
@@ -111,7 +111,7 @@ public static class NativeResponseValue
                 break;
             case IEnumerable<BaseItemDto> list:
                 // The answer keeps its own sequence shape (an array stays an array).
-                result.Value = list is BaseItemDto[] ? Mapped(list) : Mapped(list).ToList();
+                result.Value = list is BaseItemDto[]? Mapped(list) : Mapped(list).ToList();
                 break;
             case AllThemeMediaResult all:
                 foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
@@ -592,7 +592,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     private static bool IsJellyfinEnhanced(ActionContext context)
         => context.ActionDescriptor is ControllerActionDescriptor action && action.ControllerTypeInfo.Assembly == typeof(TitlePresentationResultFilter).Assembly;
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedUnclassified = new(StringComparer.Ordinal);
+    private static System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedUnclassified = new(StringComparer.Ordinal);
 
     private void WarnUnclassified(ActionContext context, object value)
     {

@@ -1,16 +1,17 @@
 using System;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
     // One consumer publication fence, shared with every real configuration commit. No lock crosses an await.
-    // E1 join: replace this adapter's capture/commit owner with Current.Epoch/PublishSeerr (for Seerr origins)
-    // and the matching effective-snapshot publication for JE origins. Preserve every caller and provenance.
-    internal sealed record ListMetadataEpoch(JellyfinEnhanced? Plugin, long Generation, string Identity)
+    // Preserve the original effective snapshot through every cache read and publication.
+    internal sealed record ListMetadataEpoch(JellyfinEnhanced? Plugin, long Generation, string Identity, EffectiveBackendSnapshot Backend)
     {
         internal static ListMetadataEpoch Capture()
         {
+            var backend = EffectiveRequestsBackend.Shared.Current;
             lock (JellyfinEnhanced.AnalyticsCredentialLock)
             {
                 var plugin = JellyfinEnhanced.Instance;
@@ -18,7 +19,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var identity = string.Join('|', c?.ArrRequestBackend, c?.ArrIntegrationEnabled, c?.ArrPhase1Enabled,
                     c?.ArrPhase3Enabled, c?.JellyseerrEnabled, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(c?.GetTmdbApiKey() ?? string.Empty))),
                     SeerrAddresses.Identity(SeerrAddresses.Parse(c?.JellyseerrUrls), c?.GetJellyseerrApiKey() ?? string.Empty));
-                return new(plugin, c?.ConfigurationGeneration ?? 0, identity);
+                return new(plugin, c?.ConfigurationGeneration ?? 0, identity, backend);
             }
         }
 
@@ -28,10 +29,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // Lifecycle precedes this lock when both are needed; configuration commits never acquire Lifecycle.
         internal T Publish<T>(Func<T> effect, Func<T> refused)
         {
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            using var publication = SeerrFacts.BeginPublication();
+            publication.EnlistEffective(Backend);
+            try
             {
-                return IsCurrent ? effect() : refused();
+                return publication.Publish(() =>
+                {
+                    lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                        return IsCurrent ? effect() : refused();
+                });
             }
+            catch (BackendDisabledException) { return refused(); }
         }
     }
 }

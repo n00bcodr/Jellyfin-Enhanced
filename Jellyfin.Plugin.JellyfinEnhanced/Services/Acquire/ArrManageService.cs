@@ -333,7 +333,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>The drawer's Overview for a title (administrators only; the caller checks).</summary>
-        public async Task<ManageResponse> OverviewAsync(StatusViewer viewer, TitleKey key, JfItemRef? item, CancellationToken cancellationToken)
+        public Task<ManageResponse> OverviewAsync(StatusViewer viewer, TitleKey key, JfItemRef? item, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => OverviewAsyncFactsCore(viewer, key, item, cancellationToken));
+
+        private async Task<ManageResponse> OverviewAsyncFactsCore(StatusViewer viewer, TitleKey key, JfItemRef? item, CancellationToken cancellationToken)
         {
             var title = key.Title;
             var statusBody = item != null
@@ -471,8 +474,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 };
             }
 
-            var requests = _requests is SeerrRequestReadModel model ? model.ForTitle(title) : Array.Empty<SeerrRequestRecord>();
-            name ??= _requests is SeerrRequestReadModel m && requests.FirstOrDefault() is { } first ? m.Meta(first.IsMovie, first.TmdbId)?.Title : null;
+            var requests = _requests is SeerrFacts model ? model.ForTitle(title) : Array.Empty<SeerrRequestRecord>();
+            name ??= _requests is SeerrFacts m && requests.FirstOrDefault() is { } first ? m.Meta(first.IsMovie, first.TmdbId)?.Title : null;
             return new ManageResponse
             {
                 Key = key.ToString(),

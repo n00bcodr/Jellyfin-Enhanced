@@ -164,7 +164,7 @@ public class IntegrationAcquisitionStampFeedTests
     [Fact]
     public async Task LifetimeExtensionReactivatesAStoredExpiredFactExactlyOnce()
     {
-        using var w = new StampWorld(live: true);
+        using var w = new StampWorld(live: true, controlledClock: true);
         var movie = w.AddMovie(StampWorld.Movie(603), w.Now.AddYears(-1));
         w.Store.AddNew(Guid.NewGuid(), movie, w.Now.AddDays(-8), "follow");
         await w.Feeder.TickAsync(default);

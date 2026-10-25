@@ -114,7 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ConcurrentDictionary<Guid, byte> _changedItems = new();
         private readonly ConcurrentDictionary<string, PassRequest> _queued = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, DateTime> _lastViewPass = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, PendingMatch> _pendingMatches = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, PendingMatch> _pendingMatches = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, DateTime> _lastForced = new(StringComparer.Ordinal);
         // Per placeholder (MatchKey): when the newest metadata applied to it was fetched. Passes read metadata outside the
         // list lock, so a pass holding an older read (e.g. the maintenance pass's cached one) must not overwrite what a
@@ -227,8 +227,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
 
         /// <summary>Gets the number of remembered "being added" matches (tests).</summary>
-        internal int PendingMatchCount => _pendingMatches.Count;
-
+        internal int PendingMatchCount
+        {
+            get
+            {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                return _pendingMatchesFacts.Count;
+            }
+        }
         private static bool Enabled => ListFlags.Lists(JellyfinEnhanced.Instance?.Configuration);
 
         // ── Scheduling ───────────────────────────────────────────────────────
@@ -303,19 +309,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="listIdN">List id.</param>
         /// <param name="placeholderId">Placeholder id.</param>
         /// <returns>The item id or null.</returns>
-        public Guid? GetPendingMatch(string listIdN, string placeholderId) =>
-            _pendingMatches.TryGetValue(MatchKey(listIdN, placeholderId), out var match) && !IsExpired(match) ? match.ItemId : null;
-
+        public Guid? GetPendingMatch(string listIdN, string placeholderId)
+        {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _pendingMatchesFacts.TryGetValue(MatchKey(listIdN, placeholderId), out var match) && !IsExpired(match) ? match.ItemId : null;
+        }
         /// <summary>Drops everything queued or remembered for a deleted list.</summary>
         /// <param name="listIdN">List id.</param>
         public void ForgetList(string listIdN)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _queued.TryRemove(listIdN, out _);
             _lastViewPass.TryRemove(listIdN, out _);
             _ownerlessLogged.TryRemove(listIdN, out _);
-            foreach (var key in _pendingMatches.Keys.Where(k => k.StartsWith(listIdN + "|", StringComparison.Ordinal)).ToList())
+            foreach (var key in _pendingMatchesFacts.Keys.Where(k => k.StartsWith(listIdN + "|", StringComparison.Ordinal)).ToList())
             {
-                _pendingMatches.TryRemove(key, out _);
+                _pendingMatchesFacts.TryRemove(key, out _);
             }
 
             foreach (var key in _lastForced.Keys.Where(k => k.StartsWith(listIdN + "|", StringComparison.Ordinal)).ToList())
@@ -399,13 +408,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>A task.</returns>
         internal async Task DrainAsync(CancellationToken cancellationToken)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // F11: a match whose placeholder went away (deleted, dropped by a sync, relinked) is never settled by a pass;
             // it's invisible once its grace has ended, so it goes then.
-            foreach (var pair in _pendingMatches)
+            foreach (var pair in _pendingMatchesFacts)
             {
                 if (IsExpired(pair.Value))
                 {
-                    _pendingMatches.TryRemove(pair);
+                    _pendingMatchesFacts.TryRemove(pair);
                 }
             }
 
@@ -601,6 +611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CancellationToken cancellationToken,
             ListAccess? onBehalfOf = null)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
             // judged again by the gate before every write (each one waits for Jellyfin).
             var current = _host.GetList(list.Id);
@@ -667,7 +678,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     {
                         // An ownerless playlist (Jellyfin keeps an open-access one whose owner was deleted): nothing can
                         // be added as its owner, so a match must not show as "being added".
-                        _pendingMatches.TryRemove(MatchKey(context.ListIdN, placeholderId), out _);
+                        _pendingMatchesFacts.TryRemove(MatchKey(context.ListIdN, placeholderId), out _);
                         if (_ownerlessLogged.TryAdd(context.ListIdN, 0))
                         {
                             _logger.Info($"[Lists] Playlist {context.ListIdN} has no owner any more; its placeholders can't be swapped in.");
@@ -1370,15 +1381,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // the retry.
         private void SettlePendingMatch(PassContext context, string placeholderId, Placeholder? placeholder, bool ok)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = MatchKey(context.ListIdN, placeholderId);
-            if (!_pendingMatches.TryGetValue(key, out var match))
+            if (!_pendingMatchesFacts.TryGetValue(key, out var match))
             {
                 return;
             }
 
             if (!ok)
             {
-                _pendingMatches.TryUpdate(key, match with { SeenUtc = UtcNow() }, match);
+                _pendingMatchesFacts.TryUpdate(key, match with { SeenUtc = UtcNow() }, match);
                 return;
             }
 
@@ -1388,7 +1400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 || _host.GetRawEntries(context.List.Id).Any(e => e.ItemId == match.ItemId);
             if (accounted || IsExpired(match))
             {
-                _pendingMatches.TryRemove(KeyValuePair.Create(key, match));
+                _pendingMatchesFacts.TryRemove(KeyValuePair.Create(key, match));
             }
         }
 
@@ -1396,11 +1408,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private void Retire(PassContext context, Placeholder placeholder, IReadOnlyCollection<string>? itemIds = null)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             context.Doc.Items.Remove(placeholder);
             context.Doc.Order.Remove(ListOrder.PlaceholderToken(placeholder.Id));
             // After the removal: a sync-owned key then owns only the items (F1).
             ListSourceOwnership.OnSwapped(context.Doc, placeholder, itemIds ?? Array.Empty<string>());
-            _pendingMatches.TryRemove(MatchKey(context.ListIdN, placeholder.Id), out _);
+            _pendingMatchesFacts.TryRemove(MatchKey(context.ListIdN, placeholder.Id), out _);
             context.Retired++;
             context.Dirty = true;
             if (PlaceholderProgress.IsEpisodeFill(placeholder) && itemIds == null && placeholder.Filled.Count > 0)
@@ -1683,6 +1696,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private void MapRefs(LibraryItemFacts facts, HashSet<PlaceholderRef> refs)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             foreach (var reference in refs)
             {
                 var doc = SafeLoad(reference.ListId);
@@ -1704,7 +1718,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 };
                 if (matches && (collection || HasOwner(reference.ListId)) && !IsAccounted(doc, placeholder, facts))
                 {
-                    _pendingMatches[MatchKey(reference.ListId, placeholder.Id)] = new PendingMatch(facts.Id, UtcNow());
+                    _pendingMatchesFacts[MatchKey(reference.ListId, placeholder.Id)] = new PendingMatch(facts.Id, UtcNow());
                 }
                 else if (facts.Kind is BaseItemKind.Movie or BaseItemKind.Episode)
                 {
@@ -2109,5 +2123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return new PassRequest(ids, Mode | other.Mode);
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, PendingMatch>> _pendingMatchesFactsOwner = new();
+        private ConcurrentDictionary<string, PendingMatch> _pendingMatchesFacts { get => _pendingMatchesFactsOwner.Read(ref _pendingMatches, () => new(StringComparer.Ordinal)); set => _pendingMatchesFactsOwner.Store(ref _pendingMatches, value); }
     }
 }

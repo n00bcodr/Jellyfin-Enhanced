@@ -41,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly ConcurrentDictionary<Guid, byte> _deleted = new();
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
-        private volatile Index? _index;
+        private Index? _index;
         private long _revision;
 
         /// <summary>Creates the store (DI).</summary>
@@ -347,7 +347,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>Drops the in-memory index; the next read loads it again.</summary>
         public void Reload()
         {
-            lock (_gate) _index = null;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            lock (_gate) _indexFacts = null;
             Interlocked.Increment(ref _revision);
         }
 
@@ -498,16 +499,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private Index? Current()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!_db.Available) return null;
-            var index = _index;
+            var index = _indexFacts;
             var generation = _db.Generation;
             if (index != null && index.Generation == generation) return index;
             lock (_gate)
             {
-                index = _index;
+                index = _indexFacts;
                 if (index != null && index.Generation == generation) return index;
                 index = Load(generation);
-                _index = index;
+                _indexFacts = index;
                 Interlocked.Increment(ref _revision);
                 return index;
             }
@@ -579,5 +581,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             var result = cmd.ExecuteScalar();
             return result is DBNull ? null : result;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Index?> _indexFactsOwner = new();
+        private Index? _indexFacts { get => _indexFactsOwner.Read(ref _index, () => default!); set => _indexFactsOwner.Store(ref _index, value); }
     }
 }

@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         private readonly SourceReadLimits _limits;
         private readonly ISourceReadAdmission _admission;
         private readonly SemaphoreSlim _gate;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, CallerBudget> _callers = new(StringComparer.Ordinal);
 
         /// <summary>Creates the fetcher (singleton).</summary>
@@ -171,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <inheritdoc />
         public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var epoch = ListMetadataEpoch.Capture();
             // Provider switches and credentials are checked before the cache: a provider the admin just turned off stops
             // working at once, and nothing is sent to it.
@@ -180,7 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var cacheKey = epoch.Generation + "|" + source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
-            if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            if (!options.Fresh && _cacheFacts.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return epoch.Publish(() => cached.Result, Changed);
             }
@@ -228,7 +229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
                     {
                         PruneCache(result.Items.Count);
-                        _cache[cacheKey] = (readAt + CacheTtl, result);
+                        _cacheFacts[cacheKey] = (readAt + CacheTtl, result);
                     }
                     else if (!result.Ok)
                     {
@@ -1150,41 +1151,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             switch (type)
             {
                 case "movie":
-                {
-                    var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
-                    var (tmdb, imdb, _) = TraktIds(movie);
-                    return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
-                }
+                    {
+                        var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
+                        var (tmdb, imdb, _) = TraktIds(movie);
+                        return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
+                    }
 
                 case "show":
-                {
-                    var target = hasShow ? show : element;
-                    var (tmdb, imdb, tvdb) = TraktIds(target);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
-                }
+                    {
+                        var target = hasShow ? show : element;
+                        var (tmdb, imdb, tvdb) = TraktIds(target);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
+                    }
 
                 case "season":
-                {
-                    if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
+                    }
 
                 case "episode":
-                {
-                    if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
-                        || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
+                            || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
+                    }
 
                 default:
                     return SourceRow.Malformed;
@@ -1442,32 +1443,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 case "tvSeries" or "tvMiniSeries":
                     return SourceRow.Of(new SourceItem("tv", null, id, null, title, year, null, null, null));
                 case "tvEpisode":
-                {
-                    if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
-                        || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                     {
-                        return SourceRow.Malformed;
-                    }
-
-                    var showId = ValidImdb(Str(show, "id"));
-                    var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
-                    int? season = null;
-                    int? episode = null;
-                    if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
-                    {
-                        if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                        if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
+                            || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                         {
-                            season = sn;
+                            return SourceRow.Malformed;
                         }
 
-                        if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                        var showId = ValidImdb(Str(show, "id"));
+                        var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
+                        int? season = null;
+                        int? episode = null;
+                        if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
                         {
-                            episode = en;
-                        }
-                    }
+                            if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                            {
+                                season = sn;
+                            }
 
-                    return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
-                }
+                            if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                            {
+                                episode = en;
+                            }
+                        }
+
+                        return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
+                    }
 
                 case "movie" or "tvMovie" or "short" or "tvShort" or "video" or "tvSpecial":
                     return SourceRow.Of(new SourceItem("movie", null, id, null, title, year, null, null, null));
@@ -1881,15 +1882,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // the entry budgets hold (F29: a stream of distinct URLs can't grow the cache without bound).
         private void PruneCache(int incoming)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
             var count = 0;
             var items = incoming;
             var live = new List<KeyValuePair<string, (DateTime ExpiresUtc, SourceFetchResult Result)>>();
-            foreach (var entry in _cache)
+            foreach (var entry in _cacheFacts)
             {
                 if (entry.Value.ExpiresUtc <= now)
                 {
-                    _cache.TryRemove(entry.Key, out _);
+                    _cacheFacts.TryRemove(entry.Key, out _);
                     continue;
                 }
 
@@ -1905,7 +1907,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     break;
                 }
 
-                if (_cache.TryRemove(entry.Key, out var removed))
+                if (_cacheFacts.TryRemove(entry.Key, out var removed))
                 {
                     count--;
                     items -= removed.Result.Items.Count;
@@ -2063,5 +2065,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             public int? RetryAfter { get; } = retryAfter;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

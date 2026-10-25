@@ -211,7 +211,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private const int MaxEpisodeLoads = 20;
 
         private readonly ArrStatusService _status;
-        private readonly SeerrRequestReadModel _requests;
+        private readonly SeerrFacts _requests;
         private readonly Func<PluginConfiguration?> _config;
         private readonly RequestLedger? _ledger;
         private Configuration.UserConfigurationManager? _hidden;
@@ -221,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _meta;
 
         /// <summary>The service (DI): Seerr's requests in Seerr mode, the request ledger once Jellyfin Enhanced handles requests.</summary>
-        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection, Configuration.UserConfigurationManager? hidden = null, TitleAliases? aliases = null, MediaBrowser.Controller.Library.ILibraryManager? library = null, SpoilerPresentation? presentation = null)
+        public RequestsHubService(ArrStatusService status, SeerrFacts requests, RequestLedger ledger, RequestHubProjection projection, Configuration.UserConfigurationManager? hidden = null, TitleAliases? aliases = null, MediaBrowser.Controller.Library.ILibraryManager? library = null, SpoilerPresentation? presentation = null)
             : this(status, requests, null, ledger, projection.MetaAsync)
         {
             _hidden = hidden;
@@ -234,7 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The service with explicit configuration (tests). Without <paramref name="ledger"/> the page always lists
         /// Seerr's requests; <paramref name="meta"/> names the ledger's titles (Jellyfin item, else TMDB).
         /// </summary>
-        internal RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, Func<PluginConfiguration?>? config, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? meta = null)
+        internal RequestsHubService(ArrStatusService status, SeerrFacts requests, Func<PluginConfiguration?>? config, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? meta = null)
         {
             _status = status;
             _requests = requests;
@@ -255,7 +255,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <see cref="ArrStatusService.GateAttempts"/> times. Null (fail closed: the answer for a viewer who isn't
         /// there) when they were removed or disabled meanwhile, or still changing after the last attempt.
         /// </summary>
-        public async Task<StatusBody?> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
+        public Task<StatusBody?> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForViewerAsyncFactsCore(viewer, cancellationToken));
+
+        private async Task<StatusBody?> ForViewerAsyncFactsCore(StatusViewer viewer, CancellationToken cancellationToken)
         {
             for (var attempt = 1; attempt <= ArrStatusService.GateAttempts; attempt++)
             {
@@ -286,7 +289,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// scope) in one cached body under its own route. <paramref name="build"/> gets the entries and every composed
         /// title; <paramref name="what"/> names everything else the body depends on.
         /// </summary>
-        internal async Task<StatusBody> ForHomeAsync(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken, Func<Func<StatusBody>, StatusBody>? responseGate = null)
+        internal Task<StatusBody> ForHomeAsync(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken, Func<Func<StatusBody>, StatusBody>? responseGate = null)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => ForHomeAsyncFactsCore(viewer, what, extraKeys, build, cancellationToken, responseGate));
+
+        private async Task<StatusBody> ForHomeAsyncFactsCore(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken, Func<Func<StatusBody>, StatusBody>? responseGate = null)
         {
             var config = _config();
             var now = _status.Now.UtcDateTime;
@@ -567,11 +573,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var only4k = asked.All(r => r.Is4k);
             // Seerr's word on the variant asked for (a 4K request holds the 4K state), and its own match of the 4K copy
             // (a hint for Play: used only when the viewer can open it). A list entry's status reads the same composition.
-            var availability = SeerrRequestReadModel.AvailabilityOf(records);
+            var availability = SeerrFacts.AvailabilityOf(records);
             return new ArrStatusService.RequestScope(
                 seasons,
                 only4k,
-                SeerrRequestReadModel.FactsOf(records, userId),
+                SeerrFacts.FactsOf(records, userId),
                 availability.Available,
                 availability.AvailableAt,
                 availability.JellyfinItemId);

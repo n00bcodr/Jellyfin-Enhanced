@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly PosterTagUserCache _users;
         private readonly Logger _logger;
         private readonly object _buildLock = new();
-        private volatile Index? _index;
+        private Index? _index;
 
         // Bumped by every review write, so an index built from the file as it
         // was before a concurrent write is never served.
@@ -122,8 +122,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private void OnReviewsChanged()
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             Interlocked.Increment(ref _generation);
-            _index = null;
+            _indexFacts = null;
         }
 
         private bool IsCurrent(Index? index)
@@ -133,14 +134,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private Index GetIndex()
         {
-            var index = _index;
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var index = _indexFacts;
             if (IsCurrent(index)) return index!;
             lock (_buildLock)
             {
-                index = _index;
+                index = _indexFacts;
                 if (IsCurrent(index)) return index!;
                 index = Build(Interlocked.Read(ref _generation));
-                _index = index;
+                _indexFacts = index;
                 return index;
             }
         }
@@ -176,5 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             return new Index(byKey, DateTime.UtcNow, generation);
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Index?> _indexFactsOwner = new();
+        private Index? _indexFacts { get => _indexFactsOwner.Read(ref _index, () => default!); set => _indexFactsOwner.Store(ref _index, value); }
     }
 }

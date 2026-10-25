@@ -130,6 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         ("$id", id), ("$a", acquisition), ("$u", Id(item.UserId)), ("$client", client), ("$f", input.Fingerprint), ("$key", input.Key), ("$v", input.Variant),
                         ("$input", input.Canonical), ("$owned", input.Canonical), ("$status", item.Pending ? "pending" : "sent"), ("$r", item.Pending ? "awaiting_approval" : "looking"),
                         ("$target", targetKey(input)), ("$kind", RequestOrigin.SeerrImportKind), ("$source", sourceId), ("$request", requestId), ("$batch", batch), ("$created", Ms(asked)), ("$at", Ms(now)));
+                    AcceptActiveAliases(c, t, input.Key);
                     RememberInput(c, t, item.UserId, client, input.Fingerprint, id);
                     // A pending import holds a free reservation, so a later JE approval charges like any approval.
                     if (item.Pending) Reserve(c, t, id, item.UserId, 0, 0, "held", now, "initial");

@@ -43,7 +43,7 @@ public class IntegrationSeerrMigrationTests
             Seerr.Users.Add(new JsonObject { ["id"] = 2, ["permissions"] = 0 });
             Service = Build();
         }
-        public SeerrMigration Build() => new(new SeerrMigrationReader(Seerr.Transport), R.Ledger, R.Policy, R.View, null, R.Feed,
+        public SeerrMigration Build() => new(new SeerrFacts(Seerr.Transport), R.Ledger, R.Policy, R.View, null, R.Feed,
             () => R.Policy.Configuration, () => { SaveHook?.Invoke(); Saves++; }, () => R.Now);
         public void Rebuild() => Service = Build();
         public JsonObject Add(int id, string type, Guid user, int status = 1, int mediaStatus = 2, bool is4k = false, int[]? seasons = null, int? tmdb = null)
@@ -231,8 +231,8 @@ public class IntegrationSeerrMigrationTests
 
         // The process dies after the import committed but before the switch: a re-run only switches.
         var preview = await m.Service.PreviewAsync(CancellationToken.None);
-        var source = m.R.Ledger.OriginSource(SeerrMigrationReader.AddressFingerprint(m.R.Policy.Configuration));
-        var plan = SeerrMigration.Plan(await new SeerrMigrationReader(m.Seerr.Transport).ReadAsync(m.R.Policy.Configuration, CancellationToken.None), _ => true, k => k, new HashSet<int>());
+        var source = m.R.Ledger.OriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration));
+        var plan = SeerrMigration.Plan(await new SeerrFacts(m.Seerr.Transport).ReadAsync(m.R.Policy.Configuration, CancellationToken.None), _ => true, k => k, new HashSet<int>());
         var crashed = m.R.Ledger.ImportSeerr(source, preview.Digest!, plan.Items, plan.Skipped, m.R.Admin, "seerr", _ => "[\"je\",\"r1\",\"g1\",null]", m.R.Now, SeerrMigration.RollbackWindow);
         Assert.Equal(12, crashed.Imported);
         m.R.Reopen(); m.Rebuild();
@@ -286,7 +286,7 @@ public class IntegrationSeerrMigrationTests
         m.Add(1, "movie", user, tmdb: 77);
         m.Add(2, "tv", user, seasons: new[] { 3 });
         Assert.Equal(2, (await m.Commit()).Imported);
-        var source = m.R.Ledger.FindOriginSource(SeerrMigrationReader.AddressFingerprint(m.R.Policy.Configuration));
+        var source = m.R.Ledger.FindOriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration));
         Assert.NotNull(source);
 
         // Same Seerr, new key (and a reordered, slash-terminated address list): the same source, nothing imported twice.
@@ -295,7 +295,7 @@ public class IntegrationSeerrMigrationTests
         m.R.Policy.Configuration.ArrRequestBackend = "seerr";
         var rotated = await m.Commit();
         Assert.Equal((200, 0, 2), (rotated.HttpStatus, rotated.Imported, rotated.Skipped["already_imported"]));
-        Assert.Equal(source, m.R.Ledger.FindOriginSource(SeerrMigrationReader.AddressFingerprint(m.R.Policy.Configuration)));
+        Assert.Equal(source, m.R.Ledger.FindOriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration)));
 
         // Another Seerr reusing the same request ids: a new source, so its rows are not mistaken for the old
         // ones; an ask the person already has in JE is not duplicated, a new one is imported.
@@ -307,7 +307,7 @@ public class IntegrationSeerrMigrationTests
         var moved = await m.Commit();
         Assert.Equal((200, 1), (moved.HttpStatus, moved.Imported));
         Assert.Equal(1, moved.Skipped["already_in_je"]);
-        var newSource = m.R.Ledger.FindOriginSource(SeerrMigrationReader.AddressFingerprint(m.R.Policy.Configuration));
+        var newSource = m.R.Ledger.FindOriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration));
         Assert.NotEqual(source, newSource);
         Assert.Equal(1, m.Count("SELECT COUNT(*) FROM wants WHERE origin_source_id='" + newSource + "' AND origin_request_id='2' AND title_key='movie:tmdb:88'"));
         Assert.Equal(1, m.Count("SELECT COUNT(*) FROM wants WHERE origin_source_id='" + source + "' AND origin_request_id='2' AND title_key LIKE 'tv:%'"));
@@ -597,7 +597,7 @@ public class IntegrationSeerrMigrationTests
         var user = m.R.Add("Member");
         m.Add(1, "movie", user);
         var live = m.R.Policy.Configuration;
-        var service = new SeerrMigration(new SeerrMigrationReader(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed, () => live, () => { }, () => m.R.Now);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed, () => live, () => { }, () => m.R.Now);
         var digest = (await service.PreviewAsync(CancellationToken.None)).Digest;
         var saved = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration
         {
@@ -647,9 +647,9 @@ public class IntegrationSeerrMigrationTests
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content });
         });
         var config = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration { JellyseerrEnabled = true, JellyseerrUrls = FakeSeerr.Url, JellyseerrApiKey = FakeSeerr.Key };
-        var read = await new SeerrMigrationReader(transport).ReadAsync(config, CancellationToken.None);
+        var read = await new SeerrFacts(transport).ReadAsync(config, CancellationToken.None);
         Assert.False(read.Complete);
-        Assert.InRange(stream.Served, 0, SeerrMigrationReader.MaxResponseBytes + 128 * 1024);
+        Assert.InRange(stream.Served, 0, SeerrFacts.MaxResponseBytes + 128 * 1024);
         if (announcesLength) Assert.Equal(0, stream.Served);
     }
 
@@ -789,7 +789,7 @@ public class IntegrationSeerrMigrationTests
         var user = m.R.Add("Member");
         m.Add(1, "movie", user);
         var live = m.R.Policy.Configuration;
-        var service = new SeerrMigration(new SeerrMigrationReader(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed, () => live, () => { }, () => m.R.Now);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed, () => live, () => { }, () => m.R.Now);
         var digest = (await service.PreviewAsync(CancellationToken.None)).Digest;
         var saved = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration
         {

@@ -225,11 +225,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     public sealed class ResolveMemo
     {
-        internal Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Movies { get; } = new();
-
-        internal Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Series { get; } = new();
-
-        internal Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> Episodes { get; } = new();
+        internal Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Movies { get => _moviesFactsOwner.Read(ref _moviesFactsStorage, () => default!); }
+        internal Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Series { get => _seriesFactsOwner.Read(ref _seriesFactsStorage, () => default!); }
+        internal Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> Episodes { get => _episodesFactsOwner.Read(ref _episodesFactsStorage, () => default!); }
+        private Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> _moviesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>>> _moviesFactsOwner = new(prepared: true);
+        private Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> _seriesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>>> _seriesFactsOwner = new(prepared: true);
+        private Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> _episodesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>>> _episodesFactsOwner = new(prepared: true);
     }
 
     /// <summary>

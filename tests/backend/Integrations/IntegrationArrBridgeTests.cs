@@ -893,6 +893,8 @@ public class IntegrationArrBridgeTests
     public async Task RecentImportsJellyfinDoesntHaveAreListedWithWhy()
     {
         using var rig = new Rig();
+        // This is the missing-list query, before any targeted refresh indexes the imports.
+        rig.Arr.Plugin.Plugin.Configuration.ArrTargetedRefreshEnabled = false;
         var now = rig.Arr.Now.UtcDateTime;
         rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E1.mkv", indexed: false);   // not scanned
         rig.Sonarr.History.Add(Rig.Import(1, now.AddMinutes(-20), "/data/tv/Firefly (2002)/Season 01/E1.mkv", episode: 1));

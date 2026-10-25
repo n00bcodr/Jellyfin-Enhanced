@@ -2449,3 +2449,5 @@ Local metadata saturation returns a typed `503` (`outcome: unavailable`, `reason
 acquire/search. Discovery refuses before publishing/caching when parental preparation cannot
 acquire admission; retrying the same query after drain rechecks evidence. A verified parental
 denial remains separate from unavailable evidence.
+The opt-in [server backend isolation contract](backend-isolation.md) keeps JE request interests local
+when Seerr is dormant, including the Downloads and History ownership filter.

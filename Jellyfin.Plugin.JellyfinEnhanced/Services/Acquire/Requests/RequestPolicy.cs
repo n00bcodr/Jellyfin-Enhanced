@@ -448,7 +448,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (config.ArrRequestBackend != "je" || newAdd) folder = input.RootFolder ?? instance.Defaults?.RootFolderPath;
             else if (library == null) return null;
             else folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
-            if (string.IsNullOrWhiteSpace(folder)) return null;
+            return LowDiskAt(config, instance, system, folder);
+        }
+        private static RequestDiskFacts? LowDiskAt(PluginConfiguration config, ArrConnection instance, ArrSystemSnapshot? system, string? folder)
+        {
+            if (config.ArrLowDiskPercent <= 0 || system == null || string.IsNullOrWhiteSpace(folder)) return null;
             var disk = system.DiskSpace.Where(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path)).OrderByDescending(d => d.Path!.Length).FirstOrDefault();
             if (disk?.TotalSpace is not long total || total <= 0 || disk.FreeSpace is not long free) return null;
             return 100.0 * free / total < config.ArrLowDiskPercent
@@ -507,6 +511,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             return null;
         }
+        // The final transport decision may use published arr identities only. Ordinary policy preparation keeps
+        // its full alias composition above, preserving legacy reads before entering the memory-only final check.
+        private string? HeldArrFolder(ArrLibrarySnapshot library, TitleKey title)
+        {
+            foreach (var key in _aliases.ArrOnly(title).Prepend(title))
+                if (key.IsMovie == title.IsMovie && RequestPlaces.HeldIn(library, key) is { Path: { Length: > 0 } path }) return path;
+            return null;
+        }
         /// <inheritdoc />
         public RequestDiskFacts? TitlePause(MutationInput input)
         {
@@ -535,10 +547,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // One read of each published snapshot (a refresh replaces it whole): both answers come from the same ones.
             var system = _store.PeekSystem(instance.Id);
             var library = _store.PeekLibrary(instance.Id);
-            var pause = LowDisk(config, instance, input, key, system, library, newAdd: false);
-            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je") return (pause, true);
+            var direct = config.ArrRequestBackend == "je";
+            var folder = (direct && library != null ? HeldArrFolder(library, key.Title) : null) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            var pause = direct && library == null ? null : LowDiskAt(config, instance, system, folder);
+            if (config.ArrLowDiskPercent <= 0 || !direct) return (pause, true);
             if (system == null || library == null) return (pause, false);
-            var folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
             return (pause, string.IsNullOrWhiteSpace(folder) || system.DiskSpace.Any(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path) && d.TotalSpace is > 0 && d.FreeSpace != null));
         }
         /// <inheritdoc />

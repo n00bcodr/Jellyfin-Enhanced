@@ -38,7 +38,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private readonly UserConfigurationManager _userConfig;
         private readonly PosterTagUserCache _users;
-        private readonly ConcurrentDictionary<Guid, Snapshot> _cache = new();
+        private ConcurrentDictionary<Guid, Snapshot> _cache = new();
 
         // Bumped by every invalidation. A read that raced a save (read the old
         // file, then stored its snapshot after the save's invalidation) is
@@ -55,12 +55,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The user's effective settings for the current plugin configuration.</summary>
         public PosterTagSettings Get(Guid userId)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Taken before anything is read (a drop after it is seen by the store below).
             var generation = Interlocked.Read(ref _generation);
             var config = JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration();
             var now = DateTime.UtcNow;
             var audioPreference = _users.Get(userId)?.AudioLanguagePreference;
-            if (_cache.TryGetValue(userId, out var hit)
+            if (_cacheFacts.TryGetValue(userId, out var hit)
                 && hit.Generation == generation
                 && ReferenceEquals(hit.Config, config)
                 && string.Equals(hit.AudioLanguagePreference, audioPreference, StringComparison.Ordinal)
@@ -73,16 +74,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // contract: null = no settings.json yet, empty = present but unreadable.
             var text = _userConfig.TryReadUserConfigurationText(userId.ToString("N"), SettingsFileName);
             var settings = PosterTagSettings.FromSettingsJson(text, config, audioPreference);
-            if (_cache.Count >= MaxEntries) _cache.Clear();
-            _cache[userId] = new Snapshot(settings, config, audioPreference, now, generation);
+            if (_cacheFacts.Count >= MaxEntries) _cacheFacts.Clear();
+            _cacheFacts[userId] = new Snapshot(settings, config, audioPreference, now, generation);
             return settings;
         }
 
         /// <summary>Drops a user's cached settings.</summary>
         public void Invalidate(Guid userId)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             Interlocked.Increment(ref _generation);
-            _cache.TryRemove(userId, out _);
+            _cacheFacts.TryRemove(userId, out _);
         }
 
         public void Dispose()
@@ -95,5 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase)) return;
             if (Guid.TryParse(userIdN, out var userId)) Invalidate(userId);
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, Snapshot>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<Guid, Snapshot> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new()); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

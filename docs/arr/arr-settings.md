@@ -1008,3 +1008,5 @@ For a person who has never opened JE settings, the first administrator display s
 When metadata sources disagree about the expected episodes, a refresh retains prior display facts but withdraws completion authority until a coherent full response arrives. Retrying after a request-backend change reads under the current configuration.
 
 A coherent metadata refresh is required before an older list can complete or supply an automatically derived whole-series request scope. Partial or contradictory evidence withdraws completion authority while keeping the previous display counts. The list projection supplies `completion` and `completionReason` independently of those counts.
+The server's opt-in [backend isolation contract](backend-isolation.md) preserves existing configurations
+and supplies the local requested-title projection for JE consumers.

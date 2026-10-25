@@ -22,7 +22,9 @@ internal static class PrivacyOutputPathScan
     public static Assembly Plugin => typeof(PrivacyValues).Assembly;
 
     /// <summary>The members one method body references (calls, loads of functions and fields, tokens).</summary>
-    public static IEnumerable<MemberInfo> Referenced(MethodBase method)
+    public static IEnumerable<MemberInfo> Referenced(MethodBase method) => Referenced(method, fieldStoresOnly: false);
+
+    internal static IEnumerable<MemberInfo> Referenced(MethodBase method, bool fieldStoresOnly, bool callbackTargetsOnly = false)
     {
         MethodBody? body;
         try { body = method.GetMethodBody(); }
@@ -50,7 +52,10 @@ internal static class PrivacyOutputPathScan
                 MemberInfo? member = null;
                 try { member = method.Module.ResolveMember(BitConverter.ToInt32(il, i), typeArgs, methodArgs); }
                 catch (Exception) { member = null; }
-                if (member != null) yield return member;
+                if (member != null && (!fieldStoresOnly || op == OpCodes.Stfld || op == OpCodes.Stsfld || op == OpCodes.Ldflda || op == OpCodes.Ldsflda)
+                    && (!callbackTargetsOnly || op == OpCodes.Ldftn || op == OpCodes.Ldvirtftn
+                        || member is FieldInfo field && typeof(Delegate).IsAssignableFrom(field.FieldType)
+                        || member is MethodInfo factory && typeof(Delegate).IsAssignableFrom(factory.ReturnType))) yield return member;
             }
             i += size;
         }

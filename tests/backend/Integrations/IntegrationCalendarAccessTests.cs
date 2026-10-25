@@ -279,7 +279,7 @@ public class IntegrationCalendarAccessTests
         config.JellyseerrUrls = FakeSeerr.Url;
         config.JellyseerrApiKey = FakeSeerr.Key;
         seerr.Requests.Add(FakeSeerr.Request(1, "movie", 438631, 2, rig.Member.Id, rig.R.Arr.Now.UtcDateTime));
-        using var requests = new SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => config, () => rig.R.Arr.Now);
+        using var requests = new SeerrFacts(seerr.Transport, new ArrChangeFeed(), null, () => config, () => rig.R.Arr.Now);
         Assert.True(await requests.RefreshAsync(default));
         rig.Aliases = new TitleAliases(rig.R.Store, requests);
         Assert.Contains(await rig.Events(TestCallers.Principal(rig.Member.Id, admin: false)), e => e.Title == "Dune");
@@ -696,7 +696,7 @@ public class IntegrationCalendarAccessTests
         var request = FakeSeerr.Request(1, "tv", 9501, 2, rig.Member.Id, rig.R.Arr.Now.UtcDateTime, tvdb: 501);
         request["media"]!["imdbId"] = "tt501";
         seerr.Requests.Add(request);
-        using var requests = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => rig.R.Arr.Now);
+        using var requests = new SeerrFacts(seerr.Transport, null, null, () => config, () => rig.R.Arr.Now);
         Assert.True(await requests.RefreshAsync(default));
         rig.Aliases = new TitleAliases(rig.R.Store, requests);
         var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid() };

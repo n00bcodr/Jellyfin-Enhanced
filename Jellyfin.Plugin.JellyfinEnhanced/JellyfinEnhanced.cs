@@ -160,8 +160,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// </summary>
         internal Services.Secrets.SecretsMigration.Report RestoreConfiguration(PluginConfiguration restored, IReadOnlyCollection<string> restoredSecretNames)
         {
-            Services.Secrets.SecretsMigration.Report? restoredReport = null;
-            Services.EvidenceRevision.Advance(() =>
+            Services.Secrets.SecretsMigration.Report? result = null;
+            Services.Acquire.Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() =>
             {
                 lock (AnalyticsCredentialLock)
                 {
@@ -193,17 +193,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     {
                         // A configuration write like any other (its generation moves on past the one held now), never the host
                         // route's: the restored configuration is applied whatever generation the backup recorded.
-                        ApplyConfiguration(_ => restored);
+                        ApplyConfiguration(_ => restored, coordinated: true);
                     }
                     finally
                     {
                         _restoringConfiguration = false;
                     }
                     LogSecretsReport(report);
-                    restoredReport = report;
+                    result = report;
                 }
-            }, _logger);
-            return restoredReport!;
+            }, CancellationToken.None, () =>
+            {
+                lock (AnalyticsCredentialLock) return RequiresBackendDrain(Configuration, restored);
+            }).GetAwaiter().GetResult();
+            return result!;
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -441,9 +444,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             return result!;
         }
 
+        // Version-zero selectors keep already-admitted legacy sends. The shared choice observer still
+        // advances FactsGeneration for that commit, retiring every old cache without restamping its inputs.
+        private static bool RequiresBackendDrain(PluginConfiguration? current, BasePluginConfiguration next)
+            => next is PluginConfiguration incoming
+                && (current?.ArrBackendIsolationVersion != incoming.ArrBackendIsolationVersion
+                    || incoming.ArrBackendIsolationVersion != 0 && current?.ArrRequestBackend != incoming.ArrRequestBackend);
+
         // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
         // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
-        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build, bool preserveEvidence = false)
+        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build, bool preserveEvidence = false, bool coordinated = false)
         {
             bool tagCacheWasEnabled = false, analyticsWasEnabled = false;
 
@@ -465,7 +475,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            void Apply()
+            // Drain before taking the configuration/lifecycle lock. Native saves, patches and restores
+            // share the same writer owner as adoption; its committed choice advances FactsGeneration.
+            void Commit()
             {
                 lock (AnalyticsCredentialLock)
                 {
@@ -514,8 +526,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     finally { _evidencePreservingConfiguration = previous; }
                 }
             }
-            if (preserveEvidence) Apply();
-            else Services.EvidenceRevision.Advance(Apply, _logger);
+            if (coordinated || preserveEvidence) Commit();
+            else Services.Acquire.Backends.EffectiveRequestsBackend.Shared.TransitionAsync(Commit, CancellationToken.None, () =>
+            {
+                lock (AnalyticsCredentialLock) return RequiresBackendDrain(Configuration, build(Configuration));
+            }).GetAwaiter().GetResult();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try

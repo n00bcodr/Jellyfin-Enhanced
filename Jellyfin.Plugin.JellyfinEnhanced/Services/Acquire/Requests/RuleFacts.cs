@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Concurrent;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -94,7 +94,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private static readonly TimeSpan Wait = TimeSpan.FromSeconds(8);
         // The facts last read (or the failed read when nothing was ever read) and when a read was last tried.
-        private readonly ConcurrentDictionary<string, (RuleFactSet Facts, DateTimeOffset TriedAt)> _cache = new(StringComparer.Ordinal);
+        private readonly RegisteredCache<string, SeerrFacts.Derived<(RuleFactSet Facts, DateTimeOffset TriedAt)>> _cache = new(StringComparer.Ordinal);
         private readonly Func<TitleKey, CancellationToken, Task<int?>> _tmdbId;
         private readonly Func<string, CancellationToken, Task<string?>> _get;
         private readonly Func<string, string, int?> _score;
@@ -135,16 +135,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public RuleFactSet? Peek(TitleKey title)
-            => _cache.TryGetValue(CacheKey(title), out var held) && (held.Facts.Failed || _now() - held.Facts.FetchedAt < FreshFor) ? held.Facts : null;
+        {
+            if (!_cache.TryGetValue(CacheKey(title), out var entry) || !entry.TryRead(out var held)) return null;
+            return held.Facts.Failed || _now() - held.Facts.FetchedAt < FreshFor ? held.Facts : null;
+        }
 
         private static string CacheKey(TitleKey title) => title.Title.ToString();
 
         /// <inheritdoc />
         public async Task PrepareAsync(TitleKey title, CancellationToken ct)
         {
+            using var operation = SeerrFacts.BeginPublication();
+            var ticket = _cache.Begin();
             var key = CacheKey(title);
             var now = _now();
-            if (_cache.TryGetValue(key, out var held) && (held.Facts.Failed ? now - held.TriedAt < FailedFor : now - held.Facts.FetchedAt < FreshFor || now - held.TriedAt < FailedFor)) return;
+            var held = default((RuleFactSet Facts, DateTimeOffset TriedAt));
+            if (_cache.TryGetValue(key, out var entry) && entry.TryRead(out held) && (held.Facts.Failed ? now - held.TriedAt < FailedFor : now - held.Facts.FetchedAt < FreshFor || now - held.TriedAt < FailedFor)) return;
             using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
             bounded.CancelAfter(Wait);
             RuleFactSet facts;
@@ -163,11 +169,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (facts.Failed && held.Facts is { Failed: false }) facts = held.Facts;
             if (_cache.Count >= MaxEntries)
             {
-                foreach (var old in _cache.OrderBy(p => p.Value.TriedAt).Take(MaxEntries / 4).ToList()) _cache.TryRemove(old.Key, out _);
+                foreach (var old in _cache.Snapshot().OrderBy(p => p.Value.Read(default).TriedAt).Take(MaxEntries / 4).ToList()) _cache.TryRemove(old.Key, out _);
             }
 
             // Tried when the read began (now, taken before it).
-            _cache[key] = (facts, now);
+            _cache.Set(key, ticket, SeerrFacts.Remember((facts, now)));
         }
 
         private async Task<RuleFactSet> ReadAsync(TitleKey title, CancellationToken ct)

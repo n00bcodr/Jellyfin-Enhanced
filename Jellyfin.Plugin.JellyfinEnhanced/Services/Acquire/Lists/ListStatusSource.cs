@@ -126,16 +126,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <inheritdoc />
         public async Task<IReadOnlyDictionary<string, JsonElement>> StatusesAsync(Guid user, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
         {
+            using var publication = SeerrFacts.BeginPublication();
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             if (!_status.Enabled || keys.Count == 0)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             var viewer = _view.Viewer(user);
             if (viewer == null)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             var wanted = keys.Distinct().Take(MaxTitles).ToList();
@@ -171,7 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            return result;
+            return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
         }
 
         /// <inheritdoc />
@@ -181,16 +182,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <inheritdoc />
         public async Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<ListStatusSeason> seasons, CancellationToken cancellationToken)
         {
+            using var publication = SeerrFacts.BeginPublication();
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             if (!_status.Enabled || seasons.Count == 0)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             var viewer = _view.Viewer(user);
             if (viewer == null)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             using var scope = _status.Store.BeginRequest("acquire/lists");
@@ -218,22 +220,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            return result;
+            return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
         }
 
         /// <inheritdoc />
         public async Task<IReadOnlyDictionary<string, JsonElement>> PartStatusesAsync(Guid user, IReadOnlyList<ListStatusPart> parts, CancellationToken cancellationToken)
         {
+            using var publication = SeerrFacts.BeginPublication();
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             if (!_status.Enabled || parts.Count == 0)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             var viewer = _view.Viewer(user);
             if (viewer == null)
             {
-                return result;
+                return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
             }
 
             using var scope = _status.Store.BeginRequest("acquire/lists");
@@ -248,7 +251,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            return result;
+            return publication.Publish<IReadOnlyDictionary<string, JsonElement>>(() => result);
         }
 
         // A stable id for a list season's virtual page (the status cache keys on it).

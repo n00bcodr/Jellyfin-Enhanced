@@ -853,7 +853,7 @@ public class IntegrationRequestBackendsTests
     {
         public FakeSeerr Seerr { get; } = new();
         public Lab Arr { get; } = new();
-        public SeerrRequestReadModel Model { get; }
+        public SeerrFacts Model { get; }
         public SeerrBackend Backend { get; }
         public Guid User { get; } = Guid.NewGuid();
         public PluginConfiguration Config => Arr.Config;
@@ -867,7 +867,7 @@ public class IntegrationRequestBackendsTests
             Config.JellyseerrApiKey = FakeSeerr.Key;
             Seerr.Users.Add(new JsonObject { ["id"] = 7, ["jellyfinUserId"] = User.ToString("N"), ["permissions"] = permissions, ["displayName"] = "Emma" });
             Seerr.Users.Add(new JsonObject { ["id"] = 8, ["jellyfinUserId"] = Guid.NewGuid().ToString("N"), ["permissions"] = 32, ["displayName"] = "Sam" });
-            Model = new SeerrRequestReadModel(Seerr.Transport, null, null, () => Config, () => Now);
+            Model = new SeerrFacts(Seerr.Transport, null, null, () => Config, () => Now);
             Backend = new SeerrBackend(Seerr.Transport, Model, null, () => Config, () => Now);
         }
 

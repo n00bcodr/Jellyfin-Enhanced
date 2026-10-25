@@ -26,7 +26,7 @@ public class IntegrationWatchlistFactsTests
         public IntegrationRequestLedgerTests.Rig R { get; } = new();
         public FakeSeerr Seerr { get; } = new();
         public DateTimeOffset Now { get; set; } = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
-        public SeerrRequestReadModel Model { get; }
+        public SeerrFacts Model { get; }
         public SharedRequestFacts Facts { get; }
         public Mock<IUserManager> Users { get; } = new();
         public Mock<IUserDataManager> Data { get; } = new();
@@ -39,7 +39,7 @@ public class IntegrationWatchlistFactsTests
             var c = Config;
             c.ArrIntegrationEnabled = true; c.ArrPhase1Enabled = true; c.ArrPhase3Enabled = true; c.ArrRequestBackend = "je";
             c.AddRequestedMediaToWatchlist = true; c.PreventWatchlistReAddition = false;
-            Model = new SeerrRequestReadModel(Seerr.Transport, new ArrChangeFeed(() => Now), null, () => Config, () => Now);
+            Model = new SeerrFacts(Seerr.Transport, new ArrChangeFeed(() => Now), null, () => Config, () => Now);
             Facts = new SharedRequestFacts(R.Ledger, Model, null);
             Data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns((User u, BaseItem _) => Saved.TryGetValue(u.Id, out var d) ? d : new UserItemData { Key = "k" });
             Data.Setup(d => d.SaveUserData(It.IsAny<User>(), It.IsAny<BaseItem>(), It.IsAny<UserItemData>(), It.IsAny<UserDataSaveReason>(), It.IsAny<CancellationToken>()))
@@ -149,7 +149,7 @@ public class IntegrationWatchlistFactsTests
         var newer = r.Person("Member");     // asked recently: in the window
         var declined = r.Person("Member");
         var at = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        const int count = SeerrRequestReadModel.MaxRequests + 5;
+        const int count = SeerrFacts.MaxRequests + 5;
         lock (r.Seerr.Requests)
         {
             r.Seerr.Requests.Add(FakeSeerr.Request(1, "movie", 603, 2, older, at));

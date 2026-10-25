@@ -230,8 +230,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly IHttpClientFactory _http;
         private readonly TmdbResponseCache _tmdb;
         private readonly Logger _logger;
-        private readonly ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlight = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlight = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _linkLock = new(1, 1);
 
         /// <summary>Seerr accounts read per request when telling who is linked.</summary>
@@ -264,8 +264,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>Upstream fetches still running (for tests: none may outlive its fetch).</summary>
-        internal int InFlightCount => _inFlight.Count;
-
+        internal int InFlightCount
+        {
+            get
+            {
+                using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                return _inFlightFacts.Count;
+            }
+        }
         /// <summary>Feed reads started upstream and not finished, running or queued (for tests).</summary>
         internal int FeedReadsPending => _feeds.Outstanding;
 
@@ -461,18 +467,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <inheritdoc />
         public async Task<bool?> IsSeerrLinkedAsync(Guid userId, CancellationToken ct)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var id = userId.ToString("N");
             var from = LinkSource();
             var now = _now();
             var linked = Known(from, now);
-            if (linked != null && (linked.Contains(id) || now - _linkedAt < LinkMissRefresh))
+            if (linked != null && (linked.Contains(id) || now - _linkedAtFacts < LinkMissRefresh))
             {
                 return linked.Contains(id);
             }
 
             // A refresh failed a moment ago: answer from what is known (nothing known = can't tell)
             // without queueing behind another refresh, so a hanging Seerr can't convoy every facade request.
-            if (now - _linkFailedAt < LinkFailureBackoff) return linked?.Contains(id);
+            if (now - _linkFailedAtFacts < LinkFailureBackoff) return linked?.Contains(id);
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
             budget.CancelAfter(LinkRefreshBudget);
             try
@@ -486,8 +493,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             try
             {
-                if (Known(from, _now()) is { } fresh && _now() - _linkedAt < LinkMissRefresh) return fresh.Contains(id);
-                if (_now() - _linkFailedAt < LinkFailureBackoff) return Known(from, _now())?.Contains(id);
+                if (Known(from, _now()) is { } fresh && _now() - _linkedAtFacts < LinkMissRefresh) return fresh.Contains(id);
+                if (_now() - _linkFailedAtFacts < LinkFailureBackoff) return Known(from, _now())?.Contains(id);
                 // Every page of Seerr's accounts: one missing page would make its people look unlinked.
                 var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var complete = false;
@@ -527,13 +534,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     // Seerr unreachable (or more accounts than are read): the previous answer while it is recent
                     // (none, or an old one: can't tell, so the page falls back instead of acting on stale
                     // access), and no retry for a while.
-                    _linkFailedAt = _now();
+                    _linkFailedAtFacts = _now();
                     return Known(from, _now())?.Contains(id);
                 }
 
-                _linked = set;
-                _linkedFrom = from;
-                _linkedAt = _now();
+                _linkedFacts = set;
+                _linkedFromFacts = from;
+                _linkedAtFacts = _now();
                 return set.Contains(id);
             }
             finally
@@ -548,8 +555,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// when Seerr can't be reached to read them again. Otherwise null (can't tell).
         /// </summary>
         private HashSet<string>? Known(string from, DateTime now)
-            => _linked is { } set && string.Equals(_linkedFrom, from, StringComparison.Ordinal) && now - _linkedAt < LinkTtl ? set : null;
-
+        {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _linkedFacts is { } set && string.Equals(_linkedFromFacts, from, StringComparison.Ordinal) && now - _linkedAtFacts < LinkTtl ? set : null;
+        }
         /// <summary>A fingerprint of the configured Seerr (URLs and key), never the key itself.</summary>
         private static string LinkSource()
         {
@@ -560,16 +569,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private bool TryCached(string path, out SourceAnswer value)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             value = default;
-            if (!_cache.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
+            if (!_cacheFacts.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
             value = hit.Value;
             return true;
         }
 
         private Task<SourceAnswer> GetAsync(string path, CancellationToken ct)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            return _inFlight.GetOrAdd(path, p => Shared(p, () => FetchAndStoreAsync(p))).Value.WaitAsync(ct);
+            return _inFlightFacts.GetOrAdd(path, p => Shared(p, () => FetchAndStoreAsync(p))).Value.WaitAsync(ct);
         }
 
         /// <summary>
@@ -581,8 +592,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            if (_inFlight.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
+            if (_inFlightFacts.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
             if (!_feeds.TryAdmit(viewer)) return Joined(path, ct) ?? Task.FromResult(SourceAnswer.Throttled);
             if (!_feedBudget.Take(viewer))
             {
@@ -604,7 +616,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     _feeds.Leave(viewer, ran);
                 }
             });
-            var shared = _inFlight.GetOrAdd(path, mine);
+            var shared = _inFlightFacts.GetOrAdd(path, mine);
             if (!ReferenceEquals(shared, mine))
             {
                 // Another caller started the same read a moment ago: join it, nothing was started.
@@ -621,8 +633,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Task<SourceAnswer>? Joined(string path, CancellationToken ct)
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (TryCached(path, out var hit)) return Task.FromResult(hit);
-            return _inFlight.TryGetValue(path, out var running) ? running.Value.WaitAsync(ct) : null;
+            return _inFlightFacts.TryGetValue(path, out var running) ? running.Value.WaitAsync(ct) : null;
         }
 
         /// <summary>
@@ -631,6 +644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Lazy<Task<SourceAnswer>> Shared(string path, Func<Task<SourceAnswer>> fetch)
         {
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             Lazy<Task<SourceAnswer>>? lazy = null;
             lazy = new Lazy<Task<SourceAnswer>>(async () =>
             {
@@ -640,7 +654,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
                 finally
                 {
-                    _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<SourceAnswer>>>(path, lazy!));
+                    _inFlightFacts.TryRemove(new KeyValuePair<string, Lazy<Task<SourceAnswer>>>(path, lazy!));
                 }
             });
             return lazy;
@@ -659,15 +673,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private SourceAnswer Store(string path, SourceAnswer value)
         {
-            if (_cache.Count >= MaxEntries)
+            using var __factsOperation10 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (_cacheFacts.Count >= MaxEntries)
             {
-                foreach (var old in _cache.OrderBy(e => e.Value.At).Take(MaxEntries / 10).ToList())
+                foreach (var old in _cacheFacts.OrderBy(e => e.Value.At).Take(MaxEntries / 10).ToList())
                 {
-                    _cache.TryRemove(old.Key, out _);
+                    _cacheFacts.TryRemove(old.Key, out _);
                 }
             }
 
-            _cache[path] = (value, DateTime.UtcNow);
+            _cacheFacts[path] = (value, DateTime.UtcNow);
             return value;
         }
 
@@ -729,5 +744,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             return SourceAnswer.Unavailable;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>>> _inFlightFactsOwner = new();
+        private ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlightFacts { get => _inFlightFactsOwner.Read(ref _inFlight, () => new(StringComparer.Ordinal)); set => _inFlightFactsOwner.Store(ref _inFlight, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<HashSet<string>?> _linkedFactsOwner = new();
+        private HashSet<string>? _linkedFacts { get => _linkedFactsOwner.Read(ref _linked, () => default!); set => _linkedFactsOwner.Store(ref _linked, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<string?> _linkedFromFactsOwner = new();
+        private string? _linkedFromFacts { get => _linkedFromFactsOwner.Read(ref _linkedFrom, () => default!); set => _linkedFromFactsOwner.Store(ref _linkedFrom, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<DateTime> _linkedAtFactsOwner = new();
+        private DateTime _linkedAtFacts { get => _linkedAtFactsOwner.Read(ref _linkedAt, () => default!); set => _linkedAtFactsOwner.Store(ref _linkedAt, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<DateTime> _linkFailedAtFactsOwner = new();
+        private DateTime _linkFailedAtFacts { get => _linkFailedAtFactsOwner.Read(ref _linkFailedAt, () => default!); set => _linkFailedAtFactsOwner.Store(ref _linkFailedAt, value); }
     }
 }

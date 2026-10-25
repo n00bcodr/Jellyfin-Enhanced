@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -32,7 +33,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             public List<string> Errors { get; set; } = new();
         }
 
-        public static async Task<BulkImportResult> BulkImportAsync(
+        public static Task<BulkImportResult> BulkImportAsync(
             List<string> userIds,
             string[] urls,
             string apiKey,
@@ -40,8 +41,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             Logger logger,
             CancellationToken cancellationToken = default,
             Func<List<string>, List<string>?>? recheck = null)
+            => EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.UserImport, cancellationToken,
+                    ct => BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, ct, recheck))
+                : BulkImportCoreAsync(userIds, urls, apiKey, httpClientFactory, logger, cancellationToken, recheck);
+
+        private static async Task<BulkImportResult> BulkImportCoreAsync(
+            List<string> userIds,
+            string[] urls,
+            string apiKey,
+            IHttpClientFactory httpClientFactory,
+            Logger logger,
+            CancellationToken cancellationToken,
+            Func<List<string>, List<string>?>? recheck)
         {
             var result = new BulkImportResult();
+            if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.UserImport).Allowed)
+            {
+                logger.Info("[RequestsBackend] Seerr import denied: backend_disabled");
+                result.Errors.Add("backend_disabled");
+                return result;
+            }
             var httpClient = SeerrHttpHelper.CreateClient(httpClientFactory);
             httpClient.Timeout = TimeSpan.FromSeconds(30);
 
@@ -80,6 +100,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                     var importedCount = importedUsers.ValueKind == JsonValueKind.Array ? importedUsers.GetArrayLength() : 0;
                     result.Imported = importedCount;
                     return result;
+                }
+                catch (BackendDisabledException ex)
+                {
+                    result.Errors.Add(ex.Reason);
+                    break;
                 }
                 catch (OperationCanceledException)
                 {

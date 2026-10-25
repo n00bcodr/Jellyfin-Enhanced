@@ -1,0 +1,211 @@
+# Explicit control-state inventory: member, exact type, reason. No answer cache may use this disposition.
+AcquireDatabase.ArrivalRevision	long	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+AcquireDatabase.Automation	Jellyfin.Plugin.JellyfinEnhanced.Helpers.FactVersion	monotonic writer invalidation clock, not a cached provider answer
+AcquireDatabase._generation	long	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+AcquireDatabase._initialized	bool	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+AcquireDatabase._unavailable	string?	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+AcquireDatabase._version	int	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+AcquisitionStampFeeder._generation	long	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampFeeder._nextCatchUp	System.DateTime	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampFeeder._nextPurge	System.DateTime	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampFeeder._wasOn	bool	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampResolver._fourKBuiltAt	System.DateTime	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampResolver._fourKChanges	System.Collections.Generic.HashSet<string>	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampResolver._fourKDirty	bool	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampResolver._warnedAt	long	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampStore._deleted	System.Collections.Concurrent.ConcurrentDictionary<System.Guid, byte>	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampStore._expired	System.Collections.Generic.Dictionary<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.StampFact, string?>	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampStore._pendingNotifications	System.Collections.Generic.HashSet<string>	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AcquisitionStampStore._revision	long	source observation lifecycle, durable deletion barriers, expiry-change notifications and worker scheduling, answer index is separately fenced
+AgeRatingStyle.Default	Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering.AgeRatingStyle	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+ArrChangeTracker._itemFlushArmed	int	native item change work queue and worker lifecycle, consumed once for invalidation, never a reusable title answer
+ArrChangeTracker._items	System.Collections.Concurrent.ConcurrentQueue<Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live.ArrChangeTracker.ItemChange>	native item change work queue and worker lifecycle, consumed once for invalidation, never a reusable title answer
+ArrChangeTracker._started	bool	native item change work queue and worker lifecycle, consumed once for invalidation, never a reusable title answer
+ArrStatusCache._maxBytes	long	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+ArrStatusCache._maxEntries	int	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+AutoMovieRequestMonitor._subscribed	bool	playback-event subscription lifecycle, each event reevaluates configuration, no retained provider answer
+AutoSeasonRequestMonitor._subscribed	bool	playback-event subscription lifecycle, each event reevaluates configuration, no retained provider answer
+AutomationSendGuard.JobAdmission._active	System.Collections.Generic.Dictionary<string, (string Category, string Scope, string Id)>	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+AutomationSendGuard.JobAdmission._reserved	System.Collections.Generic.Dictionary<string, string>	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+CompletedIdentity.Completion._context	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import.ImportCallContext	request caller/capability context, reusable completion answers are separately fenced
+CopyLookup.Absent	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.CopyLookup	fixed empty/unknown sentinel payload, never filled with provider observations
+DiscoverService._userConfig	Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserConfigurationManager?	service identity/reference, not a memoized computed answer
+EffectiveRequestsBackend._active	System.Collections.Generic.HashSet<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Admission>	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+EffectiveRequestsBackend._denials	System.Collections.Generic.Dictionary<string, System.DateTime>	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+EffectiveRequestsBackend._factsChoice	(string Backend, int Version)?	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+EffectiveRequestsBackend._fenced	bool	transition admission barrier and drain lifecycle, not a retained provider answer
+EffectiveRequestsBackend._signature	string?	live admissions, writer choice/epoch and bounded denial diagnostics, clearing these would release ownership without draining it
+FutureSeasonCharges._subscribed	int	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+HomeArrivals._loadedArrivalRevision	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+HomeArrivals._loadedFactsGeneration	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+HomeArrivals._loadedGeneration	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+HomeArrivals._revision	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+HomeArrivals._seeded	int	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+ImportPhysical.None	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import.ImportPhysical	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+ImportPhysical.Unreadable	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import.ImportPhysical	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+JeBackupService._configPath	string	stable storage/server/recipient identity of this operation, not a learned provider association
+JeBackupService._dataFolder	string	stable storage/server/recipient identity of this operation, not a learned provider association
+JellyfinEnhanced._restoringConfiguration	bool	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+JellyfinEnhanced._writtenGeneration	long	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+JellyfinEnhancedController.PersonTmdbTimeout	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+JellyfinEnhancedController._avatarCacheDuration	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+JellyfinEnhancedController._lastManualImport	System.DateTime	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+JellyfinEnhancedController._pollLogInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+JellyfinEnhancedController._seerrResponseGeneration	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+JellyfinEnhancedController._seerrStatusCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+JellyfinEnhancedController._userCacheGeneration	long	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
+JellyfinUserActions.CodeSet.Summary.Src	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.JellyfinUserActions.CodeSet.Src	source-code inventory diagnostic record, not a runtime provider cache
+ListService.CreateState.Operation	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListOperation?	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListService._createLocks	System.Collections.Concurrent.ConcurrentDictionary<System.Guid, System.Threading.SemaphoreSlim>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListService._destinationLocks	System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSourceFetcher.CallerBudget.Recent	System.Collections.Generic.Queue<System.DateTime>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSourceFetcher._callers	System.Collections.Concurrent.ConcurrentDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.ListSourceFetcher.CallerBudget>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSourceFetcher._limits	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceReadLimits	immutable source-fetch byte/time/request limits, not a provider observation
+ListSwapService._appliedMetadataAt	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSwapService._lastForced	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSwapService._overflowLogged	int	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSwapService._ownerlessLogged	System.Collections.Concurrent.ConcurrentDictionary<string, byte>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ListSwapService._queued	System.Collections.Concurrent.ConcurrentDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListSwapService.PassRequest>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+LookupResult.NotFound	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import.LookupResult<T>	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+LookupResult.Transient	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import.LookupResult<T>	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+NativeDetailsPolicy._epochFile	string?	stable storage/server/recipient identity of this operation, not a learned provider association
+NotificationService._bridgeSubscribed	int	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._created	long	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._cursor	long?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._epoch	string?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._firstDirty	System.DateTimeOffset?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._lastDirty	System.DateTimeOffset?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._ledgerCursor	long?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._nextAdmin	System.DateTimeOffset	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._nextPurge	System.DateTimeOffset	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._nextSweep	System.DateTimeOffset	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._pauseNoted	bool	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._seenRequests	long	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._storedLedgerCursor	long?	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotificationService._wasEnabled	bool	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotifyDispatcher.AlertCheck._user	System.Guid	stable storage/server/recipient identity of this operation, not a learned provider association
+NotifyDispatcher.GateRead.Config	Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration	stack-only readonly final-gate inputs, ref struct cannot survive an await or be retained in a cache
+NotifyDispatcher.GateRead.Prefs	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotifyPrefs	stack-only readonly final-gate inputs, ref struct cannot survive an await or be retained in a cache
+NotifyDispatcher._failed	long	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotifyDispatcher._sent	long	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+NotifyStore._deleted	System.Collections.Concurrent.ConcurrentDictionary<string, long>	notification lifecycle/cursors, durable deletion barriers, dirty-event scheduling and monotonic delivery counters, reusable alert/title/rule answers are fenced
+PhysicalTitle.None	Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.PhysicalTitle	fixed empty/unknown sentinel payload, never filled with provider observations
+PosterTagDataProvider._memoGeneration	long	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+PosterTagImageFilter.FileSettleMaxWait	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+PosterTagImageFilter.FileSettleTime	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+PosterTagImageFilter.WarnInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+PosterTagReviewRatings._generation	long	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+PosterTagSettingsProvider._generation	long	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+PressProof.Changed	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.PressProof	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+ReadyPlaylistService._epoch	long	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+ReadyPlaylistService._gates	System.Collections.Concurrent.ConcurrentDictionary<System.Guid, System.Threading.SemaphoreSlim>	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+ReadyPlaylistService._overflow	int	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+ReadyPlaylistService._queued	int	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+ReadyPlaylistService._server	string	stable storage/server/recipient identity of this operation, not a learned provider association
+RequestFulfilment._cursor	long?	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+RequestFulfilment._epoch	string?	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+RequestFulfilment._nextSweep	System.DateTimeOffset	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+RequestFulfilment._sweepAfter	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestWant?	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+RequestFulfilment._watchedRevision	long	invalidation epochs, work cursors and queue scheduling, not memoized answers, owned answer caches are separately fenced
+RequestIdentityService.CookieMissNegativeCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+RequestIdentityService.IpScanCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+RequestIdentityService.PerKeyWarnInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+RequestIdentityService.UserCountCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+RequestTitleLocks.Entry.Users	int	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+RequestsHubService._hidden	Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserConfigurationManager?	service identity/reference, not a memoized computed answer
+ScopeResolution.None	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ScopeResolution	fixed empty/unknown sentinel payload, never filled with provider observations
+SecretsMigration.Report.NeedsReentry	System.Collections.Generic.List<string>	single migration operation diagnostic output, never used as a provider fact, cache lookup or authorization decision
+SecretsMigration.Report.Notes	System.Collections.Generic.List<string>	single migration operation diagnostic output, never used as a provider fact, cache lookup or authorization decision
+SecretsStore.Version	Jellyfin.Plugin.JellyfinEnhanced.Helpers.FactVersion	monotonic writer invalidation clock, not a cached provider answer
+SeerrFacts.Background._admitted	int	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Background._disposed	bool	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Background._factsAdmitted	int	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Background._factsLease	(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Admission Admission, System.Threading.CancellationTokenRegistration Cancel)?	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Background._leases	System.Collections.Generic.Dictionary<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend, (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Admission Admission, System.Threading.CancellationTokenRegistration Cancel)>	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Background._legacyAdmitted	int	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Derived._generation	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.Ticket	input provenance retained by the common envelope, not a reusable domain answer
+SeerrFacts.Publication.Tainted	bool	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Publication._dependencies	System.Collections.Generic.Dictionary<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend, long>	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Publication._effectiveDependencies	System.Collections.Generic.Dictionary<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend, long>	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Publication._factsDependency	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.Publication._factsRetainDependency	int	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrFacts.SeerrAskedProofCache.Fresh	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrAskedProofCache.MaxStale	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrAskedProofCache._generation	long	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrFacts.SeerrAskedProofCache._wait	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.CallTimeout	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.FailureRetry	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.FullReadAtLeast	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.GoneFor	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.MetaFreshFor	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.RequestedDelay	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.Snapshot.Empty	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.SeerrRequestReadModel.Snapshot	fixed empty/unknown sentinel payload, never filled with provider observations
+SeerrFacts.SeerrRequestReadModel.WatchedFor	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel.WatchedInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrFacts.SeerrRequestReadModel._calls	long	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrFacts.SeerrRequestReadModel._incompleteRuns	int	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrFacts.SeerrRequestReadModel._revision	long	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrFacts.SeerrRequestReadModel._wasActive	bool	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrFacts.TaintedHandouts	System.Runtime.CompilerServices.ConditionalWeakTable<object, Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.TaintMark>	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+SeerrIsolationTransportHandler.AdmittedStream._finished	bool	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrParentalFilter._overallBudget	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SeerrParentalFilter._trimCounter	int	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrScanTriggerService._disposed	bool	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrScanTriggerService._owners	System.Collections.Generic.Dictionary<(string Source, string Job), Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrScanTriggerService.Owner>	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SeerrScanTriggerService._subscribed	bool	provider operation lifecycle, active ownership and monotonic refresh/invalidation bookkeeping, provider payload caches use generation envelopes
+SourceDeclared.Absent	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceDeclared	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+SpoilerBlurImageFilter.SeasonWatchedCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerBlurImageFilter.ShapeWarnInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerBlurImageFilter._disposed	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+SpoilerExistingTitlesApplier._lastRun	Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerExistingTitlesApplier.Summary?	completed local-library maintenance run receipt for admin progress, never reused to decide title visibility or request facts
+SpoilerFieldStripFilter.CategoryReveal.None	Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerFieldStripFilter.CategoryReveal	fixed immutable unknown/default sentinel, not an answer computed or memoized from provider I/O
+SpoilerLibraryAddAutoEnabler._flushScheduled	int	library-add worker timer lifecycle, queued native events are consumed once, not reused as provider answers
+SpoilerLibraryAddAutoEnabler._queue	System.Collections.Concurrent.ConcurrentQueue<Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerLibraryAddAutoEnabler.QueuedAdd>	native library-add work queue of item ids and kind, consumed once for local configuration writes, no retained provider answer
+SpoilerLibraryAddAutoEnabler._stopped	bool	library-add worker shutdown lifecycle, not a retained provider answer
+SpoilerSeerrPendingPromoter._activeSweeps	System.Collections.Concurrent.ConcurrentDictionary<System.Threading.Tasks.Task, byte>	active task ownership for cancellation and drain, results and provider answers are not stored here
+SpoilerSeerrPendingPromoter._pendingUsersByKey	System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<System.Guid, byte>>	reverse index of persisted per-user pending intents for scheduling local sweeps, provider facts are read afresh and no reusable provider answer is stored
+SpoilerSeerrPendingPromoter._sweepRerun	System.Collections.Concurrent.ConcurrentDictionary<string, byte>	per-user worker scheduling marker, the sweep reads current inputs instead of retaining a provider answer
+SpoilerSeerrPendingPromoter._sweepRunning	System.Collections.Concurrent.ConcurrentDictionary<string, byte>	per-user worker exclusion marker, the sweep reads current inputs instead of retaining a provider answer
+SpoilerUserResolver.CollectionScopeCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerUserResolver.PerKeyWarnInterval	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerUserResolver.UserStateCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
+SpoilerUserResolver._corruptionLog	System.Collections.Concurrent.ConcurrentDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.CorruptionEvent>	local configuration corruption diagnostics, never consulted for a title verdict or provider answer
+SpoilerUserResolver._warnedAt	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	diagnostic log de-duplication only, no reusable provider answer or delivery decision
+TagCacheMonitor._disposed	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService.Instance	Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService?	service identity/reference, not a memoized computed answer
+TagCacheService._cacheReleased	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._dirty	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._disposed	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._firstDirtyTicks	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._firstPendingTicks	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._flushing	int	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._fullBuildsRunning	int	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._inPlaceWriters	int	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._lastDirtyTicks	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._lastModified	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._lastReconciledUtcTicks	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._manualRebuildInProgress	int	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._maxLastUpdated	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._mutationEpoch	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TagCacheService._pending	Jellyfin.Plugin.JellyfinEnhanced.Services.TagCachePendingChanges	pending durable update work queue, not a lookup of a reusable fact
+TagCacheService._version	long	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+TitlePresentationResultFilter._warnedUnclassified	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	diagnostic log de-duplication only, no reusable provider answer or delivery decision
+UserAccessCache.Ticket.Facts	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.Ticket	input provenance retained by the common envelope, not a reusable domain answer
+UserAccessCache.Ticket.Stamp	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority.Stamp	input provenance retained by the common envelope, not a reusable domain answer
+UserCacheRegistry.Operation.Tainted	bool	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.Operation._touched	System.Collections.Generic.HashSet<Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.IState>	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.ProcessIdentity	string	process identity for persisted fact provenance, never a reusable domain answer
+UserCacheRegistry.RejectedPlainStores	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.State._tainted	bool	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.State._ticket	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.Ticket	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.TaintedEnvelopeStores	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.TaintedHandouts	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry.TaintedStateCaptures	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserCacheRegistry._factsGeneration	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
+UserConfigurationManager._incarnation	string	local document revision incarnation for writer concurrency, not a cached provider answer
+UserConfigurationManager._saveEpoch	long	local configuration writer invalidation clock, not a cached provider answer
+UserConfigurationManager._userFileLocks	System.Collections.Concurrent.ConcurrentDictionary<string, object>	per-file write synchronization objects, not cached document bodies or provider answers
+UserConfigurationManager._writes	System.Collections.Concurrent.ConcurrentDictionary<string, long>	per-file local write counters for document revisions, not cached document bodies or provider answers
+WatchlistMonitor._recheckRunning	int	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+WatchlistMonitor._subscribed	bool	service lifecycle, dirty-work admission, disposal and monotonic writer version barriers, clearing these could admit obsolete writers
+WrittenStateCache.Ticket.Facts	Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.Ticket	input provenance retained by the common envelope, not a reusable domain answer

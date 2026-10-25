@@ -412,20 +412,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private readonly ArrStateStore _store;
         private readonly JellyfinBridge _bridge;
-        private readonly SeerrRequestReadModel? _requests;
+        private readonly SeerrFacts? _requests;
         private readonly ArrLiveService? _live;
         private readonly ArrWebhookReceiver? _webhooks;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
 
         /// <summary>The service (DI).</summary>
-        public ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrRequestReadModel requests, ArrLiveService live, ArrWebhookReceiver webhooks)
+        public ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrFacts requests, ArrLiveService live, ArrWebhookReceiver webhooks)
             : this(store, bridge, requests, live, webhooks, null, null)
         {
         }
 
         /// <summary>The service with explicit parts (tests).</summary>
-        internal ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrRequestReadModel? requests, ArrLiveService? live, ArrWebhookReceiver? webhooks, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
+        internal ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrFacts? requests, ArrLiveService? live, ArrWebhookReceiver? webhooks, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
         {
             _store = store;
             _bridge = bridge;
@@ -443,7 +443,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Enabled => JellyfinBridge.Phase2(_config());
 
         /// <summary>The Overview tab.</summary>
-        public async Task<AdminOverview> OverviewAsync(CancellationToken cancellationToken)
+        public Task<AdminOverview> OverviewAsync(CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => OverviewAsyncFactsCore(cancellationToken));
+
+        private async Task<AdminOverview> OverviewAsyncFactsCore(CancellationToken cancellationToken)
         {
             var config = _config();
             var now = _now().UtcDateTime;
@@ -489,7 +492,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// reader (<see cref="ArrStateStore.ReadInBackgroundAsync"/>), so the check alone never holds
         /// the queue and history at the Downloads page's pace.
         /// </param>
-        public async Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsync(CancellationToken cancellationToken, bool background = false)
+        public Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsync(CancellationToken cancellationToken, bool background = false)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => NeedsAttentionAsyncFactsCore(cancellationToken, background));
+
+        private async Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsyncFactsCore(CancellationToken cancellationToken, bool background = false)
         {
             var config = _config();
             var now = _now().UtcDateTime;
@@ -658,7 +664,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         };
 
         /// <summary>The System tab.</summary>
-        public async Task<AdminSystem> SystemAsync(CancellationToken cancellationToken)
+        public Task<AdminSystem> SystemAsync(CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => SystemAsyncFactsCore(cancellationToken));
+
+        private async Task<AdminSystem> SystemAsyncFactsCore(CancellationToken cancellationToken)
         {
             var config = _config();
             var list = new List<AdminSystemInstance>();
@@ -717,6 +726,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// so a finished standard request never hides a stuck 4K one. Empty when phase 2 or Seerr is off.
         /// </summary>
         internal IReadOnlyList<HandoffFact> Handoffs(DateTime now, TimeSpan? grace)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => HandoffsFactsCore(now, grace));
+
+        private IReadOnlyList<HandoffFact> HandoffsFactsCore(DateTime now, TimeSpan? grace)
         {
             if (grace is not TimeSpan wait || _requests is not { Active: true } model) return Array.Empty<HandoffFact>();
             var result = new List<HandoffFact>();

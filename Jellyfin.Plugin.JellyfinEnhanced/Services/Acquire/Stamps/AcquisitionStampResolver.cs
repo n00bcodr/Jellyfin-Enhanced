@@ -38,7 +38,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         // with was read under (UserAccessCache, IStampLibraryAccess): a policy change applies on the next poster.
         private readonly Helpers.UserAccessCache<(Guid User, Guid Item), bool> _access = new(AccessTtl, MaxMemo);
         private readonly object _fourKGate = new();
-        private volatile FourKIndex? _fourK;
+        private FourKIndex? _fourK;
         private readonly HashSet<string> _fourKChanges = new(StringComparer.Ordinal);
         private DateTime _fourKBuiltAt;
         private volatile bool _fourKDirty;
@@ -221,11 +221,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         // it dirty: RefreshFourK (the feeder's loop) rebuilds it, never a metadata response or an image request.
         private FourKIndex FourK()
         {
-            var index = _fourK;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var index = _fourKFacts;
             if (index != null) return index;
             lock (_fourKGate)
             {
-                return _fourK ??= Build();
+                return _fourKFacts ??= Build();
             }
         }
 
@@ -236,11 +237,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="force">Rebuild whatever its state.</param>
         public void RefreshFourK(bool force = false)
         {
-            if (!force && _fourK != null && !_fourKDirty && DateTime.UtcNow - _fourKBuiltAt < FourKRebuildEvery) return;
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (!force && _fourKFacts != null && !_fourKDirty && DateTime.UtcNow - _fourKBuiltAt < FourKRebuildEvery) return;
             lock (_fourKGate)
             {
                 _fourKDirty = false;
-                var previous = _fourK;
+                var previous = _fourKFacts;
                 FourKIndex next;
                 try
                 {
@@ -251,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     _fourKDirty = true; // retain the retry when the library read failed
                     throw;
                 }
-                _fourK = next;
+                _fourKFacts = next;
                 if (previous != null)
                 {
                     foreach (var key in previous.ByKey.Keys.Concat(next.ByKey.Keys).Distinct(StringComparer.Ordinal))
@@ -314,5 +316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         {
             if (item.IsVideo) _fourKDirty = true;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<FourKIndex?> _fourKFactsOwner = new();
+        private FourKIndex? _fourKFacts { get => _fourKFactsOwner.Read(ref _fourK, () => default!); set => _fourKFactsOwner.Store(ref _fourK, value); }
     }
 }

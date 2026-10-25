@@ -605,11 +605,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private IReadOnlyList<JfLibraryRoot> Roots()
         {
-            var cached = _roots;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var cached = _rootsFacts;
             if (cached is { } c && DateTime.UtcNow - c.At < LibrariesTtl) return c.Roots;
             var roots = _libraries.Libraries();
-            _roots = (roots, DateTime.UtcNow);
+            _rootsFacts = (roots, DateTime.UtcNow);
             return roots;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<(IReadOnlyList<JfLibraryRoot> Roots, DateTime At)?> _rootsFactsOwner = new();
+        private (IReadOnlyList<JfLibraryRoot> Roots, DateTime At)? _rootsFacts { get => _rootsFactsOwner.Read(ref _roots, () => default!); set => _rootsFactsOwner.Store(ref _roots, value); }
     }
 }

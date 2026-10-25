@@ -20,22 +20,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     {
         internal NativePosterTagStampSession(JUser user, PosterTagSettings settings, string marker, UserSpoilerBlur? spoilerState)
         {
-            User = user;
-            Settings = settings;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            _userFactsStorage = user;
+            _settingsFactsStorage = settings;
             Marker = marker;
-            SpoilerState = spoilerState;
+            _spoilerStateFactsStorage = spoilerState;
         }
 
-        internal JUser User { get; }
+        private JUser _userFactsStorage;
+        private readonly Helpers.UserCacheRegistry.State<JUser> _userFactsOwner = new(prepared: true);
+        internal JUser User => _userFactsOwner.Read(ref _userFactsStorage, () => default!);
 
-        internal PosterTagSettings Settings { get; }
+        private PosterTagSettings _settingsFactsStorage;
+        private readonly Helpers.UserCacheRegistry.State<PosterTagSettings> _settingsFactsOwner = new(prepared: true);
+        internal PosterTagSettings Settings => _settingsFactsOwner.Read(ref _settingsFactsStorage, () => default!);
 
         internal string Marker { get; }
 
-        internal UserSpoilerBlur? SpoilerState { get; }
-
+        internal UserSpoilerBlur? SpoilerState { get => _spoilerStateFactsOwner.Read(ref _spoilerStateFactsStorage, () => default!); }
         // Image owners looked up during this response (ParentPrimaryImageItemId).
-        internal Dictionary<Guid, (string? Type, string? SeriesIdN)> Owners { get; } = new();
+        internal Dictionary<Guid, (string? Type, string? SeriesIdN)> Owners { get => _ownersFactsOwner.Read(ref _ownersFactsStorage, () => default!); }
+        private Dictionary<Guid, (string? Type, string? SeriesIdN)> _ownersFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<Guid, (string? Type, string? SeriesIdN)>> _ownersFactsOwner = new(prepared: true);
+        private UserSpoilerBlur? _spoilerStateFactsStorage = default!;
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<UserSpoilerBlur?> _spoilerStateFactsOwner = new(prepared: true);
     }
 
     // Metadata-time half of native poster tags, called from
@@ -158,6 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private string StampField(BaseItemDto? dto, string tag, Guid ownerId, string ownerType, string? ownerSeriesIdN, bool topRight, NativePosterTagStampSession session)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Idempotent: a filter re-entry must not re-mint.
             if (ImageTagDecoration.GetVariant(tag) != null) return tag;
 
@@ -194,6 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // library item. Memoized per response.
         private (string? Type, string? SeriesIdN) GetOwner(Guid ownerId, NativePosterTagStampSession session)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (session.Owners.TryGetValue(ownerId, out var known)) return known;
             (string? Type, string? SeriesIdN) owner = (null, null);
             if (_data.TryGetCachedEntry(ownerId, out var entry))

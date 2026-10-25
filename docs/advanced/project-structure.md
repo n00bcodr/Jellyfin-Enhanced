@@ -962,3 +962,16 @@ Local metadata saturation returns a typed `503` (`outcome: unavailable`, `reason
 acquire/search. Discovery refuses before publishing/caching when parental preparation cannot
 acquire admission; retrying the same query after drain rechecks evidence. A verified parental
 denial remains separate from unavailable evidence.
+The server backend boundary lives in `Services/Acquire/Backends/`: `EffectiveRequestsBackend` evaluates
+live configuration and admits transports, `SeerrIsolationTransportHandler` guards HTTP dispatch,
+`SeerrIsolationActionFilter` refuses legacy Seerr routes, and `RequestedTitlesProjection` reads current-user
+ledger interests. `Controllers/RequestsBackendController.cs` exposes the authenticated requested-title read.
+
+<!-- Requests & downloads, E1-server fix round 3 -->
+`Services/Acquire/SeerrFacts.cs` owns all Seerr fact handouts, their admission epochs and composed
+publication dependencies. Its partial files contain private request/migration/ownership readers,
+epoch-stamped cache handles, derived-answer stamps and background admission lifetimes. The raw
+readers are not registered or exposed to consumers. `IntegrationSeerrFactArchitectureTests` checks
+production assembly signatures and IL for references outside this owner. The global action filter
+checks actual Seerr dependencies on mixed routes as well as the dedicated Seerr route gates.
+<!-- End Requests & downloads, E1-server fix round 3 -->

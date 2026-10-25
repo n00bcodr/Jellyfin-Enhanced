@@ -79,8 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
             // (Seerr's requests, read in the background by the read model) and the per-user status service.
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
-            serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
-            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.AddSingleton<Services.Acquire.SeerrFacts>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrFacts>());
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
@@ -151,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 3c: collection gaps (what the caller has of a collection, what is missing).
             serviceCollection.AddSingleton<Services.Acquire.Requests.CollectionGapsService>();
             // Seerr to JE authority transfer (admin dry run, complete-or-nothing import, rollback by batch).
-            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigrationReader>();
+
             // Holds JE's own Seerr request writes (proxy, Requests page, outbox) off while a move runs.
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrRequestWriteFence>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigration>();
@@ -592,6 +592,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 o.Filters.AddService<PosterTagImageFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
+            // E1: one live effective-backend owner, guarding shared, fallback and list transports.
+            serviceCollection.AddSingleton(sp => Services.Acquire.Backends.EffectiveRequestsBackend.Shared.WithLogger(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Services.Acquire.Backends.EffectiveRequestsBackend>>()));
+            serviceCollection.AddSingleton<Services.Acquire.Backends.IEffectiveRequestsBackend>(sp => sp.GetRequiredService<Services.Acquire.Backends.EffectiveRequestsBackend>());
+            serviceCollection.AddTransient<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            foreach (var name in new[] { string.Empty, Helpers.Jellyseerr.SeerrHttpHelper.NamedClient })
+                serviceCollection.AddHttpClient(name).AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            serviceCollection.AddHttpClient(string.Empty).ConfigurePrimaryHttpMessageHandler(() => new Services.Acquire.Backends.BackendFallbackTransport());
+            serviceCollection.AddSingleton<Services.Acquire.Backends.RequestedTitlesProjection>();
+            serviceCollection.AddSingleton<Services.Acquire.Backends.SeerrIsolationActionFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Backends.SeerrIsolationActionFilter>(int.MinValue + 100));
+            // End E1.
         }
     }
 }

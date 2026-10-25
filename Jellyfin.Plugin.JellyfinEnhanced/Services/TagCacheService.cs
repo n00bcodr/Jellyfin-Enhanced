@@ -34,7 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Memo for LanguageIdentity: a library uses a few dozen distinct codes,
         // and the culture lookup behind it is a linear scan.
-        private readonly ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
+        // Native library metadata only. Preserve this publication (including its serialized siblings
+        // and version) across request-backend adoption; the compiled producer proof checks independence.
         private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
 
@@ -347,7 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// and the epoch did not move while it was taken (see
         /// CaptureGeneration and IsUnchangedSince).
         /// </summary>
-        private readonly record struct CacheGeneration(ConcurrentDictionary<string, TagCacheEntry> Cache, long Version, long Timestamp, long MaxLastUpdated, long Epoch, bool Quiescent);
+        private readonly record struct CacheGeneration(IReadOnlyDictionary<string, TagCacheEntry> Cache, long Version, long Timestamp, long MaxLastUpdated, long Epoch, bool Quiescent);
 
         /// <summary>
         /// Identifies the content of a shareable serialized <c>items</c> object:
@@ -498,8 +500,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public long Version => Interlocked.Read(ref _version);
         public long LastModified => Interlocked.Read(ref _lastModified);
-        public int Count => _cache.Count;
-
+        public int Count
+        {
+            get
+            {
+                return _cache.Count;
+            }
+        }
         private string CacheFilePath =>
             Path.Combine(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tag-cache.json");
 
@@ -1600,7 +1607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // still be served, but never short-circuited or shared.
                 var epoch = Interlocked.Read(ref _mutationEpoch);
                 var quiescent = Interlocked.CompareExchange(ref _inPlaceWriters, 0, 0) == 0;
-                var cache = _cache;
+                var cache = (IReadOnlyDictionary<string, TagCacheEntry>)_cache;
                 var version = Interlocked.Read(ref _version);
                 var timestamp = Interlocked.Read(ref _lastModified);
                 var maxLastUpdated = Interlocked.Read(ref _maxLastUpdated);
@@ -1847,7 +1854,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             entry = null!;
             if (!ServerModeEnabled || _cacheReleased) return false;
-            var cache = _cache; // one volatile read of the current generation
+            var cache = (IReadOnlyDictionary<string, TagCacheEntry>)_cache; // one volatile read of the current generation
             if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
             entry = found;
             return true;

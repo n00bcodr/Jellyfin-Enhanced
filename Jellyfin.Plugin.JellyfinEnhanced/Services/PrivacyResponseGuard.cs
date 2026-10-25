@@ -37,6 +37,9 @@ public sealed class PrivacyResponseGuard : IDisposable
     private GuardedBody? _body;
     private GuardedBody? _transportBody;
     private EvidencePublication? _evidence;
+    private SeerrFacts.Publication? _backendPublication;
+    private string? _backendFailure;
+    private int _backendFailureSent;
     private bool _titleFreeTransient;
     private bool _evidenceIndependent;
     private bool _detached;
@@ -112,6 +115,26 @@ public sealed class PrivacyResponseGuard : IDisposable
     }
 
     /// <summary>A long-poll takes no token while idle; each message/batch starts a fresh evidence dependency.</summary>
+    // Retain the consumed original backend dependencies after the action scope ends. The same
+    // body/header owner checks them during serialization, OnStarting and the final byte commit.
+    internal static void BackendPublication(HttpContext http, SeerrFacts.Publication publication)
+    {
+        var guard = Find(http) ?? Of(http);
+        lock (guard._lock) guard._backendPublication = publication;
+    }
+
+    private bool BackendHolds()
+    {
+        SeerrFacts.Publication? publication;
+        lock (_lock) publication = _backendPublication;
+        try { publication?.Publish(() => true); return true; }
+        catch (Acquire.Backends.BackendDisabledException ex)
+        {
+            lock (_lock) _backendFailure = ex.Reason;
+            return false;
+        }
+    }
+
     internal static void BeginMessage(HttpContext http)
     {
         if (Find(http) is not { } guard) return;
@@ -196,6 +219,12 @@ public sealed class PrivacyResponseGuard : IDisposable
     {
         var http = context.HttpContext;
         if (Find(http) is not { } guard) return true;
+        if (!guard.BackendHolds())
+        {
+            guard.Stop();
+            context.Result = new StatusCodeResult(409);
+            return false;
+        }
         if (!HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method)
             && context.Result is StatusCodeResult { StatusCode: >= 200 and < 300 })
         {
@@ -337,6 +366,7 @@ public sealed class PrivacyResponseGuard : IDisposable
     /// </summary>
     public bool Holds(bool live = true)
     {
+        if (!BackendHolds()) return false;
         PrivacyReadSet[] reads;
         lock (_lock)
         {
@@ -413,7 +443,7 @@ public sealed class PrivacyResponseGuard : IDisposable
         {
             lock (_lock) _committing = false;
         }
-        if (Stopped) return false;
+        if (Stopped) { await WriteBackendFailureAsync().ConfigureAwait(false); return false; }
         // A host without start callbacks (an in-process context) is checked here instead.
         bool checkedAtStart;
         lock (_lock) checkedAtStart = _startChecked;
@@ -434,9 +464,13 @@ public sealed class PrivacyResponseGuard : IDisposable
     /// </summary>
     public static async Task CommitAsync(HttpContext http)
     {
-        if (Find(http) is not { } guard || guard.Stopped || guard.Committed) return;
-        guard.Bind(http);
-        if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
+        if (Find(http) is not { } guard || guard.Committed) return;
+        if (!guard.Stopped)
+        {
+            guard.Bind(http);
+            if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
+        }
+        await guard.WriteBackendFailureAsync().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -473,8 +507,8 @@ public sealed class PrivacyResponseGuard : IDisposable
     private void WithheldHeaders()
     {
         var response = _http.Response;
-        response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-        response.ContentLength = 0;
+        response.StatusCode = _backendFailure == null ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status409Conflict;
+        response.ContentLength = _backendFailure == null ? 0 : BackendFailureBody().Length;
         response.Headers.CacheControl = "private, no-store";
         response.Headers.Remove("ETag");
         response.Headers.Remove("Last-Modified");
@@ -482,7 +516,21 @@ public sealed class PrivacyResponseGuard : IDisposable
         response.Headers.Remove("Content-Disposition");
         response.Headers.Remove("Content-Range");
         response.Headers.Remove("Accept-Ranges");
-        response.Headers["Retry-After"] = "1";
+        if (_backendFailure == null) response.Headers["Retry-After"] = "1";
+        else
+        {
+            response.Headers.Remove("Retry-After");
+            response.ContentType = "application/json";
+        }
+    }
+
+    private byte[] BackendFailureBody() => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { code = _backendFailure, error = true });
+
+    private async Task WriteBackendFailureAsync()
+    {
+        if (_backendFailure == null || !Stopped || HttpMethods.IsHead(_http.Request.Method)
+            || _http.RequestAborted.IsCancellationRequested || Interlocked.Exchange(ref _backendFailureSent, 1) != 0) return;
+        if (_transportBody is { } transport) await transport.WriteFailureAsync(BackendFailureBody()).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -589,6 +637,12 @@ public sealed class PrivacyResponseGuard : IDisposable
         }
 
         /// <summary>Hands the held bytes to the transport (the commit).</summary>
+        internal async Task WriteFailureAsync(byte[] body)
+        {
+            await inner.WriteAsync(body).ConfigureAwait(false);
+            await inner.FlushAsync().ConfigureAwait(false);
+        }
+
         public async Task ReleaseAsync()
         {
             byte[][] held;

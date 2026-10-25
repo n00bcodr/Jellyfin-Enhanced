@@ -1405,6 +1405,7 @@
     "ArrAutomationSourceFetchesPerHour": 60,
     "ArrBridgeMetadataWaitMinutes": 10,
     "ArrBridgeStableSeconds": 3,
+    "ArrBackendIsolationVersion": 0,
     "ArrEmailEnabled": false,
     "ArrGroupQuotaPools": "",
     "ArrHouseholdContactName": "",

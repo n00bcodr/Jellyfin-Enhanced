@@ -306,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
     public sealed class StampInterests : IStampInterests
     {
         private readonly RequestLedger _ledger;
-        private readonly SeerrRequestReadModel _requests;
+        private readonly SeerrFacts _requests;
         private readonly NotifyStore _follows;
         private readonly TitleAliases _aliases;
 
@@ -315,7 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="requests">Seerr's requests.</param>
         /// <param name="follows">Follows.</param>
         /// <param name="aliases">Title aliases.</param>
-        public StampInterests(RequestLedger ledger, SeerrRequestReadModel requests, NotifyStore follows, TitleAliases aliases)
+        public StampInterests(RequestLedger ledger, SeerrFacts requests, NotifyStore follows, TitleAliases aliases)
         {
             _ledger = ledger;
             _requests = requests;
@@ -325,6 +325,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         /// <inheritdoc />
         public IReadOnlyList<StampInterest> For(IReadOnlyList<TitleKey> keys)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForFactsCore(keys));
+
+        private IReadOnlyList<StampInterest> ForFactsCore(IReadOnlyList<TitleKey> keys)
         {
             var titles = new List<TitleKey>();
             var seen = new HashSet<string>(StringComparer.Ordinal);

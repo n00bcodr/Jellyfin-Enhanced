@@ -198,7 +198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<StatusViewer, int, IReadOnlyList<RecentTitle>> _recent;
         private readonly Func<Guid, HiddenTitles> _hidden;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<string, (DateTimeOffset At, Prepared Page)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTimeOffset At, Prepared Page)> _cache = new(StringComparer.Ordinal);
         private readonly ResponseGate _gate;
 
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
@@ -401,12 +401,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 if (spoiler == null) return card;
                 var flags = spoiler.Flags(card.Key);
-                return card with { Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
-                    Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster, Spoiler = flags };
+                return card with
+                {
+                    Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
+                    Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster,
+                    Spoiler = flags
+                };
             }
-            return answer with { Results = answer.Results.Where(Keep).Select(Project).ToArray(),
+            return answer with
+            {
+                Results = answer.Results.Where(Keep).Select(Project).ToArray(),
                 Groups = answer.Groups?.Where(g => !keys.Contains(g.Key)).Select(g => g with { Results = g.Results.Where(Keep).Select(Project).ToArray() })
-                    .Where(g => g.Results.Count > 0).ToArray() };
+                    .Where(g => g.Results.Count > 0).ToArray()
+            };
         }
 
         // ------------------------------------------------------------------ projection
@@ -788,19 +795,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         private Prepared? Cached(string key)
-            => _cache.TryGetValue(key, out var entry) && _now() - entry.At < CacheTtl ? entry.Page : null;
-
+        {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return _cacheFacts.TryGetValue(key, out var entry) && _now() - entry.At < CacheTtl ? entry.Page : null;
+        }
         // Not an answer composed from a copy lookup that reached its bound: the next read looks again.
         private void Store(string key, Prepared answer)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (CopyLookupBound.Reached || answer.Ratings.Values.Any(v => v == null)) return;
             var now = _now();
-            if (_cache.Count >= MaxCacheEntries)
+            if (_cacheFacts.Count >= MaxCacheEntries)
             {
-                foreach (var stale in _cache.Where(e => now - e.Value.At >= CacheTtl).Select(e => e.Key).ToList()) _cache.TryRemove(stale, out _);
-                if (_cache.Count >= MaxCacheEntries) _cache.Clear();
+                foreach (var stale in _cacheFacts.Where(e => now - e.Value.At >= CacheTtl).Select(e => e.Key).ToList()) _cacheFacts.TryRemove(stale, out _);
+                if (_cacheFacts.Count >= MaxCacheEntries) _cacheFacts.Clear();
             }
-            _cache[key] = (now, answer);
+            _cacheFacts[key] = (now, answer);
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTimeOffset At, Prepared Page)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTimeOffset At, Prepared Page)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

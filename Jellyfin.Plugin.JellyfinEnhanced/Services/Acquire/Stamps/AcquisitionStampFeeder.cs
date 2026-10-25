@@ -46,9 +46,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<Guid, DateTime> _pending = new();
-        private readonly ConcurrentDictionary<Guid, (StampItem Item, long Generation)> _removed = new();
-        private readonly HashSet<string> _upgradesDone = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<Guid, DateTime> _pending = new();
+        private ConcurrentDictionary<Guid, (StampItem Item, long Generation)> _removed = new();
+        private HashSet<string> _upgradesDone = new(StringComparer.Ordinal);
         private readonly object _upgradesGate = new();
         private readonly SemaphoreSlim _round = new(1, 1);
         private CancellationTokenSource? _loop;
@@ -142,20 +142,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// </summary>
         /// <param name="cancellationToken">Stops between items.</param>
         /// <returns>A task.</returns>
-        internal async Task TickAsync(CancellationToken cancellationToken)
+        internal Task TickAsync(CancellationToken cancellationToken)
+            => SeerrFacts.BackgroundAsync(token => TickAsyncFactsCore(token), cancellationToken);
+
+        private async Task TickAsyncFactsCore(CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             await _round.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (!On)
                 {
                     _wasOn = false;
-                    _pending.Clear();
+                    _pendingFacts.Clear();
                     // A removal already delegated by the live tracker still invalidates ordinary status when badges turn off.
                     using var removals = _store.BatchNotifications();
-                    foreach (var (id, removed) in _removed.ToArray())
+                    foreach (var (id, removed) in _removedFacts.ToArray())
                     {
-                        if (_removed.TryRemove(id, out _)) _store.RemoveItem(removed.Item, removed.Generation);
+                        if (_removedFacts.TryRemove(id, out _)) _store.RemoveItem(removed.Item, removed.Generation);
                     }
                     removals.Complete();
                     return;
@@ -166,7 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 if (_generation != _store.Generation)
                 {
                     _generation = _store.Generation;
-                    lock (_upgradesGate) _upgradesDone.Clear();
+                    lock (_upgradesGate) _upgradesDoneFacts.Clear();
                     _nextCatchUp = now;
                 }
                 if (!_wasOn)
@@ -180,18 +184,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     _resolver.RefreshFourK(force: true);
                 }
 
-                foreach (var (id, removed) in _removed.ToArray())
+                foreach (var (id, removed) in _removedFacts.ToArray())
                 {
-                    if (!_removed.TryRemove(id, out _)) continue;
+                    if (!_removedFacts.TryRemove(id, out _)) continue;
                     _store.RemoveItem(removed.Item, generation: removed.Generation);
                 }
                 Upgrades(now);
-                foreach (var (id, queued) in _pending.ToArray())
+                foreach (var (id, queued) in _pendingFacts.ToArray())
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (now - queued < Settle) continue;
                     // The wait only stops retrying an unread source every round; it never decides its edition.
-                    if (Judge(id, now) != Outcome.Later || now - queued > ProbeWait) _pending.TryRemove(id, out _);
+                    if (Judge(id, now) != Outcome.Later || now - queued > ProbeWait) _pendingFacts.TryRemove(id, out _);
                 }
 
                 if (now >= _nextCatchUp)
@@ -205,9 +209,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     foreach (var id in candidates)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (_pending.ContainsKey(id) || _library.Item(id) is not { } item
+                        if (_pendingFacts.ContainsKey(id) || _library.Item(id) is not { } item
                             || item.SourceItems().All(source => _store.Seen(id, source.SourceId))) continue;
-                        if (Judge(id, now) == Outcome.Later) _pending.TryAdd(id, now);
+                        if (Judge(id, now) == Outcome.Later) _pendingFacts.TryAdd(id, now);
                     }
                 }
 
@@ -253,6 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="now">Now (UTC).</param>
         /// <returns>The outcome.</returns>
         internal Outcome Judge(Guid itemId, DateTime now)
+            => SeerrFacts.Process(() => JudgeFactsCore(itemId, now));
+
+        private Outcome JudgeFactsCore(Guid itemId, DateTime now)
         {
             var generation = _store.Generation;
             if (_library.Item(itemId) is not { IsVideo: true, Virtual: false } item || item.Keys.Count == 0) return Outcome.Skipped;
@@ -340,13 +347,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private void Upgrades(DateTime now)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var generation = _store.Generation;
             var window = Math.Min(AcquisitionStampFlags.UpgradedLifetime(_config()).TotalDays, AcquisitionStampFlags.MaxDays);
             foreach (var import in _upgrades.Since(now - TimeSpan.FromDays(window)))
             {
                 lock (_upgradesGate)
                 {
-                    if (_upgradesDone.Contains(import.Source)) continue;
+                    if (_upgradesDoneFacts.Contains(import.Source)) continue;
                 }
 
                 // Jellyfin doesn't have the new file yet: looked at again next round, for a day.
@@ -368,10 +376,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private void Done(string source)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_upgradesGate)
             {
-                if (_upgradesDone.Count > 20000) _upgradesDone.Clear();
-                _upgradesDone.Add(source);
+                if (_upgradesDoneFacts.Count > 20000) _upgradesDoneFacts.Clear();
+                _upgradesDoneFacts.Add(source);
             }
         }
 
@@ -405,15 +414,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private void OnAdded(StampItem item)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!item.IsVideo || item.Virtual || !On) return;
             var generation = _store.Generation;
             var now = _now().UtcDateTime;
             _store.ObserveSources(new[] { item }, arrived: now, generation: generation);
-            _pending.TryAdd(item.Id, now);
+            _pendingFacts.TryAdd(item.Id, now);
         }
 
         private void OnRemoved(StampItem item)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!item.IsVideo || item.Virtual || !On) return;
             try
             {
@@ -424,13 +435,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     if (source.EditionKnown) _store.NoteArrival(AcquisitionStampStore.PartKeys(source), source.DateCreated, item.Id, generation: generation);
                     else _store.NoteContentArrival(source, source.DateCreated, generation: generation);
                 }
-                _pending.TryRemove(item.Id, out _);
-                _removed[item.Id] = (item, generation);
+                _pendingFacts.TryRemove(item.Id, out _);
+                _removedFacts[item.Id] = (item, generation);
             }
             catch (Exception ex)
             {
                 _logger?.Debug($"Acquisition badges: could not note a removed item ({ex.Message}).");
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, DateTime>> _pendingFactsOwner = new();
+        private ConcurrentDictionary<Guid, DateTime> _pendingFacts { get => _pendingFactsOwner.Read(ref _pending, () => new()); set => _pendingFactsOwner.Store(ref _pending, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, (StampItem Item, long Generation)>> _removedFactsOwner = new();
+        private ConcurrentDictionary<Guid, (StampItem Item, long Generation)> _removedFacts { get => _removedFactsOwner.Read(ref _removed, () => new()); set => _removedFactsOwner.Store(ref _removed, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<HashSet<string>> _upgradesDoneFactsOwner = new();
+        private HashSet<string> _upgradesDoneFacts { get => _upgradesDoneFactsOwner.Read(ref _upgradesDone, () => new(StringComparer.Ordinal)); set => _upgradesDoneFactsOwner.Store(ref _upgradesDone, value); }
     }
 }

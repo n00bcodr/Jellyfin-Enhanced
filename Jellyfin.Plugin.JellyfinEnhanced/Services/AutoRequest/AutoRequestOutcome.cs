@@ -26,6 +26,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
     /// <param name="WantId">The want recorded, if any.</param>
     public sealed record AutoRequestOutcome(AutoRequestOutcomeKind Kind, string Reason, string? TitleKey = null, string? WantId = null)
     {
+        // Backend refusal is an expected worker outcome. Keep it outside the fact scope so a refused send
+        // cannot be republished as a stale fact result, and cancellation still reaches the worker unchanged.
+        internal static async System.Threading.Tasks.Task<AutoRequestOutcome> RunOwnedAsync(
+            System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<AutoRequestOutcome>> work,
+            System.Threading.CancellationToken ct)
+        {
+            try { return await Acquire.SeerrFacts.BackgroundAsync(work, ct).ConfigureAwait(false); }
+            catch (Acquire.Backends.BackendDisabledException) { return Noop("disabled"); }
+        }
+
         /// <summary>A request was recorded.</summary>
         public static AutoRequestOutcome Recorded(string reason, string? titleKey = null, string? wantId = null) => new(AutoRequestOutcomeKind.WantRecorded, reason, titleKey, wantId);
 

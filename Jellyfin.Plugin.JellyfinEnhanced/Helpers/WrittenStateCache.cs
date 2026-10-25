@@ -58,14 +58,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             {
                 Clock = clock;
                 Ticks = ticks;
+                Facts = UserCacheRegistry.Begin();
             }
+
+            internal UserCacheRegistry.Ticket Facts { get; }
 
             internal long Clock { get; }
 
             internal long Ticks { get; }
         }
 
-        private sealed record Entry(TValue Value, long ExpiresAt, long Clock);
+        private sealed record Entry(UserCacheRegistry.Entry<Services.Acquire.SeerrFacts.Derived<TValue>> Facts, long ExpiresAt, long Clock)
+        {
+            internal TValue Value => Facts.Value.Read(default!);
+        }
 
         /// <summary>Entries held (valid or not yet dropped).</summary>
         public int Count => _entries.Count;
@@ -86,6 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 return true;
             }
 
+            if (entry != null && !UserCacheRegistry.Current(entry.Facts.Ticket)) ((ICollection<KeyValuePair<TKey, Entry>>)_entries).Remove(new(key, entry));
             value = default!;
             return false;
         }
@@ -107,7 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public void Set(TKey key, in Ticket ticket, TValue value, TimeSpan life)
         {
             var now = _ticks();
-            var entry = new Entry(value, ticket.Ticks + Math.Max(0, Math.Min(_ttl.Ticks, life.Ticks)), ticket.Clock);
+            var entry = new Entry(UserCacheRegistry.Store(ticket.Facts, Services.Acquire.SeerrFacts.Remember(value)), ticket.Ticks + Math.Max(0, Math.Min(_ttl.Ticks, life.Ticks)), ticket.Clock);
             if (!Serves(key, entry, now)) return;
             _step?.Invoke("store");
             if (_entries.Count >= _maxEntries)
@@ -152,10 +159,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             _entries.Clear();
         }
 
+        internal void EvictOldFacts()
+        {
+            foreach (var entry in _entries)
+                if (!UserCacheRegistry.Current(entry.Value.Facts.Ticket))
+                    ((ICollection<KeyValuePair<TKey, Entry>>)_entries).Remove(entry);
+        }
+
         private bool Serves(TKey key, Entry entry, long now)
         {
             var epoch = _ledger.Current;
-            return entry.ExpiresAt > now && epoch.Admits(entry.Clock) && !epoch.Ended(key, entry.Clock);
+            return UserCacheRegistry.Current(entry.Facts.Ticket) && entry.Facts.Value.TryRead(out _) && entry.ExpiresAt > now && epoch.Admits(entry.Clock) && !epoch.Ended(key, entry.Clock);
         }
     }
 }
