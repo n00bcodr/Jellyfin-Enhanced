@@ -88,6 +88,8 @@ public class IntegrationAutomationTransportTests
         using var e = new IntegrationAutomationTests.Engine();
         var arr = lab ?? seerr!.Arr;
         var instance = arr.Instance("Radarr").Id;
+        e.C.RadarrInstances = arr.Config.RadarrInstances;
+        e.C.SonarrInstances = arr.Config.SonarrInstances;
         e.C.ArrRequestBackend = backend == "direct" ? "je" : "seerr";
         e.C.JellyseerrEnabled = true;
         e.C.ArrAutomationKillAll = true;

@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="t">The transaction, if any.</param>
         /// <param name="key">A title key (any of its ids).</param>
         internal static string Canonical(SqliteConnection c, SqliteTransaction? t, string key)
-            => Scalar(c, t, "SELECT canonical FROM active_title_aliases WHERE alias=$k", ("$k", key)) ?? key;
+            => TitleChoiceRegistry.IsIdentityFenced(c, t, key) ? key : Scalar(c, t, "SELECT canonical FROM title_aliases WHERE alias=$k", ("$k", key)) ?? key;
 
         // The input under its title's canonical key.
         private static MutationInput Canonical(SqliteConnection c, SqliteTransaction? t, MutationInput input)
@@ -129,8 +129,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var factsOrigin = Helpers.UserCacheRegistry.PersistentOrigin(Helpers.UserCacheRegistry.Begin());
             var given = keys.Select(TitleKey.Parse).OfType<TitleKey>().Select(k => k.Title).DistinctBy(k => k.ToString()).ToList();
             if (given.Count < 2 || given.Any(k => k.IsMovie != given[0].IsMovie) || !_db.Available) return null;
-            if (!_db.Read(c => Group(c, null, given, seerrOrigin) is { } group && Needed(c, null, group, given, seerrOrigin))) return null;
-            return _db.Write((c, t) => Group(c, t, given, seerrOrigin) is { } group && Needed(c, t, group, given, seerrOrigin) ? UnifyCore(c, t, group, given, policy, now, seerrOrigin, factsOrigin) : null);
+            if (_db.Read(c => given.Any(k => TitleChoiceRegistry.IsIdentityFenced(c, null, k.ToString()))))
+                return _db.Write<TitleMerge?>((c, t) => { TitleChoiceRegistry.FenceSplit(c, t, given); return null; });
+            if (!_db.Read(c => Group(c, null, given, seerrOrigin) is not { } group || Needed(c, null, group, given, seerrOrigin))) return null;
+            return _db.Write((c, t) =>
+            {
+                if (Group(c, t, given, seerrOrigin) is not { } group)
+                {
+                    TitleChoiceRegistry.FenceSplit(c, t, given);
+                    return null;
+                }
+                return Needed(c, t, group, given, seerrOrigin) ? UnifyCore(c, t, group, given, policy, now, seerrOrigin, factsOrigin) : null;
+            });
         }
 
         // The title's keys: the ones given, what the ledger already maps them to, and the aliases it maps to those, with the
@@ -228,6 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private static TitleMerge UnifyCore(SqliteConnection c, SqliteTransaction t, List<string> group, IReadOnlyList<TitleKey> given, IRequestPolicy policy, DateTimeOffset now, bool seerrOrigin, string factsOrigin)
         {
+            TitleChoiceRegistry.Reconcile(c, t, group);
             var canonical = group[0];
             var aliases = group.Skip(1).ToList();
             // The aliases, each mapped straight to the canonical key (an earlier canonical key included).

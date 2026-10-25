@@ -1199,6 +1199,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/TitleChoiceRegistry.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RequestsHubService.cs",
       "category": "Services"
     },
@@ -11912,7 +11916,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 765,
+    "files": 766,
     "routes": 312,
     "configuration_properties": 667,
     "storage_references": 106,

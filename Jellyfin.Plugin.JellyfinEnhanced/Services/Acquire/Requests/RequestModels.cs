@@ -288,14 +288,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0)
     {
         /// <summary>
-        /// Refresh approval authority without making a new choice or losing a previous send binding.
-        /// Keep legacy null/zero choice stamps as stored; ledger readers retain their existing inference.
+        /// Refresh approval authority and preserve the send binding. Choice display snapshots are supplied
+        /// by TitleChoiceRegistry from the independent job reference, never inferred from this authority.
         /// </summary>
         public RequestAuthorization CarryForward(RequestAuthorization refreshed)
             => refreshed with
             {
-                ChoiceOwner = ChoiceOwner,
-                ChoiceVersion = ChoiceVersion,
                 SeerrUser = SeerrUser ?? refreshed.SeerrUser,
                 SeerrSeasons = SeerrSeasons,
             };
@@ -307,7 +305,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed record RequestDispatch(string TargetKey, MutationInput Input, DateTimeOffset At);
     /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
-        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
+        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false)
+    {
+        /// <summary>Durable registry reference; authorization choice fields are non-authoritative display snapshots.</summary>
+        public string? TitleChoiceId { get; init; }
+        /// <summary>The registry revision admitted for this job.</summary>
+        public long TitleChoiceRevision { get; init; }
+        /// <summary>Non-authoritative tag/type snapshot, populated only by the registry.</summary>
+        public Model.Arr.ArrInstanceDefaults? TitleChoiceSettings { get; init; }
+    }
     /// <summary>The current title-wide add choice, exposed only to an administrator submitting routing.</summary>
     public sealed record RequestChoice(
         [property: JsonPropertyName("owner")] Guid Owner,

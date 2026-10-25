@@ -56,7 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// saved defaults. <paramref name="tags"/> is the instance's tag list (null when it couldn't be
         /// read: then saved tags can't be checked and are refused).
         /// </summary>
-        public static ArrAddCheck Check(ArrConnection instance, ArrSnapshotRead<ArrSystemSnapshot> system, IReadOnlyDictionary<int, string>? tags, int? profileId = null, string? rootFolder = null)
+        public static ArrAddCheck Check(ArrConnection instance, ArrSnapshotRead<ArrSystemSnapshot> system, IReadOnlyDictionary<int, string>? tags, int? profileId = null, string? rootFolder = null, ArrInstanceDefaults? ownedSettings = null)
         {
             var name = instance.Name;
             if (system.Value == null || system.Error != null || system.Stale)
@@ -64,11 +64,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return new ArrAddCheck(null, "defaults_unverified", $"{name}'s quality profiles and root folders could not be read just now, so the add settings can't be checked.");
             }
             var saved = instance.Defaults;
-            var profile = profileId ?? saved?.QualityProfileId;
-            var root = rootFolder ?? saved?.RootFolderPath;
+            var profile = ownedSettings != null ? profileId : profileId ?? saved?.QualityProfileId;
+            var root = ownedSettings != null ? rootFolder : rootFolder ?? saved?.RootFolderPath;
             if (profile == null || root == null)
             {
-                return new ArrAddCheck(null, "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
+                return new ArrAddCheck(null, ownedSettings != null ? "invalid_choice" : "invalid_defaults", $"{name} needs a quality profile and root folder for adding titles. Choose them in Manage → Add to, or set the instance's add defaults.");
             }
             if (!system.Value.QualityProfiles.Any(p => p.Id == profile))
             {
@@ -83,15 +83,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 return new ArrAddCheck(null, "invalid_choice", $"{name} reports its root folder {folder.Path} as not accessible.");
             }
-            var wanted = (saved?.Tags ?? new List<int>()).Distinct().ToArray();
+            var settings = ownedSettings ?? saved;
+            var wanted = (settings?.Tags ?? new List<int>()).Distinct().ToArray();
             if (wanted.Length > 0 && (tags == null || wanted.Any(t => !tags.ContainsKey(t))))
             {
                 return new ArrAddCheck(null, tags == null ? "defaults_unverified" : "invalid_choice", $"{name} doesn't have every tag set in its add defaults.");
             }
-            var availability = Availability.FirstOrDefault(a => string.Equals(a, saved?.MinimumAvailability, StringComparison.OrdinalIgnoreCase)) ?? "released";
-            var seriesType = SeriesTypes.FirstOrDefault(s => string.Equals(s, saved?.SeriesType, StringComparison.OrdinalIgnoreCase))
+            var availability = Availability.FirstOrDefault(a => string.Equals(a, settings?.MinimumAvailability, StringComparison.OrdinalIgnoreCase)) ?? "released";
+            var seriesType = SeriesTypes.FirstOrDefault(s => string.Equals(s, settings?.SeriesType, StringComparison.OrdinalIgnoreCase))
                 ?? (instance.Role == ArrInstanceRole.Anime ? "anime" : "standard");
-            return new ArrAddCheck(new ArrAddDefaults(profile.Value, folder.Path!, wanted, availability, seriesType), null, string.Empty);
+            return new ArrAddCheck(new ArrAddDefaults(profile.Value, ownedSettings != null ? root : folder.Path!, wanted, availability, seriesType), null, string.Empty);
         }
     }
 }

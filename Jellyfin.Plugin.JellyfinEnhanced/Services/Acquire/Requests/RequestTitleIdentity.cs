@@ -114,6 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             using var publication = SeerrFacts.BeginPublication();
             var given = key.Title.ToString();
+            if (ledger.Choices.IdentityFenced(given)) return key.Title;
             var held = ledger.CanonicalKey(given);
             if (held != given) return TitleKey.Parse(held) ?? key.Title;
             var known = aliases?.Canonical(key.Title) ?? key.Title;
@@ -140,6 +141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var normalized = input?.Normalize();
             if (normalized == null || TitleKey.Parse(normalized.Key) is not { } key) return null;
             if (learn) Learn(ledger, policy, aliases, feed, normalized.Key, now);
+            if (ledger.Choices.IdentityFenced(normalized.Key)) return normalized;
             var held = Held(ledger, aliases, key).ToString();
             return held == normalized.Key ? normalized : normalized with { Key = held };
         }

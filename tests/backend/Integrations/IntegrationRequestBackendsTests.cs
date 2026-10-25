@@ -505,6 +505,9 @@ public class IntegrationRequestBackendsTests
     private static (IntegrationRequestLedgerTests.Rig Rig, Lab Lab) Ledger(Lab lab)
     {
         var r = new IntegrationRequestLedgerTests.Rig();
+        // Admission records the same defaults the configured backend will use.
+        r.Policy.Configuration.RadarrInstances = lab.Config.RadarrInstances;
+        r.Policy.Configuration.SonarrInstances = lab.Config.SonarrInstances;
         // The rig's people now point at the lab's instances and their real connection generations.
         r.Policy.Adjust = (user, input, facts) =>
         {

@@ -128,17 +128,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return (null, BackendResults.Retry("backend_unavailable", "The instance's add settings could not be revalidated."));
             var system = await _store.GetSystemAsync(run.Instance, run.Ct).ConfigureAwait(false);
             IReadOnlyDictionary<int, string>? tags = null;
-            if (run.Instance.Defaults?.Tags is { Count: > 0 })
+            if ((run.Job.TitleChoiceSettings ?? run.Instance.Defaults)?.Tags is { Count: > 0 })
             {
                 var read = await run.Client.GetAsync<List<TagRow>>("tag", null, ArrCallClass.Read, run.Ct).ConfigureAwait(false);
                 if (read.Ok) tags = read.Value!.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().Label ?? string.Empty);
             }
-            var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder);
+            var check = ArrAddRules.Check(run.Instance, system, tags, run.Job.Input.ProfileId, run.Job.Input.RootFolder, run.Job.TitleChoiceSettings);
             ChoiceNames(run, system.Value);
-            // A refused add still audits the effective candidate, including a saved fallback.
-            if ((run.Job.Input.ProfileId ?? run.Instance.Defaults?.QualityProfileId) is { } candidateProfile)
+            // A refused add still audits the effective candidate, from the admitted record, without a later saved fallback.
+            if (run.Job.Input.ProfileId is { } candidateProfile)
                 run.AddChoiceDetails["qualityProfileId"] = candidateProfile.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if ((run.Job.Input.RootFolder ?? run.Instance.Defaults?.RootFolderPath) is { } candidateRoot)
+            if (run.Job.Input.RootFolder is { } candidateRoot)
                 run.AddChoiceDetails["rootFolder"] = candidateRoot;
             if (check.Defaults != null) return (check.Defaults, null);
             return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold(check.Reason!, check.Message));
@@ -147,10 +147,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static void ChoiceNames(Run run, ArrSystemSnapshot? system)
         {
             run.AddChoiceDetails["instanceName"] = run.Instance.Name;
-            if ((run.Job.Input.ProfileId ?? run.Instance.Defaults?.QualityProfileId) is { } profile && system?.QualityProfiles.FirstOrDefault(p => p.Id == profile) is { } named)
+            if (run.Job.Input.ProfileId is { } profile && system?.QualityProfiles.FirstOrDefault(p => p.Id == profile) is { } named)
                 run.AddChoiceDetails["qualityProfileName"] = named.Name;
             // Arr root folders are identified/displayed by path in the shared snapshot.
-            if ((run.Job.Input.RootFolder ?? run.Instance.Defaults?.RootFolderPath) is { } root)
+            if (run.Job.Input.RootFolder is { } root)
                 run.AddChoiceDetails["rootFolderName"] = system?.RootFolders.FirstOrDefault(r => r.Path != null && BridgePaths.SamePath(r.Path, root))?.Path ?? root;
         }
 

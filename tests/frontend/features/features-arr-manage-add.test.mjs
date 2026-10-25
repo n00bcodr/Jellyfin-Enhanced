@@ -20,6 +20,7 @@ function translate(key, params) {
 
 function setup(t, responses) {
   const calls = [];
+  let userChange;
   const h = createHarness({
     html: '<div class="mainAnimatedPages"></div>',
     url: 'http://jellyfin.test/web/index.html#/home',
@@ -41,13 +42,13 @@ function setup(t, responses) {
         lifecycle: { register: () => ({ track: x => x }) }
       },
       arr: { live: { position: () => ({ epoch: 'e1', cursor: 1 }) }, onStatusChange: () => () => {} },
-      session: { getEpoch: () => 0, isCurrent: () => true, onUserChange: () => {} }
+      session: { getEpoch: () => 0, isCurrent: () => true, onUserChange: (_name, fn) => { userChange = fn; } }
     }
   });
   t.after(() => { h.JE.arrManage?.close(); h.close(); });
   for (const m of MODULES) h.load(m);
   h.JE.initializeArrStatus?.();
-  return { ...h, get NATIVE() { return h.NATIVE; }, calls };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, switchUser: () => userChange() };
 }
 
 async function until(check, ms = 4000) {
@@ -199,4 +200,166 @@ test('a held add says why (the request is parked for the administrator)', async 
   await until(() => h.document.querySelector('.je-manage-add-failed'));
   assert.equal(h.document.querySelector('.je-manage-add-failed').textContent, "Couldn't add it: Radarr 4K doesn't know this title");
   assert.equal(button(h, 'add-sheetlink-r4').tagName, 'A');
+});
+
+
+const queuedChoice = (version = 1, extra = {}) => ({ owner: 'admin-a', version, profileId: 4, rootFolder: '/data/movies4k', ...extra });
+const choiceError = choice => Object.assign(new Error('HTTP 409'), { status: 409,
+  responseJSON: { outcome: 'conflict', reason: 'choice_conflict', message: 'A queued choice exists.', choice } });
+
+async function conflictSheet(t, respond = () => choiceError(queuedChoice()), user = () => ({ name: 'Alex <admin>' }), kind = 'movie') {
+  const posts = [];
+  const info = overview(true, kind);
+  info.instances.push({ ...info.instances[1], id: 'other', name: 'Other Radarr' });
+  const h = setup(t, (path, opts) => {
+    if (path.startsWith('/arr/admin/manage?')) return info;
+    if (path.startsWith('/arr/admin/manage/add-options')) return options(kind === 'movie' ? {} : {
+      title: { title: "Blake's 7", seasons: [{ seasonNumber: 0 }, { seasonNumber: 1 }, { seasonNumber: 2 }] }
+    });
+    if (path.startsWith('/arr/admin/users/')) return user(path);
+    if (path === '/arr/admin/manage/add') { posts.push(opts.body); return respond(posts.length, opts.body); }
+    return null;
+  });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.NATIVE });
+  await until(() => button(h, 'add-r4'));
+  button(h, 'add-r4').click();
+  await until(() => button(h, 'add-submit-r4'));
+  button(h, 'add-submit-r4').click();
+  await until(() => posts.length === 1 && button(h, 'add-submit-r4')?.getAttribute('aria-disabled') !== 'true');
+  return { h, posts };
+}
+
+test('a choice conflict shows the owner, named profile, literal root and version without automatically overriding', async t => {
+  const { h, posts } = await conflictSheet(t, () => choiceError(queuedChoice(1, { rootFolder: '/movies/<queued>' })));
+  await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Alex <admin>'));
+  const conflict = h.document.querySelector('.je-manage-add-conflict');
+  assert.match(conflict.textContent, /HD-1080p/);
+  assert.match(conflict.textContent, /\/movies\/<queued>/);
+  assert.match(conflict.textContent, /Version 1/);
+  assert.equal(conflict.querySelector('admin, queued'), null);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].overrideChoiceVersion, undefined);
+  assert.equal(button(h, 'add-profile-r4').value, '5');
+});
+
+test('replacing requires a separate confirmation and a stale confirmation must show the new owner and version', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice()) :
+    n === 2 ? choiceError(queuedChoice(2, { owner: 'admin-c' })) : { outcome: 'accepted' },
+    path => ({ name: path.endsWith('admin-c') ? 'Casey' : 'Alex' }));
+  assert.ok(button(h, 'add-replace-r4'));
+  button(h, 'add-replace-r4').click();
+  assert.equal(posts.length, 1);
+  assert.match(h.document.querySelector('.je-manage-add-confirm').textContent, /Replace this title's queued profile and folder\?/);
+  assert.match(h.document.querySelector('.je-manage-add-confirm').textContent, /Ultra-HD/);
+  assert.equal(button(h, 'add-profile-r4').disabled, true);
+  button(h, 'add-confirm-r4').click();
+  await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Casey'));
+  assert.equal(posts[1].overrideChoiceVersion, 1);
+  assert.equal(posts[1].profileId, 5);
+  assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Version 2/);
+  assert.equal(button(h, 'add-confirm-r4'), null);
+  assert.equal(posts.length, 2);
+  button(h, 'add-replace-r4').click();
+  button(h, 'add-confirm-r4').click();
+  await until(() => h.document.querySelector('.je-manage-add-message')?.textContent.includes("hasn't confirmed it yet"));
+  assert.equal(posts[2].overrideChoiceVersion, 2);
+  assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
+});
+
+test('using queued settings submits matching fields with no override and preserves separate series seasons', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice()) : { outcome: 'accepted' }, undefined, 'tv');
+  assert.ok(button(h, 'add-use-r4'));
+  assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Profile and folder apply to the whole series. Season selections stay separate./);
+  button(h, 'add-use-r4').click();
+  await until(() => posts.length === 2);
+  assert.equal(posts[1].profileId, 4);
+  assert.equal(posts[1].rootFolder, '/data/movies4k');
+  assert.equal(posts[1].overrideChoiceVersion, undefined);
+  assert.deepEqual(posts[1].seasons, [1, 2]);
+});
+
+test('cancelling confirmation sends nothing and a normal submit never retains the override', async t => {
+  const { h, posts } = await conflictSheet(t);
+  assert.ok(button(h, 'add-replace-r4'));
+  button(h, 'add-replace-r4').click();
+  button(h, 'add-keep-r4').click();
+  assert.equal(posts.length, 1);
+  assert.equal(button(h, 'add-profile-r4').disabled, false);
+  button(h, 'add-submit-r4').click();
+  await until(() => posts.length === 2);
+  assert.equal(posts[1].overrideChoiceVersion, undefined);
+});
+
+for (const teardown of ['sheet', 'drawer', 'navigation', 'account', 'title', 'instance']) {
+  test(`a pending replacement cannot survive ${teardown} changes or a detached confirmation click`, async t => {
+    const { h, posts } = await conflictSheet(t);
+    assert.ok(button(h, 'add-replace-r4'));
+    button(h, 'add-replace-r4').click();
+    const confirm = button(h, 'add-confirm-r4');
+    if (teardown === 'sheet') button(h, 'add-cancel-r4').click();
+    else if (teardown === 'drawer') h.JE.arrManage.close();
+    else if (teardown === 'navigation') h.document.dispatchEvent(new h.window.Event('viewshow'));
+    else if (teardown === 'account') h.switchUser();
+    else if (teardown === 'instance') button(h, 'add-other').click();
+    else {
+  await h.JE.arrManage.open({ key: 'movie:tmdb:962' }, { operation: h.NATIVE });
+    }
+    confirm.click();
+    await wait(30);
+    assert.equal(posts.length, 1);
+    assert.equal(h.document.querySelector('.je-manage-add-confirm'), null);
+  });
+}
+
+test('owner lookup failure keeps a usable confirmation with a translated fallback', async t => {
+  const { h, posts } = await conflictSheet(t, undefined, () => Object.assign(new Error('not available'), { status: 404 }));
+  assert.ok(button(h, 'add-replace-r4'));
+  assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Administrator unavailable/);
+  assert.equal(posts.length, 1);
+});
+
+for (const choice of [null, queuedChoice(0), queuedChoice('1'), queuedChoice(1, { rootFolder: null })]) {
+  test(`a malformed conflict cannot authorize replacement (${JSON.stringify(choice)})`, async t => {
+    const { h, posts } = await conflictSheet(t, () => choiceError(choice));
+    assert.equal(button(h, 'add-replace-r4'), null);
+    assert.equal(button(h, 'add-confirm-r4'), null);
+    assert.equal(posts[0].overrideChoiceVersion, undefined);
+  });
+}
+
+test('a late owner lookup cannot repaint a closed drawer or replace a newer conflict owner', async t => {
+  let resolveOwner;
+  const firstOwner = new Promise(resolve => { resolveOwner = resolve; });
+  const { h } = await conflictSheet(t, n => choiceError(queuedChoice(n, { owner: n === 1 ? 'admin-a' : 'admin-b' })),
+    path => path.endsWith('admin-a') ? firstOwner : { name: 'Blair' });
+  button(h, 'add-replace-r4').click();
+  button(h, 'add-confirm-r4').click();
+  await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Blair'));
+  resolveOwner({ name: 'Outdated admin' });
+  await wait(30);
+  assert.doesNotMatch(h.document.querySelector('.je-manage-add-conflict').textContent, /Outdated admin/);
+  h.JE.arrManage.close();
+  assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
+});
+
+test('an immutable queued request retains server guidance and drops the previous replacement confirmation', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice()) : Object.assign(new Error('HTTP 409'), {
+    status: 409, responseJSON: { reason: 'request_in_flight', message: 'Already sending. Check the title in Manage.' }
+  }));
+  button(h, 'add-replace-r4').click();
+  button(h, 'add-confirm-r4').click();
+  await until(() => h.document.querySelector('.je-manage-add-message')?.textContent.includes('Already sending.'));
+  assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
+  button(h, 'add-submit-r4').click();
+  await until(() => posts.length === 3);
+  assert.equal(posts[1].overrideChoiceVersion, 1);
+  assert.equal(posts[2].overrideChoiceVersion, undefined);
+});
+
+test('an unavailable queued profile is named by id and cannot be adopted from stale options', async t => {
+  const { h, posts } = await conflictSheet(t, () => choiceError(queuedChoice(1, { profileId: 99 })));
+  assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, /Profile 99/);
+  assert.equal(button(h, 'add-use-r4').disabled, true);
+  assert.ok(button(h, 'add-replace-r4'));
+  assert.equal(posts.length, 1);
 });

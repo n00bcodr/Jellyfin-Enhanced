@@ -51,14 +51,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private readonly ArrClientFactory _clients;
         private readonly ArrAuditLog _audit;
+        private readonly Services.Acquire.Requests.RequestLedger? _ledger;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
 
         /// <summary>Creates the controller.</summary>
-        public ArrAdminController(ArrClientFactory clients, ArrAuditLog audit, IUserManager userManager, Logger logger)
+        public ArrAdminController(ArrClientFactory clients, ArrAuditLog audit, IUserManager userManager, Logger logger, Services.Acquire.Requests.RequestLedger? ledger = null)
         {
             _clients = clients;
             _audit = audit;
+            _ledger = ledger;
             _userManager = userManager;
             _logger = logger;
         }
@@ -170,7 +172,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (!IsAdmin()) return Forbid();
             if (!FeatureOn()) return NotFound(new { error = "disabled" });
-            return Ok(new { entries = _audit.ReadRecent(Math.Clamp(take, 1, 500)) });
+            var count = Math.Clamp(take, 1, 500);
+            var choices = _ledger?.Database.Available == true ? _ledger.Choices.Audit(count) : Array.Empty<ArrAuditEntry>();
+            return Ok(new { entries = _audit.ReadRecent(count).Concat(choices).OrderByDescending(x => x.Time).Take(count).ToArray() });
         }
 
         /// <summary>

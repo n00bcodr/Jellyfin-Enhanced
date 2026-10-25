@@ -28,7 +28,7 @@ public class RequestChoiceArchitectureTests
             var owner = Owner(node);
             if (node is BaseObjectCreationExpressionSyntax creation && model.GetTypeInfo(creation).Type?.ToDisplayString() == Authorization)
             {
-                // Authorize: fresh authority, stamped by AddJob before any executable insert.
+                // Authorize: fresh authority, bound by the registry before an executable insert.
                 // TargetKey / SeerrTargetKey / Charge / migration: temporary destination-serialization adapters only;
                 // they never create a job or replace an existing authorization record.
                 if (owner is not ("RequestLedger.Authorize" or "RequestLedger.TargetKey" or "RequestLedger.SeerrTargetKey" or "FutureSeasonCharges.Charge" or "SeerrMigration.CommitAsync"))
@@ -36,15 +36,15 @@ public class RequestChoiceArchitectureTests
             }
             if (node is WithExpressionSyntax copy && model.GetTypeInfo(copy).Type?.ToDisplayString() == Authorization)
             {
-                // CarryForward preserves an existing job; StampTitleChoice alone creates/advances choice stamps.
-                if (owner is not ("RequestAuthorization.CarryForward" or "RequestLedger.StampTitleChoice"))
+                // CarryForward preserves authority bindings; only the registry supplies choice display snapshots.
+                if (owner is not ("RequestAuthorization.CarryForward" or "TitleChoiceRegistry.Snapshot"))
                     problems.Add(owner + ": unreviewed authorization copy");
             }
             if (node is not LiteralExpressionSyntax literal || literal.Token.Value is not string sql) continue;
             if (Regex.IsMatch(sql, @"INSERT\s+INTO\s+jobs\b", RegexOptions.IgnoreCase))
             {
                 if (owner != "RequestLedger.AddJob" || !literal.Ancestors().OfType<MethodDeclarationSyntax>().First()
-                    .DescendantNodes().OfType<InvocationExpressionSyntax>().Any(c => model.GetSymbolInfo(c).Symbol is IMethodSymbol { Name: "StampTitleChoice" }))
+                    .DescendantNodes().OfType<InvocationExpressionSyntax>().Any(c => model.GetSymbolInfo(c).Symbol is IMethodSymbol { Name: "Bind" }))
                     problems.Add(owner + ": new job must use title-choice stamping");
             }
             if (!Regex.IsMatch(sql, @"UPDATE\s+jobs\s+SET\b.*\bauthorization_context\s*=", RegexOptions.IgnoreCase | RegexOptions.Singleline)) continue;
