@@ -607,7 +607,14 @@
     function ensureRows(status) {
         const itemId = normalize(status.itemId);
         if (!itemId) return;
-        if (season && season.itemId === itemId && (season.loading || season.statusRef === status)) return;
+        const language = (navigator.language || 'en').split('-')[0];
+        // Progress objects have no metadata identity. Availability/copy changes and asks invalidate;
+        // unchanged sibling progress shares rows for one minute, with language scoped to the read.
+        const revision = JSON.stringify([status.copy, (status.episodes || []).map(ep => [ep.episode, ep.itemId, ep.row, ep.stage === 'ready'])]);
+        if (season && season.itemId === itemId && season.language === language) {
+            season.statusRef = status;
+            if (season.loading || (season.revision === revision && Date.now() < season.expires)) return;
+        }
         const fresh = !season || season.itemId !== itemId;
         if (fresh) {
             pendingFocus = null;
@@ -616,7 +623,7 @@
             bannerSearched = null;
             closeDialog();
         }
-        const mine = { itemId, rows: fresh ? null : season.rows, caps: fresh ? null : season.caps, loading: true, statusRef: status, generation: ++generation };
+        const mine = { itemId, rows: fresh ? null : season.rows, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
         season = mine;
         load(mine);
     }
@@ -627,7 +634,7 @@
      * @returns {Promise<void>}
      */
     async function load(target) {
-        const lang = (navigator.language || 'en').split('-')[0];
+        const lang = target.language;
         // The caller's capabilities are read alongside (an administrator's Search doesn't depend on the rows'
         // canRequest); the rows don't wait for them, and the page is applied again when they arrive.
         let rows = null;
@@ -1189,9 +1196,10 @@
         if (!list || !wanted.size) return;
         // Episode numbers of the native rows, to place JE's rows between them.
         const natives = [];
+        const byId = new Map((status.episodes || []).filter(e => e.itemId).map(e => [normalize(e.itemId), e]));
         list.querySelectorAll(':scope > .listItem[data-id]').forEach((row) => {
             const id = normalize(row.getAttribute('data-id'));
-            const ep = (status.episodes || []).find(e => e.itemId && normalize(e.itemId) === id);
+            const ep = byId.get(id);
             if (ep) natives.push({ n: ep.episode, row });
         });
         for (const n of [...wanted].sort((a, b) => a - b)) {
@@ -1761,7 +1769,7 @@
         // An ask made elsewhere (the request sheet, the series page) changes this season's states.
         unsubscribe = JE.arrAsk.onChange(() => {
             if (!season) return;
-            const again = { ...season, loading: true, generation: ++generation };
+            const again = { ...season, loading: true, expires: Date.now() + 60000, generation: ++generation };
             season = again;
             load(again);
         });

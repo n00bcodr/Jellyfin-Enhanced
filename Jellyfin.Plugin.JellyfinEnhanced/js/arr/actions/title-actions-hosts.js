@@ -511,9 +511,24 @@
         (n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more, .je-actions-adapted') || r.target.matches?.('.je-actions-row')));
 
     /** Coalesces unrelated changes; mutations inside our own controls never queue another pass. */
+    /** Status decorations do not change native action hosts or their capabilities. */
+    const STATUS_UI = '.je-arr-status, .je-arr-art, .je-arr-chip, .je-arr-chip-row, .je-arr-banner, .je-arr-badge, .je-ask-ring';
+
+    /**
+     * Recognizes status-only mutation batches before scheduling a global action reconciliation.
+     * @param {MutationRecord} record Mutation.
+     * @returns {boolean} Only status-owned UI changed.
+     */
+    function statusOnly(record) {
+        if (record.target.closest?.(STATUS_UI)) return true;
+        if (record.type !== 'childList') return false;
+        const elements = [...record.addedNodes, ...record.removedNodes].filter(node => node.nodeType === 1);
+        return elements.length > 0 && elements.every(node => node.matches(STATUS_UI));
+    }
+
     function schedule(records) {
-        if (records && !records.some(r => copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
-            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more')))))) return;
+        if (records && !records.some(r => !statusOnly(r) && (copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
+            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more'))))))) return;
         if (queued || disposed) return; queued = true; frame = requestAnimationFrame(scan);
     }
 

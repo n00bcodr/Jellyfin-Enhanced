@@ -12,6 +12,10 @@
 
     let state = null; // { page, status, ctx }
     let observer = null;
+    /** Native rows retained when Jellyfin replaces a missing episode's library id. */
+    let rowsByEpisode = new Map();
+    /** Read each newly playable item once while its native row is being prepared. */
+    const pendingRows = new Map();
     /** Phase-3 extension: { chip?(ep), drawn?(status), decorate?(page, status, ctx, parts), clear?(page) }. */
     let extension = null;
 
@@ -129,36 +133,53 @@
         for (const ep of status.episodes || []) {
             if (ep.row && ep.itemId) byId.set(ep.itemId.replace(/-/g, '').toLowerCase(), ep);
         }
+        const byRow = new Map((status.episodes || []).map(ep => [rowsByEpisode.get(ep.episode), ep]));
         let firstRow = null;
+        // All geometry reads happen before the first row write. Existing chips retain their host.
+        const writes = [];
         page.querySelectorAll('.listItem[data-id]').forEach(row => {
             const id = (row.getAttribute('data-id') || '').replace(/-/g, '').toLowerCase();
-            const ep = byId.get(id);
-            if (!firstRow && (row.getAttribute('data-type') === 'Episode')) firstRow = row;
+            const ep = byId.get(id) || byRow.get(row);
+            if (ep) rowsByEpisode.set(ep.episode, row);
+            if (!firstRow && row.getAttribute('data-type') === 'Episode') firstRow = row;
             const existing = row.querySelector('.je-arr-chip');
-            // D95: an episode that is ready shows nothing from JE (a better copy on its way still says so).
-            if (!ep || (ep.stage === 'ready' && ep.reason?.code === 'ready')) {
-                if (existing) remove(existing);
+            const ready = ep?.stage === 'ready' && ep.reason?.code === 'ready';
+            if (ready) writes.push(() => patchReady(row, ep));
+            if (!ep || ready) {
+                if (existing) writes.push(() => remove(existing));
                 return;
             }
-            const chip = buildChip(ep);
-            if (existing && existing.textContent === chip.textContent && existing.className.replace(' je-arr-chip-overlay', '') === chip.className) return;
-            if (existing) remove(existing);
-            // The media-info line is hidden in phone layouts: the chip then sits on the thumbnail.
+            const override = extension?.chip ? extension.chip(ep) : null;
+            const text = override?.text || JE.arrStatus.chipText(ep);
+            const className = `je-arr-chip je-arr-tone-${override?.tone || (ep.attention ? 'attention' : ep.stage)}`;
+            if (existing) {
+                if (existing.textContent !== text || existing.className.replace(' je-arr-chip-overlay', '') !== className) {
+                    writes.push(() => {
+                        existing.textContent = text;
+                        existing.className = className + (existing.classList.contains('je-arr-chip-overlay') ? ' je-arr-chip-overlay' : '');
+                    });
+                }
+                return;
+            }
             const line = row.querySelector('.listItemMediaInfo') || row.querySelector('.listItemBody');
             const below = row.querySelector('.listItem-bottomoverview');
             const image = row.querySelector('.listItemImage');
-            if (line && (shown(line, row) || (!below && !image))) {
-                line.appendChild(chip);
-            } else if (below) {
-                const holder = document.createElement('div');
-                holder.className = 'je-arr-chip-row';
-                holder.appendChild(chip);
-                below.parentNode.insertBefore(holder, below);
-            } else if (image) {
-                chip.classList.add('je-arr-chip-overlay');
-                image.appendChild(chip);
-            }
+            const inline = line && (shown(line, row) || (!below && !image));
+            writes.push(() => {
+                const chip = JE.arrStatus.el('span', className, text);
+                if (inline) line.appendChild(chip);
+                else if (below) {
+                    const holder = document.createElement('div');
+                    holder.className = 'je-arr-chip-row';
+                    holder.appendChild(chip);
+                    below.parentNode.insertBefore(holder, below);
+                } else if (image) {
+                    chip.classList.add('je-arr-chip-overlay');
+                    image.appendChild(chip);
+                }
+            });
         });
+        for (const write of writes) write();
         // A season without any episode row of Jellyfin's own still has its (empty) list once
         // jellyfin-web has rendered the season's children.
         const list = firstRow ? firstRow.closest('.itemsContainer') : page.querySelector('#listChildrenCollapsible:not(.hide) .itemsContainer');
@@ -183,6 +204,102 @@
     }
 
     /**
+     * Makes an existing native episode row point at its accepted playable library item.
+     * Links and the row stay under the viewer's finger even when Jellyfin changed the item id.
+     * @param {Element} row Native row.
+     * @param {Object} ep Accepted episode availability.
+     * @returns {void}
+     */
+    function patchReady(row, ep) {
+        const prior = row.getAttribute('data-id');
+        if (ep.itemId && prior !== ep.itemId) {
+            row.setAttribute('data-id', ep.itemId);
+            row.querySelectorAll('[data-id], a[href]').forEach(node => {
+                if (node.getAttribute('data-id') === prior) node.setAttribute('data-id', ep.itemId);
+                const href = node.getAttribute('href');
+                if (href && prior && href.includes(prior)) node.setAttribute('href', href.replace(prior, ep.itemId));
+            });
+        }
+        row.querySelectorAll('.missingIndicator, .virtualEpisodeIndicator').forEach(node => node.remove());
+    }
+
+    /**
+     * Adds an episode that had no native row, using viewer-authorized native metadata.
+     * Existing rows and their event targets are retained; a late answer cannot decorate a departed view.
+     * @param {HTMLElement} page Season page.
+     * @param {Object[]} arrivals Newly playable episodes.
+     * @returns {void}
+     */
+    function addArrivals(page, arrivals) {
+        const epoch = JE.session?.getEpoch?.();
+        const user = window.ApiClient?.getCurrentUserId?.();
+        const server = window.ApiClient?.serverId?.();
+        const route = window.location.hash;
+        for (const ep of arrivals) {
+            if (!ep.itemId || pendingRows.has(ep.itemId) || page.querySelector(`.listItem[data-id="${ep.itemId}"]`)) continue;
+            if (typeof JE.helpers?.getItemCached !== 'function') continue;
+            const read = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
+            pendingRows.set(ep.itemId, read);
+            read.then(item => {
+                if (!item || String(item.Id || '').replace(/-/g, '').toLowerCase() !== ep.itemId.replace(/-/g, '').toLowerCase() || state?.page !== page || !page.isConnected || page.classList.contains('hide') || window.location.hash !== route
+                    || epoch !== JE.session?.getEpoch?.() || user !== window.ApiClient?.getCurrentUserId?.() || server !== window.ApiClient?.serverId?.()) return;
+                const current = state.status.episodes?.find(e => e.episode === ep.episode);
+                if (current?.stage !== 'ready' || current.itemId !== ep.itemId || page.querySelector(`.listItem[data-id="${ep.itemId}"]`)) return;
+                const list = page.querySelector('#listChildrenCollapsible .itemsContainer, .itemsContainer');
+                if (!list) return;
+                const row = arrivalRow(item, ep);
+                const after = [...rowsByEpisode].filter(([n, r]) => n > ep.episode && r.parentNode === list).sort((a, b) => a[0] - b[0])[0]?.[1];
+                list.insertBefore(row, after || null);
+                rowsByEpisode.set(ep.episode, row);
+            }).catch(() => { /* the host's next view can read a temporarily unavailable item */ }).finally(() => {
+                if (pendingRows.get(ep.itemId) === read) pendingRows.delete(ep.itemId);
+            });
+        }
+    }
+
+    /**
+     * A native episode link for an arrival the host did not list yet. Native data and safe DOM text
+     * provide the title; spoiler preferences withhold the still and overview until the native next view.
+     * @param {Object} item Viewer-authorized native episode.
+     * @param {Object} ep Accepted availability.
+     * @returns {HTMLElement} Episode row.
+     */
+    function arrivalRow(item, ep) {
+        const S = JE.arrStatus;
+        const row = S.el('div', 'listItem listItem-largeImage listItem-withContentWrapper');
+        row.dataset.id = ep.itemId;
+        row.dataset.type = 'Episode';
+        row.dataset.action = 'link';
+        row.dataset.isfolder = 'false';
+        const serverId = window.ApiClient?.serverId?.();
+        if (serverId) row.dataset.serverid = serverId;
+        row.dataset.jeArrArrival = 'true';
+        row.dataset.mediatype = 'Video';
+        const content = S.el('div', 'listItem-content');
+        const image = S.el('a', 'listItemImage listItemImage-large');
+        const link = S.el('a', 'listItemBodyText');
+        const params = new URLSearchParams({ id: ep.itemId });
+        const server = window.ApiClient?.serverId?.();
+        if (server) params.set('serverId', server);
+        for (const target of [image, link]) {
+            target.href = `#/details?${params}`;
+            target.classList.add('itemAction');
+            target.dataset.action = 'link';
+        }
+        link.textContent = `${ep.episode}. ${item.Name || ''}`;
+        const spoiler = JE.spoilerBlur?.isEnabledFor?.(item.SeriesId);
+        if (!spoiler && item.ImageTags?.Primary && window.ApiClient?.getImageUrl) {
+            image.style.backgroundImage = `url("${window.ApiClient.getImageUrl(ep.itemId, { type: 'Primary', tag: item.ImageTags.Primary, maxWidth: 400 })}")`;
+        }
+        const body = S.el('div', 'listItemBody');
+        body.appendChild(link);
+        if (!spoiler && item.Overview) body.appendChild(S.el('div', 'secondary listItem-overview listItemBodyText', item.Overview));
+        content.append(image, body);
+        row.appendChild(content);
+        return row;
+    }
+
+    /**
      * Shows a season's episode states on its page (and keeps them on while rows render).
      * @param {HTMLElement} page Season details page.
      * @param {Object} status Season status with episodes.
@@ -190,14 +307,20 @@
      * @returns {void}
      */
     function render(page, status, ctx) {
+        const previous = state?.page === page ? new Map((state.status.episodes || []).map(ep => [ep.episode, ep])) : null;
+        if (state?.page !== page) rowsByEpisode = new Map();
         state = { page, status, ctx };
         apply();
+        if (previous) addArrivals(page, (status.episodes || []).filter(ep => ep.row && ep.stage === 'ready'
+            && previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)));
         if (!observer && JE.helpers?.onBodyMutation) {
             const schedule = JE.helpers.debounce ? JE.helpers.debounce(apply, 80) : apply;
             observer = JE.helpers.onBodyMutation('arr-status-episodes', (mutations) => {
-                if (!state) return;
+                if (!state || state.page.classList.contains('hide')) return;
                 for (const m of mutations) {
-                    if (m.addedNodes && m.addedNodes.length) {
+                    if (!state.page.contains(m.target)) continue;
+                    if ([...(m.addedNodes || [])].some(node => node.nodeType === 1 && !node.hasAttribute('data-je-arr-arrival') &&
+                        (node.matches('.listItem[data-id]') || node.querySelector('.listItem[data-id]')))) {
                         schedule();
                         return;
                     }
@@ -217,6 +340,8 @@
             if (extension?.clear) extension.clear(state.page);
         }
         state = null;
+        rowsByEpisode.clear();
+        pendingRows.clear();
     }
 
     /**

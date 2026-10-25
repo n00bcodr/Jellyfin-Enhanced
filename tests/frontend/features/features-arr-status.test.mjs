@@ -63,7 +63,7 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
   return {
     ...h, calls, navigation, observers, userChange,
     S: h.JE.arrStatus,
-    mutate() { for (const fn of bodyObservers) fn([{ addedNodes: [1] }]); }
+    mutate() { for (const node of h.document.querySelectorAll('.listItem[data-id], .card[data-id]')) for (const fn of bodyObservers) fn([{ target: node.parentNode, addedNodes: [node] }]); }
   };
 }
 
@@ -977,4 +977,25 @@ test('D95: the artwork overlay is off without its switch on details pages too', 
   await h.JE.internals.arrStatusDetails.update(false);
   assert.equal(h.document.querySelector('.je-arr-art'), null);
   assert.match(h.document.querySelector('.je-arr-status').textContent, /Downloading · 5%/);
+});
+
+test('arrival bursts: cards in retained hidden views are neither observed nor refreshed', async t => {
+  const card = (id, hidden) => `<div class="page${hidden ? ' hide' : ''}"><div class="card" data-id="${id}" data-type="Episode"><div class="cardScalable"><div class="cardImageContainer"></div></div></div></div>`;
+  const h = setup(t, { html: card('visible', false) + card('hidden', true), responses: () => ({ items: [] }) });
+  h.JE.initializeArrStatusCards(); await nextTurn();
+  await new Promise(r => h.window.setTimeout(r, 450));
+  const io = h.observers[0];
+  assert.equal(io.observed.size, 1);
+  assert.equal([...io.observed][0].dataset.id, 'visible');
+  const nodes = [...h.document.querySelectorAll('.card')];
+  io.fn(nodes.map(target => ({ target, isIntersecting: true })));
+  await new Promise(r => h.window.setTimeout(r, 350));
+  assert.ok(h.calls.length > 0);
+  assert.ok(h.calls.every(c => !JSON.stringify(c.options).includes('hidden')));
+  h.document.querySelector('.page:not(.hide)').classList.add('hide');
+  h.navigation.forEach(fn => fn());
+  const before = h.calls.length;
+  h.S.refresh(['tv:tvdb:1:s1:e1']);
+  await nextTurn();
+  assert.equal(h.calls.length, before);
 });

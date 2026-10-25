@@ -965,14 +965,11 @@
     }
 
     /**
-     * D95: the download progress drawn on a title's artwork (poster cards, the details-page poster, list
-     * placeholders): a ring with the percentage while downloading, a spinning ring when the percentage isn't
-     * known, a full ring that pulses gently while almost ready (importing, Jellyfin adding it). Null otherwise,
-     * and once the title is ready. Absolutely positioned over its host, so nothing moves.
+     * Describes artwork without allocating an overlay tree.
      * @param {Object|null} status Status.
-     * @returns {HTMLElement|null} Overlay.
+     * @returns {{mode: string, pct: number|null}|null} Render fields.
      */
-    function buildArtworkProgress(status) {
+    function artworkSpec(status) {
         if (!status || settled(status)) return null;
         const s = status.summary;
         const downloading = status.stage === 'downloading' || (s && s.downloading > 0);
@@ -981,6 +978,80 @@
         const raw = downloading ? status.progress?.percent : null;
         const pct = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : null;
         const mode = almost ? 'almost' : pct === null ? 'busy' : 'pct';
+        return { mode, pct };
+    }
+
+    /**
+     * Reconciles matching elements in place, retaining focus targets and their listeners.
+     * @param {Element} old Retained element.
+     * @param {Element} next Desired element.
+     * @returns {Element} Retained element.
+     */
+    function retain(old, next) {
+        for (const a of [...old.attributes]) if (!next.hasAttribute(a.name)) old.removeAttribute(a.name);
+        for (const a of [...next.attributes]) if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value);
+        let cursor = old.firstChild;
+        for (const child of [...next.childNodes]) {
+            const matches = node => node.nodeType === child.nodeType && (node.nodeType !== 1
+                || (node.tagName === child.tagName && node.classList[0] === child.classList[0]));
+            let kept = cursor;
+            while (kept && !matches(kept)) kept = kept.nextSibling;
+            if (!kept) {
+                old.insertBefore(child, cursor);
+                continue;
+            }
+            if (kept !== cursor) old.insertBefore(kept, cursor);
+            if (kept.nodeType === 1) retain(kept, child);
+            else if (kept.nodeValue !== child.nodeValue) kept.nodeValue = child.nodeValue;
+            cursor = kept.nextSibling;
+        }
+        while (cursor) { const nextSibling = cursor.nextSibling; cursor.remove(); cursor = nextSibling; }
+        return old;
+    }
+
+    /**
+     * Changes a retained ring only when its mode or rounded percentage changed.
+     * @param {Element} host Artwork host.
+     * @param {Object|null} status Status or null to remove.
+     * @returns {boolean} An overlay is shown.
+     */
+    function paintArtwork(host, status) {
+        const old = host.querySelector(':scope > .je-arr-art');
+        const spec = artworkSpec(status);
+        if (!spec) { old?.remove(); return false; }
+        const signature = spec.mode === 'pct' ? `pct:${spec.pct}` : spec.mode;
+        if (old?.dataset.jeArrArt === signature) return true;
+        if (!old) {
+            host.appendChild(buildArtworkProgress(status));
+            return true;
+        }
+        const priorMode = old.dataset.jeArrArt?.split(':')[0];
+        const { mode, pct } = spec;
+        old.className = `je-arr-art je-arr-art-${mode}`;
+        old.dataset.jeArrArt = signature;
+        old.setAttribute('aria-label', mode === 'almost' ? tr('arr_status_almost_ready')
+            : mode === 'pct' ? tr('arr_chip_downloading_pct', { pct }) : tr('arr_chip_downloading'));
+        const circumference = 2 * Math.PI * 15.5;
+        const value = mode === 'almost' ? 100 : mode === 'busy' ? 25 : pct;
+        old.querySelector('.je-arr-art-bar').setAttribute('stroke-dasharray', `${(circumference * value / 100).toFixed(1)} ${circumference.toFixed(1)}`);
+        const label = old.querySelector('.je-arr-art-text');
+        if (mode === 'pct') label.textContent = `${pct}%`;
+        else if (priorMode !== mode) label.replaceChildren(icon(mode === 'almost' ? 'hourglass_bottom' : 'download', 'je-arr-art-icon'));
+        return true;
+    }
+
+    /**
+     * D95: the download progress drawn on a title's artwork (poster cards, the details-page poster, list
+     * placeholders): a ring with the percentage while downloading, a spinning ring when the percentage isn't
+     * known, a full ring that pulses gently while almost ready (importing, Jellyfin adding it). Null otherwise,
+     * and once the title is ready. Absolutely positioned over its host, so nothing moves.
+     * @param {Object|null} status Status.
+     * @returns {HTMLElement|null} Overlay.
+     */
+    function buildArtworkProgress(status) {
+        const spec = artworkSpec(status);
+        if (!spec) return null;
+        const { mode, pct } = spec;
         const wrap = el('div', `je-arr-art je-arr-art-${mode}`);
         wrap.dataset.jeArrArt = mode === 'pct' ? `pct:${pct}` : mode;
         wrap.setAttribute('role', 'img');
@@ -1159,6 +1230,9 @@
         buildJourney,
         buildBadge,
         buildArtworkProgress,
+        artworkSpec,
+        paintArtwork,
+        retain,
         staleNote,
         retryDelay,
         subscribe,
