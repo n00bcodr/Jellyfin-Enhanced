@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using System.Diagnostics;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jellyfin.Data;
@@ -91,13 +92,15 @@ public class IntegrationParentalEvidenceReviewTests
             Requests = new RequestService(new RequestLedger(Database), Policy, View, new ArrChangeFeed(), aliases);
             Discover = new DiscoverService(Requests, aliases, Gate, Tmdb, library.Object, Arr.Plugin.Core.Manager);
         }
-        public async Task<(int Status, JsonElement Body, AcquireDiscoverController Controller)> Read(bool search = false, string query = "family")
+        public async Task<(int Status, JsonElement Body, AcquireDiscoverController Controller)> Read(bool search = false, string query = "family", EvidenceClock? clock = null)
         {
             var c = new AcquireDiscoverController(Discover) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
             c.HttpContext.User = TestCallers.Principal(User.Id, false);
             c.HttpContext.Request.Method = "GET";
             c.HttpContext.Request.Path = "/JellyfinEnhanced/acquire/" + (search ? "search" : "discover");
-            var result = search ? await c.Search(query) : await c.Discover("trending", "movie");
+            var result = clock == null ? search ? await c.Search(query) : await c.Discover("trending", "movie")
+                : (IActionResult)typeof(AcquireDiscoverController).GetMethod("Send", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(c, new object?[] { Viewer, await clock.Read(this, search), search ? "search" : "discover" })!;
             var context = new Microsoft.AspNetCore.Mvc.Filters.ResultExecutingContext(EndpointRouting.Bind(c.HttpContext),
                 new List<Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata>(), result, c);
             new Jellyfin.Plugin.JellyfinEnhanced.Helpers.RequestOutcomeFilterAttribute().OnResultExecuting(context);
@@ -298,28 +301,148 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.DoesNotContain("Became absent", result.Body.GetRawText());
     }
 
+    // The production budget is private and lazily creates its timer. Install a controlled source
+    // before preparation first reads it, leaving PublishAsync, both preparation paths, slot waits,
+    // evidence coalescing and controller publication intact. Never replace a budget on a retry.
+    private sealed class EvidenceClock : IDisposable
+    {
+        private readonly Dictionary<object, (TimeSpan Due, CancellationTokenSource Source)> _deadlines = new();
+        public TimeSpan Elapsed { get; private set; }
+        public TimeSpan Duration { get; } = ProductionDuration();
+
+        private static TimeSpan ProductionDuration()
+        {
+            // Evaluate the compiled duration expression given to CancelAfter, without arming a
+            // wall-clock timer. A changed production duration must change this clock too.
+            var budget = typeof(DiscoverService).GetNestedType("EvidenceDeadline", BindingFlags.NonPublic)!;
+            var getter = budget.GetProperty("Token")!.GetMethod!;
+            var members = PrivacyDeliveryScan.Referenced(getter).ToArray();
+            var factory = Assert.Single(members.Where(m => m.Member is MethodInfo { DeclaringType: var type, Name: "FromSeconds" } && type == typeof(TimeSpan)));
+            var source = members.Last(m => m.Offset < factory.Offset && m.Member is FieldInfo { Name: "_source" });
+            var arm = Assert.Single(members.Where(m => m.Member is MethodInfo { DeclaringType: var type, Name: "CancelAfter" } && type == typeof(CancellationTokenSource)));
+            Assert.True(factory.Offset < arm.Offset);
+            var expression = getter.GetMethodBody()!.GetILAsByteArray()![(source.Offset + 5)..factory.Offset];
+            var evaluate = new DynamicMethod("EvidenceBudgetDuration", typeof(TimeSpan), Type.EmptyTypes);
+            var body = evaluate.GetDynamicILInfo();
+            body.SetLocalSignature(new byte[] { 0x07, 0x00 });
+            var call = body.GetTokenFor(((MethodInfo)factory.Member).MethodHandle);
+            body.SetCode(expression.Concat(new byte[] { 0x28 }).Concat(BitConverter.GetBytes(call)).Append((byte)0x2a).ToArray(), 8);
+            return evaluate.CreateDelegate<Func<TimeSpan>>()();
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            CancellationTokenSource[] due;
+            lock (_deadlines)
+            {
+                Elapsed += duration;
+                due = _deadlines.Values.Where(d => d.Due <= Elapsed && !d.Source.IsCancellationRequested).Select(d => d.Source).ToArray();
+            }
+            foreach (var source in due) source.Cancel();
+        }
+
+        public Task<DiscoverAnswer?> Read(Rig rig, bool search)
+        {
+            var publish = typeof(DiscoverService).GetMethod("PublishAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var budgetType = typeof(DiscoverService).GetNestedType("EvidenceDeadline", BindingFlags.NonPublic)!;
+            var prepare = GetType().GetMethod(nameof(Preparation), BindingFlags.Instance | BindingFlags.NonPublic)!
+                .MakeGenericMethod(budgetType).Invoke(this, new object[] { rig, search });
+            return (Task<DiscoverAnswer?>)publish.Invoke(rig.Discover,
+                new object?[] { rig.Viewer, search ? "controlled-search" : "controlled-discover", search, prepare, CancellationToken.None })!;
+        }
+
+        private Func<StatusViewer, HiddenTitles, TDeadline, Task<DiscoverService.Prepared?>> Preparation<TDeadline>(Rig rig, bool search)
+            where TDeadline : notnull
+            => (viewer, hidden, budget) =>
+            {
+                var field = typeof(TDeadline).GetField("_source", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                lock (_deadlines)
+                {
+                    if (!_deadlines.TryGetValue(budget, out var existing))
+                    {
+                        Assert.Null(field.GetValue(budget));
+                        var source = new CancellationTokenSource();
+                        _deadlines.Add(budget, (Elapsed + Duration, source));
+                        field.SetValue(budget, source);
+                    }
+                    else Assert.Same(existing.Source, field.GetValue(budget));
+                }
+                var prepare = typeof(DiscoverService).GetMethod(search ? "PrepareSearchAsync" : "PrepareDiscoverAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var args = search
+                    ? new object?[] { viewer, "family", 1, null, hidden, budget, CancellationToken.None }
+                    : new object?[] { viewer, "trending", "movie", 1, null, hidden, budget, CancellationToken.None };
+                return (Task<DiscoverService.Prepared?>)prepare.Invoke(rig.Discover, args)!;
+            };
+
+        public void Dispose()
+        {
+            foreach (var deadline in _deadlines.Values) deadline.Source.Dispose();
+        }
+    }
+
     [Fact]
     public async Task TwentyDeferredTitlesHaveOneDeadlineIncludingSlotWaitsAndWarmAfterRelease()
     {
         using var r = new Rig();
+        using var clock = new EvidenceClock();
+        Assert.Equal(TimeSpan.FromSeconds(2), clock.Duration);
+        var timeout = TimeSpan.FromMinutes(2);
         r.Page = IntegrationRequestDiscoverTests.Page(Enumerable.Range(600, 20).Select(id => IntegrationRequestDiscoverTests.Movie(id, "Title " + id)).ToArray());
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reads = new System.Collections.Concurrent.ConcurrentDictionary<int, int>();
-        r.Evidence = async (id, ct) => { reads.AddOrUpdate(id, 1, (_, n) => n + 1); if (reads.Count == 8) started.TrySetResult(); await release.Task.WaitAsync(ct); return IntegrationParentalEvidenceTests.Movie(id); };
-        var clock = Stopwatch.StartNew(); var first = r.Read();
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var second = r.Read(true); // Competes for the same eight slots.
+        r.Evidence = async (id, ct) =>
+        {
+            reads.AddOrUpdate(id, 1, (_, n) => n + 1);
+            if (reads.Count == 8) started.TrySetResult();
+            await release.Task.WaitAsync(ct);
+            return IntegrationParentalEvidenceTests.Movie(id);
+        };
+        var first = r.Read(clock: clock);
+        Task<(int Status, JsonElement Body, AcquireDiscoverController Controller)>? second = null;
+        Task[] survivors = Array.Empty<Task>();
         try
         {
-            var result = await first.WaitAsync(TimeSpan.FromSeconds(4));
-            Assert.Equal(200, result.Status); Assert.True(clock.Elapsed < TimeSpan.FromSeconds(4));
-            Assert.Equal(200, (await second.WaitAsync(TimeSpan.FromSeconds(4))).Status);
+            await started.Task.WaitAsync(timeout);
+            Assert.Equal(8, reads.Count);
+            Assert.False(first.IsCompleted);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            second = r.Read(true, clock: clock); // All eight slots are occupied for its first second.
+            Assert.False(second.IsCompleted);
+            clock.Advance(TimeSpan.FromSeconds(1) - TimeSpan.FromTicks(1));
+            Assert.False(first.IsCompleted);
+            Assert.False(second.IsCompleted);
+            clock.Advance(TimeSpan.FromTicks(1));
+            var result = await first.WaitAsync(timeout);
+            Assert.Equal(200, result.Status);
+            Assert.False(result.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
+            Assert.Empty(result.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
+            Assert.Equal(TimeSpan.FromSeconds(2), clock.Elapsed);
+            clock.Advance(TimeSpan.FromSeconds(1) - TimeSpan.FromTicks(1));
+            Assert.False(second.IsCompleted); // Slot waits consumed its existing budget; they did not restart it.
+            clock.Advance(TimeSpan.FromTicks(1));
+            var searched = await second.WaitAsync(timeout);
+            Assert.Equal(200, searched.Status);
+            Assert.False(searched.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
+            Assert.Empty(searched.Body.GetProperty("answer").GetProperty("results").EnumerateArray());
+            Assert.Equal(TimeSpan.FromSeconds(3), clock.Elapsed);
+            Assert.False(release.Task.IsCompleted); // Both deadlines expired with the transport still held.
+            Assert.All(reads.Values, n => Assert.Equal(1, n));
+            // Join the underlying shared reads before releasing the transport. Their completion
+            // proves the caches are warm, rather than racing a background cache publication.
+            survivors = reads.Keys.Select(async id => Assert.True(await r.Gate.MaySeeAbsentAsync("movie", id, r.User.Id.ToString("N"), default))).ToArray();
         }
-        finally { release.TrySetResult(); await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10)); }
-        var recovered = await r.Read();
+        finally
+        {
+            release.TrySetResult();
+            await Task.WhenAll(second == null ? new Task[] { first } : new Task[] { first, second }).WaitAsync(timeout);
+            await Task.WhenAll(survivors).WaitAsync(timeout);
+        }
+        var recovered = await r.Read(clock: clock).WaitAsync(timeout);
         Assert.Equal(200, recovered.Status);
+        Assert.True(recovered.Body.GetProperty("answer").GetProperty("complete").GetBoolean());
         Assert.Equal(20, recovered.Body.GetProperty("answer").GetProperty("results").GetArrayLength());
+        Assert.Equal(20, reads.Count);
         Assert.All(reads.Values, n => Assert.Equal(1, n)); // Shared reads survive abandoned waiters.
     }
 
