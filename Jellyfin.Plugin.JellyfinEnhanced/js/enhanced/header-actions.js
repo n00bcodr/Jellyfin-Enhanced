@@ -112,15 +112,17 @@
 
     /** Refresh text after account/language changes without inserting locale HTML. */
     function updateLabels() {
+        // Skip unchanged writes: on TVs even a no-op attribute set costs a style recalc.
+        const setAttr = (element, name, value) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
         const title = label('header_more_actions', 'More from Jellyfin Enhanced');
-        launcher.title = title;
-        launcher.setAttribute('aria-label', title);
+        if (launcher.title !== title) launcher.title = title;
+        setAttr(launcher, 'aria-label', title);
         const heading = panel.querySelector('h2');
         const text = label('header_more_title', 'More from JE');
         if (heading.textContent !== text) heading.textContent = text;
-        panel.querySelector('.je-launcher-close').setAttribute('aria-label', label('awards_close', 'Close'));
-        pager.querySelector('[data-previous]').setAttribute('aria-label', label('header_previous_page', 'Previous page'));
-        pager.querySelector('[data-next]').setAttribute('aria-label', label('header_next_page', 'Next page'));
+        setAttr(panel.querySelector('.je-launcher-close'), 'aria-label', label('awards_close', 'Close'));
+        setAttr(pager.querySelector('[data-previous]'), 'aria-label', label('header_previous_page', 'Previous page'));
+        setAttr(pager.querySelector('[data-next]'), 'aria-label', label('header_next_page', 'Next page'));
     }
 
     function closeLauncher() {
@@ -398,7 +400,8 @@
             visibleSources.forEach(source => inline.add(source));
         }
         compactMode = collapsed;
-        launcher.style.setProperty('display', collapsed ? 'inline-flex' : 'none', 'important');
+        const display = collapsed ? 'inline-flex' : 'none';
+        if (launcher.style.display !== display) launcher.style.setProperty('display', display, 'important');
         const overflowSources = visibleSources.filter(source => !inline.has(source));
         for (const source of sources) {
             const overflowed = collapsed && !inline.has(source);
