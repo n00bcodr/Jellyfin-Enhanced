@@ -252,7 +252,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return _images.Read(size + path, viewer,
                 () => _bytes.TryGetValue(size + path, out var hit) && _now() - hit.At < CacheTtl
                     ? ((byte[] Bytes, string ContentType)?)(hit.Bytes, hit.ContentType) : null,
-                () => FetchUpstreamAsync(size + path, path, size), ct);
+                () => FetchUpstreamAsync(key: size + path, size: size, path: path), ct);
         }
 
         /// <summary>Admitted image operations, including queued work (tests).</summary>
