@@ -15,6 +15,8 @@
   const fetchUserData = P.fetchUserData;
   const ensureRequestData = P.ensureRequestData;
   const setStoredShowUnmonitored = P.setStoredShowUnmonitored;
+  const saveFilters = P.saveFilters;
+  const setStoredCollapse = P.setStoredCollapse;
   const searchFromProviders = P.searchFromProviders;
   const toggleSidebarCollapsed = P.toggleSidebarCollapsed;
   const syncPageModeClasses = P.syncPageModeClasses;
@@ -120,6 +122,7 @@
         ensureRequestData();
       }
     }
+    saveFilters();
     renderPage();
   }
 
@@ -128,12 +131,20 @@
     if (state.activeFilters.size < 2) return;
     if (state.filterMatchMode === mode) return;
     state.filterMatchMode = mode;
+    saveFilters();
     renderPage();
   }
 
   function toggleFilterInvert() {
     if (state.activeFilters.size === 0) return;
     state.filterInvert = !state.filterInvert;
+    saveFilters();
+    renderPage();
+  }
+
+  function toggleCollapseEpisodes() {
+    state.settings.collapseEpisodes = !state.settings.collapseEpisodes;
+    setStoredCollapse(state.settings.collapseEpisodes);
     renderPage();
   }
 
@@ -225,6 +236,17 @@
       return;
     }
 
+    const groupBtn = e.target.closest(".je-calendar-group-toggle");
+    if (groupBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const key = groupBtn.dataset.groupKey;
+      if (!state.expandedGroups.delete(key)) state.expandedGroups.add(key);
+      renderPage();
+      return;
+    }
+
     const playBtn = e.target.closest(".je-calendar-play-btn");
     if (playBtn) {
       const playEventId = playBtn.dataset.eventId;
@@ -272,5 +294,6 @@
   P.goToday = goToday;
   P.toggleFilter = toggleFilter;
   P.toggleShowUnmonitored = toggleShowUnmonitored;
+  P.toggleCollapseEpisodes = toggleCollapseEpisodes;
   P.handleEventClick = handleEventClick;
 })();

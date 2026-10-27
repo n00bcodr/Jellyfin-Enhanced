@@ -335,6 +335,7 @@
     goToday: P.goToday,
     toggleFilter: P.toggleFilter,
     toggleShowUnmonitored: P.toggleShowUnmonitored,
+    toggleCollapseEpisodes: P.toggleCollapseEpisodes,
     renderPage,
     renderForCustomTab,
     injectStyles,

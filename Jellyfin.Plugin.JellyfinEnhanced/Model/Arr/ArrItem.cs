@@ -131,6 +131,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         [JsonPropertyName("episodeTitle")]
         public string? EpisodeTitle { get; set; }
 
+        // Sonarr v4: "season", "series" or "midseason" on the last episode of a run, else null.
+        public string? FinaleType { get; set; }
+
         /// <summary>
         /// Series ID
         /// </summary>

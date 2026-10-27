@@ -505,6 +505,8 @@
     "calendar_digital_release": "數碼發行",
     "calendar_physical_release": "實體發行",
     "calendar_episode": "集",
+    "calendar_finale": "大結局",
+    "calendar_collapse_episodes": "摺疊集數",
     "calendar_anime": "動漫",
     "calendar_open_in_shoko": "在 Shoko 中打開",
     "calendar_series": "劇集",

@@ -22,6 +22,7 @@
   const renderAgendaEvent = P.renderAgendaEvent;
   const renderCardItems = P.renderCardItems;
   const compareEventsWithinDay = P.compareEventsWithinDay;
+  const collapseEpisodes = P.collapseEpisodes;
 
   function getDefaultSidebarCollapsed() {
     if (window.matchMedia) {
@@ -97,8 +98,9 @@
       const dayStr = String(day).padStart(2, '0');
       const dateStr = `${year}-${month}-${dayStr}`;
 
-      const dayEvents = groupedEvents[dateStr] || [];
+      let dayEvents = groupedEvents[dateStr] || [];
       dayEvents.sort(compareEventsWithinDay);
+      dayEvents = collapseEpisodes(dayEvents);
 
       const dayDate = new Date(year, anchor.getMonth(), day);
       const todayClass = isTodayDate(dayDate) ? " je-calendar-today" : "";
@@ -140,8 +142,9 @@
       const month = String(day.getMonth() + 1).padStart(2, '0');
       const dayNum = String(day.getDate()).padStart(2, '0');
       const dateKey = `${year}-${month}-${dayNum}`;
-      const dayEvents = groupedEvents[dateKey] || [];
+      let dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort(compareEventsWithinDay);
+      dayEvents = collapseEpisodes(dayEvents);
 
       const todayClass = isTodayDate(day) ? " je-calendar-today" : "";
       html += `
@@ -179,8 +182,9 @@
       const weekday = dateObj.toLocaleDateString(undefined, { weekday: 'short' });
       const monthDay = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-      const dayEvents = groupedEvents[dateKey] || [];
+      let dayEvents = groupedEvents[dateKey] || [];
       dayEvents.sort(compareEventsWithinDay);
+      dayEvents = collapseEpisodes(dayEvents);
 
       html += `
         <div class="je-calendar-agenda-row">
@@ -203,8 +207,9 @@
     const groupedEvents = groupEventsByDate(filteredEvents);
     const current = new Date(state.currentDate);
     const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
-    const dayEvents = groupedEvents[dateKey] || [];
+    let dayEvents = groupedEvents[dateKey] || [];
     dayEvents.sort(compareEventsWithinDay);
+      dayEvents = collapseEpisodes(dayEvents);
 
     if (dayEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -320,6 +325,10 @@
         <span class="je-msym-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'visibility' : 'visibility_off'}</span>
         <span>${JE.t?.("calendar_include_unmonitored") || "Unmonitored"}</span>
       </div>`;
+    const collapseLegend = `<div class="je-calendar-legend-item ${state.settings.collapseEpisodes ? 'active' : ''}" onclick="window.JellyfinEnhanced.calendarPage.toggleCollapseEpisodes(); event.stopPropagation();" style="cursor: pointer;">
+        <span class="je-msym-rounded" style="font-size: 18px;">${state.settings.collapseEpisodes ? 'unfold_less' : 'unfold_more'}</span>
+        <span>${JE.t("calendar_collapse_episodes")}</span>
+      </div>`;
     const filterControls = `
       <div class="je-calendar-filter-controls">
         <div class="je-calendar-filter-toggle ${hasTwoFilters ? '' : 'is-disabled'}" role="group" aria-label="Filter mode">
@@ -364,6 +373,7 @@
         ${watchlistLegend}
         ${watchedLegend}
         ${unmonitoredLegend}
+        ${collapseLegend}
       </div>
     `;
   }

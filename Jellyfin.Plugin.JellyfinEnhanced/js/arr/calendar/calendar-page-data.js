@@ -17,6 +17,8 @@
   const logPrefix = '🪼 Jellyfin Enhanced: Calendar Page:';
   const STORAGE_KEYS = {
     showUnmonitored: "je.calendar.showUnmonitored",
+    filters: "je.calendar.filters",
+    collapse: "je.calendar.collapseEpisodes",
   };
 
   /**
@@ -59,6 +61,57 @@
     }
   }
 
+  function collapseKey() {
+    return JE.session
+      ? JE.session.userScopedKey(STORAGE_KEYS.collapse)
+      : `${STORAGE_KEYS.collapse}:anonymous`;
+  }
+
+  // Collapsing same-day episodes is on unless the user turned it off.
+  function getStoredCollapse() {
+    try {
+      return window.localStorage?.getItem(collapseKey()) !== "false";
+    } catch (error) {
+      return true;
+    }
+  }
+
+  function setStoredCollapse(value) {
+    try {
+      window.localStorage?.setItem(collapseKey(), String(!!value));
+    } catch (error) {
+    }
+  }
+
+  function filtersKey() {
+    return JE.session
+      ? JE.session.userScopedKey(STORAGE_KEYS.filters)
+      : `${STORAGE_KEYS.filters}:anonymous`;
+  }
+
+  // Filter chips, match mode and invert persist per user, like show-unmonitored.
+  function saveFilters() {
+    try {
+      window.localStorage?.setItem(filtersKey(), JSON.stringify({
+        filters: Array.from(state.activeFilters),
+        mode: state.filterMatchMode,
+        invert: state.filterInvert,
+      }));
+    } catch (error) {
+    }
+  }
+
+  function restoreFilters() {
+    try {
+      const saved = JSON.parse(window.localStorage?.getItem(filtersKey()) || "null");
+      if (!saved) return;
+      state.activeFilters = new Set(Array.isArray(saved.filters) ? saved.filters : []);
+      state.filterMatchMode = saved.mode === "all" ? "all" : "any";
+      state.filterInvert = !!saved.invert;
+    } catch (error) {
+    }
+  }
+
   /**
    * Get default view mode from settings, defaults to agenda
    */
@@ -95,6 +148,7 @@
     },
     userDataMap: new Map(),
     activeFilters: new Set(), // Track active filters
+    expandedGroups: new Set(), // Collapsed-episode groups the user expanded
     filterMatchMode: "any",
     filterInvert: false,
     requestedItems: new Set(),
@@ -137,11 +191,17 @@
       highlightFavorites: config.CalendarHighlightFavorites || false,
       highlightWatchedSeries: config.CalendarHighlightWatchedSeries || false,
       showUnmonitored: storedShowUnmonitored ?? false,
+      collapseEpisodes: getStoredCollapse(),
       displayMode: JE.currentSettings.calendarDisplayMode || "list",
       filterByLibraryAccess: config.CalendarFilterByLibraryAccess !== false,
       showOnlyRequested: config.CalendarShowOnlyRequested || false,
       forceOnlyRequested,
     };
+
+    if (!state.filtersRestored) {
+      state.filtersRestored = true;
+      restoreFilters();
+    }
 
     // If show only requested is enabled, set Requests as active by default
     if (!state.settings.forceOnlyRequested && state.settings.showOnlyRequested && state.activeFilters.size === 0) {
@@ -484,6 +544,8 @@
 
   P.state = state;
   P.STATUS_COLORS = STATUS_COLORS;
+  P.saveFilters = saveFilters;
+  P.setStoredCollapse = setStoredCollapse;
   P.setStoredShowUnmonitored = setStoredShowUnmonitored;
   P.loadSettings = loadSettings;
   P.fetchCalendarEvents = fetchCalendarEvents;
