@@ -267,14 +267,17 @@ or after a restart, doesn't fetch its images from TMDB again. It sits on the plu
 |---|---|---|
 | **Keep TMDB artwork on the server** | Off | Saves every poster, backdrop, logo, cast photo and season and episode image of a [title that isn't in the library](arr-features.md#server-side-cache-for-artwork) in the cache folder the first time it is fetched, and shows it from there afterwards. |
 | **Cache folder** | `server-cache` in the plugin's data folder | A full path on the server, created if it doesn't exist. It must be writable by Jellyfin; relative paths, the root of a drive and Jellyfin's own folders (data, metadata, cache, logs, configuration, plugins, or a folder holding them) are refused. **Check folder** tests a path without saving it. A new folder starts empty; the old one is left as it is. |
-| **Largest size (GB)** | 2 | Past this, the images used least recently are removed first, down to 90% of it. 0 means no limit. |
+| **Largest size (GB)** | 2 | Past this, the images used least recently are removed first, down to 90% of it. Fractions such as 0.5 are fine; 0 means no limit. |
 | **Keep images for up to (days)** | 30 | An image fetched longer ago is fetched from TMDB again the next time it is shown. 0 means no age limit. |
 
 Under the settings, a line shows how many images the cache holds and how much space they take (counted in whole
-4 KiB blocks, as the disk stores them), and **Clear server-side cache** deletes them all. Lowering the size or the
+4 KiB blocks, as the disk stores them), and **Clear server-side cache** deletes them all (images shown in the last
+few hours can still come from Jellyfin's memory until it restarts). Lowering the size or the
 age takes effect as soon as it is saved. The scheduled task **Tidy the server-side cache** (Dashboard → Scheduled
 Tasks, at startup and daily) removes what is past the age limit and over the size. The cache folder is never part
 of a [backup](#backup-restore).
+
+![Check folder refusing one of Jellyfin's own folders, and the line after Clear](../images/server-cache-folder-check.png)
 
 ??? info "What is in the folder"
     One file per image under `<folder>/artwork/<2 characters>/`, named by a hash (never by anything a browser sent),

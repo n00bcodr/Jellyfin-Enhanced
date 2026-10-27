@@ -1748,7 +1748,6 @@
     "SeerrScanDebounceSeconds": 60,
     "ServerCacheEnabled": false,
     "ServerCacheMaxAgeDays": 30,
-    "ServerCacheMaxSizeGb": 2,
     "ServerCachePath": "",
     "ShokoApiKey": "",
     "ShokoShowCredits": false,

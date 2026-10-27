@@ -237,6 +237,14 @@ public sealed class ServerBlobCacheTests : IDisposable
     }
 
     [Fact]
+    public void UsageIsCamelCaseJson()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new ServerCacheUsage(true, "/f", null, 1, 4096, 0, 30,
+            new[] { new ServerCacheNamespaceUsage("artwork", 1, 4096, 0) }));
+        Assert.Equal("{\"enabled\":true,\"folder\":\"/f\",\"folderError\":null,\"files\":1,\"bytes\":4096,\"maxBytes\":0,\"maxAgeDays\":30,\"namespaces\":[{\"name\":\"artwork\",\"files\":1,\"bytes\":4096,\"maxBytes\":0}]}", json);
+    }
+
+    [Fact]
     public async Task UsageCountsEveryNamespaceAndClearRemovesOnlyTheStoresOwnFiles()
     {
         var cache = Make();
@@ -316,7 +324,7 @@ public sealed class ServerBlobCacheTests : IDisposable
         Assert.NotNull(location.Resolve("cache/je", out _));
         Assert.NotNull(location.Resolve("./je", out _));
         Assert.NotNull(location.Resolve(Path.Combine(_root, "data"), out _));
-        Assert.NotNull(location.Resolve(Path.Combine(_root, "data", "metadata", "je"), out _));
+        Assert.Contains(Path.Combine(_root, "data") + ")", location.Resolve(Path.Combine(_root, "data", "metadata", "je"), out _));
         Assert.NotNull(location.Resolve(Path.Combine(_root, "log", ".."), out _)); // holds Jellyfin's folders
         Assert.NotNull(location.Resolve(Path.Combine(_root, "plugins", "x"), out _));
         Assert.NotNull(location.Resolve(Path.GetPathRoot(_root), out _));
@@ -375,6 +383,10 @@ public sealed class ServerBlobCacheTests : IDisposable
         Assert.Equal("/srv/je-cache", set.Folder);
         Assert.Equal(20L * 1024 * 1024 * 1024, set.MaxBytes);
         Assert.Equal(0, set.MaxAgeDays);
+        config.ServerCacheMaxSizeGb = 0.5;
+        Assert.Equal(512L * 1024 * 1024, ServerCacheSettings.From(config).MaxBytes);
+        config.ServerCacheMaxSizeGb = double.NaN;
+        Assert.Equal(0, ServerCacheSettings.From(config).MaxBytes);
         Assert.False(ServerCacheSettings.From(null).Enabled);
     }
 

@@ -2998,7 +2998,7 @@
                             <div class="inputContainer">
                                 <label class="inputLabel" for="serverCachePath">Cache folder</label>
                                 <input id="serverCachePath" is="emby-input" type="text" autocomplete="off" placeholder="server-cache in the plugin's data folder"/>
-                                <div class="fieldDescription">A full path on the Jellyfin server, for example <code>/cache/jellyfin-enhanced</code>. Empty: the <code>server-cache</code> folder inside the plugin's data folder. It is created if it doesn't exist and must be writable by Jellyfin; Jellyfin's own folders (data, metadata, cache, logs, configuration, plugins) are refused. A new folder starts empty, and the old one is left as it is (clear it first if you don't need it any more).</div>
+                                <div class="fieldDescription">A full path on the Jellyfin server, for example <code>/srv/jellyfin-enhanced-cache</code>. Empty: the <code>server-cache</code> folder inside the plugin's data folder. It is created if it doesn't exist and must be writable by Jellyfin; Jellyfin's own folders (data, metadata, cache, logs, configuration, plugins) are refused. A new folder starts empty, and the old one is left as it is (clear it first if you don't need it any more).</div>
                                 <div class="je-backup-actions">
                                     <button id="serverCacheCheckBtn" is="emby-button" type="button" class="raised emby-button"><span>Check folder</span></button>
                                 </div>
@@ -3006,10 +3006,10 @@
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="serverCacheMaxSizeGb">Largest size (GB)</label>
-                                <input id="serverCacheMaxSizeGb" is="emby-input" type="number" min="0" max="10000" step="1"/>
+                                <input id="serverCacheMaxSizeGb" is="emby-input" type="number" min="0" max="10000" step="any"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="serverCacheMaxSizeGb">
-                                <div class="fieldDescription">When the cache grows past this, the images used least recently are removed first (down to 90% of it). 0 means no limit. 0-10000, default 2.</div>
+                                <div class="fieldDescription">When the cache grows past this, the images used least recently are removed first (down to 90% of it). Fractions such as 0.5 are fine; 0 means no limit. 0-10000, default 2.</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="serverCacheMaxAgeDays">Keep images for up to (days)</label>
@@ -9580,8 +9580,8 @@
             config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
             config.ServerCacheEnabled = document.querySelector('#serverCacheEnabled').checked;
             config.ServerCachePath = (document.querySelector('#serverCachePath').value || '').trim();
-            var __cacheGb = parseInt(document.querySelector('#serverCacheMaxSizeGb').value, 10);
-            config.ServerCacheMaxSizeGb = isNaN(__cacheGb) ? 2 : Math.min(10000, Math.max(0, __cacheGb));
+            var __cacheGb = parseFloat(document.querySelector('#serverCacheMaxSizeGb').value);
+            config.ServerCacheMaxSizeGb = isFinite(__cacheGb) ? Math.min(10000, Math.max(0, __cacheGb)) : 2;
             var __cacheDays = parseInt(document.querySelector('#serverCacheMaxAgeDays').value, 10);
             config.ServerCacheMaxAgeDays = isNaN(__cacheDays) ? 30 : Math.min(3650, Math.max(0, __cacheDays));
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
@@ -10295,7 +10295,8 @@
 
         function saveConfig(e) {
             if (e) e.preventDefault();
-            jeSave();
+            // The server-side cache's line shows the saved limits (a lower one is applied on save).
+            Promise.resolve(jeSave()).then(function(ok) { if (ok) setTimeout(jeServerCacheRefreshUsage, 1500); }, function() {});
             return false;
         }
 
@@ -13348,7 +13349,7 @@
                 }
             });
             clearBtn.addEventListener('click', async function() {
-                if (!confirm('Clear the server-side cache?\n\nEvery saved image is deleted (nothing else in the folder is touched); they are fetched from TMDB again as titles are opened.')) return;
+                if (!confirm('Clear the server-side cache?\n\nEvery saved image is deleted from the folder (nothing else in it is touched). Images shown in the last few hours can still come from Jellyfin\'s memory until it restarts; the rest are fetched from TMDB again as titles are opened.')) return;
                 clearBtn.disabled = true;
                 try {
                     var r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache/clear'), dataType: 'json' });

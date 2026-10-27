@@ -1370,8 +1370,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public string ServerCachePath { get; set; } = string.Empty;
 
-        /// <summary>Most space the server-side cache uses, in GB; the least recently used entries go first. 0 = unlimited.</summary>
-        public int ServerCacheMaxSizeGb { get; set; } = 2;
+        /// <summary>Most space the server-side cache uses, in GB (fractions allowed); the least recently used entries go first. 0 = unlimited.</summary>
+        public double ServerCacheMaxSizeGb { get; set; } = 2;
 
         /// <summary>Days an entry of the server-side cache is kept after it was fetched. 0 = no age limit.</summary>
         public int ServerCacheMaxAgeDays { get; set; } = 30;

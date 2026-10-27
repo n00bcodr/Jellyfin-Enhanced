@@ -25,9 +25,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         public static ServerCacheSettings From(PluginConfiguration? config)
         {
             if (config == null) return new ServerCacheSettings(false, string.Empty, 0, 0);
-            var gb = Math.Clamp(config.ServerCacheMaxSizeGb, 0, MaxSizeGbLimit);
+            var gb = double.IsFinite(config.ServerCacheMaxSizeGb) ? Math.Clamp(config.ServerCacheMaxSizeGb, 0, MaxSizeGbLimit) : 0;
             return new ServerCacheSettings(config.ServerCacheEnabled, (config.ServerCachePath ?? string.Empty).Trim(),
-                gb * 1024L * 1024 * 1024, Math.Clamp(config.ServerCacheMaxAgeDays, 0, MaxAgeDaysLimit));
+                (long)(gb * 1024 * 1024 * 1024), Math.Clamp(config.ServerCacheMaxAgeDays, 0, MaxAgeDaysLimit));
         }
     }
 
@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
             if (value.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || value.Contains('\0', StringComparison.Ordinal))
                 return "The folder contains characters that aren't allowed in a path.";
-            if (!Path.IsPathFullyQualified(value)) return "Use a full path, for example /cache/jellyfin-enhanced.";
+            if (!Path.IsPathFullyQualified(value)) return "Use a full path, for example /srv/jellyfin-enhanced-cache.";
             string normalized;
             try
             {
@@ -94,11 +94,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
             if (Path.GetPathRoot(normalized) is { } root && string.Equals(Normalize(root), normalized, PathComparison))
                 return "Pick a folder, not the root of a drive.";
-            foreach (var jellyfin in _forbidden)
-            {
-                if (Inside(normalized, jellyfin) || Inside(jellyfin, normalized))
-                    return "That folder is (or holds) one of Jellyfin's own folders (" + jellyfin + "). Pick a separate folder.";
-            }
+            // Name the closest of Jellyfin's folders it is in or holds.
+            var clash = _forbidden.Where(f => Inside(normalized, f) || Inside(f, normalized)).OrderByDescending(f => f.Length).FirstOrDefault();
+            if (clash != null) return "That folder is (or holds) one of Jellyfin's own folders (" + clash + "). Pick a separate folder.";
 
             full = normalized;
             return null;

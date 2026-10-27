@@ -8476,7 +8476,7 @@
     {
       "class": "PluginConfiguration",
       "name": "ServerCacheMaxSizeGb",
-      "type": "int",
+      "type": "double",
       "initializer": "2",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"

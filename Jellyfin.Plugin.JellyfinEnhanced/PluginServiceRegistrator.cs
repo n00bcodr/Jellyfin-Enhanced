@@ -362,10 +362,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                         paths.LogDirectoryPath, paths.ConfigurationDirectoryPath, paths.PluginsPath, paths.WebPath,
                         paths.InternalMetadataPath, paths.RootFolderPath,
                     });
-                return new Services.ServerCache.ServerBlobCache(
+                var cache = new Services.ServerCache.ServerBlobCache(
                     () => Services.ServerCache.ServerCacheSettings.From(JellyfinEnhanced.Instance?.Configuration),
                     location,
                     sp.GetRequiredService<Logger>());
+                // A saved change (a lower cap or age, another folder, the switch) applies right away.
+                if (JellyfinEnhanced.Instance is { } plugin) plugin.ConfigurationChanged += (_, _) => cache.SettingsChanged();
+                return cache;
             });
             serviceCollection.AddTransient<ServerCacheMaintenanceTask>();
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).

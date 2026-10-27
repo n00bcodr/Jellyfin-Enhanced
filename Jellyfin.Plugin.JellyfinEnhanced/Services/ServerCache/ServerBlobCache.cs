@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,7 +39,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <param name="Files">Entries.</param>
     /// <param name="Bytes">Bytes on disk (whole file-system blocks).</param>
     /// <param name="MaxBytes">The namespace's own share (0: none).</param>
-    public sealed record ServerCacheNamespaceUsage(string Name, long Files, long Bytes, long MaxBytes);
+    public sealed record ServerCacheNamespaceUsage(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("files")] long Files,
+        [property: JsonPropertyName("bytes")] long Bytes,
+        [property: JsonPropertyName("maxBytes")] long MaxBytes);
 
     /// <summary>What the cache folder holds, for the admin page.</summary>
     /// <param name="Enabled">Whether the cache is on.</param>
@@ -49,8 +54,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <param name="MaxBytes">The size cap (0 = unlimited).</param>
     /// <param name="MaxAgeDays">The age limit (0 = none).</param>
     /// <param name="Namespaces">Per-namespace usage.</param>
-    public sealed record ServerCacheUsage(bool Enabled, string Folder, string? FolderError, long Files, long Bytes, long MaxBytes, int MaxAgeDays,
-        IReadOnlyList<ServerCacheNamespaceUsage> Namespaces);
+    public sealed record ServerCacheUsage(
+        [property: JsonPropertyName("enabled")] bool Enabled,
+        [property: JsonPropertyName("folder")] string Folder,
+        [property: JsonPropertyName("folderError")] string? FolderError,
+        [property: JsonPropertyName("files")] long Files,
+        [property: JsonPropertyName("bytes")] long Bytes,
+        [property: JsonPropertyName("maxBytes")] long MaxBytes,
+        [property: JsonPropertyName("maxAgeDays")] int MaxAgeDays,
+        [property: JsonPropertyName("namespaces")] IReadOnlyList<ServerCacheNamespaceUsage> Namespaces);
 
     /// <summary>
     /// A namespaced on-disk store for public data JE fetches from elsewhere (TMDB artwork first), so a
@@ -152,6 +164,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 return Interlocked.Read(ref _generation);
             }
         }
+
+        /// <summary>Reads the settings now (a saved configuration): a lowered limit is swept at once, not at the next read or write.</summary>
+        public void SettingsChanged() => Current();
 
         /// <summary>True for a namespace name the store accepts (lower-case letters and digits, starting with a letter).</summary>
         /// <param name="ns">Namespace.</param>
