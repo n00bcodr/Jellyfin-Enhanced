@@ -1302,7 +1302,9 @@
     async function nativeTitleData(state, suffix = '') {
         const path = `/native-details/title/${state.mediaType === 'movie' ? 'movie' : 'tv'}/${state.parts.tmdbId}${suffix}`;
         try {
-            if (JE.core?.api?.plugin) return await JE.core.api.plugin(path, { skipCache: true });
+            // Extras drawn after the page (the decorative lane): the title's menus and windows never wait behind them, and
+            // More Info opened meanwhile joins (and promotes) the same read.
+            if (JE.core?.api?.plugin) return await JE.core.api.plugin(path, { skipCache: true, priority: 'low' });
             return await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`JellyfinEnhanced${path}`), dataType: 'json' });
         } catch {
             return null;

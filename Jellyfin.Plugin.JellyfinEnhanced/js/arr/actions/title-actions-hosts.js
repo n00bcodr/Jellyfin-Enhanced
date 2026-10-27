@@ -94,12 +94,19 @@
         const newest = sheetOpening(owner);
         const live = () => { settleMutations(); return owner.current(); };
         let shown = false;
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
         try {
-            if (!await A.admit(c, owner) || !live()) return;
-            const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
+            // The admission and the entry reads run together; nothing about the title is drawn before it is admitted.
+            const admission = A.admit(c, owner);
+            const reading = A.entries(c, { action: owner, surface: 'recommendations', admission });
+            reading.catch(() => {});
+            if (!await admission || !live()) return;
+            A.titled(shell, c.name);
+            const entries = await reading;
+            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner), shell });
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
-        finally { if (!shown) A.finish(owner); }
+        finally { if (!shown) { A.discard(shell); A.finish(owner); } }
     }
 
     /** Reconciles a retained/recycled card without retaining detached nodes. */
@@ -271,26 +278,47 @@
     async function openRow(state, opener) {
         const action = state.action;
         if (!action.current()) return;
-        const newest = sheetOpening(action);
+        // The OPENING (as a card's, D46S2-R12-8): an offer of the row's mount, finished on every terminal path — its shell
+        // closed, refused, failed, superseded, or the sheet it showed closing. Its admission, entry reads and feedback all
+        // check it, so a closed opening's late answer (a success or an error) does nothing. What the viewer submits from
+        // the sheet belongs to the row's mount, not to this opening (it outlives the sheet).
+        const opening = A.generation(() => action.current());
+        const newest = sheetOpening(opening);
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener, opening, { mount: action, onClose: () => A.finish(opening) });
+        let shown = false;
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
-                if (!action.current()) return;
+                if (!opening.current()) return;
             }
+            const title = () => state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
+            // A cancelled admission ends the opening; any other failure leaves the native controls.
+            const admission = state.c ? A.admit(state.c, opening).catch(error => { if (A.cancelled(error)) throw error; return false; }) : null;
+            // The entry reads run alongside the admission; nothing about the title is drawn before it has answered.
+            const reading = state.c ? A.entries(state.c, { action: opening, root: state.root, surface: 'details', admission }) : Promise.resolve([]);
+            reading.catch(() => {});
             if (state.c) {
                 let admitted = false;
-                // A cancelled admission ends the opening; any other failure leaves the native controls.
-                try { admitted = await A.admit(state.c, action); } catch (error) { if (A.cancelled(error)) return; }
-                if (!action.current() || (state.c.absent && !admitted)) return;
+                try { admitted = await admission; } catch (error) { if (A.cancelled(error)) return; }
+                if (!opening.current() || (state.c.absent && !admitted)) return;
+                if (admitted) A.titled(shell, title());
             }
-            const adapted = state.c ? await A.entries(state.c, { action, root: state.root, surface: 'details' }) : [];
-            if (!action.current()) return;
+            const adapted = await reading;
+            if (!opening.current()) return;
             const entries = nativeEntries(state);
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
-            const title = state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
-            if (newest()) A.show({ ...state.c, name: title }, entries, opener, action);
-        } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
+            // The row's own context (its admission record is what an entry's late check reads); the shown name is separate.
+            if (newest()) shown = A.show(state.c || {}, entries, opener, opening, { mount: action, onClose: () => A.finish(opening), shell, name: title() });
+        } catch (_) { if (opening.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) { A.discard(shell); A.finish(opening); } }
+    }
+
+    /** Marks an adapted control working on a press (or done) and mirrors it on the compact row's visible proxy of it. */
+    function busy(state, node, on) {
+        if (on) node.setAttribute('aria-busy', 'true'); else node.removeAttribute('aria-busy');
+        for (const proxy of state.compact?.proxies?.values() || []) if (proxy.jeActionSource === node) syncProxy(proxy, node);
     }
 
     /** Reads a control's label without treating icon-font ligatures as spoken text. */
@@ -314,6 +342,8 @@
         }
         const pressed = source.getAttribute('aria-pressed');
         if (pressed != null && proxy.getAttribute('aria-pressed') !== pressed) proxy.setAttribute('aria-pressed', pressed);
+        // A source working on a press (its admission pending) shows it on the visible control too.
+        if (source.getAttribute('aria-busy') === 'true') proxy.setAttribute('aria-busy', 'true'); else proxy.removeAttribute('aria-busy');
         const count = source.querySelector('.jellyseerr-issue-count-badge');
         const value = parseInt(count?.textContent || '0', 10);
         let badge = proxy.querySelector('.je-actions-badge');
@@ -427,8 +457,11 @@
                 // A press is an operation on this row's mount; owners that confirm first carry it.
                 proxy.onclick = e => {
                     e.preventDefault(); e.stopPropagation();
-                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
+                    // A source still working on a press takes no second one (one submission per press).
+                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true' && source.getAttribute('aria-busy') !== 'true')
                         A.dispatch(source, A.generation(() => rowCurrent(state)));
+                    // The press's feedback (the source's busy state) is shown on this visible control in the same frame.
+                    syncProxy(proxy, source);
                 };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
                 owned.proxies.set(id, proxy);
@@ -527,10 +560,14 @@
                     node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
                     if (entry.reason) node.dataset.jeActionReason = entry.reason;
                     node.onclick = e => {
-                        // Only a press someone made is the row's operation (D46S2-R11-1).
-                        if (!JE.ownerOf(e) || !action.current()) return;
+                        // Only a press someone made is the row's operation (D46S2-R11-1); a control still working on a
+                        // press takes no second one (one submission per press).
+                        if (!JE.ownerOf(e) || !action.current() || node.getAttribute('aria-busy') === 'true') return;
                         const operation = A.generation(() => action.current());
-                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
+                        // Feedback in the press's own frame while the action is admitted: the control shows it is working.
+                        busy(state, node, true);
+                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); })
+                            .finally(() => busy(state, node, false));
                     };
                 } else A.bindPress(node, action);
                 ours.add(node);

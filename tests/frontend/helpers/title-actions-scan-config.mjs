@@ -148,6 +148,7 @@ export const SITES = {
  */
 export const OPENERS = [
   { name: 'show', arg: 3, callee: /^(show|A\.show|JE\.titleActions\.show)$/, file: 'arr/actions/title-actions-sheet.js', label: 'title actions sheet' },
+  { name: 'pending', arg: 1, callee: /^(A\.pending|JE\.titleActions\.pending)$/, label: 'title actions loading shell' },
   { name: 'showLink', arg: 1, callee: /(^|\.)titleActions\.showLink$|^showLink$/, label: 'Share link sheet' },
   { name: 'open', arg: 1, prop: 'operation', callee: /(^|\.)arrAskSheet\.open$|^open$/, file: 'arr/ask/ask-sheet.js', label: 'request sheet' },
   { name: 'openOrAsk', arg: 1, prop: 'operation', callee: /(^|\.)arrAskSheet\.openOrAsk$|^openOrAsk$/, file: 'arr/ask/ask-sheet.js', label: 'one-tap ask / request sheet' },
@@ -220,9 +221,9 @@ export const HOST_DIALOG_MODULES = {
 
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
-  'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 11,
+  'arr/actions/title-actions-hosts.js': 4, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 11,
   'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 6,
-  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 16, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 5, 'arr/hub/hub-page.js': 4,
+  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 16, 'arr/ask/ask-sheet.js': 11, 'arr/hub/hub-discover.js': 5, 'arr/hub/hub-page.js': 4,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
   'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 11,
@@ -233,7 +234,7 @@ export const OWNER_SITES = {
   'enhanced/spoilerguard/state.js': 10, 'jellyseerr/api.js': 1, 'jellyseerr/hss-discovery-handler.js': 2,
   'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 11,
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
-  'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
+  'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 7,
   'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
   'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 10,
   'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,

@@ -18,11 +18,11 @@
         if (document.getElementById('je-title-actions-style')) return;
         const node = el('style'); node.id = 'je-title-actions-style';
         node.textContent = `
-.je-actions-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:1000001;display:flex;align-items:center;justify-content:center;color:#fff;font-family:inherit}
-.je-actions-sheet{box-sizing:border-box;background:#1c1c1c;border-radius:20px;width:min(460px,100%);max-height:90dvh;overflow:auto;padding:8px 0 20px;box-shadow:0 12px 64px #0008}
+.je-actions-backdrop,.je-actions-shell-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:1000001;display:flex;align-items:center;justify-content:center;color:#fff;font-family:inherit}
+.je-actions-sheet,.je-actions-shell{box-sizing:border-box;background:#1c1c1c;border-radius:20px;width:min(460px,100%);max-height:90dvh;overflow:auto;padding:8px 0 20px;box-shadow:0 12px 64px #0008}
 .je-actions-handle{width:36px;height:4px;border-radius:2px;background:#5a5a5a;margin:0 auto}
 .je-actions-head{display:flex;gap:12px;align-items:center;padding:12px 16px 8px}.je-actions-heading{flex:1;min-width:0}.je-actions-heading h2{font-size:18px;margin:0}.je-actions-subtitle{font-size:13px;color:#a8a8a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
-.je-actions-sheet button,.je-actions-row button{border:0;font:inherit;color:inherit;cursor:pointer}.je-actions-close{width:44px;height:44px;border-radius:22px;background:none;flex-shrink:0}
+.je-actions-sheet button,.je-actions-shell button,.je-actions-row button{border:0;font:inherit;color:inherit;cursor:pointer}.je-actions-close{width:44px;height:44px;border-radius:22px;background:none;flex-shrink:0}
 .je-actions-group{padding:14px 16px 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#a8a8a8}
 .je-actions-entry{display:flex;align-items:center;gap:16px;width:calc(100% - 12px);margin:0 6px;min-height:48px;padding:8px 10px;background:none;border-radius:10px;text-align:start;font-size:15px!important}
 .je-actions-entry-label{flex:1;min-width:0}.je-actions-state{font-size:13px;color:#c4c4c4}.je-actions-reason{display:block;font-size:12px;color:#a8a8a8;margin-top:3px}.je-actions-entry:disabled{opacity:.6;cursor:default}
@@ -34,12 +34,13 @@
 .je-actions-compact{min-width:0!important;max-width:calc(100vw - 32px)!important;width:100%}.je-actions-compact>:not(.je-actions-row){display:none!important}.je-actions-wide-more{display:inline-flex}.je-actions-compact>.je-actions-wide-more{display:none!important}
 .je-actions-card .je-hide-btn{top:calc(var(--je-title-menu-top,6px) + 50px)}.je-card-more{position:absolute;top:var(--je-title-menu-top,6px);right:6px;width:44px;height:44px;display:flex!important;align-items:center;justify-content:center;border:0;border-radius:22px;background:#1c1c1ce6;color:white;z-index:11;cursor:pointer}.je-actions-card{position:relative}
 .je-actions-link{box-sizing:border-box;width:100%;padding:12px;background:#101010;color:white;border:1px solid #555}
-@media(max-width:600px){.je-actions-backdrop{align-items:flex-end}.je-actions-sheet{border-radius:20px 20px 0 0;max-height:94dvh;padding-bottom:max(20px,env(safe-area-inset-bottom))}}
+@media(max-width:600px){.je-actions-backdrop,.je-actions-shell-backdrop{align-items:flex-end}.je-actions-sheet,.je-actions-shell{border-radius:20px 20px 0 0;max-height:94dvh;padding-bottom:max(20px,env(safe-area-inset-bottom))}}
 @media(max-width:600px){.layout-desktop .detailRibbon.je-actions-ribbon{flex-direction:column;align-items:stretch;height:auto!important;padding-left:16px!important;padding-right:16px!important}.layout-desktop .detailRibbon.je-actions-ribbon>.infoWrapper{width:auto;min-width:0}}
 @media(max-width:360px){.je-actions-row{gap:8px}.je-actions-row button{height:48px;min-width:48px;width:48px;flex-basis:48px;border-radius:24px}.je-actions-row .je-actions-primary{padding:0 6px;gap:4px}.je-actions-row .je-actions-primary>.material-icons{font-size:20px}.je-more-info-modal .je-actions-row .je-actions-primary{padding:0 3px}}
 .je-actions-row.je-actions-fit-1>.je-actions-report{display:none!important}.je-actions-row.je-actions-fit-2 .je-actions-primary-label{white-space:normal;text-overflow:clip;overflow-wrap:break-word;font-size:14px;line-height:1.1;text-align:center}
 .je-more-info-modal .header-section.je-actions-modal-header{flex-wrap:wrap}.je-more-info-modal .je-actions-modal-header>.je-more-info-actions{flex:0 0 100%;width:100%;max-width:100%!important;margin:0}
-.layout-tv .je-actions-sheet{max-height:95dvh;width:min(680px,100%)}.layout-tv .je-actions-entry{min-height:60px}
+.je-actions-row button[aria-busy=true]::after{content:'';position:absolute;top:4px;right:4px;width:12px;height:12px;border-radius:50%;border:2px solid #ffffff55;border-top-color:#fff;animation:je-actions-spin .8s linear infinite}.je-actions-entry[aria-busy=true] .je-actions-state::after{content:'';display:inline-block;width:14px;height:14px;margin-left:8px;vertical-align:-2px;border-radius:50%;border:2px solid #5a5a5a;border-top-color:#fff;animation:je-actions-spin .8s linear infinite}.je-actions-busy{display:flex;align-items:center;gap:12px;padding:16px 22px;color:#c4c4c4;font-size:14px}.je-actions-busy::before{content:'';width:18px;height:18px;border-radius:50%;border:2px solid #5a5a5a;border-top-color:#fff;animation:je-actions-spin .8s linear infinite;flex-shrink:0}@keyframes je-actions-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.je-actions-busy::before,.je-actions-row button[aria-busy=true]::after{content:'';position:absolute;top:4px;right:4px;width:12px;height:12px;border-radius:50%;border:2px solid #ffffff55;border-top-color:#fff;animation:je-actions-spin .8s linear infinite}.je-actions-entry[aria-busy=true] .je-actions-state::after{animation:none}}
+.layout-tv .je-actions-sheet,.layout-tv .je-actions-shell{max-height:95dvh;width:min(680px,100%)}.layout-tv .je-actions-entry{min-height:60px}
 `;
         document.head.append(node);
     }
@@ -57,7 +58,7 @@
         if (!current || (owner && current.owner !== owner)) return;
         const state = current; current = null;
         state.lease.open = false; state.release?.();
-        state.releaseScope?.(); state.observer.disconnect(); state.backdrop.remove();
+        state.releaseScope?.(); state.observer?.disconnect(); state.backdrop.remove();
         A.finish(state.action);
         state.onClose?.();
     }
@@ -95,24 +96,100 @@
      * owning host (a row or card: `owner`, required, D46S2-R6) is still current. The press starts an OPERATION
      * owned by the session, the route and that host, so it outlives the sheet (D53). The opening is admitted first
      * (D46S2 audit S2): an owner that is not current opens nothing and leaves the current sheet alone (false).
+     * `shell`: the opening's loading shell ({@link pending}); its choices are drawn into it, and nothing is shown once it
+     * has closed or a newer opening replaced it. `name`: the title shown (default `c.name`).
      */
-    function show(c, entries, opener, owner, { mount = null, onClose = null } = {}) {
+    function show(c, entries, opener, owner, { mount = null, onClose = null, shell = null, name = null } = {}) {
         const host = JE.admitSurface(owner, 'the title actions sheet');
         if (!host) return false;
+        // The owner's own loading shell is filled even when the caller did not name it (closing it would end the opening).
+        if (!shell && current?.pending && current.owner === host) shell = current;
+        if (shell) return current === shell && shell.pending && shell.owner === host && shell.action.current() ? fill(shell, c, entries, name) : false;
+        const state = frame(host, opener || document.activeElement, { mount, onClose });
+        return !!state && fill(state, c, entries, name);
+    }
+
+    /**
+     * Mounts an opening's title-free loading shell at once, before any read (the press gets feedback in its own frame):
+     * the More dialog with its Close, Escape and Back, and nothing about the title. {@link show} later draws the choices
+     * into the same surface; closing it finishes the opening (`onClose`). Null when `owner` is not current.
+     */
+    function pending(opener, owner, { mount = null, onClose = null } = {}) {
+        const host = JE.admitSurface(owner, 'the title actions sheet');
+        return host ? frame(host, opener || document.activeElement, { mount, onClose, shell: true }) : null;
+    }
+
+    /** Closes an opening's shell that is still loading (a refused, failed or superseded opening); a newer one is left alone. */
+    function discard(shell) {
+        if (shell && current === shell && shell.pending) close(false);
+    }
+
+    /** Names the title in a still-loading shell, once the viewer's admission for it has answered yes. */
+    function titled(shell, name) {
+        if (shell && current === shell && shell.pending && shell.action.current()) shell.subtitle.textContent = name || '';
+    }
+
+    /**
+     * Draws a sheet's frame (its dialog, heading and Close) and registers it on the surface stack as the offer of
+     * `host`; a `shell` frame shows that it is loading. Null when the stack refused it.
+     */
+    function frame(host, opener, { mount = null, onClose = null, shell = false }) {
         close(false); styles();
-        opener = opener || document.activeElement;
         const lease = { open: true };
         const action = A.generation(() => lease.open && host.current() !== false);
-        // What a press submits belongs to the stable mount the offer was shown for (a card's or a row's), not to the
-        // offer: it outlives the sheet closing (D46S2-R12-8).
-        const base = mount || host;
-        const backdrop = el('div', 'je-actions-backdrop');
-        const sheet = el('section', 'je-actions-sheet focuscontainer');
+        const backdrop = el('div', shell ? 'je-actions-shell-backdrop' : 'je-actions-backdrop');
+        const sheet = el('section', (shell ? 'je-actions-shell' : 'je-actions-sheet') + ' focuscontainer');
         sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', JE.t('title_actions_more'));
         const head = el('div', 'je-actions-head');
-        const heading = el('div', 'je-actions-heading'); heading.append(el('h2', '', JE.t('title_actions_more')), el('div', 'je-actions-subtitle', c.name));
+        const subtitle = el('div', 'je-actions-subtitle');
+        const heading = el('div', 'je-actions-heading'); heading.append(el('h2', '', JE.t('title_actions_more')), subtitle);
         const dismiss = el('button', 'je-actions-close', '×'); dismiss.type = 'button'; dismiss.setAttribute('aria-label', JE.t('title_actions_close'));
-        dismiss.onclick = () => close(); head.append(heading, dismiss); sheet.append(el('div', 'je-actions-handle'), head);
+        head.append(heading, dismiss); sheet.append(el('div', 'je-actions-handle'), head);
+        // What a press submits belongs to the stable mount the offer was shown for (a card's or a row's), not to the
+        // offer: it outlives the sheet closing (D46S2-R12-8).
+        const state = { backdrop, sheet, subtitle, opener, action, owner: host, base: mount || host, observer: null, lease, onClose, pending: shell, busy: null };
+        if (shell) {
+            sheet.setAttribute('aria-busy', 'true');
+            state.busy = el('div', 'je-actions-busy', JE.t('title_actions_loading'));
+            state.busy.setAttribute('role', 'status');
+            sheet.append(state.busy);
+        }
+        backdrop.append(sheet);
+        // The page behind is covered by the surface stack (inert, out of the accessibility tree, D46S2-R12-11).
+        document.body.append(backdrop);
+        current = state;
+        state.release = action.onCancel(() => close(false));
+        dismiss.onclick = () => close();
+        backdrop.onclick = e => { if (e.target === backdrop) close(); };
+        // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
+        // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
+        state.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener, dismiss: () => close() });
+        if (!state.releaseScope) { close(false); return null; }
+        // Escape and every Back key reach the sheet through the surface stack only (the topmost surface, the viewer's key).
+        sheet.addEventListener('keydown', e => {
+            if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            // Only the topmost surface moves focus, and only for the viewer's key (D46S2-R12-6).
+            if (!JE.surfaceInput(backdrop, e)) return;
+            const buttons = [...sheet.querySelectorAll('button:not(:disabled)')].filter(n => !n.closest('.je-actions-control'));
+            const index = buttons.indexOf(document.activeElement);
+            const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.shiftKey || ['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1) + buttons.length) % buttons.length;
+            e.preventDefault(); e.stopImmediatePropagation(); buttons[next]?.focus();
+        });
+        if (shell) dismiss.focus();
+        return state;
+    }
+
+    /** Draws the title and its choices into an open frame (a shell becomes the sheet in place) and focuses the first. */
+    function fill(state, c, entries, name = null) {
+        const { sheet, backdrop, action, opener, lease, base } = state;
+        state.subtitle.textContent = name ?? c.name ?? '';
+        if (state.pending) {
+            state.pending = false;
+            state.busy.remove(); state.busy = null;
+            sheet.removeAttribute('aria-busy');
+            backdrop.classList.replace('je-actions-shell-backdrop', 'je-actions-backdrop');
+            sheet.classList.replace('je-actions-shell', 'je-actions-sheet');
+        }
         const pairs = [];
         for (const group of groups) {
             const order = { watch: ['replay', 'shuffle', 'instant-mix', 'trailer', 'played', 'open'], view: ['guard', 'hide'], requests: ['report', 'follow', 'request', 'request-4k', 'manage'], other: ['share', 'native-more'] }[group];
@@ -132,41 +209,27 @@
                 sync(entry, button, c); pairs.push([entry, button]);
                 button.onclick = async e => {
                     // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
-                    if (!JE.ownerOf(e) || !action.current() || button.disabled) return;
+                    // A choice still working on a press takes no second one (one submission per press).
+                    if (!JE.ownerOf(e) || !action.current() || button.disabled || button.getAttribute('aria-busy') === 'true') return;
                     const operation = A.generation(() => base.current() !== false);
+                    // Feedback in the press's own frame while the action is admitted: the entry shows it is working.
+                    button.setAttribute('aria-busy', 'true');
                     // Close before opening the owner's modal; that modal owns focus from this point.
                     try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
                     catch (_) { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); }
+                    finally { button.removeAttribute('aria-busy'); }
                 };
                 sheet.append(button);
             }
         }
-        backdrop.append(sheet);
-        // The page behind is covered by the surface stack (inert, out of the accessibility tree, D46S2-R12-11).
-        document.body.append(backdrop);
         pairs.forEach(([entry]) => {
             if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(entry.control, c.tmdbId, c.type, action.current);
         });
-        const observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button, c)));
-        pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) observer.observe(source, { subtree: true, childList: true, attributes: true }); });
-        current = { backdrop, opener, action, owner: host, observer, lease, onClose, release: action.onCancel(() => close(false)) };
-        dismiss.onclick = () => close();
-        backdrop.onclick = e => { if (e.target === backdrop) close(); };
-        // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
-        // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
-        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener, dismiss: () => close() });
-        if (!current.releaseScope) { close(false); return false; }
-        // Escape and every Back key reach the sheet through the surface stack only (the topmost surface, the viewer's key).
-        sheet.addEventListener('keydown', e => {
-            if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-            // Only the topmost surface moves focus, and only for the viewer's key (D46S2-R12-6).
-            if (!JE.surfaceInput(backdrop, e)) return;
-            const buttons = [...sheet.querySelectorAll('button:not(:disabled)')].filter(n => !n.closest('.je-actions-control'));
-            const index = buttons.indexOf(document.activeElement);
-            const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.shiftKey || ['ArrowUp', 'ArrowLeft'].includes(e.key) ? -1 : 1) + buttons.length) % buttons.length;
-            e.preventDefault(); e.stopImmediatePropagation(); buttons[next]?.focus();
-        });
-        sheet.querySelector('.je-actions-entry:not(:disabled)')?.focus();
+        state.observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button, c)));
+        pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) state.observer.observe(source, { subtree: true, childList: true, attributes: true }); });
+        const first = sheet.querySelector('.je-actions-entry:not(:disabled)');
+        // A shell the viewer has moved focus within keeps it there only if that control is still in the sheet.
+        if (first && (!sheet.contains(document.activeElement) || document.activeElement === sheet.querySelector('.je-actions-close'))) first.focus();
         return true;
     }
 
@@ -179,5 +242,5 @@
         const input = el('input', 'je-actions-link'); input.readOnly = true; input.value = url;
         input.setAttribute('aria-label', JE.t('title_actions_share')); current.backdrop.querySelector('section').append(input); input.focus(); input.select();
     }
-    Object.assign(A, { show, close, styles, icon, showLink });
+    Object.assign(A, { show, pending, titled, discard, close, styles, icon, showLink });
 })(window.JellyfinEnhanced);

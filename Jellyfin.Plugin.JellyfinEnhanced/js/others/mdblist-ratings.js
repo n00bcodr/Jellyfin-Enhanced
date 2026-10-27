@@ -304,7 +304,8 @@
         async function fetchRatings(tmdbId, apiMediaType) {
             try {
                 const cacheKey = `mdblist-ratings:/${apiMediaType}/${tmdbId}`;
-                const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${tmdbId}`, { cacheKey });
+                // Decoration (the decorative lane): the title's menus and windows never wait behind it.
+                const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${tmdbId}`, { cacheKey, priority: 'low' });
                 if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
                 return data;
             } catch (e) {
