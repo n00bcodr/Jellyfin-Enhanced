@@ -2239,6 +2239,7 @@
     "title_actions_report_no_account": "Issue reporting needs an allowed, linked Seerr account.",
     "title_actions_unavailable": "This title is not available to your account.",
     "title_actions_failed": "The action could not complete. Please try again.",
+    "title_actions_loading": "Loading…",
     "arr_ready_panel_title": "Ready to watch",
     "arr_ready_panel_loading": "Loading…",
     "arr_ready_panel_unavailable": "Your Ready settings can't be loaded right now.",

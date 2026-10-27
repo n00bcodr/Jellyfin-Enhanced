@@ -229,11 +229,12 @@
      * Rejects like the core client (status, responseJSON).
      * @param {string} path '/title/{movie|tv}/{id}', '/title/{movie|tv}/{id}/ratings',
      *   '/title/{movie|tv}/{id}/related/{similar|recommendations}?page=' or '/collection/{id}'.
-     * @param {{signal?: AbortSignal}} [options] Cancellation.
+     * @param {{signal?: AbortSignal, priority?: 'low'}} [options] Cancellation; priority 'low' for decoration a page can
+     *   draw later (the client's decorative lane, which a menu's or window's reads never wait behind).
      * @returns {Promise<any>} The answer.
      */
     api.fetchPublic = function(path, options = {}) {
-        return JE.core.api.plugin(`/native-details${path}`, { skipCache: true, signal: options.signal });
+        return JE.core.api.plugin(`/native-details${path}`, { skipCache: true, signal: options.signal, priority: options.priority === 'low' ? 'low' : undefined });
     };
 
     /**
@@ -865,6 +866,8 @@
         if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
             return null;
         }
+        // Seerr is off: there is no Seerr quota to read (the server would answer 503).
+        if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrEnabled === false) return null;
         // No Seerr account to have a quota (known from the user status): nothing to ask Seerr for.
         if (api.knownAccountRefusal()) return null;
         try {

@@ -29,7 +29,8 @@ async function fetchRatings(tmdbId, mediaType, options = {}) {
         let response;
         const JE = window.JellyfinEnhanced;
         if (options.publicDetails && JE?.jellyseerrAPI?.fetchPublic) {
-            response = await JE.jellyseerrAPI.fetchPublic(`/title/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}/ratings`);
+            // Drawn after the window (the decorative lane): its actions and state never wait behind it.
+            response = await JE.jellyseerrAPI.fetchPublic(`/title/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}/ratings`, { priority: 'low' });
         } else {
             response = await JE.core.api.fetch(url);
         }
