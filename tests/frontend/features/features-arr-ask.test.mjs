@@ -56,6 +56,8 @@ function rowsBody({ displayMissing = true, canRequest = true, requests = {}, sea
     outcome: 'accepted', reason: 'season', certainty: 'Succeeded', message: 'Season',
     rows: {
       key: 'tv:tvdb:1:s1', series: 'tv:tvdb:1', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing, canRequest, seasonRequest, blocked,
+      // The server's episode identity verdict (UX-3): TMDB's episodes are the arr's.
+      numbering: { state: 'agree', destinationOnly: [] },
       episodes: [
         { episode: 1, request: requests[1] || null },
         { episode: 2, title: 'Two', overview: 'Second one.', runtime: 44, airDate: '2014-06-08', still: '/b2.jpg', request: requests[2] || null },
@@ -1761,30 +1763,31 @@ test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an olde
 
 // ------------------------------------------------------------------ UX-3: one episode numbering across page, picker and arr
 
-test('episodeNumbering: the arr\'s numbers decide; TMDB\'s facts belong to a number only where the air days agree', t => {
+test('episodeNumbering reads the server\'s verdict; only agree and provider let single TMDB-described episodes be asked for', t => {
   const h = setup(t);
-  const N = h.JE.arrAsk.episodeNumbering;
-  const arr = (n, day, code = 'unmonitored') => ({ episode: n, airDate: day ? `${day}T04:00:00Z` : null, reason: { code } });
-  const tmdb = (n, day) => ({ episode: n, airDate: day });
-  // Firefly: the arr lists 14, TMDB 11 (12–14 are TMDB specials); 1–11 aired on the same days.
-  const days = ['2002-09-20', '2002-09-27', '2002-10-04'];
-  same(N([arr(1, days[0]), arr(2, days[1]), arr(3, days[2]), arr(4, '2003-06-23')], { episodes: days.map((d, i) => tmdb(i + 1, d)), providerEpisodes: [1, 2, 3] }),
-    { state: 'agree', destinationOnly: [4], providerOnly: [], mismatched: [] });
-  // A day apart is the same airing (time zones).
-  assert.equal(N([arr(1, '2002-09-21')], { episodes: [tmdb(1, '2002-09-20')], providerEpisodes: [1] }).state, 'agree');
-  // Another order: the same number aired on another day.
-  same(N([arr(1, '2002-12-20'), arr(2, days[0])], { episodes: [tmdb(1, days[0]), tmdb(2, days[1])], providerEpisodes: [1, 2] }),
-    { state: 'conflict', destinationOnly: [], providerOnly: [], mismatched: [1, 2] });
-  // Different counts and nothing to confirm a shared number by (dates withheld): held.
-  assert.equal(N([arr(1, null), arr(2, null), arr(3, null)], { episodes: [tmdb(1, null), tmdb(2, null)], providerEpisodes: [1, 2] }).state, 'conflict');
-  // The same numbers and no dates: nothing says they differ.
-  assert.equal(N([arr(1, null), arr(2, null)], { episodes: [], providerEpisodes: [1, 2] }).state, 'agree');
-  // A series no arr holds: the provider's numbers are all there is.
-  assert.equal(N([arr(1, days[0], 'not_in_arr')], { episodes: [], providerEpisodes: [1, 2] }).state, 'provider');
-  // Nothing to compare with.
-  assert.equal(N([arr(1, days[0])], null).state, 'unknown');
-  assert.equal(N([arr(1, days[0])], { episodes: [] }).state, 'unknown');
-  assert.equal(N([], { providerEpisodes: [1] }).state, 'unknown');
+  const { episodeNumbering: N, episodeNumbersAskable: ok } = h.JE.arrAsk;
+  same(N({ numbering: { state: 'agree', destinationOnly: [12, 13] } }), { state: 'agree', destinationOnly: [12, 13] });
+  for (const state of ['agree', 'provider']) assert.equal(ok(N({ numbering: { state } })), true, state);
+  for (const state of ['conflict', 'destination', 'unknown', 'made-up']) assert.equal(ok(N({ numbering: { state } })), false, state);
+  // UX2R-3: a failed read, or rows without a verdict, never let a number through.
+  assert.equal(N(null).state, 'unknown');
+  assert.equal(N({ episodes: [] }).state, 'unknown');
+  assert.equal(ok(N(null)), false);
+});
+
+// UX2R-2 (review probes): air days alone never establish identity, whatever the client is handed.
+for (const [scenario, arrDates, providerDates, providerNumbers] of [
+  ['daily episodes swapped', ['2020-01-02', '2020-01-01'], ['2020-01-01', '2020-01-02'], [1, 2]],
+  ['batch release reordered', ['2020-01-01', '2020-01-01'], ['2020-01-01', '2020-01-01'], [1, 2]],
+  ['one confirmed number with two undated numbers', ['2020-01-01', null, null], ['2020-01-01', null], [1, 2]],
+  ['the same numbers and no dates', [null, null], [null, null], [1, 2]],
+]) test(`UX2R-2: ${scenario} never reads as agreement`, t => {
+  const h = setup(t);
+  const verdict = h.JE.arrAsk.episodeNumbering(arrDates.map((airDate, i) => ({ episode: i + 1, airDate, reason: { code: 'unmonitored' } })), {
+    providerEpisodes: providerNumbers, episodes: providerDates.map((airDate, i) => ({ episode: i + 1, airDate }))
+  });
+  assert.notEqual(verdict.state, 'agree');
+  assert.equal(h.JE.arrAsk.episodeNumbersAskable(verdict), false);
 });
 
 /** The season of a title that isn't in the library: TMDB lists E1–E3, the arr E1–E4 (E2 and E4 missing, nobody fetching). */
@@ -1801,10 +1804,11 @@ function absentSeason({ e2Day = '2014-06-08' } = {}) {
   };
 }
 
-function providerRows() {
+function providerRows(numbering = { state: 'agree', destinationOnly: [4] }) {
   const body = rowsBody();
   body.rows.episodes = body.rows.episodes.filter(e => e.episode !== 4);
   body.rows.providerEpisodes = [1, 2, 3];
+  body.rows.numbering = numbering;
   return body;
 }
 
@@ -1822,14 +1826,14 @@ test('UX-3: an episode only the arr lists says TMDB has no details for it, and c
 });
 
 test('UX-3: when the arr numbers a season differently, its episodes shown with TMDB\'s facts are held and say why; nothing is sent', async t => {
-  const h = setup(t, { status: absentSeason({ e2Day: '2014-08-31' }), server: { rows: () => providerRows() } });
+  const h = setup(t, { status: absentSeason({ e2Day: '2014-08-31' }), server: { rows: () => providerRows({ state: 'conflict', destinationOnly: [4] }) } });
   h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
   await h.open();
-  for (const n of [2, 4]) {
-    const r = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
-    assert.equal(r.querySelector('.je-ask-get'), null, `E${n} has no Get it`);
-    assert.equal(r.querySelector('.je-ask-paused').textContent, 'Numbered differently');
-  }
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-ask-get'), null, 'E2 (TMDB\'s facts) has no Get it');
+  assert.equal(two.querySelector('.je-ask-paused').textContent, 'Numbered differently');
+  // E4 shows only the arr's own number and date: nothing of TMDB's to mistake it for.
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   const note = h.document.querySelector('.je-ask-season-note.je-ask-numbering-note');
   assert.ok(note, 'the season says why above its episodes');
   assert.match(note.textContent, /numbered differently here and on TMDB/);
@@ -1845,9 +1849,41 @@ test('UX-3: when the arr numbers a season differently, its episodes shown with T
 test('UX-3: a library season\'s own Jellyfin rows are not held by TMDB\'s numbering', async t => {
   const status = absentSeason({ e2Day: '2014-08-31' });
   status.episodes[1] = { ...status.episodes[1], itemId: ID(2), row: true };
-  const h = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: () => providerRows() } });
+  const h = setup(t, { rows: row(1) + row(2, { virtual: true }) + row(3), status: { ...status, episodes: [...status.episodes.slice(0, 2), { ...status.episodes[2], stage: 'notHere', reason: { code: 'unmonitored' } }, status.episodes[3]] },
+    server: { rows: () => providerRows({ state: 'conflict', destinationOnly: [4] }) } });
   await h.open();
   const native = h.list().querySelector(`.listItem[data-id="${ID(2)}"]`);
   assert.ok(native.querySelector('.je-ask-get'), 'Jellyfin\'s row shows Jellyfin\'s facts for the arr\'s episode');
-  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'), null, 'JE\'s TMDB-described row is held');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="3"] .je-ask-get'), null, 'JE\'s TMDB-described row is held');
+});
+
+test('UX2R-3: a season whose identity check can\'t be read holds the episodes it shows with TMDB\'s facts (fail closed), and says so', async t => {
+  for (const failure of ['error', 'no verdict', 'unknown']) {
+    const h = setup(t, { status: absentSeason(), server: { rows: () => {
+      if (failure === 'error') return new Error('503');
+      const body = providerRows(failure === 'unknown' ? { state: 'unknown', destinationOnly: [] } : undefined);
+      if (failure === 'no verdict') delete body.rows.numbering;
+      return body;
+    } } });
+    h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+    await h.open();
+    if (failure === 'error') {
+      // No rows to draw JE's rows with: nothing is offered on a guess.
+      assert.equal(h.document.querySelectorAll('.je-ask-get').length, 0, failure);
+      // The page's own (TMDB) row of a missing episode isn't offered either while the check can't be read.
+      const status = absentSeason();
+      status.episodes[1] = { ...status.episodes[1], itemId: ID(2), row: true };
+      const facade = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: () => new Error('503') } });
+      facade.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+      await facade.open();
+      assert.ok(facade.list().querySelector(`.listItem[data-id="${ID(2)}"] .je-arr-chip`), 'the row is decorated');
+      assert.equal(facade.list().querySelector(`.listItem[data-id="${ID(2)}"] .je-ask-get`), null, 'held while unchecked');
+      continue;
+    }
+    const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+    assert.equal(two.querySelector('.je-ask-get'), null, failure);
+    assert.equal(two.querySelector('.je-ask-paused').textContent, "Couldn't check", failure);
+    assert.match(h.document.querySelector('.je-ask-numbering-note').textContent, /couldn't be checked right now/, failure);
+    assert.equal(h.posts.length, 0);
+  }
 });

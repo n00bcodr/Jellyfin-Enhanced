@@ -89,26 +89,28 @@
     }
 
     /**
-     * True when an episode is shown with TMDB's facts: a row JE draws (and its dialog), or any row of a season that
-     * isn't in the library (native details lists TMDB's episodes). A library season's own rows show Jellyfin's facts
-     * for the item the arr's episode is matched to.
+     * True when an episode is shown with TMDB's facts: any row of a season that isn't in the library (native details lists
+     * TMDB's episodes), or a row JE draws with TMDB's details (and its dialog). A library season's own rows show Jellyfin's
+     * facts for the item the arr's episode is matched to, and a row only the arr lists shows the arr's number and date.
      * @param {Object|undefined} ep Episode status.
      * @returns {boolean} TMDB's facts.
      */
     function describedByTmdb(ep) {
-        return !!ep && (!ep.row || !!(season?.itemId && JE.titleDetails?.isSynthetic?.(season.itemId)));
+        if (!ep) return false;
+        return ep.row ? !!(season?.itemId && JE.titleDetails?.isSynthetic?.(season.itemId)) : !!metaOf(ep.episode);
     }
 
     /**
-     * True while an episode of the season shown is held: the arr and TMDB number the season differently
-     * (JE.arrAsk.episodeNumbering) and the episode is shown with TMDB's facts ({@link describedByTmdb}), so a press
-     * could reach another episode than the one described. The banner's and the series' asks for every missing
-     * episode stay: they name the arr's own numbers only.
+     * True while an episode of the season shown is held: it is shown with TMDB's facts ({@link describedByTmdb}) and the
+     * server hasn't established that TMDB's episode of that number is the one a request for it reaches
+     * (JE.arrAsk.episodeNumbersAskable: numbered differently, not verifiable, or the check couldn't be read). Seerr's
+     * rounded asks (whole seasons) and the banner's and the series' asks for every missing episode stay: they name the
+     * arr's own numbers only.
      * @param {Object|undefined} ep Episode status.
      * @returns {boolean} Held.
      */
     function held(ep) {
-        return describedByTmdb(ep) && season?.numbering?.state === 'conflict';
+        return describedByTmdb(ep) && !rounded() && !numberingPending() && JE.arrAsk.episodeNumbersAskable?.(season?.numbering) !== true;
     }
 
     /**
@@ -125,8 +127,9 @@
      * @returns {{chip: string, text: string, detail: string}} Words.
      */
     function heldWords() {
-        const text = tr('arr_ask_numbering_text');
-        return { chip: tr('arr_ask_numbering_chip'), text, detail: text };
+        const conflict = season?.numbering?.state === 'conflict';
+        const text = tr(conflict ? 'arr_ask_numbering_text' : 'arr_ask_numbering_unchecked_text');
+        return { chip: tr(conflict ? 'arr_ask_numbering_chip' : 'arr_ask_numbering_unchecked_chip'), text, detail: text };
     }
 
     /**
@@ -741,8 +744,8 @@
         if (!JE.arrAsk?.enabled()) return;
         JE.internals?.arrAskStyles?.syncTheme?.();
         ensureRows(status);
-        // One numbering for the whole page: the rows, their buttons, the dialog and the note read it.
-        if (season) season.numbering = JE.arrAsk.episodeNumbering ? JE.arrAsk.episodeNumbering(status.episodes, season.rows) : null;
+        // One numbering for the whole page (the server's verdict on its rows): the rows, their buttons, the dialog and the note read it.
+        if (season) season.numbering = JE.arrAsk.episodeNumbering ? JE.arrAsk.episodeNumbering(season.rows) : null;
         const byId = new Map();
         const byNumber = new Map();
         for (const ep of status.episodes || []) {

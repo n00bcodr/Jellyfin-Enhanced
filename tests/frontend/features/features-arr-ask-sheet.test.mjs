@@ -2003,22 +2003,25 @@ test('provider episode entry starts with exactly that episode selected', async t
 
 // ------------------------------------------------------------------ UX-3: the sheet's episodes are the arr's
 
-/** Firefly as the lab's arr lists it: 14 aired episodes in season 1, where TMDB's season lists 11 (12–14 are its specials). */
-function fireflyServer({ shift = 0 } = {}) {
-  const day = n => new Date(Date.UTC(2002, 8, 20) + (n - 1) * 7 * 86400000).toISOString().slice(0, 10);
-  const arrDay = n => new Date(Date.parse(`${day(n)}T04:00:00Z`) + (n <= 11 ? shift : 0) * 86400000).toISOString();
-  const seasonStatus = {
-    key: 'tv:tvdb:78874:s1', itemId: 'f1', kind: 'season', stage: 'notHere', summary: { aired: 14, ready: 0 },
-    episodes: Array.from({ length: 14 }, (_, i) => ({ key: `tv:tvdb:78874:s1:e${i + 1}`, season: 1, episode: i + 1, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: arrDay(i + 1) }))
-  };
-  const seriesStatus = { key: 'tv:tvdb:78874', kind: 'series', stage: 'notHere', seasons: [{ season: 1, itemId: 'f1', stage: 'notHere', summary: { aired: 14, ready: 0 } }] };
+/**
+ * Firefly as the lab's arr lists it: 14 aired episodes in season 1, where TMDB's season lists 11 (12–14 are its specials).
+ * The series' native details page status (by its page id) has the seasons; its status by key has none (the real contract).
+ * `verdict` is the season rows' identity verdict; `rows: 'fail'` makes the rows read fail; `native: false` drops the page
+ * status; `keyReason` is the key status' reason.
+ */
+function fireflyServer({ verdict = 'agree', rows = 'ok', native = true, keyReason = 'unmonitored' } = {}) {
+  const seriesStatus = { key: 'tv:tvdb:78874', itemId: 'fs', kind: 'series', stage: 'notHere', reason: { code: keyReason }, seasons: [{ season: 1, itemId: 'f1', stage: 'notHere', summary: { aired: 14, ready: 0 } }] };
+  const state = { rows };
   return {
-    status: path => (path.startsWith('/acquire/status/item/f1') ? { items: [seasonStatus] } : path.startsWith('/acquire/status?keys=') ? { items: [seriesStatus] } : null),
+    state,
+    status: path => (path.startsWith('/acquire/status/item/fs') ? (native ? { items: [seriesStatus] } : { items: [] })
+      : path.startsWith('/acquire/status?keys=') ? { items: [{ key: 'tv:tvdb:78874', kind: 'series', stage: 'notHere', reason: { code: keyReason } }] } : null),
     routes: (method, path) => {
-      if (path === '/tmdb/tv/1437') return { body: { seasons: [{ season_number: 1, episode_count: 11, air_date: day(1) }] } };
+      if (path === '/tmdb/tv/1437') return { body: { seasons: [{ season_number: 1, episode_count: 11, air_date: '2002-09-20' }] } };
       if (path.startsWith('/acquire/requests/season/f1')) {
+        if (state.rows === 'fail') return { status: 503, body: {} };
         return { body: { outcome: 'accepted', rows: { key: 'tv:tvdb:78874:s1', season: 1, displayMissing: true, canRequest: true, providerEpisodes: Array.from({ length: 11 }, (_, i) => i + 1),
-          episodes: Array.from({ length: 11 }, (_, i) => ({ episode: i + 1, title: `T${i + 1}`, airDate: day(i + 1) })) } } };
+          numbering: { state: verdict, destinationOnly: [12, 13, 14] }, episodes: [] } } };
       }
       return null;
     }
@@ -2026,18 +2029,22 @@ function fireflyServer({ shift = 0 } = {}) {
 }
 const FIREFLY = { key: 'tv:tmdb:1437', kind: 'series', name: 'Firefly' };
 const toggles = h => [...h.document.querySelectorAll('.je-sheet-episode')];
+/** Native details' page ids for Firefly (the series page 'fs', its season 'f1'). */
+const fireflyPages = h => { h.JE.titleDetails = { syntheticId: (kind, id) => (kind === 'series' && id === 1437 ? 'fs' : null), isSynthetic: id => ['fs', 'f1'].includes(id) }; };
+const asking = h => { const asks = []; h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; }; return asks; };
 
-test('UX-3: a title\'s own Request offers the episodes the page lists and the arr numbers (14), not TMDB\'s count (11)', async t => {
+test('UX-3 / UX2R-1: a title\'s own Request offers the episodes its page lists and the arr numbers (14), from the page\'s status, not TMDB\'s count (11)', async t => {
   const h = setup(t, fireflyServer());
-  const asks = [];
-  h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
+  fireflyPages(h);
+  const asks = asking(h);
   const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
   await settle();
   click(h, card(h, 'episodes'));
   await settle();
   assert.deepEqual(toggles(h).map(b => b.dataset.episode), Array.from({ length: 14 }, (_, i) => String(i + 1)));
-  assert.ok(toggles(h).every(b => !b.disabled), 'the numbering agrees: every episode can be picked');
+  assert.ok(toggles(h).every(b => !b.disabled), 'the server established the numbering: every episode can be picked');
   assert.equal(h.document.querySelector('.je-sheet-numbering:not([hidden])'), null);
+  assert.ok(h.statusCalls.some(p => p.startsWith('/acquire/status/item/fs')), 'read from the series page\'s own status');
   click(h, h.document.querySelector('.je-sheet-episode[data-episode="12"]'));
   click(h, primary(h));
   await pending;
@@ -2045,9 +2052,9 @@ test('UX-3: a title\'s own Request offers the episodes the page lists and the ar
 });
 
 test('UX-3: Pick episodes holds a season the arr numbers differently from TMDB and says why; a whole season is still asked for', async t => {
-  const h = setup(t, fireflyServer({ shift: 40 }));
-  const asks = [];
-  h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
+  const h = setup(t, fireflyServer({ verdict: 'conflict' }));
+  fireflyPages(h);
+  const asks = asking(h);
   let pending = h.Sheet.open({ ...FIREFLY, initialSeason: 1, initialEpisode: 1 }, { operation: h.NATIVE });
   await settle();
   await settle();
@@ -2067,4 +2074,94 @@ test('UX-3: Pick episodes holds a season the arr numbers differently from TMDB a
   assert.equal(asks.length, 1);
   assert.deepEqual([...asks[0].seasons], [1], 'the whole season, as the arr lists it');
   assert.notEqual(asks[0].scope, 'episodes');
+});
+
+test('UX2R-3: a failed identity read holds the selected episode (nothing is sent) until Try again reads a verdict that allows it', async t => {
+  const server = fireflyServer();
+  server.state.rows = 'fail';
+  const h = setup(t, server);
+  fireflyPages(h);
+  const asks = asking(h);
+  const pending = h.Sheet.open({ ...FIREFLY, initialSeason: 1, initialEpisode: 1 }, { operation: h.NATIVE });
+  await settle();
+  await settle();
+  assert.ok(toggles(h).every(b => b.disabled));
+  assert.match(h.document.querySelector('.je-sheet-numbering:not([hidden])').textContent, /couldn't be checked/);
+  click(h, primary(h));
+  await settle();
+  assert.equal(asks.length, 0, 'a failed check never lets the episode through');
+  assert.match(h.document.querySelector('.je-sheet-message').textContent, /couldn't be checked/);
+  server.state.rows = 'ok';
+  click(h, h.document.querySelector('.je-sheet-numbering-retry'));
+  await settle();
+  await settle();
+  assert.ok(toggles(h).every(b => !b.disabled), 'read again: established');
+  click(h, primary(h));
+  await pending;
+  assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x1']);
+});
+
+test('UX2R-1: without the page\'s status, TMDB\'s seasons are offered for a series no arr holds, and held for one an arr may hold', async t => {
+  for (const [keyReason, held] of [['not_in_arr', false], ['unmonitored', true]]) {
+    const h = setup(t, fireflyServer({ native: false, keyReason }));
+    fireflyPages(h);
+    const asks = asking(h);
+    const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+    await settle();
+    click(h, card(h, 'episodes'));
+    await settle();
+    assert.equal(toggles(h).length, 11, `${keyReason}: TMDB's count, the only one there is`);
+    assert.equal(toggles(h).every(b => b.disabled), held, keyReason);
+    if (held) {
+      assert.match(h.document.querySelector('.je-sheet-numbering:not([hidden])').textContent, /couldn't be checked/);
+      click(h, primary(h));
+      await settle();
+      assert.equal(asks.length, 0);
+      click(h, h.document.querySelector('.je-sheet-secondary'));
+    } else {
+      click(h, h.document.querySelector('.je-sheet-episode[data-episode="2"]'));
+      click(h, primary(h));
+    }
+    await pending;
+    if (!held) assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x2']);
+  }
+});
+
+test('UX2R-4: a plain Search that finds nothing to search again never asks; it says so (Ask Dad to search still asks, as it says)', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: MEMBER });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_NOTHING, { contact: 'Dad' });
+  await settle();
+  const search = [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent.endsWith('Search'));
+  click(h, search);
+  await settle(20);
+  assert.equal(h.searches.length, 1);
+  assert.equal(h.posts.length, 0, 'no want');
+  assert.ok(h.toasts.includes("Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it."));
+});
+
+test('UX2R-4: the compact Search primary sends exactly the desktop Search and no want, also after a sent scope\'s search is skipped', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: MEMBER, config: { NativeAbsentDetailsEnabled: true } });
+  h.load('arr/actions/title-actions.js');
+  h.load('arr/actions/title-actions-sheet.js');
+  h.load('arr/actions/title-actions-hosts.js');
+  t.after(() => h.JE.titleActions.dispose());
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.titleDetails = { isSynthetic: () => true };
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, itemId: 'series1', reason: { code: 'no_release_yet', params: { sent: '1' } } }, { contact: 'Dad' });
+  await settle();
+  const box = page.querySelector('.je-ask-actions');
+  box.classList.add('je-native-absent-primary');
+  const search = [...box.querySelectorAll('.je-ask-action')].find(b => b.textContent.endsWith('Search'));
+  search.classList.add('je-native-absent-lead');
+  const row = h.document.createElement('div'); row.className = 'mainDetailButtons'; page.append(row); row.append(box);
+  row.getBoundingClientRect = () => ({ width: 120 });
+  h.JE.titleActions.mountRow(row, page, h.JE.titleActions.context({ mediaType: 'tv', id: 1437 }));
+  const compact = row.querySelector('.je-actions-primary');
+  assert.equal(compact.querySelector('.je-actions-primary-label').textContent, 'Search');
+  click(h, compact);
+  await settle(20);
+  assert.equal(h.searches.length, 1);
+  assert.equal(h.searches[0].body.key, 'tv:tvdb:371980');
+  assert.equal(h.posts.length, 0, 'no want');
 });

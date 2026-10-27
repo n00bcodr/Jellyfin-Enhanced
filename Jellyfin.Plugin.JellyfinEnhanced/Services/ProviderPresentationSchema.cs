@@ -177,6 +177,8 @@ public static class ProviderPresentationSchema
         Children("collection", "parts", "title", kind:"movie");
         Add("season-rows", Role.Title, "key series season seriesId displayMissing canRequest seasonRequest providerEpisodes");
         Children("season-rows", "episodes", "episode"); Children("season-rows", "blocked", "block");
+        Add("numbering", Role.Metadata, "state destinationOnly");
+        Children("season-rows", "numbering", "numbering");
         schemas["page"].Fields["rows"] = new(Disposition.Project, "season-rows");
         foreach (var field in new[] { "character", "job", "department" })
             foreach (var schema in new[] { "person", "role" }) schemas[schema].Fields[field] = new(Disposition.Project, Policy: "cast");

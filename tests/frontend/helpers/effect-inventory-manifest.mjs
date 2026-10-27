@@ -208,6 +208,7 @@ export const SITES = {
     'attachDetails state generation': [1, 'module', 'lifecycle: each status draw of the details page (the status pill\'s read, not a press)'],
     'fallback feedback toast': [1, 'press', 'sync'],
     'listen state listening': [1, 'module', 'ui'],
+    'notAskedYet feedback toast': [1, 'press', 'sync'],
     'listen state quotas': [1, 'module', 'cache'],
     'openSheet state quotas': [1, 'module', 'cache'],
     'openSheet surface arrAskSheet.open': [1, 'press', 'callee'],
