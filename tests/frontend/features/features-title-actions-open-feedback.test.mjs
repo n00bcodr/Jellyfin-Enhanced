@@ -324,3 +324,10 @@ test('More Info: a superseded opening draws nothing; only the newest opening\'s 
   await second; await delivered();
   assert.equal(moreInfo(h)?.dataset.tmdbId, '1399');
 });
+
+test('with Seerr off, the Seerr quota is not asked for (no 503 and no console error on JE-mode pages)', async t => {
+  const h = setup(t);
+  h.JE.pluginConfig.JellyseerrEnabled = false;
+  assert.equal(await h.JE.jellyseerrAPI.fetchUserQuota(), null);
+  assert.equal(h.sent('GET', '/jellyseerr/quota').length, 0);
+});
