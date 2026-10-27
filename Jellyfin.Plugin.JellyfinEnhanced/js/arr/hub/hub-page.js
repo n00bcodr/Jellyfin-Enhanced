@@ -925,13 +925,19 @@
     }
 
     /**
-     * Claims #/requests before Jellyfin's router (which has no such page).
+     * Claims #/requests before Jellyfin's router (which has no such page), and leaves it on any history move away.
      * @param {HashChangeEvent|PopStateEvent} e Event.
      * @returns {void}
      */
     function intercept(e) {
+        if (state.parking) return;
         const hash = e?.newURL ? new URL(e.newURL).hash : window.location.hash;
-        if (!isRoute(hash)) return;
+        if (!isRoute(hash)) {
+            // Every history move away from Requests leaves it, whatever the shared navigation module passes on: it
+            // drops a move back to the address it saw last, and in Firefox it never saw #/requests (stopped here).
+            if (state.visible && !isRoute()) hide();
+            return;
+        }
         e.stopImmediatePropagation?.();
         e.preventDefault?.();
         show();

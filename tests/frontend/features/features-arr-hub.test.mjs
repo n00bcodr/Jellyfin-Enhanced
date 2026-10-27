@@ -1290,3 +1290,23 @@ test('a translated Requests title stays apart from a translated title the host s
   go(h, '#/home');
   assert.equal(h.document.title, 'Accueil actualisé');
 });
+
+// Review r3: a history move away from Requests that the shared navigation module drops (a repeat of the address it
+// saw last; in Firefox it never saw #/requests) still leaves the page, from the page's own listener.
+test('a history move away leaves Requests even when the shared navigation module reports nothing', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  h.document.title = 'Details';
+  go(h, '#/requests');
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(!page.classList.contains('hide'));
+  // Back: the address changes and the browser fires popstate; JE's navigation module stays silent.
+  h.window.history.replaceState(null, '', '#/details?id=1');
+  h.window.dispatchEvent(new h.window.PopStateEvent('popstate', { state: null }));
+  assert.ok(page.classList.contains('hide'), 'left on the history move itself');
+  assert.ok(!h.document.getElementById('homePage').classList.contains('hide'), 'the page under it is back');
+  assert.equal(h.document.title, 'Details');
+  await wait(1300);
+  assert.equal(h.document.title, 'Details', 'no claim of the left visit runs');
+});

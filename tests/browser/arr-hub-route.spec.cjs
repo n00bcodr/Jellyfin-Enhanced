@@ -293,3 +293,62 @@ test('an embedded Calendar does not survive an identity change while the page is
     held.release();
   }
 });
+
+// Review r3: Firefox stops the #/requests events before the shared navigation module sees them, so a Back to the
+// address it saw last was dropped as a repeat; with the host's page still mounted no viewshow came either, and
+// Requests stayed shown at Home or Details. Every engine must leave on the history move itself.
+test('Back from Requests to a Details page still mounted underneath leaves Requests', async ({ page, arr }) => {
+  await visit(page, '#/home', 1280);
+  await page.evaluate(() => { location.hash = '#/details?id=1'; });
+  await expect(page.locator('#route-details')).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/requests'; });
+  await expectHubShown(page);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/details\?id=1$/);
+  await expect(page.locator('#je-requests-hub-page')).toBeHidden();
+  // Chromium shows the parked Home for a moment before Details is drawn (the accepted flash).
+  await expect.poll(() => shownPages(page)).toEqual(['route-details']);
+  await page.waitForTimeout(1400);
+  await expect(page).toHaveTitle('Movie details');
+});
+
+test('Back from Requests to a Home already routed leaves Requests', async ({ page, arr }) => {
+  await visit(page, '#/search', 390);
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await expect(page.locator('#route-home')).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/requests'; });
+  await expectHubShown(page);
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/home$/);
+  await expect(page.locator('#je-requests-hub-page')).toBeHidden();
+  await expect.poll(() => shownPages(page)).toEqual(['route-home']);
+  await page.waitForTimeout(1400);
+  await expect(page).toHaveTitle('Home');
+});
+
+for (const gap of [0, 40, 150]) {
+  test(`rapid addresses then Back and Forward end on the right page (${gap} ms apart)`, async ({ page, arr }) => {
+    await visit(page, '#/home', 390);
+    await page.evaluate(async gap => {
+      for (const hash of ['#/requests', '#/search', '#/requests', '#/details?id=1', '#/requests']) {
+        location.hash = hash;
+        await new Promise(r => setTimeout(r, gap));
+      }
+    }, gap);
+    await expectHubShown(page);
+    await expectPhoneHeader(page);
+    await expect(page).toHaveTitle('Requests');
+    await page.goBack();
+    await expect(page.locator('#route-details')).toBeVisible();
+    await expect(page.locator('#je-requests-hub-page')).toBeHidden();
+    await expect(page).toHaveTitle('Movie details');
+    await page.goForward();
+    await expectHubShown(page);
+    await expect(page).toHaveTitle('Requests');
+    await page.evaluate(() => { location.hash = '#/search'; });
+    await expect(page.locator('#route-search')).toBeVisible();
+    await page.waitForTimeout(1300);
+    await expect(page).toHaveTitle('Search');
+    expect(await shownPages(page)).toEqual(['route-search']);
+  });
+}
