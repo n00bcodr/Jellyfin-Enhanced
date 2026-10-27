@@ -731,8 +731,9 @@
             return;
         }
         state.pending = null;
-        // A slow host redraw that caught up meanwhile needs no other.
-        if (!listPage(state) && more(action.base, state.base) && reconciled(state, action.base) === true) {
+        // A slow host redraw (JE's own, in this view) that caught up meanwhile needs no other. Before one,
+        // the picker can still list a version since removed, so its count proves nothing.
+        if (!listPage(state) && state.refreshed && more(action.base, state.base) && reconciled(state, action.base) === true) {
             commit(state, action.base);
             return;
         }

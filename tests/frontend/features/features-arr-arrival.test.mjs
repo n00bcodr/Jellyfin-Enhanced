@@ -648,6 +648,19 @@ for (const kind of ['movie', 'episode']) {
     assert.equal(h.host.shows.length, 1);
   });
 
+  test(`${kind}: after a removal to one, a picker still listing the removed version doesn't stand in for the redraw`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(1); // Jellyfin doesn't redraw for a removal: its picker still lists both old versions
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 1);
+    assert.equal(f.picker.options.length, 2);
+    f.set(2); // a new second version: the count matches the stale picker, but Jellyfin must still redraw
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1), 'redrawn');
+    assert.ok(await until(() => h.A.state().base.versions === 2));
+  });
+
   test(`${kind}: redrawn one → two, a removal to one, then a new second version redraws again (review probe)`, async t => {
     const f = eventPage(t, kind, 1), { h } = f;
     await h.D.update(false);
