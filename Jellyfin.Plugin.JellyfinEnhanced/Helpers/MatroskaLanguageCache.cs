@@ -21,21 +21,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// or hundreds of MB of read-ahead, so re-reading unchanged files turned a
     /// metadata-only refresh into hundreds of GB of downloads. With the cache, an
     /// unchanged file costs one stat; it is only opened again when its size or
-    /// modification time changes.
+    /// modification time changes. A rewrite that keeps both size and modification
+    /// time is not detected; that is the same signature Jellyfin uses to decide
+    /// whether to re-probe a file.
     ///
     /// Persisted to matroska-languages.json next to tag-cache.json, so a restart
     /// does not re-read the whole library either.
     /// </summary>
     public sealed class MatroskaLanguageCache : IDisposable
     {
+        // Bump whenever MatroskaLanguageReader learns to parse files it used to
+        // reject: unparseable files are cached as negatives, and without a bump
+        // those would never be re-read until the file itself changes.
         private const int SchemaVersion = 1;
         private const string FileName = "matroska-languages.json";
+
+        // Concurrent misses on one path (build workers, simultaneous tag-data
+        // requests) take the same stripe, so the file is opened once.
+        private const int MissLockStripes = 64;
 
         // Same cadence as the tag cache's disk save: 30s after the last change,
         // but never deferred more than 5 minutes past the first unsaved one, so a
         // full build over a cold cache writes a few times rather than never.
-        private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
-        private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan DefaultSaveDebounce = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan DefaultSaveMaxWait = TimeSpan.FromMinutes(5);
 
         // Nulls omitted on write (an unparsed file has no Languages); reading
         // back treats an absent property as null, so default options load it.
@@ -50,19 +59,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private readonly ConcurrentDictionary<string, FileEntry> _files = new(StringComparer.Ordinal);
         private readonly object _loadLock = new();
         private readonly object _saveLock = new();
+        private readonly object[] _missLocks = Enumerable.Range(0, MissLockStripes).Select(_ => new object()).ToArray();
         private readonly Timer _saveTimer;
+        private readonly TimeSpan _saveDebounce;
+        private readonly TimeSpan _saveMaxWait;
         private volatile bool _loaded;
         private volatile bool _dirty;
         private volatile bool _disposed;
         private long _firstDirtyTicks; // 0 = nothing unsaved since the last disk save
+        private int _saveFailures; // consecutive, guarded by _saveLock
         private long _generation;
         private long _reads;
         private long _hits;
 
         public MatroskaLanguageCache(IApplicationPaths applicationPaths, Logger logger)
+            : this(applicationPaths, logger, DefaultSaveDebounce, DefaultSaveMaxWait)
+        {
+        }
+
+        // Tests use short delays to exercise the save timer.
+        internal MatroskaLanguageCache(IApplicationPaths applicationPaths, Logger logger, TimeSpan saveDebounce, TimeSpan saveMaxWait)
         {
             _applicationPaths = applicationPaths;
             _logger = logger;
+            _saveDebounce = saveDebounce;
+            _saveMaxWait = saveMaxWait;
             _saveTimer = new Timer(_ => OnSaveTimer(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
@@ -117,7 +138,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             EnsureLoaded();
             var generation = Interlocked.Read(ref _generation);
 
-            if (_files.TryGetValue(path!, out var cached)
+            if (TryGetCached(path!, size, modifiedTicks, generation, out languages, out var cachedParsed))
+            {
+                return cachedParsed;
+            }
+
+            // Single-flight per path: whoever takes the stripe second finds the
+            // first one's result instead of opening the file again. Hits above
+            // stay lock-free.
+            var stripe = (StringComparer.Ordinal.GetHashCode(path!) & int.MaxValue) % MissLockStripes;
+            lock (_missLocks[stripe])
+            {
+                if (TryGetCached(path!, size, modifiedTicks, generation, out languages, out cachedParsed))
+                {
+                    return cachedParsed;
+                }
+
+                return ReadAndStore(path!, size, modifiedTicks, generation, out languages);
+            }
+        }
+
+        private bool TryGetCached(string path, long size, long modifiedTicks, long generation, out IReadOnlyList<string?> languages, out bool parsed)
+        {
+            if (_files.TryGetValue(path, out var cached)
                 && cached.Size == size
                 && cached.Modified == modifiedTicks)
             {
@@ -130,9 +173,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
                 Interlocked.Increment(ref _hits);
                 languages = cached.Languages ?? Array.Empty<string?>();
-                return cached.Parsed;
+                parsed = cached.Parsed;
+                return true;
             }
 
+            languages = Array.Empty<string?>();
+            parsed = false;
+            return false;
+        }
+
+        private bool ReadAndStore(string path, long size, long modifiedTicks, long generation, out IReadOnlyList<string?> languages)
+        {
+            languages = Array.Empty<string?>();
             var parsed = MatroskaLanguageReader.TryReadAudioLanguages(path, out var read, out var transientFailure);
             Interlocked.Increment(ref _reads);
 
@@ -154,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 Languages = parsed ? read.ToArray() : null,
                 Generation = generation,
             };
-            _files[path!] = entry;
+            _files[path] = entry;
             MarkDirty();
 
             languages = entry.Languages ?? Array.Empty<string?>();
@@ -162,10 +214,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         }
 
         /// <summary>
-        /// Starts a sweep: entries not looked up between this call and
-        /// <see cref="EndSweep"/> are treated as files that no longer exist.
-        /// Only a pass that visits every library file (the full tag-cache
-        /// build) may sweep.
+        /// Starts a sweep: entries looked up between this call and
+        /// <see cref="EndSweep"/> are known to be current; every other entry is
+        /// checked against the file system when the sweep ends. The sweeping
+        /// pass need not visit every file (the full tag-cache build skips
+        /// excluded libraries and failed items), since only files that are gone
+        /// are pruned.
         /// </summary>
         public void BeginSweep()
         {
@@ -176,9 +230,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         }
 
         /// <summary>
-        /// Removes every entry not looked up since <see cref="BeginSweep"/>.
-        /// Call only when the sweeping pass ran to completion; an aborted pass
-        /// has not visited everything and must simply not call this.
+        /// Removes entries not looked up since <see cref="BeginSweep"/> whose file
+        /// no longer exists, at one stat per such entry; entries for files that
+        /// still exist are kept even when the pass did not visit them. Call only
+        /// when the sweeping pass ran to completion.
         /// </summary>
         public void EndSweep()
         {
@@ -186,9 +241,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             var removed = 0;
             foreach (var pair in _files)
             {
+                if (pair.Value.Generation == generation || FileStillExists(pair.Key))
+                {
+                    continue;
+                }
+
                 // Removes only this exact entry, so one replaced by a concurrent
                 // read (which carries the current generation) is kept.
-                if (pair.Value.Generation != generation && _files.TryRemove(pair))
+                if (_files.TryRemove(pair))
                 {
                     removed++;
                 }
@@ -196,8 +256,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             if (removed > 0)
             {
-                _logger.Info($"[MatroskaLanguageCache] Pruned {removed} entries for files no longer in the library");
+                _logger.Info($"[MatroskaLanguageCache] Pruned {removed} entries for files that no longer exist");
                 MarkDirty();
+            }
+        }
+
+        private static bool FileStillExists(string path)
+        {
+            try
+            {
+                return File.Exists(path);
+            }
+            catch (Exception)
+            {
+                // Unknown is not gone: keep the entry rather than re-read the file.
+                return true;
             }
         }
 
@@ -279,11 +352,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 return;
             }
 
-            var due = SaveDebounce;
+            var due = _saveDebounce;
             var first = Interlocked.Read(ref _firstDirtyTicks);
             if (first != 0)
             {
-                var untilCap = TimeSpan.FromTicks(first + SaveMaxWait.Ticks - nowTicks);
+                var untilCap = TimeSpan.FromTicks(first + _saveMaxWait.Ticks - nowTicks);
                 if (untilCap < due)
                 {
                     due = untilCap < TimeSpan.Zero ? TimeSpan.Zero : untilCap;
@@ -340,12 +413,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
                     // Atomic replace: a crash mid-write leaves the previous file.
                     File.Move(temp, path, overwrite: true);
+
+                    if (_saveFailures > 0)
+                    {
+                        _logger.Info($"[MatroskaLanguageCache] Saved {FileName} after {_saveFailures} failed attempts");
+                        _saveFailures = 0;
+                    }
                 }
                 catch (Exception ex)
                 {
                     _dirty = true;
-                    Interlocked.CompareExchange(ref _firstDirtyTicks, DateTime.UtcNow.Ticks, 0);
-                    _logger.Warning($"[MatroskaLanguageCache] Failed to save {FileName}: {ex.Message}");
+                    var now = DateTime.UtcNow.Ticks;
+                    Interlocked.CompareExchange(ref _firstDirtyTicks, now, 0);
+
+                    // A lasting failure (read-only config directory) retries every
+                    // debounce interval; warn once rather than on every attempt.
+                    if (++_saveFailures == 1)
+                    {
+                        _logger.Warning($"[MatroskaLanguageCache] Failed to save {FileName}; retrying: {ex.Message}");
+                    }
+                    else
+                    {
+                        _logger.Debug($"[MatroskaLanguageCache] Save attempt {_saveFailures} failed: {ex.Message}");
+                    }
+
+                    // Retry on the debounce: otherwise, with only cache hits from
+                    // here on, nothing would be saved until Dispose.
+                    ArmSave(now);
                 }
             }
         }

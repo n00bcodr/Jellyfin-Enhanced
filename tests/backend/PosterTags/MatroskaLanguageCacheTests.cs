@@ -39,6 +39,12 @@ public class MatroskaLanguageCacheTests
         }
 
         public static byte[] Element(ulong id, byte[] data) => [.. Id(id), .. Size(data.Length), .. data];
+        public static byte[] UInt(ulong id, long value)
+        {
+            var bytes = new byte[8];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes, value);
+            return Element(id, bytes);
+        }
         public static byte[] Master(ulong id, params byte[][] children) => Element(id, [.. children.SelectMany(c => c)]);
         public static byte[] Text(ulong id, string value) => Element(id, Encoding.UTF8.GetBytes(value));
 
@@ -56,8 +62,38 @@ public class MatroskaLanguageCacheTests
             .. Master(0x18538067, Master(0x1654AE6B, tracks)),
         ];
 
+        /// <summary>A file whose Segment holds exactly these top-level children, in order.</summary>
+        public static byte[] Segment(params byte[][] children) =>
+        [
+            .. Master(0x1A45DFA3, Text(0x4282, "matroska")),
+            .. Master(0x18538067, children),
+        ];
+
+        /// <summary>SeekHead with one entry; the position is fixed-width, so the length does not depend on it.</summary>
+        public static byte[] SeekHead(ulong targetId, long position) =>
+            Master(0x114D9B74, Master(0x4DBB, Element(0x53AB, Id(targetId)), UInt(0x53AC, position)));
+
+        public static byte[] Cluster() => Master(0x1F43B675, Element(0xE7, [0]), Element(0xA3, new byte[64]));
+
+        public static byte[] Tracks(params byte[][] tracks) => Master(0x1654AE6B, tracks);
+
         /// <summary>Video, then audio "por"/pt-BR, then audio "eng".</summary>
-        public static byte[] PortugueseAndEnglish() => File(Track(1, "und"), Track(2, "por", "pt-BR"), Track(2, "eng"));
+        public static byte[] PortugueseAndEnglish() => File(PortugueseAndEnglishTracks());
+
+        public static byte[][] PortugueseAndEnglishTracks() => [Track(1, "und"), Track(2, "por", "pt-BR"), Track(2, "eng")];
+
+        /// <summary>
+        /// The layout mkvpropedit leaves when a language edit no longer fits:
+        /// SeekHead, then a Cluster, then Tracks at the end, found only through
+        /// the SeekHead.
+        /// </summary>
+        public static byte[] TracksAfterCluster(Func<long, long>? tracksPosition = null)
+        {
+            var cluster = Cluster();
+            var seekHeadLength = SeekHead(0x1654AE6B, 0).Length;
+            var position = seekHeadLength + cluster.Length;
+            return Segment(SeekHead(0x1654AE6B, tracksPosition?.Invoke(position) ?? position), cluster, Tracks(PortugueseAndEnglishTracks()));
+        }
     }
 
     private static string WriteMkv(CoreFixture f, string name, byte[] bytes)
@@ -225,28 +261,165 @@ public class MatroskaLanguageCacheTests
     }
 
     [Fact]
-    public void SweepDropsFilesThePassDidNotVisit()
+    public void SweepKeepsUnvisitedFilesThatStillExist()
     {
         using var f = new CoreFixture();
         using var cache = new MatroskaLanguageCache(f.Paths.Object, f.Logger);
-        var a = WriteMkv(f, "a.mkv", Ebml.PortugueseAndEnglish());
-        var b = WriteMkv(f, "b.mkv", Ebml.PortugueseAndEnglish());
-        Assert.True(cache.TryGetAudioLanguages(a, out _));
-        Assert.True(cache.TryGetAudioLanguages(b, out _));
+        var excluded = WriteMkv(f, "excluded-library.mkv", Ebml.PortugueseAndEnglish());
+        var deleted = WriteMkv(f, "deleted.mkv", Ebml.PortugueseAndEnglish());
+        Assert.True(cache.TryGetAudioLanguages(excluded, out _));
+        Assert.True(cache.TryGetAudioLanguages(deleted, out _));
 
+        // Neither is looked up during the sweep (an excluded library, say).
         cache.BeginSweep();
-        Assert.True(cache.TryGetAudioLanguages(a, out _));
+        File.Delete(deleted);
         cache.EndSweep();
 
-        // Both now unparseable at the same size and mtime: A is still answered
-        // from the cache, B's entry is gone so it is read (and fails).
-        CorruptInPlace(a);
-        CorruptInPlace(b);
-        Assert.True(cache.TryGetAudioLanguages(a, out var kept));
+        // The surviving file is still answered without a read even though its
+        // contents changed in place; the deleted one reappearing is read again.
+        CorruptInPlace(excluded);
+        Assert.True(cache.TryGetAudioLanguages(excluded, out var kept));
         Assert.Equal(new string?[] { "pt-BR", "eng" }, kept);
         Assert.Equal(2, cache.Reads);
-        Assert.False(cache.TryGetAudioLanguages(b, out _));
+        File.WriteAllBytes(deleted, Ebml.PortugueseAndEnglish());
+        Assert.True(cache.TryGetAudioLanguages(deleted, out _));
         Assert.Equal(3, cache.Reads);
+    }
+
+    [Fact]
+    public void SizeChangeWithTheSameModificationTimeIsReadAgain()
+    {
+        using var f = new CoreFixture();
+        using var cache = new MatroskaLanguageCache(f.Paths.Object, f.Logger);
+        var path = WriteMkv(f, "a.mkv", Ebml.PortugueseAndEnglish());
+        Assert.True(cache.TryGetAudioLanguages(path, out _));
+
+        var modified = File.GetLastWriteTimeUtc(path);
+        File.WriteAllBytes(path, Ebml.File(Ebml.Track(2, "jpn")));
+        File.SetLastWriteTimeUtc(path, modified);
+
+        Assert.True(cache.TryGetAudioLanguages(path, out var languages));
+        Assert.Equal(new string?[] { "jpn" }, languages);
+        Assert.Equal(2, cache.Reads);
+    }
+
+    [Fact]
+    public async Task ConcurrentMissesOnOneFileReadItOnce()
+    {
+        using var f = new CoreFixture();
+        using var cache = new MatroskaLanguageCache(f.Paths.Object, f.Logger);
+        var path = WriteMkv(f, "a.mkv", Ebml.PortugueseAndEnglish());
+        const int callers = 8;
+        using var start = new Barrier(callers);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, callers)
+            .Select(_ => Task.Factory.StartNew(() =>
+            {
+                start.SignalAndWait();
+                var parsed = cache.TryGetAudioLanguages(path, out var languages);
+                return (parsed, languages);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)));
+
+        Assert.Equal(1, cache.Reads);
+        Assert.Equal(callers - 1, cache.Hits);
+        Assert.All(results, r =>
+        {
+            Assert.True(r.parsed);
+            Assert.Equal(new string?[] { "pt-BR", "eng" }, r.languages);
+        });
+    }
+
+    [Fact]
+    public void FailedSaveIsRetriedWithoutAnotherChange()
+    {
+        using var f = new CoreFixture();
+        var json = Path.Combine(f.ConfigRoot, "matroska-languages.json");
+
+        // The config directory's path is taken by a file, so it cannot be
+        // created (the fixture's UserConfigurationManager makes it up front).
+        if (Directory.Exists(f.ConfigRoot)) Directory.Delete(f.ConfigRoot, true);
+        Directory.CreateDirectory(Path.GetDirectoryName(f.ConfigRoot)!);
+        File.WriteAllText(f.ConfigRoot, "blocker");
+        var path = WriteMkv(f, "a.mkv", Ebml.PortugueseAndEnglish());
+        var delay = TimeSpan.FromMilliseconds(100);
+        using var cache = new MatroskaLanguageCache(f.Paths.Object, f.Logger, delay, TimeSpan.FromSeconds(1));
+
+        Assert.True(cache.TryGetAudioLanguages(path, out _));
+        Assert.True(SpinWait.SpinUntil(() => LogContains(f, "Failed to save matroska-languages.json"), TimeSpan.FromSeconds(10)));
+        Assert.False(File.Exists(json));
+
+        // Only the retry can write it now: the cache is not changed again.
+        File.Delete(f.ConfigRoot);
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(json), TimeSpan.FromSeconds(10)));
+        Assert.Contains("a.mkv", File.ReadAllText(json));
+        Assert.Equal(1, cache.Reads);
+    }
+
+    private static bool LogContains(CoreFixture f, string text)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(f.Root, "JellyfinEnhanced_*.log").Any(log => File.ReadAllText(log).Contains(text));
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    [Fact]
+    public void ReaderFollowsTheSeekHeadToTracksAfterTheFirstCluster()
+    {
+        using var f = new CoreFixture();
+        var path = WriteMkv(f, "relocated.mkv", Ebml.TracksAfterCluster());
+
+        Assert.True(MatroskaLanguageReader.TryReadAudioLanguages(path, out var languages));
+        Assert.Equal(new string?[] { "pt-BR", "eng" }, languages);
+
+        // Through the cache the positive result is stored and served from then on.
+        using var cache = new MatroskaLanguageCache(f.Paths.Object, f.Logger);
+        Assert.True(cache.TryGetAudioLanguages(path, out var cached));
+        Assert.True(cache.TryGetAudioLanguages(path, out var again));
+        Assert.Equal(new string?[] { "pt-BR", "eng" }, cached);
+        Assert.Equal(cached, again);
+        Assert.Equal((1L, 1L), (cache.Reads, cache.Hits));
+    }
+
+    [Fact]
+    public void ReaderRejectsASeekHeadTracksPositionThatIsNotTracks()
+    {
+        using var f = new CoreFixture();
+
+        // Pointing at the Cluster (right after the SeekHead) and past the end of the file.
+        var atCluster = WriteMkv(f, "at-cluster.mkv", Ebml.TracksAfterCluster(_ => Ebml.SeekHead(0x1654AE6B, 0).Length));
+        var pastEnd = WriteMkv(f, "past-end.mkv", Ebml.TracksAfterCluster(_ => 1_000_000));
+        var overflow = WriteMkv(f, "overflow.mkv", Ebml.TracksAfterCluster(_ => long.MaxValue));
+        var beyondLong = WriteMkv(f, "beyond-long.mkv", Ebml.TracksAfterCluster(_ => -1)); // 0xFFFF_FFFF_FFFF_FFFF unsigned
+
+        Assert.False(MatroskaLanguageReader.TryReadAudioLanguages(atCluster, out _));
+        Assert.False(MatroskaLanguageReader.TryReadAudioLanguages(pastEnd, out _));
+        Assert.False(MatroskaLanguageReader.TryReadAudioLanguages(overflow, out _));
+        Assert.False(MatroskaLanguageReader.TryReadAudioLanguages(beyondLong, out _));
+    }
+
+    [Fact]
+    public void ReaderStillStopsAtTheFirstClusterWithoutASeekHead()
+    {
+        using var f = new CoreFixture();
+        var path = WriteMkv(f, "no-seekhead.mkv", Ebml.Segment(Ebml.Cluster(), Ebml.Tracks(Ebml.PortugueseAndEnglishTracks())));
+
+        Assert.False(MatroskaLanguageReader.TryReadAudioLanguages(path, out _));
+    }
+
+    [Fact]
+    public void UnparseableSeekHeadDoesNotFailAnOtherwiseReadableFile()
+    {
+        using var f = new CoreFixture();
+        var garbageSeekHead = Ebml.Element(0x114D9B74, Enumerable.Repeat((byte)0xFF, 16).ToArray());
+        var path = WriteMkv(f, "bad-seekhead.mkv", Ebml.Segment(garbageSeekHead, Ebml.Tracks(Ebml.PortugueseAndEnglishTracks())));
+
+        Assert.True(MatroskaLanguageReader.TryReadAudioLanguages(path, out var languages));
+        Assert.Equal(new string?[] { "pt-BR", "eng" }, languages);
     }
 
     private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode

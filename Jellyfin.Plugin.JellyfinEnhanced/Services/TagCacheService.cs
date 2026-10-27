@@ -637,10 +637,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 CancellationToken = cancellationToken
             };
 
-            // The full build visits every library file, so the language cache can
-            // drop entries for files it did not visit (renamed or deleted) — but
-            // only once the build has run to completion (EndSweep below); an
-            // aborted, cancelled or failed build simply never ends the sweep.
+            // Entries the build looks up are current; when it completes
+            // (EndSweep below) the language cache drops the others whose file is
+            // gone (renamed or deleted). Files the build skips (excluded
+            // libraries, failed items) still exist and are kept. An aborted,
+            // cancelled or failed build simply never ends the sweep.
             _languageCache.BeginSweep();
 
             // One pass over a list of ids: each page's entries are built in
