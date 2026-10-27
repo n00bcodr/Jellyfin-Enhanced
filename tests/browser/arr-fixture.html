@@ -41,8 +41,9 @@ button, input, select { font: inherit; }
  * - the app bar has the phone menu only below 900 px, and in the app layout only on routes it knows; elsewhere
  *   it draws the server name and library links in front of the header buttons;
  * - moving between the Dashboard and the app layouts replaces .mainAnimatedPages, pages and all;
- * - a page sets the document title when its route is drawn, not again for the route it already shows; a newer
- *   navigation replaces one not drawn yet. window.__mockRouter.hold()/release() keeps a route loading.
+ * - a page sets the document title when its route is drawn; the route it already shows is not drawn again (no
+ *   new viewshow, a mounted React page stays as it is); "Page not found" unmounts when another route is drawn;
+ *   a newer navigation replaces one not drawn yet. window.__mockRouter.hold()/release() keeps a route loading.
  */
 (function mockRouter() {
     if (new URLSearchParams(location.search).get('host') !== 'router') return;
@@ -61,6 +62,7 @@ button, input, select { font: inherit; }
     const current = () => location.hash.slice(1).split('?')[0] || '/home';
     /** Draws a route, the way the host's router commits shortly after the event it read the URL in. */
     function render(path) {
+        if (path === drawn) return;
         const next = path === '/configurationpage' ? 'dashboard' : 'app';
         let host = document.querySelector('.mainAnimatedPages');
         if (layout && next !== layout) {
@@ -71,6 +73,7 @@ button, input, select { font: inherit; }
         }
         layout = next;
         const id = next === 'dashboard' ? 'dashboardPage' : known.includes(path) ? 'route-' + path.slice(1) : 'fallbackPage';
+        if (id !== 'fallbackPage') document.getElementById('fallbackPage')?.remove();
         for (const view of host.querySelectorAll('[data-mock-route]')) view.classList.toggle('hide', view.id !== id);
         let view = document.getElementById(id);
         if (!view) {
@@ -90,7 +93,7 @@ button, input, select { font: inherit; }
         bar.style.cssText = 'display: flex; flex: none; white-space: nowrap; gap: 24px; align-items: center';
         bar.innerHTML = menu ? '<button class="paper-icon-button-light" aria-label="Open menu">=</button>'
             : '<a>Fixture Media Server</a><a>Favorites</a><a>Movies</a><a>Shows</a><a>Music</a>';
-        if (path !== drawn) document.title = titles[path] || 'Page not found';
+        document.title = titles[path] || 'Page not found';
         drawn = path;
     }
     window.addEventListener('popstate', () => {

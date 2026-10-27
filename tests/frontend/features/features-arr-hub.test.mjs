@@ -22,7 +22,7 @@ function translate(key, params) {
   return Object.entries(params || {}).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
 }
 
-function setup(t, { html = '', hash = '#/home', config = {}, responses = () => null, downloads, calendar, dom = false } = {}) {
+function setup(t, { html = '', hash = '#/home', config = {}, responses = () => null, downloads, calendar, dom = false, realSession = false, apiClient = {} } = {}) {
   const calls = [];
   const subscriptions = [];
   const navigation = [];
@@ -31,7 +31,7 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
   const h = createHarness({
     html: `<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage"></div></div>${html}`,
     url: `http://jellyfin.test/web/index.html${hash}`,
-    apiClient: { getCurrentUserId: () => USER, serverAddress: () => 'http://jellyfin.test' },
+    apiClient: { getCurrentUserId: () => USER, serverAddress: () => 'http://jellyfin.test', ...apiClient },
     JE: {
       pluginConfig: { ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrManageDrawerEnabled: true, ArrSeerrModalStatus: true, ...config },
       t: translate,
@@ -64,6 +64,7 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
     }
   });
   t.after(() => h.close());
+  if (realSession) h.load('core/session.js');
   for (const m of MODULES) h.load(m);
   return { ...h, get NATIVE() { return h.NATIVE; }, calls, subscriptions, navigation, bodyWatchers, userChanges, live: () => subscriptions.filter(s => s.active) };
 }
@@ -937,45 +938,6 @@ for (const how of ['session reset while removed', 'server switch without a reset
   });
 }
 
-// UX1R-2 and UX1R-3: with the router parked on Home under the page, leaving for another destination never shows
-// Home while that destination loads, and leaving for Home brings back Home's own title (not the entry page's).
-test('leaving the page keeps covering until another destination shows, and Home comes back with its own title', async t => {
-  const h = setup(t, { dom: true, hash: '#/requests', html: '<div class="mainAnimatedPage" id="fallbackPage"></div>', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
-  h.document.title = 'Movie details';
-  h.JE.initializeArrStatus();
-  await wait(10);
-  const page = h.document.getElementById('je-requests-hub-page');
-  // The router draws Home under the page and sets Home's title.
-  h.document.getElementById('fallbackPage').remove();
-  const container = h.document.querySelector('.mainAnimatedPages');
-  container.insertAdjacentHTML('beforeend', '<div class="mainAnimatedPage" id="parkedHome"><button id="homeButton">Home</button></div>');
-  const home = h.document.getElementById('parkedHome');
-  home.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
-  h.document.title = 'Home';
-  await wait(0);
-  assert.ok(home.classList.contains('hide'));
-  assert.equal(h.document.title, 'Requests');
-  // Search is still loading: the page keeps covering, Home stays hidden.
-  go(h, '#/search');
-  assert.ok(!page.classList.contains('hide'), 'still covering');
-  assert.ok(home.classList.contains('hide'), 'Home is not shown for Search');
-  container.insertAdjacentHTML('beforeend', '<div class="mainAnimatedPage" id="searchPage"></div>');
-  h.document.getElementById('searchPage').dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
-  assert.ok(page.classList.contains('hide'), 'Search took over');
-  assert.ok(home.classList.contains('hide'));
-
-  // Back to Requests by address (the router stays on Search under it), then to Home by address: the router is on
-  // Search, so Home is not this page's to bring back; Search hides once Home is drawn.
-  go(h, '#/requests');
-  assert.ok(!page.classList.contains('hide'));
-  assert.ok(h.document.getElementById('searchPage').classList.contains('hide'));
-  h.document.title = 'Search';
-  await wait(0);
-  go(h, '#/search');
-  assert.ok(page.classList.contains('hide'), 'the page under it is the destination: shown at once');
-  assert.ok(!h.document.getElementById('searchPage').classList.contains('hide'));
-  assert.equal(h.document.title, 'Search', 'with its own title');
-});
 
 test('leaving for the parked Home shows it at once with Home\'s title, not the entry page\'s', async t => {
   const h = setup(t, { dom: true, hash: '#/requests', html: '<div class="mainAnimatedPage" id="fallbackPage"></div>', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
@@ -1039,25 +1001,292 @@ test('leaving back to the page it opened from gives focus back to the opener', a
   assert.equal(h.document.activeElement.id, 'opener');
 });
 
-test('coming back while the page still covers a loading destination keeps that destination\'s page under it', async t => {
+// Round 3 (review r2): leaving no longer keeps the page up as a cover while the destination loads. The page under it
+// comes back at once (a brief Home before a slow destination is accepted), so no navigation can end on a blank page
+// and nothing of a page already left can act.
+test('leaving restores the page under it at once, with its title, and the left page\'s tabs cannot take the address', async t => {
   const h = setup(t, { dom: true, hash: '#/requests', html: '<div class="mainAnimatedPage" id="fallbackPage"></div>', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.document.title = 'Movie details';
   h.JE.initializeArrStatus();
   await wait(10);
   const page = h.document.getElementById('je-requests-hub-page');
   h.document.getElementById('fallbackPage').remove();
   const container = h.document.querySelector('.mainAnimatedPages');
   container.insertAdjacentHTML('beforeend', '<div class="mainAnimatedPage" id="parkedHome"></div>');
-  h.document.getElementById('parkedHome').dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
+  const home = h.document.getElementById('parkedHome');
+  home.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
+  h.document.title = 'Home';
+  await wait(0);
+  assert.equal(h.document.title, 'Requests');
   go(h, '#/search');
-  assert.ok(!page.classList.contains('hide'), 'covering while Search loads');
-  go(h, '#/requests');
-  // Search finishes loading under the page that is shown again.
+  assert.ok(page.classList.contains('hide'));
+  assert.ok(!home.classList.contains('hide'), 'never a blank page while Search loads');
+  assert.equal(h.document.title, 'Home');
+  assert.equal(h.bodyWatchers.size, 0, 'nothing left watching');
+  // The left page's tab cannot replace the address the viewer went to (review probe: cover tab activation).
+  h.click(page.querySelector('.je-hub-tab[data-tab="soon"]'));
+  assert.equal(h.window.location.hash, '#/search');
   container.insertAdjacentHTML('beforeend', '<div class="mainAnimatedPage" id="searchPage"></div>');
   h.document.getElementById('searchPage').dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
-  assert.ok(!page.classList.contains('hide'));
-  assert.ok(h.document.getElementById('searchPage').classList.contains('hide'));
+  assert.ok(page.classList.contains('hide'), 'Search taking over does not bring the page back');
+});
+
+test('rapid Requests, away, Requests, away always ends on a shown page, and an earlier visit\'s title work does nothing', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  h.document.title = 'Home';
+  const page = () => h.document.getElementById('je-requests-hub-page');
+  const shown = () => [...h.document.querySelectorAll('.mainAnimatedPage:not(.hide)')].map(n => n.id);
+  go(h, '#/requests');
   go(h, '#/search');
-  assert.ok(page.classList.contains('hide'), 'Search is the page under it: shown at once');
-  assert.ok(!h.document.getElementById('searchPage').classList.contains('hide'));
-  assert.ok(h.document.getElementById('parkedHome').classList.contains('hide'));
+  go(h, '#/requests');
+  assert.deepEqual(shown(), ['je-requests-hub-page'], 'back on Requests: the page is painted');
+  go(h, '#/details?id=1');
+  go(h, '#/home');
+  assert.ok(page().classList.contains('hide'));
+  assert.deepEqual(shown(), ['homePage'], 'never blank');
+  await wait(1300);
+  assert.equal(h.document.title, 'Home', 'title claims of the earlier visits do nothing after leaving');
+  assert.equal(h.bodyWatchers.size, 0);
+});
+
+// Review r2 probes, ported.
+const moveContainer = h => replaceContainer(h);
+for (const mode of ['user-detached', 'server-no-event', 'logout-other', 'logout-same']) {
+  test(`identity change while removed clears the rows (${mode})`, async t => {
+    let hold = false;
+    const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? (hold ? new Promise(() => {}) : hubAnswer()) : null) });
+    h.JE.initializeArrStatus();
+    h.JE.arrHub.show();
+    await wait(15);
+    const page = h.document.getElementById('je-requests-hub-page');
+    assert.ok(page.querySelector('.je-hub-row'));
+    hold = true;
+    moveContainer(h);
+    if (mode === 'server-no-event') h.window.ApiClient.serverId = () => 'new-server';
+    else {
+      if (mode.startsWith('logout')) {
+        h.window.ApiClient.getCurrentUserId = () => null;
+        for (const fn of h.userChanges) fn();
+        assert.equal(page.querySelectorAll('.je-hub-row').length, 0);
+      }
+      h.window.ApiClient.getCurrentUserId = () => (mode === 'logout-same' ? USER : 'new-user');
+      for (const fn of h.userChanges) fn();
+    }
+    runWatchers(h);
+    await wait(15);
+    assert.ok(page.isConnected);
+    assert.equal(page.querySelectorAll('.je-hub-row').length, 0);
+    assert.ok(page.querySelector('.je-hub-empty'));
+  });
+}
+
+for (const tab of ['downloads', 'calendar']) {
+  for (const mode of ['user-detached', 'server-no-event', 'logout-other', 'logout-same']) {
+    test(`an embedded ${tab} tab is discarded on an identity change while removed (${mode})`, async t => {
+      let held = false;
+      const embed = { _state: {}, stopPolling() {}, renderForCustomTab(node) { node.textContent = 'Previous identity private embedded rows'; } };
+      const h = setup(t, { dom: true, hash: `#/requests?tab=${tab}`, downloads: embed, calendar: embed,
+        responses: path => (path === '/acquire/hub' ? (held ? new Promise(() => {}) : hubAnswer({ admin: { downloads: true, calendar: true } })) : null) });
+      h.JE.initializeArrStatus();
+      await wait(15);
+      const page = h.document.getElementById('je-requests-hub-page');
+      assert.ok(page.textContent.includes('Previous identity private embedded rows'));
+      held = true;
+      moveContainer(h);
+      if (mode === 'server-no-event') h.window.ApiClient.serverId = () => 'next-server';
+      else {
+        if (mode.startsWith('logout')) {
+          h.window.ApiClient.getCurrentUserId = () => null;
+          for (const fn of h.userChanges) fn();
+        }
+        h.window.ApiClient.getCurrentUserId = () => (mode === 'logout-same' ? USER : 'next-user');
+        for (const fn of h.userChanges) fn();
+      }
+      runWatchers(h);
+      await wait(15);
+      assert.ok(page.isConnected);
+      assert.ok(!page.textContent.includes('Previous identity private embedded rows'));
+    });
+  }
+}
+
+for (const who of ['other', 'same']) {
+  test(`with the real session module, logout then ${who} login while removed shows only the fresh answer`, async t => {
+    let id = USER;
+    let held = false;
+    const gates = [];
+    const h = setup(t, { dom: true, realSession: true,
+      apiClient: { getCurrentUserId: () => id, setAuthenticationInfo: (credential, user) => { id = user; } },
+      responses: path => {
+        if (path !== '/acquire/hub') return null;
+        if (!held) return hubAnswer();
+        let resolve;
+        const promise = new Promise(r => { resolve = r; });
+        gates.push(resolve);
+        return promise;
+      } });
+    h.JE.initializeArrStatus();
+    h.JE.arrHub.show();
+    await wait(15);
+    const page = h.document.getElementById('je-requests-hub-page');
+    held = true;
+    moveContainer(h);
+    h.window.ApiClient.setAuthenticationInfo('', null);
+    h.window.ApiClient.setAuthenticationInfo('credential', who === 'same' ? USER : 'other');
+    runWatchers(h);
+    await wait(15);
+    assert.equal(page.querySelectorAll('.je-hub-row').length, 0);
+    gates.forEach((resolve, i) => resolve(hubAnswer({ mine: [entry(i === gates.length - 1 ? 'Fresh response' : 'Stale response', 'onTheWay', 'approved', 'approved')] })));
+    await wait(15);
+    assert.ok(!page.textContent.includes('Stale response'));
+    assert.ok(page.textContent.includes('Fresh response'));
+  });
+}
+
+/** The hub opened by the sidebar from a details page (the page under it is the harness's home page). */
+async function openedFromDetails(t) {
+  const h = setup(t, { dom: true, hash: '#/details?id=1', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.document.title = 'Details';
+  h.JE.initializeArrStatus();
+  h.JE.arrHub.show();
+  await wait(15);
+  return h;
+}
+
+test('a destination that never draws still leaves the page under it shown, not a blank page', async t => {
+  const h = await openedFromDetails(t);
+  const page = h.document.getElementById('je-requests-hub-page');
+  page.querySelector('.je-hub-tab').focus();
+  go(h, '#/search');
+  assert.ok(page.classList.contains('hide'));
+  assert.deepEqual([...h.document.querySelectorAll('.mainAnimatedPage:not(.hide)')].map(n => n.id), ['homePage']);
+  assert.equal(h.document.title, 'Details');
+  assert.equal(h.bodyWatchers.size, 0);
+  assert.ok(!page.contains(h.document.activeElement));
+});
+
+test('a second navigation back to the route still mounted underneath leaves it shown without a new native event', async t => {
+  const h = await openedFromDetails(t);
+  go(h, '#/search');
+  go(h, '#/details?id=1');
+  assert.ok(!h.document.getElementById('homePage').classList.contains('hide'));
+  assert.ok(h.document.getElementById('je-requests-hub-page').classList.contains('hide'));
+});
+
+test('Back to Requests and a rapid double destination end with the last destination shown', async t => {
+  const h = await openedFromDetails(t);
+  const page = h.document.getElementById('je-requests-hub-page');
+  go(h, '#/search');
+  go(h, '#/requests');
+  assert.ok(!page.classList.contains('hide'));
+  go(h, '#/search');
+  go(h, '#/home');
+  const target = h.document.createElement('div');
+  target.className = 'mainAnimatedPage';
+  target.id = 'destination';
+  h.document.querySelector('.mainAnimatedPages').append(target);
+  target.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  assert.ok(page.classList.contains('hide'));
+  assert.ok(!page.contains(h.document.activeElement));
+  assert.equal(h.bodyWatchers.size, 0);
+});
+
+test('a removed focused row falls back to the selected tab', async t => {
+  const h = await openedFromDetails(t);
+  const page = h.document.getElementById('je-requests-hub-page');
+  const target = page.querySelector('.je-hub-row');
+  target.focus();
+  assert.equal(h.document.activeElement, target);
+  moveContainer(h);
+  target.remove();
+  runWatchers(h);
+  assert.equal(h.document.activeElement.getAttribute('aria-selected'), 'true');
+});
+
+test('a dialog keeps focus while the page is moved', async t => {
+  const h = await openedFromDetails(t);
+  h.document.getElementById('je-requests-hub-page').querySelector('.je-hub-tab').focus();
+  const dialog = h.document.createElement('div');
+  dialog.setAttribute('role', 'dialog');
+  dialog.innerHTML = '<button>Close</button>';
+  h.document.body.append(dialog);
+  const button = dialog.firstChild;
+  button.focus();
+  moveContainer(h);
+  runWatchers(h);
+  assert.equal(h.document.activeElement, button);
+});
+
+test('a localized title the host sets later belongs to the page restored on leaving', async t => {
+  const h = await openedFromDetails(t);
+  await wait(20);
+  h.document.title = 'Détails du film';
+  await wait(0);
+  assert.equal(h.document.title, 'Requests');
+  go(h, '#/details?id=1');
+  assert.equal(h.document.title, 'Détails du film');
+});
+
+test('a hidden leftover Page not found does not stop the title of the page under it being kept', async t => {
+  const h = await openedFromDetails(t);
+  const fallback = h.document.createElement('div');
+  fallback.id = 'fallbackPage';
+  fallback.className = 'mainAnimatedPage hide';
+  h.document.body.append(fallback);
+  h.document.title = 'Accueil';
+  await wait(0);
+  assert.equal(h.document.title, 'Requests');
+  go(h, '#/details?id=1');
+  assert.equal(h.document.title, 'Accueil');
+});
+
+test('another JE page taking over hides the Requests page and leaves nothing watching', async t => {
+  const h = await openedFromDetails(t);
+  go(h, '#/downloads');
+  const other = h.document.createElement('div');
+  other.className = 'mainAnimatedPage';
+  other.id = 'je-downloads-page';
+  h.document.querySelector('.mainAnimatedPages').append(other);
+  other.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  assert.ok(h.document.getElementById('je-requests-hub-page').classList.contains('hide'));
+  assert.equal(h.bodyWatchers.size, 0);
+});
+
+test('the real Calendar page navigation leaves the Requests page and its focus', async t => {
+  const h = await openedFromDetails(t);
+  const hub = h.document.getElementById('je-requests-hub-page');
+  hub.querySelector('.je-hub-tab').focus();
+  h.JE.pluginConfig.CalendarPageEnabled = true;
+  h.JE.internals.calendarPage = { state: { pageVisible: false, isLoading: false }, injectStyles() {}, loadSettings() {}, renderPage() {}, loadAllData() {}, handleEventClick() {},
+    createPageContainer() {
+      const p = h.document.createElement('div');
+      p.id = 'je-calendar-page';
+      p.className = 'mainAnimatedPage hide';
+      p.textContent = 'Calendar';
+      h.document.querySelector('.mainAnimatedPages').append(p);
+      return p;
+    } };
+  h.load('arr/calendar/calendar-page-init.js');
+  h.JE.calendarPage.showPage();
+  assert.equal(h.window.location.hash, '#/calendar');
+  assert.ok(hub.classList.contains('hide'));
+  assert.ok(!h.document.getElementById('je-calendar-page').classList.contains('hide'));
+  assert.ok(!hub.contains(h.document.activeElement));
+  assert.equal(h.bodyWatchers.size, 0);
+});
+
+test('a translated Requests title stays apart from a translated title the host sets later', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.t = (key, params) => (key === 'arr_hub_title' ? 'Demandes' : translate(key, params));
+  h.document.title = 'Accueil';
+  h.JE.initializeArrStatus();
+  h.JE.arrHub.show();
+  await wait(15);
+  assert.equal(h.document.title, 'Demandes');
+  h.document.title = 'Accueil actualisé';
+  await wait(0);
+  assert.equal(h.document.title, 'Demandes');
+  go(h, '#/home');
+  assert.equal(h.document.title, 'Accueil actualisé');
 });
