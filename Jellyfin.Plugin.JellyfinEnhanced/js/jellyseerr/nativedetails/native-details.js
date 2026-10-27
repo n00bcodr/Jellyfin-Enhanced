@@ -1413,7 +1413,8 @@
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0,
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0,
+            viewer: window.ApiClient?.getCurrentUserId?.() || null, server: serverId(),
             token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
@@ -1468,14 +1469,22 @@
             stale = err?.jeItemStale || false;
         }
         if (state.aborted || current !== state || generation !== state.generation) return;
-        // An answer for a session or policy that has gone is no answer: nothing of it is drawn, and it is no outage
-        // either. A restored page stays hidden; after a policy change it is looked at again under the policy that
-        // holds now (twice at most). A session that ended is the session's to handle (a user switch disposes the page).
+        // An answer for a session or policy that has gone is no answer: nothing of it is drawn. The page is looked at
+        // again under what holds now while it is the same viewer on the same server: after a policy change (twice at
+        // most), or after their credentials were refreshed (once). Otherwise (another viewer, signed out, or no look
+        // left) it ends in the outage state: never a page left hidden while it is checked.
         if (stale) {
-            if (stale === 'policy' && state.relooks < 2) {
-                state.relooks++;
+            const sameViewer = (window.ApiClient?.getCurrentUserId?.() || null) === state.viewer && serverId() === state.server;
+            const policy = stale === 'policy';
+            if (sameViewer && (policy ? state.relooks < 2 : state.sessionRelooks < 1)) {
+                if (policy) state.relooks++;
+                else state.sessionRelooks++;
                 setTimeout(() => { if (!state.aborted && current === state && generation === state.generation) onView().catch(() => {}); }, 0);
+                return;
             }
+            checking(page, false);
+            dispose();
+            refuse(page, isTitle ? 'native_details_failed' : 'native_details_page_failed');
             return;
         }
         if (!item) {

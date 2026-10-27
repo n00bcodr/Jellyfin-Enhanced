@@ -24,7 +24,7 @@ const art = id => `http://jellyfin.test/Items/${id}/Images/Primary?fillHeight=29
  * @param {object} t Test context.
  * @returns {object} Harness and probes.
  */
-function setup(t) {
+function setup(t, realSession = false) {
   const reads = [], getItem = [], userChanges = [];
   let epoch = 1;
   const h = createHarness({
@@ -53,6 +53,11 @@ function setup(t) {
   });
   h.window.Emby = { Page: { show: () => {} } };
   t.after(() => h.close());
+  if (realSession) {
+    // The real session owner (it tells a new person from refreshed credentials of the same one).
+    h.window.ApiClient.setAuthenticationInfo = function (value, user) { this.accessToken = () => value; this.getCurrentUserId = () => user; };
+    h.load('core/session.js');
+  }
   h.load('core/ui-kit.js');
   h.load('core/api-client.js');
   h.load('enhanced/helpers.js');
@@ -278,21 +283,98 @@ for (const mode of ['epoch', 'server', 'token-body']) test(`an item read started
   assert.equal(outcome.value, undefined);
 });
 
-test('a session change while the answer\'s body is read draws nothing of it on the page', async t => {
+test('credentials refreshed while the answer\'s body is read: nothing of the old answer is drawn, the page reads once more under the new ones', async t => {
   const h = setup(t);
-  const body = deferred(), started = deferred();
-  h.window.fetch = async url => String(url).includes(ITEM_PATH)
-    ? { ok: true, status: 200, json: () => { started.resolve(); return body.promise; } }
+  const first = deferred(), started = deferred();
+  const tokens = [];
+  let calls = 0;
+  const item = async (token) => {
+    tokens.push(token);
+    if (calls++ === 0) { started.resolve(); return first.promise; }
+    return { Id: MOVIE, Type: 'Movie', Name: 'refreshed' };
+  };
+  h.window.fetch = async (url, init) => String(url).includes(ITEM_PATH)
+    ? { ok: true, status: 200, json: () => item(init?.headers?.['X-Emby-Token']) }
     : new Response('null', { status: 200 });
-  // jellyfin-web's client (the base transport) gets the same held body.
-  h.window.ApiClient.getItem = async () => { started.resolve(); return body.promise; };
+  // jellyfin-web's client (the base transport) gets the same answers.
+  h.window.ApiClient.getItem = async () => item(h.window.ApiClient.accessToken());
   const look = h.nd.onView();
   await started.promise;
   h.window.ApiClient.accessToken = () => 'changed-fixture';
-  body.resolve({ Id: MOVIE, Type: 'Movie', Name: 'old-session-drawn' });
+  first.resolve({ Id: MOVIE, Type: 'Movie', Name: 'old-session-drawn' });
   await look;
   assert.notEqual(h.nd.current()?.item?.Name, 'old-session-drawn');
-  assert.equal(h.document.querySelector('.je-native-absent-refusal'), null, 'a session change is not an outage');
+  for (let i = 0; i < 20 && h.nd.current()?.item?.Name !== 'refreshed'; i++) await tick();
+  assert.equal(h.nd.current().item.Name, 'refreshed', 'drawn from the read under the new credentials');
+  assert.deepEqual(tokens.slice(1), ['changed-fixture']);
+  assert.equal(h.document.querySelector('.je-native-absent-refusal'), null, 'a credential refresh is not an outage');
+});
+
+test('a same-user credential refresh on a restored page recovers it: read again under the new credentials, shown (review round 2, PDR2-1)', async t => {
+  const h = setup(t, true);
+  // The one startup look, then a later view of the same page (a restore).
+  await new Promise(r => setTimeout(r, 380));
+  for (let i = 0; i < 50 && h.reads.length < 1; i++) await tick();
+  h.answer(0);
+  for (let i = 0; i < 50 && h.page.dataset.jeNativeShown !== MOVIE; i++) await tick();
+  assert.equal(h.page.dataset.jeNativeShown, MOVIE);
+  const epoch = h.JE.session.getEpoch();
+  let changes = 0;
+  h.document.addEventListener('je:user-changed', () => changes++);
+  const body = deferred(), started = deferred();
+  let bodyCalls = 0;
+  h.window.fetch = async url => String(url).includes('/Users/')
+    ? { ok: true, status: 200, json: () => { bodyCalls++; started.resolve(); return bodyCalls === 1 ? body.promise : { Id: MOVIE, Type: 'Movie', Name: 'after-refresh' }; } }
+    : new Response('null', { status: 200 });
+  h.window.ApiClient.getItem = async () => { bodyCalls++; started.resolve(); return bodyCalls === 1 ? body.promise : { Id: MOVIE, Type: 'Movie', Name: 'after-refresh' }; };
+  const look = h.nd.onView();
+  await started.promise;
+  assert.ok(h.page.classList.contains('je-native-absent-checking'), 'the restored page is hidden while it is checked');
+  h.window.ApiClient.setAuthenticationInfo('refreshed-fixture', 'user-a');
+  body.resolve({ Id: MOVIE, Type: 'Movie', Name: 'old-session' });
+  await look;
+  h.JE.session.checkNow('refresh');
+  assert.equal(changes, 0, 'same-user refresh produces no identity notification');
+  assert.equal(h.JE.session.getEpoch(), epoch);
+  await new Promise(r => setTimeout(r, 100));
+  assert.ok(bodyCalls > 1, 'read again under the new credentials');
+  assert.equal(h.page.classList.contains('je-native-absent-checking'), false, 'not left hidden');
+  assert.equal(h.nd.current()?.item?.Name, 'after-refresh');
+});
+
+test('a fenced look that cannot be read again ends in the outage state, never a page left hidden', async t => {
+  for (const kind of ['another viewer', 'refreshed twice']) {
+    const h = setup(t);
+    const first = h.nd.onView();
+    await tick();
+    h.answer(0);
+    await first;
+    const bodies = [];
+    h.window.fetch = async url => String(url).includes(ITEM_PATH)
+      ? { ok: true, status: 200, json: () => { const d = deferred(); bodies.push(d); return d.promise; } }
+      : new Response('null', { status: 200 });
+    h.window.ApiClient.getItem = async () => { const d = deferred(); bodies.push(d); return d.promise; };
+    // A restored view: hidden while it is checked.
+    const look = h.nd.onView();
+    for (let i = 0; i < 20 && bodies.length < 1; i++) await tick();
+    assert.ok(h.page.classList.contains('je-native-absent-checking'));
+    if (kind === 'another viewer') h.window.ApiClient.getCurrentUserId = () => 'user-b';
+    else h.window.ApiClient.accessToken = () => 'second';
+    bodies[0].resolve({ Id: MOVIE, Type: 'Movie', Name: 'stale' });
+    await look;
+    if (kind === 'refreshed twice') {
+      for (let i = 0; i < 20 && bodies.length < 2; i++) await tick();
+      assert.equal(bodies.length, 2, 'the one re-read');
+      h.window.ApiClient.accessToken = () => 'third';
+      bodies[1].resolve({ Id: MOVIE, Type: 'Movie', Name: 'stale-again' });
+    }
+    for (let i = 0; i < 20 && !h.document.querySelector('.je-native-absent-refusal'); i++) await tick();
+    assert.ok(h.document.querySelector('.je-native-absent-refusal'), `${kind}: the outage state`);
+    assert.equal(h.page.classList.contains('je-native-absent-checking'), false, `${kind}: not hidden`);
+    assert.equal(h.document.documentElement.classList.contains('je-native-absent-checking'), false);
+    assert.notEqual(h.nd.current()?.item?.Name, 'stale');
+    assert.equal(bodies.length, kind === 'another viewer' ? 1 : 2, `${kind}: no work replayed for another viewer`);
+  }
 });
 
 test('two policy changes during one look: neither overtaken answer is drawn, the page asks again under the latest', async t => {
