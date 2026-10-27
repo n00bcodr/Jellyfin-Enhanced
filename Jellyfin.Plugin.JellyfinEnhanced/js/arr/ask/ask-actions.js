@@ -665,12 +665,12 @@
     }
 
     /**
-     * Whether the page of an episode that isn't in the library is held: the page shows TMDB's episode with this number,
-     * and the server hasn't established that a request for that number reaches it (JE.arrAsk.episodeNumbersAskable: the
-     * season's rows' verdict, read by the season page's id). Null when it may be asked for; otherwise the numbering that
-     * holds it (a read that fails holds it too: nothing is guessed).
+     * Why the page of an episode that isn't in the library is held, or null when it may be asked for: the page shows TMDB's
+     * episode with this number, which is what a request names only while no arr holds the season (the season rows' source
+     * `provider`, its status agreeing). A Sonarr that holds it numbers the season itself (`differently`: ask on the season
+     * page, which lists Sonarr's episodes); a read that fails or says nothing holds it too (`unchecked`).
      * @param {Object} status Episode status.
-     * @returns {Promise<Object|null>} The holding numbering, or null.
+     * @returns {Promise<'differently'|'unchecked'|null>} Reason.
      */
     async function episodeHeld(status) {
         const parts = JE.titleDetails?.parse?.(status.itemId);
@@ -678,21 +678,23 @@
         const language = (navigator.language || 'en').split('-')[0];
         const rows = seasonId ? await JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(seasonId)}?language=${encodeURIComponent(language)}`)
             .then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null) : null;
-        const numbering = JE.arrAsk.episodeNumbering(rows);
-        return JE.arrAsk.episodeNumbersAskable(numbering) ? null : numbering;
+        const arrHolds = status.reason?.code !== 'not_in_arr';
+        if (rows?.source === 'provider' && !arrHolds) return null;
+        if (rows?.source === 'destination') return 'differently';
+        return JE.arrAsk.heldReason(rows, { arrHolds });
     }
 
     /**
      * The actions of a held episode page ({@link episodeHeld}): the line saying why it can't be asked for on its own.
      * @param {Object} caps Capabilities.
-     * @param {Object} numbering The holding numbering.
+     * @param {'differently'|'unchecked'} reason Why.
      * @returns {HTMLElement} Box.
      */
-    function heldBox(caps, numbering) {
+    function heldBox(caps, reason) {
         const box = actionsBox(caps);
-        const conflict = numbering?.state === 'conflict';
-        const text = tr(conflict ? 'arr_ask_numbering_text' : 'arr_ask_numbering_unchecked_text');
-        const note = JE.arrAsk.pausedNote({ chip: tr(conflict ? 'arr_ask_numbering_chip' : 'arr_ask_numbering_unchecked_chip'), text, detail: text });
+        const differently = reason === 'differently';
+        const text = tr(differently ? 'arr_ask_numbering_text' : 'arr_ask_numbering_unchecked_text');
+        const note = JE.arrAsk.pausedNote({ chip: tr(differently ? 'arr_ask_numbering_chip' : 'arr_ask_numbering_unchecked_chip'), text, detail: text });
         const glyph = note.querySelector('.je-ask-paused-icon');
         if (glyph) glyph.textContent = 'format_list_numbered';
         note.classList.add('je-ask-numbering-note');
@@ -800,10 +802,7 @@
             seasons,
             latestSeason: latest,
             nextSeason: upcoming,
-            askedSeasons: plan.askedSeasons,
-            // A library title's seasons number its own episodes; a title that isn't in the library has its seasons checked
-            // against the arr (seasons from TMDB alone can't be: their single episodes stay held).
-            numbering: isAbsent(status) ? 'unverified' : 'library'
+            askedSeasons: plan.askedSeasons
         }, { opener: button, operation: owner });
         if (result) quotas.clear();
     }

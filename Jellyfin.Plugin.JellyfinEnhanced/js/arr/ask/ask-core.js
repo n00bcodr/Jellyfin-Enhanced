@@ -908,29 +908,41 @@
     }
 
     /**
-     * How a season's episodes line up between the provider whose facts its page shows (TMDB) and the destination a request
-     * names them at by number: the server's verdict on its season rows (SeasonRows.numbering; matched on titles, the air day
-     * only breaking ties). States: `agree`, `conflict`, `provider` (the request names TMDB's numbering: no arr holds the
-     * series yet, or Seerr takes it), `destination` (TMDB's season couldn't be read) and `unknown` (not worked out, or the
-     * rows couldn't be read at all).
-     * @param {Object|null|undefined} rows The season rows ({numbering: {state, destinationOnly}}).
-     * @returns {{state: string, destinationOnly: Array<number>}} Numbering.
+     * Whose numbering and facts a season's rows carry (SeasonRows.source, UX-3): `destination` (the request target's Sonarr
+     * holds the series: its own numbers, titles and air days, never TMDB's), `provider` (no requestable Sonarr holds it, or
+     * Seerr takes requests: TMDB's numbers are what a request names), `unknown` (the target couldn't be read now, or the rows
+     * themselves couldn't be read) or `unchecked` (the viewer may not use the target; nothing about it is said).
+     * @param {Object|null|undefined} rows The season rows.
+     * @returns {string} Source.
      */
-    function episodeNumbering(rows) {
-        const verdict = rows?.numbering;
-        const state = ['agree', 'conflict', 'provider', 'destination', 'unknown'].includes(verdict?.state) ? verdict.state : 'unknown';
-        return { state, destinationOnly: Array.isArray(verdict?.destinationOnly) ? verdict.destinationOnly.filter(Number.isInteger) : [] };
+    function episodeSource(rows) {
+        return ['destination', 'provider', 'unknown', 'unchecked'].includes(rows?.source) ? rows.source : 'unknown';
     }
 
     /**
-     * True when single episodes described by TMDB may be asked for by number under a numbering: only when they are known
-     * to be the destination's episodes of those numbers (`agree`), or the request names TMDB's numbers itself
-     * (`provider`). Anything not established, a failed read included, holds them (whole seasons stay askable).
-     * @param {{state: string}|null|undefined} numbering Numbering ({@link episodeNumbering}).
+     * True when single episodes of a season may be asked for by number: the rows carry the request target's own numbering
+     * (`destination`), or TMDB's while no arr holds the season (`provider`, and the season's status agrees). Anything else,
+     * a read that failed included, holds them; whole seasons stay askable.
+     * @param {Object|null|undefined} rows The season rows (read for the edition asked about).
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
      * @returns {boolean} Askable.
      */
-    function episodeNumbersAskable(numbering) {
-        return numbering?.state === 'agree' || numbering?.state === 'provider';
+    function singleEpisodesAskable(rows, context) {
+        const source = rows ? episodeSource(rows) : 'unknown';
+        return source === 'destination' || (source === 'provider' && !context?.arrHolds);
+    }
+
+    /**
+     * Why single episodes are held: `differently` when the rows carry TMDB's details for a season an arr numbers itself (so a
+     * number may name another episode there), else `unchecked` (the numbering couldn't be checked).
+     * @param {Object|null|undefined} rows The season rows.
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
+     * @returns {'differently'|'unchecked'} Reason.
+     */
+    function heldReason(rows, context) {
+        if (!rows || !context?.arrHolds) return 'unchecked';
+        const tmdb = (rows.source === 'provider' || rows.source == null) && (Array.isArray(rows.episodes) ? rows.episodes : []).some(e => e?.title || e?.overview);
+        return tmdb ? 'differently' : 'unchecked';
     }
 
     JE.session?.onUserChange?.('arr-ask', () => {
@@ -982,8 +994,9 @@
         adminSearch,
         familySearch,
         tmdbSeasons,
-        episodeNumbering,
-        episodeNumbersAskable,
+        episodeSource,
+        singleEpisodesAskable,
+        heldReason,
         call,
         tr
     });

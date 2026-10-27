@@ -1323,24 +1323,19 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
     aired episode is simply not here and later ones are *not out yet*.
 
-    **Episode numbers.** A request for an episode names it by number, and Sonarr decides which episode that number is. So
-    once Sonarr has the series, the season page, the sheet's *Pick episodes…* and Sonarr all count the episodes Sonarr
-    lists: a season TMDB lists 11 episodes for and Sonarr 14 shows 14 rows and offers E1–E14, whichever way the sheet was
-    opened. The server checks each season that TMDB's episode of a number is Sonarr's episode of that number: their titles
-    must match (TMDB's English titles against Sonarr's; case, accents and punctuation aside), and where a title appears
-    more than once the air day (a day apart counts as the same) must leave exactly one. Only that verdict reaches the
-    browser, never titles or dates, so it works with Spoiler Guard on. An episode only Sonarr lists says *TMDB has no
-    details for this episode* and can still be asked for. Single episodes that TMDB describes can be asked for only
-    when the server has established that they are Sonarr's: when the two number a season differently, or nothing settles
-    it (no usable titles, a title it can't place), its rows and the episode's own page say *Numbered differently*;
-    when the check can't be made right now (Sonarr or the season can't be read), *Couldn't check*. *Pick episodes…*
-    then can't pick them and says why (with **Try again** for a check that failed), and nothing is sent. Asking for the
-    whole season still works (it is the season as Sonarr lists it), as do **Get missing episodes** and the *Missing*
-    line's **Get them**, which name Sonarr's own numbers. A library season's own Jellyfin rows aren't held: they show
-    Jellyfin's details for the episode Sonarr's is matched to.
-    Before Sonarr has the series, TMDB's numbers are all there is and are used as before. Where the sheet can't read the
-    series page's own status, it offers TMDB's seasons, and holds their single episodes unless the title's status says no
-    arr holds the series.
+    **Episode numbers.** A request for an episode names it by number, and the Sonarr it goes to decides which episode that
+    number is. So once that Sonarr has the series, Sonarr's own list is the season: the season page shows Sonarr's
+    episodes, numbers, titles and air dates (a page of a title that isn't in the library swaps its TMDB episode rows for
+    them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired and that you may see, whichever way
+    the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
+    on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
+    you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
+    whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
+    read just now, or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
+    details are all a page has for a season Sonarr numbers itself (the page of a single episode that isn't in the library,
+    for one: ask for it on its season page). Nothing about a Sonarr you can't use (one whose library you can't open) is read
+    or shown. A library season's own Jellyfin rows are unchanged: they show Jellyfin's details for the episode Sonarr's is
+    matched to.
 
     The page's id is never taken for a copy: once one
     arrives that the person can open, the page turns into that library title's page in its place (the same rule as a

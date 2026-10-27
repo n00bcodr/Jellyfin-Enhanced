@@ -175,10 +175,8 @@ public static class ProviderPresentationSchema
         // Collection identity is not a movie identity; only its member rows own title policy.
         Add("collection", Role.Metadata, "id name title originalLanguage originalName overview posterPath backdropPath");
         Children("collection", "parts", "title", kind:"movie");
-        Add("season-rows", Role.Title, "key series season seriesId displayMissing canRequest seasonRequest providerEpisodes");
+        Add("season-rows", Role.Title, "key series season seriesId displayMissing canRequest seasonRequest source");
         Children("season-rows", "episodes", "episode"); Children("season-rows", "blocked", "block");
-        Add("numbering", Role.Metadata, "state destinationOnly");
-        Children("season-rows", "numbering", "numbering");
         schemas["page"].Fields["rows"] = new(Disposition.Project, "season-rows");
         foreach (var field in new[] { "character", "job", "department" })
             foreach (var schema in new[] { "person", "role" }) schemas[schema].Fields[field] = new(Disposition.Project, Policy: "cast");

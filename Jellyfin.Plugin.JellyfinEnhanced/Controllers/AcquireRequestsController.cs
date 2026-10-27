@@ -191,7 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [Authorize]
         [HttpGet("acquire/requests/season/{itemId}")]
-        public async Task<IActionResult> Season([FromRoute] string itemId, [FromQuery] string? language = null, CancellationToken ct = default)
+        public async Task<IActionResult> Season([FromRoute] string itemId, [FromQuery] string? language = null, [FromQuery] string? variant = null, CancellationToken ct = default)
         {
             var viewer = Person();
             if (Gate(viewer, readOnly: true) is { } refusal) return Reply(refusal);
@@ -204,8 +204,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var absent = HttpContext?.RequestServices?.GetService(typeof(IAbsentTitlePages)) is IAbsentTitlePages pages
                 ? await pages.ResolveAsync(viewer!.UserId, seasonId, ct).ConfigureAwait(false)
                 : AbsentPageResult.NotAbsent;
-            if (absent.Outcome == AbsentLookup.NotAbsent) rows = await _rows.ForSeasonAsync(viewer!, seasonId, language, ct).ConfigureAwait(false);
-            else rows = absent.Outcome == AbsentLookup.Found && absent.Title != null ? await _rows.ForAbsentSeasonAsync(viewer!, absent.Title, language, ct, admission).ConfigureAwait(false) : null;
+            // Whose episode numbers the rows carry is read for the edition asked about (its own request target).
+            var edition = variant == "4k" ? "4k" : "standard";
+            if (absent.Outcome == AbsentLookup.NotAbsent) rows = await _rows.ForSeasonAsync(viewer!, seasonId, language, ct, edition).ConfigureAwait(false);
+            else rows = absent.Outcome == AbsentLookup.Found && absent.Title != null ? await _rows.ForAbsentSeasonAsync(viewer!, absent.Title, language, ct, admission, edition).ConfigureAwait(false) : null;
             if (rows == null) return Reply(RequestOutcome.Refused("not_found", 404));
             var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "season", certainty = "Succeeded", message = "Season", rows });
             var etag = "\"" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(viewer!.UserId.ToString("N") + "|")
