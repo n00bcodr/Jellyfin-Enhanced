@@ -16,7 +16,6 @@
 arr/actions/title-actions-hosts.js	consumed	state	the action bar host's gesture bookkeeping (the press already handled), not an answer
 arr/actions/title-actions-hosts.js	receiving	state	the action bar host's gesture bookkeeping (the host taking the press), not an answer
 arr/actions/title-actions-hosts.js	touch	state	the action bar host's gesture bookkeeping (which press is in progress), not an answer
-arr/actions/title-actions-sheet.js	current	state	the More sheet open now (UI state), not an answer
 arr/actions/title-actions.js	admissions	item	one action bar's admission for its own title (may this viewer act; the copy they can open), kept only with that bar's context (a page show makes a new one); the server checks the action again when it is taken
 arr/adminusers/admin-users.js	authorization	state	the administrator's admission ticket for the open user page (which check is current), not an answer
 arr/adminusers/admin-users.js	request	state	the abort controller of the read in flight
@@ -30,6 +29,7 @@ arr/ask/ask-collection.js	intent	state	which open collection page may show an an
 arr/ask/ask-core.js	checks	revisioned	title checks, 30 s: dropped when the server's access revision moves; the server decides every ask again
 arr/ask/ask-core.js	meState	revisioned	what the person may ask for: dropped when the server's access revision moves (and on a user switch); the server decides every ask again
 arr/ask/ask-core.js	openIds	state	client request ids of asks in flight (idempotency), not an answer
+arr/ask/ask-core.js	seasonLists	revisioned	season lists the request sheet reuses, 5 min, keyed by the session and the requests write epoch: dropped when the server's access revision moves (and on a user switch); the server gates each TMDB read
 arr/ask/ask-episodes.js	bannerSearched	state	outcome of the administrator's own Search press
 arr/ask/ask-episodes.js	busy	state	episodes with a Search press running
 arr/ask/ask-episodes.js	local	state	optimistic states after the person's own ask, until the server agrees
@@ -161,6 +161,7 @@ jellyseerr/jellyseerr.js	searchDeduplicator	state	ids already drawn in the searc
 jellyseerr/jellyseerr.js	searchSignal	state	the abort signal of the search's reads
 jellyseerr/moreinfo/more-info-modal-actions.js	open4k	state	the 4K menu that is open (UI state)
 jellyseerr/moreinfo/more-info-modal-actions.js	pauseVerdicts	state	a More Info window's pause reconciliation per mount (an attempt's bookkeeping, dropped with the mount)
+jellyseerr/moreinfo/more-info-modal-init.js	shell	state	the loading shell of the opening in progress (UI state), not an answer
 jellyseerr/nativedetails/native-details.js	current	state	the details page being drawn (read on each visit)
 jellyseerr/nativedetails/native-details.js	fellBackFrom	state	the page it fell back from
 jellyseerr/recommendations/recommendations-category.js	categoryDeduplicator	state	titles already drawn on this page

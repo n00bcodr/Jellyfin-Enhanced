@@ -27,6 +27,65 @@ const css = `
             opacity: 1;
         }
 
+        .je-more-info-shell {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.95);
+            color: #fff;
+        }
+
+        .je-more-info-shell-box {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 12px 12px 20px;
+            border-radius: 14px;
+            background: #1c1c1c;
+        }
+
+        .je-more-info-shell-busy {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 15px;
+            color: #c4c4c4;
+        }
+
+        .je-more-info-shell-busy::before {
+            content: '';
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid #5a5a5a;
+            border-top-color: #fff;
+            animation: je-more-info-spin 0.8s linear infinite;
+        }
+
+        @keyframes je-more-info-spin { to { transform: rotate(360deg); } }
+
+        @media (prefers-reduced-motion: reduce) { .je-more-info-shell-busy::before { animation: none; } }
+
+        .je-more-info-shell-close {
+            width: 44px;
+            height: 44px;
+            border: 0;
+            border-radius: 22px;
+            background: none;
+            color: inherit;
+            font: inherit;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .je-more-info-shell-close:focus-visible {
+            outline: 2px solid #fff;
+            outline-offset: -2px;
+        }
+
         .je-more-info-modal .modal-overlay {
             width: 100%;
             height: 100%;

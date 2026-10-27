@@ -882,6 +882,34 @@
         return searched(result, k, accepted, sessionChanged);
     }
 
+    /** @type {Map<string, {at: number, epoch: string, promise: Promise<Object>}>} season lists the request sheet reuses, by TMDB id (cacheEpoch) */
+    const seasonLists = new Map();
+    /** How long the request sheet reuses a season list it read. */
+    const SEASONS_TTL_MS = 5 * 60 * 1000;
+
+    /**
+     * {@link tmdbSeasons} for the request sheet: a list this session read for the series a moment ago (same epoch and
+     * access, at most five minutes old) is reused, so reopening the sheet does not read TMDB again. An empty answer (TMDB
+     * could not be read) is not kept.
+     * @param {string|number|undefined} tmdbId TMDB id.
+     * @returns {Promise<{seasons: Array<{season: number, episodes: number, have: number}>, latest: number|null, upcoming: number|null}>} Seasons.
+     */
+    function sheetSeasons(tmdbId) {
+        const id = String(tmdbId || '');
+        const now = Date.now();
+        const current = cacheEpoch();
+        const hit = seasonLists.get(id);
+        if (hit && hit.epoch === current && now - hit.at < SEASONS_TTL_MS) return hit.promise;
+        const entry = { at: now, epoch: current, promise: null };
+        entry.promise = tmdbSeasons(tmdbId).then((list) => {
+            if (!list.seasons.length && list.upcoming == null && seasonLists.get(id) === entry) seasonLists.delete(id);
+            return list;
+        });
+        seasonLists.set(id, entry);
+        if (seasonLists.size > 50) seasonLists.delete(seasonLists.keys().next().value);
+        return entry.promise;
+    }
+
     /**
      * A series' seasons from JE's TMDB proxy (parental-gated on the server): episode counts of the
      * aired seasons, the latest aired one and the next one to come. Empty when the id is not a TMDB id
@@ -911,12 +939,14 @@
         meState = null;
         openIds.clear();
         checks.clear();
+        seasonLists.clear();
     });
     // The person's access moved (the server's access revision, core/access-revision.js): what they may ask for and the
     // title checks were worked out for the old access (a read in flight is dropped too: its state is no longer meState).
     document.addEventListener('je-access-revision', () => {
         meState = null;
         checks.clear();
+        seasonLists.clear();
     });
 
     JE.arrAsk = Object.freeze({
@@ -956,6 +986,7 @@
         adminSearch,
         familySearch,
         tmdbSeasons,
+        sheetSeasons,
         call,
         tr
     });

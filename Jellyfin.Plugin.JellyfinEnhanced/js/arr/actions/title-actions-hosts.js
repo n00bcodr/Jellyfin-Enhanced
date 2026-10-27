@@ -94,12 +94,19 @@
         const newest = sheetOpening(owner);
         const live = () => { settleMutations(); return owner.current(); };
         let shown = false;
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
         try {
-            if (!await A.admit(c, owner) || !live()) return;
-            const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
+            // The admission and the entry reads run together; nothing about the title is drawn before it is admitted.
+            const admission = A.admit(c, owner);
+            const reading = A.entries(c, { action: owner, surface: 'recommendations', admission });
+            reading.catch(() => {});
+            if (!await admission || !live()) return;
+            A.titled(shell, c.name);
+            const entries = await reading;
+            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner), shell });
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
-        finally { if (!shown) A.finish(owner); }
+        finally { if (!shown) { A.discard(shell); A.finish(owner); } }
     }
 
     /** Reconciles a retained/recycled card without retaining detached nodes. */
@@ -265,25 +272,34 @@
         const action = state.action;
         if (!action.current()) return;
         const newest = sheetOpening(action);
+        // Feedback in the press's own frame: a title-free loading shell, before any read.
+        const shell = A.pending(opener, action);
+        let shown = false;
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
                 if (!action.current()) return;
             }
+            const title = () => state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
+            // A cancelled admission ends the opening; any other failure leaves the native controls.
+            const admission = state.c ? A.admit(state.c, action).catch(error => { if (A.cancelled(error)) throw error; return false; }) : null;
+            // The entry reads run alongside the admission; nothing about the title is drawn before it has answered.
+            const reading = state.c ? A.entries(state.c, { action, root: state.root, surface: 'details', admission }) : Promise.resolve([]);
+            reading.catch(() => {});
             if (state.c) {
                 let admitted = false;
-                // A cancelled admission ends the opening; any other failure leaves the native controls.
-                try { admitted = await A.admit(state.c, action); } catch (error) { if (A.cancelled(error)) return; }
+                try { admitted = await admission; } catch (error) { if (A.cancelled(error)) return; }
                 if (!action.current() || (state.c.absent && !admitted)) return;
+                if (admitted) A.titled(shell, title());
             }
-            const adapted = state.c ? await A.entries(state.c, { action, root: state.root, surface: 'details' }) : [];
+            const adapted = await reading;
             if (!action.current()) return;
             const entries = nativeEntries(state);
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
-            const title = state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
-            if (newest()) A.show({ ...state.c, name: title }, entries, opener, action);
+            if (newest()) shown = A.show({ ...state.c, name: title() }, entries, opener, action, { shell });
         } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) A.discard(shell); }
     }
 
     /** Reads a control's label without treating icon-font ligatures as spoken text. */

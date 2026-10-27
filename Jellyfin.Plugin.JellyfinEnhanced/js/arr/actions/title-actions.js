@@ -224,14 +224,25 @@
         const out = [];
         const root = options.root;
         const displayName = () => c.name || root?.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
+        /** True when the host shows its own control for `selector` (it is then proxied, not read for). */
+        const shows = selector => { const node = root?.querySelector(selector); return !!node && !node.hidden && !node.classList.contains('hide'); };
         /** Finds an existing control, preserving its original handler and state. */
         function source(id, selector, group, label, icon) {
             const node = root?.querySelector(selector);
-            if (!node || node.hidden || node.classList.contains('hide')) return false;
+            if (!shows(selector)) return false;
             out.push({ id, source: node, group, label: node.getAttribute('aria-label') || node.title || label, icon,
                 state: id === 'manage' ? JE.t('title_actions_admin') : undefined });
             return true;
         }
+        // The independent reads start together (none waits on another); each is still awaited in the order below, and
+        // every continuation still checks the operation. `options.admission`: the opening's admission, read alongside.
+        const started = read => read && Promise.resolve(read).then(value => ({ value }), error => ({ error }));
+        const settled = async read => { const r = await read; if (r?.error) throw r.error; return r?.value; };
+        const follows = JE.arrNotify?.enabled?.() && c.episode == null && !shows('.je-notify-follow') ? started(JE.arrNotify.loadFollows(false)) : null;
+        const statusRead = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? started(JE.arrStatus.fetchKey(c.titleKey)) : null;
+        const capsRead = c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet ? started(JE.arrAsk.me()) : null;
+        const reportStatus = JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter && !shows('.jellyseerr-report-issue-icon') && JE.pluginConfig.JellyseerrEnabled
+            ? started(JE.jellyseerrAPI?.checkUserStatus?.()) : null;
         if (!source('guard', '.je-spoiler-pending-detail, .je-spoiler-pending-btn, .je-spoiler-blur-btn', 'view', JE.t('title_actions_guard'), 'blur_on')) {
             const node = JE.internals?.spoilerGuard?.buildSeerrToggle?.({ ...c.data, id: c.tmdbId }, c.type);
             if (node) out.push({ id: 'guard', group: 'view', label: node.title || JE.t('title_actions_guard'), icon: 'blur_on', control: node });
@@ -241,7 +252,7 @@
             if (node) out.push({ id: 'hide', group: 'view', label: node.title, icon: 'visibility', control: node });
         }
         if (JE.arrNotify?.enabled?.() && c.episode == null && !source('follow', '.je-notify-follow', 'requests', JE.t('title_actions_follow'), 'notifications_none')) {
-            await JE.arrNotify.loadFollows(false);
+            await settled(follows);
             if (!action.current()) return [];
             out.push({ id: 'follow', group: 'requests', label: JE.t('title_actions_follow'), icon: 'notifications_none',
                 pressed: JE.arrNotify.isFollowing(c.key), run: async (_opener, submitted) => {
@@ -252,11 +263,11 @@
                 } });
         }
         // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
-        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
+        const status = statusRead ? await settled(statusRead) : null;
         if (!action.current()) return [];
         const titleStatus = status?.items?.[0];
         if (c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet) {
-            const caps = await JE.arrAsk.me();
+            const caps = await settled(capsRead);
             if (!action.current()) return [];
             // Not while the title is already asked for, on its way or here: the page's own request control shows no
             // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
@@ -277,9 +288,11 @@
             out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: (_opener, submitted) => root.jeRequest4k(submitted) });
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
-                const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;
+                const status = JE.pluginConfig.JellyseerrEnabled ? await settled(reportStatus) : null;
                 if (!action.current() || status?.cancelled) return [];
                 const permitted = status?.active === true && status.userFound === true && status.canReportIssues !== false;
+                // The title's Seerr record is read once the title is admitted.
+                if (permitted && options.admission) { await options.admission.catch(() => false); if (!action.current()) return []; }
                 const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type, action) : null;
                 if (!action.current()) return [];
                 const ok = permitted && (!JE.jellyseerrAPI?.reportContext || !!record?.mediaId);
@@ -295,6 +308,8 @@
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
                     state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key }, { operation: submitted }) });
         }
+        // What the admission proved (Open) and the providers' entries come once it has answered.
+        if (options.admission) { await options.admission.catch(() => false); if (!action.current()) return []; }
         const proof = admissions.get(c);
         // Open goes to the accessible actual copy; never offered on that copy's own page.
         const same = id => id && String(id).replace(/-/g, '').toLowerCase() === String(proof.itemId).replace(/-/g, '').toLowerCase();
