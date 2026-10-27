@@ -507,9 +507,126 @@ for (const kind of ['movie', 'episode']) {
     assert.equal(h.host.shows.length, shows, 'the same read again stays given up');
     failing = false;
     handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [], ItemsUpdated: [OLD], ItemsRemoved: [] } });
-    assert.ok(await until(() => picker.options.length === 3, 2000), 'a change to the item retries');
+    await sleep(200);
+    assert.equal(h.host.shows.length, shows, 'the item merely updated again is no evidence of other versions');
+    // A version replaced by another of the same count: Jellyfin adds and removes items naming the page's item.
+    handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [NEW], ItemsUpdated: [OLD], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] } });
+    assert.ok(await until(() => picker.options.length === 3, 2000), 'versions added or removed retries');
     assert.ok(await until(() => h.A.state().base.versions === 3));
     assert.equal(h.host.shows.length, shows + 1);
+  });
+
+  // LRR3: the picker the page was shown with can go missing before JE's first redraw; and repeated
+  // LibraryChanged notifications must not renew an unchanged failed change without bound.
+  const eventPage = (t, kind) => {
+    const handlers = [];
+    let versions = 2;
+    const h = setup(t, {
+      apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+      items: { [OLD]: { Id: OLD, SeasonId: SEASON, SeriesId: SERIES } },
+      ...(kind === 'movie'
+        ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+        : { answers: () => episode('ready', { versions }) })
+    });
+    Object.assign(h.A.timing, { settle: 15, gap: 100, batch: 25 });
+    const picker = h.document.createElement('select');
+    picker.className = 'selectSource';
+    h.view.appendChild(picker);
+    const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+    draw();
+    let render = draw;
+    h.view.addEventListener('viewshow', () => render());
+    return { h, picker, draw, set: n => { versions = n; }, render: fn => { render = fn; },
+      event: data => handlers[0]({ MessageType: 'LibraryChanged', Data: data }) };
+  };
+
+  test(`${kind}: the picker the page was shown with, missing before the first redraw, is not counted as drawn (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    assert.equal(f.picker.options.length, 2);
+    f.picker.remove(); // Jellyfin takes its controls away before JE's own redraw
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    await sleep(55);
+    assert.equal(h.A.state().base.versions, 2, 'not drawn while the picker was missing');
+    h.view.appendChild(f.picker); // the old two-option controls come back
+    f.render(f.draw);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(350);
+    assert.equal(f.picker.options.length, 3, 'retried once the picker was back');
+    assert.equal(h.A.state().base.versions, 3);
+    h.D.stop();
+    await h.D.update(false);
+    await sleep(180);
+    assert.equal(f.picker.options.length, 3);
+    assert.equal(h.A.state().base.versions, 3);
+  });
+
+  test(`${kind}: spaced identical updates of the item never renew an unchanged failed change (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    assert.equal(h.host.shows.length, 3);
+    for (let round = 1; round <= 5; round++) {
+      f.event({ ItemsUpdated: [OLD] });
+      await sleep(400);
+    }
+    assert.equal(h.host.shows.length, 3, 'no fresh tries for the same change');
+    assert.equal(h.A.state().base.versions, 2);
+    assert.equal(h.A.state().abandoned?.versions, 3);
+  });
+
+  test(`${kind}: a continuous stream of identical item updates stays at one bounded set (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    for (let n = 0; n < 60; n++) { f.event({ ItemsUpdated: [OLD] }); await sleep(20); }
+    await sleep(300);
+    assert.equal(h.host.shows.length, 3);
+    assert.equal(h.replays.length, 3);
+    assert.equal(f.picker.options.length, 2);
+  });
+
+  test(`${kind}: versions added or removed renew a given-up change at most redrawRenewals times per view`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    const { redrawTries, redrawRenewals } = h.A.timing;
+    for (let round = 1; round <= redrawRenewals + 2; round++) {
+      f.event({ ItemsAdded: [NEW], ItemsUpdated: [OLD], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] });
+      const expected = redrawTries * (1 + Math.min(round, redrawRenewals));
+      assert.ok(await until(() => h.host.shows.length === expected && h.A.state().abandoned?.versions === 3, 3000), `set ${round}`);
+      await sleep(150);
+      assert.equal(h.host.shows.length, expected);
+    }
+    assert.equal(h.host.shows.length, redrawTries * (1 + redrawRenewals), 'bounded per view');
+    assert.equal(h.A.state().base.versions, 2);
+  });
+
+  test(`${kind}: a given-up change that Jellyfin's returned picker already shows is recorded with no redraw`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => f.picker.remove());
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    f.draw();
+    h.view.appendChild(f.picker); // Jellyfin's controls come back, already listing all three
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 3);
+    assert.equal(h.A.state().abandoned, null);
+    await sleep(200);
+    assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'no redraw for it');
   });
 
   test(`${kind}: a failed redraw whose change is gone again waits for nothing`, async t => {

@@ -31,6 +31,8 @@
         gap: 15000,
         /** A movie or episode redraw that Jellyfin's version picker doesn't reflect is tried at most this often per change. */
         redrawTries: 3,
+        /** How often per page view a change given up on may get a fresh set of tries (a different read, or Jellyfin adding or removing versions). */
+        redrawRenewals: 3,
         /**
          * A season or series page reloads once its status has stopped changing for this long: a season
          * pack arriving file by file, and Jellyfin dropping the missing episodes the files replace (the
@@ -56,7 +58,8 @@
      * `base` is what the page was drawn with (its first status, then each change acted on; on a movie or
      * episode page, each change Jellyfin's controls were seen to reflect). `drawing` is a movie or episode
      * redraw not yet checked, `failures` its unreconciled attempts, `abandoned` the change given up on,
-     * `latest` the newest status read, `pickerSeen` whether Jellyfin's version picker was ever on the page.
+     * `latest` the newest status read, `pickerSeen` whether Jellyfin's version picker was ever on the page,
+     * `renewals` how many fresh sets of tries the view has granted.
      * @type {Object|null}
      */
     let page = null;
@@ -248,6 +251,7 @@
         state.abandoned = null;
         state.latest = null;
         state.pickerSeen = false;
+        state.renewals = 0;
         state.settleTimer = null;
         state.endSettle = null;
         page = state;
@@ -331,9 +335,22 @@
             state.pickerSeen = true;
             return picker.options.length >= base.versions;
         }
-        // The page's picker missing (Jellyfin mid-redraw) is not a redraw that took; only a page
-        // that never had one can't be checked.
-        return state.pickerSeen ? false : null;
+        // The page's picker missing (Jellyfin mid-redraw) is not a redraw that took. Jellyfin shows one
+        // whenever the item has more than one version, so a page drawn with several (or that showed one)
+        // expects it; only a page with neither can't be checked.
+        return state.pickerSeen || state.base?.versions > 1 ? false : null;
+    }
+
+    /**
+     * Gives a change given up on a fresh set of tries, at most `redrawRenewals` times per page view.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function renew(state) {
+        if (state.renewals >= timing.redrawRenewals) return;
+        state.renewals++;
+        state.abandoned = null;
+        state.failures = null;
     }
 
     /**
@@ -357,7 +374,9 @@
     function track(state, now) {
         state.latest = now;
         if (!state.refreshed) return;
-        if (state.abandoned && !same(now, state.abandoned)) state.abandoned = null;
+        if (state.abandoned && !same(now, state.abandoned)) renew(state);
+        // A change given up on that Jellyfin's picker shows now (it redrew by itself) is drawn, with no redraw.
+        if (state.abandoned && more(now, state.base) && reconciled(state, now) === true) commit(state, now);
         const pending = state.pending;
         if (pending?.kind !== 'reload') return;
         if (!more(now, state.base)) state.pending = null;
@@ -474,12 +493,10 @@
         const ids = [].concat(data.ItemsAdded || [], data.ItemsUpdated || [], data.ItemsRemoved || [], data.FoldersAddedTo || [], data.FoldersRemovedFrom || []);
         if (!ids.some(id => state.parents.has(norm(id)))) return;
         const self = norm(state.id);
-        // Jellyfin changed the page's own item: a redraw given up on gets a fresh (still bounded) chance,
-        // since the same version count can now be a different set of versions.
-        if (state.abandoned && ids.some(id => norm(id) === self)) {
-            state.abandoned = null;
-            state.failures = null;
-        }
+        // Jellyfin added or removed items with the page's own item named: the same version count can be a
+        // different set of versions now, so a redraw given up on gets a fresh (bounded) chance. Its item
+        // being updated again (metadata, scans) is no such evidence.
+        if (state.abandoned && ids.some(id => norm(id) === self) && ((data.ItemsAdded || []).length || (data.ItemsRemoved || []).length)) renew(state);
         const removedFromPage = (data.FoldersRemovedFrom || []).some(id => norm(id) === self) && !(data.ItemsRemoved || []).some(id => norm(id) === self);
         if (removedFromPage && state.base && libraryId(state.id) && (state.kind === 'season' || state.kind === 'series')) {
             plan(state, { kind: 'reload', base: state.base, listed: true });
@@ -519,6 +536,8 @@
         // A native page has no library item to reload: it only ever moves to one.
         if (!libraryId(state.id)) return;
         const now = signature(status);
+        // The picker the page is shown with counts as seen before any redraw needs it.
+        if (!listPage(state) && state.view.querySelector('select.selectSource')) state.pickerSeen = true;
         if (!state.base) {
             state.base = now;
             drew(state);
