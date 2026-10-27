@@ -403,3 +403,40 @@ test('PMR-2: a refused row opening never reads report context or runs providers'
   assert.equal(h.document.querySelector('.je-actions-sheet'), null);
   assert.deepEqual({ reports, providers, titleReads: h.sent('GET', '/jellyseerr/movie/603').length }, { reports: 0, providers: 0, titleReads: 0 });
 });
+
+// Review round 3 (PMR2-1): a closed row opening swallows its late error as it swallows its late success.
+
+test('PMR2-1: a row opening closed before admission shows no late error and reads nothing more', async t => {
+  const h = setup(t); h.a.initialize();
+  let providers = 0;
+  h.a.register('pmr2-closed', () => { providers++; return null; });
+  const gate = h.hold('GET', '/title-actions/');
+  mount(h);
+  h.click(h.row().querySelector('.je-actions-more, .je-actions-wide-more'));
+  await delivered();
+  h.click(h.document.querySelector('.je-actions-close'));
+  // The title's Seerr record read fails once (the late error), then answers again.
+  let failed = false;
+  h.respond('GET', '/jellyseerr/movie/603', () => failed ? null : (failed = true, [403, {}]));
+  const before = h.toasts.length;
+  gate.resolve(); await delivered();
+  assert.equal(h.document.querySelector('.je-actions-shell, .je-actions-sheet'), null);
+  assert.deepEqual(h.toasts.slice(before), [], 'a cancelled opening shows no failure after the viewer closed it');
+  // (The row's own setup reads its Report control's title record: that is the row's, not the closed opening's.)
+  assert.equal(providers, 0, 'the closed opening runs no provider');
+  // The row itself is still live: a new press opens its sheet.
+  h.click(h.row().querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
+  assert.ok(h.document.querySelector('.je-actions-sheet'), 'the row opens again');
+});
+
+test('PMR2-1: an operation submitted from a row sheet outlives the sheet closing', async t => {
+  const h = setup(t);
+  h.respond('GET', '/title-actions/', [200, { allowed: true, itemId: 'a'.repeat(32) }]);
+  let opens = 0; h.JE.titleDetails.openItem = () => { opens++; };
+  h.a.initialize(); mount(h); await delivered();
+  h.click(h.row().querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
+  const gate = h.hold('GET', '/title-actions/');
+  h.click(h.document.querySelector('.je-actions-entry[data-action="open"]'));
+  gate.resolve(); await delivered();
+  assert.equal(opens, 1, 'Open runs after its sheet closed for it');
+});

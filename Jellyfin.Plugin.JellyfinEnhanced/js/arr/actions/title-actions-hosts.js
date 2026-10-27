@@ -278,35 +278,41 @@
     async function openRow(state, opener) {
         const action = state.action;
         if (!action.current()) return;
-        const newest = sheetOpening(action);
-        // Feedback in the press's own frame: a title-free loading shell, before any read.
-        const shell = A.pending(opener, action);
+        // The OPENING (as a card's, D46S2-R12-8): an offer of the row's mount, finished on every terminal path — its shell
+        // closed, refused, failed, superseded, or the sheet it showed closing. Its admission, entry reads and feedback all
+        // check it, so a closed opening's late answer (a success or an error) does nothing. What the viewer submits from
+        // the sheet belongs to the row's mount, not to this opening (it outlives the sheet).
+        const opening = A.generation(() => action.current());
+        const newest = sheetOpening(opening);
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener, opening, { mount: action, onClose: () => A.finish(opening) });
         let shown = false;
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
-                if (!action.current()) return;
+                if (!opening.current()) return;
             }
             const title = () => state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
             // A cancelled admission ends the opening; any other failure leaves the native controls.
-            const admission = state.c ? A.admit(state.c, action).catch(error => { if (A.cancelled(error)) throw error; return false; }) : null;
+            const admission = state.c ? A.admit(state.c, opening).catch(error => { if (A.cancelled(error)) throw error; return false; }) : null;
             // The entry reads run alongside the admission; nothing about the title is drawn before it has answered.
-            const reading = state.c ? A.entries(state.c, { action, root: state.root, surface: 'details', admission }) : Promise.resolve([]);
+            const reading = state.c ? A.entries(state.c, { action: opening, root: state.root, surface: 'details', admission }) : Promise.resolve([]);
             reading.catch(() => {});
             if (state.c) {
                 let admitted = false;
                 try { admitted = await admission; } catch (error) { if (A.cancelled(error)) return; }
-                if (!action.current() || (state.c.absent && !admitted)) return;
+                if (!opening.current() || (state.c.absent && !admitted)) return;
                 if (admitted) A.titled(shell, title());
             }
             const adapted = await reading;
-            if (!action.current()) return;
+            if (!opening.current()) return;
             const entries = nativeEntries(state);
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
-            if (newest()) shown = A.show({ ...state.c, name: title() }, entries, opener, action, { shell });
-        } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
-        finally { if (!shown) A.discard(shell); }
+            // The row's own context (its admission record is what an entry's late check reads); the shown name is separate.
+            if (newest()) shown = A.show(state.c || {}, entries, opener, opening, { mount: action, onClose: () => A.finish(opening), shell, name: title() });
+        } catch (_) { if (opening.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) { A.discard(shell); A.finish(opening); } }
     }
 
     /** Marks an adapted control working on a press (or done) and mirrors it on the compact row's visible proxy of it. */

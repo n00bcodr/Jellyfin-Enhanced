@@ -94,16 +94,16 @@
      * owned by the session, the route and that host, so it outlives the sheet (D53). The opening is admitted first
      * (D46S2 audit S2): an owner that is not current opens nothing and leaves the current sheet alone (false).
      * `shell`: the opening's loading shell ({@link pending}); its choices are drawn into it, and nothing is shown once it
-     * has closed or a newer opening replaced it.
+     * has closed or a newer opening replaced it. `name`: the title shown (default `c.name`).
      */
-    function show(c, entries, opener, owner, { mount = null, onClose = null, shell = null } = {}) {
+    function show(c, entries, opener, owner, { mount = null, onClose = null, shell = null, name = null } = {}) {
         const host = JE.admitSurface(owner, 'the title actions sheet');
         if (!host) return false;
         // The owner's own loading shell is filled even when the caller did not name it (closing it would end the opening).
         if (!shell && current?.pending && current.owner === host) shell = current;
-        if (shell) return current === shell && shell.pending && shell.owner === host && shell.action.current() ? fill(shell, c, entries) : false;
+        if (shell) return current === shell && shell.pending && shell.owner === host && shell.action.current() ? fill(shell, c, entries, name) : false;
         const state = frame(host, opener || document.activeElement, { mount, onClose });
-        return !!state && fill(state, c, entries);
+        return !!state && fill(state, c, entries, name);
     }
 
     /**
@@ -177,9 +177,9 @@
     }
 
     /** Draws the title and its choices into an open frame (a shell becomes the sheet in place) and focuses the first. */
-    function fill(state, c, entries) {
+    function fill(state, c, entries, name = null) {
         const { sheet, backdrop, action, opener, lease, base } = state;
-        state.subtitle.textContent = c.name || '';
+        state.subtitle.textContent = name ?? c.name ?? '';
         if (state.pending) {
             state.pending = false;
             state.busy.remove(); state.busy = null;
