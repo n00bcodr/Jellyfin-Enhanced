@@ -474,6 +474,12 @@
         const ids = [].concat(data.ItemsAdded || [], data.ItemsUpdated || [], data.ItemsRemoved || [], data.FoldersAddedTo || [], data.FoldersRemovedFrom || []);
         if (!ids.some(id => state.parents.has(norm(id)))) return;
         const self = norm(state.id);
+        // Jellyfin changed the page's own item: a redraw given up on gets a fresh (still bounded) chance,
+        // since the same version count can now be a different set of versions.
+        if (state.abandoned && ids.some(id => norm(id) === self)) {
+            state.abandoned = null;
+            state.failures = null;
+        }
         const removedFromPage = (data.FoldersRemovedFrom || []).some(id => norm(id) === self) && !(data.ItemsRemoved || []).some(id => norm(id) === self);
         if (removedFromPage && state.base && libraryId(state.id) && (state.kind === 'season' || state.kind === 'series')) {
             plan(state, { kind: 'reload', base: state.base, listed: true });

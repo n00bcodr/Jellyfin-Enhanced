@@ -479,6 +479,39 @@ for (const kind of ['movie', 'episode']) {
     assert.equal(h.host.shows.length, 3);
   });
 
+  test(`${kind}: Jellyfin changing the item again gives a given-up redraw one fresh, bounded chance`, async t => {
+    const handlers = [];
+    let versions = 2;
+    const h = setup(t, {
+      apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+      ...(kind === 'movie'
+        ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+        : { answers: () => episode('ready', { versions }) })
+    });
+    Object.assign(h.A.timing, { settle: 15, gap: 60, batch: 25 });
+    const picker = h.document.createElement('select');
+    picker.className = 'selectSource';
+    h.view.appendChild(picker);
+    const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+    draw();
+    let failing = true;
+    h.view.addEventListener('viewshow', () => { if (!failing) draw(); });
+    await h.D.update(false);
+    assert.ok(await until(() => handlers.length === 1));
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    const shows = h.host.shows.length;
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.host.shows.length, shows, 'the same read again stays given up');
+    failing = false;
+    handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [], ItemsUpdated: [OLD], ItemsRemoved: [] } });
+    assert.ok(await until(() => picker.options.length === 3, 2000), 'a change to the item retries');
+    assert.ok(await until(() => h.A.state().base.versions === 3));
+    assert.equal(h.host.shows.length, shows + 1);
+  });
+
   test(`${kind}: a failed redraw whose change is gone again waits for nothing`, async t => {
     const f = retryPage(t, kind), { h } = f;
     await h.D.update(false);
