@@ -281,7 +281,8 @@
      * Deduplicated item fetch with short TTL cache.
      * Prevents multiple modules from requesting the same item concurrently on detail page navigation: every caller
      * joins the read already in flight for the same server, person, session and item. A read answers only for the
-     * session and the policy it started under (an AbortError otherwise).
+     * session and the policy it started under: an overtaken one is read once more for the same person on the same
+     * server, and answers null for anyone else (it is never handed on).
      *
      * `visit: true` is a page's own check of what it shows (a details page, every time it is shown): it joins only a
      * read started on the same route generation and never answers from a finished one, so a page shown again is
@@ -293,6 +294,7 @@
      * @param {number} [options.ttlMs]
      * @param {boolean} [options.forceRefresh]
      * @param {boolean} [options.visit]
+     * @param {boolean} [options.retried] Internal: the one read again after an overtaken one.
      * @returns {Promise<object|null>}
      */
     async function getItemCached(itemId, options = {}) {
@@ -320,19 +322,26 @@
             }
         }
 
+        const asked = captureItemSession();
         const now = Date.now();
         const entry = itemCache.get(key);
 
         if (!options.forceRefresh && entry) {
-            if (entry.promise) {
-                return entry.promise;
-            }
-            if (entry.item && (now - entry.ts) < ttlMs) {
+            if (entry.item && !entry.promise && (now - entry.ts) < ttlMs) {
                 return entry.item;
             }
         }
-
-        return startItemRead(key, userId, itemId);
+        const read = !options.forceRefresh && entry?.promise ? entry.promise : startItemRead(key, userId, itemId);
+        try {
+            return await read;
+        } catch (err) {
+            if (!err?.jeItemStale) throw err;
+            // Overtaken (refreshed credentials, a policy change): never its answer. The same person on the same server
+            // is answered by one read under what holds now; anyone else, or a second overtaken read, gets nothing.
+            const live = captureItemSession();
+            if (options.retried || live.userId !== asked.userId || live.server !== asked.server) return null;
+            return getItemCached(itemId, { ...options, forceRefresh: false, retried: true });
+        }
     }
 
 

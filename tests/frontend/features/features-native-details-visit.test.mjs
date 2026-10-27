@@ -154,7 +154,7 @@ test('a look in flight when Hidden Content changes reads again and draws the pag
   assert.equal(h.document.querySelector('.je-native-absent-refusal'), null, 'a policy change is not an outage');
 });
 
-test('a read overtaken by an access change or a user switch answers no one and is never kept or joined', async t => {
+test('a read overtaken by an access change or a session restart hands on nothing of its own and is never kept or joined', async t => {
   for (const change of ['access', 'user']) {
     const h = setup(t);
     const old = h.JE.helpers.getItemCached(MOVIE);
@@ -165,10 +165,13 @@ test('a read overtaken by an access change or a user switch answers no one and i
     await tick();
     assert.equal(h.reads.length, 2, `${change}: a new read, not the one in flight`);
     h.answer(0, { Id: MOVIE, Name: 'stale' });
-    // Overtaken: not even its own caller is answered with it (review round 1, PDR-1/2).
-    assert.equal((await old.then(() => null, error => error))?.name, 'AbortError', `${change}: the overtaken read publishes nothing`);
     h.answer(1, { Id: MOVIE, Name: 'current' });
     assert.equal((await fresh).Name, 'current');
+    // Overtaken: not even its own caller is answered with it (review rounds 1-2, PDR-1/2); the same person is answered
+    // by the read under what holds now (joined, no third read).
+    const outcome = await old.then(value => ({ value }), error => ({ error }));
+    assert.notEqual(outcome.value?.Name, 'stale', `${change}: the overtaken read publishes nothing`);
+    assert.equal(outcome.value?.Name, 'current', `${change}: its caller gets the current answer`);
     // The stale completion did not replace the current answer.
     assert.equal((await h.JE.helpers.getItemCached(MOVIE)).Name, 'current');
     assert.equal(h.reads.length, 2);
@@ -258,12 +261,18 @@ test('an image of the page scrolled out of view stays loaded, so coming back fet
 for (const mode of ['epoch', 'server', 'token-body']) test(`an item read started under one session never answers for another (${mode} moves)`, async t => {
   let epoch = 1, server = 'server-a', token = 'fixture-a';
   const headers = deferred(), body = deferred(), bodyStarted = deferred();
-  const hooks = [];
+  const hooks = [], tokens = [];
+  let calls = 0;
+  // The first read is held (headers, then body); a read made after it answers for the session that holds then.
+  const answer = async () => {
+    if (calls++ === 0) { const r = await headers.promise; return r; }
+    return { ok: true, status: 200, json: async () => ({ Id: MOVIE, Name: 'current-session' }) };
+  };
   const h = createHarness({
     JE: { core: { navigation: { onNavigate: () => {} } }, session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (_n, fn) => hooks.push(fn) } },
     // jellyfin-web's client (the base transport) gets the same held answer.
-    apiClient: { serverId: () => server, accessToken: () => token, getItem: async () => (await headers.promise).json() },
-    fetch: () => headers.promise
+    apiClient: { serverId: () => server, accessToken: () => token, getItem: async () => { tokens.push(token); return (await answer()).json(); } },
+    fetch: (_url, init) => { tokens.push(init?.headers?.['X-Emby-Token']); return answer(); }
   });
   t.after(() => h.close());
   h.load('core/api-client.js');
@@ -279,8 +288,18 @@ for (const mode of ['epoch', 'server', 'token-body']) test(`an item read started
   }
   body.resolve({ Id: MOVIE, Name: 'previous-session' });
   const outcome = await result;
-  assert.equal(outcome.error?.name, 'AbortError', 'the previous session\'s answer is not published');
-  assert.equal(outcome.value, undefined);
+  assert.notEqual(outcome.value?.Name, 'previous-session', 'the previous session\'s answer is not published');
+  assert.equal(outcome.error, undefined);
+  if (mode === 'server') {
+    // Another server: nothing, and nothing read for it on the caller's behalf.
+    assert.equal(outcome.value, null);
+    assert.equal(calls, 1);
+  } else {
+    // The same person on the same server: answered by one read under the session that holds now.
+    assert.equal(outcome.value?.Name, 'current-session');
+    assert.equal(calls, 2);
+    if (mode === 'token-body') assert.deepEqual(tokens, ['fixture-a', 'fixture-b']);
+  }
 });
 
 test('credentials refreshed while the answer\'s body is read: nothing of the old answer is drawn, the page reads once more under the new ones', async t => {
@@ -399,14 +418,29 @@ test('two policy changes during one look: neither overtaken answer is drawn, the
   assert.equal(h.document.querySelector('.je-native-absent-refusal'), null);
 });
 
-test('a policy change during a default read: its callers get an AbortError, never the overtaken answer', async t => {
+test('a policy change during a default read: its callers never get the overtaken answer, but one read under the new policy (no console error for them)', async t => {
   const h = setup(t);
   const read = h.JE.helpers.getItemCached(MOVIE).then(value => ({ value }), error => ({ error }));
   await tick();
   h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
   h.answer(0, { Id: MOVIE, Name: 'overtaken' });
+  for (let i = 0; i < 20 && h.reads.length < 2; i++) await tick();
+  assert.equal(h.reads.length, 2, 'read once more under the new policy');
+  h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
+  h.answer(1, { Id: MOVIE, Name: 'overtaken-again' });
   const outcome = await read;
-  assert.equal(outcome.error?.name, 'AbortError');
+  assert.equal(outcome.error, undefined, 'nothing for the caller to report');
+  assert.equal(outcome.value, null, 'overtaken twice: nothing, never an overtaken answer');
+  assert.equal(h.reads.length, 2);
+  // Another person by the time it is overtaken: nothing either, and no read for them.
+  const other = setup(t);
+  const theirs = other.JE.helpers.getItemCached(MOVIE).then(value => ({ value }), error => ({ error }));
+  await tick();
+  other.window.ApiClient.getCurrentUserId = () => 'user-b';
+  other.window.dispatchEvent(new other.window.CustomEvent('je-hidden-content-changed'));
+  other.answer(0, { Id: MOVIE, Name: 'overtaken' });
+  assert.deepEqual(await theirs, { value: null });
+  assert.equal(other.reads.length, 1);
 });
 
 test('early artwork keeps jellyfin-web\'s gate, and a changed grant is left to jellyfin-web', async t => {
