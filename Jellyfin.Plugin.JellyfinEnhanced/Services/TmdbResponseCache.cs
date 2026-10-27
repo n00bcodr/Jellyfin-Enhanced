@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -56,7 +57,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     ///
     /// Entries are also written to disk (debounced) and reloaded at startup,
     /// so a server restart does not put every details page back on the cold
-    /// path; expiry times travel with the entries.
+    /// path; expiry times travel with the entries. With the server-side cache on,
+    /// that disk copy is the cache's <c>tmdbjson</c> namespace instead (see the
+    /// disk tier below), which holds far more than memory.
     /// </summary>
     public sealed class TmdbResponseCache : IDisposable
     {
@@ -119,7 +122,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public bool IsSuccess => StatusCode >= 200 && StatusCode <= 299;
         }
 
-        private sealed record Entry(string Key, TmdbResponse Response, DateTimeOffset ExpiresAt, long Size);
+        private sealed record Entry(string Key, TmdbResponse Response, DateTimeOffset ExpiresAt, long Size)
+        {
+            /// <summary>1 once the entry is on disk or a write of it was started (the server-side cache).</summary>
+            public int Saved;
+        }
 
         /// <summary>One resource of a details-page bundle: its own cache key and the waiters for it.</summary>
         private sealed record BundleMember(string Name, string Key, TaskCompletionSource<TmdbResponse> Owner);
@@ -167,19 +174,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private Timer? _debounceSaveTimer;
         private volatile bool _disposed;
 
-        public TmdbResponseCache(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger, NativeDetails.ViewerMetadataAdmission? admission = null)
-            : this(httpClientFactory, TimeProvider.System, admission)
+        public TmdbResponseCache(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger, NativeDetails.ViewerMetadataAdmission? admission = null,
+            ServerCache.ServerBlobCache? disk = null)
+            : this(httpClientFactory, TimeProvider.System, admission, disk,
+                Path.Combine(applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tmdb-cache.json"), logger)
         {
-            _logger = logger;
-            _diskPath = Path.Combine(applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tmdb-cache.json");
-            LoadFromDisk();
         }
 
-        internal TmdbResponseCache(IHttpClientFactory httpClientFactory, TimeProvider timeProvider, NativeDetails.ViewerMetadataAdmission? admission = null)
+        internal TmdbResponseCache(IHttpClientFactory httpClientFactory, TimeProvider timeProvider, NativeDetails.ViewerMetadataAdmission? admission = null,
+            ServerCache.ServerBlobCache? disk = null)
+            : this(httpClientFactory, timeProvider, admission, disk, null, null)
+        {
+        }
+
+        /// <summary>Creates the cache with its legacy snapshot file (null: none) and server-side cache (tests).</summary>
+        internal TmdbResponseCache(IHttpClientFactory httpClientFactory, TimeProvider timeProvider, NativeDetails.ViewerMetadataAdmission? admission,
+            ServerCache.ServerBlobCache? disk, string? legacyPath, Logger? logger)
         {
             MetadataAdmission = admission ?? new NativeDetails.ViewerMetadataAdmission();
             _httpClientFactory = httpClientFactory;
             _timeProvider = timeProvider;
+            _logger = logger;
+            _disk = disk;
+            _disk?.Register(new ServerCache.ServerCacheNamespace(DiskNamespace, DiskMaxBytes, LookupTtl, DiskMaxEntryBytes));
+            _diskPath = legacyPath;
+            LoadFromDisk();
         }
 
         internal NativeDetails.ViewerMetadataAdmission MetadataAdmission { get; }
@@ -209,7 +228,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var identity = "people:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)))
                 + ":" + string.Join(",", ids);
-            return MetadataAdmission.Read<IReadOnlyDictionary<int, TmdbResponse>?>(identity, viewer, Cached,
+            if (_disk != null && !Cached().Hit && DiskReady()) return PeopleAfterDiskAsync(ids, apiKey, () => ReadPeople(ids, apiKey, viewer, identity, Cached, ct), ct);
+            return ReadPeople(ids, apiKey, viewer, identity, Cached, ct);
+        }
+
+        /// <summary>The cast chunk's admitted read (<see cref="GetPeopleAsync"/>), after any saved people were loaded from disk.</summary>
+        private Task<IReadOnlyDictionary<int, TmdbResponse>?> ReadPeople(int[] ids, string apiKey, Guid viewer, string identity,
+            Func<(bool Hit, IReadOnlyDictionary<int, TmdbResponse>? Value)> cached, CancellationToken ct)
+        {
+            return MetadataAdmission.Read<IReadOnlyDictionary<int, TmdbResponse>?>(identity, viewer, cached,
                 async () =>
                 {
                     var answers = new System.Collections.Concurrent.ConcurrentDictionary<int, TmdbResponse>();
@@ -239,6 +266,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
+            // A caller only asking what is already known (CachedOnlyAsync) never starts a read.
+            if (CachedOnly.Value is { } probe) return CachedOnlyGetAsync(probe, apiPath, query, apiKey, bundle, refresh, cancellationToken);
+            // What is saved on disk is loaded before any admission or upstream place is asked for.
+            if (!refresh && DiskCandidates(apiPath, query, apiKey, bundle) is { } keys && DiskReady())
+                return GetAfterDiskAsync(keys, apiPath, query, apiKey, bundle, cancellationToken);
+            return GetCore(apiPath, query, apiKey, cancellationToken, bundle, refresh);
+        }
+
+        /// <summary><see cref="GetAsync"/> once anything saved on disk is in memory: memory, a running read, then an admitted fetch.</summary>
+        private Task<TmdbResponse> GetCore(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle, bool refresh)
+        {
             // Public cached facts and existing owned reads cost no new place, for every owner.
             var joinTarget = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (!refresh && Joined(apiKey, UpstreamUrl(joinTarget?.CanonicalPath ?? apiPath,
@@ -260,7 +298,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             cachedTarget.HasValue ? string.Empty : query, apiKey, out value);
                         return (hit, value!);
                     },
-                    () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh),
+                    () => GetCore(apiPath, query, apiKey, CancellationToken.None, bundle, refresh),
                     new TmdbResponse(503, "{}", string.Empty) { AdmissionBusy = true }, cancellationToken);
             }
 
@@ -269,7 +307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (JellyfinEnhanced.Instance?.Configuration is { } config && NativeDetails.NativeDetailsPolicy.JeBackend(config))
                     return Task.FromResult(new TmdbResponse(503, "{}", string.Empty));
                 return AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Legacy,
-                    () => GetAsync(apiPath, query, apiKey, CancellationToken.None, bundle, refresh), cancellationToken).WaitAsync(cancellationToken);
+                    () => GetCore(apiPath, query, apiKey, CancellationToken.None, bundle, refresh), cancellationToken).WaitAsync(cancellationToken);
             }
 
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
@@ -286,10 +324,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Task<TmdbResponse> shared;
             TaskCompletionSource<TmdbResponse>? owner = null;
             List<BundleMember>? bundleMembers = null;
+            long fence;
             lock (_lock)
             {
                 var keyPrefix = GetKeyHash(apiKey) + "|";
                 key = keyPrefix + upstreamUrl;
+                fence = _fenceClock;
                 if (!refresh && TryGetFreshLocked(key, out var cached))
                 {
                     return Task.FromResult(cached);
@@ -348,15 +388,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             Services.MetadataAdmission.Required.Retain(shared);
             if (bundleMembers != null || owner != null) NativeDetails.MetadataTaskProbe.External(apiPath);
+            // Captured before the upstream read starts: a disk Clear or Forget after it refuses saving its answer.
+            var diskGeneration = bundleMembers != null || owner != null ? DiskGeneration() : 0;
 
             if (bundleMembers != null)
             {
                 var bundleUrl = UpstreamUrl(target!.Value.TitlePath, "?append_to_response=" + string.Join(",", BundleMemberNames(target.Value.MediaType).Where(m => m != null)));
-                _ = FetchBundleAsync(target.Value, bundleMembers, AppendApiKey(bundleUrl, apiKey), apiKey);
+                _ = FetchBundleAsync(target.Value, bundleMembers, AppendApiKey(bundleUrl, apiKey), apiKey, diskGeneration, fence);
             }
             else if (owner != null)
             {
-                _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner);
+                _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, null, diskGeneration, fence);
             }
 
             return shared.WaitAsync(cancellationToken);
@@ -379,7 +421,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<TmdbResponse> GetAdmittedAsync(string apiPath, string query, string apiKey, Func<CancellationToken, Task<IDisposable>> admit, CancellationToken cancellationToken)
         {
             var upstreamUrl = UpstreamUrl(apiPath, query);
-            if (Joined(apiKey, upstreamUrl, out var joined))
+            if (Joined(apiKey, upstreamUrl, out var joined)
+                || (await HydrateAsync(apiPath, query, apiKey, cancellationToken).ConfigureAwait(false) && Joined(apiKey, upstreamUrl, out joined)))
             {
                 return await joined.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -392,9 +435,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Task<TmdbResponse> shared;
             TaskCompletionSource<TmdbResponse>? owner = null;
             string key;
+            var diskGeneration = DiskGeneration();
+            long fence;
             lock (_lock)
             {
                 key = GetKeyHash(apiKey) + "|" + upstreamUrl;
+                fence = _fenceClock;
                 if (TryGetFreshLocked(key, out var cached))
                 {
                     shared = Task.FromResult(cached);
@@ -419,7 +465,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             else
             {
                 NativeDetails.MetadataTaskProbe.External(apiPath);
-                _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, lease);
+                _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, lease, diskGeneration, fence);
             }
 
             return await shared.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -431,6 +477,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Fresh public facts and pending reads remain free, including joins to a forced refresh.
         /// </summary>
         internal Task<TmdbResponse> GetListMetadataAsync(string apiPath, string query, string apiKey, CancellationToken ct, bool refresh)
+        {
+            if (Joined(apiKey, UpstreamUrl(apiPath, query), out var joined, skipCache: refresh))
+                return joined.WaitAsync(ct);
+            if (!refresh && DiskCandidates(apiPath, query, apiKey, false) != null && DiskReady())
+                return ListMetadataAfterDiskAsync(apiPath, query, apiKey, ct);
+            return ListMetadataCore(apiPath, query, apiKey, ct, refresh);
+        }
+
+        /// <summary><see cref="GetListMetadataAsync"/> after anything saved on disk was loaded (a refresh never reads it).</summary>
+        private Task<TmdbResponse> ListMetadataCore(string apiPath, string query, string apiKey, CancellationToken ct, bool refresh)
         {
             if (Joined(apiKey, UpstreamUrl(apiPath, query), out var joined, skipCache: refresh))
                 return joined.WaitAsync(ct);
@@ -504,14 +560,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="apiKey">The key the answer was read with.</param>
         public void Forget(string apiPath, string query, string apiKey)
         {
+            string keyHash;
             lock (_lock)
             {
-                if (_entries.TryGetValue(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out var node))
+                keyHash = GetKeyHash(apiKey);
+                var key = keyHash + "|" + UpstreamUrl(apiPath, query);
+                // A read of this key already under way (upstream or from disk) must not put the forgotten answer back.
+                FenceLocked(key);
+                if (_entries.TryGetValue(key, out var node))
                 {
                     RemoveNode(node);
                     ScheduleDebouncedSave();
                 }
             }
+
+            ForgetOnDisk(keyHash, UpstreamUrl(apiPath, query));
         }
 
         private static string UpstreamUrl(string apiPath, string query) => $"https://api.themoviedb.org/3/{apiPath}{query}";
@@ -610,7 +673,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
-        private async Task FetchAsync(string key, string requestUri, TimeSpan ttl, TaskCompletionSource<TmdbResponse> owner, IDisposable? lease = null)
+        private async Task FetchAsync(string key, string requestUri, TimeSpan ttl, TaskCompletionSource<TmdbResponse> owner, IDisposable? lease = null,
+            long diskGeneration = 0, long fence = long.MaxValue)
         {
             // Awaited through WhenAny, which never throws, so every outcome of the
             // upstream call (a response, any failure, the upstream timeout) reaches
@@ -619,16 +683,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var upstream = FetchUpstreamAsync(requestUri);
             await Task.WhenAny(upstream).ConfigureAwait(false);
             lease?.Dispose(); // the admission this call owned (GetAdmittedAsync) ends with it
+            List<Entry>? save = null;
             lock (_lock)
             {
                 _inFlight.Remove(key);
-                if (upstream.IsCompletedSuccessfully)
+                if (upstream.IsCompletedSuccessfully && !FencedLocked(key, fence))
                 {
                     var (result, isJson) = upstream.Result;
-                    StoreOutcomeLocked(key, result, isJson, ttl);
+                    save = new List<Entry>();
+                    if (StoreOutcomeLocked(key, result, isJson, ttl) is { } stored) save.Add(stored);
+                    if (isJson && result.IsSuccess) SeedNativeAppendLocked(key, result, save);
                 }
+
+                PruneFencesLocked();
             }
 
+            if (save != null) SaveEntries(save, diskGeneration);
             Complete(owner, upstream);
         }
 
@@ -639,7 +709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// released; a 404 is stored for all of them; any other outcome reaches
         /// the waiters exactly as a standalone call's would.
         /// </summary>
-        private async Task FetchBundleAsync(BundleTarget target, List<BundleMember> members, string requestUri, string apiKey)
+        private async Task FetchBundleAsync(BundleTarget target, List<BundleMember> members, string requestUri, string apiKey, long diskGeneration, long fence)
         {
             var upstream = FetchUpstreamAsync(requestUri);
             await Task.WhenAny(upstream).ConfigureAwait(false);
@@ -669,6 +739,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // every member's waiters exactly as a standalone call's would be.
             var unsplittable = split == null && upstream.IsCompletedSuccessfully && upstream.Result.IsJson && upstream.Result.Response.IsSuccess;
             var refetch = new HashSet<BundleMember>();
+            var save = new List<Entry>();
             lock (_lock)
             {
                 foreach (var member in members)
@@ -682,7 +753,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (split != null && split.TryGetValue(member.Name, out var part))
                     {
-                        StoreOutcomeLocked(member.Key, part, true, LookupTtl);
+                        if (!FencedLocked(member.Key, fence) && StoreOutcomeLocked(member.Key, part, true, LookupTtl) is { } stored) save.Add(stored);
                     }
                     else if (split != null || unsplittable)
                     {
@@ -695,10 +766,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         // A JSON 404 (the title does not exist) is kept briefly
                         // for every member; other statuses stay uncached.
-                        StoreOutcomeLocked(member.Key, upstream.Result.Response, upstream.Result.IsJson, LookupTtl);
+                        if (!FencedLocked(member.Key, fence) && StoreOutcomeLocked(member.Key, upstream.Result.Response, upstream.Result.IsJson, LookupTtl) is { } stored)
+                            save.Add(stored);
                     }
                 }
+
+                PruneFencesLocked();
             }
+
+            SaveEntries(save, diskGeneration);
 
             var fallbackAnswers = new Dictionary<BundleMember, TaskCompletionSource<TmdbResponse>>();
             foreach (var member in members)
@@ -708,7 +784,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var memberPath = member.Name.Length == 0 ? target.TitlePath : target.TitlePath + "/" + member.Name;
                     var fallback = new TaskCompletionSource<TmdbResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
                     fallbackAnswers.Add(member, fallback);
-                    await FetchAsync(member.Key, AppendApiKey(UpstreamUrl(memberPath, string.Empty), apiKey), LookupTtl, fallback);
+                    await FetchAsync(member.Key, AppendApiKey(UpstreamUrl(memberPath, string.Empty), apiKey), LookupTtl, fallback, null, diskGeneration, fence);
                 }
             }
 
@@ -824,17 +900,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // Caller holds _lock. 2xx JSON is kept for the TTL, a JSON 404 briefly.
-        private void StoreOutcomeLocked(string key, TmdbResponse result, bool isJson, TimeSpan ttl)
+        // Caller holds _lock. 2xx JSON is kept for the TTL, a JSON 404 briefly. Returns the stored entry (null: none).
+        private Entry? StoreOutcomeLocked(string key, TmdbResponse result, bool isJson, TimeSpan ttl)
         {
             if (isJson && result.IsSuccess)
             {
-                Store(key, result, ttl);
+                return Store(key, result, ttl);
             }
-            else if (isJson && result.StatusCode == 404)
+
+            if (isJson && result.StatusCode == 404)
             {
-                Store(key, result, NotFoundTtl);
+                return Store(key, result, NotFoundTtl);
             }
+
+            return null;
         }
 
         /// <summary>One upstream call: the response with its ETag, and whether the body is JSON.</summary>
@@ -860,19 +939,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Caller holds _lock.
-        private void Store(string key, TmdbResponse response, TimeSpan ttl)
+        private Entry? Store(string key, TmdbResponse response, TimeSpan ttl)
         {
-            StoreLocked(key, response, _timeProvider.GetUtcNow() + ttl);
+            var stored = StoreLocked(key, response, _timeProvider.GetUtcNow() + ttl);
             ScheduleDebouncedSave();
+            return stored;
         }
 
         // Caller holds _lock.
-        private void StoreLocked(string key, TmdbResponse response, DateTimeOffset expiresAt)
+        private Entry? StoreLocked(string key, TmdbResponse response, DateTimeOffset expiresAt)
         {
             var size = (key.Length + response.Content.Length + response.ETag.Length) * 2L + EntryOverheadBytes;
             if (size > MaxCacheBytes)
             {
-                return;
+                return null;
             }
 
             if (_entries.TryGetValue(key, out var existing))
@@ -888,6 +968,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 RemoveNode(_lru.Last);
             }
+
+            return node.Value;
         }
 
         // Caller holds _lock.
@@ -1021,6 +1103,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _dirty = false;
                 Interlocked.Exchange(ref _firstDirtyTicks, 0);
+                // The server-side cache is then the one disk copy (entries are written there as they are fetched).
+                if (DiskReady()) return;
 
                 try
                 {
@@ -1104,6 +1188,517 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
             if (_dirty) SaveToDisk();
+        }
+
+        // ---- server-side cache (disk tier) ------------------------------------
+        // The disk tier of the raw TMDB cache: with the server-side cache on, every public JSON answer (2xx for its TTL,
+        // a JSON 404 for its ten minutes) is also kept in the cache's <c>tmdbjson</c> namespace, so an answer that left the
+        // 24 MiB memory, or a restart, is read back from disk instead of TMDB. A disk read comes before any admission or
+        // upstream place is asked for, and never renews an answer: its fetch time and expiry travel with it. Free-text
+        // searches (<c>search/*</c>) stay in memory only, and the parental evidence query is left to its own facts
+        // namespace. Keys are hashes of the key hash and the exact URL (never the API key); a record names its key and
+        // resource and is checked against both, its status, type, times and body ETag before it is used.
+
+        /// <summary>The server-side cache namespace of raw TMDB answers.</summary>
+        internal const string DiskNamespace = "tmdbjson";
+
+        private const int DiskSchema = 2;
+        private const long DiskMaxBytes = 256L * 1024 * 1024;
+        private const int DiskMaxEntryBytes = BoundedBody.MaxBytes + 64 * 1024;
+        private const int MaxHeaderBytes = 4096;
+        private const int MaxFences = 4096;
+        private const string UpstreamPrefix = "https://api.themoviedb.org/3/";
+
+        private static readonly AsyncLocal<CachedOnlyProbe?> CachedOnly = new();
+
+        // The parental evidence query (TitleParentalEvidenceProvider): its facts have their own namespace.
+        private static readonly HashSet<string> EvidenceQueries = new(StringComparer.Ordinal)
+        {
+            "?language=en-US&append_to_response=release_dates", "?language=en-US&append_to_response=release_dates,keywords",
+            "?language=en-US&append_to_response=content_ratings", "?language=en-US&append_to_response=content_ratings,keywords",
+        };
+
+        private static readonly Regex NativeAppendPattern = new(
+            @"^https://api\.themoviedb\.org/3/(movie|tv)/([0-9]{1,9})\?append_to_response=([a-z_/,]+)$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        private readonly ServerBlobCache? _disk;
+        // Keys forgotten while a read of theirs may be under way, with the fence clock at the time (bounded).
+        private readonly Dictionary<string, long> _fences = new(StringComparer.Ordinal);
+        private long _fenceClock;
+        private long _fenceFloor;
+        private int _activeReads;
+        private int _diskHits;
+        private int _diskOn;
+        private int _promoting;
+
+        /// <summary>Answers read back from disk into memory (tests, diagnostics).</summary>
+        internal int DiskHits => Volatile.Read(ref _diskHits);
+
+        /// <summary>
+        /// Runs <paramref name="read"/> answering only from what is already known (memory or disk): a read that would
+        /// need TMDB gets a local "busy" answer instead and the probe reports a miss. Hit is true only when every read
+        /// was answered that way, so an owner can skip its admission for answers that cost no upstream place.
+        /// </summary>
+        /// <typeparam name="T">The owner's answer.</typeparam>
+        /// <param name="read">The owner's read, calling <see cref="GetAsync"/>.</param>
+        /// <returns>Whether everything was known, and the answer.</returns>
+        internal static async Task<(bool Hit, T Value)> CachedOnlyAsync<T>(Func<Task<T>> read)
+        {
+            var probe = new CachedOnlyProbe();
+            CachedOnly.Value = probe;
+            try
+            {
+                var value = await read().ConfigureAwait(false);
+                return (!probe.Missed, value);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return (false, default!);
+            }
+        }
+
+        /// <summary>Whether a read under <see cref="CachedOnlyAsync{T}"/> needed TMDB.</summary>
+        private sealed class CachedOnlyProbe
+        {
+            public bool Missed;
+        }
+
+        /// <summary>
+        /// Loads the answer for <c>{apiPath}{query}</c> from disk into memory when it is there and still valid; true
+        /// when memory holds a fresh answer afterwards. Never asks TMDB; false when the cache is off.
+        /// </summary>
+        internal Task<bool> HydrateAsync(string apiPath, string query, string apiKey, CancellationToken ct)
+        {
+            var url = UpstreamUrl(apiPath, query);
+            if (_disk == null || !Durable(url) || !DiskReady()) return Task.FromResult(false);
+            string hash;
+            lock (_lock) hash = GetKeyHash(apiKey);
+            return HydrateKeyAsync(hash, url, ct);
+        }
+
+        private async Task<TmdbResponse> CachedOnlyGetAsync(CachedOnlyProbe probe, string apiPath, string query, string apiKey, bool bundle, bool refresh, CancellationToken ct)
+        {
+            if (!refresh)
+            {
+                var target = bundle ? ResolveBundleTarget(apiPath, query) : null;
+                var path = target?.CanonicalPath ?? apiPath;
+                var q = target.HasValue ? string.Empty : query;
+                if (TryGetCached(path, q, apiKey, out var hit)
+                    || (await HydrateAsync(path, q, apiKey, ct).ConfigureAwait(false) && TryGetCached(path, q, apiKey, out hit)))
+                {
+                    return hit;
+                }
+            }
+
+            probe.Missed = true;
+            return new TmdbResponse(503, "{}", string.Empty) { AdmissionBusy = true };
+        }
+
+        private async Task<TmdbResponse> GetAfterDiskAsync(List<(string Hash, string Url)> keys, string apiPath, string query, string apiKey, bool bundle, CancellationToken ct)
+        {
+            // A bundle's members are read together, so a cold title whose siblings are saved fetches only what is missing.
+            await Task.WhenAll(keys.Select(k => HydrateKeyAsync(k.Hash, k.Url, ct))).ConfigureAwait(false);
+            return await GetCore(apiPath, query, apiKey, ct, bundle, refresh: false).ConfigureAwait(false);
+        }
+
+        private async Task<TmdbResponse> ListMetadataAfterDiskAsync(string apiPath, string query, string apiKey, CancellationToken ct)
+        {
+            await HydrateAsync(apiPath, query, apiKey, ct).ConfigureAwait(false);
+            return await ListMetadataCore(apiPath, query, apiKey, ct, refresh: false).ConfigureAwait(false);
+        }
+
+        private async Task<IReadOnlyDictionary<int, TmdbResponse>?> PeopleAfterDiskAsync(int[] ids, string apiKey,
+            Func<Task<IReadOnlyDictionary<int, TmdbResponse>?>> then, CancellationToken ct)
+        {
+            await Parallel.ForEachAsync(ids, new ParallelOptions { MaxDegreeOfParallelism = 16, CancellationToken = ct },
+                async (id, token) => await HydrateAsync("person/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, apiKey, token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+            return await then().ConfigureAwait(false);
+        }
+
+        /// <summary>The disk entries worth reading before a request (null: memory has it, a read runs, or it is never on disk).</summary>
+        private List<(string Hash, string Url)>? DiskCandidates(string apiPath, string query, string apiKey, bool bundle)
+        {
+            if (_disk == null) return null;
+            var target = bundle ? ResolveBundleTarget(apiPath, query) : null;
+            var url = UpstreamUrl(target?.CanonicalPath ?? apiPath, target.HasValue ? string.Empty : query);
+            if (!Durable(url)) return null;
+            var now = _timeProvider.GetUtcNow();
+            lock (_lock)
+            {
+                var hash = GetKeyHash(apiKey);
+                bool Known(string u) => (_entries.TryGetValue(hash + "|" + u, out var node) && node.Value.ExpiresAt > now) || _inFlight.ContainsKey(hash + "|" + u);
+                if (Known(url)) return null;
+                var keys = new List<(string Hash, string Url)> { (hash, url) };
+                if (target is { } t)
+                {
+                    foreach (var member in BundleMemberNames(t.MediaType))
+                    {
+                        var memberUrl = UpstreamUrl(member == null ? t.TitlePath : t.TitlePath + "/" + member, string.Empty);
+                        if (memberUrl != url && !Known(memberUrl)) keys.Add((hash, memberUrl));
+                    }
+                }
+
+                return keys;
+            }
+        }
+
+        /// <summary>One entry from disk into memory, unless it was forgotten meanwhile; true when memory holds it fresh.</summary>
+        private async Task<bool> HydrateKeyAsync(string keyHash, string upstreamUrl, CancellationToken ct)
+        {
+            var key = keyHash + "|" + upstreamUrl;
+            long fence;
+            lock (_lock)
+            {
+                if (TryGetFreshLocked(key, out _)) return true;
+                if (_inFlight.ContainsKey(key)) return false;
+                fence = _fenceClock;
+                _activeReads++;
+            }
+
+            var loaded = false;
+            try
+            {
+                var entry = await _disk!.TryGetAsync(DiskNamespace, DiskKey(keyHash, upstreamUrl), ct).ConfigureAwait(false);
+                if (entry != null && Decode(entry, keyHash, upstreamUrl) is { } record)
+                {
+                    lock (_lock)
+                    {
+                        if (!FencedLocked(key, fence))
+                        {
+                            if (TryGetFreshLocked(key, out _))
+                            {
+                                loaded = true;
+                            }
+                            else if (StoreLocked(key, record.Response, record.ExpiresAt) is { } stored)
+                            {
+                                // Already on disk; no renewed lifetime (the record's own expiry).
+                                stored.Saved = 1;
+                                loaded = true;
+                                _diskHits++;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _activeReads--;
+                    PruneFencesLocked();
+                }
+            }
+
+            return loaded;
+        }
+
+        /// <summary>True while the server-side cache is on and usable; the first time it is, saves what memory already holds.</summary>
+        private bool DiskReady()
+        {
+            if (_disk == null) return false;
+            var on = _disk.Enabled;
+            if (!on) Volatile.Write(ref _diskOn, 0);
+            else if (Interlocked.Exchange(ref _diskOn, 1) == 0) _ = Task.Run(PromoteAsync);
+            return on;
+        }
+
+        private long DiskGeneration() => _disk?.Generation ?? 0;
+
+        /// <summary>
+        /// Saves the fresh entries memory holds that aren't on disk yet (those fetched while the cache was off, and the
+        /// legacy snapshot's entries loaded at startup, with their original fetch time and expiry); entries of unknown
+        /// fetch time and free-text searches are left out. When everything was saved, the legacy snapshot file is renamed
+        /// (<c>.migrated</c>), so it isn't loaded or imported again; it is kept for a rollback by hand.
+        /// </summary>
+        internal async Task PromoteAsync()
+        {
+            if (Interlocked.Exchange(ref _promoting, 1) == 1) return;
+            try
+            {
+                var generation = DiskGeneration();
+                var now = _timeProvider.GetUtcNow();
+                List<Entry> pending;
+                lock (_lock)
+                {
+                    pending = _lru.Where(e => Volatile.Read(ref e.Saved) == 0 && e.ExpiresAt > now && e.Response.FetchedAtUtc > DateTime.MinValue
+                        && Durable(UrlOf(e.Key))).ToList();
+                }
+
+                var failed = 0;
+                foreach (var entry in pending)
+                {
+                    if (Interlocked.Exchange(ref entry.Saved, 1) == 0 && !await WriteAsync(entry, generation).ConfigureAwait(false)) failed++;
+                }
+
+                if (failed == 0 && _disk?.Enabled == true) RetireLegacyFile();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger?.Warning($"[TMDB cache] Saving to the server-side cache failed: {ex.GetType().Name}");
+            }
+            finally
+            {
+                Volatile.Write(ref _promoting, 0);
+            }
+        }
+
+        private void RetireLegacyFile()
+        {
+            if (_diskPath == null || !File.Exists(_diskPath)) return;
+            try
+            {
+                File.Move(_diskPath, _diskPath + ".migrated", overwrite: true);
+                _logger?.Info("[TMDB cache] Moved to the server-side cache; the old snapshot was renamed tmdb-cache.json.migrated");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.Warning($"[TMDB cache] Could not rename the old snapshot: {ex.Message}");
+            }
+        }
+
+        /// <summary>Starts the disk writes of entries just stored (fetched after <paramref name="generation"/> was captured).</summary>
+        private void SaveEntries(List<Entry> entries, long generation)
+        {
+            if (entries.Count == 0 || !DiskReady()) return;
+            foreach (var entry in entries)
+            {
+                if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key)) && Interlocked.Exchange(ref entry.Saved, 1) == 0)
+                    _ = WriteAsync(entry, generation);
+            }
+        }
+
+        private async Task<bool> WriteAsync(Entry entry, long generation)
+        {
+            try
+            {
+                var bar = entry.Key.IndexOf('|', StringComparison.Ordinal);
+                var keyHash = entry.Key[..bar];
+                var url = entry.Key[(bar + 1)..];
+                var bytes = Encode(entry, DiskDigest(keyHash, url), url);
+                return await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
+                    generation, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Removes the disk copy of a forgotten answer (a disk read under way is fenced by the caller).</summary>
+        private void ForgetOnDisk(string keyHash, string upstreamUrl)
+        {
+            if (_disk == null || !Durable(upstreamUrl)) return;
+            _ = _disk.ForgetAsync(DiskNamespace, DiskKey(keyHash, upstreamUrl), CancellationToken.None);
+            // A disk read that began before the file was removed (after the first fence) can't put it back now.
+            lock (_lock)
+            {
+                var key = keyHash + "|" + upstreamUrl;
+                FenceLocked(key);
+                if (_entries.TryGetValue(key, out var node)) RemoveNode(node);
+            }
+        }
+
+        // Caller holds _lock.
+        private void FenceLocked(string key)
+        {
+            if (_fences.Count >= MaxFences)
+            {
+                // Bounded: everything that started before now counts as fenced.
+                _fences.Clear();
+                _fenceFloor = _fenceClock + 1;
+            }
+
+            _fences[key] = ++_fenceClock;
+        }
+
+        // Caller holds _lock. True when a read that started at fence clock <paramref name="started"/> was overtaken by a Forget.
+        private bool FencedLocked(string key, long started)
+            => started < _fenceFloor || (_fences.TryGetValue(key, out var at) && at > started);
+
+        // Caller holds _lock. With no read of any key under way, no old fence can matter any more.
+        private void PruneFencesLocked()
+        {
+            if (_activeReads <= 0 && _inFlight.Count == 0) _fences.Clear();
+        }
+
+        /// <summary>
+        /// The profiler's overlap (perf-details-open FIX BRIEF item 2): a successful native details read
+        /// (<c>movie|tv/{id}?append_to_response=</c> the native set, no language) already holds the generic proxy's base
+        /// title, watch providers and the movie's release dates or the series' content ratings, in their standalone shape
+        /// once split. Those are stored under their own keys with the read's fetch time and expiry (never "now"), unless
+        /// a fresh copy or a read of them already exists, so the generic extras don't fetch them again. Reviews and
+        /// anything else stay their own reads. A body that isn't this title (its id) seeds nothing. Caller holds _lock.
+        /// </summary>
+        private void SeedNativeAppendLocked(string key, TmdbResponse response, List<Entry> save)
+        {
+            var bar = key.IndexOf('|', StringComparison.Ordinal);
+            var match = NativeAppendPattern.Match(key[(bar + 1)..]);
+            if (!match.Success || !_entries.TryGetValue(key, out var source)) return;
+            var kind = match.Groups[1].Value;
+            var expected = kind == "movie" ? NativeDetails.TmdbNativeShape.MovieAppend : NativeDetails.TmdbNativeShape.SeriesAppend;
+            if (!string.Equals(match.Groups[3].Value, expected, StringComparison.Ordinal)) return;
+            var id = long.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+            var members = kind == "movie" ? new[] { "release_dates", "watch/providers" } : new[] { "content_ratings", "watch/providers" };
+            Dictionary<string, TmdbResponse> parts;
+            try
+            {
+                parts = SplitAppended(response.Content, expected.Split(','), members, id);
+            }
+            catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or OverflowException)
+            {
+                return;
+            }
+
+            var prefix = key[..(bar + 1)];
+            var titlePath = kind + "/" + match.Groups[2].Value;
+            var now = _timeProvider.GetUtcNow();
+            foreach (var (name, part) in parts)
+            {
+                var memberKey = prefix + UpstreamUrl(name.Length == 0 ? titlePath : titlePath + "/" + name, string.Empty);
+                if ((_entries.TryGetValue(memberKey, out var existing) && existing.Value.ExpiresAt > now) || _inFlight.ContainsKey(memberKey)) continue;
+                if (StoreLocked(memberKey, part with { FetchedAtUtc = response.FetchedAtUtc }, source.Value.ExpiresAt) is { } stored) save.Add(stored);
+            }
+        }
+
+        /// <summary>
+        /// Splits an append_to_response body: the title without every appended property, and each of
+        /// <paramref name="members"/> in its standalone shape (the title's id first). Null when the body isn't title
+        /// <paramref name="id"/>; a member TMDB left out (or not an object) is absent.
+        /// </summary>
+        internal static Dictionary<string, TmdbResponse> SplitAppended(string body, IReadOnlyCollection<string> appended, IReadOnlyCollection<string> members, long id)
+        {
+            var parts = new Dictionary<string, TmdbResponse>(StringComparer.Ordinal);
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("id", out var idElement)
+                || idElement.ValueKind != JsonValueKind.Number || !idElement.TryGetInt64(out var actual) || actual != id)
+            {
+                return parts;
+            }
+
+            var names = new HashSet<string>(appended, StringComparer.Ordinal);
+            var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (!names.Contains(property.Name)) property.WriteTo(writer);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            parts[string.Empty] = ToResponse(buffer);
+            foreach (var member in members)
+            {
+                if (!root.TryGetProperty(member, out var element) || element.ValueKind != JsonValueKind.Object) continue;
+                buffer.SetLength(0);
+                using (var writer = new Utf8JsonWriter(buffer))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("id", id);
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        if (property.Name != "id") property.WriteTo(writer);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                parts[member] = ToResponse(buffer);
+            }
+
+            return parts;
+        }
+
+        /// <summary>Whether an answer may be kept on disk: not a free-text search, not the parental evidence query.</summary>
+        internal static bool Durable(string upstreamUrl)
+        {
+            if (!upstreamUrl.StartsWith(UpstreamPrefix, StringComparison.Ordinal)) return false;
+            var resource = upstreamUrl[UpstreamPrefix.Length..];
+            var q = resource.IndexOf('?', StringComparison.Ordinal);
+            var path = q >= 0 ? resource[..q] : resource;
+            if (path.Equals("search", StringComparison.OrdinalIgnoreCase) || path.StartsWith("search/", StringComparison.OrdinalIgnoreCase)) return false;
+            return q < 0 || !EvidenceQueries.Contains(resource[q..]);
+        }
+
+        private static string UrlOf(string key) => key[(key.IndexOf('|', StringComparison.Ordinal) + 1)..];
+
+        /// <summary>The digest naming an answer: SHA-256 of the versioned, length-delimited service, key hash and URL.</summary>
+        private static string DiskDigest(string keyHash, string upstreamUrl)
+        {
+            var text = new StringBuilder();
+            foreach (var part in new[] { "tmdb-api-3", "v" + DiskSchema.ToString(CultureInfo.InvariantCulture), keyHash, upstreamUrl })
+                text.Append(part.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(part);
+            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
+        }
+
+        private static string DiskKey(string keyHash, string upstreamUrl) => "tmdbjson/" + DiskSchema.ToString(CultureInfo.InvariantCulture) + "/" + DiskDigest(keyHash, upstreamUrl);
+
+        /// <summary>A record: one header line (JSON: schema, digest, resource, status, type, ETag, fetched, expires), then the body.</summary>
+        private static byte[] Encode(Entry entry, string digest, string upstreamUrl)
+        {
+            var header = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(header))
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("v", DiskSchema);
+                writer.WriteString("d", digest);
+                writer.WriteString("r", upstreamUrl[UpstreamPrefix.Length..]);
+                writer.WriteNumber("s", entry.Response.StatusCode);
+                writer.WriteString("t", ServerBlobCache.JsonContentType);
+                writer.WriteString("e", entry.Response.ETag);
+                writer.WriteNumber("f", entry.Response.FetchedAtUtc.Ticks);
+                writer.WriteNumber("x", entry.ExpiresAt.UtcTicks);
+                writer.WriteEndObject();
+            }
+
+            var body = Encoding.UTF8.GetBytes(entry.Response.Content);
+            var bytes = new byte[header.Length + 1 + body.Length];
+            header.GetBuffer().AsSpan(0, (int)header.Length).CopyTo(bytes);
+            bytes[header.Length] = (byte)'\n';
+            body.CopyTo(bytes, header.Length + 1);
+            return bytes;
+        }
+
+        /// <summary>A record read back, if it is this key's, a stored outcome, within its TTL and intact (its ETag).</summary>
+        private (TmdbResponse Response, DateTimeOffset ExpiresAt)? Decode(ServerCacheEntry entry, string keyHash, string upstreamUrl)
+        {
+            try
+            {
+                if (entry.ContentType != ServerBlobCache.JsonContentType) return null;
+                var newline = Array.IndexOf(entry.Bytes, (byte)'\n', 0, Math.Min(entry.Bytes.Length, MaxHeaderBytes));
+                if (newline <= 0) return null;
+                using var header = JsonDocument.Parse(entry.Bytes.AsMemory(0, newline));
+                var h = header.RootElement;
+                var resource = upstreamUrl[UpstreamPrefix.Length..];
+                if (h.ValueKind != JsonValueKind.Object
+                    || !h.TryGetProperty("v", out var v) || !v.TryGetInt32(out var schema) || schema != DiskSchema
+                    || h.GetProperty("d").GetString() != DiskDigest(keyHash, upstreamUrl)
+                    || h.GetProperty("r").GetString() != resource
+                    || h.GetProperty("t").GetString() != ServerBlobCache.JsonContentType) return null;
+                var status = h.GetProperty("s").GetInt32();
+                var fetched = h.GetProperty("f").GetInt64();
+                var expires = h.GetProperty("x").GetInt64();
+                if (!(status is >= 200 and <= 299 or 404) || fetched <= 0 || expires <= fetched || expires > DateTime.MaxValue.Ticks) return null;
+                var fetchedAt = new DateTime(fetched, DateTimeKind.Utc);
+                var expiresAt = new DateTimeOffset(expires, TimeSpan.Zero);
+                var now = _timeProvider.GetUtcNow();
+                // Not from the future, still valid, and never valid for longer than this answer's own TTL.
+                var ttl = status == 404 ? NotFoundTtl : GetTtl(resource);
+                if (fetchedAt > now.UtcDateTime.AddMinutes(1) || expiresAt <= now || expiresAt > new DateTimeOffset(fetchedAt) + ttl + TimeSpan.FromMinutes(1)) return null;
+                var content = Encoding.UTF8.GetString(entry.Bytes, newline + 1, entry.Bytes.Length - newline - 1);
+                var etag = ComputeETag(content);
+                if (h.GetProperty("e").GetString() != etag) return null;
+                return (new TmdbResponse(status, content, etag) { FetchedAtUtc = fetchedAt }, expiresAt);
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException)
+            {
+                return null;
+            }
         }
     }
 }
