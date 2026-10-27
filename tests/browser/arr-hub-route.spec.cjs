@@ -352,3 +352,152 @@ for (const gap of [0, 40, 150]) {
     expect(await shownPages(page)).toEqual(['route-search']);
   });
 }
+
+// Review r4 probes, ported. The page's history listener no longer stops events (Jellyfin's router, added first, has
+// seen them anyway; stopping only starved JE's later listeners, such as the header launcher's close on hashchange),
+// and the address as it is now decides, so a queued older Requests hashchange cannot undo a departure.
+
+const state = page => page.evaluate(() => {
+ const s=JellyfinEnhanced.internals.arrHub.state;
+ return {hash:location.hash,title:document.title,visible:s.visible,visit:s.visit,watch:!!s.watch,titleWatch:!!s.titleWatch,
+ shown:[...document.querySelectorAll('.mainAnimatedPage:not(.hide)')].filter(n=>n.getClientRects().length).map(n=>n.id)};
+});
+async function observe(page) {
+ await page.addInitScript(()=>{
+  window.__intercepts=[];
+  const add=EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener=function(type,fn,options){
+   if(this===window && ['popstate','hashchange'].includes(type) && fn.name==='intercept' && new Error().stack.includes('/hub-page.js')) {
+    const original=fn;
+    fn=function(e){
+     const s=JellyfinEnhanced.internals.arrHub.state;
+     const before={type,hash:location.hash,newHash:e.newURL?new URL(e.newURL).hash:null,parking:s.parking,before:s.visible,time:performance.now()};
+     try{return original.call(this,e);}finally{window.__intercepts.push({...before,after:s.visible,visit:s.visit,watch:!!s.watch,titleWatch:!!s.titleWatch});}
+    };
+   }
+   return add.call(this,type,fn,options);
+  };
+ });
+}
+async function subscribers(page) {
+ await page.evaluate(()=>{
+  window.__later=[];window.__shared=[];
+  for(const type of ['popstate','hashchange','je:navigate']) for(const capture of [true,false]) window.addEventListener(type,e=>{
+   window.__later.push({type,capture,hash:location.hash,newHash:e.newURL?new URL(e.newURL).hash:null,parking:JellyfinEnhanced.internals.arrHub.state.parking});
+  },capture);
+  JellyfinEnhanced.core.navigation.onNavigate(e=>window.__shared.push({type:e?.type,hash:location.hash,parking:JellyfinEnhanced.internals.arrHub.state.parking}));
+ });
+}
+async function hub(page) {
+ await page.evaluate(()=>{location.hash='#/requests';});await expectHubShown(page);
+ await page.waitForTimeout(100);
+}
+for(const origin of ['home','details']) test('event-time Back cleanup to warmed '+origin+' needs no native commit',async({page,arr})=>{
+ await observe(page);await visit(page,'#/search',1280);
+ await page.evaluate(origin=>{location.hash=origin==='home'?'#/home':'#/details?id=1';},origin);
+ await expect(page.locator('#route-'+origin)).toBeVisible();await hub(page);await subscribers(page);
+ await page.evaluate(()=>{window.__mockRouter.hold();window.__intercepts=[];});
+ await page.goBack();
+ const immediate=await state(page);
+ const events=await page.evaluate(()=>({intercepts:window.__intercepts,later:window.__later,shared:window.__shared}));
+ expect(immediate.visible).toBe(false);expect(immediate.watch).toBe(false);expect(immediate.titleWatch).toBe(false);
+ const departure=events.intercepts.find(x=>x.type==='popstate'&&!x.parking);
+ expect(departure).toBeDefined();expect(departure.after).toBe(false);expect(departure.watch).toBe(false);expect(departure.titleWatch).toBe(false);
+ // Event delivery is distinct from the shared service's legitimate same-href deduplication.
+ expect(events.later.some(x=>x.type==='popstate'&&!x.capture&&x.hash===immediate.hash)).toBe(true);
+ await page.evaluate(()=>window.__mockRouter.release());
+ await expect(page.locator('#route-'+origin)).toBeVisible();
+ await page.waitForTimeout(1400);
+ expect(await state(page)).toMatchObject({visible:false,title:origin==='home'?'Home':'Movie details',shown:['route-'+origin]});
+});
+for(const delay of [0,5,40]) test('Back immediately followed by Forward at '+delay+' ms',async({page,arr})=>{
+ await observe(page);await visit(page,'#/details?id=1',390);await hub(page);
+ await page.evaluate(delay=>{
+  window.__intercepts=[];
+  window.addEventListener('popstate',function forward(){if(location.hash==='#/details?id=1'){
+   window.removeEventListener('popstate',forward,true);setTimeout(()=>history.forward(),delay);
+  }},true);
+  history.back();
+ },delay);
+ await page.waitForFunction(()=>window.__intercepts.some(x=>x.type==='popstate'&&x.hash==='#/details?id=1'&&!x.after));
+ await expect(page).toHaveURL(/#\/requests$/);await expectHubShown(page);await expectPhoneHeader(page);
+ await page.waitForTimeout(1400);expect(await state(page)).toMatchObject({visible:true,title:'Requests',shown:['je-requests-hub-page']});
+ await page.evaluate(()=>{location.hash='#/search';});await expect(page.locator('#route-search')).toBeVisible();
+ await page.waitForTimeout(1400);expect(await state(page)).toMatchObject({visible:false,title:'Search',shown:['route-search']});
+});
+for(const method of ['hash','replace']) test('Requests query-only changes keep the same visible visit via '+method,async({page,arr})=>{
+ await observe(page);await visit(page,'#/home',390);await hub(page);await subscribers(page);
+ const before=await state(page);
+ await page.evaluate(method=>{
+  window.__intercepts=[];
+  for(const hash of ['#/requests?tab=soon','#/requests?tab=ready&serverId=fixture','#/requests?tab=mine']){
+   if(method==='replace')history.replaceState(history.state,'',hash);else location.hash=hash;
+  }
+ },method);
+ await page.waitForTimeout(1500);
+ const after=await state(page);
+ expect(after).toMatchObject({visible:true,visit:before.visit,title:'Requests',shown:['je-requests-hub-page']});
+ expect(await page.locator('.je-hub-tab[data-tab="mine"]').getAttribute('aria-selected')).toBe('true');
+ expect((await page.evaluate(()=>window.__intercepts)).some(x=>x.before&&!x.after)).toBe(false);
+});
+test('synthetic parking popstate keeps the hub; genuine Home popstate leaves it',async({page,arr})=>{
+ await observe(page);await visit(page,'#/requests',390);await expectHubShown(page);
+ const entry=await page.evaluate(()=>window.__intercepts);
+ const parked=entry.filter(x=>x.type==='popstate'&&x.parking);
+ expect(parked.length).toBeGreaterThan(0);for(const e of parked){expect(e.hash).toBe('#/home');expect(e.after).toBe(true);}
+ await subscribers(page);
+ const result=await page.evaluate(()=>{
+  history.replaceState(history.state,'','#/home');
+  // A host that dispatches its own popstate after a real replaceState departure.
+  window.dispatchEvent(new PopStateEvent('popstate',{state:history.state}));
+  const s=JellyfinEnhanced.internals.arrHub.state;return {visible:s.visible,watch:!!s.watch,titleWatch:!!s.titleWatch,later:window.__later,shared:window.__shared};
+ });
+ expect(result.visible).toBe(false);expect(result.watch).toBe(false);expect(result.titleWatch).toBe(false);
+ expect(result.later.some(x=>x.type==='popstate'&&!x.capture&&x.hash==='#/home')).toBe(true);
+ await expect(page.locator('#route-home')).toBeVisible();await page.waitForTimeout(1400);await expect(page).toHaveTitle('Home');
+});
+test('another JE module replaceState departure reaches shared navigation synchronously',async({page,arr})=>{
+ await visit(page,'#/home',1280);await hub(page);await subscribers(page);
+ const result=await page.evaluate(()=>{
+  history.replaceState(history.state,'','#/search?query=je');
+  const s=JellyfinEnhanced.internals.arrHub.state;
+  return {visible:s.visible,watch:!!s.watch,titleWatch:!!s.titleWatch,shared:window.__shared,later:window.__later,hash:location.hash};
+ });
+ expect(result.visible).toBe(false);expect(result.watch).toBe(false);expect(result.titleWatch).toBe(false);
+ expect(result.shared).toEqual([{type:'je:navigate',hash:'#/search?query=je',parking:false}]);
+ expect(result.later.some(x=>x.type==='je:navigate'&&!x.capture&&x.hash==='#/search?query=je')).toBe(true);
+ await page.waitForTimeout(1400);expect(await state(page)).toMatchObject({visible:false,hash:'#/search?query=je'});
+});
+test('Requests hashchange reaches the shared module and JE listeners added after hub initialization',async({page,arr})=>{
+ await visit(page,'#/home',390);await subscribers(page);await hub(page);
+ await page.evaluate(()=>{window.__later=[];window.__shared=[];location.hash='#/requests?tab=soon';});
+ await expect(page.locator('.je-hub-tab[data-tab="soon"]')).toHaveAttribute('aria-selected','true');
+ await page.waitForTimeout(100);
+ const result=await page.evaluate(()=>({shared:window.__shared,later:window.__later}));
+ expect(result.shared.some(x=>x.hash==='#/requests?tab=soon'&&!x.parking)).toBe(true);
+ expect(result.later.some(x=>x.type==='hashchange'&&x.newHash==='#/requests?tab=soon')).toBe(true);
+});
+test('production header launcher closes on Requests query-only hashchange',async({page,arr})=>{
+ await visit(page,'#/home',390);await hub(page);
+ await page.evaluate(()=>{
+  const tray=JellyfinEnhanced.headerActions.getTray();
+  for(let i=0;i<8;i++){const b=document.createElement('button');b.className='headerButton';b.id='review-source-'+i;b.title='Review action '+i;b.textContent='Action '+i;b.style.width='80px';tray.append(b);}
+ });
+ await page.locator('#je-header-launcher').click();
+ await expect(page.locator('#je-header-launcher-panel')).toHaveAttribute('open','');
+ await page.evaluate(()=>{location.hash='#/requests?tab=soon';});
+ await expect(page.locator('.je-hub-tab[data-tab="soon"]')).toHaveAttribute('aria-selected','true');
+ await page.waitForTimeout(1400);
+ await expect(page.locator('#je-header-launcher-panel')).not.toHaveAttribute('open','');
+});
+
+// A different JE module can replace the address in the same task as a hash move;
+// its je:navigate cleanup happens before the browser delivers the queued hashchange.
+test('a queued Requests tab hashchange cannot undo another module replaceState departure',async({page,arr})=>{
+ await observe(page);await visit(page,'#/home',1280);await hub(page);await subscribers(page);
+ await page.evaluate(()=>{window.__intercepts=[];location.hash='#/requests?tab=soon';history.replaceState(history.state,'','#/search?query=je');});
+ await page.waitForTimeout(1500);
+ const result=await state(page);
+ expect(result).toMatchObject({hash:'#/search?query=je',visible:false});
+});
+

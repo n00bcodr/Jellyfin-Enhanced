@@ -59,24 +59,6 @@
     let pageNode = null;
 
     /**
-     * Whether listeners on the window run in the order they were added, capturing or not (Chromium). Jellyfin's
-     * router added its popstate listener before this page's, so there it sees the Requests URL first; engines that
-     * run capturing listeners first (Firefox) let intercept() keep it from the router.
-     */
-    const routerSeesFirst = (() => {
-        try {
-            const target = new EventTarget();
-            let first = null;
-            target.addEventListener('order', () => { first = first || 'added'; });
-            target.addEventListener('order', () => { first = first || 'capture'; }, true);
-            target.dispatchEvent(new Event('order'));
-            return first === 'added';
-        } catch {
-            return false;
-        }
-    })();
-
-    /**
      * Translates through the shared status helper.
      * @param {string} key en.json key.
      * @param {Object} [params] Parameters.
@@ -925,23 +907,22 @@
     }
 
     /**
-     * Claims #/requests before Jellyfin's router (which has no such page), and leaves it on any history move away.
+     * Follows every history move itself (not only through the shared navigation module, which drops a move back to
+     * the address it saw last). Added after Jellyfin's router and stopping nothing, so every other listener gets the
+     * event too; the address as it is now decides, so an older queued event never shows the page again after it
+     * was left. Jellyfin's router has just seen a move to #/requests (its listener came first) and is parked on
+     * Home under the page before it draws its "Page not found".
      * @param {HashChangeEvent|PopStateEvent} e Event.
      * @returns {void}
      */
     function intercept(e) {
         if (state.parking) return;
-        const hash = e?.newURL ? new URL(e.newURL).hash : window.location.hash;
-        if (!isRoute(hash)) {
-            // Every history move away from Requests leaves it, whatever the shared navigation module passes on: it
-            // drops a move back to the address it saw last, and in Firefox it never saw #/requests (stopped here).
-            if (state.visible && !isRoute()) hide();
+        if (!isRoute()) {
+            if (state.visible) hide();
             return;
         }
-        e.stopImmediatePropagation?.();
-        e.preventDefault?.();
         show();
-        if (e.type === 'popstate' && routerSeesFirst && state.visible) parkRouter(true);
+        if (e.type === 'popstate' && state.visible) parkRouter(true);
     }
 
     /**
@@ -954,8 +935,8 @@
         H.injectStyles?.();
         injectNavigation();
         JE.helpers?.onSidebarRebuilt?.('requests-hub', '.je-nav-requests-hub-item', injectNavigation);
-        window.addEventListener('hashchange', intercept, true);
-        window.addEventListener('popstate', intercept, true);
+        window.addEventListener('hashchange', intercept);
+        window.addEventListener('popstate', intercept);
         const lifecycle = JE.core?.lifecycle?.register('arr-hub');
         const off = JE.core?.navigation?.onNavigate?.(handleNavigation);
         if (lifecycle && off) lifecycle.track(off);

@@ -1310,3 +1310,33 @@ test('a history move away leaves Requests even when the shared navigation module
   await wait(1300);
   assert.equal(h.document.title, 'Details', 'no claim of the left visit runs');
 });
+
+// Review r4: a Requests hashchange delivered after another module already replaced the address elsewhere (the hub
+// left at that replacement) must not show the page again or take the address back.
+test('a queued Requests hashchange cannot undo a departure made before it was delivered', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  go(h, '#/requests');
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  h.window.history.replaceState(null, '', '#/search?query=je');
+  for (const fn of h.navigation) fn();
+  assert.ok(page.classList.contains('hide'));
+  h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange', { oldURL: 'http://jellyfin.test/web/index.html#/requests', newURL: 'http://jellyfin.test/web/index.html#/requests?tab=soon' }));
+  assert.equal(h.window.location.hash, '#/search?query=je', 'the address stays where the other module put it');
+  assert.ok(page.classList.contains('hide'), 'the page stays left');
+});
+
+// Review r4: the page's own history listener stops nothing, so listeners added after it still get the event.
+test('listeners added after the Requests page still get its history events', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  const seen = [];
+  h.window.addEventListener('hashchange', () => seen.push('hashchange'));
+  h.window.addEventListener('popstate', () => seen.push('popstate'));
+  h.window.history.pushState(null, '', '#/requests?tab=soon');
+  h.window.dispatchEvent(new h.window.PopStateEvent('popstate', { state: null }));
+  h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange', { newURL: h.window.location.href }));
+  assert.ok(seen.includes('popstate') && seen.includes('hashchange'), JSON.stringify(seen));
+  assert.ok(!h.document.getElementById('je-requests-hub-page').classList.contains('hide'));
+});
