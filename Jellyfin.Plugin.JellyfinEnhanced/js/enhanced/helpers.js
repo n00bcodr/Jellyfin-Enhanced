@@ -182,22 +182,38 @@
     }
 
     /**
-     * Reads an item from the server. JE's own transport sends it uncached (`no-store`): jellyfin-web reads the same
-     * URL as it opens a details page, and the browser's HTTP cache would otherwise hold the page's own read until
-     * JE's finished (it lets one request per URL at a time through its cache). The transport also drops a read
-     * started under an earlier Hidden Content / Spoiler Guard policy or by another session.
+     * Reads an item from the server, uncached (`no-store`): jellyfin-web reads the same URL as it opens a details
+     * page, and the browser's HTTP cache would otherwise hold the page's own read until JE's finished (it lets one
+     * request per URL at a time through its cache). Like ApiClient.getItem it takes no place in JE's request limit
+     * (the page's own JE requests would wait behind it). An answer for a session that has ended since is dropped.
      * @param {string} userId
      * @param {string} itemId
      * @returns {Promise<object>}
      */
-    function readItem(userId, itemId) {
-        if (typeof JE.core?.api?.jf === 'function') {
-            // Its own binding: which reads are shared is decided here (getItemCached), so the transport never joins a
-            // read this owner has already let go of.
-            const bound = typeof JE.core.api.session === 'function' ? { session: JE.core.api.session(), current: () => true } : undefined;
-            return JE.core.api.jf(`/Users/${userId}/Items/${itemId}`, { skipRetry: true, bound });
+    async function readItem(userId, itemId) {
+        const token = typeof ApiClient.accessToken === 'function' ? ApiClient.accessToken() : '';
+        // Without JE's core transport (the bundle always loads it; unit fixtures may not) the host client reads it.
+        if (!token || typeof fetch !== 'function' || typeof JE.core?.api?.jf !== 'function') return ApiClient.getItem(userId, itemId);
+        const response = await fetch(ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`), {
+            cache: 'no-store',
+            headers: {
+                'X-Jellyfin-User-Id': userId,
+                'Authorization': 'MediaBrowser Token="' + token + '"',
+                'X-Emby-Token': token,
+                'Accept': 'application/json'
+            }
+        });
+        if (ApiClient.accessToken() !== token) {
+            const ended = new Error('Request aborted');
+            ended.name = 'AbortError';
+            throw ended;
         }
-        return ApiClient.getItem(userId, itemId);
+        if (!response.ok) {
+            const failed = /** @type {any} */ (new Error(`HTTP ${response.status}`));
+            failed.status = response.status;
+            throw failed;
+        }
+        return response.json();
     }
 
     /**
