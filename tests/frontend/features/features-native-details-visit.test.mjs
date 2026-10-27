@@ -48,7 +48,8 @@ function setup(t) {
       arrAsk: { enabled: () => false },
       core: { navigation: { onNavigate: () => {}, onViewPage: () => {} } },
     },
-    apiClient: { serverId: () => SERVER, getItem: async (...args) => { getItem.push(args); throw new Error('the page read the item past its owner'); } },
+    // jellyfin-web's client (the base transport) answers from the same held reads, so a base run fails on behaviour.
+    apiClient: { serverId: () => SERVER, getItem: (...args) => { getItem.push(args); const read = { init: { via: 'ApiClient.getItem' }, answer: deferred() }; reads.push(read); return read.answer.promise; } },
   });
   h.window.Emby = { Page: { show: () => {} } };
   t.after(() => h.close());
@@ -106,8 +107,10 @@ test('a page shown again is read again: no finished read is reused by a look, on
   h.answer(2);
   await back;
   // Another module's read within its short TTL still answers from the last read (unchanged).
-  assert.equal((await h.JE.helpers.getItemCached(MOVIE)).Name, 'Dune');
+  const cached = h.JE.helpers.getItemCached(MOVIE);
+  await tick();
   assert.equal(h.reads.length, 3);
+  assert.equal((await cached).Name, 'Dune');
 });
 
 test('A, away, A again before the first read ends: the newer read draws the page and is the one kept', async t => {
@@ -126,8 +129,10 @@ test('A, away, A again before the first read ends: the newer read draws the page
   h.answer(0, { Id: MOVIE, Type: 'Movie', Name: 'older' });
   await first;
   assert.equal(h.nd.current().item.Name, 'newer');
-  assert.equal((await h.JE.helpers.getItemCached(MOVIE)).Name, 'newer', 'the older completion is not kept');
+  const cached = h.JE.helpers.getItemCached(MOVIE);
+  await tick();
   assert.equal(h.reads.length, 2);
+  assert.equal((await cached).Name, 'newer', 'the older completion is not kept');
 });
 
 test('a look in flight when Hidden Content changes reads again and draws the page from the new answer', async t => {
@@ -144,7 +149,7 @@ test('a look in flight when Hidden Content changes reads again and draws the pag
   assert.equal(h.document.querySelector('.je-native-absent-refusal'), null, 'a policy change is not an outage');
 });
 
-test('a read overtaken by an access change or a user switch answers its caller but is never kept or joined', async t => {
+test('a read overtaken by an access change or a user switch answers no one and is never kept or joined', async t => {
   for (const change of ['access', 'user']) {
     const h = setup(t);
     const old = h.JE.helpers.getItemCached(MOVIE);
@@ -155,8 +160,8 @@ test('a read overtaken by an access change or a user switch answers its caller b
     await tick();
     assert.equal(h.reads.length, 2, `${change}: a new read, not the one in flight`);
     h.answer(0, { Id: MOVIE, Name: 'stale' });
-    if (change === 'access') assert.equal((await old).Name, 'stale');
-    else await old.catch(() => null);
+    // Overtaken: not even its own caller is answered with it (review round 1, PDR-1/2).
+    assert.equal((await old.then(() => null, error => error))?.name, 'AbortError', `${change}: the overtaken read publishes nothing`);
     h.answer(1, { Id: MOVIE, Name: 'current' });
     assert.equal((await fresh).Name, 'current');
     // The stale completion did not replace the current answer.
@@ -206,10 +211,17 @@ test('an image of the page scrolled out of view stays loaded, so coming back fet
   const canvas = poster.previousElementSibling;
   const padder = poster.parentNode.querySelector('.cardPadder');
   const url = art(MOVIE);
-  // Loaded and faded in, as jellyfin-web leaves it.
+  // Loaded by jellyfin-web's lazy loader on this page: the preloader starts, then the image fades in.
+  poster.setAttribute('data-src', url);
+  poster.classList.add('lazy-hidden');
+  await tick();
   poster.style.backgroundImage = "url('" + url + "')";
+  poster.removeAttribute('data-src');
   poster.classList.add('lazy-image-fadein', 'blurhashed');
+  poster.classList.remove('lazy-hidden');
+  canvas.classList.add('lazy-hidden');
   padder.classList.add('lazy-hidden-children');
+  await tick();
   // Out of view: jellyfin-web empties it (and would load it again, preloader and background, on the way back).
   canvas.classList.remove('lazy-hidden');
   padder.classList.remove('lazy-hidden-children');
@@ -233,4 +245,181 @@ test('an image of the page scrolled out of view stays loaded, so coming back fet
   await tick();
   assert.equal(poster.style.backgroundImage, 'none');
   assert.equal(poster.getAttribute('data-src'), shown);
+});
+
+// Review round 1 (PDR-1..3): a read answers only for the session and policy it started under, and artwork shown
+// under an earlier policy is asked for again.
+
+for (const mode of ['epoch', 'server', 'token-body']) test(`an item read started under one session never answers for another (${mode} moves)`, async t => {
+  let epoch = 1, server = 'server-a', token = 'fixture-a';
+  const headers = deferred(), body = deferred(), bodyStarted = deferred();
+  const hooks = [];
+  const h = createHarness({
+    JE: { core: { navigation: { onNavigate: () => {} } }, session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (_n, fn) => hooks.push(fn) } },
+    // jellyfin-web's client (the base transport) gets the same held answer.
+    apiClient: { serverId: () => server, accessToken: () => token, getItem: async () => (await headers.promise).json() },
+    fetch: () => headers.promise
+  });
+  t.after(() => h.close());
+  h.load('core/api-client.js');
+  h.load('enhanced/helpers.js');
+  const result = h.JE.helpers.getItemCached(MOVIE).then(value => ({ value }), error => ({ error }));
+  if (mode === 'epoch') { epoch++; hooks.forEach(fn => fn()); }
+  if (mode === 'server') server = 'server-b';
+  headers.resolve({ ok: true, status: 200, json: () => { bodyStarted.resolve(); return body.promise; } });
+  if (mode === 'token-body') {
+    // The headers came under the old session; it changes while the body is still being read.
+    await bodyStarted.promise;
+    token = 'fixture-b'; epoch++; hooks.forEach(fn => fn());
+  }
+  body.resolve({ Id: MOVIE, Name: 'previous-session' });
+  const outcome = await result;
+  assert.equal(outcome.error?.name, 'AbortError', 'the previous session\'s answer is not published');
+  assert.equal(outcome.value, undefined);
+});
+
+test('a session change while the answer\'s body is read draws nothing of it on the page', async t => {
+  const h = setup(t);
+  const body = deferred(), started = deferred();
+  h.window.fetch = async url => String(url).includes(ITEM_PATH)
+    ? { ok: true, status: 200, json: () => { started.resolve(); return body.promise; } }
+    : new Response('null', { status: 200 });
+  // jellyfin-web's client (the base transport) gets the same held body.
+  h.window.ApiClient.getItem = async () => { started.resolve(); return body.promise; };
+  const look = h.nd.onView();
+  await started.promise;
+  h.window.ApiClient.accessToken = () => 'changed-fixture';
+  body.resolve({ Id: MOVIE, Type: 'Movie', Name: 'old-session-drawn' });
+  await look;
+  assert.notEqual(h.nd.current()?.item?.Name, 'old-session-drawn');
+  assert.equal(h.document.querySelector('.je-native-absent-refusal'), null, 'a session change is not an outage');
+});
+
+test('two policy changes during one look: neither overtaken answer is drawn, the page asks again under the latest', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
+  h.answer(0, { Id: MOVIE, Type: 'Movie', Name: 'first-stale' });
+  for (let i = 0; i < 20 && h.reads.length < 2; i++) await tick();
+  assert.equal(h.reads.length, 2);
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  h.answer(1, { Id: MOVIE, Type: 'Movie', Name: 'second-stale' });
+  await look;
+  assert.notEqual(h.nd.current()?.item?.Name, 'second-stale', 'the retry belongs to its policy generation too');
+  assert.notEqual(h.nd.current()?.item?.Name, 'first-stale');
+  // The page looks again under the policy that holds now and draws that answer.
+  for (let i = 0; i < 20 && h.reads.length < 3; i++) await tick();
+  assert.equal(h.reads.length, 3);
+  h.answer(2, { Id: MOVIE, Type: 'Movie', Name: 'current' });
+  for (let i = 0; i < 20 && h.nd.current()?.item?.Name !== 'current'; i++) await tick();
+  assert.equal(h.nd.current().item.Name, 'current');
+  assert.equal(h.document.querySelector('.je-native-absent-refusal'), null);
+});
+
+test('a policy change during a default read: its callers get an AbortError, never the overtaken answer', async t => {
+  const h = setup(t);
+  const read = h.JE.helpers.getItemCached(MOVIE).then(value => ({ value }), error => ({ error }));
+  await tick();
+  h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
+  h.answer(0, { Id: MOVIE, Name: 'overtaken' });
+  const outcome = await read;
+  assert.equal(outcome.error?.name, 'AbortError');
+});
+
+test('early artwork keeps jellyfin-web\'s gate, and a changed grant is left to jellyfin-web', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  const poster = h.document.getElementById('poster');
+  poster.setAttribute('data-src', art(MOVIE));
+  poster.classList.add('lazy-hidden');
+  await tick();
+  assert.ok(poster.classList.contains('lazy-hidden'), 'still hidden until jellyfin-web\'s preloader has loaded');
+  h.answer(0);
+  await look;
+  poster.classList.remove('lazy-hidden');
+  await tick();
+  const old = poster.style.backgroundImage;
+  const next = art(MOVIE).replace('tag=signed', 'tag=changed');
+  poster.setAttribute('data-src', next);
+  poster.classList.add('lazy-hidden');
+  await tick();
+  assert.equal(poster.getAttribute('data-src'), next);
+  assert.ok(poster.classList.contains('lazy-hidden'));
+  assert.equal(poster.style.backgroundImage, old);
+  poster.style.backgroundImage = "url('" + next + "')";
+  poster.removeAttribute('data-src');
+  poster.classList.remove('lazy-hidden');
+  assert.equal(poster.style.backgroundImage, `url("${next}")`);
+});
+
+test('after an access change, artwork shown before it is not kept: emptied, it goes back to jellyfin-web to ask again', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const poster = h.document.getElementById('poster');
+  const url = art(MOVIE);
+  poster.setAttribute('data-src', url);
+  poster.classList.add('lazy-hidden');
+  await tick();
+  poster.style.backgroundImage = "url('" + url + "')";
+  poster.removeAttribute('data-src');
+  poster.classList.remove('lazy-hidden');
+  await tick();
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  const shown = poster.style.backgroundImage.slice(4, -1).replace(/"/g, '');
+  poster.style.backgroundImage = 'none';
+  poster.setAttribute('data-src', shown);
+  poster.classList.add('lazy-hidden');
+  await tick();
+  assert.ok(poster.classList.contains('lazy-hidden'), 'the old grant is checked before it is shown again');
+  assert.equal(poster.style.backgroundImage, 'none');
+  assert.equal(poster.getAttribute('data-src'), shown);
+});
+
+test('an access or Hidden Content change asks for the shown artwork again, even at an unchanged address, and drops an early background still loading', async t => {
+  for (const [target, name] of [['document', 'je-access-revision'], ['window', 'je-hidden-content-changed']]) {
+    const h = setup(t);
+    const look = h.nd.onView();
+    await tick();
+    h.answer(0);
+    await look;
+    const poster = h.document.getElementById('poster');
+    const card = h.document.getElementById('library');
+    const url = art(MOVIE);
+    poster.style.backgroundImage = "url('" + url + "')";
+    // A second synthetic card whose preloader is still running, with the background joined to it.
+    card.setAttribute('data-src', art(MOVIE).replace('Primary', 'Backdrop'));
+    card.classList.add('lazy-hidden');
+    await tick();
+    assert.match(card.style.backgroundImage, /Backdrop/);
+    (target === 'document' ? h.document : h.window).dispatchEvent(new h.window.CustomEvent(name));
+    const again = poster.style.backgroundImage;
+    assert.notEqual(again, `url("${url}")`, `${name}: a new request for the shown image`);
+    assert.ok(again.startsWith(`url("${url}&_sbcb=`), `${name}: the same signed grant, asked again: ${again}`);
+    assert.equal(card.style.backgroundImage, '', `${name}: jellyfin-web's own assignment fetches it anew`);
+    // A library image of the same page is not touched.
+    assert.equal(h.document.getElementById('img').style.backgroundImage, '');
+  }
+});
+
+test('nodes this page did not load under the current policy are never kept when jellyfin-web empties them', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const nodes = Array.from({ length: 200 }, () => {
+    const n = h.document.createElement('div');
+    h.page.append(n);
+    n.style.backgroundImage = 'none';
+    n.setAttribute('data-src', art(MOVIE));
+    n.classList.add('lazy-hidden');
+    return n;
+  });
+  await tick();
+  assert.equal(nodes.filter(n => n.style.backgroundImage === 'none' && n.hasAttribute('data-src') && n.classList.contains('lazy-hidden')).length, 200);
 });

@@ -182,44 +182,82 @@
     }
 
     /**
+     * The signed-in session as it is now: person, server, token and session epoch.
+     * @returns {{userId: string, server: string, token: string, epoch: number}}
+     */
+    function captureItemSession() {
+        let server = '';
+        try { server = String((typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ''); } catch { /* none */ }
+        return {
+            userId: String(ApiClient.getCurrentUserId?.() || ''),
+            server,
+            token: typeof ApiClient.accessToken === 'function' ? String(ApiClient.accessToken() || '') : '',
+            epoch: JE.session?.getEpoch?.() ?? 0
+        };
+    }
+
+    /**
+     * An item read whose answer may not be published: its session ended ('session') or the person's policy moved
+     * ('policy') between its start and its answer.
+     * @param {'session'|'policy'} why
+     * @returns {Error}
+     */
+    function staleItemRead(why) {
+        const error = /** @type {any} */ (new Error('Request aborted'));
+        error.name = 'AbortError';
+        error.jeItemStale = why;
+        return error;
+    }
+
+    /**
      * Reads an item from the server, uncached (`no-store`): jellyfin-web reads the same URL as it opens a details
      * page, and the browser's HTTP cache would otherwise hold the page's own read until JE's finished (it lets one
      * request per URL at a time through its cache). Like ApiClient.getItem it takes no place in JE's request limit
-     * (the page's own JE requests would wait behind it). An answer for a session that has ended since is dropped.
+     * (the page's own JE requests would wait behind it). The answer belongs to the session that asked: when the
+     * person, server, token or session epoch has moved by the time the whole answer is in, it is dropped.
      * @param {string} userId
      * @param {string} itemId
      * @returns {Promise<object>}
      */
     async function readItem(userId, itemId) {
-        const token = typeof ApiClient.accessToken === 'function' ? ApiClient.accessToken() : '';
-        // Without JE's core transport (the bundle always loads it; unit fixtures may not) the host client reads it.
-        if (!token || typeof fetch !== 'function' || typeof JE.core?.api?.jf !== 'function') return ApiClient.getItem(userId, itemId);
-        const response = await fetch(ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`), {
-            cache: 'no-store',
-            headers: {
-                'X-Jellyfin-User-Id': userId,
-                'Authorization': 'MediaBrowser Token="' + token + '"',
-                'X-Emby-Token': token,
-                'Accept': 'application/json'
+        const session = captureItemSession();
+        const fence = () => {
+            const now = captureItemSession();
+            if (now.userId !== session.userId || now.server !== session.server || now.token !== session.token || now.epoch !== session.epoch) {
+                throw staleItemRead('session');
             }
-        });
-        if (ApiClient.accessToken() !== token) {
-            const ended = new Error('Request aborted');
-            ended.name = 'AbortError';
-            throw ended;
+        };
+        let item;
+        // Without JE's core transport (the bundle always loads it; unit fixtures may not) the host client reads it.
+        if (!session.token || typeof fetch !== 'function' || typeof JE.core?.api?.jf !== 'function') {
+            item = await ApiClient.getItem(userId, itemId);
+        } else {
+            const response = await fetch(ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`), {
+                cache: 'no-store',
+                headers: {
+                    'X-Jellyfin-User-Id': userId,
+                    'Authorization': 'MediaBrowser Token="' + session.token + '"',
+                    'X-Emby-Token': session.token,
+                    'Accept': 'application/json'
+                }
+            });
+            fence();
+            if (!response.ok) {
+                const failed = /** @type {any} */ (new Error(`HTTP ${response.status}`));
+                failed.status = response.status;
+                throw failed;
+            }
+            item = await response.json();
         }
-        if (!response.ok) {
-            const failed = /** @type {any} */ (new Error(`HTTP ${response.status}`));
-            failed.status = response.status;
-            throw failed;
-        }
-        return response.json();
+        // After the last await: nothing of another session is ever handed on.
+        fence();
+        return item;
     }
 
     /**
-     * Starts a read of an item and keeps it as the key's entry while it runs. Only the read that is still the key's
-     * entry when it finishes keeps its answer: one replaced meanwhile (a forced refresh, a policy change, a user
-     * switch) answers its own callers and nothing else.
+     * Starts a read of an item and keeps it as the key's entry while it runs. Its answer is published (to its callers
+     * and the cache) only while the person's policy is still the one it started under; only the read that is still
+     * the key's entry when it finishes is kept.
      * @param {string} key
      * @param {string} userId
      * @param {string} itemId
@@ -228,6 +266,7 @@
     function startItemRead(key, userId, itemId) {
         const entry = { item: null, ts: Date.now(), promise: null, route: JE.routeGeneration?.() ?? 0, generation: itemGeneration };
         entry.promise = readItem(userId, itemId).then((item) => {
+            if (entry.generation !== itemGeneration) throw staleItemRead('policy');
             if (itemCache.get(key) === entry) itemCache.set(key, { item, ts: Date.now(), promise: null, route: entry.route, generation: entry.generation });
             return item;
         }, (err) => {
@@ -241,11 +280,13 @@
     /**
      * Deduplicated item fetch with short TTL cache.
      * Prevents multiple modules from requesting the same item concurrently on detail page navigation: every caller
-     * joins the read already in flight for the same server, person, session and item.
+     * joins the read already in flight for the same server, person, session and item. A read answers only for the
+     * session and the policy it started under (an AbortError otherwise).
      *
      * `visit: true` is a page's own check of what it shows (a details page, every time it is shown): it joins only a
      * read started on the same route generation and never answers from a finished one, so a page shown again is
-     * checked again. When the person's policy changes while it runs, it asks once more under the new policy.
+     * checked again. When the person's policy changes while it runs, it asks once more under the new policy; when
+     * that read is overtaken too, it fails (AbortError) rather than answer for a policy that has gone.
      * @param {string} itemId
      * @param {Object} [options]
      * @param {string} [options.userId]
@@ -270,9 +311,10 @@
                     ? entry.promise : startItemRead(key, userId, itemId);
                 try {
                     const item = await read;
-                    if (attempt > 0 || generation === itemGeneration) return item;
+                    if (generation === itemGeneration) return item;
+                    if (attempt > 0) throw staleItemRead('policy');
                 } catch (err) {
-                    const policyMoved = generation !== itemGeneration || JE.core?.api?.isPresentationAbort?.(err) === true;
+                    const policyMoved = err?.jeItemStale === 'policy' || generation !== itemGeneration;
                     if (attempt > 0 || !policyMoved || key !== itemKey(userId, itemId)) throw err;
                 }
             }

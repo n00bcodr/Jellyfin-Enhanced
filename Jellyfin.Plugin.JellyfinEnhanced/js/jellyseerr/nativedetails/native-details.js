@@ -850,6 +850,38 @@
     /** The artwork of this server's synthetic items (signed, served `private, no-store`). */
     const SIGNED_IMAGE = /\/Items\/([0-9a-f]{32})\/Images\//i;
 
+    /** Moves on with the person's access or presentation policy (and session): artwork from an earlier one is not kept. */
+    let artGeneration = 0;
+    /** Elements whose artwork this module joined to jellyfin-web's preloader, with the policy generation it was asked under. */
+    const artwork = new WeakMap();
+
+    /**
+     * The person's access or presentation policy moved (or the session did): the shown page's absent-title artwork
+     * is asked for again under what holds now, whatever its address. A load still running has the element's early
+     * background taken away, so jellyfin-web's own assignment fetches it anew; a shown image is asked for again (the
+     * server checks the grant and policy as for any request: refused, it is no longer drawn). Nothing is kept from
+     * before (see keepImages).
+     * @returns {void}
+     */
+    function artPolicyMoved() {
+        artGeneration++;
+        const state = current;
+        if (!state || state.aborted) return;
+        state.page.querySelectorAll('[style*="/Images/"]').forEach((node) => {
+            if (!(node instanceof HTMLElement) || node.tagName === 'IMG') return;
+            const url = /url\(["']?([^"')]+)["']?\)/.exec(node.style.backgroundImage || '')?.[1];
+            const match = url ? SIGNED_IMAGE.exec(url) : null;
+            if (!match || !isSynthetic(match[1])) return;
+            artwork.delete(node);
+            if (node.hasAttribute('data-src')) {
+                node.style.backgroundImage = '';
+                return;
+            }
+            const base = url.replace(/([?&])_sbcb=\d+&?/g, '$1').replace(/[?&]$/, '');
+            node.style.backgroundImage = "url('" + base + (base.includes('?') ? '&' : '?') + '_sbcb=' + Date.now() + "')";
+        });
+    }
+
     /**
      * Keeps a page's artwork to one load per image. jellyfin-web loads a lazy image in two steps: a hidden
      * preloader (new Image) and, once that has loaded, the element's background with the same URL. An absent
@@ -859,9 +891,10 @@
      *     (lazy-hidden): the browser then has one load of it, which jellyfin-web's own later assignment of the
      *     identical value reuses.
      *   - An image emptied after it was shown is put back as jellyfin-web leaves a loaded one (before anything is
-     *     drawn without it), so coming back into view loads nothing.
+     *     drawn without it), so coming back into view loads nothing; only one this page loaded under the policy and
+     *     session that hold now (artPolicyMoved: anything from before goes back to jellyfin-web's own reload).
      * Nothing else changes: the URL and its signature are jellyfin-web's, it still fades a new image in, and a new
-     * grant or policy is a new URL (or a new page) and loads anew.
+     * grant or policy is a new URL, a new page or a new request (artPolicyMoved), and loads anew.
      * @param {Object} state Page state.
      * @returns {MutationObserver|null} Observer, or null when unsupported.
      */
@@ -878,10 +911,16 @@
                 if (!match || !isSynthetic(match[1])) continue;
                 const shown = node.style.backgroundImage;
                 if (shown && shown !== 'none') continue;
-                // The exact text jellyfin-web assigns, so its own assignment is no change.
+                if (shown !== 'none') {
+                    // The exact text jellyfin-web assigns, so its own assignment is no change.
+                    node.style.backgroundImage = "url('" + src + "')";
+                    artwork.set(node, artGeneration);
+                    continue;
+                }
+                // Emptied after it was shown: kept only when this page loaded it under the policy that holds now;
+                // anything older goes back to jellyfin-web, which asks the server again when it comes into view.
+                if (artwork.get(node) !== artGeneration) continue;
                 node.style.backgroundImage = "url('" + src + "')";
-                if (shown !== 'none') continue;
-                // Emptied after it was shown: loaded again, as jellyfin-web leaves an image once it has faded in.
                 node.removeAttribute('data-src');
                 node.classList.remove('lazy-hidden');
                 const canvas = node.previousSibling;
@@ -1374,7 +1413,7 @@
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0,
             token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
@@ -1410,6 +1449,8 @@
         const generation = ++state.generation;
         let item = null;
         let status = 0;
+        /** @type {false|'session'|'policy'} */
+        let stale = false;
         // A restored page still shows what it showed before (Back keeps the page's element, though
         // leaving it ended this module's state): hidden until the check below passes.
         if (same || page.dataset.jeNativeShown) checking(page, true);
@@ -1424,8 +1465,19 @@
                 : await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
         } catch (err) {
             status = Number(err?.status || err?.response?.status || 0);
+            stale = err?.jeItemStale || false;
         }
         if (state.aborted || current !== state || generation !== state.generation) return;
+        // An answer for a session or policy that has gone is no answer: nothing of it is drawn, and it is no outage
+        // either. A restored page stays hidden; after a policy change it is looked at again under the policy that
+        // holds now (twice at most). A session that ended is the session's to handle (a user switch disposes the page).
+        if (stale) {
+            if (stale === 'policy' && state.relooks < 2) {
+                state.relooks++;
+                setTimeout(() => { if (!state.aborted && current === state && generation === state.generation) onView().catch(() => {}); }, 0);
+            }
+            return;
+        }
         if (!item) {
             if (status === 404 || status === 403) {
                 dispose();
@@ -1542,6 +1594,7 @@
         document.addEventListener('contextmenu', guard, true);
         window.addEventListener('je-spoiler-policy-changed', event => {
             const state = current;
+            artGeneration++;
             if (!state || event.detail?.type && (Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail.type !== state.mediaType)) return;
             // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
             state.page.replaceChildren();
@@ -1549,7 +1602,10 @@
             // The reload is this page's own step: it happens only while this page is still the one shown (D46S2-R11-6).
             JE.internals.spoilerGuard?.scheduleFullReload?.(JE.operation());
         });
-        JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
+        JE.session?.onUserChange?.('native-details', () => { artGeneration++; cancelPendingModal(); dispose(); });
+        // Artwork follows the person's access and presentation (Spoiler Guard reloads the page above).
+        document.addEventListener('je-access-revision', artPolicyMoved);
+        window.addEventListener('je-hidden-content-changed', artPolicyMoved);
     }
 
     JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, openItem: go, syntheticId, parse, isSynthetic });
