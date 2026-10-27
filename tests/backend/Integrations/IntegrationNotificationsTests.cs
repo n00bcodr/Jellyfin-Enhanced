@@ -848,6 +848,35 @@ public class IntegrationNotificationsTests
         Assert.Equal("Dune Part Two (RadarrZ, import_waiting)", Params(digest.Payload)["items"]);
     }
 
+    // UX-15: the bell lists a digest's downloads on demand. The digest carries them as fields (title, scope, instance and the
+    // Needs attention code the Overview names), next to its unchanged one-line text for phone and e-mail.
+    [Fact]
+    public async Task TheStuckDigestCarriesItsDownloadsAsFieldsForTheBell()
+    {
+        using var rig = await Started();
+        var blocked = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "importBlocked", status: "warning");
+        var waiting = FakeArr.RadarrQueueRow(3, 1, "Fresh Film", state: "downloading", status: "warning");
+        waiting["status"] = "completed";
+        waiting["sizeleft"] = 0;
+        rig.Radarr.Queue.AddRange(new[] { blocked, waiting });
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Arr.Now = rig.Arr.Now.AddHours(7);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
+        await rig.Service.AdminChecksAsync(default);
+        var p = Params(Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest").Payload);
+        Assert.Equal("2", p["count"]);
+        var entries = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(p["entries"])!;
+        Assert.Equal(
+            new[] { ("Dune Part Two", "RadarrZ", "import_blocked"), ("Fresh Film", "RadarrZ", "import_waiting") },
+            entries.Select(e => (e["title"], e["instance"], e["code"])).OrderBy(e => e.Item1).ToArray());
+        Assert.All(entries, e => Assert.Equal(string.Empty, e["scope"]));
+        // The phone and e-mail text is the same list as before.
+        Assert.Contains("Dune Part Two (RadarrZ, import_blocked)", p["items"]);
+        Assert.Empty(rig.Inbox(rig.Emma));
+    }
+
     [Fact]
     public async Task LowDiskIsToldOncePerFolderAndDay()
     {

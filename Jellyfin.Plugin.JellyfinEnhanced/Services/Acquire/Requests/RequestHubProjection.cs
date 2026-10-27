@@ -373,6 +373,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         };
 
         /// <summary>
+        /// Display names of the titles audit rows act on (Requests → Audit), resolved for
+        /// <paramref name="admin"/> exactly as their request cards name them (<see cref="MetaAsync"/>):
+        /// a title their Hidden Content hides on the Requests page, or an unknown caller, gets no name.
+        /// </summary>
+        internal async Task<Dictionary<string, HubTitleMeta>> AuditTitlesAsync(IEnumerable<string> keys, Guid admin, CancellationToken ct)
+        {
+            if (_service.View.Viewer(admin) is not { } caller) return new Dictionary<string, HubTitleMeta>(StringComparer.Ordinal);
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, caller.UserId, library: _library);
+            return await MetaAsync(keys.Where(k => !hidden.IsHidden(TitleKey.Parse(k), _aliases, "requests")), caller, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Display data per title key for one caller: their own visible Jellyfin item first (name,
         /// year, official rating), then TMDB (title, year, poster, certification) within a bounded
         /// budget. Keys past <see cref="MaxMetaTitles"/> or whose lookup fails get nothing.

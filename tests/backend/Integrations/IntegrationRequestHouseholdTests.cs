@@ -192,6 +192,24 @@ public class IntegrationRequestHouseholdTests
         Assert.False(plain.TryGetProperty("already4k", out _));
     }
 
+    // UX-14: Requests → Audit names the titles its rows act on as the administrator's own request cards name them.
+    [Fact]
+    public async Task TheAuditNamesTitlesForTheAdministratorAsTheirCardsDoAndNobodyElse()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        h.Tmdb[605] = new HubTitleMeta { Title = "Inside Out 3", Year = 2027, Poster = "/io3.jpg" };
+        h.Found["tv:tvdb:77623"] = 141;
+        h.Tmdb[141] = new HubTitleMeta { Title = "Cheers", Year = 1982 };
+        var names = await h.Projection.AuditTitlesAsync(new[] { "movie:tmdb:605", "tv:tvdb:77623", "movie:tmdb:999" }, r.Admin, default);
+        Assert.Equal(("Inside Out 3", 2027), (names["movie:tmdb:605"].Title, names["movie:tmdb:605"].Year));
+        Assert.Equal("Cheers", names["tv:tvdb:77623"].Title);
+        // TMDB doesn't know it: no name is made up.
+        Assert.True(!names.TryGetValue("movie:tmdb:999", out var unknown) || unknown.Title == null);
+        // A caller Jellyfin doesn't know reads nothing.
+        Assert.Empty(await h.Projection.AuditTitlesAsync(new[] { "movie:tmdb:605" }, Guid.NewGuid(), default));
+    }
+
     [Fact]
     public async Task ASeriesNoSonarrHoldsYetIsNamedOnItsCardThroughTmdbsFindByItsTvdbId()
     {

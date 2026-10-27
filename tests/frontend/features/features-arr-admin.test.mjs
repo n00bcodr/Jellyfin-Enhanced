@@ -344,7 +344,11 @@ test('the System tab shows live state, health, tasks, Seerr, the bridge and the 
   const cells = [...page.querySelectorAll('.je-ops-table tbody tr')].map(r => [...r.children].map(c => c.textContent));
   assert.equal(cells[0][2], 'Remove and delete data');
   assert.equal(cells[0][3], 'Plan 9 · Radarr');
-  assert.match(cells[0][4], /^rejected · needs a fresh confirmation$/);
+  // UX-14: the outcome reads in plain words; the stored outcome is kept under Technical details.
+  const result = page.querySelector('.je-ops-table tbody tr').children[4];
+  const details = result.querySelector('details');
+  assert.match(result.textContent.slice(0, result.textContent.length - details.textContent.length), /^Refused · needs a fresh confirmation$/);
+  assert.match(details.textContent, /Outcomerejected/);
   assert.equal(cells[1][2], 'custom.thing');
   // Leaving the admin tabs stops the poll.
   h.click(page.querySelector('.je-hub-tab[data-tab="mine"]'));
@@ -1116,4 +1120,100 @@ test('Admin Audit displays the actual request.dispatch profile and root message'
   assert.match(panel.textContent, /\/selected/);
   assert.match(panel.textContent, /Radarr/);
   assert.equal(entry.action, 'request.dispatch');
+});
+
+// UX-14: the Audit tab named nobody (an empty Who, provider ids as titles, machine action names, every fact in one long
+// message, and phone cards without their column names). Rows now read in plain words from the server's names, with the
+// stored facts one tap away.
+test('Admin Audit names who acted and the title, labels actions plainly and keeps every stored fact under Technical details', t => {
+  const h = setup(t);
+  const panel = h.document.createElement('div');
+  const admin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const gone = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const emma = 'cccccccccccccccccccccccccccccccc';
+  h.JE.internals.arrHub.admin.renderAudit(panel, {
+    entries: [
+      { id: 'e1', time: new Date().toISOString(), userId: admin, action: 'request.dispatch', instanceId: 'r1', target: 'movie:tmdb:438631', outcome: 'succeeded',
+        message: 'Added to Radarr and searching. Instance: Radarr; Profile: 4 (HD-1080p); Root: /data/movies.', details: { instanceName: 'Radarr', qualityProfileId: '4' } },
+      { id: 'e2', time: new Date().toISOString(), userId: 'system', action: 'request.choice.claim.identity_merge', instanceId: 's1', target: 'tv:tvdb:75932', outcome: 'succeeded',
+        message: 'Choice claim.identity_merge; Actor: system; Expected revision: 2; Revision: 3; Profile: 4; Root: /data/tv; Tags: ; Series type: standard; Availability: released.' },
+      { id: 'e3', time: new Date().toISOString(), userId: gone, action: 'request.dispatch', instanceId: 'gone-instance', target: 'movie:tmdb:999', outcome: 'failed', error: 'invalid_choice', message: 'Radarr needs a profile.' },
+      { id: 'e4', time: new Date().toISOString(), userId: '', action: 'request.choice.claim', instanceId: 'r1', target: 'movie:tmdb:438631', outcome: 'succeeded', message: 'Choice claim; Revision: 1; Profile: missing; Root: missing.' },
+      { id: 'e5', time: new Date().toISOString(), userId: admin, action: 'users.policy', target: emma, outcome: 'succeeded' }
+    ],
+    names: {
+      users: { [admin]: 'Jake', [emma]: 'Emma' },
+      titles: { 'movie:tmdb:438631': { title: 'Dune', year: 2021 }, 'tv:tvdb:75932': { title: 'Fawlty Towers' } },
+      instances: { r1: 'Radarr', s1: 'Sonarr' }
+    }
+  });
+  const rows = [...panel.querySelectorAll('tbody tr')].map(r => [...r.children]);
+  const text = cell => cell.querySelector('span > span').textContent;
+  // Who.
+  assert.deepEqual(rows.map(r => r[1].textContent), ['Jake', 'Automatic', 'Removed account', 'Unknown account', 'Jake']);
+  // Action, in words.
+  assert.deepEqual(rows.map(r => r[2].textContent), ['Request sent', 'Add settings merged (same title)', 'Request sent', 'Add settings recorded', 'User settings changed']);
+  // Title: the name and the instance; an unknown title keeps its key; a settings change names its account.
+  assert.deepEqual(rows.map(r => r[3].textContent), ['Dune (2021) · Radarr', 'Fawlty Towers · Sonarr', 'movie:tmdb:999', 'Dune (2021) · Radarr', 'Settings of Emma']);
+  // Result: the outcome in words and a short summary; the facts are in a closed Technical details block.
+  assert.equal(text(rows[0][4]), 'Done');
+  assert.match(rows[0][4].textContent, /^Done · Added to Radarr and searching\.Technical details/);
+  assert.match(rows[1][4].textContent, /^Done · Version 3 · profile 4 · folder \/data\/tv/);
+  assert.match(rows[2][4].textContent, /^Failed · Radarr needs a profile\./);
+  const details = rows[0][4].querySelector('details.je-ops-diag');
+  assert.ok(details && !details.open);
+  const facts = Object.fromEntries([...details.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.equal(facts.Action, 'request.dispatch');
+  assert.equal(facts.Target, 'movie:tmdb:438631');
+  assert.equal(facts['User ID'], admin);
+  assert.equal(facts['Instance ID'], 'r1');
+  assert.match(facts.Message, /Profile: 4 \(HD-1080p\); Root: \/data\/movies/);
+  assert.equal(facts.qualityProfileId, '4');
+  const merge = Object.fromEntries([...rows[1][4].querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.match(merge.Message, /Expected revision: 2; Revision: 3/);
+  assert.equal(merge['User ID'], 'system');
+  // Phone cards name each cell's column (the header row is hidden there).
+  assert.ok(panel.querySelector('table').classList.contains('je-ops-table-labelled'));
+  assert.deepEqual(rows[0].map(c => c.dataset.label), ['When', 'Who', 'Action', 'Title', 'Result']);
+});
+
+test('an opened Technical details block stays open when the tab is drawn again', t => {
+  const h = setup(t);
+  const draw = () => {
+    const panel = h.document.createElement('div');
+    h.JE.internals.arrHub.admin.renderAudit(panel, { entries: [{ id: 'keep', time: new Date().toISOString(), userId: 'system', action: 'jellyfin.scan', target: 'library', outcome: 'succeeded' }] });
+    return panel.querySelector('details');
+  };
+  const first = draw();
+  first.open = true;
+  first.dispatchEvent(new h.window.Event('toggle'));
+  assert.equal(draw().open, true);
+});
+
+// UX-17: Activity spelled queue states as the arr does (importBlocked, importPending) while Overview named them.
+test('Activity names a download\'s state as Overview does and keeps the arr\'s spelling under Technical details', t => {
+  const h = setup(t);
+  const A = h.JE.internals.arrHub.admin;
+  const panel = h.document.createElement('div');
+  const row = (id, extra) => ({ instanceId: 'r1', instance: 'Radarr', downloadId: id, title: id, actions: [], ...extra });
+  A.renderActivity(panel, {
+    queue: [
+      row('blocked', { state: 'importBlocked', status: 'completed', health: 'warning', problem: 'import_blocked', percent: 100 }),
+      row('pending', { state: 'importPending', status: 'completed', health: 'warning', problem: 'import_waiting' }),
+      row('stalled', { state: 'downloading', status: 'downloading', health: 'ok', problem: 'download_stalled', percent: 35 }),
+      row('fine', { state: 'downloading', status: 'downloading', health: 'ok', percent: 10 }),
+      row('queued', { status: 'queued' }),
+      row('odd', { state: 'someNewState' })
+    ]
+  }, { results: {}, busy: new Set(), queue: () => {}, arrUrl: () => null, history: null });
+  const subs = [...panel.querySelectorAll('.je-ops-dl')].map(r => r.querySelector('.je-ops-item-sub').textContent.split(' · ')[0]);
+  assert.deepEqual(subs, ['Import blocked', 'Waiting to import', 'Download stalled', 'Downloading', 'Queued', 'someNewState']);
+  // The same words as Overview's Needs attention row for that download.
+  assert.equal(A.itemTitle({ code: 'import_blocked', title: 'Dune', instance: 'Radarr' }).split(' · ')[0], subs[0]);
+  assert.equal(A.itemTitle({ code: 'import_waiting', title: 'Dune', instance: 'Radarr' }).split(' · ')[0], subs[1]);
+  assert.doesNotMatch(panel.querySelector('.je-ops-dl').querySelector('.je-ops-item-sub').textContent, /importBlocked/);
+  const diag = panel.querySelector('.je-ops-dl .je-ops-queue-diag');
+  assert.ok(diag && !diag.open);
+  const facts = Object.fromEntries([...diag.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.deepEqual(facts, { 'Arr state': 'importBlocked', 'Client status': 'completed', Health: 'warning', 'Reason code': 'import_blocked', 'Download ID': 'blocked' });
 });
