@@ -39,7 +39,7 @@
 @media(max-width:360px){.je-actions-row{gap:8px}.je-actions-row button{height:48px;min-width:48px;width:48px;flex-basis:48px;border-radius:24px}.je-actions-row .je-actions-primary{padding:0 6px;gap:4px}.je-actions-row .je-actions-primary>.material-icons{font-size:20px}.je-more-info-modal .je-actions-row .je-actions-primary{padding:0 3px}}
 .je-actions-row.je-actions-fit-1>.je-actions-report{display:none!important}.je-actions-row.je-actions-fit-2 .je-actions-primary-label{white-space:normal;text-overflow:clip;overflow-wrap:break-word;font-size:14px;line-height:1.1;text-align:center}
 .je-more-info-modal .header-section.je-actions-modal-header{flex-wrap:wrap}.je-more-info-modal .je-actions-modal-header>.je-more-info-actions{flex:0 0 100%;width:100%;max-width:100%!important;margin:0}
-.je-actions-busy{display:flex;align-items:center;gap:12px;padding:16px 22px;color:#c4c4c4;font-size:14px}.je-actions-busy::before{content:'';width:18px;height:18px;border-radius:50%;border:2px solid #5a5a5a;border-top-color:#fff;animation:je-actions-spin .8s linear infinite;flex-shrink:0}@keyframes je-actions-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.je-actions-busy::before{animation:none}}
+.je-actions-entry[aria-busy=true] .je-actions-state::after{content:'';display:inline-block;width:14px;height:14px;margin-left:8px;vertical-align:-2px;border-radius:50%;border:2px solid #5a5a5a;border-top-color:#fff;animation:je-actions-spin .8s linear infinite}.je-actions-busy{display:flex;align-items:center;gap:12px;padding:16px 22px;color:#c4c4c4;font-size:14px}.je-actions-busy::before{content:'';width:18px;height:18px;border-radius:50%;border:2px solid #5a5a5a;border-top-color:#fff;animation:je-actions-spin .8s linear infinite;flex-shrink:0}@keyframes je-actions-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.je-actions-busy::before,.je-actions-entry[aria-busy=true] .je-actions-state::after{animation:none}}
 .layout-tv .je-actions-sheet,.layout-tv .je-actions-shell{max-height:95dvh;width:min(680px,100%)}.layout-tv .je-actions-entry{min-height:60px}
 `;
         document.head.append(node);
@@ -208,9 +208,12 @@
                     // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
                     if (!JE.ownerOf(e) || !action.current() || button.disabled) return;
                     const operation = A.generation(() => base.current() !== false);
+                    // Feedback in the press's own frame while the action is admitted: the entry shows it is working.
+                    button.setAttribute('aria-busy', 'true');
                     // Close before opening the owner's modal; that modal owns focus from this point.
                     try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
                     catch (_) { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); }
+                    finally { button.removeAttribute('aria-busy'); }
                 };
                 sheet.append(button);
             }

@@ -122,6 +122,20 @@ test('a superseded opening never paints into the newer opening\'s shell or sheet
   assert.equal(h.document.querySelector('.je-actions-sheet'), newer.sheet);
 });
 
+test('a sheet entry shows that it is working in the press frame while its action is admitted', async t => {
+  const h = setup(t); h.a.initialize(); mount(h); await delivered();
+  h.click(h.row().querySelector('.je-actions-more')); await delivered();
+  const entry = h.document.querySelector('.je-actions-entry[data-action="request"]');
+  assert.ok(entry, 'the sheet offers Request');
+  const admission = h.hold('GET', '/title-actions/');
+  h.click(entry);
+  assert.equal(entry.getAttribute('aria-busy'), 'true', 'busy before the admission answers');
+  admission.resolve({ allowed: false });
+  await delivered();
+  assert.equal(entry.hasAttribute('aria-busy'), false, 'a refused action leaves the entry as it was');
+  assert.equal(h.document.querySelector('.je-sheet, .je-sheet-shell'), null, 'nothing opened for a refused action');
+});
+
 test('decorative page reads in flight do not hold the admission of a More press in the client queue', async t => {
   const h = setup(t); h.a.initialize(); mount(h); await delivered();
   // Four rating reads of the page (as many as the client sends at once) that do not answer.
