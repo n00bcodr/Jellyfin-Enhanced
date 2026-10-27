@@ -501,3 +501,96 @@ test('a queued Requests tab hashchange cannot undo another module replaceState d
  expect(result).toMatchObject({hash:'#/search?query=je',visible:false});
 });
 
+
+// Review r5 probes, ported: a router listener added after JE's (late start) or moved behind it (re-registered)
+// reads the restored Requests address after a parking and draws "Page not found" again; the page checks afterwards
+// and parks it again, so the phone header survives, also with a tab move while the parked Home is pending.
+async function setupRouterOrder(page, { late = false } = {}) {
+  await page.addInitScript(() => {
+    const add = window.addEventListener.bind(window), remove = window.removeEventListener.bind(window);
+    window.__routerReads = [];
+    window.addEventListener = function (type, fn, opts) {
+      if (type === 'popstate' && !window.__routerListener && fn.toString().includes('const path = current()')) {
+        const wrapped = e => { window.__routerReads.push({ hash: location.hash, parking: !!window.JellyfinEnhanced?.internals?.arrHub?.state.parking }); return fn.call(window, e); };
+        window.__routerListener = { wrapped, opts };
+        return add(type, wrapped, opts);
+      }
+      return add(type, fn, opts);
+    };
+    window.__moveRouterLast = () => { const r = window.__routerListener; remove('popstate', r.wrapped, r.opts); add('popstate', r.wrapped, r.opts); };
+  });
+  if (late) await page.route('**/arr?*', async route => {
+    const response = await route.fetch();
+    let html = await response.text();
+    html = html.replace('(function mockRouter() {', 'window.__startMockRouter = function mockRouter() {').replace('})();\n</script>', '};\n</script>');
+    html = html.replace("document.body.dataset.arrReady = 'true';", "window.__startMockRouter();\n    document.body.dataset.arrReady = 'true';");
+    await route.fulfill({ response, body: html });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+}
+async function visitOrdered(page, mode, hash = '#/details?id=1') {
+  await page.goto('/arr?host=router' + hash);
+  await expect(page.locator('body')).toHaveAttribute('data-arr-ready', 'true');
+  if (mode === 'reregister') await page.evaluate(() => window.__moveRouterLast());
+}
+const readOrder = page => page.evaluate(() => ({ hash: location.hash, title: document.title, length: history.length,
+  visible: JellyfinEnhanced.internals.arrHub.state.visible, menu: !!document.querySelector('[aria-label="Open menu"]'),
+  bar: document.querySelector('.je-mock-appbar')?.dataset.variant,
+  shown: [...document.querySelectorAll('.mainAnimatedPage:not(.hide)')].filter(n => n.getClientRects().length).map(n => n.id),
+  router: window.__routerReads }));
+async function stableHubOrder(page) {
+  await expect(page.locator('.je-hub-tab').first()).toBeVisible();
+  await page.waitForTimeout(1400);
+  expect(await readOrder(page)).toMatchObject({ visible: true, title: 'Requests', bar: 'menu', shown: ['je-requests-hub-page'] });
+}
+
+for (const mode of ['normal', 'late', 'reregister']) {
+  test(`parking keeps history and the Back title with a ${mode} router`, async ({ page, arr }) => {
+    await setupRouterOrder(page, { late: mode === 'late' });
+    await visitOrdered(page, mode);
+    const before = await readOrder(page);
+    await page.evaluate(() => { location.hash = '#/requests'; });
+    await stableHubOrder(page);
+    const entered = await readOrder(page);
+    expect(entered.length).toBe(before.length + 1);
+    expect(entered.router.some(e => e.hash === '#/home' && e.parking)).toBe(true);
+    await page.goBack();
+    await expect(page.locator('#route-details')).toBeVisible();
+    await page.waitForTimeout(1400);
+    expect(await readOrder(page)).toMatchObject({ hash: '#/details?id=1', visible: false, title: 'Movie details', shown: ['route-details'], length: entered.length });
+    await page.goForward();
+    await stableHubOrder(page);
+    expect((await readOrder(page)).length).toBe(entered.length);
+  });
+}
+
+for (const mode of ['late', 'reregister']) {
+  test(`a router added after JE survives a tab move while its parked Home is pending (${mode})`, async ({ page, arr }) => {
+    await setupRouterOrder(page, { late: mode === 'late' });
+    await visitOrdered(page, mode);
+    await page.evaluate(() => {
+      const observer = new MutationObserver(() => {
+        if (!document.getElementById('fallbackPage') || window.__queryInjected) return;
+        window.__queryInjected = true;
+        // A tab move after "Page not found" appears, before the parked Home is drawn.
+        setTimeout(() => { location.hash = '#/requests?tab=soon'; }, 0);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      location.hash = '#/requests';
+    });
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => window.__queryInjected)).toBe(true);
+    expect(await readOrder(page)).toMatchObject({ hash: '#/requests?tab=soon', visible: true, title: 'Requests', bar: 'menu', shown: ['je-requests-hub-page'] });
+    await page.goBack();
+    await page.waitForTimeout(1400);
+    expect(await readOrder(page)).toMatchObject({ hash: '#/requests', visible: true, title: 'Requests', bar: 'menu' });
+  });
+
+  test(`a tab move 30 ms after entering keeps the phone header with a ${mode} router`, async ({ page, arr }) => {
+    await setupRouterOrder(page, { late: mode === 'late' });
+    await visitOrdered(page, mode);
+    await page.evaluate(() => { location.hash = '#/requests'; setTimeout(() => { location.hash = '#/requests?tab=soon'; }, 30); });
+    await page.waitForTimeout(1500);
+    expect(await readOrder(page)).toMatchObject({ hash: '#/requests?tab=soon', visible: true, title: 'Requests', bar: 'menu', shown: ['je-requests-hub-page'] });
+  });
+}

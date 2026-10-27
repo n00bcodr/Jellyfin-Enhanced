@@ -883,9 +883,13 @@ test('a router showing its Page not found for #/requests is moved to Home under 
   assert.equal(h.window.location.hash, '#/requests');
   const page = h.document.getElementById('je-requests-hub-page');
   assert.ok(!page.classList.contains('hide'), 'the page stays shown');
-  // The same "Page not found" page is not moved again on later changes.
-  for (const watch of h.bodyWatchers.values()) watch([]);
-  assert.deepEqual(seen, ['#/home']);
+  // Round 6 (review r5): a router still on its "Page not found" page (one that read the address after the
+  // parking) is parked again when checked, at most three times for one move onto the page (this replaces the
+  // round-1 "never again for the same page" check, which was the defect).
+  for (let i = 0; i < 5; i++) for (const watch of h.bodyWatchers.values()) watch([]);
+  await wait(300);
+  assert.deepEqual(seen, ['#/home', '#/home', '#/home'], 'bounded');
+  assert.equal(h.window.location.hash, '#/requests');
 });
 
 /** Navigates the harness to a hash the way JE's navigation module reports it. */
@@ -1339,4 +1343,18 @@ test('listeners added after the Requests page still get its history events', asy
   h.window.dispatchEvent(new h.window.HashChangeEvent('hashchange', { newURL: h.window.location.href }));
   assert.ok(seen.includes('popstate') && seen.includes('hashchange'), JSON.stringify(seen));
   assert.ok(!h.document.getElementById('je-requests-hub-page').classList.contains('hide'));
+});
+
+// Review r5: once the router has left its "Page not found" page (it is on Home), nothing parks it again.
+test('a router that reached Home under the page is not parked again', async t => {
+  const h = setup(t, { dom: true, hash: '#/requests', html: '<div class="mainAnimatedPage" id="fallbackPage"></div>', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  const seen = [];
+  h.window.addEventListener('popstate', () => seen.push(h.window.location.hash));
+  h.JE.initializeArrStatus();
+  await wait(10);
+  assert.deepEqual(seen, ['#/home']);
+  h.document.getElementById('fallbackPage').remove();
+  for (const watch of h.bodyWatchers.values()) watch([]);
+  await wait(300);
+  assert.deepEqual(seen, ['#/home'], 'the later checks find the router on Home');
 });

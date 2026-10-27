@@ -19,6 +19,8 @@
     const PAGE_ID = 'je-requests-hub-page';
     // A route Jellyfin's own router knows and gives the phone menu (see parkRouter).
     const PARK_ROUTE = '#/home';
+    // At most this many parkings per move onto the page: a router that read the address after a parking redoes it.
+    const PARK_TRIES = 3;
     const OWN_TABS = ['mine', 'soon', 'ready'];
     const RELOAD_DELAY_MS = 300;
     const logPrefix = '🪼 Jellyfin Enhanced: Requests:';
@@ -51,7 +53,7 @@
         visit: 0,
         titleWatch: null,
         parking: false,
-        parkedFor: null,
+        parkTries: 0,
         watch: null
     };
 
@@ -255,6 +257,7 @@
         if (!state.visible) {
             state.visible = true;
             state.visit++;
+            state.parkTries = 0;
             state.underTitle = fallbackShown() ? null : document.title;
             const active = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#fallbackPage)`);
             if (active) {
@@ -287,7 +290,7 @@
     function claimPage(shown) {
         if (!state.visible || state.parking || !isRoute()) return;
         const page = pageContainer();
-        parkRouter();
+        ensureParked();
         const others = [...document.querySelectorAll(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#fallbackPage)`)];
         if (shown?.classList.contains('mainAnimatedPage') && shown !== page && shown.id !== 'fallbackPage' && !others.includes(shown)) others.push(shown);
         if (!others.length) return;
@@ -309,15 +312,12 @@
      * Jellyfin's router has no Requests page. When it sees the Requests URL itself (a typed address, deep link,
      * reload, Back/Forward) it shows its "Page not found" page, and Jellyfin 12's app bar drops the phone menu on a
      * route it does not know, showing the wide library links instead. Moves the router to Home underneath this
-     * page; the address stays the Requests one. Once per "Page not found" page, or at once when the router has
-     * just seen the Requests URL (before it draws anything for it).
-     * @param {boolean} [seen] The router has just seen the Requests URL.
+     * page; the address stays the Requests one. Whichever ran first, this or the router: on the next frames the
+     * page checks that the router left its "Page not found" page and parks it again if not (ensureParked).
      * @returns {void}
      */
-    function parkRouter(seen) {
-        const fallback = document.getElementById('fallbackPage');
-        if (!seen && (!fallback || state.parkedFor === fallback)) return;
-        if (fallback) state.parkedFor = fallback;
+    function parkRouter() {
+        state.parkTries++;
         const url = window.location.hash;
         const entry = history.state;
         state.parking = true;
@@ -328,6 +328,22 @@
         } finally {
             state.parking = false;
         }
+        // A router listener that ran after this one read the restored Requests address and drew "Page not found"
+        // again: look once it has drawn, and again a little later for a slower one.
+        const visit = state.visit;
+        const verify = () => { if (visit === state.visit) ensureParked(); };
+        requestAnimationFrame(() => requestAnimationFrame(verify));
+        setTimeout(verify, 250);
+    }
+
+    /**
+     * Parks the router again while it shows its "Page not found" page under this one (it is not on Home), at most
+     * PARK_TRIES times per move onto the page.
+     * @returns {void}
+     */
+    function ensureParked() {
+        if (!state.visible || state.parking || !isRoute() || !fallbackShown() || state.parkTries >= PARK_TRIES) return;
+        parkRouter();
     }
 
     /**
@@ -406,7 +422,7 @@
         state.watch = null;
         state.titleWatch?.disconnect();
         state.titleWatch = null;
-        state.parkedFor = null;
+        state.parkTries = 0;
         leaveEmbedded();
         H.admin?.leave?.();
         leaveExtras(null);
@@ -910,8 +926,8 @@
      * Follows every history move itself (not only through the shared navigation module, which drops a move back to
      * the address it saw last). Added after Jellyfin's router and stopping nothing, so every other listener gets the
      * event too; the address as it is now decides, so an older queued event never shows the page again after it
-     * was left. Jellyfin's router has just seen a move to #/requests (its listener came first) and is parked on
-     * Home under the page before it draws its "Page not found".
+     * was left. Jellyfin's router sees a move to #/requests too and is parked on Home under the page (checked
+     * again afterwards, so it does not matter whether its listener runs before or after this one).
      * @param {HashChangeEvent|PopStateEvent} e Event.
      * @returns {void}
      */
@@ -921,8 +937,9 @@
             if (state.visible) hide();
             return;
         }
+        state.parkTries = 0;
         show();
-        if (e.type === 'popstate' && state.visible) parkRouter(true);
+        if (e.type === 'popstate' && state.visible) parkRouter();
     }
 
     /**
