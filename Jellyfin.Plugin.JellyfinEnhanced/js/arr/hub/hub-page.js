@@ -17,6 +17,10 @@
     const H = (JE.internals = JE.internals || {}).arrHub = JE.internals.arrHub || {};
     const ROUTE = '#/requests';
     const PAGE_ID = 'je-requests-hub-page';
+    // A route Jellyfin's own router knows and gives the phone menu (see parkRouter).
+    const PARK_ROUTE = '#/home';
+    // At most this many parkings per move onto the page: a router that read the address after a parking redoes it.
+    const PARK_TRIES = 3;
     const OWN_TABS = ['mine', 'soon', 'ready'];
     const RELOAD_DELAY_MS = 300;
     const logPrefix = '🪼 Jellyfin Enhanced: Requests:';
@@ -37,8 +41,24 @@
         refreshFailed: false,
         retryTimer: null,
         retryDelay: 0,
-        hiddenListener: false
+        hiddenListener: false,
+        // The page under this one: its title and the control that had focus on it.
+        underTitle: null,
+        previousFocus: null,
+        // The focus id (data-je-focus) of the control last focused here, kept while focus is lost.
+        lastFocus: null,
+        // The account and server the page's content was drawn for.
+        renderedFor: null,
+        // Moves on with every visit and every leave: work started for an earlier one does nothing.
+        visit: 0,
+        titleWatch: null,
+        parking: false,
+        parkTries: 0,
+        watch: null
     };
+
+    /** The page element; kept across host re-renders that remove it from the document. */
+    let pageNode = null;
 
     /**
      * Translates through the shared status helper.
@@ -84,13 +104,37 @@
     }
 
     /**
-     * The page container (created once), Jellyfin page classes for header/back integration.
+     * The account and server now signed in.
+     * @returns {string} Identity.
+     */
+    function identity() {
+        const user = typeof ApiClient !== 'undefined' && typeof ApiClient.getCurrentUserId === 'function' ? ApiClient.getCurrentUserId() : '';
+        const server = typeof ApiClient !== 'undefined' && typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : '';
+        return `${server || ''}|${user || ''}`;
+    }
+
+    /**
+     * The page container (created once), Jellyfin page classes for header/back integration. It is put (back) into
+     * Jellyfin's current page container: leaving the Dashboard replaces that container, and this page with it.
+     * Content drawn for another account or server is dropped before it goes back; the control that had focus here
+     * gets it back.
      * @returns {HTMLElement} Page.
      */
     function pageContainer() {
-        let page = document.getElementById(PAGE_ID);
-        if (page) return page;
-        page = document.createElement('div');
+        const host = document.querySelector('.mainAnimatedPages') || document.body;
+        if (pageNode) {
+            if (pageNode.parentElement !== host) {
+                // Drawn for another account or server: everything resets (every tab's own data too) before it shows.
+                if (state.renderedFor !== null && state.renderedFor !== identity()) {
+                    JE.session?.checkNow?.('requests page remount');
+                    if (state.renderedFor !== null && state.renderedFor !== identity()) resetForIdentity();
+                }
+                host.appendChild(pageNode);
+                regainFocus();
+            }
+            return pageNode;
+        }
+        const page = pageNode = document.createElement('div');
         page.id = PAGE_ID;
         page.className = 'page type-interior mainAnimatedPage hide';
         page.setAttribute('data-title', tr('arr_hub_title'));
@@ -103,8 +147,32 @@
         root.className = 'content-primary je-hub';
         content.appendChild(root);
         page.appendChild(content);
-        (document.querySelector('.mainAnimatedPages') || document.body).appendChild(page);
+        page.addEventListener('focusin', (e) => {
+            state.lastFocus = e.target.closest?.('[data-je-focus]')?.dataset.jeFocus || '';
+        });
+        page.addEventListener('focusout', (e) => {
+            // Focus moved on to something else on purpose (the header, a dialog); one dropped (its node removed) or
+            // taken by a page the host shows under this one is kept.
+            const to = e.relatedTarget;
+            if (to && !page.contains(to) && !to.closest?.('.mainAnimatedPage')) state.lastFocus = null;
+        });
+        host.appendChild(page);
         return page;
+    }
+
+    /**
+     * Gives focus back to the control that had it here (or the selected tab) when the host took it away: the page
+     * was removed with its container, or the host focused something in a page now hidden under this one.
+     * @returns {void}
+     */
+    function regainFocus() {
+        const root = pageNode?.querySelector('.je-hub');
+        if (!state.visible || !root) return;
+        const active = document.activeElement;
+        const dropped = !active || active === document.body || !active.isConnected;
+        const covered = !dropped && !pageNode.contains(active) && !!active.closest('.mainAnimatedPage.hide');
+        if (covered) restoreFocus(root, state.lastFocus ?? '');
+        else if (dropped && state.lastFocus !== null) restoreFocus(root, state.lastFocus);
     }
 
     /**
@@ -182,26 +250,109 @@
      */
     function show() {
         if (!enabled()) return;
-        const page = pageContainer();
         if (!isRoute()) history.pushState({ page: 'requests' }, tr('arr_hub_title'), ROUTE);
+        const page = pageContainer();
         const wanted = tabFromHash();
         if (wanted) state.tab = wanted;
         if (!state.visible) {
             state.visible = true;
-            const active = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`);
+            state.visit++;
+            state.parkTries = 0;
+            state.underTitle = fallbackShown() ? null : document.title;
+            const active = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#fallbackPage)`);
             if (active) {
                 state.previousPage = active;
+                state.previousFocus = active.contains(document.activeElement) ? document.activeElement : null;
                 active.classList.add('hide');
                 active.dispatchEvent(new CustomEvent('viewhide', { bubbles: true, detail: { type: 'interior' } }));
             }
             page.classList.remove('hide');
             page.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'custom', isRestored: false, options: {} } }));
+            watchTitle();
             claimChrome();
+            watchPage();
+            claimPage();
             render();
             load();
         } else {
+            claimPage();
             render();
         }
+    }
+
+    /**
+     * Keeps this page the shown one while the Requests URL is: back in Jellyfin's current page container when the
+     * host replaced it, with Jellyfin's router moved off the Requests URL (parkRouter), and over any page the router
+     * shows meanwhile (hidden, and restored on leaving like the page this one replaced).
+     * @param {HTMLElement} [shown] A page the host has just shown.
+     * @returns {void}
+     */
+    function claimPage(shown) {
+        if (!state.visible || state.parking || !isRoute()) return;
+        const page = pageContainer();
+        ensureParked();
+        const others = [...document.querySelectorAll(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#fallbackPage)`)];
+        if (shown?.classList.contains('mainAnimatedPage') && shown !== page && shown.id !== 'fallbackPage' && !others.includes(shown)) others.push(shown);
+        if (!others.length) return;
+        for (const other of others) {
+            if (other !== state.previousPage) {
+                state.previousPage = other;
+                state.previousFocus = null;
+            }
+            other.classList.add('hide');
+            other.dispatchEvent(new CustomEvent('viewhide', { bubbles: true, detail: { type: 'interior' } }));
+        }
+        // The header follows the shown page: tell it this one is shown again.
+        page.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'custom', isRestored: true, options: {} } }));
+        claimTitle();
+        regainFocus();
+    }
+
+    /**
+     * Jellyfin's router has no Requests page. When it sees the Requests URL itself (a typed address, deep link,
+     * reload, Back/Forward) it shows its "Page not found" page, and Jellyfin 12's app bar drops the phone menu on a
+     * route it does not know, showing the wide library links instead. Moves the router to Home underneath this
+     * page; the address stays the Requests one. Whichever ran first, this or the router: on the next frames the
+     * page checks that the router left its "Page not found" page and parks it again if not (ensureParked).
+     * @returns {void}
+     */
+    function parkRouter() {
+        state.parkTries++;
+        const url = window.location.hash;
+        const entry = history.state;
+        state.parking = true;
+        try {
+            history.replaceState(entry, '', PARK_ROUTE);
+            window.dispatchEvent(new PopStateEvent('popstate', { state: entry }));
+            history.replaceState(entry, '', url);
+        } finally {
+            state.parking = false;
+        }
+        // A router listener that ran after this one read the restored Requests address and drew "Page not found"
+        // again: look once it has drawn, and again a little later for a slower one.
+        const visit = state.visit;
+        const verify = () => { if (visit === state.visit) ensureParked(); };
+        requestAnimationFrame(() => requestAnimationFrame(verify));
+        setTimeout(verify, 250);
+    }
+
+    /**
+     * Parks the router again while it shows its "Page not found" page under this one (it is not on Home), at most
+     * PARK_TRIES times per move onto the page.
+     * @returns {void}
+     */
+    function ensureParked() {
+        if (!state.visible || state.parking || !isRoute() || !fallbackShown() || state.parkTries >= PARK_TRIES) return;
+        parkRouter();
+    }
+
+    /**
+     * Follows the document while the page is shown (claimPage), before the next paint.
+     * @returns {void}
+     */
+    function watchPage() {
+        if (state.watch || !JE.core?.dom?.onBodyMutation) return;
+        state.watch = JE.core.dom.onBodyMutation('arr-hub-page', () => claimPage(), { priority: 1 });
     }
 
     /**
@@ -212,42 +363,91 @@
      */
     function claimChrome() {
         document.body.classList.add('je-hub-active');
-        const title = tr('arr_hub_title');
-        for (const delay of [0, 300, 1200]) {
-            setTimeout(() => {
-                if (!state.visible || !isRoute()) return;
-                document.title = title;
-                const header = document.querySelector('.skinHeader .pageTitle');
-                if (header) header.textContent = title;
-            }, delay);
-        }
+        const visit = state.visit;
+        for (const delay of [0, 300, 1200]) setTimeout(() => { if (visit === state.visit) claimTitle(); }, delay);
     }
 
     /**
-     * Hides the page (navigation elsewhere) and stops following the feed.
+     * True while Jellyfin's "Page not found" page is drawn (not a hidden leftover of one).
+     * @returns {boolean} Drawn.
+     */
+    function fallbackShown() {
+        const fallback = document.getElementById('fallbackPage');
+        return !!fallback && !fallback.classList.contains('hide');
+    }
+
+    /**
+     * Follows the document title while the page is shown: a title the host sets meanwhile belongs to the page
+     * under this one (not to its "Page not found" page), and is the one restored on leaving.
+     * @returns {void}
+     */
+    function watchTitle() {
+        if (state.titleWatch || typeof MutationObserver === 'undefined' || !document.head) return;
+        state.titleWatch = new MutationObserver(() => {
+            const title = document.title;
+            if (title === tr('arr_hub_title') || fallbackShown()) return;
+            state.underTitle = title;
+            claimTitle();
+        });
+        state.titleWatch.observe(document.head, { childList: true, subtree: true, characterData: true });
+    }
+
+    /**
+     * Sets the document and header title to "Requests" while this page is shown.
+     * @returns {void}
+     */
+    function claimTitle() {
+        if (!state.visible || !isRoute()) return;
+        const title = tr('arr_hub_title');
+        document.title = title;
+        const header = document.querySelector('.skinHeader .pageTitle');
+        if (header) header.textContent = title;
+    }
+
+    /**
+     * Hides the page (navigation elsewhere) and stops following the feed. The page under it comes back at once
+     * (with its title, and focus where it was); a destination the router still loads replaces it when it is ready.
+     * Focus never stays in this hidden page.
      * @returns {void}
      */
     function hide() {
         if (!state.visible) return;
         state.visible = false;
+        state.visit++;
         state.generation++;
         stopRetry();
         state.refreshFailed = false;
         document.body.classList.remove('je-hub-active');
+        state.watch?.unsubscribe();
+        state.watch = null;
+        state.titleWatch?.disconnect();
+        state.titleWatch = null;
+        state.parkTries = 0;
         leaveEmbedded();
         H.admin?.leave?.();
         leaveExtras(null);
         follow(null);
-        const page = document.getElementById(PAGE_ID);
-        if (page) {
+        const page = pageNode;
+        const focusHere = !!page && page.contains(document.activeElement);
+        if (page && !page.classList.contains('hide')) {
             page.classList.add('hide');
             page.dispatchEvent(new CustomEvent('viewhide', { bubbles: true, detail: { type: 'custom' } }));
         }
-        if (state.previousPage && !document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`)) {
-            state.previousPage.classList.remove('hide');
-            state.previousPage.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'interior', isRestored: true } }));
+        const previous = state.previousPage;
+        const restored = !!previous?.isConnected && !document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`);
+        if (restored) {
+            previous.classList.remove('hide');
+            previous.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'interior', isRestored: true } }));
         }
+        // The page under this one had this title; a page the router draws next sets its own after this.
+        if (state.underTitle && document.title === tr('arr_hub_title')) document.title = state.underTitle;
+        const back = state.previousFocus;
+        if (restored && back?.isConnected && previous.contains(back) && (focusHere || document.activeElement === document.body)) back.focus({ preventScroll: true });
+        else if (focusHere) document.activeElement.blur();
         state.previousPage = null;
+        state.previousFocus = null;
+        state.underTitle = null;
+        state.lastFocus = null;
     }
 
     /**
@@ -447,6 +647,8 @@
      * @returns {void}
      */
     function selectTab(tab) {
+        // A tab of a page already left never takes the address over from where the viewer went.
+        if (!state.visible || !isRoute()) return;
         state.tab = tab;
         const url = tab === 'mine' ? ROUTE : `${ROUTE}?tab=${encodeURIComponent(tab)}`;
         if (window.location.hash !== url) history.replaceState(history.state, '', url);
@@ -483,9 +685,10 @@
      * @returns {void}
      */
     function render() {
-        const page = document.getElementById(PAGE_ID);
-        const root = page?.querySelector('.je-hub');
+        // The retained page, also while the host has removed it: what it holds must follow the session.
+        const root = pageNode?.querySelector('.je-hub');
         if (!root) return;
+        state.renderedFor = identity();
         const focus = focusedId(root);
         renderPage(root);
         restoreFocus(root, focus);
@@ -714,21 +917,29 @@
      * @returns {void}
      */
     function handleNavigation() {
+        if (state.parking) return;
         if (isRoute()) show();
         else if (state.visible) hide();
     }
 
     /**
-     * Claims #/requests before Jellyfin's router (which has no such page).
+     * Follows every history move itself (not only through the shared navigation module, which drops a move back to
+     * the address it saw last). Added after Jellyfin's router and stopping nothing, so every other listener gets the
+     * event too; the address as it is now decides, so an older queued event never shows the page again after it
+     * was left. Jellyfin's router sees a move to #/requests too and is parked on Home under the page (checked
+     * again afterwards, so it does not matter whether its listener runs before or after this one).
      * @param {HashChangeEvent|PopStateEvent} e Event.
      * @returns {void}
      */
     function intercept(e) {
-        const hash = e?.newURL ? new URL(e.newURL).hash : window.location.hash;
-        if (!isRoute(hash)) return;
-        e.stopImmediatePropagation?.();
-        e.preventDefault?.();
+        if (state.parking) return;
+        if (!isRoute()) {
+            if (state.visible) hide();
+            return;
+        }
+        state.parkTries = 0;
         show();
+        if (e.type === 'popstate' && state.visible) parkRouter();
     }
 
     /**
@@ -741,13 +952,15 @@
         H.injectStyles?.();
         injectNavigation();
         JE.helpers?.onSidebarRebuilt?.('requests-hub', '.je-nav-requests-hub-item', injectNavigation);
-        window.addEventListener('hashchange', intercept, true);
-        window.addEventListener('popstate', intercept, true);
+        window.addEventListener('hashchange', intercept);
+        window.addEventListener('popstate', intercept);
         const lifecycle = JE.core?.lifecycle?.register('arr-hub');
         const off = JE.core?.navigation?.onNavigate?.(handleNavigation);
         if (lifecycle && off) lifecycle.track(off);
         document.addEventListener('viewshow', (e) => {
-            if (state.visible && e.target && e.target.id !== PAGE_ID && !isRoute()) hide();
+            if (!state.visible || state.parking || !e.target || e.target.id === PAGE_ID) return;
+            if (isRoute()) claimPage(e.target);
+            else hide();
         });
         // Hiding or unhiding something (here or on another page) shows at once.
         window.addEventListener('je-hidden-content-changed', () => {
@@ -763,7 +976,20 @@
         handleNavigation();
     }
 
-    JE.session?.onUserChange?.('arr-hub', () => {
+    /**
+     * Drops everything read for the previous account or server: the data, its retry and feed, and what the page
+     * shows (also while the host has it removed); shown, it reads again for the new one.
+     * @returns {void}
+     */
+    function resetForIdentity() {
+        // Everything drawn for the previous identity goes, embedded and extension tabs included (their content
+        // would otherwise survive the redraw of a still-selected tab).
+        leaveEmbedded();
+        H.admin?.leave?.();
+        leaveExtras(null);
+        const root = pageNode?.querySelector('.je-hub');
+        if (root) root.textContent = '';
+        state.renderedFor = null;
         state.data = null;
         state.error = false;
         state.refreshFailed = false;
@@ -775,7 +1001,9 @@
             render();
             load();
         }
-    });
+    }
+
+    JE.session?.onUserChange?.('arr-hub', resetForIdentity);
 
     /**
      * Redraws just the tab strip (an admin tab's answer changed the Overview count), keeping focus
@@ -783,7 +1011,7 @@
      * @returns {void}
      */
     function refreshTabs() {
-        const root = document.getElementById(PAGE_ID)?.querySelector('.je-hub');
+        const root = pageNode?.querySelector('.je-hub');
         if (!root || !state.visible) return;
         const strip = root.querySelector('.je-hub-tabs');
         const focus = strip && strip.contains(document.activeElement) ? focusedId(root) : null;
