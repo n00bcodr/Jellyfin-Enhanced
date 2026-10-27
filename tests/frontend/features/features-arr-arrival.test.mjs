@@ -247,6 +247,504 @@ test('a version added to an episode the page shows (Jellyfin 12 groups an episod
   assert.equal(h.id(), OLD);
 });
 
+// LR-2: the version picker is Jellyfin's own; JE's in-place patches never touch it. After the first
+// redraw, a later version (another burst) must reach it through one more coalesced redraw.
+const versionPage = (t, kind, versions) => {
+  const h = setup(t, kind === 'movie'
+    ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions()) }
+    : { answers: () => episode('ready', { versions: versions() }) });
+  // Jellyfin's controller draws the picker from the item on each show.
+  const picker = h.document.createElement('select');
+  picker.className = 'selectSource';
+  h.view.appendChild(picker);
+  const draw = () => picker.replaceChildren(...Array.from({ length: versions() }, (_, n) => {
+    const o = h.document.createElement('option');
+    o.textContent = `Version ${n + 1}`;
+    return o;
+  }));
+  draw();
+  h.view.addEventListener('viewshow', draw);
+  return { h, picker };
+};
+
+for (const kind of ['movie', 'episode']) {
+  test(`${kind}: separate later version bursts each reach Jellyfin's version picker with one redraw per burst`, async t => {
+    let versions = 1;
+    const { h, picker } = versionPage(t, kind, () => versions);
+    await h.D.update(false);
+    versions = 2;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1), 'the first burst redraws');
+    await sleep(40);
+    assert.equal(picker.options.length, 2);
+    h.A.timing.batch = 80;
+    for (const burst of [[3, 4], [5, 6]]) {
+      const before = h.host.shows.length;
+      for (const n of burst) {
+        versions = n;
+        await h.D.update(true);
+      }
+      assert.equal(h.host.shows.length, before, 'the burst settles first');
+      assert.equal(h.A.state().base.versions, burst[0] - 1, 'not recorded as drawn before Jellyfin redraws');
+      assert.ok(await until(() => h.host.shows.length === before + 1), 'the later burst redraws the native page');
+      await sleep(120);
+      assert.equal(h.host.shows.length, before + 1, 'one redraw for the burst');
+      assert.equal(picker.options.length, burst[1], 'the picker shows every version');
+      assert.equal(h.A.state().base.versions, burst[1]);
+    }
+    assert.equal(h.replays.length, 3, 'JE page handlers replay once per redraw');
+    assert.equal(h.id(), OLD);
+  });
+
+  test(`${kind}: a later version waits for the gap and for the viewer's finger before Jellyfin redraws`, async t => {
+    let versions = 2;
+    const { h, picker } = versionPage(t, kind, () => versions);
+    await h.D.update(false);
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1));
+    h.A.timing.gap = 250;
+    h.window.dispatchEvent(new h.window.Event('pointerdown'));
+    versions = 4;
+    await h.D.update(true);
+    await sleep(320);
+    assert.equal(h.host.shows.length, 1, 'held while the pointer is down');
+    assert.equal(picker.options.length, 3);
+    assert.equal(h.A.state().base.versions, 3, 'still drawn with three');
+    h.window.dispatchEvent(new h.window.Event('pointerup'));
+    assert.ok(await until(() => h.host.shows.length === 2, 2000), 'redrawn once released');
+    assert.equal(picker.options.length, 4);
+  });
+}
+
+// LRR-1: Jellyfin's redraw is asynchronous and can fail (its item read errors, the old controls stay).
+// A movie or episode change counts as drawn only once Jellyfin's own picker (select.selectSource) lists it.
+const asyncVersionPage = (t, kind, versions, fail) => {
+  const h = setup(t, kind === 'movie'
+    ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions()) }
+    : { answers: () => episode('ready', { versions: versions() }) });
+  const picker = h.document.createElement('select');
+  picker.className = 'selectSource';
+  h.view.appendChild(picker);
+  const draw = () => picker.replaceChildren(...Array.from({ length: versions() }, () => h.document.createElement('option')));
+  draw();
+  h.view.addEventListener('viewshow', async () => {
+    const failed = fail();
+    await Promise.resolve();
+    if (!failed) draw();
+  });
+  return { h, picker };
+};
+
+for (const kind of ['movie', 'episode']) {
+  test(`${kind}: a later native redraw that fails is tried again and the baseline waits for it (review probe)`, async t => {
+    let versions = 1;
+    let failNext = false;
+    const { h, picker } = asyncVersionPage(t, kind, () => versions, () => { const f = failNext; failNext = false; return f; });
+    await h.D.update(false);
+    versions = 2;
+    await h.D.update(true);
+    assert.ok(await until(() => picker.options.length === 2));
+    failNext = true;
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length >= 2));
+    await sleep(40);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(40);
+    assert.equal(picker.options.length, 3, 'fresh status reads recover the failed redraw');
+    assert.equal(h.A.state().base.versions, 3);
+    assert.equal(h.host.shows.length, 3, 'one retry, no loop');
+    h.D.stop(); // leave the followed page; the host keeps the same cached view for Back
+    await h.D.update(false);
+    await sleep(40);
+    assert.equal(picker.options.length, 3, 'a cached-view restore stays reconciled');
+    assert.equal(h.host.shows.length, 3);
+  });
+
+  test(`${kind}: a native redraw that never takes is tried a bounded number of times, then left until a newer version`, async t => {
+    let versions = 2;
+    let failing = true;
+    const { h, picker } = asyncVersionPage(t, kind, () => versions, () => failing);
+    await h.D.update(false);
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === h.A.timing.redrawTries), 'retried up to the limit');
+    for (let n = 0; n < 4; n++) { await h.D.update(true); await sleep(10); }
+    await sleep(60);
+    assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'no further redraw for the same change');
+    assert.equal(picker.options.length, 2);
+    assert.equal(h.A.state().base.versions, 2, 'never recorded as drawn');
+    failing = false;
+    versions = 4;
+    await h.D.update(true);
+    assert.ok(await until(() => picker.options.length === 4), 'a newer version gets a fresh redraw');
+    assert.ok(await until(() => h.A.state().base.versions === 4), 'drawn once the picker lists it');
+    assert.equal(h.host.shows.length, h.A.timing.redrawTries + 1);
+  });
+
+  test(`${kind}: a slow native redraw that catches up before the retry needs no second redraw`, async t => {
+    let versions = 2;
+    const h = setup(t, kind === 'movie'
+      ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+      : { answers: () => episode('ready', { versions }) });
+    const picker = h.document.createElement('select');
+    picker.className = 'selectSource';
+    h.view.appendChild(picker);
+    const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+    draw();
+    h.view.addEventListener('viewshow', () => { setTimeout(draw, 40); });
+    h.A.timing.gap = 150;
+    await h.D.update(false);
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1));
+    assert.ok(await until(() => h.A.state().base.versions === 3, 1000), 'drawn once the picker caught up');
+    await sleep(200);
+    assert.equal(h.host.shows.length, 1, 'no second redraw');
+    assert.equal(picker.options.length, 3);
+  });
+}
+
+// LRR2: a picker the page had, missing at the check (Jellyfin mid-redraw), is not a redraw that took;
+// and a version removed while a retry waits must not stay the target or fence a later arrival.
+const retryPage = (t, kind) => {
+  let versions = 2;
+  const h = setup(t, kind === 'movie'
+    ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+    : { answers: () => episode('ready', { versions }) });
+  Object.assign(h.A.timing, { settle: 15, gap: 140, batch: 25 });
+  const picker = h.document.createElement('select');
+  picker.className = 'selectSource';
+  h.view.appendChild(picker);
+  const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+  draw();
+  let render = draw;
+  h.view.addEventListener('viewshow', () => render());
+  return { h, picker, draw, set: n => { versions = n; }, render: fn => { render = fn; } };
+};
+
+for (const kind of ['movie', 'episode']) {
+  test(`${kind}: a picker missing while Jellyfin redraws is not counted as drawn (review probe)`, async t => {
+    const f = retryPage(t, kind), { h } = f;
+    await h.D.update(false);
+    // The first redraw takes the picker away and puts the old one back after the check: no item render.
+    f.render(() => { if (h.host.shows.length === 1) { f.picker.remove(); setTimeout(() => h.view.appendChild(f.picker), 55); } else f.draw(); });
+    f.set(3);
+    await h.D.update(true);
+    await sleep(100);
+    assert.equal(h.A.state().base.versions, 2, 'not recorded as drawn while the picker was missing');
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(300);
+    assert.equal(f.picker.options.length, 3, 'retried once the picker was back');
+    assert.equal(h.A.state().base.versions, 3);
+    assert.equal(h.host.shows.length, 2, 'one retry');
+    h.D.stop();
+    await h.D.update(false);
+    await sleep(180);
+    assert.equal(f.picker.options.length, 3, 'a cached-view restore stays reconciled');
+    assert.equal(h.host.shows.length, 2);
+  });
+
+  test(`${kind}: a picker that stays missing after the redraw is tried a bounded number of times`, async t => {
+    const f = retryPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => { f.picker.remove(); });
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000), 'given up after the bound');
+    for (let n = 0; n < 3; n++) { await h.D.update(true); await sleep(10); }
+    await sleep(300);
+    assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'no loop');
+    assert.equal(h.A.state().base.versions, 2);
+  });
+
+  test(`${kind}: a version removed while a failed redraw waits becomes the target, and a later arrival still redraws (review probe)`, async t => {
+    const f = retryPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => { if (h.host.shows.length > 1) f.draw(); }); // the first redraw fails
+    f.set(4);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().failures?.tries === 1));
+    f.set(3); // one version removed while the retry for four waits
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 3), 'the retry draws what is there now');
+    assert.equal(f.picker.options.length, 3);
+    assert.equal(h.A.state().abandoned, null);
+    f.set(4); // a new arrival after the page shows three
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(350);
+    assert.equal(f.picker.options.length, 4, 'the later arrival gets its redraw');
+    assert.equal(h.A.state().base.versions, 4);
+    assert.equal(h.host.shows.length, 3);
+  });
+
+  test(`${kind}: Jellyfin changing the item again gives a given-up redraw one fresh, bounded chance`, async t => {
+    const handlers = [];
+    let versions = 2;
+    const h = setup(t, {
+      apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+      ...(kind === 'movie'
+        ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+        : { answers: () => episode('ready', { versions }) })
+    });
+    Object.assign(h.A.timing, { settle: 15, gap: 60, batch: 25 });
+    const picker = h.document.createElement('select');
+    picker.className = 'selectSource';
+    h.view.appendChild(picker);
+    const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+    draw();
+    let failing = true;
+    h.view.addEventListener('viewshow', () => { if (!failing) draw(); });
+    await h.D.update(false);
+    assert.ok(await until(() => handlers.length === 1));
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    const shows = h.host.shows.length;
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.host.shows.length, shows, 'the same read again stays given up');
+    failing = false;
+    handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [], ItemsUpdated: [OLD], ItemsRemoved: [] } });
+    await sleep(200);
+    assert.equal(h.host.shows.length, shows, 'the item merely updated again is no evidence of other versions');
+    // A version replaced by another of the same count: Jellyfin adds and removes items naming the page's item.
+    handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [NEW], ItemsUpdated: [OLD], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] } });
+    assert.ok(await until(() => picker.options.length === 3, 2000), 'versions added or removed retries');
+    assert.ok(await until(() => h.A.state().base.versions === 3));
+    assert.equal(h.host.shows.length, shows + 1);
+  });
+
+  // LRR3: the picker the page was shown with can go missing before JE's first redraw; and repeated
+  // LibraryChanged notifications must not renew an unchanged failed change without bound.
+  const eventPage = (t, kind, initial = 2) => {
+    const handlers = [];
+    let versions = initial;
+    const h = setup(t, {
+      apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+      items: { [OLD]: { Id: OLD, SeasonId: SEASON, SeriesId: SERIES } },
+      ...(kind === 'movie'
+        ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+        : { answers: () => episode('ready', { versions }) })
+    });
+    Object.assign(h.A.timing, { settle: 15, gap: 100, batch: 25 });
+    const picker = h.document.createElement('select');
+    picker.className = 'selectSource';
+    h.view.appendChild(picker);
+    const draw = () => picker.replaceChildren(...Array.from({ length: versions }, () => h.document.createElement('option')));
+    draw();
+    let render = draw;
+    h.view.addEventListener('viewshow', () => render());
+    return { h, picker, draw, set: n => { versions = n; }, render: fn => { render = fn; },
+      event: data => handlers[0]({ MessageType: 'LibraryChanged', Data: data }) };
+  };
+
+  test(`${kind}: the picker the page was shown with, missing before the first redraw, is not counted as drawn (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    assert.equal(f.picker.options.length, 2);
+    f.picker.remove(); // Jellyfin takes its controls away before JE's own redraw
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    await sleep(55);
+    assert.equal(h.A.state().base.versions, 2, 'not drawn while the picker was missing');
+    h.view.appendChild(f.picker); // the old two-option controls come back
+    f.render(f.draw);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(350);
+    assert.equal(f.picker.options.length, 3, 'retried once the picker was back');
+    assert.equal(h.A.state().base.versions, 3);
+    h.D.stop();
+    await h.D.update(false);
+    await sleep(180);
+    assert.equal(f.picker.options.length, 3);
+    assert.equal(h.A.state().base.versions, 3);
+  });
+
+  test(`${kind}: spaced identical updates of the item never renew an unchanged failed change (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    assert.equal(h.host.shows.length, 3);
+    for (let round = 1; round <= 5; round++) {
+      f.event({ ItemsUpdated: [OLD] });
+      await sleep(400);
+    }
+    assert.equal(h.host.shows.length, 3, 'no fresh tries for the same change');
+    assert.equal(h.A.state().base.versions, 2);
+    assert.equal(h.A.state().abandoned?.versions, 3);
+  });
+
+  test(`${kind}: a continuous stream of identical item updates stays at one bounded set (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    for (let n = 0; n < 60; n++) { f.event({ ItemsUpdated: [OLD] }); await sleep(20); }
+    await sleep(300);
+    assert.equal(h.host.shows.length, 3);
+    assert.equal(h.replays.length, 3);
+    assert.equal(f.picker.options.length, 2);
+  });
+
+  test(`${kind}: versions added or removed renew a given-up change at most redrawRenewals times per view`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    const { redrawTries, redrawRenewals } = h.A.timing;
+    for (let round = 1; round <= redrawRenewals + 2; round++) {
+      f.event({ ItemsAdded: [NEW], ItemsUpdated: [OLD], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] });
+      const expected = redrawTries * (1 + Math.min(round, redrawRenewals));
+      assert.ok(await until(() => h.host.shows.length === expected && h.A.state().abandoned?.versions === 3, 3000), `set ${round}`);
+      await sleep(150);
+      assert.equal(h.host.shows.length, expected);
+    }
+    assert.equal(h.host.shows.length, redrawTries * (1 + redrawRenewals), 'bounded per view');
+    assert.equal(h.A.state().base.versions, 2);
+  });
+
+  test(`${kind}: a given-up change that Jellyfin's returned picker already shows is recorded with no redraw`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => f.picker.remove());
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2000));
+    f.draw();
+    h.view.appendChild(f.picker); // Jellyfin's controls come back, already listing all three
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 3);
+    assert.equal(h.A.state().abandoned, null);
+    await sleep(200);
+    assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'no redraw for it');
+  });
+
+  // LRR4: a removal down to one starts the page over; a given-up change fences only its own count.
+  const flagged = { ItemsUpdated: [OLD], ItemsAdded: [NEW], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] };
+
+  test(`${kind}: drawn with two, a removal to one, then a new second version redraws (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(1); f.draw(); // Jellyfin redrew itself after a version was removed
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 1, 'starts over at one');
+    f.set(2); // the picker stays at one until JE has Jellyfin redraw
+    await h.D.update(true);
+    f.event(flagged);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 2, 'a new arrival after an observed removal reaches the picker');
+    assert.equal(h.A.state().base.versions, 2);
+    assert.equal(h.host.shows.length, 1);
+  });
+
+  test(`${kind}: after a removal to one, a picker still listing the removed version doesn't stand in for the redraw`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(1); // Jellyfin doesn't redraw for a removal: its picker still lists both old versions
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 1);
+    assert.equal(f.picker.options.length, 2);
+    f.set(2); // a new second version: the count matches the stale picker, but Jellyfin must still redraw
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1), 'redrawn');
+    assert.ok(await until(() => h.A.state().base.versions === 2));
+  });
+
+  test(`${kind}: redrawn one → two, a removal to one, then a new second version redraws again (review probe)`, async t => {
+    const f = eventPage(t, kind, 1), { h } = f;
+    await h.D.update(false);
+    f.set(2);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 2));
+    assert.equal(h.host.shows.length, 1);
+    f.set(1); f.draw();
+    await h.D.update(true);
+    f.set(2);
+    await h.D.update(true);
+    f.event(flagged);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 2);
+    assert.equal(h.host.shows.length, 2, 'handled like a first arrival');
+    assert.equal(h.A.state().base.versions, 2);
+  });
+
+  test(`${kind}: with renewals used up, a lower read and a new arrival are new changes (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(5);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 5, 2500));
+    for (let n = 1; n <= h.A.timing.redrawRenewals; n++) {
+      f.event(flagged);
+      assert.ok(await until(() => h.host.shows.length === 3 * (n + 1) && h.A.state().abandoned?.versions === 5, 2500));
+    }
+    assert.equal(h.A.state().renewals, h.A.timing.redrawRenewals);
+    f.set(3); // a removal is read
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.A.state().abandoned, null, 'the obsolete five no longer fences anything');
+    f.render(() => f.draw());
+    f.set(4);
+    await h.D.update(true);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 4, 'a genuine new four reaches the picker');
+    assert.equal(h.A.state().base.versions, 4);
+  });
+
+  test(`${kind}: given up at three with renewals used up, a fourth version still redraws`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2500));
+    for (let n = 1; n <= h.A.timing.redrawRenewals; n++) {
+      f.event(flagged);
+      assert.ok(await until(() => h.host.shows.length === 3 * (n + 1) && h.A.state().abandoned?.versions === 3, 2500));
+    }
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.host.shows.length, 12, 'the same count stays given up');
+    f.render(() => f.draw());
+    f.set(4);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 4, 1500));
+    assert.equal(f.picker.options.length, 4);
+    assert.equal(h.host.shows.length, 13);
+  });
+
+  test(`${kind}: a failed redraw whose change is gone again waits for nothing`, async t => {
+    const f = retryPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => { if (h.host.shows.length > 1) f.draw(); });
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().failures?.tries === 1));
+    f.set(2); // the new version went away before the retry
+    await h.D.update(true);
+    await sleep(300);
+    assert.equal(h.host.shows.length, 1, 'no retry for a change that is gone');
+    assert.equal(h.A.state().base.versions, 2);
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 3, 1000));
+    assert.equal(f.picker.options.length, 3);
+  });
+}
+
 test('a movie whose file Jellyfin now keeps as a version of another item moves to that item', async t => {
   // Jellyfin makes the higher resolution the primary: the 1080p item the page showed becomes a version of the
   // new 2160p item (12.x), which the status names.

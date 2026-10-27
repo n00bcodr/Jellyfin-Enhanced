@@ -319,7 +319,8 @@ test('owner lookup failure keeps a usable confirmation with a translated fallbac
   assert.equal(posts.length, 1);
 });
 
-for (const choice of [null, queuedChoice(0), queuedChoice('1'), queuedChoice(1, { rootFolder: null })]) {
+for (const choice of [null, queuedChoice('1'), queuedChoice(-1), queuedChoice(1.5), queuedChoice(1, { profileId: 0 }),
+  queuedChoice(1, { profileId: '4' }), queuedChoice(1, { rootFolder: ' ' }), queuedChoice(1, { rootFolder: 5 }), queuedChoice(1, { owner: 7 })]) {
   test(`a malformed conflict cannot authorize replacement (${JSON.stringify(choice)})`, async t => {
     const { h, posts } = await conflictSheet(t, () => choiceError(choice));
     assert.equal(button(h, 'add-replace-r4'), null);
@@ -363,4 +364,80 @@ test('an unavailable queued profile is named by id and cannot be adopted from st
   assert.equal(button(h, 'add-use-r4').disabled, true);
   assert.ok(button(h, 'add-replace-r4'));
   assert.equal(posts.length, 1);
+});
+
+// The server's RequestChoice contract (LR-1): profile and folder are nullable, the owner of an identity
+// split is the empty GUID, and a split before the first job is revision 0 (TitleChoiceRoundFiveTests).
+const EMPTY_OWNER = '00000000-0000-0000-0000-000000000000';
+const splitChoice = version => ({ owner: EMPTY_OWNER, version, profileId: null, rootFolder: null });
+
+for (const version of [0, 3]) {
+  test(`an identity split at revision ${version} reaches an explicit confirmation bound to that revision`, async t => {
+    const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(splitChoice(version)) : { outcome: 'accepted' });
+    assert.ok(button(h, 'add-replace-r4'), 'replace offered');
+    const conflict = h.document.querySelector('.je-manage-add-conflict');
+    assert.match(conflict.textContent, new RegExp(translate('arr_manage_add_choice_heading_unowned')));
+    assert.match(conflict.textContent, /No profile queued/);
+    assert.match(conflict.textContent, /No folder queued/);
+    assert.match(conflict.textContent, new RegExp(`Version ${version}`));
+    assert.equal(button(h, 'add-use-r4'), null, 'nothing queued to adopt');
+    assert.equal(conflict.querySelector('.je-manage-add-choice-root'), null, 'the fallback is not styled as a path');
+    assert.equal(h.calls.filter(c => c.path.startsWith('/arr/admin/users/')).length, 0, 'no lookup of the empty owner');
+    assert.match(h.document.querySelector('.je-manage-add-message').textContent, /explicit confirmation/);
+    clickAsViewer(button(h, 'add-replace-r4'));
+    assert.equal(posts.length, 1, 'replace alone sends nothing');
+    clickAsViewer(button(h, 'add-confirm-r4'));
+    await until(() => posts.length === 2);
+    assert.equal(posts[1].overrideChoiceVersion, version);
+    assert.equal(posts[1].profileId, 5);
+    assert.equal(posts[1].rootFolder, '/data/movies4k');
+    assert.equal(posts[1].idempotencyKey, posts[0].idempotencyKey);
+    await until(() => h.document.querySelector('.je-manage-add-message')?.textContent.includes("hasn't confirmed it yet"));
+    assert.equal(h.document.querySelector('.je-manage-add-conflict'), null);
+    clickAsViewer(button(h, 'add-cancel-r4'));
+    clickAsViewer(button(h, 'add-r4'));
+    await until(() => button(h, 'add-submit-r4'));
+    clickAsViewer(button(h, 'add-submit-r4'));
+    await until(() => posts.length === 3);
+    assert.equal(posts[2].overrideChoiceVersion, undefined, 'the revision binds one send only');
+  });
+}
+
+test('a partial owned choice shows the missing field, adopts the queued one and keeps the sheet selection for the rest', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice(2, { profileId: 4, rootFolder: null })) : { outcome: 'accepted' });
+  await until(() => h.document.querySelector('.je-manage-add-conflict')?.textContent.includes('Alex <admin>'));
+  const conflict = h.document.querySelector('.je-manage-add-conflict');
+  assert.match(conflict.textContent, /HD-1080p \(profile 4\)/);
+  assert.match(conflict.textContent, /No folder queued/);
+  assert.match(conflict.textContent, /Version 2/);
+  assert.ok(button(h, 'add-replace-r4'));
+  assert.equal(button(h, 'add-use-r4').disabled, false);
+  clickAsViewer(button(h, 'add-use-r4'));
+  await until(() => posts.length === 2);
+  assert.equal(posts[1].profileId, 4);
+  assert.equal(posts[1].rootFolder, '/data/movies4k');
+  assert.equal(posts[1].overrideChoiceVersion, undefined);
+});
+
+test('a partial choice can be explicitly replaced at its revision, and only adoption depends on current options', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError(queuedChoice(4, { profileId: null, rootFolder: '/gone' })) : { outcome: 'accepted' });
+  const conflict = h.document.querySelector('.je-manage-add-conflict');
+  assert.match(conflict.textContent, /No profile queued/);
+  assert.match(conflict.textContent, /\/gone/);
+  assert.equal(button(h, 'add-use-r4').disabled, true);
+  assert.match(conflict.textContent, /no longer available/);
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-confirm-r4'));
+  await until(() => posts.length === 2);
+  assert.equal(posts[1].overrideChoiceVersion, 4);
+});
+
+test('a choice without an owner field still offers confirmation with the unowned wording', async t => {
+  const { h, posts } = await conflictSheet(t, n => n === 1 ? choiceError({ version: 0 }) : { outcome: 'accepted' });
+  assert.ok(button(h, 'add-replace-r4'));
+  assert.match(h.document.querySelector('.je-manage-add-conflict').textContent, new RegExp(translate('arr_manage_add_choice_heading_unowned')));
+  clickAsViewer(button(h, 'add-replace-r4'));
+  clickAsViewer(button(h, 'add-confirm-r4'));
+  await until(() => posts.length === 2);
+  assert.equal(posts[1].overrideChoiceVersion, 0);
 });
