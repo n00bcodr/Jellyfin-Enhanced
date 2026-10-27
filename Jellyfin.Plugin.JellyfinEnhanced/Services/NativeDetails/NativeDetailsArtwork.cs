@@ -84,8 +84,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly Func<DateTime> _now;
         private readonly ImageMetadataAdmission _images = new();
         private readonly ServerBlobCache? _disk;
-        // OnDisk: the image is (or was) in the server-side cache too, so a memory hit needn't save it again.
-        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk)> _bytes = new(StringComparer.Ordinal);
+        // OnDisk: nothing left to save (the image is, or was, in the server-side cache, or its save was superseded by a
+        // Clear, Forget, folder change or switch-off). Generation: the server-side cache's generation from before the
+        // bytes were fetched; every save of them carries it, so an invalidation since then refuses the save.
+        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk, long Generation)> _bytes = new(StringComparer.Ordinal);
         private long _cachedBytes;
 
         /// <summary>Creates the artwork service with a key in memory.</summary>
@@ -300,30 +302,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Only what an upstream fetch would accept is served, with the type it was stored with.
             if (entry == null || !IsImageType(entry.ContentType) || entry.Bytes.Length > MaxImageBytes) return null;
             Interlocked.Increment(ref _diskHits);
-            Store(key, entry.Bytes, entry.ContentType, onDisk: true);
+            Store(key, entry.Bytes, entry.ContentType, onDisk: true, generation: 0);
             return (entry.Bytes, entry.ContentType);
         }
 
         /// <summary>
-        /// Saves an image the byte cache holds but the server-side cache doesn't (it was fetched while that was off), with
-        /// its fetch time; concurrent hits save it once, and a refused save (cache off, disk busy) is tried on a later hit.
-        /// An image that was saved and then cleared isn't saved again from memory.
+        /// Saves an image the byte cache holds but the server-side cache doesn't (fetched while that was off, or its save
+        /// was skipped: disk busy, over the cap), with its fetch time and the generation from before its fetch, so the
+        /// store refuses it after any Clear, Forget, folder change or switch-off since. Concurrent hits save it once. A save
+        /// refused for being off, busy or over the cap is tried again on a later hit; one superseded by an invalidation
+        /// never is, and neither is an image that was saved and then cleared.
         /// </summary>
-        private async Task PersistAsync(string key, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk) memory)
+        private async Task PersistAsync(string key, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk, long Generation) memory)
         {
-            var claimed = (memory.Bytes, memory.ContentType, memory.At, true);
+            var claimed = memory with { OnDisk = true };
             if (!_bytes.TryUpdate(key, claimed, memory)) return;
             var stored = false;
             try
             {
-                stored = await _disk!.PutAsync(DiskNamespace, key, memory.Bytes, memory.ContentType, CancellationToken.None, fetchedAt: memory.At).ConfigureAwait(false);
+                stored = await _disk!.PutAsync(DiskNamespace, key, memory.Bytes, memory.ContentType, CancellationToken.None, memory.Generation, fetchedAt: memory.At).ConfigureAwait(false);
             }
             catch (Exception)
             {
                 // Optional: the image is still served from memory.
             }
 
-            if (!stored) _bytes.TryUpdate(key, memory, claimed);
+            // Superseded (the generation moved on): it stays settled, never saved. Otherwise a later hit tries again.
+            if (!stored && _disk!.Generation == memory.Generation) _bytes.TryUpdate(key, memory, claimed);
         }
 
         private static bool IsImageType(string type) => type is "image/jpeg" or "image/png" or "image/webp";
@@ -353,11 +358,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
 
                 var bytes = buffer.ToArray();
-                Store(key, bytes, type, onDisk: false);
-                if (_disk != null && await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false)
+                Store(key, bytes, type, onDisk: false, generation: generation);
+                // Saved, or superseded by an invalidation since the fetch began: either way nothing is left to save.
+                if (_disk != null && (await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false)
+                        || _disk.Generation != generation)
                     && _bytes.TryGetValue(key, out var stored) && ReferenceEquals(stored.Bytes, bytes))
                 {
-                    _bytes.TryUpdate(key, (stored.Bytes, stored.ContentType, stored.At, true), stored);
+                    _bytes.TryUpdate(key, stored with { OnDisk = true }, stored);
                 }
 
                 return (bytes, type);
@@ -368,7 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
         }
 
-        private void Store(string key, byte[] bytes, string type, bool onDisk)
+        private void Store(string key, byte[] bytes, string type, bool onDisk, long generation)
         {
             if (Interlocked.Add(ref _cachedBytes, bytes.Length) > MaxCacheBytes)
             {
@@ -380,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (_bytes.TryGetValue(key, out var previous)) Interlocked.Add(ref _cachedBytes, -previous.Bytes.Length);
-            _bytes[key] = (bytes, type, DateTime.UtcNow, onDisk);
+            _bytes[key] = (bytes, type, DateTime.UtcNow, onDisk, generation);
         }
 
         private string Sign(byte[] payload)

@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// sweep or Clear alike.
     /// <list type="bullet">
     /// <item><description>Writes go to a temporary file renamed into place under the commit lock, carrying the
-    /// generation they started in: Clear, Forget, or a change of folder or switch ends it, and a write from an
+    /// generation they started in: Clear, Forget, a change of folder or switching the cache off ends it, and a write from an
     /// earlier generation is refused at its commit, so cleared or forgotten data never comes back.</description></item>
     /// <item><description>A read opens the file once, checks the bounded header (key, sizes, the namespace's largest
     /// entry) before anything is allocated for the body, then reads the body from the same handle. A file that
@@ -202,7 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
         /// <summary>
         /// The current generation. Capture it before reading what an entry is made from and pass it to
-        /// <see cref="PutAsync"/>: Clear, Forget, or a change of folder or switch since then refuses the write.
+        /// <see cref="PutAsync"/>: Clear, Forget, a change of folder or switching the cache off since then refuses the write.
         /// </summary>
         public long Generation
         {
@@ -710,7 +710,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
 
         /// <summary>
-        /// The current settings. A change of folder or switch ends the generation (and a folder change resets the
+        /// The current settings. A change of folder or switching the cache off ends the generation (and a folder change resets the
         /// running totals); a change sweeps at once, reading headers when it isn't the first look (a lower age limit
         /// applies to entries read recently too).
         /// </summary>
@@ -730,7 +730,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     foreach (var name in _namespaceBytes.Keys.ToList()) _namespaceBytes[name] = 0;
                 }
 
-                if (_seen != null && (_seen.Folder != settings.Folder || _seen.Enabled != settings.Enabled)) _generation++;
+                // Moving the folder or switching the cache off ends the generation. Switching it on doesn't: no write can be
+                // under way while it is off, and images fetched meanwhile may still be saved (their generation holds).
+                if (_seen != null && (_seen.Folder != settings.Folder || (_seen.Enabled && !settings.Enabled))) _generation++;
                 _seen = settings;
             }
 
