@@ -679,6 +679,8 @@
         const rows = seasonId ? await JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(seasonId)}?language=${encodeURIComponent(language)}`)
             .then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null) : null;
         const arrHolds = status.reason?.code !== 'not_in_arr';
+        // The season rows say this episode hasn't aired (an unknown or placeholder date): never asked for on its own.
+        if ((Array.isArray(rows?.episodes) ? rows.episodes : []).some(e => e?.episode === parts?.episode && e.aired === false)) return 'unchecked';
         if (rows?.source === 'provider' && !arrHolds) return null;
         if (rows?.source === 'destination') return 'differently';
         return JE.arrAsk.heldReason(rows, { arrHolds });

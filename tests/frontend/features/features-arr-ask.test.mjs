@@ -1933,3 +1933,20 @@ test('UX2R3-1 probe: a failed refresh cannot reuse a warm destination source to 
   h.setStatus(absentSeason()); await h.JE.internals.arrStatusDetails.update(true); await settle(30);
   assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'), 'established again');
 });
+
+// Review round 5 probe (UX2R5-1), ported: the provider season page answer the server gave for TMDB's placeholder date before the
+// fix (status: aired, "not here"; rows: aired false). The page holds the episode as the picker does, and nothing is sent.
+test('UX2R5-1 probe: a provider page never offers or posts an episode its rows say hasn\'t aired', async t => {
+  const status = { key: 'tv:tvdb:100:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 1, ready: 0 },
+    episodes: [{ key: 'tv:tvdb:100:s1:e1', season: 1, episode: 1, itemId: ID(1), row: true, stage: 'notHere', reason: { code: 'not_in_arr' }, airDate: '0001-01-01T00:00:00Z' }] };
+  const rows = { key: 'tv:tvdb:100:s1', series: 'tv:tvdb:100', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing: false, canRequest: true, source: 'provider',
+    episodes: [{ episode: 1, title: 'Episode', airDate: '0001-01-01', aired: false }] };
+  const h = setup(t, { rows: row(1, { virtual: true }), status, server: { rows: () => ({ outcome: 'accepted', rows }) } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  const button = h.list().querySelector('.je-ask-get');
+  if (button) h.click(button);
+  await settle(30);
+  assert.equal(h.posts.length, 0, 'an episode refused as unaired in the picker is not requested by the page');
+  assert.equal(button, null, 'no request action for the unknown date');
+});

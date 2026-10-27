@@ -129,7 +129,10 @@
         if (season?.failed) return 'unchecked';
         const rows = season?.rows;
         const context = { arrHolds: arrHolds() };
-        return JE.arrAsk.singleEpisodesAskable?.(rows, context) === true ? null : (JE.arrAsk.heldReason?.(rows, context) || 'unchecked');
+        if (JE.arrAsk.singleEpisodesAskable?.(rows, context) !== true) return JE.arrAsk.heldReason?.(rows, context) || 'unchecked';
+        // The season rows say it hasn't aired (an unknown or placeholder date, by the one airing rule): never asked for by number,
+        // as Pick episodes doesn't offer it, whatever the status says.
+        return (Array.isArray(rows?.episodes) ? rows.episodes : []).some(e => e?.episode === ep.episode && e.aired === false) ? 'unchecked' : null;
     }
 
     /**

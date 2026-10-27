@@ -477,7 +477,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal static readonly TimeSpan DayLasts = TimeSpan.FromHours(36);
 
         /// <summary>A date-only day that is still today or later somewhere (see <see cref="DayLasts"/>).</summary>
-        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date + DayLasts > now;
+        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date > now - DayLasts;
 
         /// <summary>
         /// A date still to come: an instant after now, or a date-only day still ahead somewhere. The one airing rule of status and
@@ -746,15 +746,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             int? nextEpisode = null;
             foreach (var e in page.Episodes.Where(e => e.Season == season).OrderBy(e => e.Episode))
             {
-                var out_ = e.AirDate is DateTime d && !NotYet(d, isDay: true, c.Now);
+                // The one airing rule (TMDB's placeholder or unknown date: not aired), as Pick episodes uses it.
+                var out_ = Aired(e.AirDate, isDay: true, c.Now);
                 if (out_) aired++;
-                else if (e.AirDate is DateTime future && (nextAir == null || future < nextAir))
+                else if (Valid(e.AirDate) is DateTime future && (nextAir == null || future < nextAir))
                 {
                     nextAir = future;
                     nextEpisode = e.Episode;
                 }
 
-                var state = out_ ? down : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: e.AirDate, DateIsDay: true);
+                var state = out_ ? down : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: Valid(e.AirDate), DateIsDay: true);
                 list.Add(new EpisodeStatus
                 {
                     Key = facts.Key.WithEpisode(season, e.Episode).ToString(),
@@ -803,8 +804,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = page.Season ?? 0;
             var number = page.Episode ?? 0;
-            var air = page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate;
-            var state = air is DateTime d && !NotYet(d, isDay: true, c.Now)
+            var air = Valid(page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate);
+            var state = Aired(air, isDay: true, c.Now)
                 ? ApplyRequest(NothingKnown(facts), request, c, facts)
                 : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: air != null);
             return new TitleStatus

@@ -238,4 +238,53 @@ public class IntegrationUx3DestinationProbesTests
         Assert.Equal(expected, result.Episodes.Single().Aired);
         Assert.Equal(status.Stage != StatusStage.NotOut, result.Episodes.Single().Aired);
     }
+
+    /// <summary>UX2R5-1 (review probe, ported): the actual season and episode pages and the picker agree, both sources.</summary>
+    public static IEnumerable<object?[]> PageCases()
+    {
+        foreach (var provider in new[] { false, true })
+        foreach (var wire in new string?[] { "0001-01-01", null, "", "1900-01-01", "2099-12-31", "9999-12-30", "9999-12-31", "2020-01-01" })
+            yield return new object?[] { provider, wire, true, "2026-10-13T12:00:00Z", wire == "2020-01-01" };
+        foreach (var wire in new[] { "0001-01-01T00:00:00Z", "2099-12-31T00:00:00Z", "9999-12-31T23:59:59Z" })
+            yield return new object?[] { false, wire, false, "2026-10-13T12:00:00Z", false };
+    }
+
+    [Theory]
+    [MemberData(nameof(PageCases))]
+    public async Task UX2R5_1_TheActualPagesAndThePickerAgreeOnWhatHasAired(bool provider, string? wire, bool day, string clock, bool expected)
+    {
+        using var arr = new FakeArr(); var host = arr.Add("sonarr.lan", "Sonarr");
+        arr.Configure(("TV", ArrKind.Sonarr, "http://sonarr.lan:8989", "PROBE-FAKE"));
+        host.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        var raw = FakeArr.Episode(1, "2020-01-01T00:00:00Z");
+        raw.Remove("airDateUtc"); raw.Remove("airDate");
+        if (wire != null) raw[day ? "airDate" : "airDateUtc"] = wire;
+        host.Episodes.Add(raw);
+        var store = arr.Store(); var tv = arr.Instance("TV");
+        var library = (await store.GetLibraryAsync(tv, default)).Value!;
+        var snapshot = (await store.GetEpisodesAsync(tv, 1, default)).Value!;
+        var episode = snapshot.Episodes.Single();
+        using var r = new IntegrationRequestLedgerTests.Rig(); var viewer = r.View.Users[r.Member];
+        var now = DateTimeOffset.Parse(clock, System.Globalization.CultureInfo.InvariantCulture);
+        var copy = new ArrCopyFacts(tv) { Series = library.SeriesByTvdb(100), Episodes = snapshot };
+        var context = new ComposeContext(viewer, now.UtcDateTime, 24);
+        DateTime? parsed = DateTime.TryParse(wire, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var date) ? date : null;
+        var page = new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse("tv:tvdb:100")!, Season = 1, Episode = 1, Rows = true,
+            Episodes = new[] { new AbsentEpisode(1, 1, parsed, Guid.NewGuid()) } };
+        var facts = new TitleFacts(page.Title);
+        // The page each source's episodes are shown on: TMDB's absent season and episode pages, or Sonarr's own list.
+        var pageAired = provider ? StatusComposer.AbsentSeason(facts, page, null, context).Episodes!.Single().Stage != StatusStage.NotOut
+            : StatusComposer.EpisodeFromArr(copy.Through(HiddenParts.None), 1, 1, episode, context).Stage != StatusStage.NotOut;
+        bool? episodeAired = provider ? StatusComposer.AbsentEpisode(facts, page, new JfItemRef { ItemId = page.PageId, Kind = "episode", Key = page.Title.WithEpisode(1, 1) }, null, context).Stage != StatusStage.NotOut : null;
+        var id = Guid.NewGuid();
+        r.View.AddItem(new JfItemRef { ItemId = id, Kind = "season", Key = TitleKey.Parse("tv:tvdb:100")!.WithSeason(1), SeriesId = Guid.NewGuid(), Season = 1, TmdbId = 101 });
+        var json = System.Text.Json.JsonSerializer.Serialize(new { episodes = new[] { new { episode_number = 1, name = "Episode", air_date = wire } } });
+        var service = new SeasonRowsService(r.View, r.Ledger, r.Policy, null, (_, _, _, _) => Task.FromResult<string?>(json), () => now,
+            destination: (_, titles, season, ct) => provider ? Task.FromResult(DestinationSeason.NotHeld) : SeasonRowsService.DestinationSeasonAsync(store, tv.Id, titles, season, ct));
+        var result = await service.ForSeasonAsync(viewer, id, "en", default);
+        Assert.NotNull(result); Assert.Equal(provider ? "provider" : "destination", result.Source);
+        Assert.Equal(expected, result.Episodes.Single().Aired);
+        Assert.Equal(expected, pageAired);
+        if (provider) Assert.Equal(expected, episodeAired);
+    }
 }
