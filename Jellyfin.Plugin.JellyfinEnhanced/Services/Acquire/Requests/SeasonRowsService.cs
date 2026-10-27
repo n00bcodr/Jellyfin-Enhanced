@@ -108,7 +108,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Episode">Episode number.</param>
     /// <param name="Title">Title as the destination lists it.</param>
     /// <param name="AirDateUtc">Air time (UTC).</param>
-    public sealed record DestinationEpisode(int Episode, string? Title, DateTime? AirDateUtc);
+    /// <param name="AirDateIsDay">The air date is a calendar day only (no air time): it airs as status says such days do.</param>
+    public sealed record DestinationEpisode(int Episode, string? Title, DateTime? AirDateUtc, bool AirDateIsDay = false);
 
     /// <summary>
     /// The destination's view of one season: <paramref name="Read"/> false when its lists couldn't be read; otherwise
@@ -319,7 +320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (series == null) return DestinationSeason.NotHeld;
             var episodes = await arrs.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
             if (episodes.Error != null || episodes.Value is not { } list) return DestinationSeason.Unread;
-            return new DestinationSeason(true, true, list.Episodes.Where(e => e.SeasonNumber == season).Select(e => new DestinationEpisode(e.EpisodeNumber, e.Title, e.AirDateUtc)).ToList());
+            return new DestinationSeason(true, true, list.Episodes.Where(e => e.SeasonNumber == season).Select(e => new DestinationEpisode(e.EpisodeNumber, e.Title, e.AirDateUtc, e.AirDateIsDay)).ToList());
         }
 
         /// <summary>The policy probe of a season's episodes in one edition.</summary>
@@ -362,7 +363,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var guarded = presentation?.Guarded(title) == true;
             var episodes = new List<SeasonRowEpisode>();
             var now = _now();
-            var today = now.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             foreach (var n in numbers)
             {
                 if (destination != null)
@@ -375,7 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         Episode = n,
                         Title = shown && !strip.Title && !string.IsNullOrWhiteSpace(listed!.Title) ? listed.Title : null,
                         AirDate = shown && !strip.AirDate ? day : null,
-                        Aired = listed != null && (withFile.Contains(n) || (listed.AirDateUtc is { } aired && aired <= now.UtcDateTime)),
+                        Aired = listed != null && (withFile.Contains(n) || HasAired(listed.AirDateUtc, listed.AirDateIsDay, now.UtcDateTime)),
                         Request = perEpisode.GetValueOrDefault(n),
                         Request4k = perEpisode4k.GetValueOrDefault(n),
                     });
@@ -391,7 +391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     Runtime = known ? info!.Runtime : null,
                     AirDate = known && !strip.AirDate ? info!.AirDate : null,
                     Still = known && !guarded ? info!.Still : null,
-                    Aired = info != null && (withFile.Contains(n) || (info.AirDate is { } d && string.CompareOrdinal(d, today) <= 0)),
+                    Aired = info != null && (withFile.Contains(n) || HasAired(TmdbDay(info.AirDate), true, now.UtcDateTime)),
                     Request = perEpisode.GetValueOrDefault(n),
                     Request4k = perEpisode4k.GetValueOrDefault(n),
                 });
@@ -414,6 +414,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Source = source,
             };
         }
+
+        /// <summary>
+        /// An episode has aired by the same rule status uses (<see cref="StatusComposer.NotYet"/>): an instant before now, or a
+        /// date-only day no longer ahead anywhere. No date: not aired.
+        /// </summary>
+        internal static bool HasAired(DateTime? date, bool isDay, DateTime now) => date is { } at && !StatusComposer.NotYet(at, isDay, now);
+
+        /// <summary>TMDB's "yyyy-MM-dd" air date as that day (UTC midnight), or null.</summary>
+        private static DateTime? TmdbDay(string? day)
+            => DateTime.TryParseExact(day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at : null;
 
         /// <summary>
         /// The viewer's request state per episode of a season and of the season as a whole, from the wants of one edition

@@ -125,6 +125,8 @@
     function heldFor(ep) {
         if (!ep || rounded() || numberingPending()) return null;
         if (ep.row && !absentSeason()) return null;
+        // The latest read failed: the season's numbering isn't established now, whatever was read before.
+        if (season?.failed) return 'unchecked';
         const rows = season?.rows;
         const context = { arrHolds: arrHolds() };
         return JE.arrAsk.singleEpisodesAskable?.(rows, context) === true ? null : (JE.arrAsk.heldReason?.(rows, context) || 'unchecked');
@@ -708,7 +710,8 @@
             bannerSearched = null;
             closeDialog();
         }
-        const mine = { itemId, rows: fresh ? null : season.rows, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
+        // A failed read leaves the season unestablished until a read succeeds (its kept rows are for display only).
+        const mine = { itemId, rows: fresh ? null : season.rows, failed: fresh ? false : !!season.failed, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
         season = mine;
         load(mine);
     }
@@ -733,6 +736,8 @@
         }
         if (season !== target || target.generation !== generation) return;
         target.loading = false;
+        // UX2R3-1: rows kept from an earlier read never authorize an episode once a read has failed.
+        target.failed = !rows;
         if (rows) {
             target.rows = rows;
             // The server's answer replaces optimistic states it agrees with (or knows better).

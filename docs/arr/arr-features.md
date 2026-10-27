@@ -1189,8 +1189,8 @@ ask fetch the episodes that are missing, one tap each.
       looking." When some of those episodes were never sent, the *Missing* line searches each episode a request sent (at
       most ten) and asks for the others. For anything no request sent yet, a season's **Search** asks for it like
       **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to Sonarr/Radarr as a search
-      for what they already monitor. The **Search** of a series or episode page (on a computer and as a phone's main
-      button alike) never asks: when nothing was sent to search again it says so, and the page's **Request** asks;
+      for what they already monitor. The **Search** of a movie, series or episode page (on a computer and as a phone's
+      main button alike) never asks: when nothing was sent to search again it says so, and the page's **Request** asks;
       only a button that reads **Ask {contact} to search** asks, as it says.
 
 ??? info "Paused: storage full, never a bare Missing"
@@ -1326,12 +1326,14 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     **Episode numbers.** A request for an episode names it by number, and the Sonarr it goes to decides which episode that
     number is. So once that Sonarr has the series, Sonarr's own list is the season: the season page shows Sonarr's
     episodes, numbers, titles and air dates (a page of a title that isn't in the library swaps its TMDB episode rows for
-    them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired and that you may see, whichever way
+    them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired (by the same rule as the season page: a date without a time
+    counts from the end of that day everywhere) and that you may see, whichever way
     the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
     on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
     you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
     whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
-    read just now, or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
+    read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
+    or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
     details are all a page has for a season Sonarr numbers itself (the page of a single episode that isn't in the library,
     for one: ask for it on its season page). Nothing about a Sonarr you can't use (one whose library you can't open) is read
     or shown. A library season's own Jellyfin rows are unchanged: they show Jellyfin's details for the episode Sonarr's is

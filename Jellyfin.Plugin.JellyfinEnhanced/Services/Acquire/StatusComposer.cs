@@ -479,8 +479,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A date-only day that is still today or later somewhere (see <see cref="DayLasts"/>).</summary>
         internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date + DayLasts > now;
 
-        /// <summary>A date still to come: an instant after now, or a date-only day still ahead somewhere.</summary>
-        private static bool NotYet(DateTime date, bool isDay, DateTime now) => isDay ? DayStillAhead(date, now) : date > now;
+        /// <summary>
+        /// A date still to come: an instant after now, or a date-only day still ahead somewhere. The one airing rule of status and
+        /// of the season rows' <c>aired</c> (what Pick episodes offers).
+        /// </summary>
+        internal static bool NotYet(DateTime date, bool isDay, DateTime now) => isDay ? DayStillAhead(date, now) : date > now;
 
         internal sealed record CopyState(string Stage, string Reason, bool Attention = false, StatusProgress? Progress = null, DateTime? Date = null, DateTime? Since = null, ArrQueueEntry? Row = null, IReadOnlyDictionary<string, string>? Params = null, bool DateIsDay = false, DateTime? LastSearch = null)
         {

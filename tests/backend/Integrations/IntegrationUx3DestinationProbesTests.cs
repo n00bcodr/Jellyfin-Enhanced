@@ -148,4 +148,34 @@ public class IntegrationUx3DestinationProbesTests
         Assert.Equal("A Different Episode", fourK.Episodes.Single().Title);
         Assert.Equal(new[] { tv.Id, fourk.Id }, called);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UX2R3_3_ADateOnlyEpisodeAiringTodayIsNotAnAiredPickerNumber(bool provider)
+    {
+        using var arr = new FakeArr(); var host = arr.Add("sonarr.lan", "Sonarr");
+        arr.Configure(("TV", ArrKind.Sonarr, "http://sonarr.lan:8989", "PROBE-FAKE"));
+        host.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        var ep = FakeArr.Episode(1, "2026-10-12T00:00:00Z"); ep.Remove("airDateUtc"); ep["airDate"] = "2026-10-12"; host.Episodes.Add(ep);
+        var store = arr.Store(); var tv = arr.Instance("TV");
+        var library = (await store.GetLibraryAsync(tv, default)).Value!;
+        var snapshot = (await store.GetEpisodesAsync(tv, 1, default)).Value!;
+        Assert.True(snapshot.Episodes.Single().AirDateIsDay);
+        using var r = new IntegrationRequestLedgerTests.Rig(); var viewer = r.View.Users[r.Member];
+        var copy = new ArrCopyFacts(tv) { Series = library.SeriesByTvdb(100), Episodes = snapshot };
+        var state = StatusComposer.EpisodeFromArr(copy.Through(HiddenParts.None), 1, 1, snapshot.Episodes.Single(), new ComposeContext(viewer, arr.Now.UtcDateTime, 24));
+        Assert.Equal(StatusStage.NotOut, state.Stage);                  // the season page's own airing rule
+        var key = TitleKey.Parse("tv:tvdb:100")!; var seasonId = Guid.NewGuid();
+        r.View.AddItem(new JfItemRef { ItemId = seasonId, Kind = "season", Key = key.WithSeason(1), SeriesId = Guid.NewGuid(), Season = 1, TmdbId = 101 });
+        var rows = new SeasonRowsService(r.View, r.Ledger, r.Policy, null, (_, _, _, _) => Task.FromResult<string?>("""{"episodes":[{"episode_number":1,"name":"Today","air_date":"2026-10-12"}]}"""), () => arr.Now,
+            destination: (_, titles, season, ct) => provider ? Task.FromResult(DestinationSeason.NotHeld) : SeasonRowsService.DestinationSeasonAsync(store, tv.Id, titles, season, ct));
+        var answer = await rows.ForSeasonAsync(viewer, seasonId, "en", default);
+        Assert.NotNull(answer); Assert.Equal(provider ? "provider" : "destination", answer.Source);
+        Assert.False(answer.Episodes.Single().Aired, "the page says NotOut; the picker must not offer it as aired");
+        // The same rule a day and a half on: aired for both.
+        var later = new SeasonRowsService(r.View, r.Ledger, r.Policy, null, (_, _, _, _) => Task.FromResult<string?>("""{"episodes":[{"episode_number":1,"name":"Today","air_date":"2026-10-12"}]}"""), () => arr.Now.AddHours(37),
+            destination: (_, titles, season, ct) => provider ? Task.FromResult(DestinationSeason.NotHeld) : SeasonRowsService.DestinationSeasonAsync(store, tv.Id, titles, season, ct));
+        Assert.True((await later.ForSeasonAsync(viewer, seasonId, "en", default))!.Episodes.Single().Aired);
+    }
 }

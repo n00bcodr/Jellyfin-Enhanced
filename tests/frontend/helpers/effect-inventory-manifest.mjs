@@ -356,7 +356,7 @@ export const SITES = {
     'pickSeasonsPanel surface insert foreground': [1, 'press', 'render: a control inside the request sheet (build() registers the sheet on the surface stack)'],
     'render focus focus': [1, 'press', 'sync'],
     'restoreFocus focus focus': [2, 'press', 'sync'],
-    'searchButton feedback toast': [4, 'press', 'effect'],
+    'searchButton feedback toast': [5, 'press', 'effect'],
     'searchButton state closure busy': [2, 'module', 'ui'],
     'searchButton state closure local': [1, 'module', 'ui'],
     'searchButton write arrAsk.adminSearch': [1, 'press', 'transport'],

@@ -1001,7 +1001,7 @@ test('an administrator\'s Search on an episode page runs the arr search at once 
   same(h.toasts, ['Found a copy — downloading']);
 });
 
-test('mount API: a title missing for a long while gets Search (an ask for members, the arr search for admins)', async t => {
+test('mount API: a title missing for a long while gets Search (the household search for members, never an ask; the arr search for admins)', async t => {
   const h = setup(t, {
     html: '<div id="a"></div><div id="b"></div>', config: { ArrManageDrawerEnabled: true },
     routes: (method, path) => (method === 'POST' && path === '/arr/admin/manage/search' ? { body: { status: 'Succeeded', found: false } } : null)
@@ -1014,8 +1014,12 @@ test('mount API: a title missing for a long while gets Search (an ask for member
   assert.equal(search.textContent, 'searchSearch');
   click(h, search);
   await settle(20);
-  same(h.posts[0].body.input, { key: MOVIE.key, scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
-  assert.equal(a.querySelector('.je-arr-chip').textContent, 'Asked!');
+  // UX2R3-2 (changed from "an ask for members"): plain Search runs the household search and, with nothing sent to search
+  // again, says so; it never asks (the title's Request does).
+  same(h.searches.map(x => x.body.key), [MOVIE.key]);
+  same(h.posts, []);
+  assert.equal(h.toasts.at(-1), "Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it.");
+  assert.equal(a.querySelector('.je-ask-mount-search').textContent, 'searchSearch');
   controls.destroy();
 
   h.state.me = ADMIN;
@@ -1026,7 +1030,7 @@ test('mount API: a title missing for a long while gets Search (an ask for member
   admin.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' }, admin: { variants: [{ instance: 'Radarr', instanceId: 'rad1', kind: 'Radarr', role: 'standard', stage: 'looking', reason: { code: 'no_release_yet' } }] } });
   click(h, b.querySelector('.je-ask-mount-search'));
   await settle(20);
-  same([h.posts[1].path, h.posts[1].body.instanceId, h.posts[1].body.key], ['/arr/admin/manage/search', 'rad1', MOVIE.key]);
+  same([h.posts[0].path, h.posts[0].body.instanceId, h.posts[0].body.key], ['/arr/admin/manage/search', 'rad1', MOVIE.key]);
   assert.equal(b.querySelector('.je-arr-chip').textContent, 'Nothing found yet · searched just now');
   assert.equal(h.toasts.at(-1), 'Nothing found yet · searched just now');
   admin.destroy();
@@ -2261,4 +2265,41 @@ test('UX2R-4: the compact Search primary sends exactly the desktop Search and no
   assert.equal(h.searches.length, 1);
   assert.equal(h.searches[0].body.key, 'tv:tvdb:371980');
   assert.equal(h.posts.length, 0, 'no want');
+});
+
+// ------------------------------------------------------------------ review round 3 probes (UX2R3-*), ported
+
+test('UX2R3-4 probe: the read-ahead is bounded, owned by its sheet, cancelled when it closes, and late answers are dropped', async t => {
+  const h = setup(t);
+  const calls = [];
+  const releases = [];
+  const real = h.JE.arrAsk.call;
+  h.JE.arrAsk = { ...h.JE.arrAsk, call: (path, options) => {
+    if (!path.startsWith('/acquire/requests/season/')) return real(path, options);
+    calls.push({ path, signal: options?.signal });
+    return new Promise(resolve => releases.push(() => resolve({ status: 200, body: { rows: { source: 'destination', episodes: [{ episode: 1, aired: true }] } } })));
+  } };
+  const title = { ...SERIES, seasons: Array.from({ length: 30 }, (_, i) => ({ season: i + 1, itemId: `long-${i + 1}`, episodes: 1, have: 0 })) };
+  const pending = h.Sheet.open(title, { operation: h.NATIVE }); await settle();
+  click(h, card(h, 'episodes')); await settle();
+  assert.equal(calls.length, 12, 'only the first twelve seasons');
+  assert.ok(calls.every(c => c.signal && !c.signal.aborted), 'each read carries the sheet\'s signal');
+  closeSheet(h); await pending;
+  const aborted = calls.filter(c => c.signal?.aborted).length;
+  releases.forEach(f => f()); await settle();
+  assert.equal(toggles(h).length, 0, 'late answers do not recreate the closed sheet');
+  assert.equal(aborted, 12, 'all read-ahead requests are cancelled');
+});
+
+for (const me of [MEMBER, KID]) test(`UX2R3-2 probe: a ${me.role}'s plain Search on a mounted title never creates a want after the search is skipped`, async t => {
+  const h = setup(t, { html: '<div id="mounted-title"></div>', me });
+  const host = h.document.getElementById('mounted-title');
+  const controls = h.Sheet.mount(host, MOVIE, { notify: false }); t.after(() => controls.destroy());
+  await settle();
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet', params: { sent: '1' } } });
+  const button = host.querySelector('.je-ask-mount-search'); assert.ok(button);
+  assert.equal(button.querySelector('span:not(.material-icons)').textContent, 'Search');
+  click(h, button); click(h, button); await settle(30);
+  assert.equal(h.searches.length, 1);
+  assert.equal(h.posts.length, 0, 'plain title Search never falls through to a movie request');
 });

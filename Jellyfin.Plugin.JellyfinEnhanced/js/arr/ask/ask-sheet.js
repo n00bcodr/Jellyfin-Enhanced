@@ -520,8 +520,10 @@
             choice: title.initialEpisode != null ? 'episodes' : title.initialSeason != null ? 'pick' : null,
             picked: new Set(title.initialSeason != null ? [title.initialSeason] : []),
             episodeSeason: title.initialSeason ?? null, episodes: new Set(title.initialEpisode != null ? [title.initialEpisode] : []), cards: [], key: title.key,
-            // Per season: how the arr's and TMDB's episode numbers line up (Pick episodes; see numberingOf).
+            // Per edition and season: what Pick episodes may offer (see numberingOf), read by the sheet's own reads, which end
+            // with it (UX2R3-4: closed, navigated away from or another user: the reads still out are cancelled).
             numbering: new Map(),
+            reads: new AbortController(),
             blocks: { ...(options?.blocks || {}) },
             // A list entry (phase 4c3a): its scope and edition are the entry's, and it is asked for through the list.
             fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
@@ -857,9 +859,12 @@
         state.numbering.set(key, 'checking');
         const variant = state.variant;
         const language = (navigator.language || 'en').split('-')[0];
-        JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(s.itemId)}?language=${encodeURIComponent(language)}&variant=${encodeURIComponent(variant)}`)
+        const signal = state.reads.signal;
+        JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(s.itemId)}?language=${encodeURIComponent(language)}&variant=${encodeURIComponent(variant)}`, { signal })
             .then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null)
             .then((rows) => {
+                // The sheet ended meanwhile: its answer is dropped.
+                if (state.done || signal.aborted) return;
                 const source = rows ? JE.arrAsk.episodeSource(rows) : 'unknown';
                 const numbers = (Array.isArray(rows?.episodes) ? rows.episodes : []).filter(e => Number.isInteger(e?.episode) && e.aired === true).map(e => e.episode).sort((a, b) => a - b);
                 state.numbering.set(key, { source, numbers, askable: (source === 'destination' || source === 'provider') && numbers.length > 0 });
@@ -1159,6 +1164,7 @@
     function finish(state, result) {
         if (state.done) return;
         state.done = true;
+        state.reads?.abort();
         state.releaseAction?.();
         const remove = () => state.backdrop?.remove();
         // A list sheet only takes itself away through the list gate's erase (no other write): its backdrop goes first,
@@ -1409,9 +1415,9 @@
         /**
          * Search for a title missing for a long while (monitored, nothing grabbed): an
          * administrator's runs the arr's search right away; so does anyone's for a movie, or a series'
-         * episodes missing for a long while, that requests already sent; a movie is otherwise asked for
-         * with one tap, a series opens the sheet (the request backend turns an ask for a monitored scope
-         * into a search).
+         * episodes missing for a long while, that requests already sent. Otherwise a plain "Search" says
+         * nothing was asked for yet (never an ask); only "Ask {contact} to search" asks (a movie with one
+         * tap, a series through the sheet).
          * @returns {HTMLButtonElement} Button.
          */
         function searchButton() {
@@ -1444,7 +1450,12 @@
                         // Requests already sent it: search for it again instead of asking.
                         if (submitted.current()) JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
+                    } else if (submitted.current() && !JE.arrAsk.searchAsksFirst(caps, status)) {
+                        // A plain Search never turns into an ask (UX2R3-2, as the series and episode pages): it says nothing was
+                        // asked for yet, and the title's Request asks.
+                        JE.arrAsk.toast(tr('arr_search_not_asked'));
                     } else if (submitted.current()) {
+                        // "Ask {contact} to search": an ask, as it says.
                         const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() }) : await open(title, { opener: b, operation: submitted.owner });
                         if (result?.stale) { /* its operation ended before the send: nothing was sent */ } else if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);

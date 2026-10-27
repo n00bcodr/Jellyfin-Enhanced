@@ -1913,3 +1913,23 @@ test('UX2R2 probe: season row and banner Search each keep exactly one ask fallba
     assert.equal(h.searches.length, surface === 'row' ? 1 : 3, surface);
   }
 });
+
+// Review round 3 probe (UX2R3-1), ported: a failed browser refresh never reuses the rows of an earlier read to authorize.
+test('UX2R3-1 probe: a failed refresh cannot reuse a warm destination source to authorize single episodes', async t => {
+  const h = setup(t, { status: absentSeason(), server: { rows: () => { const b = rowsBody({ source: 'destination' }); b.rows.episodes = [{ episode: 2, title: 'Destination Two', airDate: '2014-06-08', aired: true }, { episode: 4, title: 'Destination Four', airDate: '2014-06-22', aired: true }]; return b; } } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID }; await h.open();
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
+  const firstReads = h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length;
+  h.setRows(() => new Error('synthetic unavailable'));
+  const updated = absentSeason(); updated.episodes[2] = { ...updated.episodes[2], row: true, itemId: ID(3) };
+  h.setStatus(updated); await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.ok(h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length > firstReads, 'a second rows read really failed');
+  const button = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  if (button) h.click(button); await settle(30);
+  assert.equal(h.posts.length, 0, 'unread current facts hold rather than authorize with the previous rows');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, "Couldn't check");
+  // A read that succeeds again re-establishes it.
+  h.setRows(() => { const b = rowsBody({ source: 'destination' }); b.rows.episodes = [{ episode: 2, title: 'Destination Two', airDate: '2014-06-08', aired: true }, { episode: 4, title: 'Destination Four', airDate: '2014-06-22', aired: true }]; return b; });
+  h.setStatus(absentSeason()); await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'), 'established again');
+});
