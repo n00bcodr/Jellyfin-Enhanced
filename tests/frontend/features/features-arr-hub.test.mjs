@@ -22,10 +22,11 @@ function translate(key, params) {
   return Object.entries(params || {}).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
 }
 
-function setup(t, { html = '', hash = '#/home', config = {}, responses = () => null, downloads, calendar } = {}) {
+function setup(t, { html = '', hash = '#/home', config = {}, responses = () => null, downloads, calendar, dom = false } = {}) {
   const calls = [];
   const subscriptions = [];
   const navigation = [];
+  const bodyWatchers = new Map();
   const h = createHarness({
     html: `<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage"></div></div>${html}`,
     url: `http://jellyfin.test/web/index.html${hash}`,
@@ -44,7 +45,9 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
           }
         },
         navigation: { onNavigate: fn => { navigation.push(fn); return () => {}; }, onViewPage: fn => () => {} },
-        lifecycle: { register: () => ({ track: x => x }) }
+        lifecycle: { register: () => ({ track: x => x }) },
+        // The shared body observer, run by hand (dom: true).
+        ...(dom ? { dom: { onBodyMutation: (id, fn) => { bodyWatchers.set(id, fn); return { unsubscribe: () => bodyWatchers.delete(id) }; } } } : {})
       },
       arr: {
         live: { position: () => ({ epoch: 'e1', cursor: 7 }) },
@@ -61,7 +64,7 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, get NATIVE() { return h.NATIVE; }, calls, subscriptions, navigation, live: () => subscriptions.filter(s => s.active) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, subscriptions, navigation, bodyWatchers, live: () => subscriptions.filter(s => s.active) };
 }
 
 /** Waits (up to 5 s) until `check` is true: the drawer's re-reads are timer-driven and slow under coverage. */
@@ -829,4 +832,56 @@ test('a Manage drawer retry is never sent or shown after another account signs i
   await wait(30);
   assert.equal(reads, before, 'the retry is not sent for the new account');
   assert.ok(drawer.querySelector('.je-manage-stale'), 'nothing new is shown in the first account\'s drawer');
+});
+
+// UX-1: leaving the Dashboard, Jellyfin 12 replaces its page container (with this page in it) after the page was
+// shown. The page goes back into the new container, over the page the host shows there, and leaving restores that
+// page and its title.
+test('the Requests page moves into a replaced page container and covers the page the host shows there', async t => {
+  const h = setup(t, { dom: true, responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  h.document.title = 'Dashboard';
+  h.window.history.pushState(null, '', '#/requests');
+  for (const fn of h.navigation) fn();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(page && !page.classList.contains('hide'));
+  assert.equal(h.document.title, 'Requests');
+  const fresh = h.document.createElement('div');
+  fresh.className = 'mainAnimatedPages';
+  fresh.innerHTML = '<div class="mainAnimatedPage" id="libraryPage"></div>';
+  h.document.querySelector('.mainAnimatedPages').replaceWith(fresh);
+  assert.equal(page.isConnected, false);
+  for (const watch of h.bodyWatchers.values()) watch([]);
+  h.document.getElementById('libraryPage').dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true, detail: {} }));
+  assert.equal(page.parentElement, fresh, 'back in the container the host draws now');
+  assert.ok(!page.classList.contains('hide'));
+  assert.ok(h.document.getElementById('libraryPage').classList.contains('hide'), 'the page under it is hidden');
+  assert.ok(page.querySelectorAll('.je-hub-tab').length >= 3, 'with its tabs');
+  assert.equal(h.document.title, 'Requests');
+  // Leaving brings back the covered page and the title from before.
+  h.window.history.pushState(null, '', '#/home');
+  for (const fn of h.navigation) fn();
+  assert.ok(page.classList.contains('hide'));
+  assert.ok(!h.document.getElementById('libraryPage').classList.contains('hide'));
+  assert.equal(h.document.title, 'Dashboard');
+  assert.equal(h.bodyWatchers.size, 0, 'it stops watching the document');
+});
+
+// UX-2: when Jellyfin's router itself sees #/requests it draws its "Page not found" page, and Jellyfin 12's app bar
+// drops the phone menu on a route it does not know. The router is moved to Home underneath; the URL stays.
+test('a router showing its Page not found for #/requests is moved to Home under the page, the URL kept', async t => {
+  const h = setup(t, { dom: true, hash: '#/requests', html: '<div class="mainAnimatedPage" id="fallbackPage"></div>', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  const seen = [];
+  // Jellyfin's router: added before JE's listeners, it reads the URL when the event comes.
+  h.window.addEventListener('popstate', () => seen.push(h.window.location.hash));
+  h.JE.initializeArrStatus();
+  await wait(10);
+  assert.deepEqual(seen, ['#/home'], 'the router saw Home once');
+  assert.equal(h.window.location.hash, '#/requests');
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(!page.classList.contains('hide'), 'the page stays shown');
+  // The same "Page not found" page is not moved again on later changes.
+  for (const watch of h.bodyWatchers.values()) watch([]);
+  assert.deepEqual(seen, ['#/home']);
 });

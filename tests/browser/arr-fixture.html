@@ -33,6 +33,62 @@ button, input, select { font: inherit; }
 <div class="detailPagePrimaryContent"><div class="detailSection"></div></div>
 </div></div>
 <script>
+/**
+ * ?host=router: a stand-in for jellyfin-web 12's router and app bar, as observed on a 12.2 server:
+ * - its popstate listener is added before JE's (Chromium runs window listeners in the order they were added, so a
+ *   hash change reaches it before JE's capturing listener can stop it); pushState never reaches it;
+ * - an unknown path draws #fallbackPage ("Page not found");
+ * - the app bar has the phone menu only below 900 px, and in the app layout only on routes it knows; elsewhere
+ *   it draws the server name and library links in front of the header buttons;
+ * - moving between the Dashboard and the app layouts replaces .mainAnimatedPages, pages and all.
+ */
+(function mockRouter() {
+    if (new URLSearchParams(location.search).get('host') !== 'router') return;
+    const known = ['/home', '/details', '/search'];
+    let layout = null;
+    document.querySelector('.skinHeader').insertAdjacentHTML('afterbegin', '<div class="je-mock-appbar"></div>');
+    document.querySelector('.skinHeader').style.justifyContent = 'flex-start';
+    document.querySelector('.headerRight').style.marginLeft = 'auto';
+    document.querySelector('#itemDetailPage').remove();
+    /** The router's path for the current URL. */
+    const current = () => location.hash.slice(1).split('?')[0] || '/home';
+    /** Draws a route, the way the host's router commits shortly after the event it read the URL in. */
+    function render(path) {
+        const next = path === '/configurationpage' ? 'dashboard' : 'app';
+        let host = document.querySelector('.mainAnimatedPages');
+        if (layout && next !== layout) {
+            const fresh = document.createElement('div');
+            fresh.className = 'mainAnimatedPages';
+            host.replaceWith(fresh);
+            host = fresh;
+        }
+        layout = next;
+        const id = next === 'dashboard' ? 'dashboardPage' : known.includes(path) ? 'route-' + path.slice(1) : 'fallbackPage';
+        for (const view of host.querySelectorAll('[data-mock-route]')) view.classList.toggle('hide', view.id !== id);
+        let view = document.getElementById(id);
+        if (!view) {
+            view = document.createElement('div');
+            view.id = id;
+            view.className = 'mainAnimatedPage';
+            view.dataset.mockRoute = path;
+            view.style.padding = '80px 16px';
+            view.textContent = id;
+            host.appendChild(view);
+        }
+        view.classList.remove('hide');
+        if (id !== 'fallbackPage') view.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: {} }));
+        const bar = document.querySelector('.je-mock-appbar');
+        const menu = innerWidth < 900 && (next === 'dashboard' || known.includes(path));
+        bar.dataset.variant = menu ? 'menu' : 'wide';
+        bar.style.cssText = 'display: flex; flex: none; white-space: nowrap; gap: 24px; align-items: center';
+        bar.innerHTML = menu ? '<button class="paper-icon-button-light" aria-label="Open menu">=</button>'
+            : '<a>Fixture Media Server</a><a>Favorites</a><a>Movies</a><a>Shows</a><a>Music</a>';
+    }
+    window.addEventListener('popstate', () => { const path = current(); setTimeout(() => render(path), 20); });
+    render(current());
+})();
+</script>
+<script>
 /** Boots production modules in manifest order against a local mock Jellyfin host. */
 async function bootArrFixture() {
     const params = new URLSearchParams(location.search);
@@ -69,7 +125,7 @@ async function bootArrFixture() {
             return Object.entries(params).reduce((s, [k, v]) => s.split('{' + k + '}').join(String(v)), translations[key]);
         }
     };
-    const shared = ['core/navigation.js', 'core/session.js', 'core/lifecycle.js', 'core/dom-observer.js',
+    const shared = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'core/lifecycle.js', 'core/dom-observer.js',
         'core/ui-kit.js', 'core/api-client.js', 'enhanced/config.js', 'enhanced/helpers.js', 'enhanced/header-actions.js'];
     const manifest = await fetch(root + 'component-scripts.json').then(r => r.json());
     const arrDirs = ask ? /^arr\/(live|status|manage|hub|notify|admin|ask)\// : /^arr\/(live|status|manage|hub|notify|admin)\//;

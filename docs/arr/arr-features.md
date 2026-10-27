@@ -646,7 +646,9 @@ again for you as you are now (if you were removed or keep changing, the Requests
       "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
     - **Requests page** (`#/requests`, "Requests" in the sidebar): your own requests, grouped into *Waiting for an
       OK*, *On the way*, *Not out yet* and *Said no*; **Coming soon** (dates in the next two months, by day) and
-      **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
+      **Ready** (what arrived in the last two weeks, with Play). It opens the same way from anywhere: the sidebar, a
+      typed or bookmarked address, Back/Forward, or straight from the Dashboard, with Jellyfin's own header kept (on a
+      phone, its menu button). Each request follows what it asked for: a request
       for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
       arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
       any library and in any folder of a grouped series, every requested episode by its own files, and only a version

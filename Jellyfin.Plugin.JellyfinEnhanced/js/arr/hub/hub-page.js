@@ -17,6 +17,8 @@
     const H = (JE.internals = JE.internals || {}).arrHub = JE.internals.arrHub || {};
     const ROUTE = '#/requests';
     const PAGE_ID = 'je-requests-hub-page';
+    // A route Jellyfin's own router knows and gives the phone menu (see parkRouter).
+    const PARK_ROUTE = '#/home';
     const OWN_TABS = ['mine', 'soon', 'ready'];
     const RELOAD_DELAY_MS = 300;
     const logPrefix = '🪼 Jellyfin Enhanced: Requests:';
@@ -37,8 +39,33 @@
         refreshFailed: false,
         retryTimer: null,
         retryDelay: 0,
-        hiddenListener: false
+        hiddenListener: false,
+        previousTitle: null,
+        parking: false,
+        parkedFor: null,
+        watch: null
     };
+
+    /** The page element; kept across host re-renders that remove it from the document. */
+    let pageNode = null;
+
+    /**
+     * Whether listeners on the window run in the order they were added, capturing or not (Chromium). Jellyfin's
+     * router added its popstate listener before this page's, so there it sees the Requests URL first; engines that
+     * run capturing listeners first (Firefox) let intercept() keep it from the router.
+     */
+    const routerSeesFirst = (() => {
+        try {
+            const target = new EventTarget();
+            let first = null;
+            target.addEventListener('order', () => { first = first || 'added'; });
+            target.addEventListener('order', () => { first = first || 'capture'; }, true);
+            target.dispatchEvent(new Event('order'));
+            return first === 'added';
+        } catch {
+            return false;
+        }
+    })();
 
     /**
      * Translates through the shared status helper.
@@ -84,13 +111,17 @@
     }
 
     /**
-     * The page container (created once), Jellyfin page classes for header/back integration.
+     * The page container (created once), Jellyfin page classes for header/back integration. It is put (back) into
+     * Jellyfin's current page container: leaving the Dashboard replaces that container, and this page with it.
      * @returns {HTMLElement} Page.
      */
     function pageContainer() {
-        let page = document.getElementById(PAGE_ID);
-        if (page) return page;
-        page = document.createElement('div');
+        const host = document.querySelector('.mainAnimatedPages') || document.body;
+        if (pageNode) {
+            if (pageNode.parentElement !== host) host.appendChild(pageNode);
+            return pageNode;
+        }
+        const page = pageNode = document.createElement('div');
         page.id = PAGE_ID;
         page.className = 'page type-interior mainAnimatedPage hide';
         page.setAttribute('data-title', tr('arr_hub_title'));
@@ -103,7 +134,7 @@
         root.className = 'content-primary je-hub';
         content.appendChild(root);
         page.appendChild(content);
-        (document.querySelector('.mainAnimatedPages') || document.body).appendChild(page);
+        host.appendChild(page);
         return page;
     }
 
@@ -188,6 +219,7 @@
         if (wanted) state.tab = wanted;
         if (!state.visible) {
             state.visible = true;
+            state.previousTitle = document.title;
             const active = document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`);
             if (active) {
                 state.previousPage = active;
@@ -197,11 +229,72 @@
             page.classList.remove('hide');
             page.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'custom', isRestored: false, options: {} } }));
             claimChrome();
+            watchPage();
+            claimPage();
             render();
             load();
         } else {
+            claimPage();
             render();
         }
+    }
+
+    /**
+     * Keeps this page the shown one while the Requests URL is: back in Jellyfin's current page container when the
+     * host replaced it, with Jellyfin's router moved off the Requests URL (parkRouter), and over any page the router
+     * shows meanwhile (hidden, and restored on leaving like the page this one replaced).
+     * @param {HTMLElement} [shown] A page the host has just shown.
+     * @returns {void}
+     */
+    function claimPage(shown) {
+        if (!state.visible || state.parking || !isRoute()) return;
+        const page = pageContainer();
+        parkRouter();
+        const others = [...document.querySelectorAll(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID}):not(#fallbackPage)`)];
+        if (shown?.classList.contains('mainAnimatedPage') && shown !== page && shown.id !== 'fallbackPage' && !others.includes(shown)) others.push(shown);
+        if (!others.length) return;
+        for (const other of others) {
+            state.previousPage = other;
+            other.classList.add('hide');
+            other.dispatchEvent(new CustomEvent('viewhide', { bubbles: true, detail: { type: 'interior' } }));
+        }
+        // The header follows the shown page: tell it this one is shown again.
+        page.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'custom', isRestored: true, options: {} } }));
+        claimTitle();
+    }
+
+    /**
+     * Jellyfin's router has no Requests page. When it sees the Requests URL itself (a typed address, deep link,
+     * reload, Back/Forward) it shows its "Page not found" page, and Jellyfin 12's app bar drops the phone menu on a
+     * route it does not know, showing the wide library links instead. Moves the router to Home underneath this
+     * page; the address stays the Requests one. Once per "Page not found" page, or at once when the router has
+     * just seen the Requests URL (before it draws anything for it).
+     * @param {boolean} [seen] The router has just seen the Requests URL.
+     * @returns {void}
+     */
+    function parkRouter(seen) {
+        const fallback = document.getElementById('fallbackPage');
+        if (!seen && (!fallback || state.parkedFor === fallback)) return;
+        if (fallback) state.parkedFor = fallback;
+        const url = window.location.hash;
+        const entry = history.state;
+        state.parking = true;
+        try {
+            history.replaceState(entry, '', PARK_ROUTE);
+            window.dispatchEvent(new PopStateEvent('popstate', { state: entry }));
+            history.replaceState(entry, '', url);
+        } finally {
+            state.parking = false;
+        }
+    }
+
+    /**
+     * Follows the document while the page is shown (claimPage), before the next paint.
+     * @returns {void}
+     */
+    function watchPage() {
+        if (state.watch || !JE.core?.dom?.onBodyMutation) return;
+        state.watch = JE.core.dom.onBodyMutation('arr-hub-page', () => claimPage(), { priority: 1 });
     }
 
     /**
@@ -212,15 +305,19 @@
      */
     function claimChrome() {
         document.body.classList.add('je-hub-active');
+        for (const delay of [0, 300, 1200]) setTimeout(claimTitle, delay);
+    }
+
+    /**
+     * Sets the document and header title to "Requests" while this page is shown.
+     * @returns {void}
+     */
+    function claimTitle() {
+        if (!state.visible || !isRoute()) return;
         const title = tr('arr_hub_title');
-        for (const delay of [0, 300, 1200]) {
-            setTimeout(() => {
-                if (!state.visible || !isRoute()) return;
-                document.title = title;
-                const header = document.querySelector('.skinHeader .pageTitle');
-                if (header) header.textContent = title;
-            }, delay);
-        }
+        document.title = title;
+        const header = document.querySelector('.skinHeader .pageTitle');
+        if (header) header.textContent = title;
     }
 
     /**
@@ -234,6 +331,9 @@
         stopRetry();
         state.refreshFailed = false;
         document.body.classList.remove('je-hub-active');
+        state.watch?.unsubscribe();
+        state.watch = null;
+        state.parkedFor = null;
         leaveEmbedded();
         H.admin?.leave?.();
         leaveExtras(null);
@@ -243,11 +343,14 @@
             page.classList.add('hide');
             page.dispatchEvent(new CustomEvent('viewhide', { bubbles: true, detail: { type: 'custom' } }));
         }
-        if (state.previousPage && !document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`)) {
+        if (state.previousPage?.isConnected && !document.querySelector(`.mainAnimatedPage:not(.hide):not(#${PAGE_ID})`)) {
             state.previousPage.classList.remove('hide');
             state.previousPage.dispatchEvent(new CustomEvent('viewshow', { bubbles: true, detail: { type: 'interior', isRestored: true } }));
         }
+        // A page that comes back as it was keeps its title; one the router draws again sets its own after this.
+        if (state.previousTitle && document.title === tr('arr_hub_title')) document.title = state.previousTitle;
         state.previousPage = null;
+        state.previousTitle = null;
     }
 
     /**
@@ -714,6 +817,7 @@
      * @returns {void}
      */
     function handleNavigation() {
+        if (state.parking) return;
         if (isRoute()) show();
         else if (state.visible) hide();
     }
@@ -729,6 +833,7 @@
         e.stopImmediatePropagation?.();
         e.preventDefault?.();
         show();
+        if (e.type === 'popstate' && routerSeesFirst && state.visible) parkRouter(true);
     }
 
     /**
@@ -747,7 +852,9 @@
         const off = JE.core?.navigation?.onNavigate?.(handleNavigation);
         if (lifecycle && off) lifecycle.track(off);
         document.addEventListener('viewshow', (e) => {
-            if (state.visible && e.target && e.target.id !== PAGE_ID && !isRoute()) hide();
+            if (!state.visible || state.parking || !e.target || e.target.id === PAGE_ID) return;
+            if (isRoute()) claimPage(e.target);
+            else hide();
         });
         // Hiding or unhiding something (here or on another page) shows at once.
         window.addEventListener('je-hidden-content-changed', () => {
