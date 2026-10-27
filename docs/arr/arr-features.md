@@ -1260,7 +1260,9 @@ profiles, folders or tags.
       seasons…*, *Pick episodes…* and *Just new episodes from now on* (with Seerr handling requests Jellyfin Enhanced
       asks Seerr for each new season as it starts, see [Sending requests](#sending-requests-phase-3); *Pick episodes…*
       isn't offered there, since Seerr takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3);
-      with Seerr's partial requests off only *The whole series* is). Each card shows what it costs ("Uses 2 of your 4
+      with Seerr's partial requests off only *The whole series* is). The seasons and episodes are the ones the series page
+      offers, numbered as Sonarr lists them once it has the series (see
+      [Episode numbers](#titles-that-arent-in-the-library-native-details)). Each card shows what it costs ("Uses 2 of your 4
       this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
       ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
       standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -1306,14 +1308,31 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
 
 ??? info "How the page asks and updates"
     The first of them sits in Jellyfin's button row where *Play* is on a library title; the others follow it there as icon
-    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page.
+    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page. The row has
+    one **Request** (the **+** that opens the sheet; *More* lists it too) and the same main action on every screen: where
+    the row is too narrow for its buttons (a phone), its main button is still the one the wide row starts with, so a
+    series whose episodes have been missing for a long while shows **Search** on a phone as on a computer, never
+    **Request** in its place.
     These are the page's only request controls, and they ask through Jellyfin Enhanced in both request modes: in JE mode
     the request goes straight to Sonarr or Radarr (asks that need an OK wait for it), in Seerr mode Jellyfin Enhanced
     passes it on to Seerr as the person who asked. In JE mode the cards of the *Not in your library* search row and of the
     Discover tab open these pages too, and the request is followed on the page and in *My requests* through to *Ready*.
 
     The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
-    aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
+    aired episode is simply not here and later ones are *not out yet*.
+
+    **Episode numbers.** A request for an episode names it by number, and Sonarr decides which episode that number is. So
+    once Sonarr has the series, the season page, the sheet's *Pick episodes…* and Sonarr all count the episodes Sonarr
+    lists: a season TMDB lists 11 episodes for and Sonarr 14 shows 14 rows and offers E1–E14 (its title's own **Request**
+    and **+** alike). TMDB's titles, synopses and pictures are shown on an episode only where both say it aired on the same
+    day (a day apart counts as the same); an episode only Sonarr lists says *TMDB has no details for this episode* and can
+    still be asked for. When the two number a season differently (the same number aired on different days, or they list
+    different counts and no shared episode can be confirmed, for example when Spoiler Guard hides the dates), single
+    episodes of that season are held: its rows and the episode's own page say *Numbered differently*, *Pick episodes…*
+    can't pick them and says why, and nothing is sent. Asking for the whole season still works (it is the season as Sonarr
+    lists it), as do **Get missing episodes** and the *Missing* line's **Get them**, which name Sonarr's own numbers. A
+    library season's own Jellyfin rows aren't held: they show Jellyfin's details for the episode Sonarr's is matched to.
+    Before Sonarr has the series, TMDB's numbers are all there is and are used as before. The page's id is never taken for a copy: once one
     arrives that the person can open, the page turns into that library title's page in its place (the same rule as a
     library page whose title arrives: it waits while they type, play or have a dialog open, and **Open** is offered
     meanwhile).

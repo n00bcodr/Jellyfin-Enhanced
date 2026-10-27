@@ -2000,3 +2000,71 @@ test('provider episode entry starts with exactly that episode selected', async t
   click(h, primary(h)); await settle();
   assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0].body.input.episodes)), [{ season: 2, episode: 4 }]);
 });
+
+// ------------------------------------------------------------------ UX-3: the sheet's episodes are the arr's
+
+/** Firefly as the lab's arr lists it: 14 aired episodes in season 1, where TMDB's season lists 11 (12–14 are its specials). */
+function fireflyServer({ shift = 0 } = {}) {
+  const day = n => new Date(Date.UTC(2002, 8, 20) + (n - 1) * 7 * 86400000).toISOString().slice(0, 10);
+  const arrDay = n => new Date(Date.parse(`${day(n)}T04:00:00Z`) + (n <= 11 ? shift : 0) * 86400000).toISOString();
+  const seasonStatus = {
+    key: 'tv:tvdb:78874:s1', itemId: 'f1', kind: 'season', stage: 'notHere', summary: { aired: 14, ready: 0 },
+    episodes: Array.from({ length: 14 }, (_, i) => ({ key: `tv:tvdb:78874:s1:e${i + 1}`, season: 1, episode: i + 1, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: arrDay(i + 1) }))
+  };
+  const seriesStatus = { key: 'tv:tvdb:78874', kind: 'series', stage: 'notHere', seasons: [{ season: 1, itemId: 'f1', stage: 'notHere', summary: { aired: 14, ready: 0 } }] };
+  return {
+    status: path => (path.startsWith('/acquire/status/item/f1') ? { items: [seasonStatus] } : path.startsWith('/acquire/status?keys=') ? { items: [seriesStatus] } : null),
+    routes: (method, path) => {
+      if (path === '/tmdb/tv/1437') return { body: { seasons: [{ season_number: 1, episode_count: 11, air_date: day(1) }] } };
+      if (path.startsWith('/acquire/requests/season/f1')) {
+        return { body: { outcome: 'accepted', rows: { key: 'tv:tvdb:78874:s1', season: 1, displayMissing: true, canRequest: true, providerEpisodes: Array.from({ length: 11 }, (_, i) => i + 1),
+          episodes: Array.from({ length: 11 }, (_, i) => ({ episode: i + 1, title: `T${i + 1}`, airDate: day(i + 1) })) } } };
+      }
+      return null;
+    }
+  };
+}
+const FIREFLY = { key: 'tv:tmdb:1437', kind: 'series', name: 'Firefly' };
+const toggles = h => [...h.document.querySelectorAll('.je-sheet-episode')];
+
+test('UX-3: a title\'s own Request offers the episodes the page lists and the arr numbers (14), not TMDB\'s count (11)', async t => {
+  const h = setup(t, fireflyServer());
+  const asks = [];
+  h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
+  const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+  await settle();
+  click(h, card(h, 'episodes'));
+  await settle();
+  assert.deepEqual(toggles(h).map(b => b.dataset.episode), Array.from({ length: 14 }, (_, i) => String(i + 1)));
+  assert.ok(toggles(h).every(b => !b.disabled), 'the numbering agrees: every episode can be picked');
+  assert.equal(h.document.querySelector('.je-sheet-numbering:not([hidden])'), null);
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="12"]'));
+  click(h, primary(h));
+  await pending;
+  assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x12'], 'E12 is the arr\'s E12');
+});
+
+test('UX-3: Pick episodes holds a season the arr numbers differently from TMDB and says why; a whole season is still asked for', async t => {
+  const h = setup(t, fireflyServer({ shift: 40 }));
+  const asks = [];
+  h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
+  let pending = h.Sheet.open({ ...FIREFLY, initialSeason: 1, initialEpisode: 1 }, { operation: h.NATIVE });
+  await settle();
+  await settle();
+  assert.ok(toggles(h).length > 0 && toggles(h).every(b => b.disabled), 'no single episode can be picked');
+  assert.match(h.document.querySelector('.je-sheet-numbering:not([hidden])').textContent, /Season 1's episodes are numbered differently here and on TMDB/);
+  click(h, primary(h));
+  await settle();
+  assert.equal(asks.length, 0, 'the episode the page named is never sent');
+  assert.match(h.document.querySelector('.je-sheet-message').textContent, /numbered differently/);
+  click(h, h.document.querySelector('.je-sheet-secondary'));
+  await pending;
+  pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+  await settle();
+  click(h, card(h, 'everything'));
+  click(h, primary(h));
+  await pending;
+  assert.equal(asks.length, 1);
+  assert.deepEqual([...asks[0].seasons], [1], 'the whole season, as the arr lists it');
+  assert.notEqual(asks[0].scope, 'episodes');
+});

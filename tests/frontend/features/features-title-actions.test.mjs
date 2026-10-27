@@ -494,3 +494,54 @@ test('request proxies omit icon ligatures from their spoken and visible label', 
   assert.equal(row.querySelector('.je-actions-primary-label').textContent, 'Request');
   assert.equal(row.querySelector('.je-actions-primary').getAttribute('aria-label'), 'Request');
 });
+
+/** The request controls native details puts in Play's place on a series that isn't in the library: Search leads, + opens the sheet. */
+const ABSENT_SLOT = '<div class="je-native-absent-primary"><button class="je-ask-action je-native-absent-lead" data-je-ask-kind="search"><span class="material-icons je-ask-action-icon">search</span><span class="je-ask-action-text">Search</span></button>'
+  + '<button class="je-ask-action je-native-absent-icon" data-je-ask-kind="more" aria-label="More ways to get Firefly" title="Request"><span class="material-icons je-ask-action-icon">add</span><span class="je-ask-action-text">Request</span></button></div>';
+
+test('UX-9: a compact absent row keeps the wide row\'s primary action (Search stays Search) and runs the page\'s own control', t => {
+  const { actions: a, click, document: d, load } = setup(t); load('arr/actions/title-actions-hosts.js');
+  const row = d.createElement('div'); row.className = 'mainDetailButtons';
+  row.innerHTML = ABSENT_SLOT + '<button class="je-detail-hide-btn">Hide</button><button class="je-spoiler-pending-detail">Guard</button><button class="je-notify-follow">Follow</button>';
+  d.body.append(row); row.getBoundingClientRect = () => ({ width: 288 });
+  let searches = 0; row.querySelector('.je-native-absent-lead').addEventListener('click', () => searches++);
+  a.mountRow(row, row, a.context({ mediaType: 'tv', id: 1437 }));
+  assert.equal(row.classList.contains('je-actions-compact'), true);
+  const primary = row.querySelector('.je-actions-primary');
+  assert.ok(primary, 'the compact row has a primary action');
+  assert.equal(primary.querySelector('.je-actions-primary-label').textContent, 'Search');
+  assert.equal(primary.querySelector('.material-icons').textContent, 'search', 'the primary keeps the lead\'s own icon');
+  click(primary);
+  assert.equal(searches, 1, 'the proxy runs the page\'s own Search');
+});
+
+test('UX-19: an absent row whose page has its own request-sheet control gets no second adapted Request', async t => {
+  let opened = 0;
+  const h = setup(t, {
+    arrAsk: { enabled: () => true, me: async () => ({}), canAsk: () => true },
+    arrAskSheet: { open: () => { opened++; } },
+    arrStatus: { enabled: () => true, fetchKey: async () => ({ items: [{ key: 'tv:tmdb:1437', kind: 'series', stage: 'looking', reason: { code: 'no_release_yet' } }] }), subscribe: () => () => {} },
+    internals: { arrAskSheet: { askable: () => true } },
+  });
+  h.load('arr/actions/title-actions-hosts.js');
+  const row = h.document.createElement('div'); row.className = 'mainDetailButtons';
+  row.innerHTML = ABSENT_SLOT + '<button class="je-detail-hide-btn">Hide</button>';
+  h.document.body.append(row); row.getBoundingClientRect = () => ({ width: 1600 });
+  row.parentElement.getBoundingClientRect = () => ({ width: 1600 });
+  const c = h.actions.context({ mediaType: 'tv', id: 1437 });
+  h.actions.mountRow(row, row, c);
+  for (let n = 0; n < 20; n++) await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  h.actions.mountRow(row, row, c);
+  assert.equal(row.classList.contains('je-actions-compact'), false);
+  assert.equal(row.querySelectorAll('[data-je-action-kind="request"]').length, 0, 'no adapted Request beside the page\'s own +');
+  assert.equal(row.querySelectorAll('[data-je-ask-kind="more"]').length, 1);
+  // Without the page's own sheet control the adapted Request is still offered.
+  const bare = h.document.createElement('div'); bare.className = 'mainDetailButtons';
+  bare.innerHTML = '<button class="je-detail-hide-btn">Hide</button>';
+  h.document.body.append(bare); bare.getBoundingClientRect = () => ({ width: 1600 });
+  h.actions.mountRow(bare, bare, h.actions.context({ mediaType: 'tv', id: 1438 }));
+  for (let n = 0; n < 20; n++) await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  h.actions.mountRow(bare, bare, h.actions.context({ mediaType: 'tv', id: 1438 }));
+  assert.equal(bare.querySelectorAll('[data-je-action-kind="request"]').length, 1);
+  assert.equal(opened, 0);
+});

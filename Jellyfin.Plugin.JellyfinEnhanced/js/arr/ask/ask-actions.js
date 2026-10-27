@@ -187,7 +187,7 @@
             missing: partial.reduce((n, s) => n + notFetchedOf(s.summary), 0),
             longMissing: searchable.reduce((n, s) => n + longMissingOf(s.summary), 0),
             searchSeasons: searchable.map(s => s.season),
-            seasons: seasons.map(s => ({ season: s.season, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
+            seasons: seasons.map(s => ({ season: s.season, itemId: s.itemId || null, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
             latestSeason: aired.length ? aired[aired.length - 1].season : null,
             upcomingSeason: upcoming ? upcoming.season : (lastOwned > 0 ? lastOwned + 1 : null),
             askedSeasons: [...asked]
@@ -242,8 +242,12 @@
                 clear(page);
                 return;
             }
+            // The page of an episode that isn't in the library shows TMDB's episode of that number: held when the arr
+            // the ask goes to numbers its season differently.
+            const held = status.kind === 'episode' && isAbsent(status) && offerable(status) ? await episodeHeld(status) : false;
+            if (gen !== generation) return;
             let box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
-                : status.kind === 'episode' ? episodeActions(status, caps)
+                : status.kind === 'episode' ? (held ? heldBox(caps) : episodeActions(status, caps))
                     : status.kind === 'season' ? await seasonActions(status, caps, gen)
                         : movieActions(page, status, caps, gen);
             if (gen !== generation) return;
@@ -645,6 +649,44 @@
      */
     function isAbsent(status) {
         return !!status?.itemId && !!JE.titleDetails?.isSynthetic?.(status.itemId);
+    }
+
+    /**
+     * True when the page of an episode that isn't in the library is held: the page shows TMDB's episode with this
+     * number, and the arr a request names numbers the season differently (JE.arrAsk.episodeNumbering), so Get it or
+     * Search could reach another episode than the one described. Read from the season's status and rows (by the
+     * season page's id); false when they can't be read or can't be compared.
+     * @param {Object} status Episode status.
+     * @returns {Promise<boolean>} Held.
+     */
+    async function episodeHeld(status) {
+        const parts = JE.titleDetails?.parse?.(status.itemId);
+        const seasonId = parts?.kind === 'episode' ? JE.titleDetails.syntheticId?.('season', parts.tmdbId, parts.season) : null;
+        if (!seasonId || !JE.arrAsk.episodeNumbering) return false;
+        const language = (navigator.language || 'en').split('-')[0];
+        const [season, rows] = await Promise.all([
+            Promise.resolve(JE.arrStatus.fetchItem(seasonId)).then(answer => answer?.items?.[0] || null, () => null),
+            JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(seasonId)}?language=${encodeURIComponent(language)}`).then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null)
+        ]);
+        return JE.arrAsk.episodeNumbering(season?.episodes, rows).state === 'conflict';
+    }
+
+    /**
+     * The actions of a held episode page ({@link episodeHeld}): the line saying why it can't be asked for on its own.
+     * @param {Object} caps Capabilities.
+     * @returns {HTMLElement} Box.
+     */
+    function heldBox(caps) {
+        const box = actionsBox(caps);
+        const text = tr('arr_ask_numbering_text');
+        const note = JE.arrAsk.pausedNote({ chip: tr('arr_ask_numbering_chip'), text, detail: text });
+        const glyph = note.querySelector('.je-ask-paused-icon');
+        if (glyph) glyph.textContent = 'format_list_numbered';
+        note.classList.add('je-ask-numbering-note');
+        note.dataset.jeFocus = 'numbering';
+        box.appendChild(note);
+        box.dataset.sig = signature(box);
+        return box;
     }
 
     /**

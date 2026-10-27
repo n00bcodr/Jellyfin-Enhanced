@@ -259,6 +259,7 @@
             .filter(s => Number.isInteger(s?.season) && s.season > 0)
             .map(s => ({
                 season: s.season,
+                itemId: typeof s.itemId === 'string' && s.itemId ? s.itemId : null,
                 episodes: Math.max(0, Number(s.episodes) || 0),
                 have: standard ? Math.max(0, Number(s.have) || 0) : 0,
                 asked: asked.has(s.season),
@@ -339,13 +340,24 @@
     // ------------------------------------------------------------------ the sheet
 
     /**
-     * The seasons of a series given without them (search and Discover cards name only the title):
-     * read through JE's TMDB proxy for a TMDB key; null when they can't be had.
+     * The seasons of a series given without them (search and Discover cards, a title's own Request name only the title):
+     * the series' status first, as its page offers them (numbered as the arr the request goes to lists them, with each
+     * season's page id), else read through JE's TMDB proxy for a TMDB key; null when they can't be had.
      * @param {Object} title Series title.
      * @returns {Promise<Object|null>} The title with seasons, or null.
      */
     async function withSeasons(title) {
         if (Array.isArray(title.seasons)) return title;
+        const plan = await statusPlan(title.key);
+        if (plan) {
+            return {
+                ...title,
+                seasons: plan.seasons,
+                latestSeason: Number.isInteger(title.latestSeason) ? title.latestSeason : plan.latestSeason,
+                nextSeason: Number.isInteger(title.nextSeason) ? title.nextSeason : plan.upcomingSeason,
+                askedSeasons: Array.isArray(title.askedSeasons) ? title.askedSeasons : plan.askedSeasons
+            };
+        }
         const id = /^tv:tmdb:(\d{1,10})$/.exec(String(title.key))?.[1] ?? title.tmdbId;
         const tmdb = await JE.arrAsk.tmdbSeasons(id);
         if (!tmdb.seasons.length && tmdb.upcoming == null) return null;
@@ -355,6 +367,22 @@
             latestSeason: Number.isInteger(title.latestSeason) ? title.latestSeason : tmdb.latest,
             nextSeason: Number.isInteger(title.nextSeason) ? title.nextSeason : tmdb.upcoming
         };
+    }
+
+    /**
+     * The series page's plan of a title's seasons from its status (JE.internals.arrAskActions.seriesPlan), or null
+     * when there is no status or it names no episodes.
+     * @param {string} key Series key.
+     * @returns {Promise<Object|null>} Plan.
+     */
+    async function statusPlan(key) {
+        const plan = JE.internals?.arrAskActions?.seriesPlan;
+        if (!plan || !JE.arrStatus?.enabled?.() || !JE.arrStatus.fetchKey) return null;
+        let status = null;
+        try { status = (await JE.arrStatus.fetchKey(key))?.items?.[0] || null; } catch { return null; }
+        if (!status || !Array.isArray(status.seasons)) return null;
+        const shown = plan(status);
+        return shown.seasons.some(s => s.episodes > 0) ? shown : null;
     }
 
     /**
@@ -486,6 +514,8 @@
             choice: title.initialEpisode != null ? 'episodes' : title.initialSeason != null ? 'pick' : null,
             picked: new Set(title.initialSeason != null ? [title.initialSeason] : []),
             episodeSeason: title.initialSeason ?? null, episodes: new Set(title.initialEpisode != null ? [title.initialEpisode] : []), cards: [], key: title.key,
+            // Per season: how the arr's and TMDB's episode numbers line up (Pick episodes; see numberingOf).
+            numbering: new Map(),
             blocks: { ...(options?.blocks || {}) },
             // A list entry (phase 4c3a): its scope and edition are the entry's, and it is asked for through the list.
             fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
@@ -709,16 +739,34 @@
          * Fills the episode toggles of the chosen season.
          * @returns {void}
          */
+        const note = el('div', 'je-sheet-numbering');
+        note.id = `je-sheet-numbering-${Math.random().toString(36).slice(2, 10)}`;
+        note.hidden = true;
         const fill = () => {
             grid.replaceChildren();
             const s = seasons.find(x => x.season === state.episodeSeason);
+            note.hidden = true;
+            note.replaceChildren();
+            grid.removeAttribute('aria-describedby');
             if (!s) return;
             grid.setAttribute('aria-label', tr('arr_sheet_pick_episodes_label', { season: s.season }));
+            // Single episodes are offered once the season's numbering is known to agree (or can't be compared).
+            const numbering = numberingOf(state, s, fill);
+            const holding = numbering === 'checking' || numbering?.state === 'conflict';
+            if (holding) {
+                note.hidden = false;
+                note.className = `je-sheet-numbering ${numbering === 'checking' ? 'je-sheet-numbering-checking' : 'je-sheet-note je-sheet-note-attention'}`;
+                if (numbering !== 'checking') note.appendChild(icon('format_list_numbered', 'je-sheet-note-icon'));
+                note.appendChild(el('span', null, tr(numbering === 'checking' ? 'arr_sheet_numbering_checking' : 'arr_sheet_numbering_conflict', { season: s.season })));
+                grid.setAttribute('aria-describedby', note.id);
+            }
             for (let n = 1; n <= Math.min(s.episodes, MAX_EPISODES); n++) {
                 const b = button('je-sheet-toggle je-sheet-episode', tr('arr_sheet_episode_short', { episode: n }));
                 b.dataset.episode = String(n);
                 b.setAttribute('aria-label', tr('arr_sheet_episode', { episode: n }));
+                if (holding) b.disabled = true;
                 b.addEventListener('click', () => {
+                    if (b.disabled) return;
                     if (state.episodes.has(n)) state.episodes.delete(n);
                     else state.episodes.add(n);
                     refresh(state);
@@ -744,8 +792,48 @@
         }
         fill();
         panel.appendChild(row);
+        panel.appendChild(note);
         panel.appendChild(grid);
         return panel;
+    }
+
+    /**
+     * How a season's episode numbers line up between the arr the request goes to and TMDB (JE.arrAsk.episodeNumbering),
+     * read once per sheet from the season's status and rows (by its page id): 'checking' while being read (then `redraw`
+     * runs when the answer comes, while the sheet is still open on that season), the numbering, or null when the season
+     * has no page id to read it by (seasons from TMDB alone: nothing to compare with, offered as before).
+     * @param {Object} state Sheet state.
+     * @param {{season: number, itemId: string|null}} s Season.
+     * @param {Function} redraw Draws the season's episodes again.
+     * @returns {'checking'|Object|null} Numbering.
+     */
+    function numberingOf(state, s, redraw) {
+        if (!s.itemId || !JE.arrAsk.episodeNumbering) return null;
+        if (state.numbering.has(s.season)) return state.numbering.get(s.season);
+        state.numbering.set(s.season, 'checking');
+        const id = encodeURIComponent(s.itemId);
+        const language = (navigator.language || 'en').split('-')[0];
+        Promise.all([
+            Promise.resolve(JE.arrStatus?.fetchItem?.(s.itemId)).then(answer => answer?.items?.[0] || null, () => null),
+            JE.arrAsk.call(`/acquire/requests/season/${id}?language=${encodeURIComponent(language)}`).then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null)
+        ]).then(([status, rows]) => {
+            // Neither could be read: nothing to compare with (offered as before), like a season from TMDB alone.
+            state.numbering.set(s.season, JE.arrAsk.episodeNumbering(status?.episodes, rows));
+            if (state.done || !state.sheet?.isConnected || state.episodeSeason !== s.season) return;
+            sheetPaint(state.listTicket, () => { redraw(); refreshSheet(state); });
+        });
+        return 'checking';
+    }
+
+    /**
+     * True while single episodes of the season picked can't be asked for: its numbering is still being read, or the
+     * arr and TMDB number it differently.
+     * @param {Object} state Sheet state.
+     * @returns {boolean} Held.
+     */
+    function episodesHeld(state) {
+        const numbering = state.numbering.get(state.episodeSeason);
+        return numbering === 'checking' || numbering?.state === 'conflict';
     }
 
     /**
@@ -761,7 +849,7 @@
         if (!card) return null;
         if (card.id === 'pick') return state.picked.size ? JE.arrAsk.seasonsInput(state.key, [...state.picked], variant) : null;
         if (card.id === 'episodes') {
-            if (state.episodeSeason == null || !state.episodes.size) return null;
+            if (state.episodeSeason == null || !state.episodes.size || episodesHeld(state)) return null;
             return JE.arrAsk.episodesInput(state.key, [...state.episodes].sort((a, b) => a - b).map(episode => ({ season: state.episodeSeason, episode })), variant);
         }
         return card.input(variant);
@@ -895,7 +983,10 @@
         if (!state.submitted.current()) { finish(state, null); return; }
         const input = currentInput(state);
         if (!input) {
-            showMessage(state, tr('arr_sheet_pick_none'), true);
+            // Single episodes of a season held (numbering still being read, or numbered differently): never sent.
+            const held = state.choice === 'episodes' && !state.fixed && episodesHeld(state);
+            const numbering = held ? state.numbering.get(state.episodeSeason) : null;
+            showMessage(state, held ? tr(numbering === 'checking' ? 'arr_sheet_numbering_checking' : 'arr_sheet_numbering_conflict', { season: state.episodeSeason }) : tr('arr_sheet_pick_none'), true);
             return;
         }
         state.busy = true;

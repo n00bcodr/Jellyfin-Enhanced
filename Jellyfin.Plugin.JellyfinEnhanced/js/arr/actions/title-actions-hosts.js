@@ -216,6 +216,13 @@
     function classify(node, c) {
         if (node.dataset.jeActionKind) return ['request', 'open'].includes(node.dataset.jeActionKind) ? 'primary' : node.dataset.jeActionKind;
         const match = selector => node.matches(selector);
+        // The request controls of a title that isn't in the library, in Play's place (ask-actions via native details): the
+        // first is the row's primary action on every host (Search, Get missing episodes, Get it…), the sheet opener after
+        // it is the row's one Request, and any other ask goes with the requests.
+        if (match('.je-native-absent-primary .je-ask-action')) {
+            if (node.classList.contains('je-native-absent-lead')) return 'primary';
+            return node.dataset.jeAskKind === 'more' ? 'request' : 'ask';
+        }
         if (c?.absent && match('.btnPlay, .btnResume, .btnReplay, .btnShuffle, .btnInstantMix, [data-action="play"], [data-action="resume"], .btnDownload, .btnDelete, .btnMediaInfo')) return null;
         // Every distinct playback action keeps a place: with progress, Jellyfin shows Resume (.btnPlay)
         // and Play from beginning (.btnReplay, data-action="play") side by side.
@@ -239,10 +246,10 @@
     function nativeEntries(state) {
         return originals(state.row).map(source => {
             const id = classify(source, state.c); if (!id || ['primary', 'favorite', 'follow'].includes(id)) return null;
-            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: WATCH.includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage'].includes(id) ? 'requests' : 'other',
-                label: ['guard', 'follow', 'manage', 'native-more', 'replay'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more', replay: 'title_actions_replay' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
-                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report', 'replay'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
-                icon: { replay: 'replay', shuffle: 'shuffle', 'instant-mix': 'explore', trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
+            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: WATCH.includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage', 'request', 'ask'].includes(id) ? 'requests' : 'other',
+                label: ['guard', 'follow', 'manage', 'native-more', 'replay', 'request'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more', replay: 'title_actions_replay', request: 'jellyseerr_btn_request' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
+                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report', 'replay', 'request'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
+                icon: { replay: 'replay', shuffle: 'shuffle', 'instant-mix': 'explore', trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert', request: 'add' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
         }).filter(Boolean);
     }
 
@@ -321,7 +328,8 @@
     function reconcileRequest(state) {
         const request = state.request;
         if (!request) return;
-        const want = request.askable && !originals(state.row).some(n => !n.dataset.jeActionKind && classify(n, state.c) === 'primary');
+        // A native primary or request-sheet control (the page's own Request) leaves one request control per row (UX-19).
+        const want = request.askable && !originals(state.row).some(n => !n.dataset.jeActionKind && ['primary', 'request'].includes(classify(n, state.c)));
         if (want && request.node.parentElement !== state.row) { state.row.append(request.node); state.owned.add(request.node); }
         else if (!want && request.node.parentElement) { request.node.remove(); state.owned.delete(request.node); }
     }
@@ -403,10 +411,12 @@
         if (!owned.row) { owned.row = document.createElement('div'); owned.row.className = 'je-actions-row'; ours.add(owned.row); }
         const compactRow = owned.row;
         if (compactRow.parentElement !== row) row.append(compactRow);
-        const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'replay');
+        // The same primary as the wide row (UX-9): the page's own lead (Search stays Search), else its Request.
+        const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'request') || visible.find(n => classify(n, state.c) === 'replay');
         const favorite = visible.find(n => classify(n, state.c) === (state.c?.absent ? 'follow' : 'favorite'));
         const report = visible.find(n => classify(n, state.c) === 'report' && !n.disabled && n.getAttribute('aria-disabled') !== 'true');
-        const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : state.c?.absent ? 'add' : 'play_arrow';
+        const askIcon = primary?.matches('.je-ask-action') ? primary.querySelector('.je-ask-action-icon')?.textContent : null;
+        const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : askIcon || (state.c?.absent ? 'add' : 'play_arrow');
         const selected = [['primary', primary, primaryIcon], [state.c?.absent ? 'follow' : 'favorite', favorite, state.c?.absent ? 'notifications_none' : 'favorite_border'], ['report', report, 'warning']];
         for (const [id, , ] of [...owned.proxies]) if (!selected.some(([want, source]) => want === id && source)) { owned.proxies.get(id).remove(); owned.proxies.delete(id); }
         for (const [id, source, glyph] of selected) {
@@ -425,7 +435,7 @@
             }
             syncProxy(proxy, source);
             if (id === 'primary') {
-                const label = proxy.querySelector('.je-actions-primary-label'); const text = controlLabel(source);
+                const label = proxy.querySelector('.je-actions-primary-label'); const text = classify(source, state.c) === 'request' ? JE.t('jellyseerr_btn_request') : controlLabel(source);
                 if (label.textContent !== text) label.textContent = text;
             }
         }

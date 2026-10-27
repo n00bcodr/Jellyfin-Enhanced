@@ -117,6 +117,33 @@ public class IntegrationRequestSeasonRowsTests
     }
 
     [Fact]
+    public async Task TheRowsNameTheProvidersEpisodeNumbersSoTheClientCanMatchThemToTheArrs()
+    {
+        // UX-3: TMDB's season numbers (what the page's facts are numbered by), episodes with a file included, so the client
+        // can tell where they line up with the arr's own list; hidden episodes are left out like their rows.
+        using var s = new Setup();
+        var rows = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, rows!.ProviderEpisodes);
+        var page = new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse("tv:tvdb:393189")!, TmdbId = 83867, Season = 1, SeriesPageId = Guid.NewGuid(), HiddenEpisodes = new[] { 3 } };
+        var absent = await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), page, "en", CancellationToken.None);
+        Assert.Equal(new[] { 1, 2, 4 }, absent!.ProviderEpisodes);
+        // TMDB couldn't be read: unknown, never an empty list that would read as "TMDB lists nothing".
+        s.Json = null;
+        var unread = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "fr", CancellationToken.None);
+        Assert.Null(unread!.ProviderEpisodes);
+        using var without = new Setup(tmdbId: null);
+        Assert.Null((await without.Rows.ForSeasonAsync(without.Viewer(without.R.Member), without.SeasonId, null, CancellationToken.None))!.ProviderEpisodes);
+
+        // The response's Spoiler Guard projection keeps the numbers (no title facts) and still drops undeclared fields.
+        var config = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripOverview = true, SpoilerReplaceTitle = true };
+        var guard = new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerPresentationContext(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur { PendingTmdb = new() { ["tv:42"] = new() } }, config);
+        var projected = System.Text.Json.Nodes.JsonNode.Parse(Jellyfin.Plugin.JellyfinEnhanced.Services.ProviderPresentationSchema.Project(
+            """{"key":"tv:tmdb:42:s1","season":1,"providerEpisodes":[1,2,3],"episodes":[],"undeclared":1}""", null, guard, "requests", "tv:tmdb:42", "season-rows"))!;
+        Assert.Null(projected["undeclared"]);
+        Assert.Equal("[1,2,3]", projected["providerEpisodes"]!.ToJsonString());
+    }
+
+    [Fact]
     public async Task AnInvalidLanguageIsNotPassedUpstreamAndNoTmdbIdMeansNoMetadata()
     {
         using var s = new Setup();

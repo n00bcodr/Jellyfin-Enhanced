@@ -1758,3 +1758,96 @@ test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an olde
   assert.equal(h.posts.length, 1);
   same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
 });
+
+// ------------------------------------------------------------------ UX-3: one episode numbering across page, picker and arr
+
+test('episodeNumbering: the arr\'s numbers decide; TMDB\'s facts belong to a number only where the air days agree', t => {
+  const h = setup(t);
+  const N = h.JE.arrAsk.episodeNumbering;
+  const arr = (n, day, code = 'unmonitored') => ({ episode: n, airDate: day ? `${day}T04:00:00Z` : null, reason: { code } });
+  const tmdb = (n, day) => ({ episode: n, airDate: day });
+  // Firefly: the arr lists 14, TMDB 11 (12–14 are TMDB specials); 1–11 aired on the same days.
+  const days = ['2002-09-20', '2002-09-27', '2002-10-04'];
+  same(N([arr(1, days[0]), arr(2, days[1]), arr(3, days[2]), arr(4, '2003-06-23')], { episodes: days.map((d, i) => tmdb(i + 1, d)), providerEpisodes: [1, 2, 3] }),
+    { state: 'agree', destinationOnly: [4], providerOnly: [], mismatched: [] });
+  // A day apart is the same airing (time zones).
+  assert.equal(N([arr(1, '2002-09-21')], { episodes: [tmdb(1, '2002-09-20')], providerEpisodes: [1] }).state, 'agree');
+  // Another order: the same number aired on another day.
+  same(N([arr(1, '2002-12-20'), arr(2, days[0])], { episodes: [tmdb(1, days[0]), tmdb(2, days[1])], providerEpisodes: [1, 2] }),
+    { state: 'conflict', destinationOnly: [], providerOnly: [], mismatched: [1, 2] });
+  // Different counts and nothing to confirm a shared number by (dates withheld): held.
+  assert.equal(N([arr(1, null), arr(2, null), arr(3, null)], { episodes: [tmdb(1, null), tmdb(2, null)], providerEpisodes: [1, 2] }).state, 'conflict');
+  // The same numbers and no dates: nothing says they differ.
+  assert.equal(N([arr(1, null), arr(2, null)], { episodes: [], providerEpisodes: [1, 2] }).state, 'agree');
+  // A series no arr holds: the provider's numbers are all there is.
+  assert.equal(N([arr(1, days[0], 'not_in_arr')], { episodes: [], providerEpisodes: [1, 2] }).state, 'provider');
+  // Nothing to compare with.
+  assert.equal(N([arr(1, days[0])], null).state, 'unknown');
+  assert.equal(N([arr(1, days[0])], { episodes: [] }).state, 'unknown');
+  assert.equal(N([], { providerEpisodes: [1] }).state, 'unknown');
+});
+
+/** The season of a title that isn't in the library: TMDB lists E1–E3, the arr E1–E4 (E2 and E4 missing, nobody fetching). */
+function absentSeason({ e2Day = '2014-06-08' } = {}) {
+  return {
+    key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'unmonitored' },
+    summary: { aired: 4, ready: 1, missing: 2 },
+    episodes: [
+      { key: 'tv:tvdb:1:s1:e1', season: 1, episode: 1, row: false, stage: 'ready', reason: { code: 'ready' }, airDate: '2014-06-01T00:00:00Z' },
+      { key: 'tv:tvdb:1:s1:e2', season: 1, episode: 2, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: `${e2Day}T00:00:00Z` },
+      { key: 'tv:tvdb:1:s1:e3', season: 1, episode: 3, row: false, stage: 'downloading', reason: { code: 'downloading' }, airDate: '2014-06-15T00:00:00Z' },
+      { key: 'tv:tvdb:1:s1:e4', season: 1, episode: 4, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: '2014-06-22T00:00:00Z' }
+    ]
+  };
+}
+
+function providerRows() {
+  const body = rowsBody();
+  body.rows.episodes = body.rows.episodes.filter(e => e.episode !== 4);
+  body.rows.providerEpisodes = [1, 2, 3];
+  return body;
+}
+
+test('UX-3: an episode only the arr lists says TMDB has no details for it, and can still be asked for', async t => {
+  const h = setup(t, { status: absentSeason(), server: { rows: () => providerRows() } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"]');
+  assert.equal(four.querySelector('.je-ask-row-title bdi').textContent, '4. Episode 4');
+  assert.equal(four.querySelector('.je-ask-row-arr-only').textContent, 'TMDB has no details for this episode.');
+  assert.ok(four.querySelector('.je-ask-get'), 'the arr lists it: Get it reaches it');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-row-arr-only'), null);
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
+  assert.equal(h.document.querySelector('.je-ask-numbering-note'), null);
+});
+
+test('UX-3: when the arr numbers a season differently, its episodes shown with TMDB\'s facts are held and say why; nothing is sent', async t => {
+  const h = setup(t, { status: absentSeason({ e2Day: '2014-08-31' }), server: { rows: () => providerRows() } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  for (const n of [2, 4]) {
+    const r = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(r.querySelector('.je-ask-get'), null, `E${n} has no Get it`);
+    assert.equal(r.querySelector('.je-ask-paused').textContent, 'Numbered differently');
+  }
+  const note = h.document.querySelector('.je-ask-season-note.je-ask-numbering-note');
+  assert.ok(note, 'the season says why above its episodes');
+  assert.match(note.textContent, /numbered differently here and on TMDB/);
+  // The episode's dialog holds it too.
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-row-title'));
+  await settle();
+  const dialog = h.document.querySelector('.je-ask-dialog');
+  assert.ok(dialog.querySelector('.je-ask-numbering-note'));
+  assert.equal(dialog.querySelector('.je-ask-get'), null);
+  assert.equal(h.posts.length, 0);
+});
+
+test('UX-3: a library season\'s own Jellyfin rows are not held by TMDB\'s numbering', async t => {
+  const status = absentSeason({ e2Day: '2014-08-31' });
+  status.episodes[1] = { ...status.episodes[1], itemId: ID(2), row: true };
+  const h = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: () => providerRows() } });
+  await h.open();
+  const native = h.list().querySelector(`.listItem[data-id="${ID(2)}"]`);
+  assert.ok(native.querySelector('.je-ask-get'), 'Jellyfin\'s row shows Jellyfin\'s facts for the arr\'s episode');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'), null, 'JE\'s TMDB-described row is held');
+});

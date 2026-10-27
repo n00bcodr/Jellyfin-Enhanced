@@ -87,6 +87,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Episodes in number order: request state for all, metadata for the ones without a file.</summary>
         [JsonPropertyName("episodes")] public IReadOnlyList<SeasonRowEpisode> Episodes { get; init; } = Array.Empty<SeasonRowEpisode>();
+
+        /// <summary>
+        /// The episode numbers the provider's (TMDB's) season lists, in order, without those hidden from the viewer: what the
+        /// page's metadata is numbered by, so the client can tell where it agrees with the destination's own numbering
+        /// (the arr's episode list, which a request names). Null when the provider's season couldn't be read.
+        /// </summary>
+        [JsonPropertyName("providerEpisodes")] public IReadOnlyList<int>? ProviderEpisodes { get; init; }
     }
 
     /// <summary>
@@ -292,6 +299,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Blocked4k = canRequest4k ? null : RequestBlock.Of(facts4k),
                 SeasonRequest4k = seasonState4k,
                 Episodes = episodes,
+                ProviderEpisodes = meta.Count == 0 ? null : meta.Keys.Where(n => !hidden.Contains(n)).OrderBy(n => n).ToList(),
             };
         }
 

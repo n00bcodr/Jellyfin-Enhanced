@@ -351,7 +351,7 @@ export const SITES = {
     'openOrAsk feedback toast': [2, 'press', 'effect'],
     'openOrAsk state inflight': [2, 'module', 'cache'],
     'openOrAsk write arrAsk.ask': [1, 'press', 'transport'],
-    'pickEpisodesPanel surface insert foreground': [2, 'press', 'render: a control inside the request sheet (build() registers the sheet on the surface stack)'],
+    'pickEpisodesPanel surface insert foreground': [3, 'press', 'render: a control or the numbering note inside the request sheet (build() registers the sheet on the surface stack)'],
     'pickSeasonsPanel surface insert foreground': [1, 'press', 'render: a control inside the request sheet (build() registers the sheet on the surface stack)'],
     'render focus focus': [1, 'press', 'sync'],
     'restoreFocus focus focus': [2, 'press', 'sync'],

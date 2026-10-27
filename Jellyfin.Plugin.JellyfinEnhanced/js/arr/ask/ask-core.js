@@ -907,6 +907,61 @@
         return { seasons, latest: aired.length ? aired[aired.length - 1].season_number : null, upcoming: upcoming ? upcoming.season_number : null };
     }
 
+    /**
+     * The calendar day of an air date (an arr's UTC instant or TMDB's yyyy-MM-dd) as a day number, or null.
+     * @param {string|null|undefined} value Air date.
+     * @returns {number|null} Days since 1970-01-01.
+     */
+    function airDay(value) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+        return m ? Math.round(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000) : null;
+    }
+
+    /**
+     * How a season's episode numbers line up between the destination (the arr's episode list, as the season's status gives
+     * it: what a request for an episode number reaches) and the provider (TMDB's season list, which numbers the page's
+     * titles, synopses and dates). A request always names the destination's numbers; the provider's facts belong to the
+     * same number only where both say the episode aired on the same day (a day apart for time zones).
+     * - `provider`: the destination has no list of its own (the series isn't in an arr yet): the provider's numbers are
+     *   all there is, as before.
+     * - `agree`: every number both list aired on the same day (or neither gives dates and they list as many episodes):
+     *   the provider's facts describe the destination's episodes. `destinationOnly` are episodes only the destination
+     *   lists (the page has no facts for them); `providerOnly` ones only the provider lists (nothing to ask for).
+     * - `conflict`: some number aired on different days in the two lists, or they list different counts and no shared
+     *   number can be confirmed: picking an episode by what the page shows could reach another one, so single episodes
+     *   of the season are held (a whole season still names the destination's season).
+     * - `unknown`: either list is missing; nothing is held.
+     * @param {Array<Object>|null|undefined} statusEpisodes The season status' episodes ({episode, airDate, reason}).
+     * @param {Object|null|undefined} rows The season rows ({episodes: [{episode, airDate}], providerEpisodes}).
+     * @returns {{state: string, destinationOnly: Array<number>, providerOnly: Array<number>, mismatched: Array<number>}} Numbering.
+     */
+    function episodeNumbering(statusEpisodes, rows) {
+        const none = { destinationOnly: [], providerOnly: [], mismatched: [] };
+        const destination = (Array.isArray(statusEpisodes) ? statusEpisodes : []).filter(e => Number.isInteger(e?.episode));
+        if (!destination.length || !rows) return { state: 'unknown', ...none };
+        // A series no arr holds yet: its episode statuses are the provider's own list.
+        if (destination.every(e => e.reason?.code === 'not_in_arr')) return { state: 'provider', ...none };
+        if (!Array.isArray(rows.providerEpisodes)) return { state: 'unknown', ...none };
+        const provider = new Set(rows.providerEpisodes.filter(Number.isInteger));
+        const numbers = new Set(destination.map(e => e.episode));
+        const providerDays = new Map((Array.isArray(rows.episodes) ? rows.episodes : []).map(e => [e?.episode, airDay(e?.airDate)]));
+        const mismatched = [];
+        let confirmed = 0;
+        for (const ep of destination) {
+            if (!provider.has(ep.episode)) continue;
+            const a = airDay(ep.airDate);
+            const b = providerDays.get(ep.episode) ?? null;
+            if (a == null || b == null) continue;
+            if (Math.abs(a - b) > 1) mismatched.push(ep.episode);
+            else confirmed++;
+        }
+        const destinationOnly = [...numbers].filter(n => !provider.has(n)).sort((a, b) => a - b);
+        const providerOnly = [...provider].filter(n => !numbers.has(n)).sort((a, b) => a - b);
+        const counted = destinationOnly.length > 0 || providerOnly.length > 0;
+        const conflict = mismatched.length > 0 || (counted && confirmed === 0);
+        return { state: conflict ? 'conflict' : 'agree', destinationOnly, providerOnly, mismatched: mismatched.sort((a, b) => a - b) };
+    }
+
     JE.session?.onUserChange?.('arr-ask', () => {
         meState = null;
         openIds.clear();
@@ -956,6 +1011,7 @@
         adminSearch,
         familySearch,
         tmdbSeasons,
+        episodeNumbering,
         call,
         tr
     });
