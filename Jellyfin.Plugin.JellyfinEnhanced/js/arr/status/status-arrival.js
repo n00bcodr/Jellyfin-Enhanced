@@ -31,7 +31,7 @@
         gap: 15000,
         /** A movie or episode redraw that Jellyfin's version picker doesn't reflect is tried at most this often per change. */
         redrawTries: 3,
-        /** How often per page view a change given up on may get a fresh set of tries (a different read, or Jellyfin adding or removing versions). */
+        /** How often per page view a change given up on may get a fresh set of tries for the same count (Jellyfin adding or removing versions). */
         redrawRenewals: 3,
         /**
          * A season or series page reloads once its status has stopped changing for this long: a season
@@ -342,7 +342,8 @@
     }
 
     /**
-     * Gives a change given up on a fresh set of tries, at most `redrawRenewals` times per page view.
+     * Gives a change given up on a fresh set of tries for the same count (Jellyfin added or removed
+     * versions), at most `redrawRenewals` times per page view.
      * @param {Object} state Page state.
      * @returns {void}
      */
@@ -373,8 +374,20 @@
      */
     function track(state, now) {
         state.latest = now;
+        // Down to one version (a removal): the page starts over as freshly drawn with it, so the next
+        // arrival is a first arrival again.
+        if (now.versions === 1 && state.base?.versions > 1) {
+            Object.assign(state, { base: now, drawing: null, failures: null, abandoned: null, renewals: 0, refreshed: false });
+            if (state.pending?.kind === 'reload') state.pending = null;
+            drew(state);
+            return;
+        }
         if (!state.refreshed) return;
-        if (state.abandoned && !same(now, state.abandoned)) renew(state);
+        // A read with another count is another change, with its own tries; only the same count stays given up.
+        if (state.abandoned && !same(now, state.abandoned)) {
+            state.abandoned = null;
+            state.failures = null;
+        }
         // A change given up on that Jellyfin's picker shows now (it redrew by itself) is drawn, with no redraw.
         if (state.abandoned && more(now, state.base) && reconciled(state, now) === true) commit(state, now);
         const pending = state.pending;
@@ -636,7 +649,7 @@
     function plan(state, action) {
         if (page !== state) return;
         if (action.kind === 'replace' && state.tried.has(action.target)) return;
-        if (action.kind === 'reload' && state.abandoned && !more(action.base, state.abandoned)) return;
+        if (action.kind === 'reload' && state.abandoned && same(action.base, state.abandoned)) return;
         if (action.kind === 'reload' && state.refreshed && listPage(state)) {
             state.base = higher(state.base, action.base);
             drew(state);

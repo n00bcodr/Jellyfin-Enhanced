@@ -518,9 +518,9 @@ for (const kind of ['movie', 'episode']) {
 
   // LRR3: the picker the page was shown with can go missing before JE's first redraw; and repeated
   // LibraryChanged notifications must not renew an unchanged failed change without bound.
-  const eventPage = (t, kind) => {
+  const eventPage = (t, kind, initial = 2) => {
     const handlers = [];
-    let versions = 2;
+    let versions = initial;
     const h = setup(t, {
       apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
       items: { [OLD]: { Id: OLD, SeasonId: SEASON, SeriesId: SERIES } },
@@ -627,6 +627,90 @@ for (const kind of ['movie', 'episode']) {
     assert.equal(h.A.state().abandoned, null);
     await sleep(200);
     assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'no redraw for it');
+  });
+
+  // LRR4: a removal down to one starts the page over; a given-up change fences only its own count.
+  const flagged = { ItemsUpdated: [OLD], ItemsAdded: [NEW], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] };
+
+  test(`${kind}: drawn with two, a removal to one, then a new second version redraws (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(1); f.draw(); // Jellyfin redrew itself after a version was removed
+    await h.D.update(true);
+    assert.equal(h.A.state().base.versions, 1, 'starts over at one');
+    f.set(2); // the picker stays at one until JE has Jellyfin redraw
+    await h.D.update(true);
+    f.event(flagged);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 2, 'a new arrival after an observed removal reaches the picker');
+    assert.equal(h.A.state().base.versions, 2);
+    assert.equal(h.host.shows.length, 1);
+  });
+
+  test(`${kind}: redrawn one → two, a removal to one, then a new second version redraws again (review probe)`, async t => {
+    const f = eventPage(t, kind, 1), { h } = f;
+    await h.D.update(false);
+    f.set(2);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 2));
+    assert.equal(h.host.shows.length, 1);
+    f.set(1); f.draw();
+    await h.D.update(true);
+    f.set(2);
+    await h.D.update(true);
+    f.event(flagged);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 2);
+    assert.equal(h.host.shows.length, 2, 'handled like a first arrival');
+    assert.equal(h.A.state().base.versions, 2);
+  });
+
+  test(`${kind}: with renewals used up, a lower read and a new arrival are new changes (review probe)`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(5);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 5, 2500));
+    for (let n = 1; n <= h.A.timing.redrawRenewals; n++) {
+      f.event(flagged);
+      assert.ok(await until(() => h.host.shows.length === 3 * (n + 1) && h.A.state().abandoned?.versions === 5, 2500));
+    }
+    assert.equal(h.A.state().renewals, h.A.timing.redrawRenewals);
+    f.set(3); // a removal is read
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.A.state().abandoned, null, 'the obsolete five no longer fences anything');
+    f.render(() => f.draw());
+    f.set(4);
+    await h.D.update(true);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    await sleep(450);
+    assert.equal(f.picker.options.length, 4, 'a genuine new four reaches the picker');
+    assert.equal(h.A.state().base.versions, 4);
+  });
+
+  test(`${kind}: given up at three with renewals used up, a fourth version still redraws`, async t => {
+    const f = eventPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {});
+    f.set(3);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.versions === 3, 2500));
+    for (let n = 1; n <= h.A.timing.redrawRenewals; n++) {
+      f.event(flagged);
+      assert.ok(await until(() => h.host.shows.length === 3 * (n + 1) && h.A.state().abandoned?.versions === 3, 2500));
+    }
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.host.shows.length, 12, 'the same count stays given up');
+    f.render(() => f.draw());
+    f.set(4);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 4, 1500));
+    assert.equal(f.picker.options.length, 4);
+    assert.equal(h.host.shows.length, 13);
   });
 
   test(`${kind}: a failed redraw whose change is gone again waits for nothing`, async t => {
