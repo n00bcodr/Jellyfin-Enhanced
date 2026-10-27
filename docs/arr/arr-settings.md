@@ -724,14 +724,20 @@ What each one does is described with the Seerr settings ([details pages](../seer
 
 #### With Seerr off
 
-When Seerr isn't set up (or the request backend no longer uses it), the configuration page keeps Seerr's own
-connection setup available and greys out what only Seerr can do, each with one short note; nothing stored is changed,
-and saving keeps the values for when Seerr is turned on again:
+"Seerr is on" means one thing everywhere: Seerr is set up (turned on, with an address and a key) **and** backend
+isolation allows it (not yet adopted, or adopted with request handling set to Seerr). An install that adopted Jellyfin
+Enhanced or Status only counts as Seerr off even with Seerr's switch, address and key still stored. When Seerr is off,
+the configuration page keeps Seerr's own connection setup available and greys out what only Seerr can do, each with one
+short note; nothing stored is changed, and saving keeps the values for when Seerr is turned on again:
 
 - the **Seerr Recommendations Page** settings (Pages tab); the page, its sidebar link, its native Home tab and its Plugin
   Pages entry are hidden while Seerr is off;
 - **Import from Seerr** (Sonarr and Radarr), **Move requests from Seerr...**, **Show the status in Seerr's more-info
   window** and **Read Seerr's requests every (minutes)**.
+
+The server enforces the same rule, so nothing reaches Seerr while it is off, whatever a browser still showing an
+older page asks for: **Move requests from Seerr** answers `409 seerr_off` (checked before the read and again before
+anything is written), **Import from Seerr** and the request quota answer `503`, and no Seerr account is looked up.
 
 The Requests page's **System** tab then describes the request handling actually in use instead of Seerr: with
 Jellyfin Enhanced handling requests, whether asking is on, how many Sonarr/Radarr instances can take requests and
