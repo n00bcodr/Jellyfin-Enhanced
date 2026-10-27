@@ -84,6 +84,8 @@
 
     /** @type {Object|null} the synthetic page shown now */
     let current = null;
+    /** @type {HTMLElement|null} the page whose check holds the page-wide gate (see checking) */
+    let gateOwner = null;
     let started = false;
     /** The synthetic id the last fallback left (a second look at it must not fall back again). */
     let fellBackFrom = null;
@@ -958,26 +960,15 @@
      * A page state that ends (left, another viewer, signed out, no page shown) while its page is still hidden for a
      * check: the check is over, and it failed closed. The page that owned it keeps none of its earlier content on
      * show: shown now, it gets the outage state (refusal, Back); not shown, it is refused in place, and showing it
-     * again checks it anew. The page-wide gate and Jellyfin's loading indicator are let go either way.
+     * again checks it anew, and nothing shared (the backdrop, the page-wide gate it does not hold, the loading
+     * indicator another page shows) changes. The page-wide gate and indicator it held are let go.
      * @param {Object} state The page state that ended.
      * @returns {void}
      */
     function endCheck(state) {
         const page = state.page;
         if (!page?.classList.contains(CHECKING_CLASS)) return;
-        const message = TITLE_KINDS.has(state.parts.kind) ? 'native_details_failed' : 'native_details_page_failed';
-        if (page === visiblePage()) {
-            refuse(page, message);
-            return;
-        }
-        page.classList.remove(CHECKING_CLASS);
-        page.querySelector('.je-native-absent-refusal')?.remove();
-        const box = el('div', 'je-native-absent-refusal');
-        box.setAttribute('role', 'status');
-        box.textContent = JE.t(message);
-        page.prepend(box);
-        page.classList.add(REFUSED_CLASS);
-        checking(null, false);
+        refuse(page, TITLE_KINDS.has(state.parts.kind) ? 'native_details_failed' : 'native_details_page_failed');
     }
 
     /**
@@ -988,10 +979,13 @@
      * @returns {void}
      */
     function refuse(page, messageKey = 'native_details_unavailable') {
+        // Only the page shown now speaks for what is shared (the backdrop, the loading indicator, a pending
+        // window): a page refused while it is not shown changes nothing of the page that is.
+        const shown = page === visiblePage();
         // A refusal on another page (where Back or Forward took the viewer) wins over the modal an
         // earlier outage still meant to open; the failed page's own second look keeps it.
-        if (pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
-        window.Dashboard?.hideLoadingMsg?.();
+        if (shown && pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
+        if (shown) window.Dashboard?.hideLoadingMsg?.();
         page.querySelector('.je-native-absent-refusal')?.remove();
         sweep(null);
         const box = el('div', 'je-native-absent-refusal');
@@ -1009,7 +1003,7 @@
         page.prepend(box);
         checking(page, false);
         page.classList.add(REFUSED_CLASS);
-        document.documentElement.classList.add(REFUSED_VIEW_CLASS);
+        if (shown) document.documentElement.classList.add(REFUSED_VIEW_CLASS);
     }
 
     /**
@@ -1019,9 +1013,13 @@
      * @returns {void}
      */
     function checking(page, on) {
+        page?.classList.toggle(CHECKING_CLASS, on);
+        // The page-wide part (the backdrop hidden, Jellyfin's loading indicator) belongs to the page that set it:
+        // another page ending its check leaves it alone; with no page given (no details page shown) it goes.
+        if (!on && page && gateOwner && gateOwner !== page) return;
         const was = document.documentElement.classList.contains(CHECKING_CLASS);
         document.documentElement.classList.toggle(CHECKING_CLASS, on);
-        page?.classList.toggle(CHECKING_CLASS, on);
+        gateOwner = on ? page : null;
         // Jellyfin's own loading indicator while the page is hidden.
         if (on && !was) window.Dashboard?.showLoadingMsg?.();
         else if (!on && was) window.Dashboard?.hideLoadingMsg?.();

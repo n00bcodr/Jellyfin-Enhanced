@@ -837,6 +837,7 @@ export const SITES = {
     'backThenModal state pendingModal': [2, 'module', 'cache'],
     'cancelPendingModal state pendingModal': [1, 'module', 'cache'],
     'checking navigation Dashboard.showLoadingMsg': [1, 'press', 'sync'],
+    'checking state gateOwner': [1, 'module', 'ui'],
     'dispose state current': [1, 'module', 'ui'],
     'focusLead focus focus': [1, 'press', 'sync'],
     'go navigation location.hash': [2, 'press', 'sync'],

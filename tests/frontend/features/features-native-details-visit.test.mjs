@@ -9,6 +9,7 @@ import { createHarness, deferred } from '../helpers/harness.mjs';
 const SERVER = '0202511b0eac4284ab045b3ba556d72e';
 const MOVIE = '4a45ad11000a938e00000000f9c67720'; // the server's own vector (ApiNativeDetailsTests)
 const LIBRARY = '0123456789abcdef0123456789abcdef';
+const SERVER_ID = SERVER;
 const DETAILS = `#/details?id=${MOVIE}&serverId=${SERVER}`;
 const PAGE = `<div id="itemDetailPage" class="page libraryPage itemDetailPage"><div class="detailPageContent"><div class="detailPagePrimaryContainer">
   <div class="mainDetailButtons"><button class="btnPlay detailButton">Play</button></div>
@@ -24,7 +25,7 @@ const art = id => `http://jellyfin.test/Items/${id}/Images/Primary?fillHeight=29
  * @param {object} t Test context.
  * @returns {object} Harness and probes.
  */
-function setup(t, realSession = false) {
+function setup(t, realSession = false, realNavigation = false) {
   const reads = [], getItem = [], userChanges = [];
   let epoch = 1;
   const h = createHarness({
@@ -58,6 +59,8 @@ function setup(t, realSession = false) {
     h.window.ApiClient.setAuthenticationInfo = function (value, user) { this.accessToken = () => value; this.getCurrentUserId = () => user; };
     h.load('core/session.js');
   }
+  // The real view hooks (a route change keeps the page state until the next details view is shown).
+  if (realNavigation) h.load('core/navigation.js');
   h.load('core/ui-kit.js');
   h.load('core/api-client.js');
   h.load('enhanced/helpers.js');
@@ -547,8 +550,8 @@ const held = name => ({ Id: MOVIE, Type: 'Movie', Name: name });
 const until = async fn => { for (let i = 0; i < 80 && !fn(); i++) await tick(); assert.ok(fn(), 'held stage reached'); };
 
 /** A restored view of a page shown once, with the real session owner; its item reads are held. */
-async function restoredPage(t) {
-  const h = setup(t, true);
+async function restoredPage(t, realNavigation = false) {
+  const h = setup(t, true, realNavigation);
   let loading = false;
   h.window.Dashboard = { showLoadingMsg: () => { loading = true; }, hideLoadingMsg: () => { loading = false; } };
   // The startup look is spent first, so it cannot rescue a page later.
@@ -657,4 +660,124 @@ test('a page no longer shown when it would be looked at again lets its check go 
   assert.equal(h.nd.current()?.item?.Name, 'current');
   assert.equal(h.page.classList.contains('je-native-absent-refused'), false);
   settled(h);
+});
+
+// Review round 4 (PDR4-1): a page refused while it is not shown changes nothing shared. The backdrop, the page-wide
+// gate it does not hold and the loading indicator belong to the page that is shown.
+
+const named = (name, id = MOVIE) => ({ Id: id, Type: 'Movie', Name: name });
+function gatesOff(h, page = h.page) {
+  assert.equal(page.classList.contains('je-native-absent-checking'), false, 'own page gate');
+  assert.equal(h.document.documentElement.classList.contains('je-native-absent-checking'), false, 'page-wide gate');
+  assert.equal(h.loading(), false, 'loading indicator');
+}
+/** The restored page's first read is overtaken by a credential refresh; its one look again is held. */
+async function lookingAgain(h) {
+  const look = h.nd.onView();
+  await until(() => h.held.length === 1);
+  h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+  h.held[0].body.resolve(named('overtaken-first'));
+  await look;
+  await until(() => h.held.length === 2);
+  assert.ok(h.page.classList.contains('je-native-absent-checking'));
+}
+
+for (const ending of ['refresh', 'access', 'http403', 'empty', 'success']) {
+  test(`a page no longer shown whose look again ends (${ending}) leaves the shown page's backdrop alone`, async t => {
+    const h = await restoredPage(t);
+    await lookingAgain(h);
+    // jellyfin-web has hidden the cached page while its read is out; no view has been shown yet.
+    h.page.classList.add('hide');
+    const backdrop = h.document.createElement('div');
+    backdrop.className = 'backdropContainer';
+    h.document.body.append(backdrop);
+    if (ending === 'refresh') h.window.ApiClient.setAuthenticationInfo('credential-c', 'user-a');
+    if (ending === 'access') h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+    if (ending === 'http403') h.held[1].body.reject(Object.assign(new Error('HTTP 403'), { status: 403 }));
+    else h.held[1].body.resolve(ending === 'empty' ? null : named(ending === 'refresh' ? 'overtaken-rerun' : 'current'));
+    await tick(); await tick(); await tick();
+    if (ending === 'access') {
+      // The one read under the new policy, overtaken too.
+      await until(() => h.held.length === 3);
+      h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+      h.held[2].body.resolve(named('overtaken-policy'));
+      await tick(); await tick(); await tick();
+    }
+    assert.notEqual(h.nd.current()?.item?.Name, 'overtaken-rerun');
+    assert.notEqual(h.nd.current()?.item?.Name, 'overtaken-policy');
+    gatesOff(h);
+    assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false, 'nothing page-wide');
+    assert.notEqual(h.window.getComputedStyle(backdrop).display, 'none', 'the shown page keeps its backdrop');
+    if (ending !== 'success') {
+      assert.ok(h.page.classList.contains('je-native-absent-refused'));
+      assert.ok(h.page.querySelector('.je-native-absent-refusal'));
+      assert.equal(h.window.getComputedStyle(h.page.querySelector('.detailPageContent')).display, 'none', 'its earlier content stays hidden');
+    }
+    // Shown again: checked anew.
+    h.page.classList.remove('hide');
+    const count = h.held.length;
+    const back = h.nd.onView();
+    await until(() => h.held.length === count + 1);
+    h.held[count].body.resolve(named('current-on-show'));
+    await back;
+    assert.equal(h.nd.current()?.item?.Name, 'current-on-show');
+    gatesOff(h);
+    assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false);
+  });
+}
+
+test('the outgoing page refused before the incoming details page is shown leaves the incoming backdrop alone (real navigation)', async t => {
+  const h = await restoredPage(t, true);
+  await lookingAgain(h);
+  h.page.classList.add('hide');
+  const holder = h.document.createElement('div');
+  holder.innerHTML = PAGE;
+  const nextPage = holder.firstElementChild;
+  const id = h.JE.titleDetails.syntheticId('movie', 998);
+  h.document.body.append(nextPage);
+  h.window.location.hash = `#/details?id=${id}&serverId=${SERVER_ID}`;
+  await tick();
+  assert.equal(h.nd.current()?.page, h.page, 'the route change keeps the old state until the next details view');
+  const backdrop = h.document.createElement('div');
+  backdrop.className = 'backdropContainer';
+  h.document.body.append(backdrop);
+  h.window.ApiClient.setAuthenticationInfo('credential-c', 'user-a');
+  h.held[1].body.resolve(named('overtaken-rerun'));
+  await tick(); await tick();
+  gatesOff(h);
+  assert.equal(h.nd.current(), null);
+  assert.equal(h.window.getComputedStyle(h.page.querySelector('.detailPageContent')).display, 'none');
+  assert.notEqual(h.window.getComputedStyle(nextPage.querySelector('.detailPageContent')).display, 'none');
+  assert.notEqual(h.window.getComputedStyle(backdrop).display, 'none', 'only the outgoing page failed: the incoming page keeps its backdrop');
+  const count = h.held.length;
+  h.window.Emby.Page.onViewShow('itemDetailPage', nextPage, h.window.location.hash);
+  await until(() => h.held.length === count + 1);
+  h.held[count].body.resolve(named('incoming-current', id));
+  await until(() => h.nd.current()?.item?.Name === 'incoming-current');
+  gatesOff(h, nextPage);
+  assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false);
+});
+
+test('a second view of a page hidden while its read is overtaken again leaves the shared backdrop shown', async t => {
+  const h = await restoredPage(t);
+  const first = h.nd.onView();
+  await until(() => h.held.length === 1);
+  h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+  h.held[0].body.resolve(named('overtaken-first'));
+  await first;
+  await tick(); await tick();
+  const second = h.nd.onView();
+  await until(() => h.held.length === 2);
+  const backdrop = h.document.createElement('div');
+  backdrop.className = 'backdropContainer';
+  h.document.body.append(backdrop);
+  h.page.classList.add('hide');
+  h.window.ApiClient.setAuthenticationInfo('credential-c', 'user-a');
+  h.held[1].body.resolve(named('overtaken-second'));
+  await second;
+  await tick(); await tick();
+  assert.equal(h.held.length, 2);
+  gatesOff(h);
+  assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false);
+  assert.notEqual(h.window.getComputedStyle(backdrop).display, 'none');
 });
