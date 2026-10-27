@@ -1678,7 +1678,7 @@
                                     <i class="material-icons je-info-icon">auto_awesome</i>
                                     <div>
                                         <strong>Seerr Recommendations Page</strong> adds a dedicated view with Seerr-powered rows: Trending, Popular Movies, Popular TV Shows, Upcoming Movies and Upcoming TV Shows.<br/><br/>
-                                        <strong>Requirements:</strong> Seerr integration must be configured and enabled.
+                                        <strong>Requirements:</strong> Seerr integration must be configured and enabled. While Seerr is off, the page, its link and its tab are hidden and these settings are kept as they are; with Jellyfin Enhanced handling requests, the Requests page's Discover tab offers discovery without Seerr.
                                     </div>
                                 </div>
                             </div>
@@ -2053,10 +2053,7 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrShowAdvanced">
                                 <div class="fieldDescription je-field-desc-xl">Lets users choose the Server, Quality and Path while requesting. Only shown to users with the Advanced Requests (or Manage Requests) permission in Seerr. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
-                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
-                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. Requires "Partial requests" to be enabled in Seerr; otherwise Seerr itself requires all seasons. With Requests &amp; downloads (phase 3) on, Jellyfin Enhanced's own request sheet and series buttons follow it too, also when Jellyfin Enhanced handles requests.</div>
-                            </div>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="jellyseerrSingleSeasonRequestOnly"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Only allow requesting one season at a time</strong> works with Seerr or with Jellyfin Enhanced handling requests, so it is set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#jellyseerrSingleSeasonRequestOnly">Requests &amp; discovery</a>.</div></div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowQuotaInfo" is="emby-checkbox" type="checkbox"/><span>Show request quota info</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowQuotaInfo">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, request modals display a chip showing the user's request usage and when their next slot frees up. Quota errors get a detailed dialog instead of a vanishing toast.</div>
@@ -2071,10 +2068,7 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrUseMoreInfoModal">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, clicking a Seerr result title or poster opens an in-app More Info modal.<br/>When disabled, clicking will open the item in Seerr.</div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="nativeAbsentDetailsEnabled" is="emby-checkbox" type="checkbox"/><span>Open titles that aren't in the library on Jellyfin's own details page (Experimental)</span></label></div>
-                            <div class="je-setting-description" data-desc-for="nativeAbsentDetailsEnabled">
-                                <div class="fieldDescription je-field-desc-xl">Jellyfin 12 web only. A title that isn't in your library (Seerr results and discovery rows, recommendations, the Requests page, notifications, the calendar, Hidden Content) opens on a regular Jellyfin details page, filled in from Seerr and TMDB, with the request controls on it. Nothing is added to your library and other apps never see these titles. If the page can't be loaded the More Info modal opens instead. When off, or on Jellyfin 10.11, titles open as set above.</div>
-                            </div>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="nativeAbsentDetailsEnabled"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Open titles that aren't in the library on Jellyfin's own details page</strong> works with Seerr or with Jellyfin Enhanced handling requests, so it is set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#nativeAbsentDetailsEnabled">Requests &amp; discovery</a>.</div></div>
                             <div class="checkboxContainer"><label><input id="jellyseerrAvailablePosterLinksToJellyfin" is="emby-checkbox" type="checkbox"/><span>Link available items' posters straight to Jellyfin</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrAvailablePosterLinksToJellyfin">
                                 <div class="fieldDescription je-field-desc-xl">For a Seerr result that's already available in your library, clicking the poster goes straight to the Jellyfin item, just like the title link already does. If "Open results in More Info modal" above is enabled, the modal can no longer be opened by clicking the poster of an available item.</div>
@@ -2154,128 +2148,10 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle">Automatic Requests</legend>
                         <div class="configSection">
-                            <details class="je-details-section">
-                                <summary>Auto Season Requests</summary>
-                                <div class="je-details-body">
-                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Automatic Advance Season Requests</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestEnabled">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Automatically request the next season in Seerr when a user about to finish the current season.
-                                            <br/><br/>
-                                        </div>
-                                    </div>
-                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/><span>Require All Prior Episodes Watched</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestRequireAllWatched">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br/> This might cause requests to not be triggered if users skip episodes.
-                                        </div>
-                                    </div>
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
-                                        <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoSeasonRequestThresholdValue">
-                                            <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
-                                            <div class="je-info-banner-inline">
-                                            <i class="material-icons je-info-icon-sm">info</i>
-                                            <div>
-                                                • Requests are triggered when users start or complete watching episodes<br/>
-                                                • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br/>
-                                                • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br/>
-                                                • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br/>
-                                            </div>
-                                            </div>
-                                        </div>
-                                </div>
-                            </details>
-
-                            <details class="je-details-section">
-                                <summary>Auto Movie Requests</summary>
-                                <div class="je-details-body">
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Auto Movie Requests</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestEnabled">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Automatically request the next movie in a collection based on configured triggers.
-                                            <br/><br/>
-                                        <strong>Requirements:</strong> TMDB API key must be configured.
-                                        </div>
-                                    </div>
-
-                                    <div style="margin-top:10px;"><strong>Request Triggers:</strong></div>
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/><span>When movie starts</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnStart">
-                                        <div class="fieldDescription je-field-desc-mt-sm">Trigger an auto-request for the next movie in the collection as soon as a user starts a movie.</div>
-                                    </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/><span>After X minutes watched</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnMinutesWatched">
-                                        <div class="fieldDescription je-field-desc-mt-sm">
-                                            Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
-                                        </div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label for="autoMovieRequestMinutesWatched" class="inputLabel">Minutes Watched Threshold:</label>
-                                        <input id="autoMovieRequestMinutesWatched" is="emby-input" type="number" min="1" max="180" value="20" />
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestMinutesWatched">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                                How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
-                                            </div>
-                                        </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/><span>Only request if released</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestCheckReleaseDate">
-                                        <div class="fieldDescription je-field-desc-mt-sm">
-                                            When enabled, future releases will be skipped. Only movies that have already been released will be requested.
-                                        </div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label for="autoMovieRequestQualityMode" class="inputLabel">Quality Profile Mode:</label>
-                                        <select id="autoMovieRequestQualityMode" is="emby-select" class="emby-select">
-                                            <option value="default">Default</option><option value="original">Original</option><option value="custom">Custom</option>
-                                        </select>
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestQualityMode">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                            <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br/>
-                                            <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br/>
-                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.<br/>
-                                            With Requests &amp; downloads "Ask for it" (phase 3) on, the next movie is recorded as a plain request instead and these quality settings aren't used.
-                                            </div>
-                                        </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox"/><span>Use default instead of 4K fallback</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestFallbackOn4k">
-                                        <div class="fieldDescription je-field-desc-lg">
-                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
-                                        </div>
-                                    </div>
-
-                                    <div id="autoMovieRequestCustomSettings" style="display:none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestServer">Radarr Server:</label><select id="autoMovieRequestServer" name="autoMovieRequestServer" is="emby-select" class="emby-select"></select></div>
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestProfile">Quality Profile:</label><select id="autoMovieRequestProfile" name="autoMovieRequestProfile" is="emby-select" class="emby-select"></select></div>
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestRootFolder">Root Folder:</label><select id="autoMovieRequestRootFolder" name="autoMovieRequestRootFolder" is="emby-select" class="emby-select"></select></div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestRootFolder">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                                These settings are only used when Quality Profile Mode is set to "Custom".
-                                            </div>
-                                            <div class="je-info-banner-inline">
-                                            <i class="material-icons je-info-icon-sm">info</i>
-                                            <div>
-                                                • Only works for movies that are part of a TMDB collection (e.g., <a class="je-bold-link" href="https://www.themoviedb.org/collection/86311" target="_blank">The Avengers Collection</a>, <a class="je-bold-link" href="https://www.themoviedb.org/collection/10" target="_blank">Star Wars Collection</a>, etc.)<br/>
-                                                • Automatically requests the next movie in the collection based on release order<br/>
-                                                • Movies already available or requested will be skipped<br/>
-                                            </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </details>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="autoSeasonRequestEnabled"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Automatic season and movie requests</strong> work with Seerr or with Jellyfin Enhanced handling requests, so they are set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#autoSeasonRequestEnabled">Requests &amp; discovery</a>.</div></div>
                         </div>
                     </fieldset>
 
@@ -2618,7 +2494,7 @@
                             <!-- Phase 1: Requests page, Manage drawer, Seerr modal status, Seerr request list -->
                             <div class="checkboxContainer"><label><input id="arrRequestsHubEnabled" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrRequestsHubEnabled">
-                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. Requests are read from Seerr (Seerr tab), so this shows nothing until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
+                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. With Jellyfin Enhanced handling requests ("Ask for it" below) they come from its own request list and Seerr isn't needed; otherwise they are read from Seerr (Seerr tab), so the list stays empty until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrManageDrawerEnabled" is="emby-checkbox" type="checkbox"/><span>Manage button for administrators</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrManageDrawerEnabled">
@@ -2984,6 +2860,143 @@
                                 </div>
                             </div>
                             <!-- /Requests & downloads, phase 2: notifications -->
+                        </div>
+                    </fieldset>
+                    <!-- Requests & discovery: settings that work with Seerr or with Jellyfin Enhanced handling requests. One stored
+                         setting each; the Seerr tab links here. Each is gated on what it really needs (CAPABILITY_DEPS), not on Seerr. -->
+                    <fieldset id="requestsDiscoverySection" data-dep-own>
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">travel_explore</i>Requests &amp; discovery</legend>
+                        <div class="configSection">
+                            <div class="je-setting-description" data-desc-for="requestsDiscoverySection">
+                                <div class="fieldDescription">These work with Seerr (Seerr tab) or with Jellyfin Enhanced handling requests (Requests &amp; downloads above, "Ask for it", request handling "Jellyfin Enhanced"). Each one says what it needs and stays off until that is set up.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="nativeAbsentDetailsEnabled" is="emby-checkbox" type="checkbox"/><span>Open titles that aren't in the library on Jellyfin's own details page (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativeAbsentDetailsEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Jellyfin 12 web only. A title that isn't in your library (search results and discovery rows, recommendations, the Requests page, notifications, the calendar, Hidden Content) opens on a regular Jellyfin details page, with the request controls on it. It is filled in from TMDB when Jellyfin Enhanced handles requests (needs a TMDB API key), otherwise from Seerr and TMDB (needs Seerr set up). Nothing is added to your library and other apps never see these titles. If the page can't be loaded the More Info modal opens instead. When off, or on Jellyfin 10.11, titles open as set on the Seerr tab ("Open results in More Info modal").</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
+                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. With Requests &amp; downloads "Ask for it" (phase 3) on, Jellyfin Enhanced's own request sheet and series buttons follow it, whichever handles requests. Seerr's request window follows it too; there it needs "Partial requests" enabled in Seerr, otherwise Seerr itself requires all seasons. Needs Seerr set up or "Ask for it" on.</div>
+                            </div>
+                            <details class="je-details-section">
+                                <summary>Auto Season Requests</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Automatic Advance Season Requests</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestEnabled">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Automatically ask for the next season when a user is about to finish the current one: through Seerr, or, with Requests &amp; downloads "Ask for it" (phase 3) on, as a request of their own (without Seerr this needs a TMDB API key).
+                                            <br/><br/>
+                                        </div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/><span>Require All Prior Episodes Watched</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestRequireAllWatched">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br/> This might cause requests to not be triggered if users skip episodes.
+                                        </div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
+                                        <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoSeasonRequestThresholdValue">
+                                            <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
+                                            <div class="je-info-banner-inline">
+                                            <i class="material-icons je-info-icon-sm">info</i>
+                                            <div>
+                                                • Requests are triggered when users start or complete watching episodes<br/>
+                                                • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br/>
+                                                • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br/>
+                                                • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br/>
+                                            </div>
+                                            </div>
+                                        </div>
+                                </div>
+                            </details>
+
+                            <details class="je-details-section">
+                                <summary>Auto Movie Requests</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Auto Movie Requests</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestEnabled">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Automatically request the next movie in a collection based on configured triggers.
+                                            <br/><br/>
+                                        <strong>Requirements:</strong> a TMDB API key, plus Seerr set up or Requests &amp; downloads "Ask for it" (phase 3) on.
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-top:10px;"><strong>Request Triggers:</strong></div>
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/><span>When movie starts</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnStart">
+                                        <div class="fieldDescription je-field-desc-mt-sm">Trigger an auto-request for the next movie in the collection as soon as a user starts a movie.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/><span>After X minutes watched</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnMinutesWatched">
+                                        <div class="fieldDescription je-field-desc-mt-sm">
+                                            Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
+                                        </div>
+                                    </div>
+
+                                    <div class="inputContainer">
+                                        <label for="autoMovieRequestMinutesWatched" class="inputLabel">Minutes Watched Threshold:</label>
+                                        <input id="autoMovieRequestMinutesWatched" is="emby-input" type="number" min="1" max="180" value="20" />
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestMinutesWatched">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                                How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
+                                            </div>
+                                        </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/><span>Only request if released</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestCheckReleaseDate">
+                                        <div class="fieldDescription je-field-desc-mt-sm">
+                                            When enabled, future releases will be skipped. Only movies that have already been released will be requested.
+                                        </div>
+                                    </div>
+
+                                    <div class="inputContainer">
+                                        <label for="autoMovieRequestQualityMode" class="inputLabel">Quality Profile Mode:</label>
+                                        <select id="autoMovieRequestQualityMode" is="emby-select" class="emby-select">
+                                            <option value="default">Default</option><option value="original">Original</option><option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestQualityMode">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                            <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br/>
+                                            <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br/>
+                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.<br/>
+                                            With Requests &amp; downloads "Ask for it" (phase 3) on, the next movie is recorded as a plain request instead and these quality settings aren't used.
+                                            </div>
+                                        </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox"/><span>Use default instead of 4K fallback</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestFallbackOn4k">
+                                        <div class="fieldDescription je-field-desc-lg">
+                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
+                                        </div>
+                                    </div>
+
+                                    <div id="autoMovieRequestCustomSettings" style="display:none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestServer">Radarr Server:</label><select id="autoMovieRequestServer" name="autoMovieRequestServer" is="emby-select" class="emby-select"></select></div>
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestProfile">Quality Profile:</label><select id="autoMovieRequestProfile" name="autoMovieRequestProfile" is="emby-select" class="emby-select"></select></div>
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestRootFolder">Root Folder:</label><select id="autoMovieRequestRootFolder" name="autoMovieRequestRootFolder" is="emby-select" class="emby-select"></select></div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestRootFolder">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                                These settings are only used when Quality Profile Mode is set to "Custom".
+                                            </div>
+                                            <div class="je-info-banner-inline">
+                                            <i class="material-icons je-info-icon-sm">info</i>
+                                            <div>
+                                                • Only works for movies that are part of a TMDB collection (e.g., <a class="je-bold-link" href="https://www.themoviedb.org/collection/86311" target="_blank">The Avengers Collection</a>, <a class="je-bold-link" href="https://www.themoviedb.org/collection/10" target="_blank">Star Wars Collection</a>, etc.)<br/>
+                                                • Automatically requests the next movie in the collection based on release order<br/>
+                                                • Movies already available or requested will be skipped<br/>
+                                            </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
@@ -11112,7 +11125,6 @@
             { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
@@ -11132,6 +11144,109 @@
             { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
             { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
         ];
+
+        /**
+         * True when Requests &amp; downloads takes requests ("Ask for it", phase 3, with its parents), whichever handles them.
+         * @returns {boolean} Whether the request ledger records requests
+         */
+        function jeRequestsActive() {
+            var on = function(id) { var el = document.getElementById(id); return !!(el && el.checked); };
+            return on('arrIntegrationEnabled') && on('arrPhase1Enabled') && on('arrPhase3Enabled');
+        }
+
+        /**
+         * True when Jellyfin Enhanced is the selected request handling (the server reads TMDB, never Seerr, then).
+         * @returns {boolean} Whether "Request handling" is set to Jellyfin Enhanced
+         */
+        function jeBackendSelected() {
+            var el = document.getElementById('arrRequestBackend');
+            return !!(el && el.value === 'je');
+        }
+
+        /**
+         * The server's readiness rule for native details (NativeDetailsPolicy.MetadataReady): TMDB when Jellyfin
+         * Enhanced is the request handling, Seerr otherwise.
+         * @returns {boolean} Whether native details have a metadata source
+         */
+        function nativeDetailsReady() {
+            return jeBackendSelected() ? hasTmdbKey() : hasJellyseerrConfigured();
+        }
+
+        // What a setting really needs, for settings that work with Seerr or with Jellyfin Enhanced handling requests
+        // (Requests & discovery on the *arr tab), and for Seerr-only navigation and admin operations. Unmet: every
+        // listed control is disabled with one short hint (stored values are kept and saved unchanged). The rules mirror
+        // the server's (NativeDetailsPolicy, AutoSeason/AutoMovieRequestService, EffectiveRequestsBackend.SeerrUsable).
+        var CAPABILITY_DEPS = [
+            { tag: 'cap-native-details', checkFn: nativeDetailsReady, controls: ['nativeAbsentDetailsEnabled'],
+              hint: 'Needs Seerr set up, or Jellyfin Enhanced request handling with a TMDB API key' },
+            { tag: 'cap-single-season', checkFn: function() { return hasJellyseerrConfigured() || jeRequestsActive(); }, controls: ['jellyseerrSingleSeasonRequestOnly'],
+              hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on' },
+            { tag: 'cap-auto-season', checkFn: function() { return hasJellyseerrConfigured() || (jeRequestsActive() && hasTmdbKey()); },
+              controls: ['autoSeasonRequestEnabled', 'autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'],
+              hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on with a TMDB API key' },
+            { tag: 'cap-auto-movie', checkFn: function() { return hasTmdbKey() && (hasJellyseerrConfigured() || jeRequestsActive()); },
+              controls: ['autoMovieRequestEnabled', 'autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k', 'autoMovieRequestServer', 'autoMovieRequestProfile', 'autoMovieRequestRootFolder'],
+              hint: 'Needs a TMDB API key, plus Seerr set up or Requests & downloads "Ask for it" on' },
+            // Seerr-only: the Seerr Recommendations page (its rows all come from Seerr) and the advanced Seerr operations.
+            // Seerr's connection setup itself always stays available (Seerr tab).
+            { tag: 'cap-seerr-recommendations', checkFn: hasJellyseerrConfigured,
+              controls: ['recommendationsPageEnabled', 'recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'],
+              hint: 'Seerr is off (Seerr tab): this page shows only Seerr\'s rows. The settings are kept for when Seerr is on.' },
+            { tag: 'cap-seerr-ops', checkFn: hasJellyseerrConfigured,
+              controls: ['importSonarrFromSeerr', 'importRadarrFromSeerr', 'arrSeerrMigrationBtn', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes'],
+              hint: 'Seerr is off (Seerr tab): not available. The settings are kept for when Seerr is on.' }
+        ];
+
+        /**
+         * Evaluates one capability rule: disables (or re-enables, once no other dependency holds them) its controls, dims
+         * their rows and shows its hint once per row. Values are left as they are, so a save keeps them.
+         * @param {Object} dep - Entry from CAPABILITY_DEPS
+         */
+        function updateCapabilityDep(dep) {
+            var isMet = !!dep.checkFn();
+            var hintClass = 'cap-hint-' + dep.tag;
+            dep.controls.forEach(function(id) {
+                var control = document.getElementById(id);
+                if (!control) return;
+                var container = control.closest('.checkboxContainer, .inputContainer, .selectContainer');
+                // A button in an action row (Import from Seerr): the hint goes under the row, the row stays usable.
+                var row = container ? null : control.closest('.je-arr-action-row');
+                if (!isMet) {
+                    control.disabled = true;
+                    addDepTag(control, dep.tag);
+                    control.title = dep.hint;
+                    if (container) {
+                        container.style.opacity = '0.5';
+                        container.style.cursor = 'not-allowed';
+                        addDepTag(container, dep.tag);
+                        if (!container.querySelector('.' + hintClass)) {
+                            var hint = document.createElement('div');
+                            hint.className = 'dep-hint-text ' + hintClass;
+                            hint.textContent = dep.hint;
+                            container.appendChild(hint);
+                        }
+                    } else if (row && !(row.nextElementSibling && row.nextElementSibling.classList.contains(hintClass))) {
+                        var rowHint = document.createElement('div');
+                        rowHint.className = 'dep-hint-text ' + hintClass;
+                        rowHint.textContent = dep.hint;
+                        row.after(rowHint);
+                    }
+                    // An open Seerr import list closes with its button.
+                    var picker = /^import(Sonarr|Radarr)FromSeerr$/.test(id) && document.getElementById(id.slice(6, 12).toLowerCase() + 'SeerrImportPicker');
+                    if (picker) { picker.style.display = 'none'; picker.innerHTML = ''; }
+                } else {
+                    if (removeDepTag(control, dep.tag)) control.disabled = false;
+                    if (control.title === dep.hint) control.title = '';
+                    if (container) {
+                        if (removeDepTag(container, dep.tag)) { container.style.opacity = ''; container.style.cursor = ''; }
+                        var shown = container.querySelector('.' + hintClass);
+                        if (shown) shown.remove();
+                    } else if (row && row.nextElementSibling && row.nextElementSibling.classList.contains(hintClass)) {
+                        row.nextElementSibling.remove();
+                    }
+                }
+            });
+        }
 
         // Informational only (unlike INDIVIDUAL_DEPS) — Native Tab is more
         // reliable than Custom Tabs on Jellyfin 12, but Custom Tabs still works.
@@ -11240,7 +11355,8 @@
                 // Setup fieldsets (Sonarr/Radarr/Bazarr config, Seerr connection setup)
                 // are always editable so admins can add a connection without first
                 // having one — they carry `data-dep-setup` directly in the HTML.
-                if (fieldsets[i].hasAttribute('data-dep-setup')) continue;
+                // Fieldsets with `data-dep-own` gate each setting on what it needs (CAPABILITY_DEPS) instead.
+                if (fieldsets[i].hasAttribute('data-dep-setup') || fieldsets[i].hasAttribute('data-dep-own')) continue;
                 targets.push(fieldsets[i]);
             }
 
@@ -12370,6 +12486,7 @@
             enforceTabExclusivity();
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
+            CAPABILITY_DEPS.forEach(updateCapabilityDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
             PARENT_DEPS.forEach(updateParentDep);
@@ -12663,6 +12780,8 @@
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
         document.querySelector('#metadataIconsEnabled').addEventListener('change', updateAllDependencies);
+        // Request handling decides what native details read (TMDB or Seerr).
+        document.querySelector('#arrRequestBackend').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });

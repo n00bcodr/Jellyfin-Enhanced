@@ -4063,6 +4063,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Seerr Search Settings
                 config.JellyseerrEnabled,
+                // Seerr is set up and the request mode lets Jellyfin Enhanced use it: Seerr-only navigation and
+                // windows follow this (stored Seerr settings are kept either way).
+                SeerrAvailable = EffectiveRequestsBackend.SeerrUsable(config),
                 config.JellyseerrShowSearchResults,
                 config.JellyseerrSearchExcludeLibraryItems,
                 config.JellyseerrShowReportButton,
@@ -4224,8 +4227,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
 
-                // Recommendations Page Settings
-                config.RecommendationsPageEnabled,
+                // Recommendations Page Settings. The page only shows Seerr's rows, so it is off while Seerr is (the
+                // stored switch is kept for when Seerr is turned on again).
+                RecommendationsPageEnabled = config.RecommendationsPageEnabled && EffectiveRequestsBackend.SeerrUsable(config),
                 config.RecommendationsUseCustomTabs,
                 config.RecommendationsUseNativeTab,
 

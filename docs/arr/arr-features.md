@@ -781,7 +781,9 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
       and if that fails the action says "The queue is changing; try again in a moment." Below, the recent history.
       Sonarr and Radarr have no way to change a download's priority, so neither does this tab.
     - **System**: per app its version, health checks, disks, scheduled tasks, live connection and webhook; Seerr's
-      request list; and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
+      request list while Seerr is in use or handles requests (with Jellyfin Enhanced handling requests, a **Requests**
+      box instead says whether asking is on, how many Sonarr/Radarr instances can take requests and whether a TMDB key
+      is set); and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
       yet, Jellyfin can't see the file there, outside every library), titles with files Jellyfin doesn't list at
       all, and the **path doctor**, which shows each app's root folders as Jellyfin sees them, compares a few titles
       both sides have and suggests the path mapping that would fix a mismatch ("/data/media → /media").
@@ -1251,7 +1253,7 @@ profiles, folders or tags.
 3. In the request sheet, choose what to ask for, then confirm.
 
 !!! note "One season at a time"
-    With Seerr's **Only allow requesting one season at a time** on, the sheet and the series page ask for one season at a time in both request modes (in Seerr mode while Seerr takes partial requests). See [Seerr settings](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time).
+    With **Only allow requesting one season at a time** on (*arr tab, [Requests & discovery](arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced)), the sheet and the series page ask for one season at a time in both request modes (in Seerr mode while Seerr takes partial requests). See [Seerr settings](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time).
 
 ??? info "Movies, series, collections, and the request sheet"
     - **Movies** are asked for with one tap and a toast ("Asked! We'll let you know."). A short sheet appears first only
@@ -1298,7 +1300,8 @@ Every ask carries a client request id: a double tap or a retry after a lost answ
 
 ### Titles that aren't in the library (native details)
 
-With Seerr's experimental **Open titles that aren't in the library on Jellyfin's own details page** on (see
+With the experimental **Open titles that aren't in the library on Jellyfin's own details page** on (*arr tab,
+[Requests & discovery](arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced); see
 [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), a
 title you don't have opens on a Jellyfin details page, and the request controls above sit on it exactly as on a
 library page: the status pill and journey (or the season's pill), *Notify me*, *Manage* for administrators, and
@@ -1448,7 +1451,8 @@ discovery and search row stay as they are, and neither of these appears.
     Seerr is turned off for), with or without the experimental native details page. Jellyfin Enhanced reads them with
     its own Seerr key and filters them for that person on the server, as it does for native pages: what the library hides
     from them is left out, their parental limit applies, and a copy they can open is shown as *Available*. What only a
-    Seerr account has (who asked, Seerr's downloads and quota) isn't shown; one line in the window says so. Their own
+    Seerr account has (who asked, Seerr's downloads and quota) isn't shown, and Seerr's quota isn't asked for; while
+    Seerr is set up, one line in the window says so (with Seerr off there is no Seerr account to miss, so it doesn't). Their own
     requests show as usual in Jellyfin Enhanced's status line. In Seerr mode such a person can't use Seerr's window: it
     says once that their Seerr account isn't linked yet instead of opening empty, and the rows aren't asked for. (On
     Jellyfin 10.11 the public details aren't available, so the window says the same in JE mode.)

@@ -260,4 +260,42 @@ public class ApiConfigurationTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
         Assert.Equal(expected, document.RootElement.GetProperty("ArrStatusArtworkProgressEnabled").GetBoolean());
     }
+
+    // ---- UX-5: the Seerr Recommendations page follows Seerr; SeerrAvailable is the client's one "Seerr is on" rule ----
+
+    [Fact]
+    public void SeerrRecommendationsAreOffWhileSeerrIsAndTheStoredSwitchIsKept()
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.RecommendationsPageEnabled = true;
+        config.RecommendationsUseNativeTab = true;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        (bool Available, bool Page) Read()
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+            return (document.RootElement.GetProperty("SeerrAvailable").GetBoolean(), document.RootElement.GetProperty("RecommendationsPageEnabled").GetBoolean());
+        }
+
+        config.JellyseerrEnabled = false;
+        config.JellyseerrUrls = "http://seerr.invalid:5055";
+        config.JellyseerrApiKey = "seerr-key";
+        Assert.Equal((false, false), Read());
+        Assert.True(config.RecommendationsPageEnabled, "the stored switch is kept");
+        config.JellyseerrEnabled = true;
+        Assert.Equal((true, true), Read());
+        config.JellyseerrApiKey = "";
+        Assert.Equal((false, false), Read());
+        config.JellyseerrApiKey = "seerr-key";
+        // An adopted Jellyfin Enhanced backend refuses every Seerr route: Seerr isn't usable even though it is set up.
+        config.ArrIntegrationEnabled = config.ArrPhase1Enabled = config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        config.ArrBackendIsolationVersion = 1;
+        Assert.Equal((false, false), Read());
+        config.RecommendationsPageEnabled = false;
+        config.ArrBackendIsolationVersion = 0;
+        Assert.Equal((true, false), Read());
+    }
 }

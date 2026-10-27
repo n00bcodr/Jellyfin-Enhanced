@@ -215,6 +215,18 @@ public class AdminUserSettingsTests
         Assert.Equal("seerr",f.Read().GetProperty("seerr").GetProperty("quotaSource").GetString());
     }
     [Fact]
+    public void SeerrGroupSaysWhetherSeerrIsInUseSoTheEditorFollowsTheBackend()
+    {
+        // UX-7: with Seerr off the per-person Seerr group is read-only; the stored exclusion is kept and still read back.
+        using var f=new Fixture(); var c=f.R.Policy.Configuration;
+        c.JellyseerrEnabled=false; c.JellyseerrImportBlockedUsers=f.R.Member.ToString("N");
+        var seerr=f.Read().GetProperty("seerr");
+        Assert.False(seerr.GetProperty("enabled").GetBoolean());
+        Assert.True(seerr.GetProperty("blocked").GetBoolean());
+        c.JellyseerrEnabled=true; c.JellyseerrUrls="http://seerr.invalid:5055"; c.JellyseerrApiKey="seerr-key";
+        Assert.True(f.Read().GetProperty("seerr").GetProperty("enabled").GetBoolean());
+    }
+    [Fact]
     public void EveryAdministratorGroupKeepsAllPersonalConsentsByteForByte()
     {
         using var f=new Fixture(); var path=f.Files.Write(f.R.Member.ToString("N"),"{\"AutoSeasonRequests\":false,\"AutoMovieRequests\":true,\"ListSwapIn\":null}");

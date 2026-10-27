@@ -394,6 +394,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The thresholds in use (minutes / percent).</summary>
         public IReadOnlyDictionary<string, int> Settings { get; init; } = new Dictionary<string, int>();
+
+        /// <summary>Who handles requests and whether it has what it needs (Seerr is described only while it is in use).</summary>
+        public AdminRequestsBackend RequestsBackend { get; init; } = new();
+    }
+
+    /// <summary>The request backend as the System tab describes it.</summary>
+    public sealed class AdminRequestsBackend
+    {
+        /// <summary>The selected request handling: <c>je</c>, <c>seerr</c> or <c>status_only</c>.</summary>
+        public string Mode { get; init; } = "seerr";
+
+        /// <summary>True when requests can be made (Requests &amp; downloads with "Ask for it" on).</summary>
+        public bool RequestsOn { get; init; }
+
+        /// <summary>True when Seerr is set up and the request mode uses it.</summary>
+        public bool SeerrInUse { get; init; }
+
+        /// <summary>True when Jellyfin Enhanced has a TMDB key (its source for titles that aren't in the library).</summary>
+        public bool TmdbKey { get; init; }
+
+        /// <summary>Usable Sonarr/Radarr instances requests can go to.</summary>
+        public int Instances { get; init; }
     }
 
     /// <summary>
@@ -713,6 +735,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     ["lowDiskPercent"] = LowDiskPercent(config),
                     ["libraryPendingMinutes"] = Math.Clamp(config?.ArrLibraryPendingMinutes ?? 10, 1, 1440),
                     ["seerrHandoffGraceMinutes"] = Math.Clamp(config?.ArrSeerrHandoffGraceMinutes ?? 15, 1, 1440),
+                },
+                RequestsBackend = new AdminRequestsBackend
+                {
+                    Mode = config?.ArrRequestBackend is "je" or "status_only" ? config.ArrRequestBackend : "seerr",
+                    RequestsOn = Backends.EffectiveRequestsBackend.EvaluateConfiguration(config).RequestsEnabled,
+                    SeerrInUse = Backends.EffectiveRequestsBackend.SeerrUsable(config),
+                    TmdbKey = !string.IsNullOrWhiteSpace(config?.GetTmdbApiKey()),
+                    Instances = list.Count,
                 },
             };
         }

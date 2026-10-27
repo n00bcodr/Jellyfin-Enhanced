@@ -678,6 +678,34 @@ test('JE mode: the more-info window with public details says in one line that Se
   assert.equal(note(), null, 'details read through the viewer\'s own account: no line');
 });
 
+test('UX-12: with Seerr off the JE-mode more-info window shows no Seerr-account line and never asks Seerr for a quota', async t => {
+  const h = setup(t, { config: { JellyseerrEnabled: false, SeerrAvailable: false } });
+  const { internal } = moreInfoWindow(h);
+  const quotaReads = [];
+  h.JE.jellyseerrAPI.fetchUserQuota = async () => { quotaReads.push('quota'); return null; };
+  const note = () => h.document.querySelector('[data-mount="je-requested-by"] .je-more-info-public-note');
+  for (const mediaType of ['movie', 'tv']) {
+    internal.renderActions({ id: 604, title: 'The Matrix Reloaded', name: 'Firefly', jePublicDetails: true, mediaInfo: { status: 1 } }, mediaType);
+    await settle();
+    assert.equal(note(), null, `${mediaType}: no "needs a Seerr account" line`);
+  }
+  assert.deepEqual(quotaReads, [], 'no Seerr quota read for public details');
+});
+
+test('UX-12 control: Seerr on, details read through the viewer\'s own Seerr account still draw Seerr\'s quota chip; public details keep the account line', async t => {
+  const h = setup(t, { jeMode: false, config: { SeerrAvailable: true } });
+  const { internal } = moreInfoWindow(h);
+  const quotaReads = [];
+  h.JE.jellyseerrAPI.fetchUserQuota = async () => { quotaReads.push('quota'); return null; };
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.deepEqual(quotaReads, ['quota']);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: true, mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.equal(h.document.querySelector('[data-mount="je-requested-by"] .je-more-info-public-note')?.textContent, translate('jellyseerr_modal_public_details'));
+  assert.deepEqual(quotaReads, ['quota'], 'public details: no quota read');
+});
+
 test('a request toast shows a translation\'s icon as its emoji, never as escaped markup (A1 live finding)', async t => {
   const h = setup(t);
   h.JE.arrAsk.toast('<span class="je-emoji">❌</span> Failed to load collection details');

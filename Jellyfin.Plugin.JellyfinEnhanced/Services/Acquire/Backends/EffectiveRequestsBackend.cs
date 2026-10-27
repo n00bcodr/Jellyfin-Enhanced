@@ -72,6 +72,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         }
         /// <summary>Compatibility callers use the same pure boundary evaluator.</summary>
         public static bool AllowsSeerr(PluginConfiguration? config) => EvaluateConfiguration(config).AllowSeerrTransport;
+        /// <summary>
+        /// True when Seerr is set up (turned on, with an address and a key) and the request mode lets Jellyfin Enhanced
+        /// talk to it: the one "Seerr is on" rule for Seerr-only navigation, pages and administration. Stored Seerr
+        /// settings are kept either way.
+        /// </summary>
+        public static bool SeerrUsable(PluginConfiguration? config)
+            => config is { JellyseerrEnabled: true } && !string.IsNullOrWhiteSpace(config.JellyseerrUrls)
+                && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()) && AllowsSeerr(config);
         /// <summary>Whether JE is the isolated read authority regardless of rollout switches.</summary>
         public static bool IsStrictJe(PluginConfiguration? config) => EvaluateConfiguration(config).StrictJe;
         /// <inheritdoc />

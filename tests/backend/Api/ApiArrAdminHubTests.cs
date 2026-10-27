@@ -896,6 +896,29 @@ public class ApiArrAdminHubTests
         rig.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = false;
         Assert.False((await HubFor(rig.AdminUser)).GetProperty("admin").GetProperty("hub").GetBoolean());
     }
+
+    // ---- UX-8: System names the request backend and describes Seerr only while it is in use ----
+
+    [Fact]
+    public async Task SystemNamesTheRequestBackendAndWhetherSeerrIsInUse()
+    {
+        using var rig = new Rig();
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        var c = rig.Controller(rig.AdminUser);
+        async Task<JsonElement> Backend() => Json(await Send(() => c.GetSystem(default))).GetProperty("requestsBackend").Clone();
+
+        var seerr = await Backend();
+        Assert.Equal(("seerr", true, false, false, 2), (seerr.GetProperty("mode").GetString(), seerr.GetProperty("seerrInUse").GetBoolean(), seerr.GetProperty("requestsOn").GetBoolean(), seerr.GetProperty("tmdbKey").GetBoolean(), seerr.GetProperty("instances").GetInt32()));
+
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        config.JellyseerrEnabled = false;
+        config.TMDB_API_KEY = "tmdb-key";
+        var je = await Backend();
+        Assert.Equal(("je", false, true, true, 2), (je.GetProperty("mode").GetString(), je.GetProperty("seerrInUse").GetBoolean(), je.GetProperty("requestsOn").GetBoolean(), je.GetProperty("tmdbKey").GetBoolean(), je.GetProperty("instances").GetInt32()));
+        // No Seerr request list to describe (left out of the answer).
+        Assert.False(Json(await Send(() => c.GetSystem(default))).TryGetProperty("seerr", out var list) && list.ValueKind != JsonValueKind.Null);
+    }
 }
 
 /// <summary>Shared helper: adds a path mapping to every instance row of a JSON list.</summary>

@@ -263,8 +263,16 @@ let _quotaRenderToken = 0;
 // cleared and repopulated the mounts.
 let _renderActionsToken = 0;
 
-async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
-    if (!actionMount) return;
+/**
+ * Seerr's request quota as a chip in the window's actions. Not for public details (Jellyfin Enhanced handles requests,
+ * or the viewer has no Seerr account): there is no Seerr quota to ask for then.
+ * @param {HTMLElement|null} actionMount The window's action mount.
+ * @param {string} mediaType 'movie' or 'tv'.
+ * @param {Object} [data] The window's details.
+ * @returns {Promise<void>}
+ */
+async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType, data) {
+    if (!actionMount || data?.jePublicDetails === true) return;
     const myToken = ++_quotaRenderToken;
     actionMount.dataset.quotaRenderToken = String(myToken);
 
@@ -494,7 +502,8 @@ function drawActions(data, mediaType) {
     const modal = state.currentModal;
     modal.jeRequest4k = null;
     renderRequestedBy(requestedByMount, data.mediaInfo);
-    if (data.jePublicDetails === true) renderPublicNote(requestedByMount);
+    // The note explains a missing Seerr account; with Seerr off there is no account to miss, so it says nothing.
+    if (data.jePublicDetails === true && JE.pluginConfig?.SeerrAvailable !== false) renderPublicNote(requestedByMount);
     JE.internals.spoilerGuard?.appendSeerrToggle?.(secondaryMount, data, mediaType);
     const hide = JE.hiddenContent?.buildTitleControl?.({ ...data, mediaType, tmdbId: data.id, name: data.title || data.name }, { detail: true });
     if (hide) secondaryMount?.appendChild(hide);
@@ -548,14 +557,14 @@ function drawActions(data, mediaType) {
             if (show4k && canRequest4k && actionMount) {
                 const followUp = buildSingle4kButton(data);
                 if (followUp) actionMount.appendChild(followUp);
-                maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
+                maybeRenderMoreInfoQuotaChip(actionMount, 'movie', data);
             }
             return;
         }
 
         const actions = buildMovieActions(data, actionMount, chipMount, show4k);
         if (actions && actionMount) actionMount.appendChild(actions);
-        maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
+        maybeRenderMoreInfoQuotaChip(actionMount, 'movie', data);
     } else {
         const mediaInfo = data.mediaInfo || {};
         const status = mediaInfo.status ?? 1;
@@ -603,7 +612,7 @@ function drawActions(data, mediaType) {
         if (canRequestNormal) {
             const actions = internal.buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
-            maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+            maybeRenderMoreInfoQuotaChip(actionMount, 'tv', data);
             return;
         }
 
@@ -615,7 +624,7 @@ function drawActions(data, mediaType) {
             if (hasDeletedStatus && actionMount) {
                 const requestMoreButton = internal.buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                 if (requestMoreButton) actionMount.appendChild(requestMoreButton);
-                maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+                maybeRenderMoreInfoQuotaChip(actionMount, 'tv', data);
                 return;
             }
             internal.checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
@@ -624,11 +633,11 @@ function drawActions(data, mediaType) {
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = internal.buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                     if (requestMoreButton) actionMount.appendChild(requestMoreButton);
-                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv', data);
                 } else if (show4kTv && canRequest4k && actionMount) {
                     const followUp4k = internal.buildSingleTv4kButton(data);
                     if (followUp4k) actionMount.appendChild(followUp4k);
-                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+                    maybeRenderMoreInfoQuotaChip(actionMount, 'tv', data);
                 }
                 if (actionMount) showPaused(actionMount, data, mediaType, myToken).catch(() => { /* the controls stay as drawn */ });
             });
@@ -637,7 +646,7 @@ function drawActions(data, mediaType) {
 
         const actions = internal.buildTvActions(data);
         if (actions && actionMount) actionMount.appendChild(actions);
-        maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+        maybeRenderMoreInfoQuotaChip(actionMount, 'tv', data);
     }
 }
     internal.buildSingle4kButton = buildSingle4kButton;
