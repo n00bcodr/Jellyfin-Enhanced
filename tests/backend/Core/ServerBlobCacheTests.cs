@@ -101,17 +101,19 @@ public sealed class ServerBlobCacheTests : IDisposable
         Assert.Equal(5000, entry.Bytes.Length);
         Assert.All(entry.Bytes, b => Assert.Equal(entry.Bytes[0], b));
 
-        // A temporary file an interrupted write left goes after an hour; a fresh one (a write in progress) stays.
+        // Temporary files no write of this process is using (an interrupted write's, whatever their age) count as
+        // disk used and go with the next sweep.
         var shard = Path.GetDirectoryName(Assert.Single(Blobs()))!;
         var old = Path.Combine(shard, new string('a', 64) + ".0123456789abcdef.tmp");
         var fresh = Path.Combine(shard, new string('b', 64) + ".0123456789abcdef.tmp");
         File.WriteAllBytes(old, new byte[10]);
-        File.WriteAllBytes(fresh, new byte[10]);
+        File.WriteAllBytes(fresh, new byte[5000]);
         File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddHours(-2));
-        File.SetLastWriteTimeUtc(fresh, DateTime.UtcNow);
+        Assert.Equal(2 * Block + Block + 2 * Block, cache.Usage().Bytes);
         await cache.SweepAsync(full: true, CancellationToken.None);
         Assert.False(File.Exists(old));
-        Assert.True(File.Exists(fresh));
+        Assert.False(File.Exists(fresh));
+        Assert.Equal(2 * Block, cache.Usage().Bytes);
     }
 
     [Theory]

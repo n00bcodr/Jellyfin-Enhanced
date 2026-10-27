@@ -360,8 +360,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     {
                         paths.ProgramDataPath, paths.ProgramSystemPath, paths.DataPath, paths.CachePath, paths.TempDirectory,
                         paths.LogDirectoryPath, paths.ConfigurationDirectoryPath, paths.PluginsPath, paths.WebPath,
-                        paths.InternalMetadataPath, paths.RootFolderPath,
-                    });
+                        paths.InternalMetadataPath, paths.RootFolderPath, paths.ImageCachePath,
+                    },
+                    // A dedicated folder inside Jellyfin's cache folder is allowed (never the cache folder itself).
+                    paths.CachePath);
                 var cache = new Services.ServerCache.ServerBlobCache(
                     () => Services.ServerCache.ServerCacheSettings.From(JellyfinEnhanced.Instance?.Configuration),
                     location,

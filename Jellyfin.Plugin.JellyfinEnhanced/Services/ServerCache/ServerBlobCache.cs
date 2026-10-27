@@ -68,20 +68,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// A namespaced on-disk store for public data JE fetches from elsewhere (TMDB artwork first), so a
     /// repeat request or a restart doesn't fetch it again. Each entry is one file,
     /// <c>&lt;folder&gt;/&lt;namespace&gt;/&lt;2 hex&gt;/&lt;SHA-256 of namespace and key&gt;.blob</c>, holding a small
-    /// header (the key, the content type, when it was fetched, the writer's expiry) and the bytes; it is
-    /// written to a temporary file and renamed into place, and a file that doesn't read back (truncated,
-    /// another key, too large) is deleted and counts as a miss. A file's modification time is its last
-    /// access (touched at most hourly on a hit); the fetch time in the header is its age, and a read never
-    /// renews it. An entry is valid until the earliest of the writer's expiry (or the namespace's default
-    /// lifetime), the reader's own maximum age and the configured age limit. One size cap covers every
-    /// namespace, and a namespace may have its own share under it: past either, the least recently used
-    /// entries go (down to 90%); sizes count whole file-system blocks. A write carries the generation it
-    /// started in, and Clear or a change of folder or switch ends that generation, so a write that was
-    /// under way never brings cleared data back. File names never come from a request, and the sweeps and
-    /// Clear only touch files of that exact shape, never following a symbolic link, so other files in a
-    /// shared folder are left alone. File reads and writes run a few at a time. The store never fetches
-    /// anything and decides nothing about who may see an entry: consumers keep their own admission and
-    /// checks and store only public data (no credential, signed URL or user identity).
+    /// header (the key, the content type, when it was fetched, the writer's expiry, a random write id) and the
+    /// bytes. Every file operation goes through <see cref="CacheFolderAccess"/>, confined to the folder's real path
+    /// and never following a symbolic link (anchored handles on Linux).
+    /// <list type="bullet">
+    /// <item><description>Writes go to a temporary file renamed into place under the commit lock, carrying the
+    /// generation they started in: Clear, Forget, or a change of folder or switch ends it, and a write from an
+    /// earlier generation is refused at its commit, so cleared or forgotten data never comes back.</description></item>
+    /// <item><description>A read opens the file once, checks the bounded header (key, sizes, the namespace's largest
+    /// entry) before anything is allocated for the body, then reads the body from the same handle. A file that
+    /// doesn't read back, or is past its validity, is removed only if it is still the very file that was read (its
+    /// write id), never a replacement written meanwhile.</description></item>
+    /// <item><description>Validity is the earliest of the writer's expiry (or the namespace's default lifetime), the
+    /// reader's own maximum age and the configured age limit, from the fetch time, which a read never renews; the
+    /// last access (the file's time, touched at most hourly) orders eviction.</description></item>
+    /// <item><description>One size cap covers every namespace, and a namespace may have its own share under it: past
+    /// either, the least recently used entries go (down to 90%). Sizes count whole 4 KiB blocks, temporary files
+    /// and writes under way included. Running totals are reconciled with each sweep's count without losing a change
+    /// made while it counted.</description></item>
+    /// <item><description>Disk reads and writes are bounded: a few run at once, a few more may wait, the same entry
+    /// is read once for every caller waiting on it, and beyond that a read is a miss and a write is skipped.</description></item>
+    /// </list>
+    /// File names never come from a request, and the sweeps and Clear only touch files of the store's own shape,
+    /// so other files in a shared folder are left alone. The store never fetches anything and decides nothing
+    /// about who may see an entry: consumers keep their own admission and checks and store only public data (no
+    /// credential, signed URL or user identity).
     /// </summary>
     public sealed class ServerBlobCache
     {
@@ -91,41 +102,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>Largest entry any namespace may store.</summary>
         public const int MaxEntryBytes = 64 * 1024 * 1024;
 
-        /// <summary>File reads and writes running at once (the rest wait their turn).</summary>
+        /// <summary>File reads and writes running at once.</summary>
         public const int MaxConcurrentIo = 16;
+
+        /// <summary>File reads and writes running or waiting at once; beyond it a read is a miss and a write is skipped.</summary>
+        public const int MaxPendingIo = 64;
+
+        /// <summary>The content type JSON values are stored with.</summary>
+        public const string JsonContentType = "application/json";
 
         private const double LowWatermark = 0.9;
         private const int MaxKeyBytes = 1024;
         private const int MaxContentTypeBytes = 128;
         private const long BlockBytes = 4096;
-        private const int FixedHeaderBytes = 5 + 2 + 1 + 8 + 8 + 4;
-        private static readonly byte[] Magic = { (byte)'J', (byte)'E', (byte)'B', (byte)'C', 1 };
+        // magic (5) | key length (2) | key | type length (1) | type | fetched (8) | expires (8) | write id (8) | body length (4)
+        private const int FixedHeaderBytes = 5 + 2 + 1 + 8 + 8 + 8 + 4;
+        private const int MaxHeaderBytes = FixedHeaderBytes + MaxKeyBytes + MaxContentTypeBytes;
+        private static readonly byte[] Magic = { (byte)'J', (byte)'E', (byte)'B', (byte)'C', 2 };
         private static readonly Regex NamespacePattern = new("^[a-z][a-z0-9]{0,31}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex ShardPattern = new("^[0-9a-f]{2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex BlobPattern = new("^[0-9a-f]{64}\\.blob$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex TempPattern = new("^[0-9a-f]{64}\\.[0-9a-f]{16}\\.tmp$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly TimeSpan TouchEvery = TimeSpan.FromHours(1);
-        private static readonly TimeSpan TempLifetime = TimeSpan.FromHours(1);
         private static readonly TimeSpan FolderRetry = TimeSpan.FromMinutes(5);
 
         private readonly Func<ServerCacheSettings> _settings;
         private readonly ServerCacheLocation _location;
         private readonly Logger? _logger;
         private readonly Func<DateTime> _now;
+        private readonly bool _anchored;
         private readonly SemaphoreSlim _sweepLock = new(1, 1);
         private readonly SemaphoreSlim _io = new(MaxConcurrentIo, MaxConcurrentIo);
         private readonly object _lock = new();
         private readonly Dictionary<string, ServerCacheNamespace> _namespaces = new(StringComparer.Ordinal);
         private readonly Dictionary<string, long> _namespaceBytes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Task<ServerCacheEntry?>> _reads = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _activeTemps = new(StringComparer.Ordinal);
         private ServerCacheSettings? _seen;
-        private string? _folder;
+        private CacheFolderAccess? _access;
         private string? _folderError;
         private DateTime _folderErrorAt;
         private long _bytes;
+        private long _reserved;
+        private int _pendingIo;
         private long _generation;
+        private Dictionary<string, (string Ns, long Bytes)?>? _tracker;
         private DateTime _lastSweep = DateTime.MinValue;
         private Task _pendingSweep = Task.CompletedTask;
         private bool _sweepAgain;
+        private bool _sweepAgainFull;
 
         /// <summary>Creates the store.</summary>
         /// <param name="settings">The current settings (read on every call; changes take effect on the next one).</param>
@@ -133,11 +158,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <param name="logger">Logger, if any.</param>
         /// <param name="now">Clock (tests).</param>
         public ServerBlobCache(Func<ServerCacheSettings> settings, ServerCacheLocation location, Logger? logger, Func<DateTime>? now = null)
+            : this(settings, location, logger, now, anchored: true)
+        {
+        }
+
+        /// <summary>Creates the store, optionally with checked paths instead of anchored access (tests).</summary>
+        internal ServerBlobCache(Func<ServerCacheSettings> settings, ServerCacheLocation location, Logger? logger, Func<DateTime>? now, bool anchored)
         {
             _settings = settings;
             _location = location;
             _logger = logger;
             _now = now ?? (() => DateTime.UtcNow);
+            _anchored = anchored;
         }
 
         /// <summary>Where the folder may be.</summary>
@@ -149,23 +181,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>The sweep an over-cap write or a settings change started, if any (tests).</summary>
         internal Task PendingSweep { get { lock (_lock) return _pendingSweep; } }
 
+        /// <summary>Called at fixed points (tests): "read" before a shared read waits for its turn, "commit" inside a write's commit, "counted" when a sweep has counted.</summary>
+        internal Action<string>? Hook { get; set; }
+
+        /// <summary>The running total: committed entries plus writes under way (tests).</summary>
+        internal long CountedBytes { get { lock (_lock) return _bytes + _reserved; } }
+
+        /// <summary>Whether file operations are anchored (Linux) rather than checked paths (tests).</summary>
+        internal bool Anchored => Access(create: false)?.Anchored == true;
+
         /// <summary>True when the cache is on and its folder can be used.</summary>
-        public bool Enabled => Current() is { Enabled: true } && Folder() != null;
+        public bool Enabled => Current() is { Enabled: true } && Access() != null;
 
         /// <summary>
         /// The current generation. Capture it before reading what an entry is made from and pass it to
-        /// <see cref="PutAsync"/>: Clear, or a change of folder or switch since, refuses the write.
+        /// <see cref="PutAsync"/>: Clear, Forget, or a change of folder or switch since then refuses the write.
         /// </summary>
         public long Generation
         {
             get
             {
                 Current();
-                return Interlocked.Read(ref _generation);
+                lock (_lock) return _generation;
             }
         }
 
-        /// <summary>Reads the settings now (a saved configuration): a lowered limit is swept at once, not at the next read or write.</summary>
+        /// <summary>Reads the settings now (a saved configuration): a tightened limit is swept at once, not at the next read or write.</summary>
         public void SettingsChanged() => Current();
 
         /// <summary>True for a namespace name the store accepts (lower-case letters and digits, starting with a letter).</summary>
@@ -173,52 +214,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <returns>Valid.</returns>
         public static bool IsNamespace(string? ns) => ns != null && NamespacePattern.IsMatch(ns);
 
-        /// <summary>Registers (or updates) a namespace; reads and writes of an unregistered one are refused.</summary>
+        /// <summary>Registers (or updates) a namespace; reads and writes of an unregistered one are refused. Changed limits are swept at once.</summary>
         /// <param name="ns">The namespace and its limits.</param>
         public void Register(ServerCacheNamespace ns)
         {
             if (!IsNamespace(ns.Name)) throw new ArgumentException("Namespace names are lower-case letters and digits, starting with a letter.", nameof(ns));
             if (ns.MaxEntryBytes is <= 0 or > MaxEntryBytes || ns.MaxBytes < 0) throw new ArgumentOutOfRangeException(nameof(ns));
+            bool changed;
             lock (_lock)
             {
+                changed = _namespaces.TryGetValue(ns.Name, out var previous) && previous != ns;
                 _namespaces[ns.Name] = ns;
                 _namespaceBytes.TryAdd(ns.Name, 0);
             }
+
+            if (changed) ScheduleSweep(force: true, full: true);
         }
 
         /// <summary>
-        /// Reads an entry; null when off, missing, past its validity or unreadable (an unreadable or
-        /// expired file is removed; one only older than <paramref name="maxAge"/> is kept for other readers).
+        /// Reads an entry; null when off, missing, past its validity, unreadable, or when the disk is too busy (an
+        /// unreadable or expired file is removed; one only older than <paramref name="maxAge"/> is kept for other readers).
+        /// Callers asking for the same entry at once share one read.
         /// </summary>
         /// <param name="ns">A registered namespace.</param>
         /// <param name="key">The consumer's canonical key (up to 1 KiB of text; hashed, never used as a path).</param>
-        /// <param name="ct">Cancellation.</param>
+        /// <param name="ct">Cancels this caller's wait, not the shared read.</param>
         /// <param name="maxAge">The reader's own, stricter, maximum age.</param>
         /// <returns>The entry, or null.</returns>
         public async Task<ServerCacheEntry?> TryGetAsync(string ns, string key, CancellationToken ct, TimeSpan? maxAge = null)
         {
             var settings = Current();
-            if (!settings.Enabled || Options(ns) is not { } options || Folder() is not { } folder) return null;
-            var path = EntryPath(folder, ns, key);
-            FileInfo info;
-            ServerCacheEntry? entry;
-            await _io.WaitAsync(ct).ConfigureAwait(false);
+            if (!settings.Enabled || Options(ns) is not { } options || Access() is not { } access) return null;
+            if (Encoding.UTF8.GetByteCount(key) > MaxKeyBytes) return null;
+            var id = ns + "\n" + key;
+            Task<ServerCacheEntry?> shared;
+            lock (_lock)
+            {
+                if (!_reads.TryGetValue(id, out shared!))
+                {
+                    if (_pendingIo >= MaxPendingIo) return null;
+                    _pendingIo++;
+                    shared = Task.Run(() => ReadAsync(id, access, ns, key, options));
+                    _reads[id] = shared;
+                }
+            }
+
+            var entry = await shared.WaitAsync(ct).ConfigureAwait(false);
+            if (entry != null && maxAge is { } limit && _now() - entry.FetchedAt >= limit) return null;
+            return entry;
+        }
+
+        /// <summary>The one read of an entry that every waiting caller shares.</summary>
+        private async Task<ServerCacheEntry?> ReadAsync(string id, CacheFolderAccess access, string ns, string key, ServerCacheNamespace options)
+        {
             try
             {
-                info = new FileInfo(path);
-                if (!info.Exists || info.LinkTarget != null) return null;
-                // Refused before anything is allocated for it.
-                if (info.Length > options.MaxEntryBytes + FixedHeaderBytes + MaxKeyBytes + MaxContentTypeBytes)
+                var (shard, name) = Names(ns, key);
+                Read read;
+                Hook?.Invoke("read");
+                await _io.WaitAsync().ConfigureAwait(false);
+                try
                 {
-                    Remove(info, ns);
+                    read = ReadEntry(access, ns, shard, name, key, options);
+                }
+                finally
+                {
+                    _io.Release();
+                }
+
+                if (read.Seen == null) return null;
+                var now = _now();
+                if (read.Entry == null || Expired(read.Entry.FetchedAt, read.Entry.ExpiresAt, Current(), options, now))
+                {
+                    RemoveIfSame(access, ns, shard, name, read.Seen.Value);
                     return null;
                 }
 
-                entry = Parse(await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false), key);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
+                if (now - read.Seen.Value.Modified >= TouchEvery) Touch(access, ns, shard, name, now);
+                return read.Entry;
             }
             catch (Exception)
             {
@@ -226,31 +299,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
             finally
             {
-                _io.Release();
+                lock (_lock)
+                {
+                    _reads.Remove(id);
+                    _pendingIo--;
+                }
             }
+        }
 
-            var now = _now();
-            if (entry == null || Expired(entry.FetchedAt, entry.ExpiresAt, settings, options, now))
-            {
-                Remove(info, ns);
-                return null;
-            }
+        /// <summary>What a read found: the file (null when there was none) and the entry (null when it didn't read back).</summary>
+        private readonly record struct Read(Seen? Seen, ServerCacheEntry? Entry);
 
-            if (maxAge is { } limit && now - entry.FetchedAt >= limit) return null;
+        /// <summary>The identity of the file a read or sweep inspected: its write id when its header read, else its size and time.</summary>
+        private readonly record struct Seen(long Length, DateTime Modified, ulong? WriteId);
+
+        /// <summary>
+        /// Opens an entry once and reads it from that handle: the header (bounded) is checked against the key, the
+        /// namespace's largest entry and the file's length before the body is allocated.
+        /// </summary>
+        private static Read ReadEntry(CacheFolderAccess access, string ns, string shard, string name, string? key, ServerCacheNamespace options)
+        {
+            using var handle = access.OpenRead(ns, shard, name);
+            if (handle == null) return new Read(null, null);
+            long length;
+            DateTime modified;
             try
             {
-                // The last access only: the fetch time in the header stays as it was.
-                if (now - info.LastWriteTimeUtc >= TouchEvery) File.SetLastWriteTimeUtc(path, now);
+                length = RandomAccess.GetLength(handle);
+                modified = File.GetLastWriteTimeUtc(handle);
             }
             catch (Exception)
             {
-                // A read-only folder still serves what it holds.
+                return new Read(null, null);
             }
 
-            return entry;
+            var seen = new Seen(length, modified, null);
+            try
+            {
+                if (length < FixedHeaderBytes || length > MaxHeaderBytes + (long)options.MaxEntryBytes) return new Read(seen, null);
+                var head = new byte[(int)Math.Min(length, MaxHeaderBytes)];
+                if (ReadFully(handle, head, 0) != head.Length || ReadHeader(head) is not { } header) return new Read(seen, null);
+                seen = seen with { WriteId = header.WriteId };
+                if ((key != null && !string.Equals(header.Key, key, StringComparison.Ordinal)) || header.Length > options.MaxEntryBytes
+                    || length != header.Body + (long)header.Length)
+                {
+                    return new Read(seen, null);
+                }
+
+                var bytes = new byte[header.Length];
+                if (ReadFully(handle, bytes, header.Body) != bytes.Length) return new Read(seen, null);
+                return new Read(seen, new ServerCacheEntry(bytes, header.Type, header.Fetched, header.Expires));
+            }
+            catch (Exception)
+            {
+                return new Read(seen, null);
+            }
         }
 
-        /// <summary>Stores an entry (replacing one with the same key); nothing happens when off or the folder can't be used.</summary>
+        private static int ReadFully(Microsoft.Win32.SafeHandles.SafeFileHandle handle, byte[] buffer, long offset)
+        {
+            var total = 0;
+            while (total < buffer.Length)
+            {
+                var read = RandomAccess.Read(handle, buffer.AsSpan(total), offset + total);
+                if (read <= 0) break;
+                total += read;
+            }
+
+            return total;
+        }
+
+        /// <summary>Stores an entry (replacing one with the same key); nothing happens when off, the folder can't be used or the disk is too busy.</summary>
         /// <param name="ns">A registered namespace.</param>
         /// <param name="key">The consumer's canonical key.</param>
         /// <param name="bytes">Bytes (at most the namespace's largest entry).</param>
@@ -264,8 +383,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             long? generation = null, DateTime? expiresAt = null, DateTime? fetchedAt = null)
         {
             var settings = Current();
-            var started = generation ?? Interlocked.Read(ref _generation);
-            if (!settings.Enabled || Options(ns) is not { } options || Folder() is not { } folder) return false;
+            long started;
+            lock (_lock) started = generation ?? _generation;
+            if (!settings.Enabled || Options(ns) is not { } options || Access() is not { } access) return false;
             var keyBytes = Encoding.UTF8.GetBytes(key);
             var typeBytes = Encoding.UTF8.GetBytes(contentType ?? string.Empty);
             if (bytes.Length > options.MaxEntryBytes || keyBytes.Length > MaxKeyBytes || typeBytes.Length > MaxContentTypeBytes) return false;
@@ -276,59 +396,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (Expired(fetched, expires, settings, options, now)) return false;
             var size = Blocks(FixedHeaderBytes + keyBytes.Length + typeBytes.Length + bytes.Length);
             if ((settings.MaxBytes > 0 && size > settings.MaxBytes) || (options.MaxBytes > 0 && size > options.MaxBytes)) return false;
-            var hash = Hash(ns, key);
-            var nsFolder = Path.Combine(folder, ns);
-            var shard = Path.Combine(nsFolder, hash.Substring(0, 2));
-            var final = Path.Combine(shard, hash + ".blob");
-            var temp = Path.Combine(shard, hash + "." + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)) + ".tmp");
-            await _io.WaitAsync(ct).ConfigureAwait(false);
+            var (shard, name) = Names(ns, key);
+            var temp = name.Substring(0, 64) + "." + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)) + ".tmp";
+            var tempId = ns + "/" + shard + "/" + temp;
+            lock (_lock)
+            {
+                if (_pendingIo >= MaxPendingIo || _generation != started) return false;
+                _pendingIo++;
+                // The write's space counts from now (a temporary file is disk used too).
+                _activeTemps.Add(tempId);
+                _reserved += size;
+            }
+
+            var committed = false;
+            var created = false;
+            long total = 0, inNamespace = 0;
             try
             {
-                if (Interlocked.Read(ref _generation) != started) return false;
-                Directory.CreateDirectory(shard);
-                // Never write through a link someone put in the folder.
-                if (new DirectoryInfo(nsFolder).LinkTarget != null || new DirectoryInfo(shard).LinkTarget != null) return false;
-                await using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
+                await _io.WaitAsync(ct).ConfigureAwait(false);
+                try
                 {
-                    await file.WriteAsync(Header(keyBytes, typeBytes, fetched, expires, bytes.Length), ct).ConfigureAwait(false);
-                    await file.WriteAsync(bytes, ct).ConfigureAwait(false);
-                }
-
-                File.SetLastWriteTimeUtc(temp, now);
-                long total, inNamespace;
-                lock (_lock)
-                {
-                    // The commit and Clear's new generation are ordered: a write that started before a Clear never lands after it.
-                    if (_generation != started)
+                    using (var handle = access.CreateNew(ns, shard, temp))
                     {
-                        TryDelete(temp);
-                        return false;
+                        if (handle == null) return false;
+                        created = true;
+                        var header = Header(keyBytes, typeBytes, fetched, expires, BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8)), bytes.Length);
+                        await RandomAccess.WriteAsync(handle, header, 0, ct).ConfigureAwait(false);
+                        await RandomAccess.WriteAsync(handle, bytes, header.Length, ct).ConfigureAwait(false);
+                        File.SetLastWriteTimeUtc(handle, now);
                     }
 
-                    var previous = new FileInfo(final);
-                    var replaced = previous.Exists && previous.LinkTarget == null ? Blocks(previous.Length) : 0;
-                    File.Move(temp, final, overwrite: true);
-                    total = Interlocked.Add(ref _bytes, size - replaced);
-                    inNamespace = _namespaceBytes[ns] = _namespaceBytes.GetValueOrDefault(ns) + size - replaced;
+                    lock (_lock)
+                    {
+                        // The commit and the generation's end (Clear, Forget, settings) are ordered by this lock: a write
+                        // that started before them never lands after them.
+                        if (_generation != started) return false;
+                        Hook?.Invoke("commit");
+                        var previous = access.Stat(ns, shard, name);
+                        if (!access.Rename(ns, shard, temp, name)) return false;
+                        committed = true;
+                        Account(ns + "/" + shard + "/" + name, ns, previous is { } old ? Blocks(old.Length) : 0, size);
+                        total = _bytes + _reserved - size;
+                        inNamespace = _namespaceBytes.GetValueOrDefault(ns);
+                    }
                 }
-
-                if ((settings.MaxBytes > 0 && total > settings.MaxBytes) || (options.MaxBytes > 0 && inNamespace > options.MaxBytes)) ScheduleSweep();
-                return true;
+                finally
+                {
+                    _io.Release();
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                TryDelete(temp);
                 return false;
-            }
-            catch (OperationCanceledException)
-            {
-                TryDelete(temp);
-                throw;
             }
             finally
             {
-                _io.Release();
+                if (created && !committed) access.Delete(ns, shard, temp);
+                lock (_lock)
+                {
+                    _activeTemps.Remove(tempId);
+                    _reserved -= size;
+                    _pendingIo--;
+                }
             }
+
+            if ((settings.MaxBytes > 0 && total > settings.MaxBytes) || (options.MaxBytes > 0 && inNamespace > options.MaxBytes)) ScheduleSweep();
+            return true;
         }
 
         /// <summary>Reads a JSON value (see <see cref="TryGetAsync"/>); one that doesn't deserialize is removed.</summary>
@@ -371,10 +504,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             long? generation = null, DateTime? expiresAt = null, DateTime? fetchedAt = null)
             => PutAsync(ns, key, JsonSerializer.SerializeToUtf8Bytes(value, options), JsonContentType, ct, generation, expiresAt, fetchedAt);
 
-        /// <summary>The content type JSON values are stored with.</summary>
-        public const string JsonContentType = "application/json";
-
-        /// <summary>Removes one entry (a consumer's invalidation); it also ends the current generation.</summary>
+        /// <summary>Removes one entry (a consumer's invalidation) and ends the current generation, in the same step as a commit could.</summary>
         /// <param name="ns">A registered namespace.</param>
         /// <param name="key">The consumer's canonical key.</param>
         /// <param name="ct">Cancellation.</param>
@@ -382,16 +512,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         public Task<bool> ForgetAsync(string ns, string key, CancellationToken ct)
         {
             Current();
-            if (Options(ns) == null || Folder(create: false) is not { } folder) return Task.FromResult(false);
-            Interlocked.Increment(ref _generation);
-            var info = new FileInfo(EntryPath(folder, ns, key));
-            return Task.FromResult(info.Exists && info.LinkTarget == null && Remove(info, ns));
+            if (Options(ns) == null || Encoding.UTF8.GetByteCount(key) > MaxKeyBytes) return Task.FromResult(false);
+            var access = Access(create: false);
+            var (shard, name) = Names(ns, key);
+            lock (_lock)
+            {
+                _generation++;
+                if (access == null) return Task.FromResult(false);
+                var stat = access.Stat(ns, shard, name);
+                if (stat == null || !access.Delete(ns, shard, name)) return Task.FromResult(false);
+                Account(ns + "/" + shard + "/" + name, ns, Blocks(stat.Value.Length), 0);
+                return Task.FromResult(true);
+            }
         }
 
         /// <summary>
         /// Removes entries past their validity and, when the folder or a namespace is over its cap, the least
-        /// recently used ones (down to 90%), plus temporary files an interrupted write left. A full sweep also
-        /// reads each remaining entry's header (the scheduled task); otherwise only last-access times are used.
+        /// recently used ones (down to 90%), plus temporary files no write of this process is using (left by an
+        /// interrupted one). A full sweep also reads each remaining entry's header (startup task, daily task, a
+        /// tightened setting); otherwise only last-access times are used.
         /// </summary>
         /// <param name="full">Read every entry's header.</param>
         /// <param name="ct">Cancellation.</param>
@@ -400,72 +539,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             var settings = Current();
             // A cache that is off and was never created is left alone.
-            if (Folder(create: false) is not { } folder || !Directory.Exists(folder)) return 0;
+            if (Access(create: false) is not { } access || !access.Intact()) return 0;
             await _sweepLock.WaitAsync(ct).ConfigureAwait(false);
+            var snapshot = new Dictionary<string, (string Ns, long Bytes)>(StringComparer.Ordinal);
+            lock (_lock) _tracker = new Dictionary<string, (string Ns, long Bytes)?>(StringComparer.Ordinal);
             try
             {
                 var now = _now();
                 var removed = 0;
-                var entries = new List<(FileInfo File, string Ns)>();
-                foreach (var (file, ns, temp) in Enumerate(folder))
+                var entries = new List<Found>();
+                foreach (var found in Enumerate(access.Root))
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (temp)
+                    if (found.Temp)
                     {
-                        // A temporary file's time is the file system's own (a write in progress never set it).
-                        if (DateTime.UtcNow - file.LastWriteTimeUtc >= TempLifetime) TryDelete(file.FullName);
+                        RemoveOrphan(access, found);
                         continue;
                     }
 
-                    var options = Options(ns) ?? new ServerCacheNamespace(ns);
+                    var options = Options(found.Ns) ?? new ServerCacheNamespace(found.Ns);
+                    var seen = new Seen(found.Length, found.Modified, null);
                     // The last access is never before the fetch, so an entry unused since the cutoff is too old.
-                    var stale = settings.MaxAgeDays > 0 && file.LastWriteTimeUtc < now - TimeSpan.FromDays(settings.MaxAgeDays);
+                    var stale = settings.MaxAgeDays > 0 && found.Modified < now - TimeSpan.FromDays(settings.MaxAgeDays);
                     if (!stale && full)
                     {
-                        var times = Times(file);
-                        stale = times == null || Expired(times.Value.Fetched, times.Value.Expires, settings, options, now);
+                        var read = ReadHead(access, found, options);
+                        if (read.Seen is { } inspected) seen = inspected;
+                        stale = read.Times is not { } times || Expired(times.Fetched, times.Expires, settings, options, now);
                     }
 
                     if (stale)
                     {
-                        if (TryDelete(file.FullName)) removed++;
+                        if (RemoveIfSame(access, found.Ns, found.Shard, found.Name, seen)) removed++;
                         continue;
                     }
 
-                    entries.Add((file, ns));
+                    entries.Add(found);
                 }
 
-                var kept = new List<(FileInfo File, string Ns)>();
+                var kept = new List<Found>();
                 foreach (var group in entries.GroupBy(e => e.Ns, StringComparer.Ordinal))
-                {
-                    var cap = Options(group.Key)?.MaxBytes ?? 0;
-                    removed += Evict(group.ToList(), cap, kept);
-                }
-
-                var survivors = new List<(FileInfo File, string Ns)>();
-                removed += Evict(kept, settings.MaxBytes, survivors);
-                lock (_lock)
-                {
-                    Interlocked.Exchange(ref _bytes, survivors.Sum(e => Blocks(e.File.Length)));
-                    foreach (var name in _namespaceBytes.Keys.ToList()) _namespaceBytes[name] = 0;
-                    foreach (var group in survivors.GroupBy(e => e.Ns, StringComparer.Ordinal))
-                    {
-                        if (_namespaceBytes.ContainsKey(group.Key)) _namespaceBytes[group.Key] = group.Sum(e => Blocks(e.File.Length));
-                    }
-
-                    _lastSweep = now;
-                }
-
-                if (removed > 0) _logger?.Debug($"[Server cache] Removed {removed} entries; {Interlocked.Read(ref _bytes) / (1024 * 1024)} MiB kept.");
+                    removed += Evict(access, group.ToList(), Options(group.Key)?.MaxBytes ?? 0, 0, kept);
+                long reserved;
+                lock (_lock) reserved = _reserved;
+                var survivors = new List<Found>();
+                removed += Evict(access, kept, settings.MaxBytes, reserved, survivors);
+                foreach (var f in survivors) snapshot[f.Id] = (f.Ns, Blocks(f.Length));
+                Hook?.Invoke("counted");
+                TouchMarker(access);
+                lock (_lock) _lastSweep = now;
+                if (removed > 0) _logger?.Debug($"[Server cache] Removed {removed} entries.");
                 return removed;
             }
             finally
             {
+                Reconcile(snapshot);
                 _sweepLock.Release();
             }
         }
 
-        /// <summary>Deletes every entry (of one namespace, or all) and the folders the store made for them.</summary>
+        /// <summary>Deletes every entry (of one namespace, or all) and the folders the store made for them; ends the generation first.</summary>
         /// <param name="ns">A namespace, or null for all.</param>
         /// <param name="ct">Cancellation.</param>
         /// <returns>Entries removed.</returns>
@@ -475,74 +608,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             Current();
             // Writes under way from before this point are refused at their commit.
             lock (_lock) _generation++;
-            if (Folder(create: false) is not { } folder || !Directory.Exists(folder)) return 0;
+            if (Access(create: false) is not { } access || !access.Intact()) return 0;
             await _sweepLock.WaitAsync(ct).ConfigureAwait(false);
+            var snapshot = new Dictionary<string, (string Ns, long Bytes)>(StringComparer.Ordinal);
+            lock (_lock) _tracker = new Dictionary<string, (string Ns, long Bytes)?>(StringComparer.Ordinal);
             try
             {
                 var removed = 0;
-                foreach (var (file, fileNs, temp) in Enumerate(folder))
+                var namespaces = new HashSet<(string Ns, string Shard)>();
+                foreach (var found in Enumerate(access.Root))
                 {
-                    if (ns != null && fileNs != ns) continue;
-                    if (TryDelete(file.FullName) && !temp) removed++;
+                    if (ns != null && found.Ns != ns)
+                    {
+                        if (!found.Temp) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
+                        continue;
+                    }
+
+                    namespaces.Add((found.Ns, found.Shard));
+                    if (found.Temp) RemoveOrphan(access, found);
+                    else if (RemoveIfSame(access, found.Ns, found.Shard, found.Name, new Seen(found.Length, found.Modified, null))) removed++;
+                    else snapshot[found.Id] = (found.Ns, Blocks(found.Length));
                 }
 
-                foreach (var nsDir in SafeDirectories(new DirectoryInfo(folder), NamespacePattern))
-                {
-                    if (ns != null && nsDir.Name != ns) continue;
-                    foreach (var shard in SafeDirectories(nsDir, ShardPattern)) TryDeleteEmpty(shard.FullName);
-                    TryDeleteEmpty(nsDir.FullName);
-                }
-
-                Recount(folder);
+                foreach (var (space, shard) in namespaces) access.RemoveEmpty(space, shard);
+                foreach (var space in namespaces.Select(n => n.Ns).Distinct(StringComparer.Ordinal)) access.RemoveEmpty(space, null);
                 _logger?.Info($"[Server cache] Cleared {removed} entries{(ns == null ? string.Empty : " from " + ns)}.");
                 return removed;
             }
             finally
             {
+                Reconcile(snapshot);
                 _sweepLock.Release();
             }
         }
 
-        /// <summary>Counts what the folder holds (and refreshes the running totals).</summary>
+        /// <summary>Counts what the folder holds, temporary files included (it changes no running total).</summary>
         /// <returns>Usage.</returns>
         public ServerCacheUsage Usage()
         {
             var settings = Current();
-            var folder = Folder(create: settings.Enabled);
+            var access = settings.Enabled ? Access() : Access(create: false);
             var spaces = new SortedDictionary<string, (long Files, long Bytes)>(StringComparer.Ordinal);
-            if (folder != null && Directory.Exists(folder))
+            if (access != null && access.Intact())
             {
-                foreach (var (ns, files, bytes) in Recount(folder)) spaces[ns] = (files, bytes);
+                foreach (var found in Enumerate(access.Root))
+                {
+                    var (files, bytes) = spaces.GetValueOrDefault(found.Ns);
+                    spaces[found.Ns] = (files + (found.Temp ? 0 : 1), bytes + Blocks(found.Length));
+                }
             }
 
             string? error;
             Dictionary<string, long> caps;
             lock (_lock)
             {
-                error = _folderError;
+                error = access == null ? _folderError : null;
                 caps = _namespaces.ToDictionary(n => n.Key, n => n.Value.MaxBytes, StringComparer.Ordinal);
             }
 
-            return new ServerCacheUsage(settings.Enabled, folder ?? string.Empty, error, spaces.Values.Sum(s => s.Files), spaces.Values.Sum(s => s.Bytes),
+            return new ServerCacheUsage(settings.Enabled, access?.Root ?? string.Empty, error, spaces.Values.Sum(s => s.Files), spaces.Values.Sum(s => s.Bytes),
                 settings.MaxBytes, settings.MaxAgeDays,
                 spaces.Select(s => new ServerCacheNamespaceUsage(s.Key, s.Value.Files, s.Value.Bytes, caps.GetValueOrDefault(s.Key))).ToList());
         }
 
         /// <summary>
-        /// The current settings. A change of folder or switch ends the generation (and a folder change resets
-        /// the running totals); any change starts a sweep, so a lowered limit applies without waiting for a write.
+        /// The current settings. A change of folder or switch ends the generation (and a folder change resets the
+        /// running totals); a change sweeps at once, reading headers when it isn't the first look (a lower age limit
+        /// applies to entries read recently too).
         /// </summary>
         private ServerCacheSettings Current()
         {
             var settings = _settings();
+            bool first;
             lock (_lock)
             {
                 if (_seen == settings) return settings;
+                first = _seen == null;
                 if (_seen == null || _seen.Folder != settings.Folder)
                 {
-                    _folder = null;
+                    _access = null;
                     _folderError = null;
-                    Interlocked.Exchange(ref _bytes, 0);
+                    _bytes = 0;
                     foreach (var name in _namespaceBytes.Keys.ToList()) _namespaceBytes[name] = 0;
                 }
 
@@ -550,7 +696,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 _seen = settings;
             }
 
-            ScheduleSweep(force: true);
+            ScheduleSweep(force: true, full: !first);
             return settings;
         }
 
@@ -566,10 +712,96 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                || (options.DefaultTtl is { } ttl && now - fetched >= ttl)
                || (settings.MaxAgeDays > 0 && now - fetched >= TimeSpan.FromDays(settings.MaxAgeDays));
 
-        /// <summary>Keeps <paramref name="entries"/> under <paramref name="cap"/> (0: no cap), least recently used first; the rest go to <paramref name="kept"/>.</summary>
-        private static int Evict(List<(FileInfo File, string Ns)> entries, long cap, List<(FileInfo File, string Ns)> kept)
+        /// <summary>Applies a committed change to the running totals (under the lock), and to a sweep's count under way.</summary>
+        private void Account(string id, string ns, long before, long after)
         {
-            var total = entries.Sum(e => Blocks(e.File.Length));
+            _bytes += after - before;
+            if (_namespaceBytes.TryGetValue(ns, out var bytes)) _namespaceBytes[ns] = Math.Max(0, bytes + after - before);
+            if (_tracker != null) _tracker[id] = after > 0 ? (ns, after) : null;
+        }
+
+        /// <summary>Sets the running totals from a sweep's count, with every change committed while it counted applied on top.</summary>
+        private void Reconcile(Dictionary<string, (string Ns, long Bytes)> snapshot)
+        {
+            lock (_lock)
+            {
+                if (_tracker != null)
+                {
+                    foreach (var (id, state) in _tracker)
+                    {
+                        if (state is { } now) snapshot[id] = now;
+                        else snapshot.Remove(id);
+                    }
+                }
+
+                _tracker = null;
+                _bytes = snapshot.Values.Sum(v => v.Bytes);
+                foreach (var name in _namespaceBytes.Keys.ToList()) _namespaceBytes[name] = 0;
+                foreach (var group in snapshot.Values.GroupBy(v => v.Ns, StringComparer.Ordinal))
+                {
+                    if (_namespaceBytes.ContainsKey(group.Key)) _namespaceBytes[group.Key] = group.Sum(v => v.Bytes);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Removes a file only if it is still the one inspected (same write id, or same size and time when its header
+        /// didn't read), in the same step as a commit could replace it.
+        /// </summary>
+        private bool RemoveIfSame(CacheFolderAccess access, string ns, string shard, string name, Seen seen)
+        {
+            lock (_lock)
+            {
+                var options = Options(ns) ?? new ServerCacheNamespace(ns);
+                var current = seen.WriteId != null ? ReadHead(access, new Found(ns, shard, name, 0, default, false), options).Seen : null;
+                if (seen.WriteId != null ? current?.WriteId != seen.WriteId : access.Stat(ns, shard, name) is not { } stat || stat.Length != seen.Length || stat.Modified != seen.Modified)
+                    return false;
+                if (!access.Delete(ns, shard, name)) return false;
+                Account(ns + "/" + shard + "/" + name, ns, Blocks(seen.Length), 0);
+                return true;
+            }
+        }
+
+        /// <summary>Removes a temporary file no write of this process is using (an interrupted write's).</summary>
+        private void RemoveOrphan(CacheFolderAccess access, Found found)
+        {
+            lock (_lock)
+            {
+                if (!_activeTemps.Contains(found.Id)) access.Delete(found.Ns, found.Shard, found.Name);
+            }
+        }
+
+        private static void Touch(CacheFolderAccess access, string ns, string shard, string name, DateTime now)
+        {
+            try
+            {
+                using var handle = access.OpenRead(ns, shard, name);
+                if (handle != null) File.SetLastWriteTimeUtc(handle, now);
+            }
+            catch (Exception)
+            {
+                // A read-only folder still serves what it holds.
+            }
+        }
+
+        /// <summary>Keeps the folder's marker fresh (a folder in Jellyfin's cache folder loses files untouched for 30 days).</summary>
+        private void TouchMarker(CacheFolderAccess access)
+        {
+            try
+            {
+                var marker = new FileInfo(Path.Combine(access.Root, ServerCacheLocation.MarkerName));
+                if (marker.Exists && marker.LinkTarget == null && access.Intact()) File.SetLastWriteTimeUtc(marker.FullName, _now());
+            }
+            catch (Exception)
+            {
+                // Only the dedicated-folder check reads it.
+            }
+        }
+
+        /// <summary>Keeps <paramref name="entries"/> (plus <paramref name="extra"/> bytes) under <paramref name="cap"/>, least recently used first.</summary>
+        private int Evict(CacheFolderAccess access, List<Found> entries, long cap, long extra, List<Found> kept)
+        {
+            var total = entries.Sum(e => Blocks(e.Length)) + extra;
             if (cap <= 0 || total <= cap)
             {
                 kept.AddRange(entries);
@@ -578,11 +810,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
             var removed = 0;
             var target = (long)(cap * LowWatermark);
-            foreach (var entry in entries.OrderBy(e => e.File.LastWriteTimeUtc).ThenBy(e => e.File.Name, StringComparer.Ordinal))
+            foreach (var entry in entries.OrderBy(e => e.Modified).ThenBy(e => e.Name, StringComparer.Ordinal))
             {
-                if (total > target && TryDelete(entry.File.FullName))
+                if (total > target && RemoveIfSame(access, entry.Ns, entry.Shard, entry.Name, new Seen(entry.Length, entry.Modified, null)))
                 {
-                    total -= Blocks(entry.File.Length);
+                    total -= Blocks(entry.Length);
                     removed++;
                 }
                 else
@@ -594,37 +826,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             return removed;
         }
 
-        /// <summary>Counts the folder per namespace and sets the running totals from it.</summary>
-        private List<(string Ns, long Files, long Bytes)> Recount(string folder)
-        {
-            var counted = Enumerate(folder).Where(e => !e.Temp).GroupBy(e => e.Ns, StringComparer.Ordinal)
-                .Select(g => (Ns: g.Key, Files: (long)g.Count(), Bytes: g.Sum(e => Blocks(e.File.Length)))).ToList();
-            lock (_lock)
-            {
-                Interlocked.Exchange(ref _bytes, counted.Sum(c => c.Bytes));
-                foreach (var name in _namespaceBytes.Keys.ToList()) _namespaceBytes[name] = counted.FirstOrDefault(c => c.Ns == name).Bytes;
-            }
-
-            return counted;
-        }
-
         /// <summary>
-        /// The resolved folder; null when the setting can't be used. With <paramref name="create"/> (reads and
-        /// writes of a cache that is on) the folder is created and checked writable once per setting (a failed
-        /// check is retried after a few minutes); without it, the folder is only resolved (sweeps, Clear, usage).
+        /// The usable folder's access; null when the setting can't be used. With <paramref name="create"/> (reads and
+        /// writes of a cache that is on) the folder is prepared (created, checked writable, marked) once per setting (a
+        /// failed check is retried after a few minutes); without it, it is only resolved (sweeps, Clear, usage).
         /// </summary>
-        private string? Folder(bool create = true)
+        private CacheFolderAccess? Access(bool create = true)
         {
             string configured;
             lock (_lock)
             {
-                if (_folder != null) return _folder;
+                if (_access != null) return _access;
                 if (_folderError != null && _now() - _folderErrorAt < FolderRetry) return null;
                 configured = _seen?.Folder ?? string.Empty;
             }
 
             var error = _location.Resolve(configured, out var full);
-            if (error == null && create) error = ServerCacheLocation.CheckWritable(full);
+            if (error == null && create) error = _location.Prepare(full);
             lock (_lock)
             {
                 if ((_seen?.Folder ?? string.Empty) != configured) return null;
@@ -637,19 +855,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 }
 
                 _folderError = null;
-                if (create) _folder = full;
-                return full;
+                var access = CacheFolderAccess.For(full, _anchored);
+                if (create) _access = access;
+                return access;
             }
         }
 
         /// <summary>Starts a sweep (after the debounce unless forced); one asked for while one runs runs after it.</summary>
-        private void ScheduleSweep(bool force = false)
+        private void ScheduleSweep(bool force = false, bool full = false)
         {
             lock (_lock)
             {
                 if (!_pendingSweep.IsCompleted)
                 {
                     _sweepAgain = true;
+                    _sweepAgainFull |= full;
                     return;
                 }
 
@@ -659,14 +879,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     try
                     {
                         if (wait > TimeSpan.Zero) await Task.Delay(wait).ConfigureAwait(false);
-                        bool again;
-                        do
+                        var thisFull = full;
+                        while (true)
                         {
-                            lock (_lock) _sweepAgain = false;
-                            await SweepAsync(full: false, CancellationToken.None).ConfigureAwait(false);
-                            lock (_lock) again = _sweepAgain;
+                            await SweepAsync(thisFull, CancellationToken.None).ConfigureAwait(false);
+                            lock (_lock)
+                            {
+                                if (!_sweepAgain) break;
+                                thisFull = _sweepAgainFull;
+                                _sweepAgain = false;
+                                _sweepAgainFull = false;
+                            }
                         }
-                        while (again);
                     }
                     catch (Exception ex)
                     {
@@ -676,14 +900,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
+        /// <summary>A file of the store's own shape: namespace, shard, name, size, last write, and whether it is a temporary file.</summary>
+        private readonly record struct Found(string Ns, string Shard, string Name, long Length, DateTime Modified, bool Temp)
+        {
+            internal string Id => Ns + "/" + Shard + "/" + Name;
+        }
+
         /// <summary>Every entry and temporary file of the store's own shape under <paramref name="folder"/> (links skipped).</summary>
-        private static IEnumerable<(FileInfo File, string Ns, bool Temp)> Enumerate(string folder)
+        private static IEnumerable<Found> Enumerate(string folder)
         {
             foreach (var nsDir in SafeDirectories(new DirectoryInfo(folder), NamespacePattern))
             {
                 foreach (var shard in SafeDirectories(nsDir, ShardPattern))
                 {
-                    IEnumerable<FileInfo> files;
+                    List<FileInfo> files;
                     try
                     {
                         files = shard.EnumerateFiles().ToList();
@@ -696,8 +926,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     foreach (var file in files)
                     {
                         if (file.LinkTarget != null) continue;
-                        if (BlobPattern.IsMatch(file.Name)) yield return (file, nsDir.Name, false);
-                        else if (TempPattern.IsMatch(file.Name)) yield return (file, nsDir.Name, true);
+                        var temp = TempPattern.IsMatch(file.Name);
+                        if (!temp && !BlobPattern.IsMatch(file.Name)) continue;
+                        long length;
+                        DateTime modified;
+                        try
+                        {
+                            length = file.Length;
+                            modified = file.LastWriteTimeUtc;
+                        }
+                        catch (Exception)
+                        {
+                            continue;
+                        }
+
+                        yield return new Found(nsDir.Name, shard.Name, file.Name, length, modified, temp);
                     }
                 }
             }
@@ -715,57 +958,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
-        private bool Remove(FileInfo file, string ns)
+        /// <summary>An entry's header times and identity, read through the confined access.</summary>
+        private static (Seen? Seen, (DateTime Fetched, DateTime? Expires)? Times) ReadHead(CacheFolderAccess access, Found found, ServerCacheNamespace options)
         {
-            if (!TryDelete(file.FullName)) return false;
-            var size = Blocks(file.Length);
-            Interlocked.Add(ref _bytes, -size);
-            lock (_lock)
+            using var handle = access.OpenRead(found.Ns, found.Shard, found.Name);
+            if (handle == null) return (null, null);
+            try
             {
-                if (_namespaceBytes.TryGetValue(ns, out var bytes)) _namespaceBytes[ns] = Math.Max(0, bytes - size);
+                var length = RandomAccess.GetLength(handle);
+                var seen = new Seen(length, File.GetLastWriteTimeUtc(handle), null);
+                if (length < FixedHeaderBytes || length > MaxHeaderBytes + (long)options.MaxEntryBytes) return (seen, null);
+                var head = new byte[(int)Math.Min(length, MaxHeaderBytes)];
+                if (ReadFully(handle, head, 0) != head.Length || ReadHeader(head) is not { } header) return (seen, null);
+                seen = seen with { WriteId = header.WriteId };
+                if (header.Length > options.MaxEntryBytes || length != header.Body + (long)header.Length) return (seen, null);
+                return (seen, (header.Fetched, header.Expires));
             }
-
-            return true;
+            catch (Exception)
+            {
+                return (null, null);
+            }
         }
 
         private static long Blocks(long length) => Math.Max(1, (length + BlockBytes - 1) / BlockBytes) * BlockBytes;
 
-        private static bool TryDelete(string path)
-        {
-            try
-            {
-                File.Delete(path);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static void TryDeleteEmpty(string folder)
-        {
-            try
-            {
-                if (!Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder);
-            }
-            catch (Exception)
-            {
-                // Something else is in there; it stays.
-            }
-        }
-
         private static string Hash(string ns, string key)
             => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ns + "\n" + key)));
 
-        private static string EntryPath(string folder, string ns, string key)
+        /// <summary>An entry's shard folder and file name.</summary>
+        private static (string Shard, string Name) Names(string ns, string key)
         {
             var hash = Hash(ns, key);
-            return Path.Combine(folder, ns, hash.Substring(0, 2), hash + ".blob");
+            return (hash.Substring(0, 2), hash + ".blob");
         }
 
-        // Layout: magic (5) | key length (2) | key | type length (1) | type | fetched ticks (8) | expiry ticks, 0 = none (8) | body length (4) | body.
-        private static byte[] Header(byte[] key, byte[] type, DateTime fetched, DateTime? expires, int length)
+        private static byte[] Header(byte[] key, byte[] type, DateTime fetched, DateTime? expires, ulong writeId, int length)
         {
             var header = new byte[FixedHeaderBytes + key.Length + type.Length];
             var at = 0;
@@ -782,14 +1009,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             at += 8;
             BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(at), expires?.Ticks ?? 0);
             at += 8;
+            BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(at), writeId);
+            at += 8;
             BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(at), length);
             return header;
         }
 
-        /// <summary>Reads a header: the key, type, times and body offset and length; null when it isn't one.</summary>
-        private static (string Key, string Type, DateTime Fetched, DateTime? Expires, int Body, int Length)? ReadHeader(ReadOnlySpan<byte> span)
+        /// <summary>Reads a header: the key, type, times, write id and body offset and length; null when it isn't one.</summary>
+        private static (string Key, string Type, DateTime Fetched, DateTime? Expires, ulong WriteId, int Body, int Length)? ReadHeader(ReadOnlySpan<byte> span)
         {
-            if (span.Length < Magic.Length + 2 || !span.Slice(0, Magic.Length).SequenceEqual(Magic)) return null;
+            if (span.Length < FixedHeaderBytes || !span.Slice(0, Magic.Length).SequenceEqual(Magic)) return null;
             var at = Magic.Length;
             int keyLength = BinaryPrimitives.ReadUInt16LittleEndian(span.Slice(at));
             at += 2;
@@ -797,39 +1026,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var key = Encoding.UTF8.GetString(span.Slice(at, keyLength));
             at += keyLength;
             int typeLength = span[at++];
-            if (typeLength > MaxContentTypeBytes || span.Length < at + typeLength + 20) return null;
+            if (typeLength > MaxContentTypeBytes || span.Length < at + typeLength + 28) return null;
             var type = Encoding.UTF8.GetString(span.Slice(at, typeLength));
             at += typeLength;
             var fetched = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(at));
             var expires = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(at + 8));
-            var length = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(at + 16));
-            at += 20;
+            var writeId = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(at + 16));
+            var length = BinaryPrimitives.ReadInt32LittleEndian(span.Slice(at + 24));
+            at += 28;
             if (fetched <= 0 || fetched > DateTime.MaxValue.Ticks || expires < 0 || expires > DateTime.MaxValue.Ticks || length < 0) return null;
-            return (key, type, new DateTime(fetched, DateTimeKind.Utc), expires == 0 ? null : new DateTime(expires, DateTimeKind.Utc), at, length);
-        }
-
-        /// <summary>Reads a file's bytes back; null unless it is a whole entry for <paramref name="key"/>.</summary>
-        private static ServerCacheEntry? Parse(byte[] data, string key)
-        {
-            if (ReadHeader(data) is not { } header || !string.Equals(header.Key, key, StringComparison.Ordinal) || data.Length - header.Body != header.Length) return null;
-            return new ServerCacheEntry(data.AsSpan(header.Body).ToArray(), header.Type, header.Fetched, header.Expires);
-        }
-
-        /// <summary>An entry's fetch time and expiry from its header; null when it isn't a whole entry.</summary>
-        private static (DateTime Fetched, DateTime? Expires)? Times(FileInfo file)
-        {
-            try
-            {
-                using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                var head = new byte[FixedHeaderBytes + MaxKeyBytes + MaxContentTypeBytes];
-                var read = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
-                if (ReadHeader(head.AsSpan(0, read)) is not { } header || file.Length != header.Body + (long)header.Length) return null;
-                return (header.Fetched, header.Expires);
-            }
-            catch (Exception)
-            {
-                return null;
-            }
+            return (key, type, new DateTime(fetched, DateTimeKind.Utc), expires == 0 ? null : new DateTime(expires, DateTimeKind.Utc), writeId, at, length);
         }
     }
 }

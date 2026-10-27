@@ -59,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public IActionResult CheckFolder([FromBody] ServerCacheFolderRequest? body)
         {
             if (!IsAdmin()) return Forbid();
-            var error = _cache.Location.Resolve(body?.Folder, out var full) ?? ServerCacheLocation.CheckWritable(full);
+            var error = _cache.Location.Resolve(body?.Folder, out var full) ?? _cache.Location.Prepare(full);
             Response.Headers.CacheControl = "no-store";
             return Ok(new { ok = error == null, folder = error == null ? full : string.Empty, message = error });
         }

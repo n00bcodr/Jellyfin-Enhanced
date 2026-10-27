@@ -1913,7 +1913,7 @@ Admin only, `no-store`. See [Server-side cache](../arr/arr-settings.md#server-si
 | Method | Path | Access and contract |
 |---|---|---|
 | GET | `admin/server-cache` | Usage: `enabled`, `folder`, `folderError` (why the folder can't be used, else null), `files`, `bytes` (whole 4 KiB blocks), `maxBytes`, `maxAgeDays` and `namespaces[]` (`name`, `files`, `bytes`, `maxBytes`) |
-| POST | `admin/server-cache/check-folder` | Body `{"folder":"/path"}` (empty: the default): `{ok, folder, message}`; creates the folder if it is allowed and missing, saves nothing |
+| POST | `admin/server-cache/check-folder` | Body `{"folder":"/path"}` (empty: the default): `{ok, folder, message}` (`folder` is the real path, every link resolved); creates and marks the folder if it is allowed and missing, saves nothing |
 | POST | `admin/server-cache/clear` | Deletes every cache entry (only files the cache wrote; nothing else in the folder) and answers `{removed, usage}` |
 
 ## Activity Feed & What's New

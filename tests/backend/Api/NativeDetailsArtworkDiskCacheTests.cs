@@ -49,7 +49,10 @@ public sealed class NativeDetailsArtworkDiskCacheTests : IDisposable
         var viewer = Guid.NewGuid();
         // Fill this viewer's every admission place with images TMDB never answers.
         var stuck = Enumerable.Range(0, 8).Select(i => after.FetchAsync("/stuck" + i + ".jpg", "w500", viewer, CancellationToken.None)).ToList();
+        // Each first looks on disk (a shared, bounded read), then takes its admission place.
+        for (var i = 0; i < 200 && after.InFlightCount < 8; i++) await Task.Delay(10);
         Assert.Equal(8, after.InFlightCount);
+        for (var i = 0; i < 200 && afterSent.Count < 8; i++) await Task.Delay(10);
         // And their upstream budget.
         while (after.TakeUpstream(viewer)) { }
 
