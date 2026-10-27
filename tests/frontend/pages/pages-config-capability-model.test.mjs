@@ -5,6 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { configPage } from '../helpers/config-page.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { repositoryRoot } from '../helpers/discovery.mjs';
 
 const JE_REQUESTS = { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true, ArrRequestBackend: 'je' };
 const SEERR_ON = { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test:5055', JellyseerrApiKey: 'seerr-key' };
@@ -114,4 +117,40 @@ test('leaving the configuration page stops its unsaved-changes check from readin
   await new Promise(r => page.window.setTimeout(r, 50));
   assert.equal(page.$('.je-save-dock').classList.contains('je-dirty'), true);
   assert.deepEqual(errors, []);
+});
+
+// ---- UX3R-1 (review round 1): every Seerr gate on this page follows backend isolation, as the server's rule does ----
+
+const RETAINED = { ...JE_REQUESTS, ...SEERR_ON, ...SONARR, TMDB_API_KEY: 'tmdb-key', RecommendationsPageEnabled: true };
+const SEERR_GATED = ['recommendationsPageEnabled', 'importSonarrFromSeerr', 'arrSeerrMigrationBtn', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes'];
+
+for (const backend of ['je', 'status_only']) test(`UX3R-1: adopted ${backend} (isolation 1) disables Seerr-only settings even with Seerr's switch, address and key retained`, async t => {
+  const page = await open(t, { ...RETAINED, ArrRequestBackend: backend, ArrBackendIsolationVersion: 1 });
+  assert.deepEqual(Object.fromEntries(SEERR_GATED.map(id => [id, page.$('#' + id).disabled])), Object.fromEntries(SEERR_GATED.map(id => [id, true])));
+  // Seerr's own connection setup stays editable; the Seerr tab's other settings wait like Seerr off.
+  for (const id of ['jellyseerrEnabled', 'jellyseerrUrls', 'JellyseerrApiKey']) assert.equal(page.$('#' + id).disabled, false, id);
+  assert.equal(page.$('#jellyseerrShowSearchResults').disabled, true);
+  // Shared settings: native details read TMDB with the JE backend selected (key set), the others need what they need.
+  assert.equal(page.$('#nativeAbsentDetailsEnabled').disabled, backend !== 'je');
+  const saved = await page.save();
+  assert.equal(saved.RecommendationsPageEnabled, true, 'stored value kept');
+});
+
+test('UX3R-1 control: isolation 1 with Seerr handling requests keeps every Seerr setting available', async t => {
+  const page = await open(t, { ...RETAINED, ArrRequestBackend: 'seerr', ArrBackendIsolationVersion: 1 });
+  for (const id of SEERR_GATED) assert.equal(page.$('#' + id).disabled, false, id);
+  // Choosing Jellyfin Enhanced handling on the page applies the isolation rule at once.
+  page.choose('#arrRequestBackend', 'je');
+  await page.flush();
+  for (const id of SEERR_GATED) assert.equal(page.$('#' + id).disabled, true, `${id} with JE handling`);
+});
+
+test('UX3R-1: the page\'s "Seerr is on" matches the server rule for every isolation version, backend and Seerr setup', async t => {
+  const table = JSON.parse(readFileSync(resolve(repositoryRoot, 'tests/fixtures/seerr-usable-truth-table.json'), 'utf8'));
+  assert.equal(table.rows.length, 18);
+  for (const row of table.rows) {
+    const page = await open(t, { ...RETAINED, JellyseerrEnabled: row.seerrSetUp, ArrRequestBackend: row.backend, ArrBackendIsolationVersion: row.isolationVersion });
+    for (const id of ['recommendationsPageEnabled', 'importSonarrFromSeerr']) assert.equal(page.$('#' + id).disabled, !row.seerrUsable, `${id} ${JSON.stringify(row)}`);
+    page.close();
+  }
 });

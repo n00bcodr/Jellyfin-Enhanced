@@ -276,6 +276,8 @@ public class ApiConfigurationTests
         (bool Available, bool Page) Read()
         {
             using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+            // UX3R-1: every client Seerr gate reads JellyseerrEnabled; it is the same server rule as SeerrAvailable.
+            Assert.Equal(document.RootElement.GetProperty("SeerrAvailable").GetBoolean(), document.RootElement.GetProperty("JellyseerrEnabled").GetBoolean());
             return (document.RootElement.GetProperty("SeerrAvailable").GetBoolean(), document.RootElement.GetProperty("RecommendationsPageEnabled").GetBoolean());
         }
 
@@ -297,5 +299,28 @@ public class ApiConfigurationTests
         config.RecommendationsPageEnabled = false;
         config.ArrBackendIsolationVersion = 0;
         Assert.Equal((true, false), Read());
+    }
+
+    // ---- UX3R-1: the configuration page's "Seerr is on" and the server's are one rule, pinned by one table ----
+
+    [Fact]
+    public void SeerrUsableTruthTableIsTheServersRule()
+    {
+        using var stream = typeof(ApiConfigurationTests).Assembly.GetManifestResourceStream("JE.Tests.SeerrUsableTruthTable")!;
+        using var document = JsonDocument.Parse(stream);
+        var rows = document.RootElement.GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(18, rows.Count);
+        foreach (var row in rows)
+        {
+            var setUp = row.GetProperty("seerrSetUp").GetBoolean();
+            var config = new PluginConfiguration
+            {
+                ArrIntegrationEnabled = true, ArrPhase1Enabled = true, ArrPhase3Enabled = true,
+                ArrRequestBackend = row.GetProperty("backend").GetString()!,
+                ArrBackendIsolationVersion = row.GetProperty("isolationVersion").GetInt32(),
+                JellyseerrEnabled = setUp, JellyseerrUrls = "http://seerr.invalid:5055", JellyseerrApiKey = "seerr-key",
+            };
+            Assert.True(row.GetProperty("seerrUsable").GetBoolean() == Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.SeerrUsable(config), row.ToString());
+        }
     }
 }

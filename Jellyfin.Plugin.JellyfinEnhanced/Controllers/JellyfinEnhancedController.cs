@@ -358,8 +358,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // The Seerr user and when the read that found them began (a held answer's own read): a cache that keeps something
         // worked out from it (the account id) ends when this read does, never later.
+        // Seerr off (switched off, not set up, or excluded by backend isolation: SeerrUsable): no identity read, no
+        // auto-import, before anything reaches Seerr. The transport check alone knows isolation, not the switch.
         private Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserRead(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
-            => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed
+            => !EffectiveRequestsBackend.SeerrUsable(JellyfinEnhanced.Instance?.Configuration) || !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed
                 ? Task.FromResult<(JellyseerrUser?, DateTime)>((null, DateTime.UtcNow))
                 : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrAsync(SeerrUse.Identity, epoch => GetJellyseerrUserReadCore(jellyfinUserId, bypassCache, allowAutoImport, epoch));
 
@@ -370,6 +372,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var readAt = DateTime.UtcNow;
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return (null, readAt);
             var config = JellyfinEnhanced.Instance?.Configuration;
+            if (!EffectiveRequestsBackend.SeerrUsable(config)) return (null, readAt);
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
@@ -2089,7 +2092,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            // The same rule as the configuration page's button (switched on, set up and allowed by backend isolation).
+            if (config == null || !EffectiveRequestsBackend.SeerrUsable(config))
             {
                 return StatusCode(503, new { error = "Seerr integration is not configured or enabled." });
             }
@@ -2361,6 +2365,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetJellyseerrQuota()
         {
+            // Seerr off (a client still showing an older configuration may ask): refused before the identity lookup, so
+            // nothing reaches Seerr.
+            if (!EffectiveRequestsBackend.SeerrUsable(JellyfinEnhanced.Instance?.Configuration))
+                return StatusCode(503, new { code = "seerr_off", error = "Seerr integration is not configured or enabled." });
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString() ?? "";
             var seerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             var quotaResult = await ProxyJellyseerrRequest($"/api/v1/user/{seerrUserId}/quota", HttpMethod.Get);
@@ -4061,10 +4069,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.TagCacheServerMode,
                 config.EnableTagsLocalStorageFallback,
 
-                // Seerr Search Settings
-                config.JellyseerrEnabled,
-                // Seerr is set up and the request mode lets Jellyfin Enhanced use it: Seerr-only navigation and
-                // windows follow this (stored Seerr settings are kept either way).
+                // Seerr Search Settings. "Seerr is on" for clients is the server's one rule: set up AND allowed by backend
+                // isolation (EffectiveRequestsBackend.SeerrUsable), so every client Seerr gate that reads JellyseerrEnabled
+                // follows isolation too; the stored switch is kept (the configuration page reads it, not this).
+                JellyseerrEnabled = EffectiveRequestsBackend.SeerrUsable(config),
                 SeerrAvailable = EffectiveRequestsBackend.SeerrUsable(config),
                 config.JellyseerrShowSearchResults,
                 config.JellyseerrSearchExcludeLibraryItems,

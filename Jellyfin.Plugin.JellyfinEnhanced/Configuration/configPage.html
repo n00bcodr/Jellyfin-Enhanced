@@ -11080,6 +11080,30 @@
         }
 
         /**
+         * Whether the server lets Jellyfin Enhanced talk to Seerr at all: the backend isolation rule of
+         * EffectiveRequestsBackend.EvaluateConfiguration (AllowSeerrTransport). Version 0 (not adopted) allows it;
+         * version 1 only while "Request handling" is Seerr; any other version never. The version is server-owned
+         * (never edited here), so it is read from the configuration the server last handed this page.
+         * @returns {boolean} True when the isolation rule allows Seerr
+         */
+        function seerrTransportAllowed() {
+            var version = (typeof _jeBase !== 'undefined' && _jeBase && _jeBase.ArrBackendIsolationVersion) || 0;
+            if (version === 0) return true;
+            var backend = document.getElementById('arrRequestBackend');
+            return version === 1 && !!backend && backend.value === 'seerr';
+        }
+
+        /**
+         * "Seerr is on": set up here (enabled, an address and a key) and allowed by backend isolation. The same rule as
+         * the server's EffectiveRequestsBackend.SeerrUsable (public config SeerrAvailable); every Seerr gate on this page
+         * uses it. Connection setup itself stays editable either way.
+         * @returns {boolean} True when Seerr is usable
+         */
+        function jeSeerrUsable() {
+            return hasJellyseerrConfigured() && seerrTransportAllowed();
+        }
+
+        /**
          * Checks whether at least one ENABLED arr service (Sonarr or Radarr) has a URL and API key.
          * Disabled instances are skipped — they're stored config but the fan-out callers
          * (controller endpoints, scheduled tag sync) skip them, so gating dependent
@@ -11107,10 +11131,10 @@
         var SECTION_DEPS = [
             {
                 tabSelector: '#seerr',
-                checkFn: hasJellyseerrConfigured,
+                checkFn: jeSeerrUsable,
                 bannerIcon: 'link_off',
                 bannerTitle: 'Enable "Seerr integration" to configure',
-                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration.',
+                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration. With request handling moved to Jellyfin Enhanced (or Status only), Seerr isn\'t used.',
                 bannerId: 'dep-banner-jellyseerr'
             },
             {
@@ -11171,30 +11195,31 @@
          * @returns {boolean} Whether native details have a metadata source
          */
         function nativeDetailsReady() {
-            return jeBackendSelected() ? hasTmdbKey() : hasJellyseerrConfigured();
+            return jeBackendSelected() ? hasTmdbKey() : jeSeerrUsable();
         }
 
         // What a setting really needs, for settings that work with Seerr or with Jellyfin Enhanced handling requests
         // (Requests & discovery on the *arr tab), and for Seerr-only navigation and admin operations. Unmet: every
         // listed control is disabled with one short hint (stored values are kept and saved unchanged). The rules mirror
-        // the server's (NativeDetailsPolicy, AutoSeason/AutoMovieRequestService, EffectiveRequestsBackend.SeerrUsable).
+        // the server's (NativeDetailsPolicy, AutoSeason/AutoMovieRequestService, EffectiveRequestsBackend.SeerrUsable); "Seerr" is
+        // always jeSeerrUsable(), backend isolation included.
         var CAPABILITY_DEPS = [
             { tag: 'cap-native-details', checkFn: nativeDetailsReady, controls: ['nativeAbsentDetailsEnabled'],
               hint: 'Needs Seerr set up, or Jellyfin Enhanced request handling with a TMDB API key' },
-            { tag: 'cap-single-season', checkFn: function() { return hasJellyseerrConfigured() || jeRequestsActive(); }, controls: ['jellyseerrSingleSeasonRequestOnly'],
+            { tag: 'cap-single-season', checkFn: function() { return jeSeerrUsable() || jeRequestsActive(); }, controls: ['jellyseerrSingleSeasonRequestOnly'],
               hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on' },
-            { tag: 'cap-auto-season', checkFn: function() { return hasJellyseerrConfigured() || (jeRequestsActive() && hasTmdbKey()); },
+            { tag: 'cap-auto-season', checkFn: function() { return jeSeerrUsable() || (jeRequestsActive() && hasTmdbKey()); },
               controls: ['autoSeasonRequestEnabled', 'autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'],
               hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on with a TMDB API key' },
-            { tag: 'cap-auto-movie', checkFn: function() { return hasTmdbKey() && (hasJellyseerrConfigured() || jeRequestsActive()); },
+            { tag: 'cap-auto-movie', checkFn: function() { return hasTmdbKey() && (jeSeerrUsable() || jeRequestsActive()); },
               controls: ['autoMovieRequestEnabled', 'autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k', 'autoMovieRequestServer', 'autoMovieRequestProfile', 'autoMovieRequestRootFolder'],
               hint: 'Needs a TMDB API key, plus Seerr set up or Requests & downloads "Ask for it" on' },
             // Seerr-only: the Seerr Recommendations page (its rows all come from Seerr) and the advanced Seerr operations.
             // Seerr's connection setup itself always stays available (Seerr tab).
-            { tag: 'cap-seerr-recommendations', checkFn: hasJellyseerrConfigured,
+            { tag: 'cap-seerr-recommendations', checkFn: jeSeerrUsable,
               controls: ['recommendationsPageEnabled', 'recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'],
               hint: 'Seerr is off (Seerr tab): this page shows only Seerr\'s rows. The settings are kept for when Seerr is on.' },
-            { tag: 'cap-seerr-ops', checkFn: hasJellyseerrConfigured,
+            { tag: 'cap-seerr-ops', checkFn: jeSeerrUsable,
               controls: ['importSonarrFromSeerr', 'importRadarrFromSeerr', 'arrSeerrMigrationBtn', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes'],
               hint: 'Seerr is off (Seerr tab): not available. The settings are kept for when Seerr is on.' }
         ];

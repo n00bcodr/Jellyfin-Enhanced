@@ -179,6 +179,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (!PhaseOn(config)) return SeerrMigrationReply.Refused("feature_disabled", 403, "Turn on \"Ask for it\" (phase 3) and save first.", config.ArrRequestBackend);
             if (config.ArrRequestBackend is not ("seerr" or "je")) return SeerrMigrationReply.Refused("backend_status_only", 409, "Request handling is \"Status only\"; choose Seerr first.", config.ArrRequestBackend);
+            // Seerr off (switched off, not set up, or excluded by backend isolation): nothing is read from it or moved. The
+            // gate runs before the read and again before anything is written, so turning Seerr off mid-move stops it too.
+            if (!Backends.EffectiveRequestsBackend.SeerrUsable(config)) return SeerrMigrationReply.Refused("seerr_off", 409, "Seerr is off; turn it on (Seerr tab) to move its requests.", config.ArrRequestBackend);
             if (!_ledger.Database.Available) return SeerrMigrationReply.Refused("database_unavailable", 503, "The Requests & downloads database is unavailable.", config.ArrRequestBackend);
             return null;
         }

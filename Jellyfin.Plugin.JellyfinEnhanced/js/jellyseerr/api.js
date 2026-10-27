@@ -866,8 +866,11 @@
         if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
             return null;
         }
-        // Seerr is off: there is no Seerr quota to read (the server would answer 503).
-        if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrEnabled === false) return null;
+        // Seerr is off (the server's one rule, backend isolation included: SeerrAvailable / JellyseerrEnabled), or
+        // Jellyfin Enhanced handles requests (its own allowance applies, never Seerr's): no Seerr quota to read. Every
+        // quota caller (More Info, the request and season windows, the quota dialog) comes through here.
+        const cfg = window.JellyfinEnhanced?.pluginConfig;
+        if (cfg?.JellyseerrEnabled === false || cfg?.SeerrAvailable === false || cfg?.ArrRequestsJeMode === true) return null;
         // No Seerr account to have a quota (known from the user status): nothing to ask Seerr for.
         if (api.knownAccountRefusal()) return null;
         try {

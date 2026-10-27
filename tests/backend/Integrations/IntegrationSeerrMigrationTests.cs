@@ -24,6 +24,50 @@ public class IntegrationSeerrMigrationTests
     private const long Request = (long)JellyseerrPermission.REQUEST;
     private const long Admin = (long)JellyseerrPermission.ADMIN;
 
+    // ---- UX3R-2 (review round 1): a disabled Seerr is never read from or moved, whatever calls the API ----
+
+    [Theory]
+    [InlineData("switched_off")]
+    [InlineData("isolated_je")]
+    public async Task UX3ReviewDisabledSeerrMustNotImport(string off)
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        var c = m.R.Policy.Configuration;
+        if (off == "switched_off") c.JellyseerrEnabled = false;
+        else { c.ArrRequestBackend = "je"; c.ArrBackendIsolationVersion = 1; }
+        var backend = c.ArrRequestBackend;
+        plugin.Plugin.Configuration.JellyseerrEnabled = c.JellyseerrEnabled;
+        plugin.Plugin.Configuration.JellyseerrUrls = c.JellyseerrUrls;
+        plugin.Plugin.Configuration.JellyseerrApiKey = c.JellyseerrApiKey;
+        plugin.Plugin.Configuration.ArrRequestBackend = c.ArrRequestBackend;
+        plugin.Plugin.Configuration.ArrBackendIsolationVersion = off == "switched_off" ? 1 : c.ArrBackendIsolationVersion;
+        Assert.False(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.SeerrUsable(c));
+        var preview = await m.Service.PreviewAsync(CancellationToken.None);
+        var commit = await m.Service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.True(m.Seerr.Calls.Count == 0 && m.Count("SELECT COUNT(*) FROM wants") == 0,
+            $"disabled Seerr: preview HTTP {preview.HttpStatus}, commit HTTP {commit.HttpStatus}, upstream calls {m.Seerr.Calls.Count}, imported wants {m.Count("SELECT COUNT(*) FROM wants")}, backend {c.ArrRequestBackend}");
+        Assert.Equal((409, "seerr_off"), (preview.HttpStatus, preview.Reason));
+        Assert.Equal((409, "seerr_off"), (commit.HttpStatus, commit.Reason));
+        Assert.Equal(backend, c.ArrRequestBackend);
+    }
+
+    [Fact]
+    public async Task UX3ReviewSeerrSwitchedOffBetweenReadAndWriteMovesNothing()
+    {
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        var preview = await m.Service.PreviewAsync(CancellationToken.None);
+        Assert.Equal(200, preview.HttpStatus);
+        // The administrator turns Seerr off while the move reads it: the gate before the writes refuses.
+        m.Seerr.BeforePage = _ => m.R.Policy.Configuration.JellyseerrEnabled = false;
+        var commit = await m.Service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.Equal((409, "seerr_off"), (commit.HttpStatus, commit.Reason));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM wants"));
+        Assert.Equal("seerr", m.R.Policy.Configuration.ArrRequestBackend);
+    }
+
     private sealed class Mig : IDisposable
     {
         public IntegrationRequestLedgerTests.Rig R { get; } = new();

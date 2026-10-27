@@ -16,6 +16,53 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ApiSeerrTests
 {
+    // ---- UX3R-3 (review round 1): Seerr off means no Seerr identity read, whatever a stale client asks for ----
+
+    [Theory]
+    [InlineData("switched_off")]
+    [InlineData("isolated_je")]
+    [InlineData("isolated_status_only")]
+    public async Task UX3ReviewDisabledSeerrQuotaMustNotReadIdentity(string off)
+    {
+        using var f = new SeerrFixture();
+        var c = f.Plugin.Plugin.Configuration;
+        if (off == "switched_off") c.JellyseerrEnabled = false;
+        else
+        {
+            // Adopted Jellyfin Enhanced (or Status only) with Seerr's switch, address and key retained.
+            c.ArrIntegrationEnabled = c.ArrPhase1Enabled = c.ArrPhase3Enabled = true;
+            c.ArrRequestBackend = off == "isolated_je" ? "je" : "status_only";
+            c.ArrBackendIsolationVersion = 1;
+        }
+        var result = await f.Controller.GetJellyseerrQuota();
+        Assert.Empty(f.Calls);
+        Assert.Equal(503, Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task UX3ReviewQuotaControlSeerrOnStillReadsTheAccountsQuota()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("{\"movie\":{\"limit\":5,\"used\":1,\"days\":7},\"tv\":{\"limit\":5,\"used\":0,\"days\":7}}");
+        await f.Controller.GetJellyseerrQuota();
+        Assert.Contains(f.Calls, call => call.Path.StartsWith("/api/v1/user?", StringComparison.Ordinal));
+        Assert.Contains(f.Calls, call => call.Path == "/api/v1/user/27/quota");
+    }
+
+    [Fact]
+    public async Task UX3ReviewImportFromSeerrIsRefusedWhileIsolationExcludesSeerr()
+    {
+        using var f = new SeerrFixture();
+        f.SetUser(f.UserId, admin: true);
+        var c = f.Plugin.Plugin.Configuration;
+        c.ArrIntegrationEnabled = c.ArrPhase1Enabled = c.ArrPhase3Enabled = true;
+        c.ArrRequestBackend = "je";
+        c.ArrBackendIsolationVersion = 1;
+        var result = await f.Controller.GetJellyseerrArrSettings("sonarr");
+        Assert.Empty(f.Calls);
+        Assert.Equal(503, Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult>(result).StatusCode);
+    }
+
     private sealed class SeerrFixture : IDisposable
     {
         public ApiPluginFixture Plugin { get; } = new();
