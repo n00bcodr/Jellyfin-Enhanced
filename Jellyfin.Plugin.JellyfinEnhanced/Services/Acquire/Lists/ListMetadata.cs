@@ -150,13 +150,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPostersFacts { get => _tmdbPostersFactsOwner.Read(ref _tmdbPosters, () => new(StringComparer.Ordinal)); }
 
 
+        private readonly ListPosterFactCache? _posterFacts;
+
         /// <summary>Creates the service (singleton).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
         /// <param name="logger">JE logger.</param>
-        public ListMetadataService(IHttpClientFactory httpClientFactory, Logger logger)
+        /// <param name="posterFacts">Saved poster facts (the server-side cache), if any.</param>
+        public ListMetadataService(IHttpClientFactory httpClientFactory, Logger logger, ListPosterFactCache? posterFacts = null)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
+            _posterFacts = posterFacts;
         }
 
         /// <summary>Per-request timeout of this instance (tests shorten it).</summary>
@@ -876,15 +880,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
         {
             var epoch = ListMetadataEpoch.Capture();
-            var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
+            var keyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8);
+            var key = "tmdb|" + keyHash + "|" + apiPath;
             if (_tmdbPostersFacts.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
             {
                 return epoch.Publish(() => (cached.Poster, true, false), () => ((string?)null, false, false));
             }
 
+            // A fact saved by an earlier read (the server-side cache) needs no poster slot or TMDB read; it keeps its
+            // original read time, and publishes only while the list metadata epoch still holds.
+            if (_posterFacts != null
+                && await ListContinuation.Await(() => _posterFacts.ReadAsync(keyHash, apiPath, asked, cancellationToken)).ConfigureAwait(false) is { } saved)
+            {
+                return epoch.Publish(() =>
+                {
+                    _tmdbPostersFacts[key] = (saved.Poster, saved.ReadAt);
+                    return (saved.Poster, true, false);
+                }, () => ((string?)null, false, false));
+            }
+
             // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
             using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
             using var metadataAdmission = new MetadataAdmission("list-posters");
+            // Captured before the read: a Clear of the server-side cache after it refuses saving what it yields.
+            var factsGeneration = _posterFacts?.Generation ?? 0;
             // The poster lives from when its read began.
             var readAt = DateTime.UtcNow;
             try
@@ -928,6 +947,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return epoch.Publish(() =>
                 {
                     _tmdbPostersFacts[key] = (poster, readAt);
+                    _ = _posterFacts?.WriteAsync(keyHash, apiPath, asked, poster, readAt, factsGeneration);
                     return (poster, true, false);
                 }, () => ((string?)null, false, false));
             }
