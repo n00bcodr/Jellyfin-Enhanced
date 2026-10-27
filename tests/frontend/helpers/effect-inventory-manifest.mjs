@@ -172,6 +172,7 @@ export const SITES = {
     'bindPress state presses': [1, 'module', 'registry'],
     'dispatch state pressing': [2, 'module', 'registry'],
     'end state lifecycle': [1, 'module', 'lifecycle: the action bar\'s own end (a user switch, the feature going off, disposal) ends every operation'],
+    'entries state closure refused': [1, 'module', 'ui'],
     'end state live': [2, 'module', 'registry'],
     'generation state live': [2, 'module', 'registry'],
     'prune state live': [1, 'module', 'registry'],

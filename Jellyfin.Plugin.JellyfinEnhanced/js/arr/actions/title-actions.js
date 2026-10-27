@@ -235,11 +235,22 @@
             return true;
         }
         // The independent reads start together (none waits on another); each is still awaited in the order below, and
-        // every continuation still checks the operation. `options.admission`: the opening's admission, read alongside.
+        // every continuation still checks the operation. `options.admission`: the opening's admission, read alongside:
+        // only the viewer's own reads (follows, capabilities, Seerr account) overlap it; nothing about the title is read
+        // before it answers, and once it refuses a title that isn't in the library nothing more is read and every read
+        // still out answers into nothing (a library title keeps its native controls, as without an opening).
         const started = read => read && Promise.resolve(read).then(value => ({ value }), error => ({ error }));
+        let refused = false;
+        const gate = options.admission ? Promise.resolve(options.admission).then(ok => ok === true, () => false).then(ok => {
+            if (!ok && c.absent) refused = true;
+            return ok || !c.absent;
+        }) : Promise.resolve(true);
+        /** The opening has ended for these entries: its operation, or a refused admission of an absent title. */
+        const ended = () => refused || !action.current();
         const settled = async read => { const r = await read; if (r?.error) throw r.error; return r?.value; };
         const follows = JE.arrNotify?.enabled?.() && c.episode == null && !shows('.je-notify-follow') ? started(JE.arrNotify.loadFollows(false)) : null;
-        const statusRead = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? started(JE.arrStatus.fetchKey(c.titleKey)) : null;
+        const statusRead = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey
+            ? started(gate.then(go => go && !ended() ? JE.arrStatus.fetchKey(c.titleKey) : null)) : null;
         const capsRead = c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet ? started(JE.arrAsk.me()) : null;
         const reportStatus = JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter && !shows('.jellyseerr-report-issue-icon') && JE.pluginConfig.JellyseerrEnabled
             ? started(JE.jellyseerrAPI?.checkUserStatus?.()) : null;
@@ -253,7 +264,7 @@
         }
         if (JE.arrNotify?.enabled?.() && c.episode == null && !source('follow', '.je-notify-follow', 'requests', JE.t('title_actions_follow'), 'notifications_none')) {
             await settled(follows);
-            if (!action.current()) return [];
+            if (ended()) return [];
             out.push({ id: 'follow', group: 'requests', label: JE.t('title_actions_follow'), icon: 'notifications_none',
                 pressed: JE.arrNotify.isFollowing(c.key), run: async (_opener, submitted) => {
                     const on = !JE.arrNotify.isFollowing(c.key);
@@ -264,11 +275,11 @@
         }
         // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
         const status = statusRead ? await settled(statusRead) : null;
-        if (!action.current()) return [];
+        if (ended()) return [];
         const titleStatus = status?.items?.[0];
         if (c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet) {
             const caps = await settled(capsRead);
-            if (!action.current()) return [];
+            if (ended()) return [];
             // Not while the title is already asked for, on its way or here: the page's own request control shows no
             // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
             // A row (`options.reconcile`) gets it either way, marked `askable`: it follows the newest status (D46S2-R7-5).
@@ -292,9 +303,9 @@
                 if (!action.current() || status?.cancelled) return [];
                 const permitted = status?.active === true && status.userFound === true && status.canReportIssues !== false;
                 // The title's Seerr record is read once the title is admitted.
-                if (permitted && options.admission) { await options.admission.catch(() => false); if (!action.current()) return []; }
+                if (permitted && (!await gate || ended())) return [];
                 const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type, action) : null;
-                if (!action.current()) return [];
+                if (ended()) return [];
                 const ok = permitted && (!JE.jellyseerrAPI?.reportContext || !!record?.mediaId);
                 const item = { jeAbsent: c.absent, Type: c.episode != null ? 'Episode' : c.season != null ? 'Season' : c.type === 'movie' ? 'Movie' : 'Series', IndexNumber: c.episode ?? c.season, ParentIndexNumber: c.season };
                 const control = ok && JE.jellyseerrIssueReporter.createReportButton?.(root || document.body, String(c.tmdbId), displayName(), c.type, null, item);
@@ -309,7 +320,7 @@
                     state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key }, { operation: submitted }) });
         }
         // What the admission proved (Open) and the providers' entries come once it has answered.
-        if (options.admission) { await options.admission.catch(() => false); if (!action.current()) return []; }
+        if (!await gate || ended()) return [];
         const proof = admissions.get(c);
         // Open goes to the accessible actual copy; never offered on that copy's own page.
         const same = id => id && String(id).replace(/-/g, '').toLowerCase() === String(proof.itemId).replace(/-/g, '').toLowerCase();
@@ -328,10 +339,10 @@
         } });
         for (const provider of providers.values()) {
             const result = await provider(c, { action, root, surface: options.surface });
-            if (!action.current()) return [];
+            if (ended()) return [];
             if (result) out.push(...(Array.isArray(result) ? result : [result]));
         }
-        return action.current() ? out : [];
+        return ended() ? [] : out;
     }
     /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
     const registrySize = () => live.size;

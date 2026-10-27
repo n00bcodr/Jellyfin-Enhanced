@@ -206,7 +206,8 @@
                 sync(entry, button); pairs.push([entry, button]);
                 button.onclick = async e => {
                     // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
-                    if (!JE.ownerOf(e) || !action.current() || button.disabled) return;
+                    // A choice still working on a press takes no second one (one submission per press).
+                    if (!JE.ownerOf(e) || !action.current() || button.disabled || button.getAttribute('aria-busy') === 'true') return;
                     const operation = A.generation(() => base.current() !== false);
                     // Feedback in the press's own frame while the action is admitted: the entry shows it is working.
                     button.setAttribute('aria-busy', 'true');

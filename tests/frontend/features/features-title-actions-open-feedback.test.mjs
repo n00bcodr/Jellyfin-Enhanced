@@ -41,7 +41,7 @@ test('row More: a title-free shell is drawn in the press frame, and the choices 
   assert.equal(h.document.activeElement, sheet.querySelector('.je-actions-entry:not(:disabled)'), 'focus moves to the first choice');
 });
 
-test('card More: the title appears only after admission; the entry reads run alongside the admission', async t => {
+test('card More: the title appears only after admission, and no per-title read leaves before it answers', async t => {
   const { h, more } = await cardHarness(t);
   const admission = h.hold('GET', '/title-actions/');
   const status = h.hold('GET', '/acquire/status');
@@ -51,9 +51,10 @@ test('card More: the title appears only after admission; the entry reads run alo
   assert.ok(shell);
   await delivered();
   assert.equal(shell.textContent.includes('The Matrix'), false, 'no title before the admission answers');
-  assert.equal(h.sent('GET', '/acquire/status').length, statusBefore + 1, 'the title status read is sent while the admission is still pending');
+  assert.equal(h.sent('GET', '/acquire/status').length, statusBefore, 'the title status is not read while the admission is pending');
   admission.resolve();
   await delivered();
+  assert.equal(h.sent('GET', '/acquire/status').length, statusBefore + 1, 'read once the title is admitted');
   assert.equal(shell.querySelector('.je-actions-subtitle').textContent, 'The Matrix', 'the admitted title is named while its details load');
   assert.equal(shell.querySelectorAll('.je-actions-entry').length, 0);
   status.resolve();
@@ -330,4 +331,75 @@ test('with Seerr off, the Seerr quota is not asked for (no 503 and no console er
   h.JE.pluginConfig.JellyseerrEnabled = false;
   assert.equal(await h.JE.jellyseerrAPI.fetchUserQuota(), null);
   assert.equal(h.sent('GET', '/jellyseerr/quota').length, 0);
+});
+
+// Review round 2 (PMR-1 to PMR-4), the reviewer's probes as regressions.
+
+test('PMR-3: a busy More entry takes one submission; a second press while it is admitted does nothing', async t => {
+  const h = setup(t); h.a.initialize(); mount(h); await delivered();
+  h.click(h.row().querySelector('.je-actions-more')); await delivered();
+  let shares = 0;
+  Object.defineProperty(h.window.navigator, 'share', { configurable: true, value: async () => { shares++; } });
+  const gate = h.hold('GET', '/title-actions/');
+  const entry = h.document.querySelector('.je-actions-entry[data-action="share"]');
+  h.click(entry); h.click(entry);
+  assert.equal(entry.getAttribute('aria-busy'), 'true');
+  gate.resolve(); await delivered();
+  assert.equal(shares, 1, 'one busy entry dispatches Share once');
+});
+
+test('PMR-3: a busy adapted bar control takes one submission, and is pressable again once it settles', async t => {
+  const h = setup(t);
+  h.respond('GET', '/title-actions/', [200, { allowed: true, itemId: 'a'.repeat(32) }]);
+  let opens = 0; h.JE.titleDetails.openItem = () => { opens++; };
+  h.a.initialize(); mount(h); await delivered();
+  const control = h.row().querySelector('[data-je-action-kind="open"]');
+  assert.ok(control);
+  const gate = h.hold('GET', '/title-actions/');
+  h.click(control); h.click(control);
+  assert.equal(control.getAttribute('aria-busy'), 'true');
+  gate.resolve(); await delivered();
+  assert.equal(opens, 1, 'one busy bar control dispatches Open once');
+  assert.equal(control.hasAttribute('aria-busy'), false);
+  h.click(control); await delivered();
+  assert.equal(opens, 2, 'a settled control takes the next press');
+});
+
+test('PMR-4: the visible compact Request shows busy in the press frame and clears when its action settles', async t => {
+  const h = setup(t); h.a.initialize(); mount(h); await delivered();
+  const gate = h.hold('GET', '/title-actions/');
+  const proxy = h.row().querySelector('.je-actions-row .je-actions-primary');
+  assert.ok(proxy);
+  h.click(proxy);
+  assert.equal(proxy.getAttribute('aria-busy'), 'true', 'the visible pressed control shows the busy feedback');
+  h.click(proxy);
+  assert.equal(h.sent('GET', '/title-actions/').filter(r => r[2].startsWith('/title-actions/movie/603')).length >= 1, true);
+  gate.resolve({ allowed: false }); await delivered();
+  assert.equal(proxy.hasAttribute('aria-busy'), false, 'cleared with its source after the refusal');
+  assert.equal(h.document.querySelector('.je-sheet, .je-sheet-shell'), null);
+});
+
+test('PMR-1: a More opening fetches no title facts before admission answers (and none after a refusal)', async t => {
+  const h = setup(t, { card: true }); h.a.initialize(); await delivered();
+  const gate = h.hold('GET', '/title-actions/');
+  const before = h.sent('GET', '/acquire/status').length;
+  h.click(h.document.querySelector('.card .je-card-more'));
+  await delivered();
+  assert.equal(h.sent('GET', '/acquire/status').length - before, 0, 'no per-title status read while admission remains unanswered');
+  gate.resolve({ allowed: false }); await delivered();
+  assert.equal(h.sent('GET', '/acquire/status').length - before, 0, 'nor after the refusal');
+});
+
+test('PMR-2: a refused row opening never reads report context or runs providers', async t => {
+  const h = setup(t); h.a.initialize();
+  let reports = 0, providers = 0;
+  const reportContext = h.JE.jellyseerrAPI.reportContext;
+  h.JE.jellyseerrAPI.reportContext = async (...args) => { reports++; return reportContext(...args); };
+  h.a.register('pmr-probe', async () => { providers++; return null; });
+  const gate = h.hold('GET', '/title-actions/');
+  mount(h);
+  h.click(h.row().querySelector('.je-actions-more, .je-actions-wide-more'));
+  gate.resolve({ allowed: false }); await delivered();
+  assert.equal(h.document.querySelector('.je-actions-sheet'), null);
+  assert.deepEqual({ reports, providers, titleReads: h.sent('GET', '/jellyseerr/movie/603').length }, { reports: 0, providers: 0, titleReads: 0 });
 });

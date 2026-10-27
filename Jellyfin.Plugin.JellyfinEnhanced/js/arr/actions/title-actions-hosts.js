@@ -309,6 +309,12 @@
         finally { if (!shown) A.discard(shell); }
     }
 
+    /** Marks an adapted control working on a press (or done) and mirrors it on the compact row's visible proxy of it. */
+    function busy(state, node, on) {
+        if (on) node.setAttribute('aria-busy', 'true'); else node.removeAttribute('aria-busy');
+        for (const proxy of state.compact?.proxies?.values() || []) if (proxy.jeActionSource === node) syncProxy(proxy, node);
+    }
+
     /** Reads a control's label without treating icon-font ligatures as spoken text. */
     function controlLabel(source) {
         if (source.getAttribute('aria-label') || source.title) return source.getAttribute('aria-label') || source.title;
@@ -330,6 +336,8 @@
         }
         const pressed = source.getAttribute('aria-pressed');
         if (pressed != null && proxy.getAttribute('aria-pressed') !== pressed) proxy.setAttribute('aria-pressed', pressed);
+        // A source working on a press (its admission pending) shows it on the visible control too.
+        if (source.getAttribute('aria-busy') === 'true') proxy.setAttribute('aria-busy', 'true'); else proxy.removeAttribute('aria-busy');
         const count = source.querySelector('.jellyseerr-issue-count-badge');
         const value = parseInt(count?.textContent || '0', 10);
         let badge = proxy.querySelector('.je-actions-badge');
@@ -443,8 +451,11 @@
                 // A press is an operation on this row's mount; owners that confirm first carry it.
                 proxy.onclick = e => {
                     e.preventDefault(); e.stopPropagation();
-                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
+                    // A source still working on a press takes no second one (one submission per press).
+                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true' && source.getAttribute('aria-busy') !== 'true')
                         A.dispatch(source, A.generation(() => rowCurrent(state)));
+                    // The press's feedback (the source's busy state) is shown on this visible control in the same frame.
+                    syncProxy(proxy, source);
                 };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
                 owned.proxies.set(id, proxy);
@@ -543,13 +554,14 @@
                     node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
                     if (entry.reason) node.dataset.jeActionReason = entry.reason;
                     node.onclick = e => {
-                        // Only a press someone made is the row's operation (D46S2-R11-1).
-                        if (!JE.ownerOf(e) || !action.current()) return;
+                        // Only a press someone made is the row's operation (D46S2-R11-1); a control still working on a
+                        // press takes no second one (one submission per press).
+                        if (!JE.ownerOf(e) || !action.current() || node.getAttribute('aria-busy') === 'true') return;
                         const operation = A.generation(() => action.current());
                         // Feedback in the press's own frame while the action is admitted: the control shows it is working.
-                        node.setAttribute('aria-busy', 'true');
+                        busy(state, node, true);
                         A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); })
-                            .finally(() => node.removeAttribute('aria-busy'));
+                            .finally(() => busy(state, node, false));
                     };
                 } else A.bindPress(node, action);
                 ours.add(node);
