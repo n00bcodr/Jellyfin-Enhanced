@@ -831,6 +831,8 @@ export const SITES = {
   },
   'jellyseerr/nativedetails/native-details.js': {
     'adaptListPage navigation history.back': [1, 'press', 'sync'],
+    'artPolicyMoved state artGeneration': [1, 'module', 'lifecycle: moves on with the person\'s access / presentation policy and session; it only ends kept artwork'],
+    'artPolicyMoved state artwork': [1, 'module', 'ui'],
     'backThenModal navigation history.back': [1, 'press', 'sync'],
     'backThenModal state pendingModal': [2, 'module', 'cache'],
     'cancelPendingModal state pendingModal': [1, 'module', 'cache'],
@@ -841,6 +843,7 @@ export const SITES = {
     'go navigation location.replace': [1, 'press', 'sync'],
     'go navigation Page.show': [1, 'press', 'sync'],
     'goHome navigation location.replace': [1, 'press', 'sync'],
+    'keepImages state artwork': [1, 'module', 'ui'],
     'mountExtras dialog showCollectionRequestModal': [1, 'press', 'callee'],
     'moved state navigated': [1, 'module', 'ui'],
     'onView navigation go': [1, 'press', 'after: the page\'s own state (state.aborted, current === state): the view it was read for is still the one shown'],
@@ -854,6 +857,7 @@ export const SITES = {
     'refuse navigation history.back': [1, 'press', 'sync'],
     'showOpen navigation go': [1, 'press', 'sync'],
     'start reload scheduleFullReload': [1, 'press', 'callee'],
+    'start state artGeneration': [2, 'module', 'lifecycle: moves on with the person\'s access / presentation policy and session; it only ends kept artwork'],
     'start state started': [1, 'module', 'ui'],
   },
   'jellyseerr/seerr-status.js': {
