@@ -65,9 +65,21 @@
         return JE.currentSettings?.isAdmin === true;
     }
 
-    // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
+    // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls.
+    // Keyed by server, user, session epoch and item; each entry also records the route generation and the
+    // item generation it was read in (see getItemCached).
     const itemCache = new Map();
     const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
+    // Moves on when what the server projects for this person may have changed (Hidden Content, Spoiler Guard,
+    // their access): a read that started before it is neither joined nor kept once it finishes.
+    let itemGeneration = 0;
+    function invalidateItems() {
+        itemGeneration++;
+        itemCache.clear();
+    }
+    window.addEventListener('je-spoiler-policy-changed', invalidateItems);
+    window.addEventListener('je-hidden-content-changed', invalidateItems);
+    document.addEventListener('je-access-revision', invalidateItems);
 
     // Protected Seerr avatars require authenticated blob fetches because a
     // plain <img> cannot attach Jellyfin auth headers. Keep one shared cache
@@ -158,13 +170,72 @@
     });
 
     /**
+     * The cache key of an item read: the server, the person, their session epoch and the item.
+     * @param {string} userId
+     * @param {string} itemId
+     * @returns {string}
+     */
+    function itemKey(userId, itemId) {
+        let server = '';
+        try { server = String((typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ''); } catch { /* none */ }
+        return `${server}|${userId}|${JE.session?.getEpoch?.() ?? 0}|${itemId}`;
+    }
+
+    /**
+     * Reads an item from the server. JE's own transport sends it uncached (`no-store`): jellyfin-web reads the same
+     * URL as it opens a details page, and the browser's HTTP cache would otherwise hold the page's own read until
+     * JE's finished (it lets one request per URL at a time through its cache). The transport also drops a read
+     * started under an earlier Hidden Content / Spoiler Guard policy or by another session.
+     * @param {string} userId
+     * @param {string} itemId
+     * @returns {Promise<object>}
+     */
+    function readItem(userId, itemId) {
+        if (typeof JE.core?.api?.jf === 'function') {
+            // Its own binding: which reads are shared is decided here (getItemCached), so the transport never joins a
+            // read this owner has already let go of.
+            const bound = typeof JE.core.api.session === 'function' ? { session: JE.core.api.session(), current: () => true } : undefined;
+            return JE.core.api.jf(`/Users/${userId}/Items/${itemId}`, { skipRetry: true, bound });
+        }
+        return ApiClient.getItem(userId, itemId);
+    }
+
+    /**
+     * Starts a read of an item and keeps it as the key's entry while it runs. Only the read that is still the key's
+     * entry when it finishes keeps its answer: one replaced meanwhile (a forced refresh, a policy change, a user
+     * switch) answers its own callers and nothing else.
+     * @param {string} key
+     * @param {string} userId
+     * @param {string} itemId
+     * @returns {Promise<object>}
+     */
+    function startItemRead(key, userId, itemId) {
+        const entry = { item: null, ts: Date.now(), promise: null, route: JE.routeGeneration?.() ?? 0, generation: itemGeneration };
+        entry.promise = readItem(userId, itemId).then((item) => {
+            if (itemCache.get(key) === entry) itemCache.set(key, { item, ts: Date.now(), promise: null, route: entry.route, generation: entry.generation });
+            return item;
+        }, (err) => {
+            if (itemCache.get(key) === entry) itemCache.delete(key);
+            throw err;
+        });
+        itemCache.set(key, entry);
+        return entry.promise;
+    }
+
+    /**
      * Deduplicated item fetch with short TTL cache.
-     * Prevents multiple modules from requesting the same item concurrently on detail page navigation.
+     * Prevents multiple modules from requesting the same item concurrently on detail page navigation: every caller
+     * joins the read already in flight for the same server, person, session and item.
+     *
+     * `visit: true` is a page's own check of what it shows (a details page, every time it is shown): it joins only a
+     * read started on the same route generation and never answers from a finished one, so a page shown again is
+     * checked again. When the person's policy changes while it runs, it asks once more under the new policy.
      * @param {string} itemId
      * @param {Object} [options]
      * @param {string} [options.userId]
      * @param {number} [options.ttlMs]
      * @param {boolean} [options.forceRefresh]
+     * @param {boolean} [options.visit]
      * @returns {Promise<object|null>}
      */
     async function getItemCached(itemId, options = {}) {
@@ -172,7 +243,25 @@
 
         const ttlMs = Number.isFinite(options.ttlMs) ? options.ttlMs : ITEM_CACHE_TTL_MS;
         const userId = options.userId || ApiClient.getCurrentUserId();
-        const key = `${userId}:${itemId}`;
+        const key = itemKey(userId, itemId);
+
+        if (options.visit) {
+            for (let attempt = 0; ; attempt++) {
+                const generation = itemGeneration;
+                const entry = itemCache.get(key);
+                const route = JE.routeGeneration?.() ?? 0;
+                const read = !options.forceRefresh && entry?.promise && entry.route === route && entry.generation === generation
+                    ? entry.promise : startItemRead(key, userId, itemId);
+                try {
+                    const item = await read;
+                    if (attempt > 0 || generation === itemGeneration) return item;
+                } catch (err) {
+                    const policyMoved = generation !== itemGeneration || JE.core?.api?.isPresentationAbort?.(err) === true;
+                    if (attempt > 0 || !policyMoved || key !== itemKey(userId, itemId)) throw err;
+                }
+            }
+        }
+
         const now = Date.now();
         const entry = itemCache.get(key);
 
@@ -185,18 +274,7 @@
             }
         }
 
-        const promise = ApiClient.getItem(userId, itemId)
-            .then((item) => {
-                itemCache.set(key, { item, ts: Date.now(), promise: null });
-                return item;
-            })
-            .catch((err) => {
-                itemCache.delete(key);
-                throw err;
-            });
-
-        itemCache.set(key, { item: null, ts: now, promise });
-        return promise;
+        return startItemRead(key, userId, itemId);
     }
 
 

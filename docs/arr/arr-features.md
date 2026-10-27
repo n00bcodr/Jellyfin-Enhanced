@@ -1357,6 +1357,13 @@ you retry. Unavailable parental evidence also gives the page a retryable unavail
 permits the title. Status reads retain their empty-status contract while a lookup is unavailable.
 Admission refusals are not cached, and abandoning a page does not free its still-running read's place.
 
+In the browser, opening one of these pages reads the title once for all of Jellyfin Enhanced's parts of it (the request
+controls, the details chips, the discovery rows), and that read never holds up Jellyfin's own read of the same title.
+Every view reads it again, so a page you come back to is checked again, and a Hidden Content, Spoiler Guard or access
+change while it loads makes it ask once more. The page's artwork is loaded once: a poster or card isn't fetched a
+second time as it appears, or again when it is scrolled out of view and back. New artwork (another grant, a changed
+setting) is a new address or a new page and loads anew.
+
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 
 ### Discover and search (JE mode)

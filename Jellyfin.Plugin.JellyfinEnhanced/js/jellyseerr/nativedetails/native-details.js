@@ -847,6 +847,52 @@
         adoptActions(state);
     }
 
+    /** The artwork of this server's synthetic items (signed, served `private, no-store`). */
+    const SIGNED_IMAGE = /\/Items\/([0-9a-f]{32})\/Images\//i;
+
+    /**
+     * Keeps a page's artwork to one load per image. jellyfin-web loads a lazy image in two steps: a hidden
+     * preloader (new Image) and, once that has loaded, the element's background with the same URL. An absent
+     * title's artwork may not be stored by the browser, so that second step fetched it again; and a loaded image
+     * scrolled out of view is emptied, then loaded again (both steps) when it comes back.
+     *   - As the preloader starts, the background gets that same URL while the element is still hidden
+     *     (lazy-hidden): the browser then has one load of it, which jellyfin-web's own later assignment of the
+     *     identical value reuses.
+     *   - An image emptied after it was shown is put back as jellyfin-web leaves a loaded one (before anything is
+     *     drawn without it), so coming back into view loads nothing.
+     * Nothing else changes: the URL and its signature are jellyfin-web's, it still fades a new image in, and a new
+     * grant or policy is a new URL (or a new page) and loads anew.
+     * @param {Object} state Page state.
+     * @returns {MutationObserver|null} Observer, or null when unsupported.
+     */
+    function keepImages(state) {
+        if (typeof MutationObserver !== 'function') return null;
+        const observer = new MutationObserver((records) => {
+            if (state.aborted || current !== state) return;
+            for (const record of records) {
+                const node = /** @type {HTMLElement} */ (record.target);
+                // Only as lazy-hidden is added: jellyfin-web starting its preloader, or emptying a loaded image.
+                if (node.tagName === 'IMG' || /\blazy-hidden\b/.test(record.oldValue || '') || !node.classList.contains('lazy-hidden')) continue;
+                const src = node.getAttribute('data-src');
+                const match = src ? SIGNED_IMAGE.exec(src) : null;
+                if (!match || !isSynthetic(match[1])) continue;
+                const shown = node.style.backgroundImage;
+                if (shown && shown !== 'none') continue;
+                // The exact text jellyfin-web assigns, so its own assignment is no change.
+                node.style.backgroundImage = "url('" + src + "')";
+                if (shown !== 'none') continue;
+                // Emptied after it was shown: loaded again, as jellyfin-web leaves an image once it has faded in.
+                node.removeAttribute('data-src');
+                node.classList.remove('lazy-hidden');
+                const canvas = node.previousSibling;
+                if (node.classList.contains('blurhashed') && canvas?.nodeName === 'CANVAS') /** @type {Element} */ (canvas).classList.add('lazy-hidden');
+                node.parentNode?.querySelector?.('.cardPadder')?.classList.add('lazy-hidden-children');
+            }
+        });
+        observer.observe(state.page, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, subtree: true });
+        return observer;
+    }
+
     /**
      * Stops what the previous synthetic page started and takes away every control this module drew,
      * copies included.
@@ -859,6 +905,7 @@
             try { state.controls?.destroy?.(); } catch { /* already gone */ }
             state.observer?.disconnect();
             state.rowObserver?.disconnect();
+            state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             controlsOf(state).forEach(n => n.remove());
             current = null;
@@ -1326,13 +1373,14 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, extras: null,
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
             token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
             dispose();
             current = state;
+            state.imageObserver = keepImages(state);
             // Titles get their request controls in the native action row; a person page has none.
             state.primary = isTitle ? primaryOf(state) : null;
             state.container = actionsOf(state);
@@ -1369,7 +1417,11 @@
         // page too (the title may have arrived since).
         const where = !isTitle ? Promise.resolve(null) : resolve({ id });
         try {
-            item = await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
+            // The visit's one read of the item, shared with the page's other JE readers (helpers.getItemCached): a
+            // look that overlaps another on this route joins it, a page shown again reads it again.
+            item = typeof JE.helpers?.getItemCached === 'function'
+                ? await JE.helpers.getItemCached(id, { userId: ApiClient.getCurrentUserId(), visit: true })
+                : await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
         } catch (err) {
             status = Number(err?.status || err?.response?.status || 0);
         }
