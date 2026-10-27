@@ -132,7 +132,7 @@ public class PrivacyCacheTests
         using var restarted = Create(f, library); restarted.LoadFromDisk(); Assert.Equal(0, restarted.Count); Assert.Equal(8, restarted.Version);
     }
 
-    private static TagCacheService Create(JE.Tests.ApiPluginFixture f, Mock<ILibraryManager> library) => new(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger);
+    private static TagCacheService Create(JE.Tests.ApiPluginFixture f, Mock<ILibraryManager> library) => new(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new Jellyfin.Plugin.JellyfinEnhanced.Helpers.MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
     private static TagCacheEntry Entry(long updated) => new() { Type = "Movie", Genres = ["Drama"], LastUpdated = updated };
     private static string SnapshotPath(JE.Tests.ApiPluginFixture f) => Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
     private static void Seed(JE.Tests.ApiPluginFixture f, Dictionary<string, TagCacheEntry> items)

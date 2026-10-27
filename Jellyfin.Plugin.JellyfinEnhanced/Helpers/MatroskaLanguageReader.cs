@@ -23,6 +23,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private const ulong ClusterId = 0x1F43B675;
         private const ulong TrackEntryId = 0xAE;
 
+        private const ulong SeekHeadId = 0x114D9B74;
+        private const ulong SeekId = 0x4DBB;
+        private const ulong SeekIdId = 0x53AB;
+        private const ulong SeekPositionId = 0x53AC;
+
         private const ulong TrackTypeId = 0x83;
         private const ulong LanguageId = 0x22B59C;
         private const ulong LanguageBcp47Id = 0x22B59D;
@@ -32,6 +37,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         // Language tags are tiny. Reject absurd element sizes rather than
         // allocating unbounded buffers if a malformed file is encountered.
         private const ulong MaxLanguageElementSize = 1024;
+
+        // A SeekHead lists a handful of top-level elements; anything larger is
+        // not worth walking for a hint.
+        private const ulong MaxSeekHeadSize = 64 * 1024;
 
         /// <summary>
         /// Reads effective language values for audio TrackEntry elements, in
@@ -56,11 +65,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public static bool TryReadAudioLanguages(
             string? path,
             out IReadOnlyList<string?> languages)
+            => TryReadAudioLanguages(path, out languages, out _);
+
+        /// <summary>
+        /// <see cref="TryReadAudioLanguages(string?, out IReadOnlyList{string?})"/>,
+        /// also telling a failure that says nothing about the file's contents
+        /// (missing file, I/O or permission error) apart from a file that was
+        /// read and is not usable Matroska. <see cref="MatroskaLanguageCache"/>
+        /// remembers only the latter.
+        /// </summary>
+        internal static bool TryReadAudioLanguages(
+            string? path,
+            out IReadOnlyList<string?> languages,
+            out bool transientFailure)
         {
             languages = Array.Empty<string?>();
+            transientFailure = false;
 
-            if (!IsSupportedPath(path) || !File.Exists(path))
+            if (!IsSupportedPath(path))
             {
+                return false;
+            }
+
+            if (!File.Exists(path))
+            {
+                transientFailure = true;
                 return false;
             }
 
@@ -95,10 +124,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             }
             catch (IOException)
             {
+                transientFailure = true;
                 return false;
             }
             catch (UnauthorizedAccessException)
             {
+                transientFailure = true;
                 return false;
             }
             catch (InvalidDataException)
@@ -115,7 +146,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             }
         }
 
-        private static bool IsSupportedPath(string? path)
+        internal static bool IsSupportedPath(string? path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -170,12 +201,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             stream.Position = segment.DataStart;
 
             var segmentEnd = segment.End ?? stream.Length;
+            long? tracksPosition = null;
+            var seekHeadSeen = false;
 
             while (stream.Position < segmentEnd && stream.Position < stream.Length)
             {
                 if (!TryReadElementHeader(stream, out var element))
                 {
-                    return false;
+                    break;
                 }
 
                 if (element.Id == TracksId)
@@ -189,29 +222,143 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return true;
                 }
 
-                // Tracks normally precedes the first media Cluster. Do not scan
-                // through the media payload if a malformed/unusual file places
-                // Tracks later; just fall back to Jellyfin's current language.
-                if (element.Id == ClusterId)
-                {
-                    return false;
-                }
-
-                if (!element.End.HasValue)
-                {
-                    return false;
-                }
-
-                if (element.End.Value > segmentEnd
+                // Tracks usually precedes the first media Cluster, but
+                // mkvpropedit moves it to the end of the file when an edit (a
+                // language tag, say) no longer fits in place. The walk does not
+                // scan through the media payload; the SeekHead's Tracks
+                // position, if there was one, is tried instead.
+                if (element.Id == ClusterId
+                    || !element.End.HasValue
+                    || element.End.Value > segmentEnd
                     || element.End.Value > stream.Length)
                 {
-                    return false;
+                    break;
+                }
+
+                // Only the first SeekHead is read, and only for its Tracks entry,
+                // so a Seek pointing at a further SeekHead is never followed.
+                if (element.Id == SeekHeadId && !seekHeadSeen)
+                {
+                    seekHeadSeen = true;
+                    if (element.Size <= MaxSeekHeadSize)
+                    {
+                        tracksPosition = TryReadTracksSeekPosition(stream, element);
+                    }
                 }
 
                 stream.Position = element.End.Value;
             }
 
-            return false;
+            return tracksPosition.HasValue
+                && TryReadTracksAt(stream, segment, segmentEnd, tracksPosition.Value, out tracks);
+        }
+
+        /// <summary>
+        /// Returns the SeekHead's position for Tracks (relative to the Segment's
+        /// data start), or null when it has none or cannot be parsed: the
+        /// SeekHead is only a hint, so a bad one never fails the read.
+        /// </summary>
+        private static long? TryReadTracksSeekPosition(
+            Stream stream,
+            ElementHeader seekHead)
+        {
+            var end = seekHead.End!.Value;
+            stream.Position = seekHead.DataStart;
+
+            while (stream.Position < end)
+            {
+                if (!TryReadElementHeader(stream, out var seek)
+                    || !seek.End.HasValue
+                    || seek.End.Value > end)
+                {
+                    return null;
+                }
+
+                if (seek.Id == SeekId)
+                {
+                    ulong? targetId = null;
+                    ulong? position = null;
+
+                    while (stream.Position < seek.End.Value)
+                    {
+                        if (!TryReadElementHeader(stream, out var child)
+                            || !child.End.HasValue
+                            || child.End.Value > seek.End.Value)
+                        {
+                            return null;
+                        }
+
+                        // SeekID holds the target's id bytes big-endian, which
+                        // reads back as the same value TryReadElementHeader
+                        // gives an id.
+                        if (child.Id is SeekIdId or SeekPositionId)
+                        {
+                            if (!TryReadUnsignedInteger(stream, child, out var value))
+                            {
+                                return null;
+                            }
+
+                            if (child.Id == SeekIdId)
+                            {
+                                targetId = value;
+                            }
+                            else
+                            {
+                                position = value;
+                            }
+                        }
+
+                        stream.Position = child.End.Value;
+                    }
+
+                    if (targetId == TracksId && position.HasValue)
+                    {
+                        return position.Value <= long.MaxValue ? (long)position.Value : null;
+                    }
+                }
+
+                stream.Position = seek.End.Value;
+            }
+
+            return null;
+        }
+
+        private static bool TryReadTracksAt(
+            Stream stream,
+            ElementHeader segment,
+            long segmentEnd,
+            long position,
+            out ElementHeader tracks)
+        {
+            tracks = default;
+
+            long target;
+            try
+            {
+                target = checked(segment.DataStart + position);
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+
+            if (target >= segmentEnd || target >= stream.Length)
+            {
+                return false;
+            }
+
+            stream.Position = target;
+            if (!TryReadElementHeader(stream, out var element)
+                || element.Id != TracksId
+                || !element.End.HasValue
+                || element.End.Value > segmentEnd
+                || element.End.Value > stream.Length)
+            {
+                return false;
+            }
+
+            tracks = element;
+            return true;
         }
 
         private static bool TryParseTracks(

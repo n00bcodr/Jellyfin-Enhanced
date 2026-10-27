@@ -439,6 +439,8 @@ The retained cache grows with the number of included items. Exclude large librar
 
     Builds load item data in small pages to reduce peak memory.
 
+    Audio languages that JE reads from Matroska track headers (for regional tags such as `pt-BR`) are kept in `matroska-languages.json` next to the tag cache, keyed by file path, size and modification time. Later rebuilds, reconciles and tag-data requests do not open an unchanged file again, which matters on network and cloud mounts where each open can download a large read-ahead.
+
     Turning server mode off releases the in-memory cache and stops loading, building, monitoring, and scheduled refresh work. The saved snapshot remains on disk. Clients pick up the switch on their next load.
 
     Re-enabling from the dashboard restores the snapshot and catches up on missed changes in the background, without a restart.

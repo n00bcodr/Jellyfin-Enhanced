@@ -495,7 +495,7 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 | Location | Files and responsibilities |
 |---|---|
 | `Helpers/` | `ArrUrlGuard.cs` checks integration URLs; `BuildAttestation.cs` handles release attestation; `ProviderHelper.cs` and `UserHelper.cs` resolve provider/user identifiers; `ReviewVisibility.cs` applies author visibility; `TagEpisodeSelector.cs` chooses representative episodes with usable streams. |
-| `Helpers/` language handling | `MatroskaLanguageReader.cs`, `MediaStreamLanguageResolver.cs` recover stream language data; `AudioLanguageTagHelper.cs` maps base/regional codes to tag names and computes changes. |
+| `Helpers/` language handling | `MatroskaLanguageReader.cs`, `MediaStreamLanguageResolver.cs` recover stream language data; `MatroskaLanguageCache.cs` keeps each file's parsed languages (persisted, keyed by path, size and modification time) so unchanged files are not reopened; `AudioLanguageTagHelper.cs` maps base/regional codes to tag names and computes changes. |
 | `Helpers/Jellyseerr/` | `SeerrHttpHelper.cs`, `JellyseerrPermissionHelper.cs`, `JellyseerrUserImportHelper.cs`: HTTP, permission and import helpers. `ParentalRatingDecision.cs`, `ParentalTagDecision.cs`, `SeerrCertificationExtractor.cs`, `SeerrTagSignatureExtractor.cs`: shared parental decisions/extraction. |
 | `Extensions/` | `ItemRepositoryExtensions.cs`, `JellyfinDbContextExtensions.cs`, `UserManagerExtensions.cs`: repository/database provider lookups and compatible user enumeration across server API changes. |
 | `Model/TagCacheEntry.cs` | Precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |

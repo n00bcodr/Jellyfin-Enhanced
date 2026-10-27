@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -167,7 +168,7 @@ public class TaskMetadataTests
         var writes = 0;
         library.Setup(l => l.UpdateItemAsync(movie, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Callback(() => writes++).Returns(Task.CompletedTask);
         var localization = new Mock<MediaBrowser.Model.Globalization.ILocalizationManager>();
-        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, localization.Object, f.Core.Logger);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, localization.Object, f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
         var previous = BaseItem.LibraryManager;
         BaseItem.LibraryManager = library.Object;
         try

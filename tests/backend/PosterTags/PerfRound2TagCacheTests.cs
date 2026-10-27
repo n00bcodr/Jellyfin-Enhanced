@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
@@ -57,7 +58,7 @@ public class PerfRound2TagCacheTests
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).ToArray());
         library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
         library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
-        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
         cache.BuildFullCache(null, CancellationToken.None);
         Assert.Equal(all.Length, cache.Count);
         foreach (var container in new BaseItem[] { series, season, specialSeason })
@@ -97,13 +98,13 @@ public class PerfRound2TagCacheTests
         File.WriteAllText(snapshot, JsonSerializer.Serialize(new { SchemaVersion = 8, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = new Dictionary<string, TagCacheEntry>() }));
 
         // Shutdown applies the queued update synchronously: the first rebuild adds the entry...
-        using (var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger))
+        using (var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger)))
         {
             cache.LoadFromDisk();
             cache.EnqueueUpdate(episode.Id);
         }
         var afterFirst = File.ReadAllText(snapshot);
-        using (var restarted = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger))
+        using (var restarted = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger)))
         {
             restarted.LoadFromDisk();
             Assert.True(restarted.TryGetEntry(episode.Id, out var added));

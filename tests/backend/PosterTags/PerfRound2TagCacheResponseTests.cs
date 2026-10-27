@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
@@ -62,7 +63,7 @@ public class PerfRound2TagCacheResponseTests
                     [Episode.ToString("N")] = new() { Type = "Episode", SeriesId = SeriesId.ToString("N"), Genres = ["Episode secret"], LastUpdated = 150 }
                 }
             }));
-            Cache = new TagCacheService(Library.Object, Fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), Fixture.Core.Logger);
+            Cache = new TagCacheService(Library.Object, Fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), Fixture.Core.Logger, new MatroskaLanguageCache(Fixture.Core.Paths.Object, Fixture.Core.Logger));
             Cache.LoadFromDisk();
             var services = new ServiceCollection();
             services.AddLogging();

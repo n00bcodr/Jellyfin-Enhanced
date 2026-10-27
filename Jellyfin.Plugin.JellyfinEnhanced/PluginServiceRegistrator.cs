@@ -59,6 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<WatchlistMonitor>();
             serviceCollection.AddSingleton<CatchUpLogService>();
             serviceCollection.AddSingleton<SeerrScanTriggerService>();
+            // Matroska track languages per file (size + mtime), so tag-cache
+            // rebuilds and tag-data requests don't reopen unchanged media files
+            // -- see MatroskaLanguageCache for why that matters on network mounts.
+            serviceCollection.AddSingleton<Helpers.MatroskaLanguageCache>();
             serviceCollection.AddSingleton<TagCacheService>();
             serviceCollection.AddSingleton<TagCacheMonitor>();
             // Local CDN subsystem: serves every third-party static asset (icons, fonts,

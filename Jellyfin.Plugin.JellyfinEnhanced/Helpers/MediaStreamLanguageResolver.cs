@@ -13,12 +13,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// pt-BR or en-US to their base ISO-639 language. For local Matroska sources,
     /// prefer the authoritative BCP-47 value read directly from TrackEntry while
     /// preserving Jellyfin's existing language as a fallback.
+    ///
+    /// The file is only consulted when the source has embedded audio streams for
+    /// its languages to align with, and, given a <see cref="MatroskaLanguageCache"/>,
+    /// only opened when it changed since it was last read. A Jellyfin language
+    /// of "por" or "eng" is not a reason to skip the read: that is exactly the
+    /// reduced value the file's BCP-47 tag corrects.
     /// </summary>
     internal static class MediaStreamLanguageResolver
     {
         public static IReadOnlyList<ResolvedMediaStream> Resolve(
             MediaSourceInfo source,
-            string? fallbackPath = null)
+            string? fallbackPath = null,
+            MatroskaLanguageCache? cache = null)
         {
             if (source.MediaStreams == null || source.MediaStreams.Count == 0)
             {
@@ -29,14 +36,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 ? source.Path
                 : fallbackPath;
 
-            var hasMatroskaLanguages =
-                MatroskaLanguageReader.TryReadAudioLanguages(
-                    sourcePath,
-                    out var matroskaAudioLanguages);
-
             var internalAudioCount = source.MediaStreams.Count(
                 stream => stream.Type == MediaStreamType.Audio
                     && !stream.IsExternal);
+
+            // The file's languages can only be aligned onto embedded audio
+            // streams, so without any there is nothing to read (or stat) for.
+            IReadOnlyList<string?> matroskaAudioLanguages = Array.Empty<string?>();
+            var hasMatroskaLanguages =
+                internalAudioCount > 0
+                && (cache != null
+                    ? cache.TryGetAudioLanguages(sourcePath, out matroskaAudioLanguages)
+                    : MatroskaLanguageReader.TryReadAudioLanguages(sourcePath, out matroskaAudioLanguages));
 
             // Only align by ordinal when both views contain exactly the same
             // number of embedded audio tracks. This prevents a missing stream
