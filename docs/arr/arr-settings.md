@@ -708,6 +708,8 @@ Settings that work with Seerr or with Jellyfin Enhanced handling requests live o
 really needs, not on "Enable Seerr integration"; until that is set up it is greyed out with a short note saying what is
 missing, and its stored value is kept.
 
+![Requests & discovery on the *arr tab, with Seerr off and Jellyfin Enhanced handling requests](../images/arr-requests-discovery-settings.png)
+
 | Setting | Default | Needs |
 |---|---|---|
 | **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** (`NativeAbsentDetailsEnabled`) | Off | Request handling set to Jellyfin Enhanced and a TMDB API key (the pages read TMDB), or Seerr set up in the other modes |
