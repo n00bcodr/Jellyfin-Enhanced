@@ -413,7 +413,7 @@
     "toast_bookmark_updated": "{{icon:success}} Lesezeichen aktualisiert",
     "toast_bookmark_deleted": "{{icon:trash}} Lesezeichen gelöscht",
     "toast_bookmark_save_failed": "{{icon:error}} Fehler beim Speichern des Lesezeichens",
-    "toast_bookmark_delete_failed": "{{icon:error}} Fehler beim Löschen des Lesezeichens",
+    "toast_bookmark_delete_failed": "{{icon:error}} Löschen des Lesezeichen fehlgeschlagen",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Zu Lesezeichen gesprungen",
     "bookmark_cleanup_complete": "Bereinigung abgeschlossen: {count} verwaiste Lesezeichen entfernt",
     "bookmark_cleanup_failed": "Bereinigung fehlgeschlagen",
@@ -710,10 +710,10 @@
     "header_more_actions": "Mehr von Jellyfin Enhanced",
     "panel_settings_subtitles_text_effect": "Texteffekt",
     "toast_subtitle_text_effect": "{{icon:paint}} Untertitel-Texteffekt: {effect}",
-    "jellyseerr_tvdb_match_failed": "Suche nach Übereinstimmungen fehlgeschlagen. Gib die TVDB ID der Serie manuell ein (die Zahl in ihrer thetvdb.com-URL).",
+    "jellyseerr_tvdb_match_failed": "Suche nach Übereinstimmungen fehlgeschlagen. Gib die TVDB ID der Serie manuell ein (die Zahl in der thetvdb.com-URL).",
     "jellyseerr_tvdb_id_label": "TVDB ID",
-    "jellyseerr_tvdb_id_placeholder": "e.g. 81189",
-    "jellyseerr_tvdb_match_none": "Keine Übereinstimmungen gefunden. Gib die TVDB ID der Serie manuell ein (die Zahl in ihrer thetvdb.com-URL).",
+    "jellyseerr_tvdb_id_placeholder": "z.B. 81189",
+    "jellyseerr_tvdb_match_none": "Keine Übereinstimmungen gefunden. Gib die TVDB ID der Serie manuell ein (die Zahl in der thetvdb.com-URL).",
     "jellyseerr_tvdb_match_notice": "Diese Serie konnte nicht automatisch mit TheTVDB abgeglichen werden. Wähle unten die passende Übereinstimmung oder gib die TVDB ID ein.",
     "jellyseerr_modal_toast_tvdb_required": "{{icon:warning}} Wähle eine Übereinstimmung oder gib eine gültige TVDB ID ein, um diese Serie anzufragen",
     "jellyseerr_tvdb_match_searching": "Suche nach Übereinstimmungen…",
@@ -778,6 +778,5 @@
     "catchup_top_watched": "Am häufigsten gesehen",
     "catchup_top_dismissed": "Am häufigsten verworfen",
     "catchup_top_watchlisted": "Am häufigsten gemerkt",
-    "catchup_failed": "Fehlgeschlagen: {error}",
-    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
+    "catchup_failed": "Fehlgeschlagen: {error}"
 }
