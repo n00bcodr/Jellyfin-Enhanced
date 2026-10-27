@@ -550,6 +550,8 @@
     "calendar_digital_release": "Digital Release",
     "calendar_physical_release": "Physical Release",
     "calendar_episode": "Episode",
+    "calendar_finale": "Finale",
+    "calendar_collapse_episodes": "Collapse episodes",
     "calendar_anime": "Anime",
     "calendar_open_in_shoko": "Open in Shoko",
     "calendar_series": "Series",

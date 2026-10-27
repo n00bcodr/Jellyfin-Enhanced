@@ -228,6 +228,8 @@
     "hidden_content_add_back_to_cw": "Lisää takaisin jatka katselua -listaan",
     "feature_auto_skip_outro": "{{icon:skip}} Auto-Ohita Outro",
     "calendar_episode": "Jakso",
+    "calendar_finale": "Finaali",
+    "calendar_collapse_episodes": "Tiivistä jaksot",
     "calendar_anime": "Anime",
     "calendar_open_in_shoko": "Avaa Shokossa",
     "feature_tags_hide_on_hover": "{{icon:eye}} Piilota tagit esikatselussa",

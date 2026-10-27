@@ -505,6 +505,8 @@
     "calendar_digital_release": "الإصدار الرقمي",
     "calendar_physical_release": "الإصدار المادي",
     "calendar_episode": "الحلقة",
+    "calendar_finale": "الحلقة الأخيرة",
+    "calendar_collapse_episodes": "طي الحلقات",
     "calendar_anime": "أنمي",
     "calendar_open_in_shoko": "فتح في Shoko",
     "calendar_series": "مسلسل",

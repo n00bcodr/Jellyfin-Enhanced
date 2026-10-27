@@ -11618,6 +11618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             SeasonNumber = seasonNumber,
                             EpisodeNumber = episodeNumber,
                             EpisodeTitle = episodeTitle,
+                            FinaleType = (string?)episode.finaleType,
                             Overview = (string?)episode.overview,
                             TvdbId = (int?)episode.series?.tvdbId,
                             ImdbId = (string?)episode.series?.imdbId,

@@ -601,6 +601,35 @@
       font-size: 22px;
     }
 
+    .je-calendar-group-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0.15em auto 0;
+      padding: 0;
+      background: none;
+      border: none;
+      color: inherit;
+      opacity: 0.75;
+      cursor: pointer;
+    }
+
+    .je-calendar-group-toggle:hover {
+      opacity: 1;
+    }
+
+    .je-calendar-group-toggle .material-icons {
+      font-size: 18px;
+    }
+
+    .je-calendar-card-image-wrap .je-calendar-group-toggle {
+      position: absolute;
+      bottom: 0.2em;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+    }
+
     .je-calendar-play-btn {
       background: #4caf50;
       border: none;

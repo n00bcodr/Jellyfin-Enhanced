@@ -337,6 +337,59 @@
     return `background-image: linear-gradient(${overlay}, ${overlay}), url('${safeUrl}'); background-size: cover; background-position: center; background-repeat: no-repeat;`;
   }
 
+  // Several episodes of one series+season on the same day collapse into one
+  // entry (S01E01-07) with an expand chevron, like Sonarr's own calendar.
+  function collapseEpisodes(events) {
+    if (!state.settings.collapseEpisodes) return events;
+    const keyOf = (e) => (e.type === "Series" && e.seasonNumber != null && e.episodeNumber != null)
+      ? `${e.title}|${e.seasonNumber}|${String(e.releaseDate).slice(0, 10)}` : null;
+    const buckets = new Map();
+    events.forEach((e) => {
+      const k = keyOf(e);
+      if (k) buckets.set(k, [...(buckets.get(k) || []), e]);
+    });
+    const out = [];
+    const done = new Set();
+    events.forEach((e) => {
+      const k = keyOf(e);
+      const members = k && buckets.get(k);
+      if (!members || members.length < 2) { out.push(e); return; }
+      if (done.has(k)) return;
+      done.add(k);
+      const sorted = [...members].sort((a, b) => a.episodeNumber - b.episodeNumber);
+      if (state.expandedGroups.has(k)) {
+        sorted.forEach((m, i) => out.push(i === sorted.length - 1 ? { ...m, groupKey: k, groupExpanded: true } : m));
+      } else {
+        out.push({ ...sorted[0], groupKey: k, groupMembers: sorted });
+      }
+    });
+    return out;
+  }
+
+  function isFinale(event) {
+    const hit = (e) => e.finaleType === "season" || e.finaleType === "series";
+    return hit(event) || !!event.groupMembers?.some(hit);
+  }
+
+  // Subtitle with a trailing finale marker when the episode closes a season/series.
+  function withFinale(event, text) {
+    if (!isFinale(event)) return text;
+    const label = window.JellyfinEnhanced.t("calendar_finale");
+    return text ? `${text} \u2022 ${label}` : label;
+  }
+
+  function groupSubtitle(event) {
+    const m = event.groupMembers;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `S${pad(event.seasonNumber)}E${pad(m[0].episodeNumber)}-${pad(m[m.length - 1].episodeNumber)}`;
+  }
+
+  function groupToggleHtml(event) {
+    if (!event.groupKey) return "";
+    const expanded = !!event.groupExpanded;
+    return `<button class="je-calendar-group-toggle" data-group-key="${escapeHtml(event.groupKey)}" aria-expanded="${expanded}"><span class="material-icons">${expanded ? "expand_less" : "expand_more"}</span></button>`;
+  }
+
   /**
    * Render calendar event
    */
@@ -347,14 +400,15 @@
     const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : (event.source === "Shoko" ? "je-calendar-shoko-icon" : "je-calendar-radarr-icon");
-    const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
+    const subText = withFinale(event, event.groupMembers ? groupSubtitle(event) : event.subtitle);
+    const subtitle = subText ? `<span class="je-calendar-event-subtitle">${escapeHtml(subText)}</span>` : "";
     const hasFileClass = event.hasFile ? " je-has-file" : "";
     const tooltip = buildEventTooltip(event);
     const hasBackdropClass = (state.settings.displayMode === "backdrop" && getEventPosterUrl(event)) ? " je-has-backdrop" : "";
     const statusIcons = renderStatusIcons(event);
     const statusTop = statusIcons ? `<div class="je-calendar-event-status-top">${statusIcons}</div>` : "";
     const timeText = formatTimeText(event);
-    const playButton = event.hasFile ? `<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
+    const playButton = event.hasFile && !event.groupMembers ? `<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
     const backgroundStyle = getEventBackgroundStyle(event, color);
 
     return `
@@ -367,6 +421,7 @@
           <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span></span>
           ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
+        ${groupToggleHtml(event)}
       </div>
     `;
   }
@@ -379,13 +434,13 @@
     const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
     const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : (event.source === "Shoko" ? "je-shoko-icon" : "je-radarr-icon");
-    const subtitle = event.subtitle || "";
+    const subtitle = withFinale(event, event.groupMembers ? groupSubtitle(event) : (event.subtitle || ""));
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
 
     // Build indicators array (only add if they exist)
     const indicators = [];
-    if (event.hasFile) {
+    if (event.hasFile && !event.groupMembers) {
       indicators.push(`<button class="je-calendar-play-btn" title="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>`);
     }
     const statusIcons = renderStatusIcons(event);
@@ -425,6 +480,7 @@
             ${timeLabel ? `<span>• ${escapeHtml(timeLabel)}</span>` : ""}
           </div>
         </div>
+        ${groupToggleHtml(event)}
       </div>
     `;
   }
@@ -441,22 +497,25 @@
       const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : (event.source === "Shoko" ? "je-calendar-shoko-icon" : "je-calendar-radarr-icon");
       const statusIcons = renderStatusIcons(event);
       const timePill = buildTimePill(event);
-      const playButton = event.hasFile ? `<button class="je-calendar-play-btn je-calendar-play-btn-card" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
+      const playButton = event.hasFile && !event.groupMembers ? `<button class="je-calendar-play-btn je-calendar-play-btn-card" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
       const timeRow = timePill || playButton ? `<div class="je-calendar-card-time-row">${timePill}${playButton}</div>` : "";
       const statusTop = statusIcons ? `<div class="je-calendar-card-status-top">${statusIcons}</div>` : "";
       const color = getEventColor(event);
+      const cardSubtitle = withFinale(event, event.groupMembers ? groupSubtitle(event) : event.subtitle);
+      const toggle = groupToggleHtml(event);
       if (poster) {
         return `
           <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
             <div class="je-calendar-card-image-wrap">
               <img src="${normalizeImageUrl(poster)}" alt="" class="je-calendar-card-image">
               ${statusTop}
+              ${toggle}
               <div class="je-calendar-card-overlay">
                 ${timeRow}
                 <div class="je-calendar-card-title">
                   <span class="je-calendar-card-title-text">${escapeHtml(event.title)}</span>
                 </div>
-                ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
+                ${cardSubtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(cardSubtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
                 <div class="je-calendar-card-meta">
                   ${renderTypeIconHtml(event, typeIcon, iconClass)}
                   <span>${releaseTypeLabel}</span>
@@ -472,11 +531,12 @@
       return `
         <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
           ${statusTop}
+          ${toggle}
           ${timeRow}
           <div class="je-calendar-card-title">
             <span class="je-calendar-card-title-text">${escapeHtml(event.title)}</span>
           </div>
-          ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
+          ${cardSubtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(cardSubtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
           <div class="je-calendar-card-meta">
             ${renderTypeIconHtml(event, typeIcon, iconClass)}
             <span>${releaseTypeLabel}</span>
@@ -497,6 +557,7 @@
   P.renderEvent = renderEvent;
   P.renderAgendaEvent = renderAgendaEvent;
   P.renderCardItems = renderCardItems;
+  P.collapseEpisodes = collapseEpisodes;
   P.eventHasTime = eventHasTime;
   P.compareEventsWithinDay = compareEventsWithinDay;
 })();
