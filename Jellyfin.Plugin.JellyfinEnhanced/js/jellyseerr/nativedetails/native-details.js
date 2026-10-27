@@ -15,7 +15,8 @@
 // The server facade answers the page's requests for the synthetic id (no library rows). This module
 // adapts the page:
 //   - hides the native actions a title without files can't do (Play, Shuffle, Played, Favourite,
-//     More, Download, card play/options buttons) and blocks card context menus;
+//     More, Download, card play/options buttons) and blocks card context menus, and the "Ends at"
+//     estimate of the title and its episode rows (nothing plays; the runtime stays);
 //   - holds the Requests & downloads controls: the status pill and journey, Notify me, Manage, Get
 //     Season N / Get it and the missing-episode rows come from the details surface (status-details,
 //     ask-actions, ask-episodes), which read status by this page's id; this module adds Request (the
@@ -23,7 +24,8 @@
 //   - lays them out as Jellyfin lays out a library title of the same type: the request action (or
 //     Open) leads the native action row where Play sits, the other request actions follow it as
 //     icon buttons, Spoiler Guard is an icon button in the row where the library's is, and the
-//     status pill (with the request's cost lines under it) heads the details section;
+//     status pill (with the request's cost lines under it) heads the details section, the page's one
+//     status (Jellyfin's own Missing/Unaired marker is not shown while it is);
 //   - adds what the modal shows that the native layout has no place for: the ratings row (where
 //     JE's MDBList ratings sit on a library title), the information panel (status, dates, money,
 //     language, countries, studios, streaming, links), the trailers and the collection card;
@@ -59,6 +61,11 @@
     const REFUSED_VIEW_CLASS = 'je-native-absent-refused-view';
     /** A restored page whose access is being checked again: nothing of its earlier content shows until it passes. */
     const CHECKING_CLASS = 'je-native-absent-checking';
+    /**
+     * On a title page while the details surface's status shows in its slot: that status is the page's one status, so
+     * Jellyfin's own Missing/Unaired marker in the title area (a synthetic episode is Virtual) is not shown as well.
+     */
+    const STATUS_CLASS = 'je-native-absent-has-status';
     const STYLE_ID = 'je-native-absent-style';
     /** The page's request controls in the native action row, in Play's place (first in the row). */
     const PRIMARY_CLASS = 'je-native-absent-primary';
@@ -410,6 +417,10 @@
             + `.je-native-absent-notes:empty { display: none; }\n`
             + `.je-native-absent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }\n`
             + `.je-native-absent-status:empty { display: none; }\n`
+            // Nothing on these pages plays: no "Ends at" estimate (the runtime stays), on the title and its episode rows.
+            + `.${PAGE_CLASS} .endsAt { display: none !important; }\n`
+            + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .missingIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .missingIndicator, `
+            + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .unairedIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .unairedIndicator { display: none !important; }\n`
             + `.je-native-absent-btn { display: inline-flex; align-items: center; gap: 0.4em; min-height: 44px; padding: 0 1.1em; border-radius: 6px; margin: 0; }\n`
             + `.je-native-absent-btn .material-icons { font-size: 1.25em; }\n`
             + `.je-native-absent-ratings { margin: 0.4em 0; }\n`
@@ -948,6 +959,8 @@
             try { state.controls?.destroy?.(); } catch { /* already gone */ }
             state.observer?.disconnect();
             state.rowObserver?.disconnect();
+            state.statusObserver?.disconnect();
+            state.page?.classList.remove(STATUS_CLASS);
             state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             if (state.relookTimer) clearTimeout(state.relookTimer);
@@ -1226,9 +1239,22 @@
             });
         }
         reconcile(state);
+        markStatus(state);
         showOpen(state, status?.openItemId || null);
         // The movie's Request mount follows the same status (asked, on its way, Search…).
         state.controls?.update?.(status || null);
+    }
+
+    /**
+     * Whether the page's one status is the details surface's (its status block, or Seerr's status row, in the slot):
+     * then Jellyfin's own Missing/Unaired marker is not shown as well (see STATUS_CLASS).
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function markStatus(state) {
+        if (state.aborted || current !== state) return;
+        const shown = !!state.container?.querySelector('.je-native-absent-status > .je-arr-status, .je-native-absent-status > .je-native-absent-seerr');
+        state.page.classList.toggle(STATUS_CLASS, shown);
     }
 
     /**
@@ -1445,7 +1471,7 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, extras: null,
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, statusObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0, relookTimer: 0,
             viewer: window.ApiClient?.getCurrentUserId?.() || null, server: serverId(),
             token: String(++tokens), route: JE.routeKey()
@@ -1457,6 +1483,14 @@
             // Titles get their request controls in the native action row; a person page has none.
             state.primary = isTitle ? primaryOf(state) : null;
             state.container = actionsOf(state);
+            const slot = state.container?.querySelector('.je-native-absent-status');
+            if (slot && typeof MutationObserver === 'function') {
+                // The details surface draws, redraws and takes away its status in the slot (a status that went away
+                // gives the page back Jellyfin's own marker).
+                state.statusObserver = new MutationObserver(() => markStatus(state));
+                state.statusObserver.observe(slot, { childList: true });
+            }
+            markStatus(state);
             if (state.primary && typeof MutationObserver === 'function') {
                 // The controls redraw themselves (status changes, asks): each drawing gets the native look,
                 // and smart actions taken away by any path take their cost lines with them.

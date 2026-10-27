@@ -10,16 +10,27 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
-    // An outgoing panel must not remain an editable view after its identity store is cleared.
-    // Use the existing close handler so media, drag and keyboard listeners are cleaned up too.
+    /** Closes the open panel (every close path ends here: media, drag, keyboard and surface cleanups), or null. */
+    let closeOpenPanel = null;
+
+    // An outgoing panel must not remain an editable view after its identity store is cleared. Its own close path
+    // cleans up media, drag, keyboard and surface listeners (a panel this module did not draw: its close button).
     JE.session?.onUserChange?.('settings-panel', () => {
-        document.getElementById('closeSettingsPanel')?.click();
+        if (closeOpenPanel) closeOpenPanel();
+        else document.getElementById('closeSettingsPanel')?.click();
     });
 
     /**
-     * Toggles the main settings and help panel for the plugin.
+     * Toggles the main settings and help panel for the plugin. The panel is a modal surface on the shared stack
+     * (JE.openSurface): a named dialog, Tab and the D-pad stay inside it, what it covers is inert, Escape or Back
+     * closes it while it is the topmost surface, and focus goes back to the control that opened it.
+     * @param {Event|Object} [from] The press that opens it (or its owner), taken before anything awaits.
+     * @param {{tab?: string}} [options] tab: the section to show first.
      */
-    JE.showEnhancedPanel = async () => {
+    JE.showEnhancedPanel = async (from, options = {}) => {
+        // Whoever opened it (the viewer's gesture or the surface it was made in) owns the panel's surface; taken
+        // now, while the event is still being dispatched.
+        const owner = (from && JE.ownerOf?.(from)) || null;
         // The shared document store fences this read against newer saves and identity changes.
         const epoch = JE.session?.getEpoch?.();
         const currentUserId = ApiClient.getCurrentUserId();
@@ -41,7 +52,8 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.querySelector('#closeSettingsPanel')?.click();
+            if (closeOpenPanel) closeOpenPanel();
+            else existing.querySelector('#closeSettingsPanel')?.click();
             return;
         }
         // Get theme-appropriate styles
@@ -118,16 +130,7 @@
         const resetAutoCloseTimer = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside && document.getElementById(panelId)) {
-                    help.remove();
-                    runPanelCleanups();
-                    document.removeEventListener('keydown', closeHelp);
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener, true);
-                    }
-                }
+                if (!isMouseInside && document.getElementById(panelId)) closePanel();
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
 
@@ -173,6 +176,9 @@
         help.addEventListener('mouseenter', () => { isMouseInside = true; if (autoCloseTimer) clearTimeout(autoCloseTimer); });
         help.addEventListener('mouseleave', () => { isMouseInside = false; resetAutoCloseTimer(); });
         help.addEventListener('click', resetAutoCloseTimer);
+        // Someone working with the keyboard (or a remote) is using the panel as much as a mouse over it is.
+        help.addEventListener('keydown', resetAutoCloseTimer);
+        help.addEventListener('focusin', resetAutoCloseTimer);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
 
         // Shared context handed to the split panel modules
@@ -198,10 +204,40 @@
 
         const scope = JE.internals.settingsPanelScope(ctx);
         const { listen } = scope;
+        // A section asked for by the opener (a link to Requests & alerts) is the one shown first.
+        if (options?.tab && JE.currentSettings) JE.currentSettings.lastOpenedTab = options.tab;
 
         help.innerHTML = internal.buildPanelHtml(ctx);
 
+        // Every way the panel closes (its × button, Escape or Back, '?', the auto-close timer, its owner ending,
+        // another user signing in): once.
+        let releaseSurface = null;
+        let closed = false;
+        const closePanel = () => {
+            if (closed) return;
+            closed = true;
+            if (closeOpenPanel === closePanel) closeOpenPanel = null;
+            isDragging = false;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            // The page behind is live again and focus goes back to the opener, before the panel goes.
+            releaseSurface?.();
+            help.remove();
+            runPanelCleanups();
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (!JE.pluginConfig.DisableAllShortcuts) {
+                document.addEventListener('keydown', JE.keyListener, true);
+            }
+        };
+        closeOpenPanel = closePanel;
+
         document.body.appendChild(help);
+        // On the one surface stack when an owner opened it (a press or a surface's owner). Its name is the panel's
+        // own title; the stack sets the dialog role and modal state, makes the page behind inert, keeps Tab inside and
+        // takes Escape/Back while the panel is the topmost surface.
+        if (owner && typeof JE.openSurface === 'function' && JE.admitSurface?.(owner, 'the settings panel')) {
+            releaseSurface = JE.openSurface(help, closePanel, owner, { label: 'Jellyfin Enhanced' });
+        }
 
         internal.wireShortcutEditor(ctx);
         resetAutoCloseTimer();
@@ -329,31 +365,18 @@
             return tag === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'color'].includes(target.type);
         };
         const closeHelp = (ev) => {
-            const keyboardClose = ev.type === 'keydown'
-                && (ev.key === 'Escape' || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
+            // On the surface stack, Escape (and every Back key) is the stack's: it closes only the topmost surface
+            // (a dialog the panel opened goes first). '?' closes the panel only while nothing is over it.
+            const topmost = !releaseSurface || JE.isTopmostSurface?.(help) !== false;
+            const keyboardClose = ev.type === 'keydown' && topmost
+                && ((ev.key === 'Escape' && !releaseSurface) || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
             if (keyboardClose || (ev.type === 'click' && ev.target.id === 'closeSettingsPanel')) {
                 ev.stopPropagation();
-                if (autoCloseTimer) clearTimeout(autoCloseTimer);
-                help.remove();
-                runPanelCleanups();
-                document.removeEventListener('keydown', closeHelp);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener, true);
-                }
+                closePanel();
             }
         };
 
-        scope.onCleanup(() => {
-            isDragging = false;
-            if (autoCloseTimer) clearTimeout(autoCloseTimer);
-            help.remove();
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            runPanelCleanups();
-            if (!JE.pluginConfig.DisableAllShortcuts) document.addEventListener('keydown', JE.keyListener, true);
-        });
+        scope.onCleanup(closePanel);
 
         const createToast = (featureKey, isEnabled) => {
             const feature = JE.t(featureKey);

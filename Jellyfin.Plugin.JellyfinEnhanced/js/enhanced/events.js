@@ -17,7 +17,7 @@
         if (e.key === '?') {
             e.preventDefault();
             e.stopPropagation();
-            JE.showEnhancedPanel();
+            JE.showEnhancedPanel(e);
         }
     }
 

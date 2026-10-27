@@ -109,11 +109,11 @@
             }
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
-                manageBtn.addEventListener('click', () => {
+                manageBtn.addEventListener('click', (e) => {
                     if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
                         JE.hiddenContentPage.showPage();
                     } else {
-                        JE.hiddenContent.showManagementPanel();
+                        JE.hiddenContent.showManagementPanel(e);
                     }
                 });
             }

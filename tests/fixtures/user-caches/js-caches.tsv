@@ -119,6 +119,7 @@ enhanced/player/playback.js	playbackInfoTimer	state	a timer
 enhanced/player/playback.js	segmentCache	item	a playing item's media segments (Jellyfin's own answer)
 enhanced/settingspanel/ui-panel-language.js	cultureMap	shared	Jellyfin's culture list, the same for everyone
 enhanced/settingspanel/ui-panel-language.js	localeSet	shared	the locales JE ships, the same for everyone
+enhanced/settingspanel/ui-panel.js	closeOpenPanel	state	the settings panel open now (its close path, UI state), not an answer
 enhanced/spoilerguard/state.js	statePromise	document	the read of the person's Spoiler Guard state (memoized): replaced when the document revision moves (another tab or device saved it) or a change of this tab ran across it
 enhanced/spoilerguard/state.js	userPrefs	document	the person's own Spoiler Guard preferences: read again in place when the document revision moves
 enhanced/translations.js	localStorage:`JE_translation_en_${pluginVersion}`	shared	the shipped English translations of this plugin version
