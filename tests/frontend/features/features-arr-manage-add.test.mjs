@@ -380,7 +380,8 @@ for (const version of [0, 3]) {
     assert.match(conflict.textContent, /No profile queued/);
     assert.match(conflict.textContent, /No folder queued/);
     assert.match(conflict.textContent, new RegExp(`Version ${version}`));
-    assert.equal(button(h, 'add-use-r4').disabled, true, 'nothing queued to adopt');
+    assert.equal(button(h, 'add-use-r4'), null, 'nothing queued to adopt');
+    assert.equal(conflict.querySelector('.je-manage-add-choice-root'), null, 'the fallback is not styled as a path');
     assert.equal(h.calls.filter(c => c.path.startsWith('/arr/admin/users/')).length, 0, 'no lookup of the empty owner');
     assert.match(h.document.querySelector('.je-manage-add-message').textContent, /explicit confirmation/);
     clickAsViewer(button(h, 'add-replace-r4'));

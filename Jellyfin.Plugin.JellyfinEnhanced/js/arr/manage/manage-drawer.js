@@ -722,7 +722,7 @@
             ? tr('arr_manage_add_choice_heading', { name: choice.name || tr('arr_manage_add_choice_owner_unknown') })
             : tr('arr_manage_add_choice_heading_unowned')));
         box.appendChild(el('div', '', choiceProfile(sheet, choice.profileId)));
-        box.appendChild(el('div', 'je-manage-add-choice-root', choice.rootFolder ?? tr('arr_manage_add_choice_root_none')));
+        box.appendChild(choice.rootFolder === null ? el('div', '', tr('arr_manage_add_choice_root_none')) : el('div', 'je-manage-add-choice-root', choice.rootFolder));
         box.appendChild(el('div', '', tr('arr_manage_add_choice_version', { version: choice.version })));
         if (data.kind !== 'movie') box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_series')));
         const actions = el('div', 'je-manage-actions');
@@ -756,15 +756,18 @@
             const usable = queued &&
                 (choice.profileId === null || !!sheet.options?.profiles?.some(p => p.id === choice.profileId)) &&
                 (choice.rootFolder === null || !!sheet.options?.rootFolders?.some(f => f.path === choice.rootFolder && f.accessible !== false));
-            const use = button('use', 'arr_manage_add_choice_use', () => {
-                if (!usable) return;
-                // A partial choice keeps this sheet's own selection for the field nobody queued.
-                if (choice.profileId !== null) sheet.profileId = String(choice.profileId);
-                if (choice.rootFolder !== null) sheet.rootFolder = choice.rootFolder;
-                submitAdd(instance, data);
-            });
-            use.disabled = !usable;
-            if (queued && !usable) box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_unavailable')));
+            // Nothing queued (an identity split before its first job): there is nothing to adopt.
+            if (queued) {
+                const use = button('use', 'arr_manage_add_choice_use', () => {
+                    if (!usable) return;
+                    // A partial choice keeps this sheet's own selection for the field nobody queued.
+                    if (choice.profileId !== null) sheet.profileId = String(choice.profileId);
+                    if (choice.rootFolder !== null) sheet.rootFolder = choice.rootFolder;
+                    submitAdd(instance, data);
+                });
+                use.disabled = !usable;
+                if (!usable) box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_unavailable')));
+            }
             button('replace', 'arr_manage_add_choice_replace', () => {
                 sheet.confirming = true;
                 renderShell(state.root, state.data || data);
