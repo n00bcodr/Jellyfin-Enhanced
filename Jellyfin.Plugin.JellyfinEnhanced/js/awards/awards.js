@@ -269,7 +269,8 @@
         async function fetchAwards(tmdbId, apiMediaType) {
             try {
                 const cacheKey = `awards:/${apiMediaType}/${tmdbId}`;
-                const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${tmdbId}`, { cacheKey });
+                // Decoration (the decorative lane): the title's menus and windows never wait behind it.
+                const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${tmdbId}`, { cacheKey, priority: 'low' });
                 if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
                 return normalizeAwardsData(data);
             } catch (e) {
