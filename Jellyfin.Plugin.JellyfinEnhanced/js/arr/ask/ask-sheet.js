@@ -361,7 +361,7 @@
             };
         }
         const id = /^tv:tmdb:(\d{1,10})$/.exec(String(title.key))?.[1] ?? title.tmdbId;
-        const tmdb = await JE.arrAsk.tmdbSeasons(id);
+        const tmdb = await (JE.arrAsk.sheetSeasons || JE.arrAsk.tmdbSeasons)(id);
         if (!tmdb.seasons.length && tmdb.upcoming == null) return null;
         return {
             ...title,
@@ -418,16 +418,38 @@
         let stop;
         const stopped = new Promise(resolve => { stop = resolve; });
         /** Cancels loaders promptly and removes an already displayed sheet. */
+        let cancelShell = () => {};
         const cancel = () => {
             cancelled = true;
             stop(null);
             if (state) finish(state, null);
+            else cancelShell();
         };
         const off = listTicket?.onRevoke(cancel);
         const live = () => !cancelled && submitted.current() && action.current() && newest() && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
-        pendingOpens.add(cancel);
+        /** The opening's loading shell: drawn before any read, the sheet is built into it (null once it is built or gone). */
+        let shell = null;
+        const dropShell = () => {
+            const drawn = shell; shell = null;
+            if (!drawn || drawn.adopted) return;
+            // As finish(): a list sheet's backdrop goes through the list gate's erase first, then the surface is released.
+            if (listTicket) JE.internals.arrListPages.gate.erase(() => drawn.backdrop.remove());
+            drawn.release?.();
+            if (!listTicket) drawn.backdrop.remove();
+        };
+        cancelShell = dropShell;
         try {
             if (!live()) return null;
+            // Feedback in the press's own frame: a title-free shell with its Cancel, before the first read.
+            sheetPaint(listTicket, () => { close(); shell = mountShell(submitted.owner, opener, cancel); });
+            pendingOpens.add(cancel);
+            // The reads that need nothing from another start together: the allowance, the seasons and the standard
+            // edition's check (a 4K one waits for the capabilities that allow it). The sheet is built only once all of
+            // them have answered for this opening, so its choices and its submission never rest on an older fact.
+            const quotaRead = options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv');
+            const seasonsRead = kind === 'series' && !options?.fixed ? withSeasons(title) : title;
+            const standardCheck = JE.arrAsk.check && options?.variant !== '4k' ? JE.arrAsk.check(title.key, 'standard') : null;
+            for (const read of [quotaRead, seasonsRead, standardCheck]) Promise.resolve(read).catch(() => {});
             const caps = await Promise.race([options?.caps || JE.arrAsk.me(), stopped]);
             if (!live()) return null;
             if (!JE.arrAsk.canAsk(caps, kind)) {
@@ -437,9 +459,9 @@
             const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
             const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
             const loaded = await Promise.race([Promise.all([
-                options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
-                kind === 'series' && !options?.fixed ? withSeasons(title) : title,
-                JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
+                quotaRead,
+                seasonsRead,
+                JE.arrAsk.check ? (variant === 'standard' && standardCheck ? standardCheck : JE.arrAsk.check(title.key, variant)) : null
             ]), stopped]);
             if (!live() || !loaded) return null;
             const [quota, shown, check] = loaded;
@@ -454,8 +476,11 @@
             pendingOpens.delete(cancel);
             return await new Promise(resolve => {
                 const painted = sheetPaint(listTicket, () => {
+                    // Another opening's sheet (if any) goes; this opening's own shell is built into.
+                    const own = shell; shell = null;
+                    pendingOpens.delete(cancel);
                     close();
-                    state = build(shown, kind, caps, quota, { ...options, listTicket, submitted, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+                    state = build(shown, kind, caps, quota, { ...options, listTicket, submitted, shell: own, blocks: { [variant]: blockOf(check) } }, opener, resolve);
                     current = state;
                 });
                 if (!painted) resolve(null);
@@ -463,7 +488,44 @@
         } finally {
             pendingOpens.delete(cancel);
             off?.();
+            dropShell();
         }
+    }
+
+    /**
+     * Draws an opening's loading shell: the sheet's frame with its Cancel and a busy line, nothing about the title.
+     * Registered on the surface stack for `owner` (Escape, Back and the backdrop cancel the opening). Null when refused.
+     * @param {Object} owner The opening's owner.
+     * @param {Element|null} opener Element focus returns to.
+     * @param {Function} cancel Cancels the opening.
+     * @returns {{backdrop: HTMLElement, release: Function, adopted: boolean}|null} Shell.
+     */
+    function mountShell(owner, opener, cancel) {
+        const light = prepareStyles();
+        const backdrop = el('div', 'je-sheet-shell-backdrop');
+        if (isTv()) backdrop.classList.add('je-sheet-tv');
+        if (light) backdrop.classList.add('je-sheet-light');
+        const sheet = el('div', 'je-sheet-shell focuscontainer');
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-busy', 'true');
+        sheet.setAttribute('aria-label', JE.t('title_actions_loading'));
+        sheet.appendChild(el('div', 'je-sheet-handle'));
+        const busy = el('div', 'je-sheet-busy', JE.t('title_actions_loading'));
+        busy.setAttribute('role', 'status');
+        sheet.appendChild(busy);
+        const actions = el('div', 'je-sheet-actions');
+        const dismiss = button('je-sheet-secondary', tr('arr_sheet_cancel'));
+        dismiss.addEventListener('click', cancel);
+        actions.appendChild(dismiss);
+        sheet.appendChild(actions);
+        backdrop.appendChild(sheet);
+        backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cancel(); });
+        const release = JE.openSurface(backdrop, cancel, owner, { opener });
+        if (!release) return null;
+        document.body.appendChild(backdrop);
+        dismiss.focus();
+        return { backdrop, release, adopted: false };
     }
 
     /** Runs a sheet write under its list ticket, or directly for ordinary request sheets. */
@@ -529,9 +591,17 @@
             fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
         };
         state.releaseAction = state.action.onCancel(() => finish(state, null));
-        const backdrop = el('div', 'je-sheet-backdrop');
-        if (isTv()) backdrop.classList.add('je-sheet-tv');
-        if (light) backdrop.classList.add('je-sheet-light');
+        // The opening's loading shell (if any) becomes the sheet in place: the same surface, its frame filled in.
+        const shell = options?.shell || null;
+        const backdrop = shell ? shell.backdrop : el('div', 'je-sheet-backdrop');
+        if (shell) {
+            shell.adopted = true;
+            backdrop.replaceChildren();
+            backdrop.classList.replace('je-sheet-shell-backdrop', 'je-sheet-backdrop');
+        } else {
+            if (isTv()) backdrop.classList.add('je-sheet-tv');
+            if (light) backdrop.classList.add('je-sheet-light');
+        }
         // focuscontainer: jellyfin-web's D-pad navigation (TV layout) stays inside the sheet, as Tab does.
         const sheet = el('div', 'je-sheet focuscontainer');
         sheet.setAttribute('role', 'dialog');
@@ -593,11 +663,12 @@
         state.onKey = (e) => onKey(state, e);
         // Opened for an operation: the sheet is in its scope, so once the operation ends (another page, mount, user or
         // the document leaving) it takes no more input and closes.
-        state.releaseScope = JE.openSurface(backdrop, () => finish(state, null), state.submitted.owner);
+        // A shell's registration is kept: its close cancels the opening, which finishes this sheet.
+        state.releaseScope = shell ? shell.release : JE.openSurface(backdrop, () => finish(state, null), state.submitted.owner);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(state, null); });
         document.addEventListener('keydown', state.onKey, true);
         refresh(state);
-        document.body.appendChild(backdrop);
+        if (!shell) document.body.appendChild(backdrop);
         const first = sheet.querySelector('.je-sheet-card[aria-pressed="true"]') || (state.primary.hidden ? state.cancel : state.primary);
         first.focus();
         return state;
