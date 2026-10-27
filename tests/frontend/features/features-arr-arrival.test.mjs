@@ -247,6 +247,76 @@ test('a version added to an episode the page shows (Jellyfin 12 groups an episod
   assert.equal(h.id(), OLD);
 });
 
+// LR-2: the version picker is Jellyfin's own; JE's in-place patches never touch it. After the first
+// redraw, a later version (another burst) must reach it through one more coalesced redraw.
+const versionPage = (t, kind, versions) => {
+  const h = setup(t, kind === 'movie'
+    ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions()) }
+    : { answers: () => episode('ready', { versions: versions() }) });
+  // Jellyfin's controller draws the picker from the item on each show.
+  const picker = h.document.createElement('select');
+  picker.className = 'selectSource';
+  h.view.appendChild(picker);
+  const draw = () => picker.replaceChildren(...Array.from({ length: versions() }, (_, n) => {
+    const o = h.document.createElement('option');
+    o.textContent = `Version ${n + 1}`;
+    return o;
+  }));
+  draw();
+  h.view.addEventListener('viewshow', draw);
+  return { h, picker };
+};
+
+for (const kind of ['movie', 'episode']) {
+  test(`${kind}: separate later version bursts each reach Jellyfin's version picker with one redraw per burst`, async t => {
+    let versions = 1;
+    const { h, picker } = versionPage(t, kind, () => versions);
+    await h.D.update(false);
+    versions = 2;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1), 'the first burst redraws');
+    await sleep(40);
+    assert.equal(picker.options.length, 2);
+    h.A.timing.batch = 80;
+    for (const burst of [[3, 4], [5, 6]]) {
+      const before = h.host.shows.length;
+      for (const n of burst) {
+        versions = n;
+        await h.D.update(true);
+      }
+      assert.equal(h.host.shows.length, before, 'the burst settles first');
+      assert.equal(h.A.state().base.versions, burst[0] - 1, 'not recorded as drawn before Jellyfin redraws');
+      assert.ok(await until(() => h.host.shows.length === before + 1), 'the later burst redraws the native page');
+      await sleep(120);
+      assert.equal(h.host.shows.length, before + 1, 'one redraw for the burst');
+      assert.equal(picker.options.length, burst[1], 'the picker shows every version');
+      assert.equal(h.A.state().base.versions, burst[1]);
+    }
+    assert.equal(h.replays.length, 3, 'JE page handlers replay once per redraw');
+    assert.equal(h.id(), OLD);
+  });
+
+  test(`${kind}: a later version waits for the gap and for the viewer's finger before Jellyfin redraws`, async t => {
+    let versions = 2;
+    const { h, picker } = versionPage(t, kind, () => versions);
+    await h.D.update(false);
+    versions = 3;
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1));
+    h.A.timing.gap = 250;
+    h.window.dispatchEvent(new h.window.Event('pointerdown'));
+    versions = 4;
+    await h.D.update(true);
+    await sleep(320);
+    assert.equal(h.host.shows.length, 1, 'held while the pointer is down');
+    assert.equal(picker.options.length, 3);
+    assert.equal(h.A.state().base.versions, 3, 'still drawn with three');
+    h.window.dispatchEvent(new h.window.Event('pointerup'));
+    assert.ok(await until(() => h.host.shows.length === 2, 2000), 'redrawn once released');
+    assert.equal(picker.options.length, 4);
+  });
+}
+
 test('a movie whose file Jellyfin now keeps as a version of another item moves to that item', async t => {
   // Jellyfin makes the higher resolution the primary: the 1080p item the page showed becomes a version of the
   // new 2160p item (12.x), which the status names.

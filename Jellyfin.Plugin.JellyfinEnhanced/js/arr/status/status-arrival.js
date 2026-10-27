@@ -5,8 +5,10 @@
  * available, the page either moves to that item in its own history entry (Jellyfin gives a missing
  * episode or season a new id once its file is there, a native page's title gets its library item, and
  * a movie or episode whose file became a version of a new item moves to that item), or, for the same
- * item (also when Jellyfin adds a version to it), permits one coalesced Jellyfin redraw per view, so Play, badges,
- * media info and the version picker are Jellyfin's own. It follows the page's status reads (status-details hands each one over; JE's change
+ * item (also when Jellyfin adds a version to it), has Jellyfin redraw its own page, so Play, badges,
+ * media info and the version picker are Jellyfin's own. A season or series page gets one coalesced redraw
+ * per view (later arrivals patch its rows in place); a movie or episode page redraws again for a later
+ * version, coalesced per burst and spaced out by the gap. It follows the page's status reads (status-details hands each one over; JE's change
  * feed starts them) and Jellyfin's LibraryChanged message about the page's item, season or series,
  * whichever comes first. A change waits while the viewer types, plays or has a dialog open, is checked
  * again right before it happens (a move reads its destination again as the viewer first), happens once
@@ -492,6 +494,10 @@
      * or series page waits for its arrivals to settle: the wait starts again only when more of the
      * title is available, or Jellyfin removed something the page lists (the same count read again,
      * a download moving along, is no change), and never runs past `batchMax` from the first change.
+     * After its one redraw a season or series page takes later arrivals in place (its rows are patched).
+     * A movie or episode page's version picker is Jellyfin's own, so a later version waits the same way
+     * for its burst to settle and then has Jellyfin redraw again; until then the page is not recorded
+     * as drawn with it.
      * @param {Object} state Page state.
      * @param {{kind: 'replace'|'reload', target?: string, base?: Object, listed?: boolean}} action Action.
      * @returns {void}
@@ -499,14 +505,14 @@
     function plan(state, action) {
         if (page !== state) return;
         if (action.kind === 'replace' && state.tried.has(action.target)) return;
-        if (action.kind === 'reload' && state.refreshed) {
+        if (action.kind === 'reload' && state.refreshed && listPage(state)) {
             state.base = higher(state.base, action.base);
             drew(state);
             return;
         }
         const prior = state.pending;
         if (action.kind === 'reload' && prior?.kind === 'replace') return;
-        if (action.kind !== 'reload' || !listPage(state)) {
+        if (action.kind !== 'reload' || (!listPage(state) && !state.refreshed)) {
             state.pending = action;
             schedule(state, 0);
             return;
