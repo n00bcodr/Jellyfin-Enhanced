@@ -418,6 +418,36 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
     }
 
     [Fact]
+    public async Task AFirstWriteRacingTheFirstSweepIsCountedOnce()
+    {
+        // The first write and the first-use sweep run together: a temporary file renamed into place between the sweep's
+        // listing and its clean-up is not counted again as an orphan (about 1 in 100 rounds did, F32 round).
+        for (var i = 0; i < 200; i++)
+        {
+            var folder = Path.Combine(_root, "race" + i);
+            var settings = new ServerCacheSettings(true, folder, 0, 0);
+            var c = new ServerBlobCache(() => settings, Location, null, () => _now) { SweepDebounce = TimeSpan.Zero };
+            c.Register(new("artwork"));
+            Assert.True(await Put(c));
+            await c.PendingSweep;
+            Assert.Equal(4096, c.CountedBytes);
+            Assert.Equal(4096, c.Usage().Bytes);
+        }
+    }
+
+    [Fact]
+    public async Task ManyFirstRequestsAtOnceMarkTheFolderOnceAndRecordNoError()
+    {
+        // F32 live check: the first images after the cache is switched on arrive together; only one prepares the folder.
+        var c = Make();
+        var writes = await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() => Put(c, "k" + i))));
+        Assert.All(writes, Assert.True);
+        Assert.Null(c.Usage().FolderError);
+        Assert.Equal(32, c.Usage().Files);
+        Assert.Equal(ServerCacheLocation.MarkerText, File.ReadAllText(Path.Combine(Folder, ServerCacheLocation.MarkerName)));
+    }
+
+    [Fact]
     public async Task AnInterruptedWritesTemporaryFileIsRemovedAtStartup()
     {
         // A folder already the cache's (its marker), left with an interrupted write's temporary file.
@@ -435,7 +465,10 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
     [Fact]
     public async Task AWriteUnderWayCountsTowardTheCapAndItsTemporaryFileIsNotSwept()
     {
+        // First use (and its sweep) finished before the write: the hook below sweeps inside the write's commit, so a
+        // background sweep waiting for that commit must not hold the sweep lock (it deadlocked once, F32 round).
         var c = Make();
+        Assert.True(c.Enabled);
         await c.PendingSweep;
         long during = 0;
         var tempsDuring = 0;

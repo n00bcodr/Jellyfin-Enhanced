@@ -140,6 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private readonly SemaphoreSlim _sweepLock = new(1, 1);
         private readonly SemaphoreSlim _io = new(MaxConcurrentIo, MaxConcurrentIo);
         private readonly object _lock = new();
+        private readonly object _prepareLock = new();
         private readonly Dictionary<string, ServerCacheNamespace> _namespaces = new(StringComparer.Ordinal);
         private readonly Dictionary<string, long> _namespaceBytes = new(StringComparer.Ordinal);
         private readonly Dictionary<string, Task<ServerCacheEntry?>> _reads = new(StringComparer.Ordinal);
@@ -580,8 +581,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                         var read = ReadHead(access, found, options);
                         if (read.Seen is not { } seen)
                         {
-                            // Can't be opened (permissions): it can't be removed either, but it is counted.
-                            entries.Add(found);
+                            // Can't be opened (permissions): it can't be removed either, but it is counted while it is there.
+                            if (access.Exists(found.Ns, found.Shard, found.Name)) entries.Add(found);
                             continue;
                         }
 
@@ -656,13 +657,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                         }
                     }
 
-                    // Kept (another namespace, or it couldn't be removed): still counted.
+                    // Kept (another namespace, or it couldn't be removed): still counted while it is there.
                     lock (_lock)
                     {
                         if (found.Temp && _activeTemps.Contains(found.Id)) continue;
                     }
 
-                    snapshot[found.Id] = (found.Ns, Blocks(found.Length));
+                    if (access.Exists(found.Ns, found.Shard, found.Name)) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
                 }
 
                 foreach (var (space, shard) in namespaces) access.RemoveEmpty(space, shard);
@@ -799,12 +800,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
-        /// <summary>Removes a temporary file no write of this process is using; true when it is gone or a write still uses it.</summary>
+        /// <summary>
+        /// Removes a temporary file no write of this process is using; true when it is gone (removed, or renamed into
+        /// place by a write that finished since it was listed) or a write still uses it, false when it is still there.
+        /// </summary>
         private bool RemoveOrphan(CacheFolderAccess access, Found found)
         {
             lock (_lock)
             {
-                return _activeTemps.Contains(found.Id) || access.Delete(found.Ns, found.Shard, found.Name);
+                return _activeTemps.Contains(found.Id) || access.Delete(found.Ns, found.Shard, found.Name) || !access.Exists(found.Ns, found.Shard, found.Name);
             }
         }
 
@@ -857,6 +861,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// used only when it already is the cache's (its verified marker), so maintenance never runs in a foreign folder.
         /// </summary>
         private CacheFolderAccess? Access(bool create = true)
+        {
+            lock (_lock)
+            {
+                if (_access != null) return _access;
+            }
+
+            // One preparation at a time: the first requests after the cache is switched on don't race to create its folder and marker.
+            lock (_prepareLock) return PrepareAccess(create);
+        }
+
+        private CacheFolderAccess? PrepareAccess(bool create)
         {
             string configured;
             lock (_lock)

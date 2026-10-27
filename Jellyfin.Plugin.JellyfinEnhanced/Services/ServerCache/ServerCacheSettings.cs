@@ -170,7 +170,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (!access.HasMarker())
             {
                 if (!access.IsEmpty()) return "That folder already holds other files. The cache needs a folder of its own: pick a new or empty one.";
-                if (!access.CreateMarker()) return "Jellyfin can't write to that folder.";
+                // Another preparation may have marked it a moment ago (its marker is then there and verified).
+                if (!access.CreateMarker() && !access.HasMarker()) return "Jellyfin can't write to that folder.";
             }
 
             return access.Writable() ? null : "Jellyfin can't write to that folder.";

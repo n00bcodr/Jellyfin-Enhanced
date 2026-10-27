@@ -123,8 +123,12 @@ public sealed class ServerBlobCacheTests : IDisposable
     [InlineData("otherkey")]
     public async Task AFileThatDoesntReadBackIsAMissAndIsRemoved(string damage)
     {
+        // One store, its first-use sweep finished first: nothing runs beside the damage (F31: a second store over the
+        // same folder took the other's in-flight temporary file for an orphan).
         var cache = Make();
-        await cache.PutAsync("artwork", "w500/a.jpg", Bytes(2000, 7), "image/jpeg", CancellationToken.None);
+        Assert.True(cache.Enabled);
+        await cache.PendingSweep;
+        Assert.True(await cache.PutAsync("artwork", "w500/a.jpg", Bytes(2000, 7), "image/jpeg", CancellationToken.None));
         var file = Assert.Single(Blobs());
         var bytes = File.ReadAllBytes(file);
         switch (damage)
@@ -134,9 +138,8 @@ public sealed class ServerBlobCacheTests : IDisposable
             case "empty": File.WriteAllBytes(file, Array.Empty<byte>()); break;
             case "otherkey":
                 // An entry of another key under this name (a collision, or a copied file) is never served for it.
-                var other = Make();
-                await other.PutAsync("artwork", "w500/b.jpg", Bytes(10, 1), "image/jpeg", CancellationToken.None);
-                var otherFile = Blobs().Single(f => f != file);
+                Assert.True(await cache.PutAsync("artwork", "w500/b.jpg", Bytes(10, 1), "image/jpeg", CancellationToken.None));
+                var otherFile = Assert.Single(Blobs(), f => f != file);
                 File.Copy(otherFile, file, overwrite: true);
                 break;
         }

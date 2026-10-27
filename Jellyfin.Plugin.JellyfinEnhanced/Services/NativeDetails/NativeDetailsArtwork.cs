@@ -84,7 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly Func<DateTime> _now;
         private readonly ImageMetadataAdmission _images = new();
         private readonly ServerBlobCache? _disk;
-        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At)> _bytes = new(StringComparer.Ordinal);
+        // OnDisk: the image is (or was) in the server-side cache too, so a memory hit needn't save it again.
+        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk)> _bytes = new(StringComparer.Ordinal);
         private long _cachedBytes;
 
         /// <summary>Creates the artwork service with a key in memory.</summary>
@@ -275,7 +276,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture))) return null;
             var key = size + path;
-            if (_bytes.TryGetValue(key, out var memory) && _now() - memory.At < CacheTtl) return (memory.Bytes, memory.ContentType);
+            if (_bytes.TryGetValue(key, out var memory) && _now() - memory.At < CacheTtl)
+            {
+                // Shown while the server-side cache was off (or before it was switched on): saved now, once.
+                if (!memory.OnDisk && _disk != null) await PersistAsync(key, memory).ConfigureAwait(false);
+                return (memory.Bytes, memory.ContentType);
+            }
             // Taken before the fetch: a Clear while it runs keeps its result off the disk.
             var generation = _disk?.Generation ?? 0;
             // Read before admission: a disk hit takes no admission place and makes no upstream request.
@@ -294,8 +300,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Only what an upstream fetch would accept is served, with the type it was stored with.
             if (entry == null || !IsImageType(entry.ContentType) || entry.Bytes.Length > MaxImageBytes) return null;
             Interlocked.Increment(ref _diskHits);
-            Store(key, entry.Bytes, entry.ContentType);
+            Store(key, entry.Bytes, entry.ContentType, onDisk: true);
             return (entry.Bytes, entry.ContentType);
+        }
+
+        /// <summary>
+        /// Saves an image the byte cache holds but the server-side cache doesn't (it was fetched while that was off), with
+        /// its fetch time; concurrent hits save it once, and a refused save (cache off, disk busy) is tried on a later hit.
+        /// An image that was saved and then cleared isn't saved again from memory.
+        /// </summary>
+        private async Task PersistAsync(string key, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk) memory)
+        {
+            var claimed = (memory.Bytes, memory.ContentType, memory.At, true);
+            if (!_bytes.TryUpdate(key, claimed, memory)) return;
+            var stored = false;
+            try
+            {
+                stored = await _disk!.PutAsync(DiskNamespace, key, memory.Bytes, memory.ContentType, CancellationToken.None, fetchedAt: memory.At).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Optional: the image is still served from memory.
+            }
+
+            if (!stored) _bytes.TryUpdate(key, memory, claimed);
         }
 
         private static bool IsImageType(string type) => type is "image/jpeg" or "image/png" or "image/webp";
@@ -325,8 +353,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
 
                 var bytes = buffer.ToArray();
-                Store(key, bytes, type);
-                if (_disk != null) await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false);
+                Store(key, bytes, type, onDisk: false);
+                if (_disk != null && await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false)
+                    && _bytes.TryGetValue(key, out var stored) && ReferenceEquals(stored.Bytes, bytes))
+                {
+                    _bytes.TryUpdate(key, (stored.Bytes, stored.ContentType, stored.At, true), stored);
+                }
+
                 return (bytes, type);
             }
             catch (Exception)
@@ -335,7 +368,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
         }
 
-        private void Store(string key, byte[] bytes, string type)
+        private void Store(string key, byte[] bytes, string type, bool onDisk)
         {
             if (Interlocked.Add(ref _cachedBytes, bytes.Length) > MaxCacheBytes)
             {
@@ -347,7 +380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (_bytes.TryGetValue(key, out var previous)) Interlocked.Add(ref _cachedBytes, -previous.Bytes.Length);
-            _bytes[key] = (bytes, type, DateTime.UtcNow);
+            _bytes[key] = (bytes, type, DateTime.UtcNow, onDisk);
         }
 
         private string Sign(byte[] payload)

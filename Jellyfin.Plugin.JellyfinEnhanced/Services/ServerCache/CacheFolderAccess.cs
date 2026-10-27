@@ -82,6 +82,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
+        /// <summary>True when the file is still there (for counting what a failed removal or open left behind).</summary>
+        internal bool Exists(string ns, string shard, string name)
+            => WithRootPath(path => path != null && File.Exists(Path.Combine(path, ns, shard, name)));
+
         /// <summary>True when the folder holds nothing at all.</summary>
         internal bool IsEmpty() => WithRootPath(path =>
         {

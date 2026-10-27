@@ -28,6 +28,79 @@ public sealed class NativeDetailsArtworkDiskCacheTests : IDisposable
         return response;
     });
 
+    // F32: the absent movie's own artwork as the play server's release run asked for it (Logo w500, Backdrop w1280, Primary w342).
+    private static readonly (string Path, string Size)[] MovieOwnArtwork =
+    {
+        ("/sh6VbdALF4aPeQzfVaqeyqL8Bia.png", "w500"), ("/42nrCM8Nlli5CPc7dMAeG27YkWe.jpg", "w1280"), ("/m4v9kjTA7liEIF0DJjn0QHOZtlm.jpg", "w342"),
+    };
+
+    private static async Task OpenMovie(NativeDetailsArtwork artwork)
+    {
+        foreach (var (path, size) in MovieOwnArtwork)
+        {
+            // As the image route does: the cache check (memory or disk) first, then the fetch.
+            await artwork.IsCachedAsync(path, size, CancellationToken.None);
+            Assert.Equal(Jpeg, (await artwork.FetchAsync(path, size, Guid.NewGuid(), CancellationToken.None))!.Value.Bytes);
+        }
+    }
+
+    [Fact]
+    public async Task AMoviesOwnLogoBackdropAndPosterAreServedFromDiskAfterARestart()
+    {
+        Assert.Equal("w500", NativeDetailsArtwork.SizeFor(MediaBrowser.Model.Entities.ImageType.Primary, null));
+        var sent = new List<Uri>();
+        using var network = Tmdb(sent);
+        await OpenMovie(new NativeDetailsArtwork(network, null, null, Disk()));
+        Assert.Equal(3, sent.Count);
+        sent.Clear();
+
+        var restarted = new NativeDetailsArtwork(network, null, null, Disk());
+        await OpenMovie(restarted);
+        Assert.Empty(sent);
+        Assert.Equal(3, restarted.DiskHits);
+    }
+
+    [Fact]
+    public async Task ImagesShownBeforeTheCacheWasSwitchedOnAreSavedOnTheirNextShow()
+    {
+        // The release run's order: the movie is opened (smoke checks) while the cache is off, the cache is switched on
+        // without a restart, the movie is opened again (from memory), then Jellyfin restarts.
+        _settings = _settings with { Enabled = false };
+        var sent = new List<Uri>();
+        using var network = Tmdb(sent);
+        var disk = Disk();
+        var artwork = new NativeDetailsArtwork(network, null, null, disk);
+        await OpenMovie(artwork);
+        Assert.Equal(3, sent.Count);
+        Assert.False(Directory.Exists(Path.Combine(_root, ServerBlobCache.DefaultFolderName)));
+
+        _settings = _settings with { Enabled = true };
+        await OpenMovie(artwork);
+        Assert.Equal(3, sent.Count); // memory hits, no new request ...
+        Assert.Equal(3, disk.Usage().Files); // ... and now on disk
+
+        sent.Clear();
+        var restarted = new NativeDetailsArtwork(network, null, null, Disk());
+        await OpenMovie(restarted);
+        Assert.Empty(sent);
+        Assert.Equal(3, restarted.DiskHits);
+    }
+
+    [Fact]
+    public async Task ImagesClearedFromDiskAreNotSavedAgainFromMemory()
+    {
+        var sent = new List<Uri>();
+        using var network = Tmdb(sent);
+        var disk = Disk();
+        var artwork = new NativeDetailsArtwork(network, null, null, disk);
+        await OpenMovie(artwork);
+        Assert.Equal(3, disk.Usage().Files);
+        await disk.ClearAsync(null, CancellationToken.None);
+        await OpenMovie(artwork); // from memory
+        Assert.Equal(0, disk.Usage().Files);
+        Assert.Equal(3, sent.Count);
+    }
+
     [Fact]
     public async Task AfterARestartTheSameImageIsServedFromDiskWithNoTmdbRequestOrAdmissionPlace()
     {
