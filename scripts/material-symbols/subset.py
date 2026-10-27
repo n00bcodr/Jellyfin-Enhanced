@@ -69,7 +69,7 @@ ICONS = {
         # elsewhere/reviews.js, tags/userreviewtags.js, Configuration/configPage.html
         'person_heart',
         # arr/calendar/* (agenda icons, status icons, filter bar)
-        'bookmark', 'visibility', 'visibility_off', 'download', 'check_circle',
+        'bookmark', 'visibility', 'visibility_off', 'unfold_less', 'unfold_more', 'download', 'check_circle',
         'local_movies', 'ondemand_video', 'album', 'tv_guide', 'animation',
         # enhanced/itemdetails/features-release-dates.js
         # (local_movies, ondemand_video, album, tv_guide above)
