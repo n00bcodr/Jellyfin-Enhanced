@@ -568,9 +568,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                         stale = read.Times is not { } times || Expired(times.Fetched, times.Expires, settings, options, now);
                     }
 
-                    if (stale)
+                    // One that changed since it was looked at (rewritten, read) stays, and is counted.
+                    if (stale && RemoveIfSame(access, found.Ns, found.Shard, found.Name, seen))
                     {
-                        if (RemoveIfSame(access, found.Ns, found.Shard, found.Name, seen)) removed++;
+                        removed++;
                         continue;
                     }
 
