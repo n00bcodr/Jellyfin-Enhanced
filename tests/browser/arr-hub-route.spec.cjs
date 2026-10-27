@@ -65,7 +65,7 @@ test('entering Requests from Home keeps the phone header, and leaving restores H
   await expect(page.locator('#je-requests-hub-page')).toBeHidden();
   await expect(page.locator('#route-home')).toBeVisible();
   await expectPhoneHeader(page);
-  await expect(page).not.toHaveTitle('Requests');
+  await expect(page).toHaveTitle('Home');
 });
 
 test('a direct Requests address keeps the phone header', async ({ page, arr }) => {
@@ -73,4 +73,46 @@ test('a direct Requests address keeps the phone header', async ({ page, arr }) =
   await expectHubShown(page);
   await expectPhoneHeader(page);
   await expect(page).toHaveURL(/#\/requests$/);
+});
+
+/** The ids of the pages shown now. */
+const shownPages = page => page.locator('.mainAnimatedPage:not(.hide)').evaluateAll(nodes =>
+  nodes.filter(n => n.getClientRects().length).map(n => n.id));
+
+test('leaving for Home from a Requests page entered from Details gives Home its own title', async ({ page, arr }) => {
+  await visit(page, '#/details?id=1', 390);
+  await expect(page).toHaveTitle('Movie details');
+  await page.evaluate(() => { location.hash = '#/requests'; });
+  await expectHubShown(page);
+  await expect(page).toHaveTitle('Requests');
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await expect(page.locator('#route-home')).toBeVisible();
+  await expect(page).toHaveTitle('Home');
+  expect(await shownPages(page)).toEqual(['route-home']);
+});
+
+test('leaving for a destination that is still loading never shows another page meanwhile', async ({ page, arr }) => {
+  await visit(page, '#/details?id=1', 390);
+  await page.evaluate(() => { location.hash = '#/requests'; });
+  await expectHubShown(page);
+  await page.evaluate(() => { window.__mockRouter.hold(); location.hash = '#/search'; });
+  await page.waitForTimeout(100);
+  expect(await shownPages(page), 'the Requests page covers while Search loads').toEqual(['je-requests-hub-page']);
+  await page.evaluate(() => window.__mockRouter.release());
+  await expect(page.locator('#je-requests-hub-page')).toBeHidden();
+  expect(await shownPages(page)).toEqual(['route-search']);
+  await expect(page).toHaveTitle('Search');
+});
+
+test('a hub tab keeps keyboard focus when leaving the Dashboard replaces the page container', async ({ page, arr }) => {
+  await visit(page, '#/configurationpage?name=Jellyfin%20Enhanced', 1280);
+  await page.evaluate(() => { window.__mockRouter.hold(); location.hash = '#/requests'; });
+  const tab = page.locator('#je-requests-hub-page .je-hub-tab[data-tab="soon"]');
+  await tab.focus();
+  await expect(tab).toBeFocused();
+  await page.evaluate(() => window.__mockRouter.release());
+  await expectHubShown(page);
+  await expect(page.locator('#je-requests-hub-page .je-hub-tab[data-tab="soon"]')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#je-requests-hub-page .je-hub-tab[data-tab="soon"]')).toHaveAttribute('aria-selected', 'true');
 });

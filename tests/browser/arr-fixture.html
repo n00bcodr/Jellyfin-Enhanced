@@ -40,12 +40,19 @@ button, input, select { font: inherit; }
  * - an unknown path draws #fallbackPage ("Page not found");
  * - the app bar has the phone menu only below 900 px, and in the app layout only on routes it knows; elsewhere
  *   it draws the server name and library links in front of the header buttons;
- * - moving between the Dashboard and the app layouts replaces .mainAnimatedPages, pages and all.
+ * - moving between the Dashboard and the app layouts replaces .mainAnimatedPages, pages and all;
+ * - a page sets the document title when its route is drawn, not again for the route it already shows; a newer
+ *   navigation replaces one not drawn yet. window.__mockRouter.hold()/release() keeps a route loading.
  */
 (function mockRouter() {
     if (new URLSearchParams(location.search).get('host') !== 'router') return;
     const known = ['/home', '/details', '/search'];
+    const titles = { '/home': 'Home', '/details': 'Movie details', '/search': 'Search', '/configurationpage': 'Dashboard' };
     let layout = null;
+    let drawn = null;
+    let pending = null;
+    let held = false;
+    let heldPath = null;
     document.querySelector('.skinHeader').insertAdjacentHTML('afterbegin', '<div class="je-mock-appbar"></div>');
     document.querySelector('.skinHeader').style.justifyContent = 'flex-start';
     document.querySelector('.headerRight').style.marginLeft = 'auto';
@@ -83,8 +90,23 @@ button, input, select { font: inherit; }
         bar.style.cssText = 'display: flex; flex: none; white-space: nowrap; gap: 24px; align-items: center';
         bar.innerHTML = menu ? '<button class="paper-icon-button-light" aria-label="Open menu">=</button>'
             : '<a>Fixture Media Server</a><a>Favorites</a><a>Movies</a><a>Shows</a><a>Music</a>';
+        if (path !== drawn) document.title = titles[path] || 'Page not found';
+        drawn = path;
     }
-    window.addEventListener('popstate', () => { const path = current(); setTimeout(() => render(path), 20); });
+    window.addEventListener('popstate', () => {
+        const path = current();
+        clearTimeout(pending);
+        if (held) heldPath = path;
+        else pending = setTimeout(() => render(path), 20);
+    });
+    window.__mockRouter = {
+        hold() { held = true; },
+        release() {
+            held = false;
+            if (heldPath !== null) render(heldPath);
+            heldPath = null;
+        }
+    };
     render(current());
 })();
 </script>
