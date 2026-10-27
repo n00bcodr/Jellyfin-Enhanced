@@ -31,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IApplicationPaths _applicationPaths;
         private readonly ILocalizationManager _localization;
         private readonly Logger _logger;
+        private readonly MatroskaLanguageCache _languageCache;
 
         // Memo for LanguageIdentity: a library uses a few dozen distinct codes,
         // and the culture lookup behind it is a linear scan.
@@ -162,9 +163,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Workers per page in the full build. Every item's entry is independent
         // of the others' (episodes only feed containers, which run in a later
         // pass), and the per-item work is Jellyfin read paths (stream rows,
-        // alternate versions, parent lookups) plus one Matroska header read, so
-        // a few workers overlap the database and file latency. Kept small so a
-        // build never crowds out request handling.
+        // alternate versions, parent lookups) plus a stat of the media file
+        // (its Matroska header is only read when MatroskaLanguageCache has no
+        // answer for its size and modification time), so a few workers overlap
+        // the database and file latency. Kept small so a build never crowds out
+        // request handling.
         private static readonly int BuildParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4);
 
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
@@ -442,12 +445,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
             _localization = localizationManager;
             _logger = logger;
+            _languageCache = languageCache;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -592,6 +596,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            var languageCacheAtStart = LanguageCacheCounters();
 
             // Ids only — a Guid list is tiny even for huge libraries. The heavy
             // BaseItem hydration happens page by page below so the build never
@@ -631,6 +636,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 MaxDegreeOfParallelism = BuildParallelism,
                 CancellationToken = cancellationToken
             };
+
+            // The full build visits every library file, so the language cache can
+            // drop entries for files it did not visit (renamed or deleted) — but
+            // only once the build has run to completion (EndSweep below); an
+            // aborted, cancelled or failed build simply never ends the sweep.
+            _languageCache.BeginSweep();
 
             // One pass over a list of ids: each page's entries are built in
             // parallel into a slot per item, then stored in page order, so the
@@ -732,10 +743,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             InvalidateUserAccess();
             progress?.Report(100);
 
+            _languageCache.EndSweep();
+
             sw.Stop();
             _logger.Info($"[TagCache] Full cache build complete: {_cache.Count} entries in {sw.Elapsed.TotalSeconds:F1}s");
+            LogLanguageCacheUse(languageCacheAtStart);
 
             SaveToDisk();
+        }
+
+        private (long Reads, long Hits) LanguageCacheCounters() => (_languageCache.Reads, _languageCache.Hits);
+
+        /// <summary>
+        /// Logs how many Matroska headers a pass actually opened versus answered
+        /// from <see cref="MatroskaLanguageCache"/>: the number that matters on
+        /// network mounts. The counters are process-wide, so tag-data requests
+        /// and flushes running alongside the pass are included.
+        /// </summary>
+        private void LogLanguageCacheUse((long Reads, long Hits) atStart)
+        {
+            _logger.Info($"[TagCache] Matroska headers: {_languageCache.Reads - atStart.Reads} read, {_languageCache.Hits - atStart.Hits} served from the language cache");
         }
 
         /// <summary>
@@ -781,6 +808,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
             _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
+            var languageCacheAtStart = LanguageCacheCounters();
 
             // Same paged hydration as the full build: after a sweeping change
             // (e.g. a full metadata refresh) this delta can cover most of the
@@ -987,6 +1015,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             progress?.Report(100);
+            LogLanguageCacheUse(languageCacheAtStart);
             SaveToDisk();
 
             _logger.Info($"[TagCache] Reconciliation complete: {changedIds.Count} changed items, {idsToRebuild.Count} entries checked");
@@ -2549,7 +2578,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Name = sourceName
                     });
 
-                    foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
+                    foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path, _languageCache))
                     {
                         var s = resolved.Stream;
                         var effectiveLanguage = resolved.Language;
@@ -2612,13 +2641,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <see cref="ExtractMediaData"/>, without building the stream/source
         /// lists the container scan doesn't need.
         /// </summary>
-        private static string[]? ExtractAudioLanguages(BaseItem item)
+        private string[]? ExtractAudioLanguages(BaseItem item)
         {
             var hasStreams = false;
             var languages = new HashSet<string>();
             foreach (var source in item.GetMediaSources(false))
             {
-                foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
+                foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path, _languageCache))
                 {
                     var type = resolved.Stream.Type;
                     if (type != MediaStreamType.Video && type != MediaStreamType.Audio) continue;
@@ -2792,7 +2821,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// in the memo (a read that throws fails this container's scan, as it
         /// did there). Safe to call from parallel container builds.
         /// </summary>
-        private static IndexedEpisode ReadIndexedEpisode(Guid id, ContainerEpisodeIndex index, EpisodeScanMemo episodeScans)
+        private IndexedEpisode ReadIndexedEpisode(Guid id, ContainerEpisodeIndex index, EpisodeScanMemo episodeScans)
         {
             index.Late.TryGetValue(id, out var late);
             if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } placement)

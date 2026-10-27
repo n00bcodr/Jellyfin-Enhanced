@@ -82,6 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
         private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
         private readonly IPluginManager _pluginManager;
+        private readonly Helpers.MatroskaLanguageCache _matroskaLanguageCache;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -220,7 +221,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
             MediaBrowser.Model.Tasks.ITaskManager taskManager,
-            IPluginManager pluginManager)
+            IPluginManager pluginManager,
+            Helpers.MatroskaLanguageCache matroskaLanguageCache)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -254,6 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerExistingApplier = spoilerExistingApplier;
             _taskManager = taskManager;
             _pluginManager = pluginManager;
+            _matroskaLanguageCache = matroskaLanguageCache;
         }
 
         /// <summary>
@@ -8726,7 +8729,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var stubMediaSources =
                             SelectTagDataMediaSources(spEp.GetMediaSources(false));
                         stubStreams = stubMediaSources
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache))
                             .Where(resolved =>
                                 resolved.Stream.Type == MediaStreamType.Video
                                 || resolved.Stream.Type == MediaStreamType.Audio)
@@ -8836,7 +8839,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var stubMs =
                             SelectTagDataMediaSources(spMovie.GetMediaSources(false));
                         stubStreams = stubMs
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache))
                             .Where(resolved =>
                                 resolved.Stream.Type == MediaStreamType.Video
                                 || resolved.Stream.Type == MediaStreamType.Audio)
@@ -8927,7 +8930,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SelectTagDataMediaSources(item.GetMediaSources(false));
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
-                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path))
+                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
                         .Where(resolved =>
                             resolved.Stream.Type == MediaStreamType.Video
                             || resolved.Stream.Type == MediaStreamType.Audio)

@@ -56,11 +56,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public static bool TryReadAudioLanguages(
             string? path,
             out IReadOnlyList<string?> languages)
+            => TryReadAudioLanguages(path, out languages, out _);
+
+        /// <summary>
+        /// <see cref="TryReadAudioLanguages(string?, out IReadOnlyList{string?})"/>,
+        /// also telling a failure that says nothing about the file's contents
+        /// (missing file, I/O or permission error) apart from a file that was
+        /// read and is not usable Matroska. <see cref="MatroskaLanguageCache"/>
+        /// remembers only the latter.
+        /// </summary>
+        internal static bool TryReadAudioLanguages(
+            string? path,
+            out IReadOnlyList<string?> languages,
+            out bool transientFailure)
         {
             languages = Array.Empty<string?>();
+            transientFailure = false;
 
-            if (!IsSupportedPath(path) || !File.Exists(path))
+            if (!IsSupportedPath(path))
             {
+                return false;
+            }
+
+            if (!File.Exists(path))
+            {
+                transientFailure = true;
                 return false;
             }
 
@@ -95,10 +115,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             }
             catch (IOException)
             {
+                transientFailure = true;
                 return false;
             }
             catch (UnauthorizedAccessException)
             {
+                transientFailure = true;
                 return false;
             }
             catch (InvalidDataException)
@@ -115,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             }
         }
 
-        private static bool IsSupportedPath(string? path)
+        internal static bool IsSupportedPath(string? path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {

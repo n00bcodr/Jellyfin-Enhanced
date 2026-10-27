@@ -139,6 +139,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageReader.cs",
       "category": "Helpers"
     },
@@ -7471,6 +7475,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "matroska-languages.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs"
+    },
+    {
       "literal": "config.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
@@ -7821,10 +7829,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 358,
+    "files": 359,
     "routes": 180,
     "configuration_properties": 533,
-    "storage_references": 69,
+    "storage_references": 70,
     "scheduled_tasks": 13,
     "locales": 33
   }
