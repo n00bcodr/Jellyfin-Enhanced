@@ -850,6 +850,7 @@ export const SITES = {
     'onView navigation go': [1, 'press', 'after: the page\'s own state (state.aborted, current === state): the view it was read for is still the one shown'],
     'onView state current': [1, 'module', 'ui'],
     'onView state fellBackFrom': [2, 'module', 'ui'],
+    'onView state looks': [1, 'module', 'ui'],
     'onView state tokens': [1, 'module', 'registry'],
     'open navigation go': [1, 'press', 'sync'],
     'openKey navigation go': [3, 'press', 'effect'],

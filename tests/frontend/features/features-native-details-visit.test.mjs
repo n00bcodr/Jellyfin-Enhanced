@@ -781,3 +781,83 @@ test('a second view of a page hidden while its read is overtaken again leaves th
   assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false);
   assert.notEqual(h.window.getComputedStyle(backdrop).display, 'none');
 });
+
+// Review round 5 (PDR5-1): the gate belongs to the check that set it (page and look). An earlier look of the same page
+// that ends later (its destination answered after a newer look started) changes nothing while the newer one holds it.
+
+const CHECKING = 'je-native-absent-checking';
+function gateHeld(h, page = h.page) {
+  assert.equal(page.classList.contains(CHECKING), true, 'page gate');
+  assert.equal(h.document.documentElement.classList.contains(CHECKING), true, 'page-wide gate');
+  assert.equal(h.loading(), true, 'loading indicator');
+}
+
+for (const move of ['none', 'refresh', 'access']) {
+  test(`an earlier look of the same page cannot release a newer look's gate (${move})`, async t => {
+    const h = await restoredPage(t);
+    const destinations = [];
+    const fetchItem = h.window.fetch;
+    h.window.fetch = (url, init) => {
+      if (!String(url).includes('/native-details/resolve?')) return fetchItem(url, init);
+      const read = deferred();
+      destinations.push(read);
+      return read.promise;
+    };
+    const first = h.nd.onView();
+    await until(() => h.held.length === 1 && destinations.length === 1);
+    h.held[0].body.resolve(held('first-authorized'));
+    await until(() => h.nd.current()?.item?.Name === 'first-authorized');
+    gateHeld(h);
+    if (move === 'refresh') h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+    if (move === 'access') h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+    const second = h.nd.onView();
+    await until(() => h.held.length === 2);
+    gateHeld(h);
+    // The first look's destination answers while the newer look's read is still out.
+    for (const read of destinations) read.resolve(new Response('null', { status: 200 }));
+    await first;
+    gateHeld(h);
+    assert.equal(h.window.getComputedStyle(h.page.querySelector('.detailPageContent')).visibility, 'hidden', 'the earlier content stays hidden');
+    // The newer look decides: refused, its content stays hidden and the gate goes.
+    h.held[1].body.reject(Object.assign(new Error('HTTP 403'), { status: 403 }));
+    for (const read of destinations) read.resolve(new Response('null', { status: 200 }));
+    await second;
+    assert.ok(h.page.classList.contains('je-native-absent-refused'));
+    assert.equal(h.window.getComputedStyle(h.page.querySelector('.detailPageContent')).display, 'none');
+    assert.equal(h.page.classList.contains(CHECKING), false);
+    assert.equal(h.document.documentElement.classList.contains(CHECKING), false);
+    assert.equal(h.loading(), false);
+  });
+}
+
+test('the startup look overlapping a restored page\'s look cannot release its gate early (real startup timer)', async t => {
+  const h = setup(t, true, true);
+  let loading = false;
+  h.window.Dashboard = { showLoadingMsg: () => { loading = true; }, hideLoadingMsg: () => { loading = false; } };
+  const items = [], destinations = [];
+  h.page.dataset.jeNativeShown = MOVIE;
+  h.window.fetch = async url => {
+    const list = String(url).includes('/Users/') ? items : String(url).includes('/native-details/resolve?') ? destinations : null;
+    if (!list) return new Response('null', { status: 200 });
+    const body = deferred();
+    list.push(body);
+    if (list === destinations) { await body.promise; return new Response('null', { status: 200 }); }
+    return { ok: true, status: 200, json: () => body.promise };
+  };
+  h.window.ApiClient.getItem = async () => { const body = deferred(); items.push(body); return body.promise; };
+  const first = h.nd.onView();
+  await until(() => items.length === 1 && destinations.length === 1);
+  items[0].resolve({ Id: MOVIE, Type: 'Movie', Name: 'first-authorized' });
+  await until(() => h.nd.current()?.item?.Name === 'first-authorized');
+  // The second look is native-details' own 350 ms startup look.
+  for (let i = 0; i < 60 && items.length < 2; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(items.length, 2);
+  assert.equal(h.page.classList.contains(CHECKING), true);
+  destinations.forEach(body => body.resolve(null));
+  await first;
+  const observed = { checking: h.page.classList.contains(CHECKING), documentChecking: h.document.documentElement.classList.contains(CHECKING), loading };
+  items[1].reject(Object.assign(new Error('HTTP 403'), { status: 403 }));
+  await until(() => h.page.classList.contains('je-native-absent-refused'));
+  await tick();
+  assert.deepEqual(observed, { checking: true, documentChecking: true, loading: true });
+});

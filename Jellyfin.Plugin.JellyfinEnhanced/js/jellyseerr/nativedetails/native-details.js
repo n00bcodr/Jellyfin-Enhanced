@@ -84,8 +84,10 @@
 
     /** @type {Object|null} the synthetic page shown now */
     let current = null;
-    /** @type {HTMLElement|null} the page whose check holds the page-wide gate (see checking) */
+    /** @type {{page: HTMLElement|null, look: number}|null} the check (page and look) holding the page-wide gate (see checking) */
     let gateOwner = null;
+    /** Looks at a page made so far (each onView call's own number). */
+    let looks = 0;
     let started = false;
     /** The synthetic id the last fallback left (a second look at it must not fall back again). */
     let fellBackFrom = null;
@@ -1008,18 +1010,23 @@
 
     /**
      * Shows (or hides) a restored page's earlier content while its access is checked again.
+     * The gate belongs to the check that set it (its page and its look): an earlier look of the same page that ends
+     * later changes nothing while a newer one holds it; another page ending its check leaves the page-wide part
+     * alone. Without a look (a refusal, the page state ending, no details page shown) it is let go for the page.
      * @param {HTMLElement|null} page Page.
      * @param {boolean} on Hide it (true) or show it again.
+     * @param {number} [look] The look (onView call) the check belongs to.
      * @returns {void}
      */
-    function checking(page, on) {
+    function checking(page, on, look = 0) {
+        if (!on && page && look && gateOwner?.page === page && gateOwner.look !== look) return;
         page?.classList.toggle(CHECKING_CLASS, on);
-        // The page-wide part (the backdrop hidden, Jellyfin's loading indicator) belongs to the page that set it:
+        // The page-wide part (the backdrop hidden, Jellyfin's loading indicator) belongs to the check that set it:
         // another page ending its check leaves it alone; with no page given (no details page shown) it goes.
-        if (!on && page && gateOwner && gateOwner !== page) return;
+        if (!on && page && gateOwner && gateOwner.page !== page) return;
         const was = document.documentElement.classList.contains(CHECKING_CLASS);
         document.documentElement.classList.toggle(CHECKING_CLASS, on);
-        gateOwner = on ? page : null;
+        gateOwner = on ? { page, look } : null;
         // Jellyfin's own loading indicator while the page is hidden.
         if (on && !was) window.Dashboard?.showLoadingMsg?.();
         else if (!on && was) window.Dashboard?.hideLoadingMsg?.();
@@ -1474,13 +1481,14 @@
         // Every look starts from the live controls only (copies and leftovers gone), and ends so too.
         reconcile(state);
         const generation = ++state.generation;
+        const look = ++looks;
         let item = null;
         let status = 0;
         /** @type {false|'session'|'policy'} */
         let stale = false;
         // A restored page still shows what it showed before (Back keeps the page's element, though
         // leaving it ended this module's state): hidden until the check below passes.
-        if (same || page.dataset.jeNativeShown) checking(page, true);
+        if (same || page.dataset.jeNativeShown) checking(page, true, look);
         // Where this title opens for the viewer now: a copy that is already here wins, on a restored
         // page too (the title may have arrived since).
         const where = !isTitle ? Promise.resolve(null) : resolve({ id });
@@ -1511,7 +1519,7 @@
                 }, 0);
                 return;
             }
-            checking(page, false);
+            checking(page, false, look);
             dispose();
             refuse(page, isTitle ? 'native_details_failed' : 'native_details_page_failed');
             return;
@@ -1524,7 +1532,7 @@
             }
             // Outage or an unusable page: back to where the user was, then the modal, once; a
             // second failure soon after says so on the page instead of leaving its spinner.
-            checking(page, false);
+            checking(page, false, look);
             dispose();
             if (!isTitle) {
                 // No modal shows a person: the page says it can't be loaded.
@@ -1555,21 +1563,22 @@
         unrefuse(page);
         state.item = item;
         const destination = await where;
-        if (state.aborted || current !== state) return;
+        // A newer look at this page (or its end) has taken over while the destination was asked for.
+        if (state.aborted || current !== state || generation !== state.generation) return;
         if (destination?.itemId && !isSynthetic(destination.itemId) && /^[0-9a-f-]{32,36}$/i.test(destination.itemId)) {
             // A deep link to a title that is here now: its library page, in this page's place, by the one
             // arrival rule (status-arrival.js). While the viewer types, plays or has a dialog open it waits,
             // and this page is drawn meanwhile (with Open).
             const arrival = JE.internals?.arrStatusArrival;
             if (!arrival?.open || !arrival.busy()) {
-                checking(page, false);
+                checking(page, false, look);
                 dispose();
                 if (!arrival?.open?.(page, id, destination.itemId)) go(destination.itemId, true);
                 return;
             }
             arrival.open(page, id, destination.itemId);
         }
-        checking(page, false);
+        checking(page, false, look);
         page.dataset.jeNativeShown = id;
         reconcile(state);
         // Drawn once per page state: a look that overlapped the first one (viewshow and the first look
