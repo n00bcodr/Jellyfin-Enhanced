@@ -9,6 +9,10 @@
  * tells the Seerr search not to draw one); Kids don't get it when the server hides search from them
  * (ArrKidsHideSearch). Every search carries an intent token (query, page, user epoch, sequence): a
  * newer keystroke aborts the older read and only the current one may draw (or clear) the row.
+ * While the row is up and Jellyfin found nothing itself, Jellyfin's "no results" message is hidden and the
+ * row says the library has no matches instead (the page never claims there are no results above titles).
+ * A failed search shows Try again: it searches the same query again (bounded by SEARCH_TIMEOUT_MS), keeps
+ * focus in the row and draws one row.
  * Starts itself on the first navigation once the request controls are on; JE.initializeArrAskSearch
  * starts it directly (idempotent).
  */
@@ -18,6 +22,19 @@
     const DEBOUNCE_MS = 300;
     const MAX_QUERY = 100;
     const SECTION_CLASS = 'je-ask-search-section';
+    const NATIVE_HIDDEN_CLASS = 'je-ask-search-native-hidden';
+    const LOCAL_NONE_CLASS = 'je-ask-search-local-none';
+    const RETRY_CLASS = 'je-ask-search-retry';
+    // A search (first or Try again) that gets no answer in this time fails: Try again never spins forever.
+    const SEARCH_TIMEOUT_MS = 15000;
+    const CSS = `
+.${NATIVE_HIDDEN_CLASS} { display: none !important; }
+.${LOCAL_NONE_CLASS} { margin: 1em 0 0.4em; opacity: 0.8; }
+.je-ask-search-error { display: flex; align-items: center; gap: 0.8em; flex-wrap: wrap; }
+.je-ask-search-error .je-discover-note { flex: 1 1 16em; }
+.je-ask-search-error .je-discover-btn { width: auto; }
+.${SECTION_CLASS} .sectionTitle:focus { outline: none; }
+.${SECTION_CLASS} .sectionTitle:focus-visible { outline: 3px solid #a78bfa; outline-offset: 2px; }`;
     const logPrefix = '🪼 Jellyfin Enhanced: Search:';
 
     const state = {
@@ -27,7 +44,8 @@
         token: null,
         seq: 0,
         query: null,
-        section: null
+        section: null,
+        hiddenNative: null
     };
 
     /**
@@ -52,6 +70,18 @@
         if (cls) e.className = cls;
         if (text != null) e.textContent = text;
         return e;
+    }
+
+    /**
+     * Adds the row's own styles once (the cards' come from the Discover tab).
+     * @returns {void}
+     */
+    function injectStyles() {
+        if (document.getElementById('je-ask-search-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'je-ask-search-styles';
+        style.textContent = CSS;
+        document.head.appendChild(style);
     }
 
     /**
@@ -142,6 +172,65 @@
         state.query = null;
         state.section = null;
         document.querySelectorAll(`.${SECTION_CLASS}`).forEach(n => n.remove());
+        syncNative();
+    }
+
+    /**
+     * Jellyfin's own "no results" message on the search page, when it is shown (other scripts may keep a
+     * hidden one there; one this row hid still counts).
+     * @param {HTMLElement} page Search page.
+     * @returns {HTMLElement|null} Message.
+     */
+    function nativeEmptyMessage(page) {
+        return [...page.querySelectorAll('.noItemsMessage')].find(n => !n.closest(`.${SECTION_CLASS}`) && n.style.display !== 'none'
+            && (n.classList.contains(NATIVE_HIDDEN_CLASS) || getComputedStyle(n).display !== 'none')) || null;
+    }
+
+    /**
+     * While the row is on the search page and Jellyfin found nothing: hides Jellyfin's "no results" message
+     * (a class, never its text: the node is React's) and shows the row's own "nothing in your library" line;
+     * otherwise puts both back. Writes only on change (the page's observers call this).
+     * @returns {void}
+     */
+    function syncNative() {
+        if (!state.section && !state.hiddenNative) return;
+        const page = document.querySelector('#searchPage:not(.hide)');
+        const section = state.section?.isConnected && page?.contains(state.section) ? state.section : null;
+        const message = section ? nativeEmptyMessage(page) : null;
+        if (state.hiddenNative && state.hiddenNative !== message) state.hiddenNative.classList.remove(NATIVE_HIDDEN_CLASS);
+        state.hiddenNative = message;
+        if (message && !message.classList.contains(NATIVE_HIDDEN_CLASS)) message.classList.add(NATIVE_HIDDEN_CLASS);
+        const line = section?.querySelector(`.${LOCAL_NONE_CLASS}`);
+        if (line && line.hidden !== !message) line.hidden = !message;
+    }
+
+    /**
+     * Puts a Try again pressed while its search was on its way back to rest (the search was replaced).
+     * @returns {void}
+     */
+    function settleRetry() {
+        const button = state.section?.querySelector(`.${RETRY_CLASS}`);
+        if (!button || button.getAttribute('aria-busy') !== 'true') return;
+        button.removeAttribute('aria-busy');
+        button.textContent = tr('arr_discover_retry');
+    }
+
+    /**
+     * Try again on a failed search: the same query again, at once. Ignored while a search is on its way or
+     * when the box no longer holds the failed query (typing searches by itself).
+     * @param {HTMLButtonElement} button The button.
+     * @returns {void}
+     */
+    function retry(button) {
+        if (state.token || state.timer || button.getAttribute('aria-busy') === 'true') return;
+        const query = queryOf(searchInput());
+        if (!query || query !== state.query) {
+            onInput();
+            return;
+        }
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = tr('arr_search_retrying');
+        search(query);
     }
 
     /**
@@ -160,6 +249,7 @@
         state.controller?.abort();
         state.controller = null;
         state.token = null;
+        settleRetry();
         if (!query) {
             clear();
             return;
@@ -189,7 +279,7 @@
         const lang = (navigator.language || 'en').split('-')[0].toLowerCase();
         let answer = null;
         try {
-            answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller?.signal });
+            answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller?.signal, timeoutMs: SEARCH_TIMEOUT_MS });
         } catch (err) {
             if (!current(token)) return;
             console.warn(`${logPrefix} search failed (${err?.message || err})`);
@@ -207,26 +297,49 @@
     }
 
     /**
-     * Draws the row for a query: the cards, a note when the search failed, nothing when there is
-     * nothing the caller doesn't have.
+     * Draws the row for a query: the cards, a note with Try again when the search failed, nothing when
+     * there is nothing the caller doesn't have. Focus in the row it replaces moves to the new row (its Try
+     * again, else its heading), never to the page.
      * @param {string} query Query.
      * @param {Object[]|null} results Cards (null: the search failed).
      * @param {Object} caps Capabilities.
      * @returns {void}
      */
     function draw(query, results, caps) {
-        document.querySelectorAll(`.${SECTION_CLASS}`).forEach(n => n.remove());
+        const old = [...document.querySelectorAll(`.${SECTION_CLASS}`)];
+        const hadFocus = old.some(n => n.contains(document.activeElement));
+        old.forEach(n => n.remove());
         state.section = null;
         state.query = query;
-        if (results && !results.length) return;
+        if (results && !results.length) {
+            syncNative();
+            return;
+        }
         const D = JE.internals?.arrDiscover;
-        if (!D?.buildCard) return;
+        if (!D?.buildCard) {
+            syncNative();
+            return;
+        }
         D.injectStyles?.();
+        injectStyles();
         const section = el('div', `verticalSection ${SECTION_CLASS}`);
         section.dataset.jeAskSearch = 'true';
-        section.appendChild(el('h2', 'sectionTitle sectionTitle-cards padded-left padded-right', tr('arr_search_row_title')));
+        const none = el('p', `${LOCAL_NONE_CLASS} padded-left padded-right`, tr('arr_search_local_none', { query }));
+        none.hidden = true;
+        section.appendChild(none);
+        const heading = el('h2', 'sectionTitle sectionTitle-cards padded-left padded-right', tr('arr_search_row_title'));
+        heading.tabIndex = -1;
+        section.appendChild(heading);
         if (!results) {
-            section.appendChild(el('div', 'je-discover-note padded-left padded-right', tr('arr_search_error')));
+            const error = el('div', 'je-ask-search-error padded-left padded-right');
+            error.setAttribute('role', 'alert');
+            error.appendChild(el('div', 'je-discover-note', tr('arr_search_error')));
+            const again = /** @type {HTMLButtonElement} */ (el('button', `je-discover-btn je-discover-retry ${RETRY_CLASS}`, tr('arr_discover_retry')));
+            again.type = 'button';
+            again.setAttribute('aria-label', tr('arr_search_retry_label', { query }));
+            again.addEventListener('click', () => retry(again));
+            error.appendChild(again);
+            section.appendChild(error);
         } else {
             const strip = el('div', 'je-discover-strip padded-left padded-right');
             const ctx = { caps, surface: 'search' };
@@ -235,6 +348,7 @@
         }
         state.section = section;
         place(section);
+        if (hadFocus && section.isConnected) (section.querySelector(`.${RETRY_CLASS}`) || heading).focus({ preventScroll: true });
     }
 
     /**
@@ -251,10 +365,11 @@
         const primary = sections.filter(s => ['movie', 'series'].includes(s.querySelector('[data-type]')?.dataset.type?.toLowerCase())).pop();
         if (primary) {
             if (primary.nextElementSibling !== section) primary.after(section);
-            return;
+        } else {
+            const container = page.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page') || page;
+            if (section.parentElement !== container || container.lastElementChild !== section) container.appendChild(section);
         }
-        const container = page.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page') || page;
-        if (section.parentElement !== container || container.lastElementChild !== section) container.appendChild(section);
+        syncNative();
     }
 
     /**
@@ -275,6 +390,7 @@
             return;
         }
         if (state.section && !state.section.isConnected && queryOf(input) === state.query) place(state.section);
+        else syncNative();
     }
 
     /**
@@ -310,6 +426,6 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskSearch = { state, search, check, clear, allowed, replacesSeerr };
+    JE.internals.arrAskSearch = { state, search, check, clear, allowed, replacesSeerr, retry, SEARCH_TIMEOUT_MS };
     JE.initializeArrAskSearch = initialize;
 })(window.JellyfinEnhanced);

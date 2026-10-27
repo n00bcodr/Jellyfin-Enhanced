@@ -774,10 +774,19 @@
         const view = visibleData(state.data);
         const notes = H.buildNotes(view);
         if (notes) panel.appendChild(notes);
-        const actions = { open: openEntry, play: playEntry, manage: manageEntry };
+        // Empty My requests offers Discover (when this person has that tab) and Jellyfin's search.
+        const actions = { open: openEntry, play: playEntry, manage: manageEntry, discover: available.includes('discover') ? () => selectTab('discover') : null, search: openSearch };
         if (state.tab === 'soon') H.renderSoon(panel, view, actions);
         else if (state.tab === 'ready') H.renderReady(panel, view, actions);
         else H.renderMine(panel, mineView(view), actions);
+    }
+
+    /**
+     * Opens Jellyfin's search page (from the empty My requests).
+     * @returns {void}
+     */
+    function openSearch() {
+        window.location.hash = '#/search';
     }
 
     /**

@@ -507,6 +507,8 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             if (!changed) return;
             H.renderTabs?.();
             if (H.state?.visible && H.state.tab === TAB) H.selectTab?.(TAB);
+            // An empty My requests offers Discover once it is known to be there (or stops offering it).
+            else if (H.state?.visible && H.state.tab === 'mine' && document.querySelector('#je-requests-hub-page .je-hub-empty-mine')) H.render?.();
         }, () => {
             state.capsLoading = false;
         });
