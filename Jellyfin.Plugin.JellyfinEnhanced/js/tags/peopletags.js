@@ -685,7 +685,8 @@
                 try {
                     // Single transport attempt: this loop owns the retries, so a
                     // failing chunk costs at most 1 + RETRY_DELAYS_MS.length requests.
-                    response = await JE.core.api.plugin(path, { signal, skipRetry: true, bound: action?.bound?.() });
+                    // Tags drawn on cast cards (the decorative lane): the title's menus and windows never wait behind them.
+                    response = await JE.core.api.plugin(path, { signal, skipRetry: true, bound: action?.bound?.(), priority: 'low' });
                     break;
                 } catch (error) {
                     if (signal.aborted) {
@@ -1278,7 +1279,7 @@
                 const entry = { ctl, view, epoch, people: new Map() };
                 prefetches.set(itemId, entry);
                 const outcomes = chunkMisses(misses).map((chunk) => {
-                    const outcome = JE.core.api.plugin(peopleInfoPath(chunk), { signal: ctl.signal, skipRetry: true })
+                    const outcome = JE.core.api.plugin(peopleInfoPath(chunk), { signal: ctl.signal, skipRetry: true, priority: 'low' })
                         .then((response) => {
                             // Left, or another user: nothing is kept.
                             if (ctl.signal.aborted || !isCurrentEpoch(epoch)) return { status: 'aborted' };

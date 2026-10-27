@@ -947,8 +947,9 @@
 
             console.debug(`${logPrefix} Fetching similar and recommended content for TMDB ID ${tmdbId} (${type})`);
 
-            // Fetch only the data that's enabled, passing signal for cancellation
-            const fetchOptions = { signal };
+            // Fetch only the data that's enabled, passing signal for cancellation. The rows are decoration the page draws
+            // later: the decorative lane, so the title's menus and windows never wait behind them.
+            const fetchOptions = { signal, priority: 'low' };
             const promises = [];
 
             if (showSimilar) {

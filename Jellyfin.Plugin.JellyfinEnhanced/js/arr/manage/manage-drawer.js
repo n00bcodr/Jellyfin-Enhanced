@@ -686,8 +686,27 @@
         return box;
     }
 
+    /**
+     * Reads a conflict's queued choice as the server sends it (`RequestChoice`): a nonnegative integer
+     * revision (0 before an identity split's first job), a nullable profile and folder, and an owner
+     * id that is empty when no administrator owns the choice yet.
+     * @param {*} choice Wire value.
+     * @returns {{owner: string|null, version: number, profileId: number|null, rootFolder: string|null, name: null}|null} The choice, or null if malformed.
+     */
+    function wireChoice(choice) {
+        if (!choice || typeof choice !== 'object' || !Number.isSafeInteger(choice.version) || choice.version < 0) return null;
+        const profileId = choice.profileId ?? null;
+        const rootFolder = choice.rootFolder ?? null;
+        const owner = choice.owner ?? null;
+        if (profileId !== null && !(Number.isSafeInteger(profileId) && profileId > 0)) return null;
+        if (rootFolder !== null && !(typeof rootFolder === 'string' && rootFolder.trim())) return null;
+        if (owner !== null && typeof owner !== 'string') return null;
+        return { owner: owner && !/^[0-]+$/.test(owner) ? owner : null, version: choice.version, profileId, rootFolder, name: null };
+    }
+
     /** Formats a profile from this instance's options, retaining its id if it has since disappeared. */
     function choiceProfile(sheet, id) {
+        if (id === null) return tr('arr_manage_add_choice_profile_none');
         const profile = sheet.options?.profiles?.find(p => p.id === Number(id));
         return profile ? tr('arr_manage_add_choice_profile', { name: profile.name, id }) : tr('arr_manage_add_choice_profile_unknown', { id });
     }
@@ -699,9 +718,11 @@
         const owned = () => current === state && state.action.current() && state.adding[instance.id] === sheet && sheet.choice === choice && sheet.phase === 'form';
         const box = el('div', 'je-manage-add-conflict');
         box.setAttribute('role', 'status');
-        box.appendChild(el('strong', '', tr('arr_manage_add_choice_heading', { name: choice.name || tr('arr_manage_add_choice_owner_unknown') })));
+        box.appendChild(el('strong', '', choice.owner
+            ? tr('arr_manage_add_choice_heading', { name: choice.name || tr('arr_manage_add_choice_owner_unknown') })
+            : tr('arr_manage_add_choice_heading_unowned')));
         box.appendChild(el('div', '', choiceProfile(sheet, choice.profileId)));
-        box.appendChild(el('div', 'je-manage-add-choice-root', choice.rootFolder));
+        box.appendChild(choice.rootFolder === null ? el('div', '', tr('arr_manage_add_choice_root_none')) : el('div', 'je-manage-add-choice-root', choice.rootFolder));
         box.appendChild(el('div', '', tr('arr_manage_add_choice_version', { version: choice.version })));
         if (data.kind !== 'movie') box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_series')));
         const actions = el('div', 'je-manage-actions');
@@ -730,16 +751,23 @@
                 focusOn(`add-replace-${instance.id}`);
             });
         } else {
-            const usable = sheet.options?.profiles?.some(p => p.id === choice.profileId) &&
-                sheet.options?.rootFolders?.some(f => f.path === choice.rootFolder && f.accessible !== false);
-            const use = button('use', 'arr_manage_add_choice_use', () => {
-                if (!usable) return;
-                sheet.profileId = String(choice.profileId);
-                sheet.rootFolder = choice.rootFolder;
-                submitAdd(instance, data);
-            });
-            use.disabled = !usable;
-            if (!usable) box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_unavailable')));
+            // Only adoption depends on these options; an explicit replacement of the observed revision never does.
+            const queued = choice.profileId !== null || choice.rootFolder !== null;
+            const usable = queued &&
+                (choice.profileId === null || !!sheet.options?.profiles?.some(p => p.id === choice.profileId)) &&
+                (choice.rootFolder === null || !!sheet.options?.rootFolders?.some(f => f.path === choice.rootFolder && f.accessible !== false));
+            // Nothing queued (an identity split before its first job): there is nothing to adopt.
+            if (queued) {
+                const use = button('use', 'arr_manage_add_choice_use', () => {
+                    if (!usable) return;
+                    // A partial choice keeps this sheet's own selection for the field nobody queued.
+                    if (choice.profileId !== null) sheet.profileId = String(choice.profileId);
+                    if (choice.rootFolder !== null) sheet.rootFolder = choice.rootFolder;
+                    submitAdd(instance, data);
+                });
+                use.disabled = !usable;
+                if (!usable) box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_unavailable')));
+            }
             button('replace', 'arr_manage_add_choice_replace', () => {
                 sheet.confirming = true;
                 renderShell(state.root, state.data || data);
@@ -843,14 +871,12 @@
             sheet.phase = 'form';
             sheet.failed = true;
             sheet.message = tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
-            const choice = err?.responseJSON?.choice;
-            if (err?.status === 409 && err?.responseJSON?.reason === 'choice_conflict' && data.addDirect &&
-                Number.isSafeInteger(choice?.version) && choice.version > 0 && Number.isInteger(choice.profileId) && choice.profileId > 0 &&
-                typeof choice.rootFolder === 'string' && choice.rootFolder.trim() && typeof choice.owner === 'string' && choice.owner) {
-                sheet.choice = { ...choice, name: null };
+            const choice = wireChoice(err?.responseJSON?.choice);
+            if (err?.status === 409 && err?.responseJSON?.reason === 'choice_conflict' && data.addDirect && choice) {
+                sheet.choice = choice;
                 sheet.failed = false;
-                sheet.message = tr('arr_manage_add_choice_explanation');
-                choiceOwner(state, sheet, instance, data, sheet.choice);
+                sheet.message = tr(choice.profileId === null && choice.rootFolder === null ? 'arr_manage_add_choice_explanation_empty' : 'arr_manage_add_choice_explanation');
+                if (choice.owner) choiceOwner(state, sheet, instance, data, sheet.choice);
             }
             renderShell(state.root, state.data || data);
             focusOn(`add-submit-${instance.id}`);
