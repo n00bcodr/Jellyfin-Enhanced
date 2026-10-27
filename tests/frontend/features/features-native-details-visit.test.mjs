@@ -539,3 +539,122 @@ test('nodes this page did not load under the current policy are never kept when 
   await tick();
   assert.equal(nodes.filter(n => n.style.backgroundImage === 'none' && n.hasAttribute('data-src') && n.classList.contains('lazy-hidden')).length, 200);
 });
+
+// Review round 3 (PDR3-1): the checking gate lives as long as the page state's check. Whatever ends that state (sign
+// out, another viewer or server, no page shown when it looks again) settles the page that owned the check, fail closed.
+
+const held = name => ({ Id: MOVIE, Type: 'Movie', Name: name });
+const until = async fn => { for (let i = 0; i < 80 && !fn(); i++) await tick(); assert.ok(fn(), 'held stage reached'); };
+
+/** A restored view of a page shown once, with the real session owner; its item reads are held. */
+async function restoredPage(t) {
+  const h = setup(t, true);
+  let loading = false;
+  h.window.Dashboard = { showLoadingMsg: () => { loading = true; }, hideLoadingMsg: () => { loading = false; } };
+  // The startup look is spent first, so it cannot rescue a page later.
+  await new Promise(r => setTimeout(r, 380));
+  await until(() => h.reads.length === 1);
+  h.answer(0);
+  await until(() => h.page.dataset.jeNativeShown === MOVIE);
+  const reads = [];
+  const hold = init => { const body = deferred(); reads.push({ body, init }); return body.promise; };
+  h.window.ApiClient.getItem = async () => hold({ headers: { 'X-Emby-Token': h.window.ApiClient.accessToken() } });
+  h.window.fetch = async (url, init) => {
+    if (!String(url).includes('/Users/')) return new Response('null', { status: 200 });
+    const body = hold(init);
+    return { ok: true, status: 200, json: () => body };
+  };
+  return { ...h, held: reads, loading: () => loading };
+}
+
+/** The page that owned the check, the page-wide gate and Jellyfin's loading indicator are all let go. */
+function settled(h) {
+  assert.deepEqual({
+    page: h.page.classList.contains('je-native-absent-checking'),
+    html: h.document.documentElement.classList.contains('je-native-absent-checking'),
+    loading: h.loading(),
+  }, { page: false, html: false, loading: false }, 'the page, backdrop and loading indicator settle');
+}
+
+for (const mode of ['once', 'twice-before-completion', 'during-rerun', 'signed-out', 'other-viewer', 'other-server', 'hidden-page']) {
+  test(`a restored page checked across a credential change settles (${mode})`, async t => {
+    const h = await restoredPage(t);
+    const epoch = h.JE.session.getEpoch();
+    let events = 0;
+    h.document.addEventListener('je:user-changed', () => events++);
+    const look = h.nd.onView();
+    await until(() => h.held.length === 1);
+    assert.ok(h.page.classList.contains('je-native-absent-checking'));
+    h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+    if (mode === 'twice-before-completion') h.window.ApiClient.setAuthenticationInfo('credential-c', 'user-a');
+    if (mode === 'signed-out') { h.window.ApiClient.setAuthenticationInfo('', null); h.window.ApiClient.setAuthenticationInfo('refreshed-while-out', null); }
+    if (mode === 'other-viewer') h.window.ApiClient.setAuthenticationInfo('credential-other', 'user-b');
+    if (mode === 'other-server') { h.window.ApiClient.serverId = () => 'server-b'; h.JE.session.checkNow('server'); }
+    if (mode === 'hidden-page') h.page.classList.add('hide');
+    h.held[0].body.resolve(held('overtaken-first'));
+    await look;
+    await tick();
+    await tick();
+    assert.notEqual(h.nd.current()?.item?.Name, 'overtaken-first');
+    if (['once', 'twice-before-completion', 'during-rerun'].includes(mode)) {
+      await until(() => h.held.length === 2);
+      assert.equal(h.held[1].init.headers['X-Emby-Token'], mode === 'twice-before-completion' ? 'credential-c' : 'credential-b');
+      if (mode === 'during-rerun') h.window.ApiClient.setAuthenticationInfo('credential-c', 'user-a');
+      h.held[1].body.resolve(held(mode === 'during-rerun' ? 'overtaken-rerun' : 'current'));
+      await until(() => (mode === 'during-rerun' ? !!h.document.querySelector('.je-native-absent-refusal') : h.nd.current()?.item?.Name === 'current'));
+      assert.notEqual(h.nd.current()?.item?.Name, 'overtaken-rerun');
+      assert.equal(h.held.length, 2, 'one rerun only');
+      assert.equal(events, 0);
+      assert.equal(h.JE.session.getEpoch(), epoch);
+    } else {
+      assert.equal(h.held.length, 1, 'no replay for another identity or a page not shown');
+    }
+    settled(h);
+    if (['signed-out', 'other-viewer', 'other-server'].includes(mode)) assert.ok(h.page.querySelector('.je-native-absent-refusal'), 'the outage state');
+    // Nothing of the earlier content shows: an ended check leaves the page refused, not merely unhidden.
+    if (mode !== 'once' && mode !== 'twice-before-completion') assert.ok(h.page.classList.contains('je-native-absent-refused'));
+  });
+}
+
+test('signed out between the stale answer and its queued look: the look is dropped and the page settles', async t => {
+  const h = await restoredPage(t);
+  const look = h.nd.onView();
+  await until(() => h.held.length === 1);
+  h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+  h.held[0].body.resolve(held('overtaken'));
+  // The look again is queued and has not run: the viewer signs out first.
+  await look;
+  h.window.ApiClient.setAuthenticationInfo('', null);
+  await tick();
+  await tick();
+  assert.equal(h.held.length, 1);
+  assert.notEqual(h.nd.current()?.item?.Name, 'overtaken');
+  settled(h);
+  assert.ok(h.page.classList.contains('je-native-absent-refused'));
+});
+
+test('a page no longer shown when it would be looked at again lets its check go (it is checked anew when shown)', async t => {
+  const h = await restoredPage(t);
+  const look = h.nd.onView();
+  await until(() => h.held.length === 1);
+  h.page.classList.add('hide');
+  h.window.ApiClient.setAuthenticationInfo('credential-b', 'user-a');
+  h.held[0].body.resolve(held('held'));
+  await look;
+  await tick();
+  await tick();
+  assert.equal(h.held.length, 1, 'no look for a page not shown');
+  settled(h);
+  assert.ok(h.page.classList.contains('je-native-absent-refused'), 'its earlier content stays hidden');
+  assert.equal(h.document.documentElement.classList.contains('je-native-absent-refused-view'), false, 'whatever is shown now keeps its backdrop');
+  // Shown again: checked anew and drawn.
+  h.page.classList.remove('hide');
+  const back = h.nd.onView();
+  await until(() => h.held.length === 2);
+  assert.ok(h.page.classList.contains('je-native-absent-checking'));
+  h.held[1].body.resolve(held('current'));
+  await back;
+  assert.equal(h.nd.current()?.item?.Name, 'current');
+  assert.equal(h.page.classList.contains('je-native-absent-refused'), false);
+  settled(h);
+});

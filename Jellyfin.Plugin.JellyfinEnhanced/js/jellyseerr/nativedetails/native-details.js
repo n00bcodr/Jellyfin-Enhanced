@@ -946,10 +946,38 @@
             state.rowObserver?.disconnect();
             state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
+            if (state.relookTimer) clearTimeout(state.relookTimer);
             controlsOf(state).forEach(n => n.remove());
             current = null;
+            endCheck(state);
         }
         sweep(null);
+    }
+
+    /**
+     * A page state that ends (left, another viewer, signed out, no page shown) while its page is still hidden for a
+     * check: the check is over, and it failed closed. The page that owned it keeps none of its earlier content on
+     * show: shown now, it gets the outage state (refusal, Back); not shown, it is refused in place, and showing it
+     * again checks it anew. The page-wide gate and Jellyfin's loading indicator are let go either way.
+     * @param {Object} state The page state that ended.
+     * @returns {void}
+     */
+    function endCheck(state) {
+        const page = state.page;
+        if (!page?.classList.contains(CHECKING_CLASS)) return;
+        const message = TITLE_KINDS.has(state.parts.kind) ? 'native_details_failed' : 'native_details_page_failed';
+        if (page === visiblePage()) {
+            refuse(page, message);
+            return;
+        }
+        page.classList.remove(CHECKING_CLASS);
+        page.querySelector('.je-native-absent-refusal')?.remove();
+        const box = el('div', 'je-native-absent-refusal');
+        box.setAttribute('role', 'status');
+        box.textContent = JE.t(message);
+        page.prepend(box);
+        page.classList.add(REFUSED_CLASS);
+        checking(null, false);
     }
 
     /**
@@ -1413,7 +1441,7 @@
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0,
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0, relookTimer: 0,
             viewer: window.ApiClient?.getCurrentUserId?.() || null, server: serverId(),
             token: String(++tokens), route: JE.routeKey()
         };
@@ -1479,7 +1507,10 @@
             if (sameViewer && (policy ? state.relooks < 2 : state.sessionRelooks < 1)) {
                 if (policy) state.relooks++;
                 else state.sessionRelooks++;
-                setTimeout(() => { if (!state.aborted && current === state && generation === state.generation) onView().catch(() => {}); }, 0);
+                state.relookTimer = setTimeout(() => {
+                    state.relookTimer = 0;
+                    if (!state.aborted && current === state && generation === state.generation) onView().catch(() => {});
+                }, 0);
                 return;
             }
             checking(page, false);
