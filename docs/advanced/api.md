@@ -1906,6 +1906,16 @@ Admin only. Jellyfin's own backups don't include plugin data.
 | POST | `admin/backup/restore` | Multipart `file`, `passphrase` (when it holds credentials) and `confirm=restore`: restore it; a safety copy of the current data is saved first |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 
+### Server-side cache
+
+Admin only, `no-store`. See [Server-side cache](../arr/arr-settings.md#server-side-cache).
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `admin/server-cache` | Usage: `enabled`, `folder`, `folderError` (why the folder can't be used, else null), `files`, `bytes` (whole 4 KiB blocks), `maxBytes`, `maxAgeDays` and `namespaces[]` (`name`, `files`, `bytes`, `maxBytes`) |
+| POST | `admin/server-cache/check-folder` | Body `{"folder":"/path"}` (empty: the default): `{ok, folder, message}`; creates the folder if it is allowed and missing, saves nothing |
+| POST | `admin/server-cache/clear` | Deletes every cache entry (only files the cache wrote; nothing else in the folder) and answers `{removed, usage}` |
+
 ## Activity Feed & What's New
 
 Activity merges recent watched/favorited entries with user reviews into library cards. What's New is the administrator's server-wide settings acknowledgment.

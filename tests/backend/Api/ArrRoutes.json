@@ -114,6 +114,9 @@
     {"method": "POST", "route": "admin/backup/export", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "POST", "route": "admin/backup/inspect", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "POST", "route": "admin/backup/restore", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "GET", "route": "admin/server-cache", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "POST", "route": "admin/server-cache/check-folder", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "POST", "route": "admin/server-cache/clear", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
 
     {"method": "GET", "route": "arr/queue", "access": "legacy-user", "Member": "yes; existing visibility and ownership checks", "Manager": "yes; existing visibility and ownership checks", "Kid": "yes; existing visibility and ownership checks", "requests.4k": "n/a", "capability": "existing route policy"},
     {"method": "GET", "route": "arr/history", "access": "legacy-user", "Member": "yes; existing visibility and ownership checks", "Manager": "yes; existing visibility and ownership checks", "Kid": "yes; existing visibility and ownership checks", "requests.4k": "n/a", "capability": "existing route policy"},

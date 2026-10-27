@@ -661,8 +661,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var height = Arg<int?>(context, "fillHeight") ?? Arg<int?>(context, "maxHeight") ?? Arg<int?>(context, "height");
             if (width == null && height is int h) width = grant.Type == ImageType.Backdrop ? h * 16 / 9 : grant.Type == ImageType.Logo ? h * 4 : h * 2 / 3;
             var size = NativeDetailsArtwork.SizeFor(grant.Type, width);
-            // One viewer can't make the server fetch without bound: images not cached yet come out of their budget.
-            if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
+            // One viewer can't make the server fetch without bound: images not cached yet (in memory or in the
+            // server-side cache) come out of their budget.
+            if (!await _artwork.IsCachedAsync(grant.Path, size, ct).ConfigureAwait(false) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
             var image = await _artwork.FetchAsync(grant.Path, size, grant.Viewer, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
             // The one delivery gate after the fetch (the last await): the artwork is projected under the viewer's policy

@@ -255,6 +255,35 @@ Back up Jellyfin Enhanced's own data: Jellyfin's backups don't include plugin da
     `<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`, then start Jellyfin. Keys in an
     encrypted backup can only be restored through the page.
 
+## Server-side cache
+
+Keeps the TMDB artwork of titles that aren't in the library on the Jellyfin server, so opening such a title again,
+or after a restart, doesn't fetch its images from TMDB again. It sits on the plugin's **\*arr** tab, under
+**Requests & downloads (new)**, and is off by default.
+
+![Server-side cache settings](../images/server-cache-settings.png)
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Keep TMDB artwork on the server** | Off | Saves every poster, backdrop, logo, cast photo and season and episode image of a [title that isn't in the library](arr-features.md#server-side-cache-for-artwork) in the cache folder the first time it is fetched, and shows it from there afterwards. |
+| **Cache folder** | `server-cache` in the plugin's data folder | A full path on the server, created if it doesn't exist. It must be writable by Jellyfin; relative paths, the root of a drive and Jellyfin's own folders (data, metadata, cache, logs, configuration, plugins, or a folder holding them) are refused. **Check folder** tests a path without saving it. A new folder starts empty; the old one is left as it is. |
+| **Largest size (GB)** | 2 | Past this, the images used least recently are removed first, down to 90% of it. 0 means no limit. |
+| **Keep images for up to (days)** | 30 | An image fetched longer ago is fetched from TMDB again the next time it is shown. 0 means no age limit. |
+
+Under the settings, a line shows how many images the cache holds and how much space they take (counted in whole
+4 KiB blocks, as the disk stores them), and **Clear server-side cache** deletes them all. Lowering the size or the
+age takes effect as soon as it is saved. The scheduled task **Tidy the server-side cache** (Dashboard → Scheduled
+Tasks, at startup and daily) removes what is past the age limit and over the size. The cache folder is never part
+of a [backup](#backup-restore).
+
+??? info "What is in the folder"
+    One file per image under `<folder>/artwork/<2 characters>/`, named by a hash (never by anything a browser sent),
+    holding the image, its type and when it was fetched. Only public TMDB images are kept: who may see an image (the
+    signed link of the page it is on, the parental limit, Hidden Content, Spoiler Guard) is checked on every request
+    exactly as without the cache. Clear and the tidy task only delete files the cache wrote, and never follow a link out
+    of the folder, so other files in a shared folder stay. A file that doesn't read back (cut short by a crash, edited)
+    is deleted and the image fetched again.
+
 ## Bazarr
 
 Bazarr adds links to its movie and series overviews so you can manage subtitles. You can configure one Bazarr connection.

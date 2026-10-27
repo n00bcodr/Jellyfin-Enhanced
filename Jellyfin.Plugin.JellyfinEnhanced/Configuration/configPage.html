@@ -2987,6 +2987,44 @@
                         </div>
                     </fieldset>
 
+                    <!-- Server-side cache: public TMDB data kept on disk (absent titles' artwork first) -->
+                    <fieldset id="serverCacheSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">storage</i>Server-side cache</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="serverCacheEnabled" is="emby-checkbox" type="checkbox"/><span>Keep TMDB artwork on the server</span></label></div>
+                            <div class="je-setting-description" data-desc-for="serverCacheEnabled">
+                                <div class="fieldDescription je-field-desc-xl">The posters, backdrops, logos, cast photos and season and episode images of titles that aren't in the library (their Jellyfin details pages, with Seerr or with Jellyfin Enhanced handling requests) are saved in a folder on the server the first time they are fetched from TMDB. Opening a title again, also after a restart, shows them from there without asking TMDB. Only public images are kept; who may see each one is still checked on every request. Off by default.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCachePath">Cache folder</label>
+                                <input id="serverCachePath" is="emby-input" type="text" autocomplete="off" placeholder="server-cache in the plugin's data folder"/>
+                                <div class="fieldDescription">A full path on the Jellyfin server, for example <code>/cache/jellyfin-enhanced</code>. Empty: the <code>server-cache</code> folder inside the plugin's data folder. It is created if it doesn't exist and must be writable by Jellyfin; Jellyfin's own folders (data, metadata, cache, logs, configuration, plugins) are refused. A new folder starts empty, and the old one is left as it is (clear it first if you don't need it any more).</div>
+                                <div class="je-backup-actions">
+                                    <button id="serverCacheCheckBtn" is="emby-button" type="button" class="raised emby-button"><span>Check folder</span></button>
+                                </div>
+                                <div id="serverCacheCheckResult" class="fieldDescription" role="status" aria-live="polite"></div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCacheMaxSizeGb">Largest size (GB)</label>
+                                <input id="serverCacheMaxSizeGb" is="emby-input" type="number" min="0" max="10000" step="1"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="serverCacheMaxSizeGb">
+                                <div class="fieldDescription">When the cache grows past this, the images used least recently are removed first (down to 90% of it). 0 means no limit. 0-10000, default 2.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCacheMaxAgeDays">Keep images for up to (days)</label>
+                                <input id="serverCacheMaxAgeDays" is="emby-input" type="number" min="0" max="3650" step="1"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="serverCacheMaxAgeDays">
+                                <div class="fieldDescription">An image fetched longer ago than this is fetched from TMDB again the next time it is shown, and the daily task <strong>Tidy the server-side cache</strong> removes it. 0 means no age limit. 0-3650, default 30.</div>
+                            </div>
+                            <div id="serverCacheUsage" class="fieldDescription" role="status" aria-live="polite"></div>
+                            <div class="je-backup-actions">
+                                <button id="serverCacheClearBtn" is="emby-button" type="button" class="raised emby-button"><span>Clear server-side cache</span></button>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">link</i>*arr UI Links</legend>
                         <div class="configSection">
@@ -8845,6 +8883,11 @@
                 document.querySelector('#arrLowDiskPercent').value = (config.ArrLowDiskPercent !== undefined && config.ArrLowDiskPercent !== null) ? config.ArrLowDiskPercent : 10;
                 document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
                 document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
+                document.querySelector('#serverCacheEnabled').checked = config.ServerCacheEnabled === true;
+                document.querySelector('#serverCachePath').value = config.ServerCachePath || '';
+                document.querySelector('#serverCacheMaxSizeGb').value = (config.ServerCacheMaxSizeGb !== undefined && config.ServerCacheMaxSizeGb !== null) ? config.ServerCacheMaxSizeGb : 2;
+                document.querySelector('#serverCacheMaxAgeDays').value = (config.ServerCacheMaxAgeDays !== undefined && config.ServerCacheMaxAgeDays !== null) ? config.ServerCacheMaxAgeDays : 30;
+                jeServerCacheRefreshUsage();
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -9535,6 +9578,12 @@
             var __handoffMinutes = parseInt(document.querySelector('#arrSeerrHandoffGraceMinutes').value, 10);
             config.ArrSeerrHandoffGraceMinutes = isNaN(__handoffMinutes) ? 15 : Math.min(1440, Math.max(1, __handoffMinutes));
             config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
+            config.ServerCacheEnabled = document.querySelector('#serverCacheEnabled').checked;
+            config.ServerCachePath = (document.querySelector('#serverCachePath').value || '').trim();
+            var __cacheGb = parseInt(document.querySelector('#serverCacheMaxSizeGb').value, 10);
+            config.ServerCacheMaxSizeGb = isNaN(__cacheGb) ? 2 : Math.min(10000, Math.max(0, __cacheGb));
+            var __cacheDays = parseInt(document.querySelector('#serverCacheMaxAgeDays').value, 10);
+            config.ServerCacheMaxAgeDays = isNaN(__cacheDays) ? 30 : Math.min(3650, Math.max(0, __cacheDays));
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -11288,6 +11337,7 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'serverCacheEnabled', label: 'Keep TMDB artwork on the server', children: ['serverCachePath', 'serverCacheMaxSizeGb', 'serverCacheMaxAgeDays'] },
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
@@ -13240,6 +13290,77 @@
             });
         }
         jeBackupInit();
+
+        /**
+         * Formats a byte count for the server-side cache line ("85.2 MB").
+         * @param {number} bytes - Bytes.
+         * @returns {string}
+         */
+        function jeServerCacheSize(bytes) {
+            var units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+            var value = Number(bytes) || 0;
+            var unit = 0;
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+            return (unit === 0 ? String(value) : value.toFixed(value >= 100 ? 0 : 1)) + ' ' + units[unit];
+        }
+
+        /**
+         * The server-side cache's usage line from admin/server-cache.
+         * @param {Object} usage - Response of admin/server-cache.
+         * @returns {string}
+         */
+        function jeServerCacheUsageText(usage) {
+            if (!usage) return '';
+            if (usage.folderError) return 'The cache folder can\'t be used, so nothing is cached: ' + usage.folderError;
+            var files = Number(usage.files) || 0;
+            var text = 'Holds ' + files.toLocaleString() + (files === 1 ? ' image' : ' images') + ' (' + jeServerCacheSize(usage.bytes) + ')';
+            text += usage.maxBytes > 0 ? ' of ' + jeServerCacheSize(usage.maxBytes) : '';
+            text += usage.folder ? ' in ' + usage.folder : '';
+            return text + (usage.enabled ? '.' : '. Off: nothing new is saved and nothing is read from it.');
+        }
+
+        /** Reads the server-side cache's usage into its line (admins only; quiet on failure). */
+        async function jeServerCacheRefreshUsage() {
+            var line = document.querySelector('#serverCacheUsage');
+            if (!line) return;
+            try {
+                var usage = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache'), dataType: 'json' });
+                line.textContent = jeServerCacheUsageText(usage);
+            } catch (e) {
+                line.textContent = 'The cache\'s usage can\'t be read right now.';
+            }
+        }
+
+        /** Wires the Server-side cache section's Check folder and Clear buttons. */
+        function jeServerCacheInit() {
+            var checkBtn = document.querySelector('#serverCacheCheckBtn');
+            var clearBtn = document.querySelector('#serverCacheClearBtn');
+            var result = document.querySelector('#serverCacheCheckResult');
+            if (!checkBtn || !clearBtn) return;
+            checkBtn.addEventListener('click', async function() {
+                result.textContent = 'Checking…';
+                try {
+                    var folder = (document.querySelector('#serverCachePath').value || '').trim();
+                    var r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache/check-folder'), data: JSON.stringify({ folder: folder }), contentType: 'application/json', dataType: 'json' });
+                    result.textContent = r && r.ok ? 'OK: images will be kept in ' + r.folder + ' (save to use it).' : ((r && r.message) || 'That folder can\'t be used.');
+                } catch (e) {
+                    result.textContent = 'Check failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+            clearBtn.addEventListener('click', async function() {
+                if (!confirm('Clear the server-side cache?\n\nEvery saved image is deleted (nothing else in the folder is touched); they are fetched from TMDB again as titles are opened.')) return;
+                clearBtn.disabled = true;
+                try {
+                    var r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache/clear'), dataType: 'json' });
+                    document.querySelector('#serverCacheUsage').textContent = 'Cleared ' + (r.removed || 0).toLocaleString() + ' image(s). ' + jeServerCacheUsageText(r.usage);
+                } catch (e) {
+                    document.querySelector('#serverCacheUsage').textContent = 'Clear failed: ' + (e && e.message ? e.message : e);
+                } finally {
+                    clearBtn.disabled = false;
+                }
+            });
+        }
+        jeServerCacheInit();
 
         var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
         if (rebuildTagCacheBtn) {

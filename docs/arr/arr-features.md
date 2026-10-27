@@ -1359,6 +1359,18 @@ Admission refusals are not cached, and abandoning a page does not free its still
 
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 
+### Server-side cache for artwork
+
+These pages' images (posters, backdrops, logos, cast photos, season posters and episode stills) come from TMDB. They
+are fetched by the server, a few at a time for each person, and kept in memory for a few hours. With **Keep TMDB
+artwork on the server** on ([Server-side cache](arr-settings.md#server-side-cache)), each image is also saved on disk
+when it is first fetched. After that, opening the title again, opening it for someone else, or opening it after a
+Jellyfin restart shows the images from disk without asking TMDB. An image read from disk doesn't use up the person's
+share of TMDB fetches, so a page full of already-saved artwork never waits behind images still being fetched.
+Images fetched longer ago than the age limit are fetched again. Past the size limit, the least recently used ones go
+first. Every request is still checked as before (the page's signed link, the parental limit, Hidden Content,
+Spoiler Guard, which blurs or hides protected artwork as usual).
+
 ### Discover and search (JE mode)
 
 With **Ask for it** on and request handling set to **Jellyfin Enhanced**, people who may ask for titles (Members,

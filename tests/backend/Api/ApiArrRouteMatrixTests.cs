@@ -29,7 +29,7 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ApiArrRouteMatrixTests
 {
-    private static readonly string[] Prefixes = { "arr/", "acquire/", "admin/backup", "admin/secrets" };
+    private static readonly string[] Prefixes = { "arr/", "acquire/", "admin/backup", "admin/secrets", "admin/server-cache" };
 
     internal sealed record Row(string Method, string Route, string Access);
 
@@ -99,6 +99,7 @@ public class ApiArrRouteMatrixTests
         public ArrWebhookProvisioner Provisioner { get; }
         public ArrLiveService Live { get; }
         public JeBackupService Backup { get; }
+        public Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache.ServerBlobCache ServerCache { get; }
         private readonly string _backupRoot;
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts _seerrModel;
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrBackend _seerrOptions;
@@ -126,6 +127,12 @@ public class ApiArrRouteMatrixTests
             Directory.CreateDirectory(_backupRoot);
             File.WriteAllText(Path.Combine(_backupRoot, "config.xml"), "<PluginConfiguration />");
             Backup = new JeBackupService(_backupRoot, Path.Combine(_backupRoot, "config.xml"), () => n.Arr.Plugin.Plugin.Secrets, n.Arr.Plugin.Core.Logger);
+            // An entry nobody but an administrator may count or clear.
+            ServerCache = new Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache.ServerBlobCache(
+                () => new Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache.ServerCacheSettings(true, string.Empty, 0, 0),
+                new Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache.ServerCacheLocation(_backupRoot, Array.Empty<string>()), null);
+            ServerCache.Register(new Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache.ServerCacheNamespace("artwork"));
+            ServerCache.PutAsync("artwork", "w500/a.jpg", new byte[] { 1 }, "image/jpeg", CancellationToken.None).GetAwaiter().GetResult();
             // Seerr reads go to an address that never answers; no route here may reach it for a non-admin.
             var seerr = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404)));
             _seerrModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts(seerr, null, null, () => n.Config, () => n.Arr.Now);
@@ -158,6 +165,7 @@ public class ApiArrRouteMatrixTests
                 new NotifyController(N.Service, N.Dispatcher, new NtfySender(N.Ntfy), new EmailSender(N.Mail), N.Users) { Config = () => N.Config, Now = () => N.Arr.Now },
                 new ArrLiveController(N.Feed, new ArrFeedLimits(), new ApiArrRoutesTests.KeyAudience(), Receiver, Provisioner, Live, Router, N.Store, Audit, users, logger, N.Requests) { Config = () => N.Config },
                 new JeBackupController(Backup, users, logger),
+                new ServerCacheController(ServerCache, users),
                 new ArrAddController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.ArrAddService(N.Store, N.Arr.Factory, new ServicesForRequests(N).Service, () => N.Config)),
                 Stamps(),
                 Ready(),
