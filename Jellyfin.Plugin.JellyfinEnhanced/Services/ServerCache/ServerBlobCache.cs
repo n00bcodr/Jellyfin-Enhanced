@@ -18,7 +18,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <param name="ContentType">The content type stored with them (the consumer decides what it accepts).</param>
     /// <param name="FetchedAt">When the bytes were fetched from their source (UTC); a read never changes it.</param>
     /// <param name="ExpiresAt">The consumer's own expiry, if it gave one (UTC).</param>
-    public sealed record ServerCacheEntry(byte[] Bytes, string ContentType, DateTime FetchedAt, DateTime? ExpiresAt);
+    public sealed record ServerCacheEntry(byte[] Bytes, string ContentType, DateTime FetchedAt, DateTime? ExpiresAt)
+    {
+        /// <summary>The write this entry came from (a removal is checked against it).</summary>
+        internal ulong WriteId { get; init; }
+    }
 
     /// <summary>A JSON value read back from the server-side cache.</summary>
     /// <typeparam name="T">The value's type.</typeparam>
@@ -70,7 +74,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <c>&lt;folder&gt;/&lt;namespace&gt;/&lt;2 hex&gt;/&lt;SHA-256 of namespace and key&gt;.blob</c>, holding a small
     /// header (the key, the content type, when it was fetched, the writer's expiry, a random write id) and the
     /// bytes. Every file operation goes through <see cref="CacheFolderAccess"/>, confined to the folder's real path
-    /// and never following a symbolic link (anchored handles on Linux).
+    /// and never following a symbolic link (anchored handles; Linux only, elsewhere the cache stays off). A folder
+    /// is used only once it is the cache's own (new, empty or holding its verified marker), for writes and for every
+    /// sweep or Clear alike.
     /// <list type="bullet">
     /// <item><description>Writes go to a temporary file renamed into place under the commit lock, carrying the
     /// generation they started in: Clear, Forget, or a change of folder or switch ends it, and a write from an
@@ -162,7 +168,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
         }
 
-        /// <summary>Creates the store, optionally with checked paths instead of anchored access (tests).</summary>
+        /// <summary>Creates the store; <paramref name="anchored"/> false acts as a platform without the confined calls (tests).</summary>
         internal ServerBlobCache(Func<ServerCacheSettings> settings, ServerCacheLocation location, Logger? logger, Func<DateTime>? now, bool anchored)
         {
             _settings = settings;
@@ -187,8 +193,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>The running total: committed entries plus writes under way (tests).</summary>
         internal long CountedBytes { get { lock (_lock) return _bytes + _reserved; } }
 
-        /// <summary>Whether file operations are anchored (Linux) rather than checked paths (tests).</summary>
-        internal bool Anchored => Access(create: false)?.Anchored == true;
+        /// <summary>Whether the folder is used through the anchored (Linux) access (tests).</summary>
+        internal bool Anchored => Access(create: false) is LinuxFolderAccess;
 
         /// <summary>True when the cache is on and its folder can be used.</summary>
         public bool Enabled => Current() is { Enabled: true } && Access() != null;
@@ -286,7 +292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 var now = _now();
                 if (read.Entry == null || Expired(read.Entry.FetchedAt, read.Entry.ExpiresAt, Current(), options, now))
                 {
-                    RemoveIfSame(access, ns, shard, name, read.Seen.Value);
+                    RemoveIfSame(access, ns, shard, name, read.Seen.Value.WriteId);
                     return null;
                 }
 
@@ -348,7 +354,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
                 var bytes = new byte[header.Length];
                 if (ReadFully(handle, bytes, header.Body) != bytes.Length) return new Read(seen, null);
-                return new Read(seen, new ServerCacheEntry(bytes, header.Type, header.Fetched, header.Expires));
+                return new Read(seen, new ServerCacheEntry(bytes, header.Type, header.Fetched, header.Expires) { WriteId = header.WriteId });
             }
             catch (Exception)
             {
@@ -485,7 +491,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 // Removed below, like any entry that doesn't read back.
             }
 
-            await ForgetAsync(ns, key, ct).ConfigureAwait(false);
+            // Removed only if it is still that very entry (a replacement written meanwhile stays); no generation ends.
+            if (Access() is { } access)
+            {
+                var (shard, name) = Names(ns, key);
+                RemoveIfSame(access, ns, shard, name, entry.WriteId);
+            }
+
             return null;
         }
 
@@ -538,38 +550,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         public async Task<int> SweepAsync(bool full, CancellationToken ct)
         {
             var settings = Current();
-            // A cache that is off and was never created is left alone.
+            // A cache that is off and was never created, or a folder that isn't the cache's, is left alone.
             if (Access(create: false) is not { } access || !access.Intact()) return 0;
             await _sweepLock.WaitAsync(ct).ConfigureAwait(false);
             var snapshot = new Dictionary<string, (string Ns, long Bytes)>(StringComparer.Ordinal);
+            var complete = false;
             lock (_lock) _tracker = new Dictionary<string, (string Ns, long Bytes)?>(StringComparer.Ordinal);
             try
             {
                 var now = _now();
                 var removed = 0;
                 var entries = new List<Found>();
-                foreach (var found in Enumerate(access.Root))
+                foreach (var found in Enumerate(access))
                 {
                     ct.ThrowIfCancellationRequested();
                     if (found.Temp)
                     {
-                        RemoveOrphan(access, found);
+                        // A temporary file that can't be removed is still disk used.
+                        if (!RemoveOrphan(access, found)) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
                         continue;
                     }
 
                     var options = Options(found.Ns) ?? new ServerCacheNamespace(found.Ns);
-                    var seen = new Seen(found.Length, found.Modified, null);
                     // The last access is never before the fetch, so an entry unused since the cutoff is too old.
                     var stale = settings.MaxAgeDays > 0 && found.Modified < now - TimeSpan.FromDays(settings.MaxAgeDays);
-                    if (!stale && full)
+                    ulong? writeId = null;
+                    if (stale || full)
                     {
                         var read = ReadHead(access, found, options);
-                        if (read.Seen is { } inspected) seen = inspected;
-                        stale = read.Times is not { } times || Expired(times.Fetched, times.Expires, settings, options, now);
+                        if (read.Seen is not { } seen)
+                        {
+                            // Can't be opened (permissions): it can't be removed either, but it is counted.
+                            entries.Add(found);
+                            continue;
+                        }
+
+                        writeId = seen.WriteId;
+                        stale = stale || read.Times is not { } times || Expired(times.Fetched, times.Expires, settings, options, now);
                     }
 
-                    // One that changed since it was looked at (rewritten, read) stays, and is counted.
-                    if (stale && RemoveIfSame(access, found.Ns, found.Shard, found.Name, seen))
+                    // Removed only if it is still the file looked at; anything else stays, and is counted.
+                    if (stale && RemoveIfSame(access, found.Ns, found.Shard, found.Name, writeId))
                     {
                         removed++;
                         continue;
@@ -587,14 +608,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 removed += Evict(access, kept, settings.MaxBytes, reserved, survivors);
                 foreach (var f in survivors) snapshot[f.Id] = (f.Ns, Blocks(f.Length));
                 Hook?.Invoke("counted");
-                TouchMarker(access);
+                access.TouchRootFile(ServerCacheLocation.MarkerName, _now());
                 lock (_lock) _lastSweep = now;
                 if (removed > 0) _logger?.Debug($"[Server cache] Removed {removed} entries.");
+                complete = true;
                 return removed;
             }
             finally
             {
-                Reconcile(snapshot);
+                // Only a complete count replaces the running totals; an interrupted one leaves them as they were.
+                if (complete) Reconcile(snapshot);
+                else lock (_lock) _tracker = null;
                 _sweepLock.Release();
             }
         }
@@ -612,33 +636,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (Access(create: false) is not { } access || !access.Intact()) return 0;
             await _sweepLock.WaitAsync(ct).ConfigureAwait(false);
             var snapshot = new Dictionary<string, (string Ns, long Bytes)>(StringComparer.Ordinal);
+            var complete = false;
             lock (_lock) _tracker = new Dictionary<string, (string Ns, long Bytes)?>(StringComparer.Ordinal);
             try
             {
                 var removed = 0;
                 var namespaces = new HashSet<(string Ns, string Shard)>();
-                foreach (var found in Enumerate(access.Root))
+                foreach (var found in Enumerate(access))
                 {
-                    if (ns != null && found.Ns != ns)
+                    if (ns == null || found.Ns == ns)
                     {
-                        if (!found.Temp) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
-                        continue;
+                        namespaces.Add((found.Ns, found.Shard));
+                        if (found.Temp ? RemoveOrphan(access, found)
+                            : ReadHead(access, found, Options(found.Ns) ?? new ServerCacheNamespace(found.Ns)).Seen is { } seen
+                              && RemoveIfSame(access, found.Ns, found.Shard, found.Name, seen.WriteId))
+                        {
+                            if (!found.Temp) removed++;
+                            continue;
+                        }
                     }
 
-                    namespaces.Add((found.Ns, found.Shard));
-                    if (found.Temp) RemoveOrphan(access, found);
-                    else if (RemoveIfSame(access, found.Ns, found.Shard, found.Name, new Seen(found.Length, found.Modified, null))) removed++;
-                    else snapshot[found.Id] = (found.Ns, Blocks(found.Length));
+                    // Kept (another namespace, or it couldn't be removed): still counted.
+                    lock (_lock)
+                    {
+                        if (found.Temp && _activeTemps.Contains(found.Id)) continue;
+                    }
+
+                    snapshot[found.Id] = (found.Ns, Blocks(found.Length));
                 }
 
                 foreach (var (space, shard) in namespaces) access.RemoveEmpty(space, shard);
                 foreach (var space in namespaces.Select(n => n.Ns).Distinct(StringComparer.Ordinal)) access.RemoveEmpty(space, null);
                 _logger?.Info($"[Server cache] Cleared {removed} entries{(ns == null ? string.Empty : " from " + ns)}.");
+                complete = true;
                 return removed;
             }
             finally
             {
-                Reconcile(snapshot);
+                if (complete) Reconcile(snapshot);
+                else lock (_lock) _tracker = null;
                 _sweepLock.Release();
             }
         }
@@ -652,7 +688,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var spaces = new SortedDictionary<string, (long Files, long Bytes)>(StringComparer.Ordinal);
             if (access != null && access.Intact())
             {
-                foreach (var found in Enumerate(access.Root))
+                foreach (var found in Enumerate(access))
                 {
                     var (files, bytes) = spaces.GetValueOrDefault(found.Ns);
                     spaces[found.Ns] = (files + (found.Temp ? 0 : 1), bytes + Blocks(found.Length));
@@ -746,29 +782,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
 
         /// <summary>
-        /// Removes a file only if it is still the one inspected (same write id, or same size and time when its header
-        /// didn't read), in the same step as a commit could replace it.
+        /// Removes a file only if it is still the one inspected, decided in the same step as a commit could replace it:
+        /// one with <paramref name="writeId"/> when its header read, else one whose header still doesn't read (a valid
+        /// replacement always has a readable header, so it is never taken for the broken file).
         /// </summary>
-        private bool RemoveIfSame(CacheFolderAccess access, string ns, string shard, string name, Seen seen)
+        private bool RemoveIfSame(CacheFolderAccess access, string ns, string shard, string name, ulong? writeId)
         {
             lock (_lock)
             {
                 var options = Options(ns) ?? new ServerCacheNamespace(ns);
-                var current = seen.WriteId != null ? ReadHead(access, new Found(ns, shard, name, 0, default, false), options).Seen : null;
-                if (seen.WriteId != null ? current?.WriteId != seen.WriteId : access.Stat(ns, shard, name) is not { } stat || stat.Length != seen.Length || stat.Modified != seen.Modified)
-                    return false;
+                if (ReadHead(access, new Found(ns, shard, name, 0, default, false), options).Seen is not { } current) return false;
+                if (writeId != null ? current.WriteId != writeId : current.WriteId != null) return false;
                 if (!access.Delete(ns, shard, name)) return false;
-                Account(ns + "/" + shard + "/" + name, ns, Blocks(seen.Length), 0);
+                Account(ns + "/" + shard + "/" + name, ns, Blocks(current.Length), 0);
                 return true;
             }
         }
 
-        /// <summary>Removes a temporary file no write of this process is using (an interrupted write's).</summary>
-        private void RemoveOrphan(CacheFolderAccess access, Found found)
+        /// <summary>Removes a temporary file no write of this process is using; true when it is gone or a write still uses it.</summary>
+        private bool RemoveOrphan(CacheFolderAccess access, Found found)
         {
             lock (_lock)
             {
-                if (!_activeTemps.Contains(found.Id)) access.Delete(found.Ns, found.Shard, found.Name);
+                return _activeTemps.Contains(found.Id) || access.Delete(found.Ns, found.Shard, found.Name);
             }
         }
 
@@ -782,20 +818,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             catch (Exception)
             {
                 // A read-only folder still serves what it holds.
-            }
-        }
-
-        /// <summary>Keeps the folder's marker fresh (a folder in Jellyfin's cache folder loses files untouched for 30 days).</summary>
-        private void TouchMarker(CacheFolderAccess access)
-        {
-            try
-            {
-                var marker = new FileInfo(Path.Combine(access.Root, ServerCacheLocation.MarkerName));
-                if (marker.Exists && marker.LinkTarget == null && access.Intact()) File.SetLastWriteTimeUtc(marker.FullName, _now());
-            }
-            catch (Exception)
-            {
-                // Only the dedicated-folder check reads it.
             }
         }
 
@@ -813,7 +835,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var target = (long)(cap * LowWatermark);
             foreach (var entry in entries.OrderBy(e => e.Modified).ThenBy(e => e.Name, StringComparer.Ordinal))
             {
-                if (total > target && RemoveIfSame(access, entry.Ns, entry.Shard, entry.Name, new Seen(entry.Length, entry.Modified, null)))
+                if (total > target && ReadHead(access, entry, Options(entry.Ns) ?? new ServerCacheNamespace(entry.Ns)).Seen is { } seen
+                    && RemoveIfSame(access, entry.Ns, entry.Shard, entry.Name, seen.WriteId))
                 {
                     total -= Blocks(entry.Length);
                     removed++;
@@ -830,7 +853,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>
         /// The usable folder's access; null when the setting can't be used. With <paramref name="create"/> (reads and
         /// writes of a cache that is on) the folder is prepared (created, checked writable, marked) once per setting (a
-        /// failed check is retried after a few minutes); without it, it is only resolved (sweeps, Clear, usage).
+        /// failed check is retried after a few minutes); without it (sweeps, Clear, usage of a cache that is off) it is
+        /// used only when it already is the cache's (its verified marker), so maintenance never runs in a foreign folder.
         /// </summary>
         private CacheFolderAccess? Access(bool create = true)
         {
@@ -843,7 +867,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
 
             var error = _location.Resolve(configured, out var full);
-            if (error == null && create) error = _location.Prepare(full);
+            var found = error == null ? CacheFolderAccess.For(full, _anchored) : null;
+            if (error == null && found == null) error = ServerCacheLocation.Unsupported;
+            else if (error == null && create) error = _location.Prepare(full, _anchored);
+            else if (error == null && !(found!.Intact() && found.HasMarker())) return null;
             lock (_lock)
             {
                 if ((_seen?.Folder ?? string.Empty) != configured) return null;
@@ -856,9 +883,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 }
 
                 _folderError = null;
-                var access = CacheFolderAccess.For(full, _anchored);
-                if (create) _access = access;
-                return access;
+                if (create) _access = found;
+                return found;
             }
         }
 
@@ -906,6 +932,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             internal string Id => Ns + "/" + Shard + "/" + Name;
         }
+
+        /// <summary>Every entry and temporary file of the store's own shape, listed through the folder's open handle.</summary>
+        private static List<Found> Enumerate(CacheFolderAccess access)
+            => access.WithRootPath(path => path == null ? new List<Found>() : Enumerate(path).ToList());
 
         /// <summary>Every entry and temporary file of the store's own shape under <paramref name="folder"/> (links skipped).</summary>
         private static IEnumerable<Found> Enumerate(string folder)

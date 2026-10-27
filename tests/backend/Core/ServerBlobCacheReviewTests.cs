@@ -88,10 +88,27 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
         Assert.Null(loc.Resolve(mine, out full));
         Assert.Null(loc.Prepare(full));
         Assert.True(File.Exists(Path.Combine(mine, ServerCacheLocation.MarkerName)));
+        Assert.Null(loc.Prepare(full)); // marked: ready again
+        // Without its marker a folder that holds anything (even what looks like the cache's own folders) isn't the cache's.
         File.Delete(Path.Combine(mine, ServerCacheLocation.MarkerName));
         Directory.CreateDirectory(Path.Combine(mine, "artwork", "ab"));
-        Assert.Null(loc.Prepare(full)); // only the cache's own folders: still its
-        Assert.True(File.Exists(Path.Combine(mine, ServerCacheLocation.MarkerName)));
+        Assert.NotNull(loc.Prepare(full));
+        Assert.False(File.Exists(Path.Combine(mine, ServerCacheLocation.MarkerName)));
+        // Nor does a file of the marker's name with other contents.
+        File.WriteAllText(Path.Combine(mine, ServerCacheLocation.MarkerName), "something else");
+        Assert.NotNull(loc.Prepare(full));
+    }
+
+    [Fact]
+    public async Task WithoutTheConfinedCallsTheCacheStaysOffAndSaysWhy()
+    {
+        var c = Make(anchored: false);
+        Assert.False(await Put(c));
+        Assert.Null(await c.TryGetAsync("artwork", "a", CancellationToken.None));
+        Assert.False(c.Enabled);
+        Assert.Equal(ServerCacheLocation.Unsupported, c.Usage().FolderError);
+        Assert.False(Directory.Exists(Folder));
+        Assert.Equal(ServerCacheLocation.Unsupported, Location.Prepare(Folder, supported: false));
     }
 
     [Fact]
@@ -143,7 +160,6 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
 
     [Theory]
     [InlineData(true)]
-    [InlineData(false)]
     public async Task ReadMustNotFollowLinkedNamespace(bool anchored)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -159,7 +175,6 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
 
     [Theory]
     [InlineData(true)]
-    [InlineData(false)]
     public async Task ReadMustNotFollowALinkedShardOrEntry(bool anchored)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -182,7 +197,6 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
 
     [Theory]
     [InlineData(true)]
-    [InlineData(false)]
     public async Task ForgetMustNotDeleteThroughLinkedNamespace(bool anchored)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -198,7 +212,6 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
 
     [Theory]
     [InlineData(true)]
-    [InlineData(false)]
     public async Task ClearAndSweepMustRejectRootThatBecameSymlink(bool anchored)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -218,7 +231,6 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
 
     [Theory]
     [InlineData(true)]
-    [InlineData(false)]
     public async Task RefusedLinkedNamespaceMustNotCreateShardOutside(bool anchored)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -408,8 +420,10 @@ public sealed class ServerBlobCacheReviewTests : IDisposable
     [Fact]
     public async Task AnInterruptedWritesTemporaryFileIsRemovedAtStartup()
     {
+        // A folder already the cache's (its marker), left with an interrupted write's temporary file.
         var shard = Path.Combine(Folder, "artwork", "ab");
         Directory.CreateDirectory(shard);
+        File.WriteAllText(Path.Combine(Folder, ServerCacheLocation.MarkerName), ServerCacheLocation.MarkerText);
         var orphan = Path.Combine(shard, new string('a', 64) + ".0123456789abcdef.tmp");
         File.WriteAllBytes(orphan, new byte[100]);
         var c = Make();

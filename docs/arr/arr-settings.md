@@ -258,7 +258,8 @@ Back up Jellyfin Enhanced's own data: Jellyfin's backups don't include plugin da
 ## Server-side cache
 
 Keeps the TMDB artwork of titles that aren't in the library on the Jellyfin server, so opening such a title again,
-or after a restart, doesn't fetch its images from TMDB again. It sits on the plugin's **\*arr** tab, under
+or after a restart, doesn't fetch its images from TMDB again. It needs Jellyfin running on Linux (x64, x86, Arm or
+Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It sits on the plugin's **\*arr** tab, under
 **Requests & downloads (new)**, and is off by default.
 
 ![Server-side cache settings](../images/server-cache-settings.png)
@@ -266,7 +267,7 @@ or after a restart, doesn't fetch its images from TMDB again. It sits on the plu
 | Setting | Default | What it does |
 |---|---|---|
 | **Keep TMDB artwork on the server** | Off | Saves every poster, backdrop, logo, cast photo and season and episode image of a [title that isn't in the library](arr-features.md#server-side-cache-for-artwork) in the cache folder the first time it is fetched, and shows it from there afterwards. |
-| **Cache folder** | `server-cache` in the plugin's data folder | A full path on the server, created if it doesn't exist and writable by Jellyfin. For a large cache, a new folder inside Jellyfin's cache folder is the recommended place (in Docker, `/cache/jellyfin-enhanced`): the default sits inside the plugin's configuration folder, which backups of `/config` copy. Refused: relative paths, the root of a drive, Jellyfin's cache folder itself and its own folders in it (`temp`, `transcodes`, `images`, …), a folder there that already holds other files, and Jellyfin's data, metadata, logs, configuration and plugin folders or a folder holding them, also when reached through a link. **Check folder** tests a path without saving it. A new folder starts empty; the old one is left as it is. |
+| **Cache folder** | `server-cache` in the plugin's data folder | A full path on the server, writable by Jellyfin, and a folder of its own: new or empty (it is created if missing and marked as the cache's with a `.je-server-cache` file), or already the cache's. A folder that holds anything else is refused, and so is a cleanup or tidy run there. For a large cache, a new folder inside Jellyfin's cache folder is the recommended place (in Docker, `/cache/jellyfin-enhanced`): the default sits inside the plugin's configuration folder, which backups of `/config` copy. Refused: relative paths, the root of a drive, Jellyfin's cache folder itself and its own folders in it (`temp`, `transcodes`, `images`, …), a folder there that already holds other files, and Jellyfin's data, metadata, logs, configuration and plugin folders or a folder holding them, also when reached through a link. **Check folder** tests a path without saving it. A new folder starts empty; the old one is left as it is. |
 | **Largest size (GB)** | 2 | Past this, the images used least recently are removed first, down to 90% of it. Fractions such as 0.5 are fine; 0 means no limit. |
 | **Keep images for up to (days)** | 30 | An image fetched longer ago is fetched from TMDB again the next time it is shown. 0 means no age limit. |
 
@@ -284,7 +285,7 @@ of a [backup](#backup-restore).
     holding the image, its type and when it was fetched, and a `.je-server-cache` file marking the folder as the
     cache's. In Jellyfin's cache folder, Jellyfin's own **Clean Cache Directory** task removes files there that
     haven't been used for 30 days; that only means those images are fetched again. Every file operation stays inside
-    the folder (on Linux through handles that never follow a link; elsewhere each step is checked for links first). Only public TMDB images are kept: who may see an image (the
+    the folder, through handles that never follow a link (also when it lists or marks the folder). Only public TMDB images are kept: who may see an image (the
     signed link of the page it is on, the parental limit, Hidden Content, Spoiler Guard) is checked on every request
     exactly as without the cache. Clear and the tidy task only delete files the cache wrote, and never follow a link out
     of the folder, so other files in a shared folder stay. A file that doesn't read back (cut short by a crash, edited)

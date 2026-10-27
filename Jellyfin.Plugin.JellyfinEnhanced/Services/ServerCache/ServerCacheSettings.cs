@@ -35,14 +35,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// Where the server-side cache may live: an absolute folder that is not inside (and does not contain)
     /// Jellyfin's own data, metadata, cache, log, configuration, program or plugin folders, judged by its path as
     /// written and by its real path (every link resolved). The plugin's own data folder is allowed (the default
-    /// lives there), and so is a dedicated folder inside Jellyfin's cache folder (never the cache folder itself, nor
-    /// one of Jellyfin's own folders in it): one that is new, empty or already the cache's (it holds the
-    /// <see cref="MarkerName"/> file or only the cache's namespace folders), the recommended place for a large cache.
+    /// lives there), and so is a folder inside Jellyfin's cache folder (never the cache folder itself, nor one of
+    /// Jellyfin's own folders in it), the recommended place for a large cache. Wherever it is, the folder must be
+    /// the cache's own: new, empty, or holding the cache's <see cref="MarkerName"/> file.
     /// </summary>
     public sealed class ServerCacheLocation
     {
         /// <summary>The file that marks a folder as the server-side cache's (kept fresh by the sweeps).</summary>
         public const string MarkerName = ".je-server-cache";
+
+        /// <summary>The marker's exact contents (a file of that name with anything else doesn't count).</summary>
+        public const string MarkerText = "Jellyfin Enhanced server-side cache (format 2). Its files can be deleted at any time.\n";
 
         // Folder names compare as the file system does (case-insensitively on Windows).
         private static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -153,73 +156,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
 
         /// <summary>
-        /// Gets a resolved folder ready: refuses a folder in Jellyfin's cache folder that isn't dedicated to the cache,
-        /// creates it when missing, checks a file can be written there and marks it as the cache's.
+        /// Gets a resolved folder ready, through the confined access only (the folder is created and checked without
+        /// following a link at any step): a folder that holds anything must already be the cache's (its marker is a
+        /// regular file with the marker's text); an empty or new one is marked as the cache's; a file must be writable.
         /// </summary>
         /// <param name="folder">A folder from <see cref="Resolve"/>.</param>
+        /// <param name="supported">False acts as a platform without the confined calls (tests).</param>
         /// <returns>Null when ready, else a message for the admin.</returns>
-        public string? Prepare(string folder)
+        public string? Prepare(string folder, bool supported = true)
         {
-            if (InCache(folder) != null && !Dedicated(folder))
-                return "That folder in Jellyfin's cache folder already holds other files. Pick a new or empty folder there.";
-            var error = CheckWritable(folder);
-            if (error != null) return error;
-            try
+            if (CacheFolderAccess.For(folder, supported) is not { } access) return Unsupported;
+            if (!access.EnsureRoot()) return "Jellyfin can't create that folder (or it is a link).";
+            if (!access.HasMarker())
             {
-                var marker = Path.Combine(folder, MarkerName);
-                if (new FileInfo(marker).LinkTarget == null) File.WriteAllText(marker, "Jellyfin Enhanced server-side cache. Its files can be deleted at any time.\n");
-            }
-            catch (Exception)
-            {
-                // The probe wrote; a missing marker only matters for the dedicated-folder check.
+                if (!access.IsEmpty()) return "That folder already holds other files. The cache needs a folder of its own: pick a new or empty one.";
+                if (!access.CreateMarker()) return "Jellyfin can't write to that folder.";
             }
 
-            return null;
+            return access.Writable() ? null : "Jellyfin can't write to that folder.";
         }
 
-        /// <summary>A folder that is new, empty, marked as the cache's or holding only the cache's own folders and files.</summary>
-        private static bool Dedicated(string folder)
-        {
-            try
-            {
-                var info = new DirectoryInfo(folder);
-                if (!info.Exists) return true;
-                if (File.Exists(Path.Combine(folder, MarkerName))) return true;
-                return info.EnumerateFileSystemInfos().All(e => e.LinkTarget == null
-                    && (e is DirectoryInfo ? ServerBlobCache.IsNamespace(e.Name) : e.Name.StartsWith(".je-write-check-", StringComparison.Ordinal)));
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Creates <paramref name="folder"/> when missing and checks a file can be written to it.
-        /// </summary>
-        /// <param name="folder">A resolved folder.</param>
-        /// <returns>Null when writable, else a message for the admin.</returns>
-        public static string? CheckWritable(string folder)
-        {
-            try
-            {
-                Directory.CreateDirectory(folder);
-                var probe = Path.Combine(folder, ".je-write-check-" + Guid.NewGuid().ToString("N") + ".tmp");
-                using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose))
-                {
-                }
-
-                return null;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return "Jellyfin can't write to that folder (permission denied).";
-            }
-            catch (Exception)
-            {
-                return "Jellyfin can't create or write to that folder.";
-            }
-        }
+        /// <summary>Why the cache can't run on this platform.</summary>
+        public const string Unsupported = "The server-side cache needs Jellyfin running on Linux (x64, x86, Arm or Arm64), where its folder can be kept confined.";
 
         /// <summary>True when <paramref name="path"/> is <paramref name="folder"/> or inside it.</summary>
         internal static bool Inside(string path, string folder)

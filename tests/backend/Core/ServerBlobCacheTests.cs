@@ -354,7 +354,7 @@ public sealed class ServerBlobCacheTests : IDisposable
         var locked = Path.Combine(_root, "locked");
         Directory.CreateDirectory(locked);
         File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        Assert.NotNull(ServerCacheLocation.CheckWritable(locked));
+        Assert.NotNull(Location().Prepare(locked));
         _settings = _settings with { Folder = locked };
         Assert.False(await cache.PutAsync("artwork", "k", new byte[] { 1 }, "image/jpeg", CancellationToken.None));
         Assert.Null(await cache.TryGetAsync("artwork", "k", CancellationToken.None));
