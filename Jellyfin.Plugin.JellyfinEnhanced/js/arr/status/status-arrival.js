@@ -55,7 +55,8 @@
      * The page followed now: { view, id, key, series, kind, base, pending, timer, probeTimer, reloadedAt, tried, parents }.
      * `base` is what the page was drawn with (its first status, then each change acted on; on a movie or
      * episode page, each change Jellyfin's controls were seen to reflect). `drawing` is a movie or episode
-     * redraw not yet checked, `failures` its unreconciled attempts, `abandoned` the change given up on.
+     * redraw not yet checked, `failures` its unreconciled attempts, `abandoned` the change given up on,
+     * `latest` the newest status read, `pickerSeen` whether Jellyfin's version picker was ever on the page.
      * @type {Object|null}
      */
     let page = null;
@@ -245,6 +246,8 @@
         state.drawing = null;
         state.failures = null;
         state.abandoned = null;
+        state.latest = null;
+        state.pickerSeen = false;
         state.settleTimer = null;
         state.endSettle = null;
         page = state;
@@ -324,7 +327,41 @@
     function reconciled(state, base) {
         if (!(base?.versions > 1)) return null;
         const picker = state.view.querySelector('select.selectSource');
-        return picker ? picker.options.length >= base.versions : null;
+        if (picker) {
+            state.pickerSeen = true;
+            return picker.options.length >= base.versions;
+        }
+        // The page's picker missing (Jellyfin mid-redraw) is not a redraw that took; only a page
+        // that never had one can't be checked.
+        return state.pickerSeen ? false : null;
+    }
+
+    /**
+     * True when two signatures say the same.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} a Signature.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} b Signature.
+     * @returns {boolean} Same.
+     */
+    function same(a, b) {
+        return !!a && !!b && a.ready === b.ready && a.count === b.count && a.versions === b.versions;
+    }
+
+    /**
+     * A movie or episode page's newest status read: a change waiting for its redraw (or given up on)
+     * follows it, so a version removed meanwhile never stays the target, and a change that is gone
+     * no longer waits.
+     * @param {Object} state Page state.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} now Signature read.
+     * @returns {void}
+     */
+    function track(state, now) {
+        state.latest = now;
+        if (!state.refreshed) return;
+        if (state.abandoned && !same(now, state.abandoned)) state.abandoned = null;
+        const pending = state.pending;
+        if (pending?.kind !== 'reload') return;
+        if (!more(now, state.base)) state.pending = null;
+        else if (!more(now, pending.base)) pending.base = now;
     }
 
     /**
@@ -350,17 +387,20 @@
      */
     function settled(state, base) {
         state.drawing = null;
-        if (reconciled(state, base) !== false) {
-            commit(state, base);
+        // Checked against what was redrawn, or less if a version went meanwhile; a newer arrival has its own plan.
+        const latest = state.latest || base;
+        const target = more(base, latest) ? latest : base;
+        if (reconciled(state, target) !== false) {
+            commit(state, target);
             return;
         }
-        const tries = state.failures && !more(base, state.failures.base) ? state.failures.tries + 1 : 1;
-        state.failures = { base, tries };
+        const tries = state.failures && same(target, state.failures.base) ? state.failures.tries + 1 : 1;
+        state.failures = { base: target, tries };
         if (tries >= timing.redrawTries) {
-            state.abandoned = base;
+            state.abandoned = target;
             return;
         }
-        plan(state, { kind: 'reload', base });
+        if (more(latest, state.base)) plan(state, { kind: 'reload', base: latest });
     }
 
     /**
@@ -479,6 +519,7 @@
             if (now.ready && state.kind === 'episode' && missingShown(view)) plan(state, { kind: 'reload', base: now });
             return;
         }
+        if (!listPage(state)) track(state, now);
         if (more(now, expected(state))) plan(state, { kind: 'reload', base: now });
     }
 
@@ -586,7 +627,8 @@
         const now = Date.now();
         const waiting = prior?.kind === 'reload' ? prior : null;
         const next = waiting
-            ? { kind: 'reload', base: higher(waiting.base, action.base), since: waiting.since }
+            // A movie or episode page waits for the newest read; a list page for the most it has seen.
+            ? { kind: 'reload', base: listPage(state) ? higher(waiting.base, action.base) : action.base, since: waiting.since }
             : { kind: 'reload', base: action.base, since: now };
         state.pending = next;
         const changed = !waiting || action.listed || more(next.base, waiting.base);
@@ -756,6 +798,7 @@
         const list = listPage(state);
         if (list) state.base = base;
         else state.drawing = base;
+        if (!list && state.view.querySelector('select.selectSource')) state.pickerSeen = true;
         state.refreshed = true;
         state.reloadedAt = Date.now();
         if (list) drew(state);
