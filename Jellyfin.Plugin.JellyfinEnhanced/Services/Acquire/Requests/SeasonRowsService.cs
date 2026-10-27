@@ -27,6 +27,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Air date as a calendar day (yyyy-MM-dd).</summary>
         [JsonPropertyName("airDate")] public string? AirDate { get; init; }
 
+        /// <summary>
+        /// The episode is one the request target lists (or, with <see cref="SeasonRows.Source"/> <c>provider</c>, TMDB lists)
+        /// and it has aired: what Pick episodes offers. Kept when Spoiler Guard strips the date.
+        /// </summary>
+        [JsonPropertyName("aired")] public bool Aired { get; init; }
+
         /// <summary>TMDB still path ("/abc.jpg"), validated; the client builds the image URL.</summary>
         [JsonPropertyName("still")] public string? Still { get; init; }
 
@@ -87,6 +93,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Episodes in number order: request state for all, metadata for the ones without a file.</summary>
         [JsonPropertyName("episodes")] public IReadOnlyList<SeasonRowEpisode> Episodes { get; init; } = Array.Empty<SeasonRowEpisode>();
+
+        /// <summary>
+        /// Whose numbering and facts the episodes carry (UX-3): <c>destination</c>, the request target's Sonarr holds the series and
+        /// its own numbers, titles and air days are all the rows say (never TMDB's); <c>provider</c>, no requestable Sonarr holds
+        /// it (or Seerr takes requests), so TMDB's numbers and facts are what a request names; <c>unknown</c>, the target's lists
+        /// couldn't be read now (no facts: single episodes can't be asked for); <c>unchecked</c>, the viewer may not use the
+        /// target, so nothing about it is read or said (TMDB's facts only, as for anyone who can't ask).
+        /// </summary>
+        [JsonPropertyName("source")] public string Source { get; init; } = "unknown";
+    }
+
+    /// <summary>One episode of a season as the request target's Sonarr lists it.</summary>
+    /// <param name="Episode">Episode number.</param>
+    /// <param name="Title">Title as the destination lists it.</param>
+    /// <param name="AirDateUtc">Air time (UTC).</param>
+    /// <param name="AirDateIsDay">The air date is a calendar day only (no air time): it airs as status says such days do.</param>
+    public sealed record DestinationEpisode(int Episode, string? Title, DateTime? AirDateUtc, bool AirDateIsDay = false);
+
+    /// <summary>
+    /// The destination's view of one season: <paramref name="Read"/> false when its lists couldn't be read; otherwise
+    /// <paramref name="Holds"/> says whether it has the series, and <paramref name="Episodes"/> lists that season.
+    /// </summary>
+    /// <param name="Read">The destination answered.</param>
+    /// <param name="Holds">It has the series.</param>
+    /// <param name="Episodes">The season's episodes.</param>
+    public sealed record DestinationSeason(bool Read, bool Holds, IReadOnlyList<DestinationEpisode> Episodes)
+    {
+        /// <summary>Couldn't be read.</summary>
+        public static DestinationSeason Unread => new(false, false, Array.Empty<DestinationEpisode>());
+
+        /// <summary>Read; the series isn't there.</summary>
+        public static DestinationSeason NotHeld => new(true, false, Array.Empty<DestinationEpisode>());
     }
 
     /// <summary>
@@ -108,19 +146,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly IRequestPolicy _policy;
         private readonly TitleAliases? _aliases;
         private readonly Func<int, int, string?, CancellationToken, Task<string?>> _tmdbSeason;
+        private readonly Func<string, IReadOnlyList<TitleKey>, int, CancellationToken, Task<DestinationSeason>>? _destination;
         private readonly Func<DateTimeOffset> _now;
         private readonly ResponseGate _gate;
 
-        /// <summary>Creates the service over the shared TMDB cache.</summary>
-        public SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases aliases, TmdbResponseCache tmdb, SpoilerPresentation? presentation = null)
-            : this(view, ledger, policy, aliases, (id, season, language, ct) => TmdbSeasonAsync(tmdb, id, season, language, ct))
+        /// <summary>Creates the service over the shared TMDB cache and the arrs' snapshots.</summary>
+        public SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases aliases, TmdbResponseCache tmdb, Arr.ArrStateStore arrs, SpoilerPresentation? presentation = null)
+            : this(view, ledger, policy, aliases, (id, season, language, ct) => TmdbSeasonAsync(tmdb, id, season, language, ct), destination: (instance, titles, season, ct) => DestinationSeasonAsync(arrs, instance, titles, season, ct))
         {
             _presentation = presentation;
         }
 
-        /// <summary>Creates the service with an explicit TMDB season reader (tests).</summary>
-        internal SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, Func<int, int, string?, CancellationToken, Task<string?>> tmdbSeason, Func<DateTimeOffset>? now = null, SpoilerPresentation? presentation = null)
+        /// <summary>
+        /// Creates the service with an explicit TMDB season reader and destination reader (tests). Without a destination reader no
+        /// Sonarr is read: the rows carry TMDB's numbering as with no requestable Sonarr.
+        /// </summary>
+        internal SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, Func<int, int, string?, CancellationToken, Task<string?>> tmdbSeason, Func<DateTimeOffset>? now = null, SpoilerPresentation? presentation = null,
+            Func<string, IReadOnlyList<TitleKey>, int, CancellationToken, Task<DestinationSeason>>? destination = null)
         {
+            _destination = destination;
             _presentation = presentation;
             _view = view;
             _ledger = ledger;
@@ -138,21 +182,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// included) and the request states are read again for the viewer as Jellyfin has them now, so an episode hidden
         /// meanwhile never carries its title or synopsis. A viewer whose policy changed meanwhile gets the rows prepared again.
         /// </summary>
-        public async Task<SeasonRows?> ForSeasonAsync(StatusViewer viewer, Guid seasonId, string? language, CancellationToken ct)
+        public async Task<SeasonRows?> ForSeasonAsync(StatusViewer viewer, Guid seasonId, string? language, CancellationToken ct, string variant = "standard")
         {
             for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
             {
                 var stamp = _gate.Take(viewer);
                 if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
                 var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
-                var meta = await PrepareAsync(viewer.UserId, key, season, tmdbId, language, ct).ConfigureAwait(false);
+                var prepared = await PrepareAsync(viewer.UserId, key, season, tmdbId, language, variant, ct).ConfigureAwait(false);
                 // Publication: no await from here on.
                 if (_gate.Current(stamp, rereadsLibrary: true) is { } now)
                 {
                     var before = _gate.Take(now);
                     if (_view.Resolve(seasonId, now) is not { Kind: "season", SeriesId: Guid still } || still != seriesId) return null;
                     var jf = _view.Episodes(seriesId, season, now, includeVirtual: true).Where(e => e.Season == season).ToList();
-                    var rows = Project(now, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, meta);
+                    var rows = Project(now, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, prepared);
                     // The viewer didn't change while it was projected: published; else read again for them as they are then.
                     if (ResponseGate.SameViewer(before, _gate.Take(now))) return rows;
                     viewer = now;
@@ -177,27 +221,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct)
             => ForAbsentSeasonAsync(viewer, page, language, ct, Admission(viewer));
 
+        /// <summary><see cref="ForAbsentSeasonAsync(StatusViewer, AbsentTitle, string?, CancellationToken)"/> for an edition's request target.</summary>
+        public Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, string variant, CancellationToken ct)
+            => ForAbsentSeasonAsync(viewer, page, language, ct, Admission(viewer), variant);
+
         /// <summary>Captures admission before the caller resolves an absent page, including its awaited policy reads.</summary>
         internal ResponseStamp Admission(StatusViewer viewer) => _gate.Take(viewer);
 
-        internal Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct, ResponseStamp admission)
+        internal Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct, ResponseStamp admission, string variant = "standard")
         {
             if (page.Kind != "season" || page.Season is not int season || page.SeriesPageId is not Guid seriesPageId || _gate.Current(admission) == null)
                 return Task.FromResult<SeasonRows?>(null);
             var hidden = page.HiddenEpisodes.Select(n => new JfEpisode { Season = season, Episode = n, Hidden = true }).ToList();
-            return ComposeAbsentAsync(viewer, page, seriesPageId, season, hidden, language, ct, admission);
+            return ComposeAbsentAsync(viewer, page, seriesPageId, season, hidden, language, variant, ct, admission);
         }
 
-        private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct, ResponseStamp stamp)
+        private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, string variant, CancellationToken ct, ResponseStamp stamp)
         {
-            var meta = await PrepareAsync(viewer.UserId, page.ScopeKey, season, page.TmdbId, language, ct).ConfigureAwait(false);
+            var prepared = await PrepareAsync(viewer.UserId, page.ScopeKey, season, page.TmdbId, language, variant, ct).ConfigureAwait(false);
             // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer and the library as
             // they were before the metadata read: none when either changed meanwhile (the page asks again).
             if (_gate.Current(stamp) is not { } now) return null;
             // The resolver already knows TMDB even when an absent series' TVDB alias is not in any arr index yet.
             var visibilityKey = TitleKey.Parse("tv:tmdb:" + page.TmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? page.Title;
             if (!_policy.Evaluate(now.UserId, Probe(visibilityKey, season, "standard")).Visible) return null;
-            var rows = Project(now, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, meta);
+            var rows = Project(now, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, prepared);
             if (page.Spoilers is not { } spoilers) return _gate.Current(stamp) != null ? rows : null;
             // Spoiler Guard on the title: the rows carry no plot (as the page's own episode list).
             var guarded = rows with
@@ -213,8 +261,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return _gate.Current(stamp) != null ? guarded : null;
         }
 
-        /// <summary>The metadata of a season's episodes (TMDB) and the policy's disk facts of both editions, read ahead of publication.</summary>
-        private async Task<Dictionary<int, SeasonRowEpisode>> PrepareAsync(Guid viewer, TitleKey key, int season, int? tmdbId, string? language, CancellationToken ct)
+        /// <summary>What a season's rows are composed from, read ahead of publication.</summary>
+        /// <param name="Meta">TMDB's episodes in the viewer's language.</param>
+        /// <param name="Source">Whose numbering the rows carry (<see cref="SeasonRows.Source"/>) as read.</param>
+        /// <param name="Destination">The request target's episodes of the season (with <c>destination</c>).</param>
+        /// <param name="Variant">The edition whose request target was read (a 4K ask's own target with <c>4k</c>).</param>
+        private sealed record Prepared(Dictionary<int, SeasonRowEpisode> Meta, string Source, IReadOnlyList<DestinationEpisode> Destination, string Variant);
+
+        /// <summary>
+        /// The metadata of a season's episodes (TMDB), the policy's disk facts of both editions and, for a viewer who may use the
+        /// edition's request target (its library and request rule pass first: nothing is read about a target they may not use), that
+        /// target's Sonarr list of the season, read ahead of publication.
+        /// </summary>
+        private async Task<Prepared> PrepareAsync(Guid viewer, TitleKey key, int season, int? tmdbId, string? language, string variant, CancellationToken ct)
         {
             var meta = new Dictionary<int, SeasonRowEpisode>();
             if (tmdbId is int id && id > 0)
@@ -224,8 +283,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var episode in ParseSeason(json)) meta[episode.Episode] = episode;
             }
             var canonical = _aliases?.Canonical(key.Title) ?? key.Title;
-            foreach (var variant in new[] { "standard", "4k" }) await _policy.PrepareDiskAsync(Probe(canonical, season, variant), ct).ConfigureAwait(false);
-            return meta;
+            foreach (var edition in new[] { "standard", "4k" }) await _policy.PrepareDiskAsync(Probe(canonical, season, edition), ct).ConfigureAwait(false);
+            var none = Array.Empty<DestinationEpisode>();
+            // Seerr numbers what it is sent the way TMDB does.
+            if (_policy.Configuration.ArrRequestBackend == "seerr") return new Prepared(meta, "provider", none, variant);
+            // The viewer's access to the target first: a target they may not use is never read, so nothing about it can show.
+            if (!_policy.Evaluate(viewer, Probe(canonical, season, variant)).Visible) return new Prepared(meta, "unchecked", none, variant);
+            var instance = _policy.JeTarget(viewer, Probe(canonical, season, variant)).InstanceId;
+            if (_destination == null || string.IsNullOrEmpty(instance)) return new Prepared(meta, "provider", none, variant);
+            var titles = (_aliases?.Of(key.Title) ?? Array.Empty<TitleKey>()).Append(key.Title).Append(canonical).Distinct().ToList();
+            DestinationSeason read;
+            try { read = await _destination(instance, titles, season, ct).ConfigureAwait(false); }
+            catch (Exception e) when (e is not OperationCanceledException) { read = DestinationSeason.Unread; }
+            if (!read.Read) return new Prepared(meta, "unknown", none, variant);
+            return read.Holds ? new Prepared(meta, "destination", read.Episodes, variant) : new Prepared(meta, "provider", none, variant);
+        }
+
+        /// <summary>
+        /// The request target's view of a season: its Sonarr's episode list for the series (aliases tried in turn). Only a list
+        /// read now counts: a library or episode list whose latest refresh failed (an error kept beside an older snapshot) is
+        /// unread, never taken as what the target holds.
+        /// </summary>
+        internal static async Task<DestinationSeason> DestinationSeasonAsync(Arr.ArrStateStore arrs, string instanceId, IReadOnlyList<TitleKey> titles, int season, CancellationToken ct)
+        {
+            var instance = arrs.Registry.Get(instanceId);
+            if (instance == null || !instance.Usable || instance.Kind != Arr.ArrKind.Sonarr) return DestinationSeason.Unread;
+            var library = await arrs.GetLibraryAsync(instance, ct).ConfigureAwait(false);
+            if (library.Error != null || library.Value is not { } snapshot) return DestinationSeason.Unread;
+            var series = titles.Select(t => t.Provider switch
+            {
+                "tvdb" when t.NumericId is int tvdb => snapshot.SeriesByTvdb(tvdb),
+                "tmdb" when t.NumericId is int tmdb => snapshot.SeriesByTmdb(tmdb),
+                "imdb" => snapshot.SeriesByImdb(t.Id),
+                _ => null,
+            }).FirstOrDefault(s => s != null);
+            if (series == null) return DestinationSeason.NotHeld;
+            var episodes = await arrs.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
+            if (episodes.Error != null || episodes.Value is not { } list) return DestinationSeason.Unread;
+            return new DestinationSeason(true, true, list.Episodes.Where(e => e.SeasonNumber == season).Select(e => new DestinationEpisode(e.EpisodeNumber, e.Title, e.AirDateUtc, e.AirDateIsDay)).ToList());
         }
 
         /// <summary>The policy probe of a season's episodes in one edition.</summary>
@@ -237,8 +332,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// I/O): each edition's request states and policy probe on its own target (D53, edition round 19: a control reads its
         /// own binding's edition, never the other one's).
         /// </summary>
-        private SeasonRows Project(StatusViewer viewer, TitleKey key, string seriesId, int season, int? tmdbId, List<JfEpisode> jf, Dictionary<int, SeasonRowEpisode> meta)
+        private SeasonRows Project(StatusViewer viewer, TitleKey key, string seriesId, int season, int? tmdbId, List<JfEpisode> jf, Prepared prepared)
         {
+            var meta = prepared.Meta;
             var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
             var withFile = new HashSet<int>(jf.Where(EditionAvailability.Plays).SelectMany(Numbers));
             var canonical = _aliases?.Canonical(key.Title) ?? key.Title;
@@ -251,7 +347,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
             var canRequest = facts.Refusal == null && facts.CanCreate && facts.Backend is "je" or "seerr";
             var canRequest4k = facts4k.Refusal == null && facts4k.CanCreate && facts4k.Can4k && facts4k.Backend is "je" or "seerr";
-            var numbers = new SortedSet<int>(meta.Keys);
+            // Access is checked again at publication: a target the viewer may no longer use says nothing (TMDB's facts only).
+            var source = (prepared.Variant == "4k" ? facts4k : facts).Visible ? prepared.Source : "unchecked";
+            // With the target's Sonarr holding the series its list is the season: its numbers, titles and air days, never TMDB's.
+            var destination = source == "destination" ? prepared.Destination.GroupBy(e => e.Episode).ToDictionary(g => g.Key, g => g.First()) : null;
+            var tmdbFacts = source is "provider" or "unchecked";
+            var numbers = new SortedSet<int>(destination?.Keys ?? (tmdbFacts ? meta.Keys : Enumerable.Empty<int>()));
             numbers.UnionWith(perEpisode.Keys);
             numbers.UnionWith(perEpisode4k.Keys);
             numbers.UnionWith(jf.Where(e => !e.Hidden).SelectMany(Numbers));
@@ -261,9 +362,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var strip = presentation?.MissingRow(title) ?? (Title: false, Overview: false, AirDate: false);
             var guarded = presentation?.Guarded(title) == true;
             var episodes = new List<SeasonRowEpisode>();
+            var now = _now();
             foreach (var n in numbers)
             {
-                var info = meta.GetValueOrDefault(n);
+                if (destination != null)
+                {
+                    var listed = destination.GetValueOrDefault(n);
+                    var day = listed?.AirDateUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                    var shown = listed != null && !withFile.Contains(n);
+                    episodes.Add(new SeasonRowEpisode
+                    {
+                        Episode = n,
+                        Title = shown && !strip.Title && !string.IsNullOrWhiteSpace(listed!.Title) ? listed.Title : null,
+                        AirDate = shown && !strip.AirDate ? day : null,
+                        Aired = listed != null && (withFile.Contains(n) || HasAired(listed.AirDateUtc, listed.AirDateIsDay, now.UtcDateTime)),
+                        Request = perEpisode.GetValueOrDefault(n),
+                        Request4k = perEpisode4k.GetValueOrDefault(n),
+                    });
+                    continue;
+                }
+                var info = tmdbFacts ? meta.GetValueOrDefault(n) : null;
                 var known = !withFile.Contains(n) && info != null;
                 episodes.Add(new SeasonRowEpisode
                 {
@@ -273,6 +391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     Runtime = known ? info!.Runtime : null,
                     AirDate = known && !strip.AirDate ? info!.AirDate : null,
                     Still = known && !guarded ? info!.Still : null,
+                    Aired = info != null && (withFile.Contains(n) || HasAired(TmdbDay(info.AirDate), true, now.UtcDateTime)),
                     Request = perEpisode.GetValueOrDefault(n),
                     Request4k = perEpisode4k.GetValueOrDefault(n),
                 });
@@ -292,8 +411,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Blocked4k = canRequest4k ? null : RequestBlock.Of(facts4k),
                 SeasonRequest4k = seasonState4k,
                 Episodes = episodes,
+                Source = source,
             };
         }
+
+        /// <summary>
+        /// An episode has aired by the very rule status uses (<see cref="StatusComposer.Aired"/>): a known date (an unknown or
+        /// sentinel one is not aired) that is an instant before now, or a date-only day no longer ahead anywhere.
+        /// </summary>
+        internal static bool HasAired(DateTime? date, bool isDay, DateTime now) => StatusComposer.Aired(date, isDay, now);
+
+        /// <summary>TMDB's "yyyy-MM-dd" air date as that day (UTC midnight), or null.</summary>
+        private static DateTime? TmdbDay(string? day)
+            => DateTime.TryParseExact(day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at : null;
 
         /// <summary>
         /// The viewer's request state per episode of a season and of the season as a whole, from the wants of one edition

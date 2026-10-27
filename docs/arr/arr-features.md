@@ -1187,9 +1187,11 @@ ask fetch the episodes that are missing, one tap each.
       per "still looking" period, whichever page it was pressed on: a series Search right after a season's searches only
       the episodes left, and pressing it again when none are says "Searched for it a little while ago. We'll keep
       looking." When some of those episodes were never sent, the *Missing* line searches each episode a request sent (at
-      most ten) and asks for the others, and a series page asks for its seasons. For anything no request sent yet,
-      **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to
-      Sonarr/Radarr as a search for what they already monitor.
+      most ten) and asks for the others. For anything no request sent yet, a season's **Search** asks for it like
+      **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to Sonarr/Radarr as a search
+      for what they already monitor. The **Search** of a movie, series or episode page (on a computer and as a phone's
+      main button alike) never asks: when nothing was sent to search again it says so, and the page's **Request** asks;
+      only a button that reads **Ask {contact} to search** asks, as it says.
 
 ??? info "Paused: storage full, never a bare Missing"
     When the drive a download would land on has less free space than
@@ -1260,7 +1262,9 @@ profiles, folders or tags.
       seasons…*, *Pick episodes…* and *Just new episodes from now on* (with Seerr handling requests Jellyfin Enhanced
       asks Seerr for each new season as it starts, see [Sending requests](#sending-requests-phase-3); *Pick episodes…*
       isn't offered there, since Seerr takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3);
-      with Seerr's partial requests off only *The whole series* is). Each card shows what it costs ("Uses 2 of your 4
+      with Seerr's partial requests off only *The whole series* is). The seasons and episodes are the ones the series page
+      offers, numbered as Sonarr lists them once it has the series (see
+      [Episode numbers](#titles-that-arent-in-the-library-native-details)). Each card shows what it costs ("Uses 2 of your 4
       this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
       ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
       standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -1306,14 +1310,36 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
 
 ??? info "How the page asks and updates"
     The first of them sits in Jellyfin's button row where *Play* is on a library title; the others follow it there as icon
-    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page.
+    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page. The row has
+    one **Request** (the **+** that opens the sheet; *More* lists it too) and the same main action on every screen: where
+    the row is too narrow for its buttons (a phone), its main button is still the one the wide row starts with, so a
+    series whose episodes have been missing for a long while shows **Search** on a phone as on a computer, never
+    **Request** in its place.
     These are the page's only request controls, and they ask through Jellyfin Enhanced in both request modes: in JE mode
     the request goes straight to Sonarr or Radarr (asks that need an OK wait for it), in Seerr mode Jellyfin Enhanced
     passes it on to Seerr as the person who asked. In JE mode the cards of the *Not in your library* search row and of the
     Discover tab open these pages too, and the request is followed on the page and in *My requests* through to *Ready*.
 
     The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
-    aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
+    aired episode is simply not here and later ones are *not out yet*.
+
+    **Episode numbers.** A request for an episode names it by number, and the Sonarr it goes to decides which episode that
+    number is. So once that Sonarr has the series, Sonarr's own list is the season: the season page shows Sonarr's
+    episodes, numbers, titles and air dates (a page of a title that isn't in the library swaps its TMDB episode rows for
+    them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired (by the same rule as the season page: a date without a time
+    counts from the end of that day everywhere, and an unknown date never counts as aired) and that you may see, whichever way
+    the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
+    on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
+    you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
+    whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
+    read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
+    or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
+    details are all a page has for a season Sonarr numbers itself (the page of a single episode that isn't in the library,
+    for one: ask for it on its season page). Nothing about a Sonarr you can't use (one whose library you can't open) is read
+    or shown. A library season's own Jellyfin rows are unchanged: they show Jellyfin's details for the episode Sonarr's is
+    matched to.
+
+    The page's id is never taken for a copy: once one
     arrives that the person can open, the page turns into that library title's page in its place (the same rule as a
     library page whose title arrives: it waits while they type, play or have a dialog open, and **Open** is offered
     meanwhile).

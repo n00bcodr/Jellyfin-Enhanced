@@ -187,7 +187,7 @@
             missing: partial.reduce((n, s) => n + notFetchedOf(s.summary), 0),
             longMissing: searchable.reduce((n, s) => n + longMissingOf(s.summary), 0),
             searchSeasons: searchable.map(s => s.season),
-            seasons: seasons.map(s => ({ season: s.season, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
+            seasons: seasons.map(s => ({ season: s.season, itemId: s.itemId || null, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
             latestSeason: aired.length ? aired[aired.length - 1].season : null,
             upcomingSeason: upcoming ? upcoming.season : (lastOwned > 0 ? lastOwned + 1 : null),
             askedSeasons: [...asked]
@@ -242,8 +242,12 @@
                 clear(page);
                 return;
             }
+            // The page of an episode that isn't in the library shows TMDB's episode of that number: held when the arr
+            // the ask goes to numbers its season differently.
+            const held = status.kind === 'episode' && isAbsent(status) && offerable(status) && !JE.arrAsk.seasonsOnly?.(caps) ? await episodeHeld(status) : null;
+            if (gen !== generation) return;
             let box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
-                : status.kind === 'episode' ? episodeActions(status, caps)
+                : status.kind === 'episode' ? (held ? heldBox(caps, held) : episodeActions(status, caps))
                     : status.kind === 'season' ? await seasonActions(status, caps, gen)
                         : movieActions(page, status, caps, gen);
             if (gen !== generation) return;
@@ -447,15 +451,24 @@
     }
 
     /**
+     * What a plain Search says when there is nothing to search again (nothing was asked for yet): it never asks in its
+     * place; the page's Request does.
+     * @returns {Promise<void>}
+     */
+    async function notAskedYet() {
+        JE.arrAsk.toast(tr('arr_search_not_asked'));
+    }
+
+    /**
      * Runs a Search from an action button: Searching…, then what it found (a toast, and the outcome
      * in the button's place for a couple of minutes). An administrator's runs on the instance given;
      * everyone else's runs when requests already sent the title in scope (JE.arrAsk.familySearch),
-     * otherwise <paramref name="fallback"/> asks for it instead.
+     * otherwise <paramref name="fallback"/> runs (an ask only under an "Ask {contact} to search" label).
      * @param {HTMLButtonElement} button Button.
      * @param {string} doneKey key|action.
      * @param {string} key Title key in scope.
      * @param {string|null} instanceId Instance (JE.arrAsk.searchInstance), or null for a family Search.
-     * @param {Function} [fallback] Asks for it instead (family Search that doesn't apply).
+     * @param {Function} [fallback] What a family Search that doesn't apply does instead.
      * @param {Object} [owner] The press's owner (JE.ownerOf(event)): the search carries its binding.
      * @returns {Promise<void>}
      */
@@ -533,9 +546,11 @@
         if (JE.arrStatus.searchable?.(status) && !(roundedUp && !instanceId && status.reason?.params?.sent !== '1')) {
             const doneKey = `${key}|s${season}e${episode}|search`;
             // Requests already sent this episode: the Search runs with no new OK (plain "Search" for a Kid too).
-            const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-            // Seerr mode: a Search that turns out not to apply never asks for the season behind a "Search" label.
-            const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : () => ask(b, doneKey));
+            const asksFirst = JE.arrAsk.searchAsksFirst(caps, status);
+            const text = asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
+            // A Search that turns out to have nothing to search again never asks behind a plain "Search" label (UX2R-4): it
+            // says so, and the page's Request asks. Only "Ask {contact} to search" asks, as it says; in Seerr mode never.
+            const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : asksFirst ? () => ask(b, doneKey) : notAskedYet);
             box.appendChild(action(doneKey, 'search', text, (b, owner) => runSearch(b, doneKey, status.key, instanceId, fallback(b), owner), false, instanceId ? 'search' : 'ask'));
         } else if (roundedUp) {
             const doneKey = JE.arrAsk.wholeSeriesOnly(caps) ? `${key}|series` : `${key}|season:${season}`;
@@ -614,9 +629,11 @@
             const wanted = one ? all.slice(0, 1) : all;
             if (searchFrom || wanted.length) {
                 const doneKey = `${key}|search`;
-                const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
+                const asksFirst = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status);
+                const label = asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
                 const askSeasons = (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv');
-                box.appendChild(action(doneKey, 'search', label, (b, owner) => runSearch(b, doneKey, key, searchFrom, () => askSeasons(b), owner),
+                // Plain "Search" never turns into an ask (UX2R-4); "Ask {contact} to search" asks, as it says.
+                box.appendChild(action(doneKey, 'search', label, (b, owner) => runSearch(b, doneKey, key, searchFrom, asksFirst ? () => askSeasons(b) : notAskedYet, owner),
                     plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
@@ -645,6 +662,48 @@
      */
     function isAbsent(status) {
         return !!status?.itemId && !!JE.titleDetails?.isSynthetic?.(status.itemId);
+    }
+
+    /**
+     * Why the page of an episode that isn't in the library is held, or null when it may be asked for: the page shows TMDB's
+     * episode with this number, which is what a request names only while no arr holds the season (the season rows' source
+     * `provider`, its status agreeing). A Sonarr that holds it numbers the season itself (`differently`: ask on the season
+     * page, which lists Sonarr's episodes); a read that fails or says nothing holds it too (`unchecked`).
+     * @param {Object} status Episode status.
+     * @returns {Promise<'differently'|'unchecked'|null>} Reason.
+     */
+    async function episodeHeld(status) {
+        const parts = JE.titleDetails?.parse?.(status.itemId);
+        const seasonId = parts?.kind === 'episode' ? JE.titleDetails.syntheticId?.('season', parts.tmdbId, parts.season) : null;
+        const language = (navigator.language || 'en').split('-')[0];
+        const rows = seasonId ? await JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(seasonId)}?language=${encodeURIComponent(language)}`)
+            .then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null) : null;
+        const arrHolds = status.reason?.code !== 'not_in_arr';
+        // The season rows say this episode hasn't aired (an unknown or placeholder date): never asked for on its own.
+        if ((Array.isArray(rows?.episodes) ? rows.episodes : []).some(e => e?.episode === parts?.episode && e.aired === false)) return 'unchecked';
+        if (rows?.source === 'provider' && !arrHolds) return null;
+        if (rows?.source === 'destination') return 'differently';
+        return JE.arrAsk.heldReason(rows, { arrHolds });
+    }
+
+    /**
+     * The actions of a held episode page ({@link episodeHeld}): the line saying why it can't be asked for on its own.
+     * @param {Object} caps Capabilities.
+     * @param {'differently'|'unchecked'} reason Why.
+     * @returns {HTMLElement} Box.
+     */
+    function heldBox(caps, reason) {
+        const box = actionsBox(caps);
+        const differently = reason === 'differently';
+        const text = tr(differently ? 'arr_ask_numbering_text' : 'arr_ask_numbering_unchecked_text');
+        const note = JE.arrAsk.pausedNote({ chip: tr(differently ? 'arr_ask_numbering_chip' : 'arr_ask_numbering_unchecked_chip'), text, detail: text });
+        const glyph = note.querySelector('.je-ask-paused-icon');
+        if (glyph) glyph.textContent = 'format_list_numbered';
+        note.classList.add('je-ask-numbering-note');
+        note.dataset.jeFocus = 'numbering';
+        box.appendChild(note);
+        box.dataset.sig = signature(box);
+        return box;
     }
 
     /**

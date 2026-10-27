@@ -30,6 +30,9 @@ public class IntegrationRequestSeasonRowsTests
         public Guid SeasonId { get; } = Guid.NewGuid();
         public List<(int Id, int Season, string? Language)> TmdbCalls { get; } = new();
         public string? Json { get; set; } = SeasonJson;
+        /// <summary>The request target's Sonarr season; by default it doesn't hold the series (TMDB's numbering, as before UX-3).</summary>
+        public Func<string, IReadOnlyList<TitleKey>, int, DestinationSeason>? Destination { get; set; }
+        public List<(string Instance, IReadOnlyList<TitleKey> Titles, int Season)> DestinationCalls { get; } = new();
         public SeasonRowsService Rows { get; }
         public TitleKey Series { get; } = TitleKey.Parse("tv:tvdb:78874")!;
 
@@ -42,7 +45,11 @@ public class IntegrationRequestSeasonRowsTests
             {
                 TmdbCalls.Add((id, season, language));
                 return Task.FromResult<string?>(Json);
-            }, () => R.Now);
+            }, () => R.Now, destination: (instance, titles, season, ct) =>
+            {
+                DestinationCalls.Add((instance, titles, season));
+                return Task.FromResult(Destination == null ? DestinationSeason.NotHeld : Destination(instance, titles, season));
+            });
         }
 
         public StatusViewer Viewer(Guid id) => R.View.Users[id];
@@ -114,6 +121,73 @@ public class IntegrationRequestSeasonRowsTests
         Assert.Equal((1437, 1, "de"), s.TmdbCalls.Single());
         Assert.True(rows.CanRequest);
         Assert.False(rows.DisplayMissing);
+    }
+
+    private static DestinationSeason Sonarr(params (int Episode, string? Title, string? Day)[] episodes)
+        => new(true, true, episodes.Select(e => new DestinationEpisode(e.Episode, e.Title, e.Day == null ? null : DateTime.Parse(e.Day + "T04:00:00Z", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal))).ToList());
+
+    [Fact]
+    public async Task UX3_WhenTheTargetsSonarrHoldsTheSeriesTheRowsCarryOnlyItsNumbersTitlesAndDays()
+    {
+        using var s = new Setup();
+        // TMDB lists E1–E4 (E3 with a foreign title); Sonarr lists E1, E2, E3 under its own titles, and E5 TMDB doesn't.
+        s.Destination = (_, _, _) => Sonarr((1, "Sonarr Pilot", "2014-06-01"), (2, "Sonarr Two", "2014-06-08"), (3, "Sonarr Three", "2014-06-15"), (5, "Sonarr Five", "2099-01-01"));
+        var rows = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None);
+        Assert.Equal("destination", rows!.Source);
+        Assert.Equal(new[] { 1, 2, 3, 5 }, rows.Episodes.Select(e => e.Episode));          // TMDB's E4 isn't Sonarr's: not offered
+        var two = rows.Episodes.Single(e => e.Episode == 2);
+        Assert.Equal(("Sonarr Two", "2014-06-08", true), (two.Title, two.AirDate, two.Aired));
+        Assert.Null(two.Overview); Assert.Null(two.Still); Assert.Null(two.Runtime);         // nothing of TMDB's
+        Assert.DoesNotContain(rows.Episodes, e => e.Title is "Pilot" or "Two" or "Three" or "Four");
+        Assert.Null(rows.Episodes.Single(e => e.Episode == 1).Title);                        // E1 has a file: Jellyfin's row says it
+        Assert.True(rows.Episodes.Single(e => e.Episode == 1).Aired);
+        Assert.False(rows.Episodes.Single(e => e.Episode == 5).Aired);                       // not aired yet
+        Assert.Equal(("r1", 1), (s.DestinationCalls.Single().Instance, s.DestinationCalls.Single().Season));
+        Assert.Contains(s.DestinationCalls.Single().Titles, k => k.ToString() == "tv:tvdb:78874");
+
+        // Absent page: hidden episodes stay out, and Spoiler Guard strips Sonarr's titles and days like TMDB's.
+        var page = new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse("tv:tvdb:78874")!, TmdbId = 1437, Season = 1, SeriesPageId = Guid.NewGuid(), HiddenEpisodes = new[] { 3 },
+            Spoilers = new AbsentRowSpoilers(true, true, true) };
+        var absent = await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), page, "en", CancellationToken.None);
+        Assert.Equal(new[] { 1, 2, 5 }, absent!.Episodes.Select(e => e.Episode));
+        Assert.All(absent.Episodes, e => { Assert.Null(e.Title); Assert.Null(e.AirDate); });
+        Assert.True(absent.Episodes.Single(e => e.Episode == 2).Aired, "Pick episodes still knows what aired");
+    }
+
+    [Fact]
+    public async Task UX3_WithNoRequestableSonarrHoldingTheSeriesTheRowsCarryTmdbsNumbersAndFacts()
+    {
+        using var s = new Setup();
+        var rows = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None);
+        Assert.Equal("provider", rows!.Source);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, rows.Episodes.Select(e => e.Episode));
+        Assert.Equal("Two", rows.Episodes.Single(e => e.Episode == 2).Title);
+        // Seerr takes requests: TMDB's numbering is what it is sent; Sonarr isn't read.
+        s.R.Policy.Configuration.ArrRequestBackend = "seerr";
+        var before = s.DestinationCalls.Count;
+        Assert.Equal("provider", (await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None))!.Source);
+        Assert.Equal(before, s.DestinationCalls.Count);
+    }
+
+    [Fact]
+    public async Task UX3_AnUnreadTargetOrOneTheViewerMayNotUsePublishesNoSonarrFacts()
+    {
+        using var s = new Setup();
+        foreach (var unread in new Func<string, IReadOnlyList<TitleKey>, int, DestinationSeason>[] { (_, _, _) => DestinationSeason.Unread, (_, _, _) => throw new InvalidOperationException("Sonarr down") })
+        {
+            s.Destination = unread;
+            var rows = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None);
+            Assert.Equal("unknown", rows!.Source);
+            Assert.All(rows.Episodes, e => { Assert.Null(e.Title); Assert.False(e.Aired); });   // no TMDB facts on Sonarr's numbers either
+        }
+        // A target the viewer may not use is never read, and the rows say nothing about it.
+        s.Destination = (_, _, _) => Sonarr((1, "Private", "2014-06-01"), (9, "Private Extra", "2014-06-01"));
+        s.R.Policy.Adjust = (_, _, facts) => facts with { Visible = false };
+        var calls = s.DestinationCalls.Count;
+        var hidden = await s.Rows.ForSeasonAsync(s.Viewer(s.R.Member), s.SeasonId, "en", CancellationToken.None);
+        Assert.Equal("unchecked", hidden!.Source);
+        Assert.Equal(calls, s.DestinationCalls.Count);
+        Assert.DoesNotContain(hidden.Episodes, e => e.Episode == 9 || e.Title is "Private" or "Private Extra");
     }
 
     [Fact]

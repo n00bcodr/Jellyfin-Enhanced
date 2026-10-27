@@ -477,10 +477,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal static readonly TimeSpan DayLasts = TimeSpan.FromHours(36);
 
         /// <summary>A date-only day that is still today or later somewhere (see <see cref="DayLasts"/>).</summary>
-        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date + DayLasts > now;
+        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date > now - DayLasts;
 
-        /// <summary>A date still to come: an instant after now, or a date-only day still ahead somewhere.</summary>
-        private static bool NotYet(DateTime date, bool isDay, DateTime now) => isDay ? DayStillAhead(date, now) : date > now;
+        /// <summary>
+        /// A date still to come: an instant after now, or a date-only day still ahead somewhere. The one airing rule of status and
+        /// of the season rows' <c>aired</c> (what Pick episodes offers).
+        /// </summary>
+        internal static bool NotYet(DateTime date, bool isDay, DateTime now) => isDay ? DayStillAhead(date, now) : date > now;
+
+        /// <summary>
+        /// An episode has aired: its date is known (<see cref="Valid"/>: Sonarr's 0001-01-01 means unknown) and no longer ahead
+        /// (<see cref="NotYet"/>). Unknown is not aired. The season page's status and the season rows' <c>aired</c> (what Pick
+        /// episodes offers) both use this one rule.
+        /// </summary>
+        internal static bool Aired(DateTime? date, bool isDay, DateTime now) => Valid(date) is { } at && !NotYet(at, isDay, now);
 
         internal sealed record CopyState(string Stage, string Reason, bool Attention = false, StatusProgress? Progress = null, DateTime? Date = null, DateTime? Since = null, ArrQueueEntry? Row = null, IReadOnlyDictionary<string, string>? Params = null, bool DateIsDay = false, DateTime? LastSearch = null)
         {
@@ -736,15 +746,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             int? nextEpisode = null;
             foreach (var e in page.Episodes.Where(e => e.Season == season).OrderBy(e => e.Episode))
             {
-                var out_ = e.AirDate is DateTime d && !NotYet(d, isDay: true, c.Now);
+                // The one airing rule (TMDB's placeholder or unknown date: not aired), as Pick episodes uses it.
+                var out_ = Aired(e.AirDate, isDay: true, c.Now);
                 if (out_) aired++;
-                else if (e.AirDate is DateTime future && (nextAir == null || future < nextAir))
+                else if (Valid(e.AirDate) is DateTime future && (nextAir == null || future < nextAir))
                 {
                     nextAir = future;
                     nextEpisode = e.Episode;
                 }
 
-                var state = out_ ? down : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: e.AirDate, DateIsDay: true);
+                var state = out_ ? down : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: Valid(e.AirDate), DateIsDay: true);
                 list.Add(new EpisodeStatus
                 {
                     Key = facts.Key.WithEpisode(season, e.Episode).ToString(),
@@ -793,8 +804,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = page.Season ?? 0;
             var number = page.Episode ?? 0;
-            var air = page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate;
-            var state = air is DateTime d && !NotYet(d, isDay: true, c.Now)
+            var air = Valid(page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate);
+            var state = Aired(air, isDay: true, c.Now)
                 ? ApplyRequest(NothingKnown(facts), request, c, facts)
                 : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: air != null);
             return new TitleStatus
@@ -1576,8 +1587,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!copy.QueueUnknown && Departed(copy, null, arr.Id, copy.EpisodesLoadedAt) is DateTime left)
                 return new CopyState(StatusStage.AlmostReady, StatusReasonCode.Importing, Since: left);
             var air = Valid(arr.AirDateUtc);
-            // An air date without a time (a calendar day) has not aired while that day lasts somewhere.
-            if (air == null || NotYet(air.Value, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
+            // An air date without a time (a calendar day) has not aired while that day lasts somewhere; an unknown one hasn't.
+            if (!Aired(arr.AirDateUtc, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
             if (!arr.Monitored || copy.Series?.Monitored == false) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (copy.QueueUnknown) return Unknown();
             var sent = SentFor(request, copy, season, episode, c);
@@ -2612,7 +2623,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A calendar day as "yyyy-MM-dd" (the UTC date of a date-only value).</summary>
         internal static string DayOf(DateTime d) => (d.Kind == DateTimeKind.Local ? d.ToUniversalTime() : d).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-        private static DateTime? Valid(DateTime? d) => d.HasValue && d.Value.Year > 1900 ? d : null;
+        internal static DateTime? Valid(DateTime? d) => d.HasValue && d.Value.Year > 1900 ? d : null;
 
         private static DateTime? Latest(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : (a > b ? a : b);
 
