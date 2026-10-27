@@ -2055,6 +2055,7 @@ test('UX-3 / UX2R-1: a title\'s own Request offers the episodes its page lists a
   click(h, card(h, 'episodes'));
   await settle();
   assert.deepEqual(toggles(h).map(b => b.dataset.episode), Array.from({ length: 14 }, (_, i) => String(i + 1)));
+  assert.ok(toggles(h).every(b => !b.disabled), 'the server established the numbering: every episode can be picked');
   assert.equal(h.document.querySelector('.je-sheet-numbering:not([hidden])'), null);
   assert.ok(h.statusCalls.some(p => p.startsWith('/acquire/status/item/fs')), 'read from the series page\'s own status');
   click(h, h.document.querySelector('.je-sheet-episode[data-episode="12"]'));
@@ -2122,6 +2123,7 @@ test('UX2R-3: a failed season read holds the selected episode (nothing is sent) 
   click(h, h.document.querySelector('.je-sheet-numbering-retry'));
   await settle(30);
   assert.equal(toggles(h).length, 14, 'read again');
+  assert.ok(toggles(h).every(b => !b.disabled), 'read again: established');
   click(h, primary(h));
   await pending;
   assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x1']);
@@ -2302,4 +2304,17 @@ for (const me of [MEMBER, KID]) test(`UX2R3-2 probe: a ${me.role}'s plain Search
   click(h, button); click(h, button); await settle(30);
   assert.equal(h.searches.length, 1);
   assert.equal(h.posts.length, 0, 'plain title Search never falls through to a movie request');
+});
+
+// Review round 4 (UX2R4-1), ported: the season rows' answer for an episode whose Sonarr air date is unknown (Sonarr's 0001-01-01
+// sentinel, as the fixed server answers it: not aired) offers no single episode, and nothing is sent.
+test('UX2R4-1 probe: an episode with an unknown air date is never offered or sent as aired', async t => {
+  const answer = { rows: { key: 'tv:tvdb:100:s1', series: 'tv:tvdb:100', season: 1, source: 'destination', episodes: [{ episode: 1, title: 'Episode', aired: false }] } };
+  const h = setup(t, { routes: (method, path) => (path.startsWith('/acquire/requests/season/sentinel?') ? { body: answer } : null) });
+  const title = { ...SERIES, key: 'tv:tvdb:100', name: 'Show', seasons: [{ season: 1, itemId: 'sentinel', episodes: 1, have: 0 }], initialSeason: 1, initialEpisode: 1 };
+  const pending = h.Sheet.open(title, { operation: h.NATIVE }); await settle();
+  assert.equal(h.document.querySelector('.je-sheet-episode[data-episode="1"]'), null, 'not offered');
+  click(h, primary(h)); await settle();
+  assert.equal(h.posts.length, 0, 'an episode the Sonarr page classifies NotOut is not submitted as aired');
+  closeSheet(h); await pending;
 });

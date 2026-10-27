@@ -416,10 +416,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>
-        /// An episode has aired by the same rule status uses (<see cref="StatusComposer.NotYet"/>): an instant before now, or a
-        /// date-only day no longer ahead anywhere. No date: not aired.
+        /// An episode has aired by the very rule status uses (<see cref="StatusComposer.Aired"/>): a known date (an unknown or
+        /// sentinel one is not aired) that is an instant before now, or a date-only day no longer ahead anywhere.
         /// </summary>
-        internal static bool HasAired(DateTime? date, bool isDay, DateTime now) => date is { } at && !StatusComposer.NotYet(at, isDay, now);
+        internal static bool HasAired(DateTime? date, bool isDay, DateTime now) => StatusComposer.Aired(date, isDay, now);
 
         /// <summary>TMDB's "yyyy-MM-dd" air date as that day (UTC midnight), or null.</summary>
         private static DateTime? TmdbDay(string? day)

@@ -178,4 +178,64 @@ public class IntegrationUx3DestinationProbesTests
             destination: (_, titles, season, ct) => provider ? Task.FromResult(DestinationSeason.NotHeld) : SeasonRowsService.DestinationSeasonAsync(store, tv.Id, titles, season, ct));
         Assert.True((await later.ForSeasonAsync(viewer, seasonId, "en", default))!.Episodes.Single().Aired);
     }
+
+    /// <summary>UX2R4-1 (review probe, ported): the picker's <c>aired</c> and the season page's status share one airing rule.</summary>
+    public static IEnumerable<object?[]> AiringCases()
+    {
+        // Unknown dates (Sonarr's 0001-01-01 sentinel, date-only or timed; or none): never aired, on the page and in the picker.
+        foreach (var provider in new[] { false, true })
+        {
+            yield return new object?[] { provider, "0001-01-01", true, "2026-10-13T12:00:00Z", false };
+            yield return new object?[] { provider, null, true, "2026-10-13T12:00:00Z", false };
+        }
+        yield return new object?[] { false, "0001-01-01T00:00:00Z", false, "2026-10-13T12:00:00Z", false };
+        foreach (var provider in new[] { false, true })
+        foreach (var (clock, expected) in new[] {
+            ("2026-10-11T23:59:59Z", false), ("2026-10-12T12:00:00Z", false),
+            ("2026-10-13T11:59:59.9999999Z", false), ("2026-10-13T12:00:00Z", true),
+            ("2026-10-13T12:00:00.0000001Z", true),
+            ("2026-10-13T23:59:59+12:00", false), ("2026-10-13T00:00:00-12:00", true),
+            ("2026-10-13T19:59:59+08:00", false), ("2026-10-13T20:00:00+08:00", true) })
+            yield return new object?[] { provider, "2026-10-12", true, clock, expected };
+        foreach (var (wire, clock, expected) in new[] {
+            ("2026-10-12T12:00:00Z", "2026-10-12T11:59:59.9999999Z", false),
+            ("2026-10-12T12:00:00Z", "2026-10-12T12:00:00Z", true),
+            ("2026-10-12T12:00:00Z", "2026-10-12T12:00:00.0000001Z", true),
+            ("2026-10-12T20:00:00+08:00", "2026-10-12T12:00:00Z", true),
+            ("2026-10-12T00:00:00-12:00", "2026-10-12T19:59:59+08:00", false),
+            ("2026-10-12T00:00:00-12:00", "2026-10-12T20:00:00+08:00", true) })
+            yield return new object?[] { false, wire, false, clock, expected };
+    }
+
+    [Theory]
+    [MemberData(nameof(AiringCases))]
+    public async Task UX2R4_1_ThePickersAiredAndThePageShareOneAiringRuleUnknownIsNotAired(bool provider, string? wire, bool day, string clock, bool expected)
+    {
+        using var arr = new FakeArr(); var host = arr.Add("sonarr.lan", "Sonarr");
+        arr.Configure(("TV", ArrKind.Sonarr, "http://sonarr.lan:8989", "PROBE-FAKE"));
+        host.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        var raw = FakeArr.Episode(1, "2020-01-01T00:00:00Z");
+        raw.Remove("airDateUtc"); raw.Remove("airDate");
+        if (wire != null) raw[day ? "airDate" : "airDateUtc"] = wire;
+        host.Episodes.Add(raw);
+        var store = arr.Store(); var tv = arr.Instance("TV");
+        var library = (await store.GetLibraryAsync(tv, default)).Value!;
+        var snapshot = (await store.GetEpisodesAsync(tv, 1, default)).Value!;
+        var episode = snapshot.Episodes.Single();
+        Assert.Equal(day && wire != null, episode.AirDateIsDay);
+        using var r = new IntegrationRequestLedgerTests.Rig(); var viewer = r.View.Users[r.Member];
+        var now = DateTimeOffset.Parse(clock, System.Globalization.CultureInfo.InvariantCulture);
+        var copy = new ArrCopyFacts(tv) { Series = library.SeriesByTvdb(100), Episodes = snapshot };
+        var status = StatusComposer.EpisodeFromArr(copy.Through(HiddenParts.None), 1, 1, episode, new ComposeContext(viewer, now.UtcDateTime, 24));
+        Assert.Equal(expected, status.Stage != StatusStage.NotOut);
+        var id = Guid.NewGuid();
+        r.View.AddItem(new JfItemRef { ItemId = id, Kind = "season", Key = TitleKey.Parse("tv:tvdb:100")!.WithSeason(1), SeriesId = Guid.NewGuid(), Season = 1, TmdbId = 101 });
+        var json = System.Text.Json.JsonSerializer.Serialize(new { episodes = new[] { new { episode_number = 1, name = "Episode", air_date = wire } } });
+        var service = new SeasonRowsService(r.View, r.Ledger, r.Policy, null, (_, _, _, _) => Task.FromResult<string?>(json), () => now,
+            destination: (_, titles, season, ct) => provider ? Task.FromResult(DestinationSeason.NotHeld) : SeasonRowsService.DestinationSeasonAsync(store, tv.Id, titles, season, ct));
+        var result = await service.ForSeasonAsync(viewer, id, "en", default);
+        Assert.NotNull(result); Assert.Equal(provider ? "provider" : "destination", result.Source);
+        Assert.Equal(expected, result.Episodes.Single().Aired);
+        Assert.Equal(status.Stage != StatusStage.NotOut, result.Episodes.Single().Aired);
+    }
 }

@@ -1327,7 +1327,7 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     number is. So once that Sonarr has the series, Sonarr's own list is the season: the season page shows Sonarr's
     episodes, numbers, titles and air dates (a page of a title that isn't in the library swaps its TMDB episode rows for
     them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired (by the same rule as the season page: a date without a time
-    counts from the end of that day everywhere) and that you may see, whichever way
+    counts from the end of that day everywhere, and an unknown date never counts as aired) and that you may see, whichever way
     the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
     on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
     you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
