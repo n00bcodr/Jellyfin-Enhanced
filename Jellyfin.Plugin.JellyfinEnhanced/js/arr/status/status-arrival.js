@@ -8,7 +8,8 @@
  * item (also when Jellyfin adds a version to it), has Jellyfin redraw its own page, so Play, badges,
  * media info and the version picker are Jellyfin's own. A season or series page gets one coalesced redraw
  * per view (later arrivals patch its rows in place); a movie or episode page redraws again for a later
- * version, coalesced per burst and spaced out by the gap. It follows the page's status reads (status-details hands each one over; JE's change
+ * version, coalesced per burst and spaced out by the gap, and counts it drawn only once Jellyfin's own
+ * version picker shows it (a redraw that didn't take is tried again a few times). It follows the page's status reads (status-details hands each one over; JE's change
  * feed starts them) and Jellyfin's LibraryChanged message about the page's item, season or series,
  * whichever comes first. A change waits while the viewer types, plays or has a dialog open, is checked
  * again right before it happens (a move reads its destination again as the viewer first), happens once
@@ -28,6 +29,8 @@
         settle: 1500,
         /** Least time between two reloads of one page. */
         gap: 15000,
+        /** A movie or episode redraw that Jellyfin's version picker doesn't reflect is tried at most this often per change. */
+        redrawTries: 3,
         /**
          * A season or series page reloads once its status has stopped changing for this long: a season
          * pack arriving file by file, and Jellyfin dropping the missing episodes the files replace (the
@@ -50,7 +53,9 @@
 
     /**
      * The page followed now: { view, id, key, series, kind, base, pending, timer, probeTimer, reloadedAt, tried, parents }.
-     * `base` is what the page was drawn with (its first status, then each change acted on).
+     * `base` is what the page was drawn with (its first status, then each change acted on; on a movie or
+     * episode page, each change Jellyfin's controls were seen to reflect). `drawing` is a movie or episode
+     * redraw not yet checked, `failures` its unreconciled attempts, `abandoned` the change given up on.
      * @type {Object|null}
      */
     let page = null;
@@ -237,6 +242,9 @@
             lostTimer: null, lostTries: 0, reloadedAt: shownBefore?.reloadedAt || 0, tried: new Set(), parents: new Set([norm(itemId)])
         };
         state.refreshed = false;
+        state.drawing = null;
+        state.failures = null;
+        state.abandoned = null;
         state.settleTimer = null;
         state.endSettle = null;
         page = state;
@@ -296,6 +304,63 @@
      */
     function drew(state) {
         drawn.set(state.view, { id: state.id, base: state.base, reloadedAt: state.reloadedAt });
+    }
+
+    /**
+     * What the page shows or is being redrawn with now (a read no newer than a redraw in progress waits for its check).
+     * @param {Object} state Page state.
+     * @returns {{ready: boolean, count: number|null, versions: number|null}} Signature.
+     */
+    function expected(state) {
+        return state.drawing ? higher(state.base, state.drawing) : state.base;
+    }
+
+    /**
+     * Whether Jellyfin's own version picker on the page lists `base`'s versions.
+     * @param {Object} state Page state.
+     * @param {{versions: number|null}} base Signature.
+     * @returns {boolean|null} True or false; null when there is nothing to check (one version, or no picker).
+     */
+    function reconciled(state, base) {
+        if (!(base?.versions > 1)) return null;
+        const picker = state.view.querySelector('select.selectSource');
+        return picker ? picker.options.length >= base.versions : null;
+    }
+
+    /**
+     * Records a movie or episode change as drawn.
+     * @param {Object} state Page state.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} base The change.
+     * @returns {void}
+     */
+    function commit(state, base) {
+        state.base = base;
+        state.failures = null;
+        state.abandoned = null;
+        drew(state);
+    }
+
+    /**
+     * After a movie or episode redraw settles: drawn if Jellyfin's picker reflects it, otherwise the
+     * baseline stays and the change is planned again (coalesced, after the gap), up to `redrawTries`
+     * attempts; then the page is left as it is until a newer change.
+     * @param {Object} state Page state.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} base The change redrawn.
+     * @returns {void}
+     */
+    function settled(state, base) {
+        state.drawing = null;
+        if (reconciled(state, base) !== false) {
+            commit(state, base);
+            return;
+        }
+        const tries = state.failures && !more(base, state.failures.base) ? state.failures.tries + 1 : 1;
+        state.failures = { base, tries };
+        if (tries >= timing.redrawTries) {
+            state.abandoned = base;
+            return;
+        }
+        plan(state, { kind: 'reload', base });
     }
 
     /**
@@ -414,7 +479,7 @@
             if (now.ready && state.kind === 'episode' && missingShown(view)) plan(state, { kind: 'reload', base: now });
             return;
         }
-        if (more(now, state.base)) plan(state, { kind: 'reload', base: now });
+        if (more(now, expected(state))) plan(state, { kind: 'reload', base: now });
     }
 
     /**
@@ -505,6 +570,7 @@
     function plan(state, action) {
         if (page !== state) return;
         if (action.kind === 'replace' && state.tried.has(action.target)) return;
+        if (action.kind === 'reload' && state.abandoned && !more(action.base, state.abandoned)) return;
         if (action.kind === 'reload' && state.refreshed && listPage(state)) {
             state.base = higher(state.base, action.base);
             drew(state);
@@ -585,6 +651,11 @@
             return;
         }
         state.pending = null;
+        // A slow host redraw that caught up meanwhile needs no other.
+        if (!listPage(state) && more(action.base, state.base) && reconciled(state, action.base) === true) {
+            commit(state, action.base);
+            return;
+        }
         reload(state, action.base);
     }
 
@@ -675,16 +746,19 @@
      * draws Play, badges, media info and versions; the hide first releases what its last show
      * subscribed). Only the page hears them (they don't bubble: no theme music, no router). Once it has
      * redrawn, JE reuses its accepted status before its page handlers run again, and the viewer's scroll
-     * position and focus stay, unless they moved meanwhile.
+     * position and focus stay, unless they moved meanwhile. A season or series page counts the change
+     * drawn at once; a movie or episode page only once its redraw is seen to have taken (`settled`).
      * @param {Object} state Page state.
      * @param {{ready: boolean, count: number|null, versions: number|null}} base What the page shows from now on.
      * @returns {void}
      */
     function reload(state, base) {
-        state.base = base;
+        const list = listPage(state);
+        if (list) state.base = base;
+        else state.drawing = base;
         state.refreshed = true;
         state.reloadedAt = Date.now();
-        drew(state);
+        if (list) drew(state);
         const scroller = document.scrollingElement || document.documentElement;
         const top = scroller.scrollTop;
         const focused = document.activeElement && document.activeElement !== document.body && state.view.contains(document.activeElement) ? document.activeElement : null;
@@ -707,10 +781,16 @@
             state.settleTimer = null;
             state.endSettle?.();
             state.endSettle = null;
-            if (page !== state || !shown(state)) return;
+            if (page !== state) return;
+            if (!shown(state)) {
+                // Not checked: the baseline stays, so the next read (or a later visit) tries again.
+                state.drawing = null;
+                return;
+            }
             if (!moved && scroller.scrollTop !== top) scroller.scrollTop = top;
             const active = document.activeElement;
             if (focused && focused.isConnected && (!active || active === document.body)) focused.focus({ preventScroll: true });
+            if (!list) settled(state, base);
             JE.internals?.arrStatusDetails?.repaint?.();
             JE.core?.navigation?.replayViewShow?.(state.view);
         }, timing.settle);
