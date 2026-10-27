@@ -47,6 +47,7 @@ const PAGE_MANIFEST = [
   ["/JellyfinEnhanced/arr/admin/live'), dataType: 'json' });", 'live-updates status display'],
   ["/JellyfinEnhanced/arr/admin/automation/status'), dataType: 'json' });", 'automation status display'],
   ["/JellyfinEnhanced/acquire/migration/seerr'), dataType: 'json' });", 'Seerr migration status display'],
+  ["/JellyfinEnhanced/admin/server-cache'), dataType: 'json' });", 'server-side cache usage display'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/settings/' + type),", "admin-started import of Seerr's *arr instances: fills new cards from the admin's pick"],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/jellyfin-urls'),", 'the same import: suggests the address *arr should call'],
   ["ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status'))", 'Spoiler Guard apply-to-existing progress display'],
@@ -112,11 +113,11 @@ test('every read on the configuration page is a registered field loader or a lis
   const { problems, sites } = checkConfigPage(page);
   assert.deepEqual(problems, []);
   const loaders = sites.filter(s => s.fields);
-  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 27 other reads (round 7: a
+  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 28 other reads (round 7: a
   // save, the Custom Tabs owned flags and the cache-clear stamp no longer read first; they send only their changes).
   assert.equal(loaders.length, 12);
   assert.equal(sites.length - loaders.length, PAGE_MANIFEST.length);
-  assert.equal(PAGE_MANIFEST.length, 27);
+  assert.equal(PAGE_MANIFEST.length, 28);
   assert.deepEqual([...registered(page)].sort(), [
     'AutoMovieRequestCustomProfileId', 'AutoMovieRequestCustomRootFolder', 'AutoMovieRequestCustomServerId', 'DEFAULT_REGION', 'DefaultLanguage',
     'JellyseerrImportBlockedUsers', 'MaintenanceModeAffectedUsers', 'QualityTagsPreferredAudioLanguage', 'SpoilerAutoEnableLibraryIds',
