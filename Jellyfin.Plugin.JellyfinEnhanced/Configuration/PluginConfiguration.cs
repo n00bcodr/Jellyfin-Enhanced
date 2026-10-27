@@ -1358,6 +1358,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Passphrase for credentials in scheduled backups (a stored credential: placeholder only).</summary>
         public string BackupPassphrase { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Keeps public data JE fetches from TMDB (artwork of titles that aren't in the library, for now) in a
+        /// folder on the server, so opening a title again or after a restart doesn't fetch it again. Off by default.
+        /// </summary>
+        public bool ServerCacheEnabled { get; set; } = false;
+
+        /// <summary>
+        /// Folder of the server-side cache (a full path). Empty: the <c>server-cache</c> folder inside JE's
+        /// data folder. Jellyfin's own folders are refused.
+        /// </summary>
+        public string ServerCachePath { get; set; } = string.Empty;
+
+        /// <summary>Most space the server-side cache uses, in GB (fractions allowed); the least recently used entries go first. 0 = unlimited.</summary>
+        public double ServerCacheMaxSizeGb { get; set; } = 2;
+
+        /// <summary>Days an entry of the server-side cache is kept after it was fetched. 0 = no age limit.</summary>
+        public int ServerCacheMaxAgeDays { get; set; } = 30;
+
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
         public string ShokoUrl { get; set; }

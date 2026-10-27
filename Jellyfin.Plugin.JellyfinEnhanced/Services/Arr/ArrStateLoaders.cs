@@ -83,6 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     Id = e.Id,
                     SeasonNumber = e.SeasonNumber!.Value,
                     EpisodeNumber = e.EpisodeNumber!.Value,
+                    Title = e.Title,
                     AirDateUtc = ArrDates.Parse(e.AirDateUtc ?? e.AirDate),
                     AirDateIsDay = string.IsNullOrWhiteSpace(e.AirDateUtc) && !string.IsNullOrWhiteSpace(e.AirDate),
                     HasFile = e.HasFile ?? false,

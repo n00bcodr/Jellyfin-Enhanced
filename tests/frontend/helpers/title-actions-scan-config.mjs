@@ -106,7 +106,7 @@ export const SITES = {
   'elsewhere/reviews.js': 12, 'enhanced/bookmarks/bookmarks-library-items.js': 3,
   'enhanced/bookmarks/bookmarks-library-replacements.js': 2, 'enhanced/bookmarks/bookmarks.js': 3,
   'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 7, 'enhanced/config.js': 4,
-  'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 3,
+  'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 4,
   'enhanced/hiddencontent/hidden-content-buttons.js': 4, 'enhanced/hiddencontent/hidden-content-data.js': 2,
   'enhanced/hiddencontent/hidden-content-filter.js': 2, 'enhanced/hiddencontent/hidden-content-page-admin.js': 1,
   'enhanced/hiddencontent/hidden-content-save.js': 4, 'enhanced/homeremoval/features-remove-home.js': 2,

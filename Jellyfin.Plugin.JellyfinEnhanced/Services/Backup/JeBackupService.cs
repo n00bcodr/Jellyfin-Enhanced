@@ -190,7 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         // Caches and regenerable state stay out of backups (they are rebuilt on their own).
         private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
         {
-            "cdn-cache", ArrStateStore.CacheFolderName, DefaultFolderName,
+            "cdn-cache", ArrStateStore.CacheFolderName, DefaultFolderName, ServerCache.ServerBlobCache.DefaultFolderName,
         };
 
         private static readonly HashSet<string> ExcludedFiles = new(StringComparer.OrdinalIgnoreCase)
@@ -804,6 +804,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         private IEnumerable<(string Relative, string Full)> DataFiles(string backupFolder)
         {
             if (!Directory.Exists(_dataFolder)) yield break;
+            var cacheFolder = new ServerCache.ServerCacheLocation(_dataFolder, Array.Empty<string>())
+                .Resolve(JellyfinEnhanced.Instance?.Configuration?.ServerCachePath, out var resolvedCache) == null ? resolvedCache : null;
             var root = new DirectoryInfo(_dataFolder);
             var pending = new Stack<(DirectoryInfo Dir, string Prefix)>();
             pending.Push((root, string.Empty));
@@ -816,6 +818,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                     if (prefix.Length == 0 && ExcludedDirectories.Contains(sub.Name)) continue;
                     // A backup folder chosen inside the data folder is never backed up itself.
                     if (string.Equals(sub.FullName.TrimEnd(Path.DirectorySeparatorChar), backupFolder, StringComparison.Ordinal)) continue;
+                    // Nor is a server-side cache folder chosen there.
+                    if (cacheFolder != null && string.Equals(sub.FullName.TrimEnd(Path.DirectorySeparatorChar), cacheFolder, StringComparison.Ordinal)) continue;
                     pending.Push((sub, prefix + sub.Name + "/"));
                 }
                 foreach (var file in dir.EnumerateFiles().OrderBy(f => f.Name, StringComparer.Ordinal))

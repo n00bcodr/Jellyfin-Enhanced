@@ -89,6 +89,96 @@
     }
 
     /**
+     * True on the page of a season that isn't in the library (native details): its own rows are TMDB's episodes.
+     * @returns {boolean} Absent.
+     */
+    function absentSeason() {
+        return !!(season?.itemId && JE.titleDetails?.isSynthetic?.(season.itemId));
+    }
+
+    /**
+     * True when the season's status says an arr holds it (its episodes' states come from the arr, not TMDB's list).
+     * @returns {boolean} Held by an arr.
+     */
+    function arrHolds() {
+        return (season?.statusRef?.episodes || []).some(e => e?.reason?.code !== 'not_in_arr');
+    }
+
+    /**
+     * True when an absent season's own (TMDB) rows give way to rows of the request target's Sonarr (UX-3): its Sonarr holds
+     * the series, so the season is its list, with its numbers, titles and air days (JE draws them; never TMDB's facts on them).
+     * @returns {boolean} Replaced.
+     */
+    function replaced() {
+        return absentSeason() && season?.rows?.source === 'destination';
+    }
+
+    /**
+     * Why an episode's own control is held, or null when it may be asked for (or searched): Jellyfin's own rows of a library
+     * season are never held (Jellyfin's facts for the item the arr's episode is matched to); every other row (JE's, an absent
+     * season's) only when the season rows carry the request target's numbering (JE.arrAsk.singleEpisodesAskable). Seerr's
+     * rounded asks (whole seasons), the banner's and the series' asks for every missing episode stay: they name the arr's own
+     * numbers.
+     * @param {Object|undefined} ep Episode status.
+     * @returns {'differently'|'unchecked'|null} Reason.
+     */
+    function heldFor(ep) {
+        if (!ep || rounded() || numberingPending()) return null;
+        if (ep.row && !absentSeason()) return null;
+        // The latest read failed: the season's numbering isn't established now, whatever was read before.
+        if (season?.failed) return 'unchecked';
+        const rows = season?.rows;
+        const context = { arrHolds: arrHolds() };
+        if (JE.arrAsk.singleEpisodesAskable?.(rows, context) !== true) return JE.arrAsk.heldReason?.(rows, context) || 'unchecked';
+        // The season rows say it hasn't aired (an unknown or placeholder date, by the one airing rule): never asked for by number,
+        // as Pick episodes doesn't offer it, whatever the status says.
+        return (Array.isArray(rows?.episodes) ? rows.episodes : []).some(e => e?.episode === ep.episode && e.aired === false) ? 'unchecked' : null;
+    }
+
+    /**
+     * True while an episode's own control is held ({@link heldFor}).
+     * @param {Object|undefined} ep Episode status.
+     * @returns {boolean} Held.
+     */
+    function held(ep) {
+        return heldFor(ep) != null;
+    }
+
+    /**
+     * True while the season's rows are still being read for the first time: no row control is offered until it is known
+     * whose numbering they carry.
+     * @returns {boolean} Pending.
+     */
+    function numberingPending() {
+        return !!season?.loading && !season.rows;
+    }
+
+    /**
+     * The words of a held episode (chip and sentence), in the shape of the block words.
+     * @param {'differently'|'unchecked'} reason Why it is held ({@link heldFor}).
+     * @returns {{chip: string, text: string, detail: string}} Words.
+     */
+    function heldWords(reason) {
+        const keys = reason === 'differently' ? ['arr_ask_numbering_chip', 'arr_ask_numbering_text'] : ['arr_ask_numbering_unchecked_chip', 'arr_ask_numbering_unchecked_text'];
+        const text = tr(keys[1]);
+        return { chip: tr(keys[0]), text, detail: text };
+    }
+
+    /**
+     * The line above a held season's episodes (or in an episode's dialog): why single episodes can't be asked for.
+     * @param {'differently'|'unchecked'} reason Why ({@link heldFor}).
+     * @param {string} signature Signature (the line is replaced when it changes).
+     * @returns {HTMLElement} Line.
+     */
+    function heldNote(reason, signature) {
+        const note = pausedNote(heldWords(reason), signature);
+        note.classList.add('je-ask-numbering-note');
+        const glyph = note.querySelector('.je-ask-paused-icon');
+        if (glyph) glyph.textContent = 'format_list_numbered';
+        return note;
+    }
+
+    /**
      * The request state shown for an episode: an optimistic one right after an ask, else the server's
      * (the episode's own ask first, then an ask for the whole season), in the edition of the control's own binding
      * (D53, edition round 19: a 4K copy's control reads the 4K asks, never a standard ask, and the other way round).
@@ -572,7 +662,7 @@
         if (parts && !parts.list && !parts.page?.querySelector('#listChildrenCollapsible.hide')) return out;
         let upcoming = false;
         for (const ep of status.episodes || []) {
-            if (ep.row || ep.stage === 'ready' || ep.stage === 'none') continue;
+            if ((ep.row && !replaced()) || ep.stage === 'ready' || ep.stage === 'none') continue;
             if (ep.stage === 'notOut') {
                 if (upcoming) continue;
                 upcoming = true;
@@ -623,7 +713,8 @@
             bannerSearched = null;
             closeDialog();
         }
-        const mine = { itemId, rows: fresh ? null : season.rows, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
+        // A failed read leaves the season unestablished until a read succeeds (its kept rows are for display only).
+        const mine = { itemId, rows: fresh ? null : season.rows, failed: fresh ? false : !!season.failed, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
         season = mine;
         load(mine);
     }
@@ -648,6 +739,8 @@
         }
         if (season !== target || target.generation !== generation) return;
         target.loading = false;
+        // UX2R3-1: rows kept from an earlier read never authorize an episode once a read has failed.
+        target.failed = !rows;
         if (rows) {
             target.rows = rows;
             // The server's answer replaces optimistic states it agrees with (or knows better).
@@ -694,10 +787,15 @@
             if (ep.row && ep.itemId) byId.set(normalize(ep.itemId), ep);
         }
         let list = parts.list;
+        // A Sonarr-held absent season: its own (TMDB) episode rows give way to the Sonarr rows JE draws.
+        const swap = replaced();
         page.querySelectorAll('.listItem[data-id]').forEach((row) => {
+            if (!list && row.getAttribute('data-type') === 'Episode') list = row.closest('.itemsContainer');
+            const gone = swap && row.getAttribute('data-type') === 'Episode';
+            row.classList.toggle('je-ask-replaced', gone);
+            if (gone) return;
             const ep = byId.get(normalize(row.getAttribute('data-id')));
             decorateNative(row, ep);
-            if (!list && row.getAttribute('data-type') === 'Episode') list = row.closest('.itemsContainer');
         });
         syncDrawnRows(page, status, ctx, list, season?.rows?.displayMissing ? (parts.drawn || new Set()) : new Set(), byNumber);
         decorateBanner(parts.banner, status);
@@ -716,13 +814,16 @@
      * @returns {void}
      */
     function syncNote(page, list, status) {
-        const words = list ? blockedWordsOf((status.episodes || []).filter(ep => offerable(ep) && !shownState(ep)), status) : null;
+        const open = (status.episodes || []).filter(ep => offerable(ep) && !shownState(ep));
+        const reason = list ? open.map(heldFor).find(Boolean) || null : null;
+        const holding = !!reason;
+        const words = holding ? heldWords(reason) : list ? blockedWordsOf(open, status) : null;
         const existing = page.querySelector('.je-ask-season-note');
-        const signature = words ? `${words.chip}|${words.detail || words.text}` : '';
+        const signature = words ? `${holding ? 'held' : 'paused'}|${words.chip}|${words.detail || words.text}` : '';
         if (existing && (!words || existing.dataset.sig !== signature || existing.nextElementSibling !== list)) existing.remove();
         else if (existing) return;
         if (!words) return;
-        const note = pausedNote(words, signature);
+        const note = holding ? heldNote(reason, signature) : pausedNote(words, signature);
         note.classList.add('je-ask-season-note');
         list.insertAdjacentElement('beforebegin', note);
     }
@@ -788,12 +889,16 @@
         // On TV a row is one focus target (Jellyfin's own rows are buttons there): Get it lives in the
         // episode's dialog (JE rows) or on the episode's page (Jellyfin's rows), never inside a row.
         const open = !!chipEl && !!ep && offerable(ep) && !shownState(ep) && !chipEl.classList.contains('je-arr-chip-overlay') && !isTv();
-        const placeable = open && offered(ep);
+        // Held (the arr and TMDB number the season differently): the row says so where its button would be.
+        const reason = open ? heldFor(ep) : null;
+        const hold = !!reason;
+        const waiting = open && !(ep.row && !absentSeason()) && numberingPending();
+        const placeable = open && !hold && !waiting && offered(ep);
         const outcome = placeable ? searchedOutcome(ep.episode) : null;
         const want = placeable && !outcome;
         const existing = scope.querySelector(`.je-ask-get[data-je-ask-episode="${ep?.episode}"]`) || scope.querySelector('.je-ask-get');
         syncSearched(chipEl, scope, outcome);
-        syncPaused(chipEl, scope, open && !placeable ? blockedWords(editionOf([ep])) : null);
+        syncPaused(chipEl, scope, hold ? heldWords(reason) : open && !waiting && !placeable ? blockedWords(editionOf([ep])) : null);
         if (!want) {
             if (existing && !busy.has(Number(existing.dataset.jeAskEpisode))) existing.remove();
             return;
@@ -830,7 +935,7 @@
      * @returns {string} Intent.
      */
     function rowIntent(ep, status) {
-        if (!ep || !offerable(ep) || !offered(ep, status)) return '';
+        if (!ep || held(ep) || !offerable(ep) || !offered(ep, status)) return '';
         return intentOf(modeOf(ep, status), [ep], status || season?.statusRef || null, ep.key);
     }
 
@@ -1693,14 +1798,19 @@
         if (meta.overview && !spoiler) dialog.appendChild(S.el('p', 'je-ask-dialog-overview', meta.overview));
         const actions = S.el('div', 'je-ask-dialog-actions');
         // Why it can't be asked for now, above the buttons (an administrator's Search stays below it).
-        if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
+        if (offerable(ep) && !shownState(ep) && held(ep)) {
+            const note = heldNote(heldFor(ep), '');
+            note.id = `${titleId}-paused`;
+            dialog.appendChild(note);
+            dialog.setAttribute('aria-describedby', note.id);
+        } else if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
             const note = pausedNote(blockedWords(editionOf([ep])), '');
             note.id = `${titleId}-paused`;
             dialog.appendChild(note);
             // Read out with the dialog's name (focus lands on a button; the reason is plain text).
             dialog.setAttribute('aria-describedby', note.id);
         }
-        if (offerable(ep) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
+        if (offerable(ep) && !held(ep) && !(!(ep.row && !absentSeason()) && numberingPending()) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
             const get = getItButton(ep);
             // Seerr mode: why the button asks for the whole season, in words above it.
             if (get.dataset.rounded === '1') dialog.appendChild(S.el('p', 'je-ask-dialog-note', roundedWords().note));

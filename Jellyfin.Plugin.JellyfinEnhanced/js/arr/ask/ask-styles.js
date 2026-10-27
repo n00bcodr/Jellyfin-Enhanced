@@ -48,6 +48,7 @@
 .je-ask-dim .listItemImage { filter: grayscale(0.85) brightness(0.55); }
 .je-ask-dim .listItemImageButton { display: none; }
 .je-ask-native-label-off .missingIndicator, .je-ask-native-label-off .unairedIndicator { display: none; }
+.je-ask-replaced { display: none !important; }
 .listItemImage .je-ask-ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; pointer-events: none; }
 .je-ask-ring .je-arr-ring { width: 52px; height: 52px; }
 .je-ask-ring .je-arr-ring-text { font-size: 13px; }

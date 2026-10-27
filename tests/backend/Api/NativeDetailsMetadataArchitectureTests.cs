@@ -136,7 +136,7 @@ public partial class ApiNativeDetailsTests
             async (id, _, ct) => (await rig.Cache.GetAsync("collection/" + id, "", "test-tmdb", ct)).Content,
             (_, _, _) => Task.FromResult(true), () => DateTimeOffset.UtcNow);
         // This public constructor uses the production TMDB season reader.
-        var rows = new SeasonRowsService(ledger.View, ledger.Ledger, ledger.Policy, null!, rig.Cache);
+        var rows = new SeasonRowsService(ledger.View, ledger.Ledger, ledger.Policy, null!, rig.Cache, null!);
         var audit = new MetadataAudit();
         using var observation = MetadataTaskProbe.Observe(audit.Observe);
         async Task Read(KeyValuePair<Guid, int> entry)

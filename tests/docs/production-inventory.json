@@ -191,6 +191,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/TitleActionsController.cs",
       "category": "Controllers"
     },
@@ -524,6 +528,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshCdnAssetsTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ServerCacheMaintenanceTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -1844,6 +1852,18 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrScanTriggerService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/CacheFolderAccess.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/ServerBlobCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/ServerCacheSettings.cs",
       "category": "Services"
     },
     {
@@ -5972,6 +5992,34 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/server-cache",
+      "method": "Usage",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/server-cache/clear",
+      "method": "Clear",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/server-cache/check-folder",
+      "method": "CheckFolder",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/title-actions/{type}/{tmdbId}",
       "method": "Read",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/TitleActionsController.cs",
@@ -8410,6 +8458,38 @@
       "name": "BackupPassphrase",
       "type": "string",
       "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheEnabled",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCachePath",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheMaxSizeGb",
+      "type": "double",
+      "initializer": "2",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheMaxAgeDays",
+      "type": "int",
+      "initializer": "30",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -11811,6 +11891,11 @@
       "key": "JellyfinEnhancedRefreshCdnAssets"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ServerCacheMaintenanceTask.cs",
+      "class": "ServerCacheMaintenanceTask",
+      "key": "JellyfinEnhancedServerCacheMaintenance"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
@@ -11924,11 +12009,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 768,
-    "routes": 312,
-    "configuration_properties": 667,
+    "files": 773,
+    "routes": 315,
+    "configuration_properties": 671,
     "storage_references": 106,
-    "scheduled_tasks": 15,
+    "scheduled_tasks": 16,
     "locales": 33
   }
 }

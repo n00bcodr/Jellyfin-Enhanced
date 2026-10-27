@@ -935,6 +935,44 @@
         return { seasons, latest: aired.length ? aired[aired.length - 1].season_number : null, upcoming: upcoming ? upcoming.season_number : null };
     }
 
+    /**
+     * Whose numbering and facts a season's rows carry (SeasonRows.source, UX-3): `destination` (the request target's Sonarr
+     * holds the series: its own numbers, titles and air days, never TMDB's), `provider` (no requestable Sonarr holds it, or
+     * Seerr takes requests: TMDB's numbers are what a request names), `unknown` (the target couldn't be read now, or the rows
+     * themselves couldn't be read) or `unchecked` (the viewer may not use the target; nothing about it is said).
+     * @param {Object|null|undefined} rows The season rows.
+     * @returns {string} Source.
+     */
+    function episodeSource(rows) {
+        return ['destination', 'provider', 'unknown', 'unchecked'].includes(rows?.source) ? rows.source : 'unknown';
+    }
+
+    /**
+     * True when single episodes of a season may be asked for by number: the rows carry the request target's own numbering
+     * (`destination`), or TMDB's while no arr holds the season (`provider`, and the season's status agrees). Anything else,
+     * a read that failed included, holds them; whole seasons stay askable.
+     * @param {Object|null|undefined} rows The season rows (read for the edition asked about).
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
+     * @returns {boolean} Askable.
+     */
+    function singleEpisodesAskable(rows, context) {
+        const source = rows ? episodeSource(rows) : 'unknown';
+        return source === 'destination' || (source === 'provider' && !context?.arrHolds);
+    }
+
+    /**
+     * Why single episodes are held: `differently` when the rows carry TMDB's details for a season an arr numbers itself (so a
+     * number may name another episode there), else `unchecked` (the numbering couldn't be checked).
+     * @param {Object|null|undefined} rows The season rows.
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
+     * @returns {'differently'|'unchecked'} Reason.
+     */
+    function heldReason(rows, context) {
+        if (!rows || !context?.arrHolds) return 'unchecked';
+        const tmdb = (rows.source === 'provider' || rows.source == null) && (Array.isArray(rows.episodes) ? rows.episodes : []).some(e => e?.title || e?.overview);
+        return tmdb ? 'differently' : 'unchecked';
+    }
+
     JE.session?.onUserChange?.('arr-ask', () => {
         meState = null;
         openIds.clear();
@@ -987,6 +1025,9 @@
         familySearch,
         tmdbSeasons,
         sheetSeasons,
+        episodeSource,
+        singleEpisodesAskable,
+        heldReason,
         call,
         tr
     });

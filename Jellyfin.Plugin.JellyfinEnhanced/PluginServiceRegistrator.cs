@@ -350,6 +350,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotifyDispatcher>());
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotificationService>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotificationService>());
+            // Public TMDB data kept on disk under the "Server-side cache" settings (absent titles' artwork first).
+            serviceCollection.AddSingleton(sp =>
+            {
+                var paths = sp.GetRequiredService<IServerApplicationPaths>();
+                var location = new Services.ServerCache.ServerCacheLocation(
+                    System.IO.Path.Combine(paths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced"),
+                    new[]
+                    {
+                        paths.ProgramDataPath, paths.ProgramSystemPath, paths.DataPath, paths.CachePath, paths.TempDirectory,
+                        paths.LogDirectoryPath, paths.ConfigurationDirectoryPath, paths.PluginsPath, paths.WebPath,
+                        paths.InternalMetadataPath, paths.RootFolderPath, paths.ImageCachePath,
+                    },
+                    // A dedicated folder inside Jellyfin's cache folder is allowed (never the cache folder itself).
+                    paths.CachePath);
+                var cache = new Services.ServerCache.ServerBlobCache(
+                    () => Services.ServerCache.ServerCacheSettings.From(JellyfinEnhanced.Instance?.Configuration),
+                    location,
+                    sp.GetRequiredService<Logger>());
+                // A saved change (a lower cap or age, another folder, the switch) applies right away.
+                if (JellyfinEnhanced.Instance is { } plugin) plugin.ConfigurationChanged += (_, _) => cache.SettingsChanged();
+                return cache;
+            });
+            serviceCollection.AddTransient<ServerCacheMaintenanceTask>();
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
             serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
             serviceCollection.AddTransient<JeBackupTask>();
@@ -556,7 +579,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The grant key is kept in the plugin's data folder, so open pages survive a restart.
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsArtwork(
                 sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
-                JellyfinEnhanced.Instance?.DataFolderPath));
+                JellyfinEnhanced.Instance?.DataFolderPath,
+                disk: sp.GetRequiredService<Services.ServerCache.ServerBlobCache>()));
             // Where cast, genres, studios and tags on those pages lead (the library's own pages first; read only).
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsLinks(
                 sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),

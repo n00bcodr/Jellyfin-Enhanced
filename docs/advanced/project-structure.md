@@ -97,7 +97,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── NativeDetails*Controller.cs    # Pages for titles that aren't in the library
 │   ├── NotifyController.cs            # Notifications, follows and reminders
 │   ├── ConfigurationPatchController.cs # The configuration page's save (changed fields only)
-│   └── JeBackupController.cs          # Backup, restore and the credential rollback
+│   ├── JeBackupController.cs          # Backup, restore and the credential rollback
+│   └── ServerCacheController.cs       # Server-side cache usage, folder check and Clear
 ├── PluginPages/                      # Seven embedded page wrappers
 ├── Helpers/
 │   └── Jellyseerr/                   # Seerr HTTP, permissions, imports, parental rules
@@ -123,6 +124,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │   └── Resolution/
 │   ├── NativeDetails/                # Jellyfin 12 only, except the page-id codec
 │   ├── Secrets/                      # secrets.json
+│   ├── ServerCache/                  # ServerBlobCache: namespaced on-disk store of public TMDB data (artwork first)
 │   └── SpoilerGuard/
 ├── Assets/
 │   └── PosterTags/                   # Generated, embedded rendering assets

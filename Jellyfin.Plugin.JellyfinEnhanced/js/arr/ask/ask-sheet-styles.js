@@ -44,6 +44,10 @@
 .je-sheet-toggle { font: inherit; color: inherit; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
   min-height: 2.6em; min-width: 2.9em; padding: 0.2em 0.9em; }
 .je-sheet-toggle[aria-pressed="true"] { background: #6d4aff; border-color: #8b5cf6; color: #fff; }
+.je-sheet-toggle[disabled] { opacity: 0.45; cursor: default; }
+.je-sheet-numbering[hidden] { display: none; }
+.je-sheet-numbering.je-sheet-note { margin: 0.3em 0 0.4em; }
+.je-sheet-numbering-checking { opacity: 0.75; font-size: 0.9em; margin: 0.2em 0; }
 .je-sheet-note { display: flex; gap: 0.6em; align-items: flex-start; margin: 1em 0 0; padding: 0.75em 1em; border-radius: 10px; font-weight: 600; line-height: 1.35; }
 .je-sheet-note-icon { font-size: 1.3em; }
 .je-sheet-note-attention { border: 1px solid rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); color: #f5b041; }
