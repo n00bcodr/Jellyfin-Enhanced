@@ -202,3 +202,25 @@ for (const absent of [true, false]) test(`UX-22: the More sheet's Hide on ${abse
   assert.equal(entry.firstChild.textContent, h.JE.t(absent ? 'title_actions_hide_title' : 'title_actions_hide'));
   if (absent) assert.notEqual(entry.firstChild.textContent, h.JE.t('title_actions_hide'), 'never "from my library" for a title that is not in it');
 });
+
+// ------------------------------------------------------------------ found on the rig: Manage hidden content
+
+for (const nativeTab of [true, false]) test(`the panel's Manage hidden content ${nativeTab ? 'goes to the Hidden Content Home tab (native-tab mode)' : 'control: still opens the page of its own'}`, t => {
+  const h = createHarness({
+    html: '<button id="manageHiddenContentBtn">Manage</button>',
+    JE: { pluginConfig: { HiddenContentEnabled: true, HiddenContentUseNativeTab: nativeTab }, t: key => key, nativeTabs: { register() {} } },
+  });
+  t.after(() => h.close());
+  let pages = 0;
+  h.JE.hiddenContent = { updateSettings() {}, getSettings: () => ({}) };
+  h.JE.hiddenContentPage = { showPage() { pages++; } };
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  h.JE.internals.enhancedUi.wireHiddenContentListeners({ resetAutoCloseTimer() {} });
+  h.click(h.document.getElementById('manageHiddenContentBtn'));
+  if (nativeTab) {
+    assert.equal(h.window.location.hash, '#/home?tab=0&jeTab=hidden-content');
+    assert.equal(pages, 0);
+  } else {
+    assert.equal(pages, 1);
+  }
+});
