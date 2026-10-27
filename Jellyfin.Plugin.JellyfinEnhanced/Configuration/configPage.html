@@ -4657,6 +4657,8 @@
 
             function jeUpdateDirtyIndicator() {
                 _jeDirtyQueued = false;
+                // Another page is shown (Jellyfin may show this one again): its fields can't be read by id, nothing to mark.
+                if (!form.isConnected) return;
                 if (saveDock) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
             }
 

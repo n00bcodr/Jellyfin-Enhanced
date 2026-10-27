@@ -97,3 +97,21 @@ test('UX-5/UX-6 control: with Seerr on, the Seerr-only settings and operations a
   await page.flush();
   for (const id of SEERR_ONLY) assert.equal(page.$('#' + id).disabled, false, `${id} back with Seerr`);
 });
+
+test('leaving the configuration page stops its unsaved-changes check from reading fields that are gone (no page errors)', async t => {
+  const page = await open(t, { ...JE_REQUESTS, JellyseerrEnabled: false });
+  const errors = [];
+  page.window.addEventListener('error', e => errors.push(String(e.error || e.message)));
+  const root = page.$('#JellyfinEnhancedPage');
+  const parent = root.parentNode;
+  root.remove(); // Jellyfin shows another page; this one's DOM leaves the document
+  await new Promise(r => page.window.setTimeout(r, 1300));
+  await page.flush();
+  assert.deepEqual(errors, []);
+  // Shown again: the check runs as before.
+  parent.appendChild(root);
+  page.choose('#nativeAbsentDetailsEnabled', !page.$('#nativeAbsentDetailsEnabled').checked);
+  await new Promise(r => page.window.setTimeout(r, 50));
+  assert.equal(page.$('.je-save-dock').classList.contains('je-dirty'), true);
+  assert.deepEqual(errors, []);
+});
