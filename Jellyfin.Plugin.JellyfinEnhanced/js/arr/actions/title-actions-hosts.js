@@ -536,7 +536,10 @@
                         // Only a press someone made is the row's operation (D46S2-R11-1).
                         if (!JE.ownerOf(e) || !action.current()) return;
                         const operation = A.generation(() => action.current());
-                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
+                        // Feedback in the press's own frame while the action is admitted: the control shows it is working.
+                        node.setAttribute('aria-busy', 'true');
+                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); })
+                            .finally(() => node.removeAttribute('aria-busy'));
                     };
                 } else A.bindPress(node, action);
                 ours.add(node);

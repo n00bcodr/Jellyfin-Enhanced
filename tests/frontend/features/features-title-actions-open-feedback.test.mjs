@@ -136,6 +136,19 @@ test('a sheet entry shows that it is working in the press frame while its action
   assert.equal(h.document.querySelector('.je-sheet, .je-sheet-shell'), null, 'nothing opened for a refused action');
 });
 
+test('a row control (the bar\'s Request) shows that it is working while its action is admitted', async t => {
+  const h = setup(t); h.a.initialize(); mount(h); await delivered();
+  const control = h.row().querySelector('[data-je-action-kind="request"]');
+  assert.ok(control, 'the row has its adapted Request');
+  const admission = h.hold('GET', '/title-actions/');
+  h.click(control);
+  assert.equal(control.getAttribute('aria-busy'), 'true', 'busy before the admission answers');
+  admission.resolve({ allowed: false });
+  await delivered();
+  assert.equal(control.hasAttribute('aria-busy'), false);
+  assert.equal(h.document.querySelector('.je-sheet, .je-sheet-shell'), null, 'nothing opened for a refused action');
+});
+
 test('decorative page reads in flight do not hold the admission of a More press in the client queue', async t => {
   const h = setup(t); h.a.initialize(); mount(h); await delivered();
   // Four rating reads of the page (as many as the client sends at once) that do not answer.
