@@ -182,9 +182,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             return false;
         }
 
+        // Test seam: runs just before a file is opened, inside the miss stripe,
+        // so a test can hold the first read while other callers queue up on it.
+        internal Action? BeforeRead;
+
         private bool ReadAndStore(string path, long size, long modifiedTicks, long generation, out IReadOnlyList<string?> languages)
         {
             languages = Array.Empty<string?>();
+            BeforeRead?.Invoke();
             var parsed = MatroskaLanguageReader.TryReadAudioLanguages(path, out var read, out var transientFailure);
             Interlocked.Increment(ref _reads);
 

@@ -271,17 +271,21 @@ public class MatroskaLanguageCacheTests
         Assert.True(cache.TryGetAudioLanguages(deleted, out _));
 
         // Neither is looked up during the sweep (an excluded library, say).
+        var deletedModified = File.GetLastWriteTimeUtc(deleted);
         cache.BeginSweep();
         File.Delete(deleted);
         cache.EndSweep();
 
         // The surviving file is still answered without a read even though its
-        // contents changed in place; the deleted one reappearing is read again.
+        // contents changed in place; the deleted one reappearing with the same
+        // size AND modification time is still read again, so only the pruning
+        // (not a stale signature) can explain that read.
         CorruptInPlace(excluded);
         Assert.True(cache.TryGetAudioLanguages(excluded, out var kept));
         Assert.Equal(new string?[] { "pt-BR", "eng" }, kept);
         Assert.Equal(2, cache.Reads);
         File.WriteAllBytes(deleted, Ebml.PortugueseAndEnglish());
+        File.SetLastWriteTimeUtc(deleted, deletedModified);
         Assert.True(cache.TryGetAudioLanguages(deleted, out _));
         Assert.Equal(3, cache.Reads);
     }
@@ -312,13 +316,29 @@ public class MatroskaLanguageCacheTests
         const int callers = 8;
         using var start = new Barrier(callers);
 
-        var results = await Task.WhenAll(Enumerable.Range(0, callers)
+        // Hold the first read open until every other caller has had ample time
+        // to reach the miss path, so the misses really overlap: without the
+        // single-flight stripe each of them would open the file too.
+        using var firstReadStarted = new ManualResetEventSlim();
+        using var releaseFirstRead = new ManualResetEventSlim();
+        cache.BeforeRead = () =>
+        {
+            firstReadStarted.Set();
+            releaseFirstRead.Wait(TimeSpan.FromSeconds(10));
+        };
+
+        var work = Task.WhenAll(Enumerable.Range(0, callers)
             .Select(_ => Task.Factory.StartNew(() =>
             {
                 start.SignalAndWait();
                 var parsed = cache.TryGetAudioLanguages(path, out var languages);
                 return (parsed, languages);
             }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)));
+
+        Assert.True(firstReadStarted.Wait(TimeSpan.FromSeconds(10)));
+        await Task.Delay(300);
+        releaseFirstRead.Set();
+        var results = await work;
 
         Assert.Equal(1, cache.Reads);
         Assert.Equal(callers - 1, cache.Hits);
