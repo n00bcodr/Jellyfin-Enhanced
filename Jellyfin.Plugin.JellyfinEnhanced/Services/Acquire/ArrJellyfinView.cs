@@ -36,6 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly ILogger<ArrJellyfinView>? _logger;
         private readonly BridgeImportReadiness? _readiness;
         private long _revision;
+        private long _changes;
 
         /// <summary>Native rows per copy-query page; the eligible copy budget is separate.</summary>
         internal const int CopyPageSize = 100;
@@ -60,17 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null, BridgeImportReadiness? readiness = null)
         {
             _libraryManager = libraryManager;
-            LibraryTopology = () =>
-            {
-                var topology = new StringBuilder();
-                foreach (var folder in (libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
-                {
-                    topology.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
-                    foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) topology.Append(':').Append(path);
-                }
-
-                return topology.ToString();
-            };
+            LibraryTopology = () => TopologyOf(libraryManager);
             _userManager = userManager;
             _logger = logger;
             _libraryManager.ItemAdded += OnItemChanged;
@@ -83,6 +74,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public long Revision => Interlocked.Read(ref _revision);
+
+        /// <summary>
+        /// The current library topology as text: every virtual folder's id, name, enabled state and locations. Removing a
+        /// location or disabling a library can happen without any item event, so caches of what lives where key by it.
+        /// </summary>
+        /// <param name="libraryManager">The library manager.</param>
+        /// <returns>The topology.</returns>
+        internal static string TopologyOf(ILibraryManager libraryManager)
+        {
+            var topology = new StringBuilder();
+            foreach (var folder in (libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
+            {
+                topology.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
+                foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) topology.Append(':').Append(path);
+            }
+
+            return topology.ToString();
+        }
 
         /// <summary>Observable rows per lookup before the scan bound (<see cref="CopyObservableBound"/>; tests lower it).</summary>
         internal int ObservableBound { get; set; } = CopyObservableBound;
@@ -101,6 +110,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
             return ViewerOf(user);
         }
+
+        /// <inheritdoc />
+        public StatusViewer? ViewerAsRead(User user) => user.HasPermission(PermissionKind.IsDisabled) ? null : ViewerOf(user);
 
         /// <summary>
         /// The viewer as <paramref name="user"/> (one read of them): every fact of the viewer, its policy revision and its
@@ -270,6 +282,95 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <see cref="TitleCopyIds"/> instead.
         /// </remarks>
         public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+        {
+            // One request asks the same title for the same person several times (the action menu: its real-copy check
+            // before and after the metadata await, and request visibility in each admission). A finished scan is shared
+            // within the request while nothing could have changed what it found: the same person with the same authority
+            // and library scope, the same ids, and no library item of any kind (a title, or a parent folder whose tags or
+            // rating Jellyfin's own visibility check reads) added, updated or removed since the scan began.
+            var phase = PhaseCopies(titleKey, viewer, aliases);
+            if (phase?.Held is { } held) return held;
+            var mark = Mark();
+            var lookup = Scan(titleKey, viewer, aliases);
+            if (phase != null && lookup.IsComplete) phase.Keep(mark, lookup);
+            return lookup;
+        }
+
+        /// <summary>
+        /// The library's change marks now: <see cref="Revision"/> and every library item event of any kind. Taken BEFORE a scan,
+        /// so a scan that ran across a change is never shared afterwards.
+        /// </summary>
+        private (long Revision, long Changes) Mark() => (Revision, Interlocked.Read(ref _changes));
+
+        /// <summary>
+        /// One request's shared copy lookups (<see cref="PhaseCopies"/>): kept in the request's own items, dropped with it,
+        /// and keyed by the person's full authority as this viewer was read (the fingerprint), their policy revision, the
+        /// live library topology, the title and every alias; each served only while the library's change marks are those
+        /// taken before its scan.
+        /// </summary>
+        private sealed class PhaseLookup
+        {
+            private readonly Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> _lookups;
+            private readonly string _key;
+
+            internal PhaseLookup(Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> lookups, string key, (long Revision, long Changes) now)
+            {
+                _lookups = lookups;
+                _key = key;
+                lock (_lookups)
+                {
+                    Held = _lookups.TryGetValue(key, out var held) && held.Mark == now ? held.Lookup : null;
+                }
+            }
+
+            /// <summary>The kept lookup, when the library is unchanged since its scan began.</summary>
+            internal CopyLookup? Held { get; }
+
+            internal void Keep((long Revision, long Changes) mark, CopyLookup lookup)
+            {
+                lock (_lookups)
+                {
+                    if (_lookups.Count < PhaseLookups || _lookups.ContainsKey(_key)) _lookups[_key] = (mark, lookup);
+                }
+            }
+        }
+
+        private static readonly object PhaseCopiesKey = new();
+
+        /// <summary>The most copy lookups one request shares (a long list of cards asks more titles; those scan as before).</summary>
+        private const int PhaseLookups = 256;
+
+        /// <summary>
+        /// The current request's shared copy lookups for this person and title, or null outside a request or for the
+        /// library context. The key holds every input of the scan: the person, their full authority as this viewer was read
+        /// (<see cref="Helpers.UserAuthority.Fingerprint"/>) and policy revision, the library topology as it is now (a
+        /// removed location or a disabled library changes it without any item event), the title and every alias. Item and
+        /// parent-folder state (paths, providers, tags, ratings, parents) is covered by the change marks (<see cref="Mark"/>).
+        /// </summary>
+        private PhaseLookup? PhaseCopies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases)
+        {
+            if (viewer.IsLibraryContext || viewer.Handle is not User user) return null;
+            var http = new Microsoft.AspNetCore.Http.HttpContextAccessor().HttpContext;
+            if (http == null) return null;
+            Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> lookups;
+            lock (http.Items)
+            {
+                if (http.Items.TryGetValue(PhaseCopiesKey, out var existing) && existing is Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> found) lookups = found;
+                else http.Items[PhaseCopiesKey] = lookups = new Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)>(StringComparer.Ordinal);
+            }
+
+            var key = new StringBuilder()
+                .Append(user.Id.ToString("N", CultureInfo.InvariantCulture)).Append('\n')
+                .Append(Helpers.UserAuthority.Fingerprint(user)).Append('\n')
+                .Append(viewer.PolicyRevision).Append('\n')
+                .Append(TopologyOf(_libraryManager)).Append('\n')
+                .Append(titleKey);
+            foreach (var alias in (aliases ?? Array.Empty<TitleKey>()).Select(a => a.ToString()).OrderBy(a => a, StringComparer.Ordinal)) key.Append('\n').Append(alias);
+            return new PhaseLookup(lookups, key.ToString(), Mark());
+        }
+
+        /// <summary>One copy scan (<see cref="Copies"/>).</summary>
+        private CopyLookup Scan(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases)
         {
             var user = viewer.Handle as User;
             // Nothing read: no proof of absence (and, like every incomplete read, never cached).
@@ -946,7 +1047,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
-            if (e.Item is Movie or Series or Season or Episode) Interlocked.Increment(ref _revision);
+            Interlocked.Increment(ref _changes);
+            // Titles, and the folders above them: Jellyfin's own visibility check reads every parent's tags and rating, and a
+            // library or folder edit can hide what lives under it. Playlists are nobody's parent.
+            if (e.Item is Movie or Series or Season or Episode || (e.Item is Folder && e.Item is not MediaBrowser.Controller.Playlists.Playlist)) Interlocked.Increment(ref _revision);
         }
     }
 }

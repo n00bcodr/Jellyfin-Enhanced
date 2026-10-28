@@ -1368,7 +1368,9 @@ way to the status pill while the pill shows.
     Its cast, crew, genres, studios and tags lead to the library's own pages or to pages made the same way (a person's
     page with their filmography, a genre's or studio's discovery page; see
     [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), where a
-    title opens the library copy or its own native page again.
+    title opens the library copy or its own native page again. Where each name leads is worked out for the person and
+    kept until anything in the library, its folders or the person's access changes (at most five minutes), so coming
+    back to a page doesn't work it out again.
 
 ??? info "JE mode: the pages read TMDB, never Seerr"
     With request handling set to **Jellyfin Enhanced**, these pages, their seasons and episodes, artwork, cast and crew
