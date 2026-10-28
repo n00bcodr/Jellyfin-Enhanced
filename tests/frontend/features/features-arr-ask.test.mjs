@@ -806,7 +806,7 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
   assert.ok(!h.posts.some(p => p.path === '/acquire/requests'), 'an administrator\'s Search is not a request');
 });
 
-test('rows: someone else\'s Search on an episode a request already sent searches again (no new request) and says what it found; otherwise it asks', async t => {
+test('rows: someone else\'s Search on an episode a request already sent searches again (no new request) and says what it found; otherwise it says nothing was asked yet and asks for nothing (F24)', async t => {
   let answer = { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } };
   const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'household' } }), search: () => answer } });
   await h.open();
