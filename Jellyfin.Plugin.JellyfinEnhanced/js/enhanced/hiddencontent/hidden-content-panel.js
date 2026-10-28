@@ -206,8 +206,11 @@
     /**
      * Creates and displays the management panel overlay.
      * Shows all hidden items in a searchable grid with unhide actions.
+     * @param {Event|Object} [from] The press that opens it (or its owner): opened from the settings panel, the overlay
+     *     is a surface over it on the same stack (Escape/Back close it first, focus goes back to the press).
      */
-    function showManagementPanel() {
+    function showManagementPanel(from) {
+        const owner = (from && JE.ownerOf?.(from)) || null;
         const action = JE.createSessionAction();
         document.querySelector('.je-hidden-management-overlay')?.remove();
 
@@ -221,8 +224,10 @@
         panel.className = 'je-hidden-management-panel';
 
         const header = createManagementHeader(items.length);
+        let releaseSurface = null;
         const closeOverlay = () => {
             release();
+            releaseSurface?.();
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
         };
@@ -322,9 +327,13 @@
         const escHandler = (e) => {
             if (e.key === 'Escape') closeOverlay();
         };
-        document.addEventListener('keydown', escHandler);
 
         document.body.appendChild(overlay);
+        if (owner && typeof JE.openSurface === 'function' && JE.admitSurface?.(owner, 'the hidden content manager')) {
+            // On the stack, Escape and Back are the stack's (they close the topmost surface only).
+            releaseSurface = JE.openSurface(overlay, closeOverlay, owner, { dialog: panel });
+        }
+        if (!releaseSurface) document.addEventListener('keydown', escHandler);
     }
 
     /**

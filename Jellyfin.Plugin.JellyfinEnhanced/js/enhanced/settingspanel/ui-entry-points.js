@@ -55,7 +55,7 @@
 
                 jellyfinEnhancedLink.addEventListener('click', (e) => {
                     e.preventDefault();
-                    JE.showEnhancedPanel();
+                    JE.showEnhancedPanel(e);
                 });
 
                 jellyfinEnhancedSection.appendChild(jellyfinEnhancedLink);
@@ -106,7 +106,7 @@
 
         enhancedSettingsBtn.onclick = (e) => {
             e.stopPropagation();
-            JE.showEnhancedPanel();
+            JE.showEnhancedPanel(e);
         };
 
         nativeSettingsButton.parentElement.insertBefore(enhancedSettingsBtn, nativeSettingsButton);
@@ -144,7 +144,7 @@
                 // Not a real MenuItem, so nothing calls onMenuClose -- clicking
                 // the popover's own backdrop closes it instead.
                 document.getElementById('app-user-menu')?.querySelector(':scope > .MuiBackdrop-root')?.click();
-                JE.showEnhancedPanel();
+                JE.showEnhancedPanel(e);
             });
 
             settingsLink.insertAdjacentElement('afterend', link);
@@ -190,7 +190,7 @@
 
             enhancedLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                JE.showEnhancedPanel();
+                JE.showEnhancedPanel(e);
             });
 
             // Insert at the end of the first vertical section

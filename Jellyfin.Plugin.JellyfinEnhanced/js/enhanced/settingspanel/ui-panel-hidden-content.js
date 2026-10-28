@@ -109,11 +109,15 @@
             }
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
-                manageBtn.addEventListener('click', () => {
-                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
+                manageBtn.addEventListener('click', (e) => {
+                    if (JE.pluginConfig?.HiddenContentEnabled && JE.pluginConfig?.HiddenContentUseNativeTab && JE.nativeTabs) {
+                        // The list is a Home tab then (hidden-content-custom-tab.js): the page of its own does nothing,
+                        // so go to the tab, named by id (native-tabs.js puts the right tab index in).
+                        window.location.hash = '#/home?tab=0&jeTab=hidden-content';
+                    } else if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
                         JE.hiddenContentPage.showPage();
                     } else {
-                        JE.hiddenContent.showManagementPanel();
+                        JE.hiddenContent.showManagementPanel(e);
                     }
                 });
             }

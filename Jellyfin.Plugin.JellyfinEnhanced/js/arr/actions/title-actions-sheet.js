@@ -68,12 +68,15 @@
         if (current?.lease === lease) close(restore);
     }
 
-    /** Synchronizes labels and state from original native/JE controls, including issue counts. */
-    function sync(entry, button) {
+    /**
+     * Synchronizes labels and state from original native/JE controls, including issue counts. A title that is not in
+     * the library (`c.absent`) is hidden as a title (its provider-title rule), not "from my library".
+     */
+    function sync(entry, button, c) {
         const source = entry.source || entry.control;
         const label = entry.label || source?.getAttribute('aria-label') || source?.title || source?.textContent || '';
         let text = entry.fixedLabel ? label : source?.getAttribute('aria-label') || source?.title || label;
-        if (entry.id === 'hide') text = text === JE.t('hidden_content_unhide') ? text : JE.t('title_actions_hide');
+        if (entry.id === 'hide') text = text === JE.t('hidden_content_unhide') ? text : JE.t(c?.absent ? 'title_actions_hide_title' : 'title_actions_hide');
         if (entry.id === 'guard') text = JE.t('title_actions_guard');
         if (entry.id === 'follow') text = JE.t('title_actions_follow');
         if (entry.id === 'report') text = JE.t('jellyseerr_report_issue_button');
@@ -203,7 +206,7 @@
                 if (reason && disabled) label.append(el('span', 'je-actions-reason', reason));
                 button.append(icon(entry.icon), label, el('span', 'je-actions-state'));
                 if (entry.control) { entry.control.classList.add('je-actions-control'); sheet.append(entry.control); }
-                sync(entry, button); pairs.push([entry, button]);
+                sync(entry, button, c); pairs.push([entry, button]);
                 button.onclick = async e => {
                     // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
                     // A choice still working on a press takes no second one (one submission per press).
@@ -222,7 +225,7 @@
         pairs.forEach(([entry]) => {
             if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(entry.control, c.tmdbId, c.type, action.current);
         });
-        state.observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button)));
+        state.observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button, c)));
         pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) state.observer.observe(source, { subtree: true, childList: true, attributes: true }); });
         const first = sheet.querySelector('.je-actions-entry:not(:disabled)');
         // A shell the viewer has moved focus within keeps it there only if that control is still in the sheet.

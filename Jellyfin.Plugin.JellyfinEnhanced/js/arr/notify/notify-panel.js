@@ -352,15 +352,16 @@
 
     /**
      * Opens the Jellyfin Enhanced panel at this section.
+     * @param {Object|Event} [owner] Who opens it (the press, or its owner): the panel's surface is theirs.
      * @returns {void}
      */
-    async function openSettings() {
+    async function openSettings(owner) {
         if (typeof JE.showEnhancedPanel !== 'function') return;
         if (!document.getElementById('jellyfin-enhanced-panel')) {
             if (JE.currentSettings) JE.currentSettings.lastOpenedTab = PANE;
-            // The panel reloads the user's settings as it opens (which may restore another section), so
-            // the section is picked once the panel is there.
-            await JE.showEnhancedPanel();
+            // The panel reloads the user's settings as it opens (which may restore another section): it is asked
+            // for this one, and the section is also picked once the panel is there.
+            await JE.showEnhancedPanel(owner, { tab: PANE });
         }
         const tab = document.querySelector(`#jellyfin-enhanced-panel .tab-button[data-tab="${PANE}"]`);
         if (tab && !tab.classList.contains('active')) tab.click();
@@ -374,7 +375,9 @@
         if (!JE.arrNotify?.enabled()) return;
         const hash = window.location.hash || '';
         if (!/[?&]je=alerts\b/.test(hash)) return;
-        setTimeout(openSettings, 800);
+        // No press opens it: the link's own page does, for the route it landed on (none once the viewer moved on).
+        const route = JE.routeKey?.();
+        setTimeout(() => openSettings(route === undefined ? undefined : JE.routeOwner?.(route, 'the alerts link opens the settings panel')), 800);
     }
 
     N.buildSettingsHtml = buildSettingsHtml;
