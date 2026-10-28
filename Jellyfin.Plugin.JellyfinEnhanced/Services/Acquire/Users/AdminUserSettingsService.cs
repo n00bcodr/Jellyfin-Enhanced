@@ -267,7 +267,7 @@ public sealed class AdminUserSettingsService
         if (available) try {
             _requests.Ledger.Database.Read(connection => {
                 using (var cmd = connection.CreateCommand()) {
-                    cmd.CommandText = "SELECT user_id,COUNT(*) FROM wants WHERE status='pending' GROUP BY user_id";
+                    cmd.CommandText = "SELECT user_id,COUNT(*) FROM wants WHERE status='pending' AND " + Requests.RequestLedger.NotStaged + " GROUP BY user_id";
                     using var rows = cmd.ExecuteReader();
                     while (rows.Read()) if (Guid.TryParse(rows.GetString(0), out var id) && ids.Contains(id)) pending[id] = rows.GetInt32(1);
                 }

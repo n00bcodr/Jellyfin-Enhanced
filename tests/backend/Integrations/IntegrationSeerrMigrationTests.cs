@@ -128,6 +128,113 @@ public class IntegrationSeerrMigrationTests
             $"stage={stage}, HTTP={reply.HttpStatus}, reason={reply.Reason}, wants={m.Count("SELECT COUNT(*) FROM wants")}, backend={plugin.Plugin.Configuration.ArrRequestBackend}, enabled={plugin.Plugin.Configuration.JellyseerrEnabled}");
     }
 
+    // ---- UX3R3-1 (review round 3), the reviewer's probes: a move's requests are invisible and inert until its handover ----
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public async Task UX3R3RefusedHandoverDoesNotExposeOrRetainProvisionalWants(int isolation, bool cancel)
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        m.R.Policy.Configuration.ArrBackendIsolationVersion = isolation;
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        int visible = -1;
+        int closeStatus = -1;
+        service.BeforeSwitch = () =>
+        {
+            plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+            { Set = new() { ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(false) } });
+            using var body = JsonDocument.Parse(m.R.Service.List(m.R.Member, false).Json);
+            visible = body.RootElement.GetProperty("items").GetArrayLength();
+            if (cancel)
+            {
+                var want = m.R.Ledger.List(m.R.Member, false).Single();
+                closeStatus = m.R.Service.Close(want.Id, m.R.Member, null).HttpStatus;
+            }
+        };
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        var retained = m.Count("SELECT COUNT(*) FROM wants");
+        var kept = m.Count("SELECT COALESCE(SUM(kept),0) FROM import_batches");
+        Assert.True(reply.HttpStatus == 409 && reply.Reason == "seerr_off" && visible == 0 && retained == 0,
+            $"isolation={isolation}, cancel={cancel}, HTTP={reply.HttpStatus}, reason={reply.Reason}, mid_list_items={visible}, close_HTTP={closeStatus}, retained={retained}, batch_kept={kept}, backend={plugin.Plugin.Configuration.ArrRequestBackend}");
+    }
+
+    [Fact]
+    public async Task UX3R3RefusedSecondPassCannotLeaveAnApprovedWantAndJob()
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.R.Policy.Configuration.ArrRequestBackend = "je";
+        m.Add(1, "movie", m.R.Member);
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        int approval = -1;
+        service.BeforeSwitch = () =>
+        {
+            plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+            { Set = new() { ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(false) } });
+            var want = m.R.Ledger.List(m.R.Admin, true).Single();
+            approval = m.R.Service.ApproveAsync(want.Id, m.R.Admin, null, CancellationToken.None).GetAwaiter().GetResult().HttpStatus;
+        };
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.True(reply.HttpStatus == 409 && m.Count("SELECT COUNT(*) FROM wants") == 0 && m.Count("SELECT COUNT(*) FROM jobs") == 0,
+            $"HTTP={reply.HttpStatus}, reason={reply.Reason}, approval_HTTP={approval}, wants={m.Count("SELECT COUNT(*) FROM wants")}, jobs={m.Count("SELECT COUNT(*) FROM jobs")}, backend={plugin.Plugin.Configuration.ArrRequestBackend}");
+    }
+
+    [Fact]
+    public async Task UX3R3StagedMoveIsInvisibleUntilItsHandoverCommitsThenEveryReaderSeesIt()
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        (int Mine, int Admin, int Title, int Batches) during = default;
+        service.BeforeSwitch = () =>
+        {
+            using var mine = JsonDocument.Parse(m.R.Service.List(m.R.Member, false).Json);
+            during = (mine.RootElement.GetProperty("items").GetArrayLength(), m.R.Ledger.List(m.R.Admin, true).Count,
+                m.R.Ledger.ForTitle("movie:tmdb:1001").Count, m.R.Ledger.ImportBatches().Count);
+        };
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.Equal((0, 0, 0, 0), during);
+        Assert.Equal((200, 1, "je"), (reply.HttpStatus, reply.Imported, plugin.Plugin.Configuration.ArrRequestBackend));
+        using var after = JsonDocument.Parse(m.R.Service.List(m.R.Member, false).Json);
+        Assert.Equal(1, after.RootElement.GetProperty("items").GetArrayLength());
+        Assert.Equal(1, m.R.Ledger.ForTitle("movie:tmdb:1001").Count);
+        Assert.Equal(1, m.Count("SELECT COUNT(*) FROM import_batches WHERE state='committed'"));
+    }
+
+    [Theory]
+    [InlineData("seerr", false)]
+    [InlineData("je", true)]
+    public async Task UX3R3AStagedBatchACrashLeftIsSettledBeforeTheNextCheck(string backendNow, bool committed)
+    {
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        var preview = await m.Service.PreviewAsync(CancellationToken.None);
+        var source = m.R.Ledger.OriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration));
+        var plan = SeerrMigration.Plan(await new SeerrFacts(m.Seerr.Transport).ReadAsync(m.R.Policy.Configuration, CancellationToken.None), _ => true, k => k, new HashSet<int>());
+        // The process died between a move's staged import and its handover (backendNow: whether the handover was saved).
+        var staged = m.R.Ledger.ImportSeerr(source, preview.Digest!, plan.Items, plan.Skipped, m.R.Admin, "seerr", _ => "[\"je\",\"r1\",\"g1\",null]", m.R.Now, SeerrMigration.RollbackWindow, staged: true);
+        Assert.Equal(1, staged.Imported);
+        Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
+        m.R.Policy.Configuration.ArrRequestBackend = backendNow;
+        await m.Service.PreviewAsync(CancellationToken.None);
+        Assert.Equal(committed ? 1 : 0, m.R.Ledger.List(m.R.Admin, true).Count);
+        Assert.Equal(committed ? "committed" : "rolled_back", m.R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT state FROM import_batches"; return (string)cmd.ExecuteScalar()!; }));
+    }
+
     private sealed class Mig : IDisposable
     {
         public IntegrationRequestLedgerTests.Rig R { get; } = new();

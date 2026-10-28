@@ -1730,7 +1730,9 @@ Seerr already holds. **Move requests from Seerr...** (under *Ask for it* on the 
    moved ask for it sends nothing either. Moving costs nobody's allowance and sends no "new request" notices. Request
    handling switches to Jellyfin Enhanced, and from then on Jellyfin Enhanced never writes a request to Seerr: Seerr
    request and approval calls through Jellyfin Enhanced answer `requests_in_je`. Seerr can stay for discovery and
-   still gets its scans triggered.
+   still gets its scans triggered. The moved requests appear (in lists, Approvals, status and notifications) only once
+   request handling has switched: until then nobody sees or acts on them, and a move refused at that last step (Seerr
+   turned off meanwhile, its address changed, the setting couldn't be saved) leaves nothing behind.
 
 ??? info "While a move runs, moving again, and rolling back"
     While a move runs, Jellyfin Enhanced's own request writes to Seerr wait: one already on its way finishes first, and
