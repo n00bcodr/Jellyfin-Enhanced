@@ -399,7 +399,7 @@
         instance_down: 'arr_notify_instance_down',
         instance_up: 'arr_notify_instance_up',
         low_disk: 'arr_notify_low_disk',
-        stuck_digest: 'arr_notify_stuck_digest',
+        stuck_digest: 'arr_notify_stuck_digest_short',
         remind: 'arr_notify_remind',
         attention: 'arr_notify_attention',
         test: 'arr_notify_test',
@@ -417,6 +417,7 @@
         if (item.kind === 'ready' && p.variant === '4k') return 'arr_notify_ready_4k';
         if (item.kind === 'declined' && p.reason) return 'arr_notify_declined_reason';
         if (item.kind === 'approved' && p.shared === '1') return 'arr_notify_approved_shared';
+        // A stuck digest reads as a count; which downloads, and why, is the bell's expandable list (digestEntries).
         if ((item.kind === 'stuck_digest' || item.kind === 'summary') && String(p.count) === '1') return `${KIND_KEYS[item.kind]}_one`;
         if (item.kind === 'attention') {
             if (p.code === 'import_blocked') return 'arr_notify_attention_import_blocked';
@@ -457,6 +458,34 @@
             }
         }
         return frag;
+    }
+
+    // Needs attention reasons a stuck digest lists (the server's DownloadCodes), named as Overview names them.
+    const DIGEST_CODES = new Set(['import_blocked', 'import_waiting', 'download_failed', 'download_warning', 'download_stalled', 'client_unavailable']);
+
+    /**
+     * The downloads a stuck digest lists, one line each: from its fields (entries), else, for a digest
+     * stored before they existed, its one-line list split back into lines. Never more than the digest holds.
+     * @param {Object} item Inbox item.
+     * @returns {Array<{title: string, scope?: string, instance?: string, reason?: string, text?: string}>} Lines.
+     */
+    function digestEntries(item) {
+        const p = item?.params || {};
+        let parsed = null;
+        try {
+            parsed = typeof p.entries === 'string' ? JSON.parse(p.entries) : null;
+        } catch (_) {
+            parsed = null;
+        }
+        if (Array.isArray(parsed)) {
+            return parsed.filter(e => e && typeof e.title === 'string').slice(0, 200).map(e => ({
+                title: e.title,
+                scope: typeof e.scope === 'string' ? e.scope : '',
+                instance: typeof e.instance === 'string' ? e.instance : '',
+                reason: DIGEST_CODES.has(e.code) ? tr(`arr_ops_code_${e.code}`) : ''
+            }));
+        }
+        return typeof p.items === 'string' && p.items ? p.items.split('; ').slice(0, 200).map(text => ({ title: '', text })) : [];
     }
 
     /**
@@ -725,6 +754,7 @@
     N.buildText = buildText;
     N.plainText = plainText;
     N.textKey = textKey;
+    N.digestEntries = digestEntries;
     N.showSummary = showSummary;
     N.flushHeld = flushHeld;
     N.afterNavigate = afterNavigate;

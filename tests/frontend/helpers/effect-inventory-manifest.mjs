@@ -317,6 +317,9 @@ export const SITES = {
     '(module) state season': [1, 'module', 'cache'],
   },
   'arr/ask/ask-search.js': {
+    // UX-16: focus moves from a replaced search row to the new row (Try again / heading) or to the search box, only
+    // in draw(), which runs after the search intent's current() check with no await before it.
+    'draw focus focus': [2, 'module', 'effect'],
   },
   'arr/ask/ask-seerr.js': {
     'collectionAsk feedback toast': [4, 'press', 'effect'],

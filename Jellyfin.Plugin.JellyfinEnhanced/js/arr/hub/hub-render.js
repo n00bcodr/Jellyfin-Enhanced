@@ -188,17 +188,43 @@
     }
 
     /**
-     * My requests: groups in order, each with its heading.
+     * The empty My requests buttons: Discover (when that tab is there) and Search, so someone with nothing
+     * asked for yet can go and find something from here.
+     * @param {Object} actions Row callbacks (discover, search: either may be missing).
+     * @returns {HTMLElement|null} Buttons, or null when there are none.
+     */
+    function emptyMineActions(actions) {
+        const box = el('div', 'je-hub-empty-actions');
+        for (const [name, cls, iconName, label] of [['discover', 'je-hub-btn-primary', 'explore', 'arr_hub_empty_discover'], ['search', '', 'search', 'arr_hub_empty_search']]) {
+            if (typeof actions?.[name] !== 'function') continue;
+            const button = el('button', ['je-hub-btn', cls, `je-hub-empty-${name}`].filter(Boolean).join(' '));
+            button.type = 'button';
+            button.dataset.jeFocus = `empty:${name}`;
+            button.appendChild(JE.arrStatus.icon(iconName));
+            button.appendChild(document.createTextNode(tr(label)));
+            button.addEventListener('click', () => actions[name]());
+            box.appendChild(button);
+        }
+        return box.childNodes.length ? box : null;
+    }
+
+    /**
+     * My requests: groups in order, each with its heading; with none, a short note and the ways to find
+     * something (Discover, Search).
      * @param {HTMLElement} panel Target.
      * @param {Object} data Hub response.
-     * @param {Object} actions Row callbacks.
+     * @param {Object} actions Row callbacks (open, play, manage; discover, search for the empty state).
      * @returns {void}
      */
     function renderMine(panel, data, actions) {
         const ctx = context(data);
         const entries = data.mine || [];
         if (!entries.length) {
-            panel.appendChild(el('div', 'je-hub-empty', tr(data.seerr?.configured && !data.seerr?.loaded ? 'arr_hub_loading' : 'arr_hub_empty_mine')));
+            const loading = data.seerr?.configured && !data.seerr?.loaded;
+            const text = loading ? 'arr_hub_loading' : typeof actions?.discover === 'function' ? 'arr_hub_empty_mine_discover' : 'arr_hub_empty_mine';
+            panel.appendChild(el('div', 'je-hub-empty je-hub-empty-mine', tr(text)));
+            const buttons = loading ? null : emptyMineActions(actions);
+            if (buttons) panel.appendChild(buttons);
             return;
         }
         for (const group of GROUPS) {

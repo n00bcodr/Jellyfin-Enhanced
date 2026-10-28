@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using MediaBrowser.Controller.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -371,6 +372,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             "declined" => "declined",
             _ => "cancelled",
         };
+
+        /// <summary>
+        /// Display names of the titles audit rows act on (Requests → Audit), for <paramref name="admin"/> under the rule their
+        /// request cards follow: <see cref="IRequestPolicy.Evaluate(Guid, MutationInput, string)"/> must find the title visible
+        /// to them (their libraries, the destination's library, parental limits; fail-closed while parental evidence is
+        /// unknown) for the default destination and for every row that names it, and their Hidden Content must not hide it on
+        /// the Requests page. A sent request's row is checked as its card is (the request as stored, and where it went); other
+        /// rows by the instance and root folder they record. Names then come from <see cref="MetaAsync"/>. Anything else (an
+        /// unknown caller too) gets no name, so the Audit tab shows the row's stored key.
+        /// </summary>
+        /// <param name="rows">Each row's canonical title key and the audit entry.</param>
+        /// <param name="admin">The calling administrator.</param>
+        /// <param name="ct">Cancels the reads.</param>
+        internal async Task<Dictionary<string, HubTitleMeta>> AuditTitlesAsync(IEnumerable<(string Title, ArrAuditEntry Entry)> rows, Guid admin, CancellationToken ct)
+        {
+            var named = new Dictionary<string, HubTitleMeta>(StringComparer.Ordinal);
+            if (_service.View.Viewer(admin) is not { } caller) return named;
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, caller.UserId, library: _library);
+            var checks = new Dictionary<string, List<(MutationInput Input, string Target)>>(StringComparer.Ordinal);
+            foreach (var (title, entry) in rows)
+            {
+                if (TitleKey.Parse(title) is not { } key || hidden.IsHidden(key, _aliases, "requests")) continue;
+                if (!checks.TryGetValue(title, out var inputs))
+                {
+                    if (checks.Count >= MaxMetaTitles) continue;
+                    checks[title] = inputs = new List<(MutationInput, string)> { (AuditInput(key, null, null), string.Empty) };
+                }
+                var check = AuditCheck(key, entry);
+                if (!inputs.Contains(check)) inputs.Add(check);
+            }
+            bool Visible(List<(MutationInput Input, string Target)> inputs) => inputs.All(i => _service.Policy.Evaluate(caller.UserId, i.Input, i.Target).Visible);
+            // Parental evidence not read yet for an absent title: read once (bounded, as the requested-titles list does), never guessed.
+            using (var budget = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                budget.CancelAfter(TmdbBudget);
+                foreach (var (input, target) in checks.Values.SelectMany(i => i).Where(i => _service.Policy.Evaluate(caller.UserId, i.Input, i.Target).VisibilityUnknown))
+                {
+                    if (budget.IsCancellationRequested) break;
+                    try { await _service.Policy.PrepareVisibilityAsync(caller.UserId, input, budget.Token).WaitAsync(budget.Token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+                }
+            }
+            var visible = checks.Where(c => Visible(c.Value)).Select(c => c.Key).ToList();
+            var meta = await MetaAsync(visible, caller, ct).ConfigureAwait(false);
+            // Access may have changed while TMDB answered: every name is checked again after the last await.
+            foreach (var title in visible)
+            {
+                if (meta.TryGetValue(title, out var m) && Visible(checks[title])) named[title] = m;
+            }
+            return named;
+        }
+
+        private static readonly Regex AuditRoot = new("(?:^|; )Root: ([^;]+);", RegexOptions.CultureInvariant);
+
+        // What a row's title is checked as: a dispatched request as its card checks it (the stored ask and where it went),
+        // else the title on the row's instance and recorded root folder (an add's details, a choice's message).
+        private (MutationInput Input, string Target) AuditCheck(TitleKey key, ArrAuditEntry entry)
+        {
+            if (entry.Action == "request.dispatch" && _service.Ledger.Job(entry.Id) is { } job && _service.Ledger.Find(job.WantId) is { } want)
+                return (want.Input, want.TargetKey);
+            var root = entry.Details?.TryGetValue("rootFolder", out var folder) == true ? folder
+                : entry.Message != null && AuditRoot.Match(entry.Message) is { Success: true } m && m.Groups[1].Value != "missing" ? m.Groups[1].Value : null;
+            return (AuditInput(key, string.IsNullOrEmpty(entry.InstanceId) ? null : entry.InstanceId, root), string.Empty);
+        }
+
+        // The ask a request card would evaluate for an audited title (the whole series for a series), on an instance and folder or the default destination.
+        private static MutationInput AuditInput(TitleKey key, string? instance, string? root)
+            => (key.IsMovie ? new MutationInput { Key = key.Title.ToString() } : new MutationInput { Key = key.Title.ToString(), Scope = "seasons" })
+                with { InstanceId = instance, RootFolder = root };
 
         /// <summary>
         /// Display data per title key for one caller: their own visible Jellyfin item first (name,
