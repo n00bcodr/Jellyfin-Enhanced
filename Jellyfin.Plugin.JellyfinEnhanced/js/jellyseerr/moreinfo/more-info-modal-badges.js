@@ -85,7 +85,10 @@ function buildMediaFacts(data, mediaType, tmdbId) {
     const tmdbLink = `https://www.themoviedb.org/${mediaType}/${tmdbId}?language=en`;
     const imdbLink = imdbId ? `https://www.imdb.com/title/${imdbId}` : null;
     const tvdbLink = tvdbId ? `http://www.thetvdb.com/?tab=series&id=${tvdbId}` : null;
-    const rtLink = mediaType === 'tv' ? (data.ratings?.url || null) : (data.ratings?.rt?.url || null);
+    // Without a ratings URL (no ratings for the title, or not read yet) look the title up, never an empty link.
+    const rtTitle = data.title || data.name || '';
+    const rtLink = (mediaType === 'tv' ? data.ratings?.url : data.ratings?.rt?.url)
+        || (rtTitle ? `https://www.rottentomatoes.com/search?search=${encodeURIComponent(rtTitle)}` : 'https://www.rottentomatoes.com');
     const traktLink = `https://trakt.tv/search/tmdb/${tmdbId}?id_type=${mediaType === 'movie' ? 'movie' : 'show'}`;
     const letterboxdLink = mediaType === 'movie' ? `https://letterboxd.com/tmdb/${tmdbId}` : null;
     const simklLink = imdbId ? `https://api.simkl.com/redirect?to=Simkl&imdb=${encodeURIComponent(imdbId)}` : null;

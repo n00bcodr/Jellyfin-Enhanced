@@ -281,7 +281,7 @@ Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](s
 
     More Info shows metadata, content rating, overview, requester names/avatars, and normal/4K status. Depending on upstream data, it includes download bars, cast/crew, trailers, keywords, collection membership, external links, and TV seasons with availability badges that link to the library when a Jellyfin season ID is resolved.
 
-    It does not continuously poll. It shows up to 20 cast entries, 20 keywords, and six trailers. **View on SIMKL** is available when an IMDb ID exists, with no separate switch.
+    It does not continuously poll. It shows up to 20 cast entries, 20 keywords, and six trailers. **View on SIMKL** is available when an IMDb ID exists, with no separate switch. When the ratings have no Rotten Tomatoes page, **View on Rotten Tomatoes** searches Rotten Tomatoes for the title.
 
     The modal's **Streaming** section is independent of poster icons. With TMDB configured, it shows up to six unique subscription providers using your per-user Elsewhere region, then the server region (US by default). If the selected region is absent from supplied data, it tries US and then the first supplied region. See [provider settings](seerr-settings.md#streaming-providers).
 
