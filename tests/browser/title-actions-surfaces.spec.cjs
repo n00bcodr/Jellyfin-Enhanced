@@ -148,7 +148,8 @@ test('More Info is a named modal dialog; the covered page\'s Request is out of t
   expect(open.coveredRequest).toBe(false);
   expect(open.behind).toBe(false);
   await page.keyboard.press('Escape');
-  await expect.poll(() => page.evaluate(() => !!document.querySelector('.je-more-info-modal')?._isClosing)).toBe(true);
+  // Escape closed it: closing, or already gone (a slow poll can miss the short closing state; still open fails).
+  await expect.poll(() => page.evaluate(() => { const modal = document.querySelector('.je-more-info-modal'); return !modal || !!modal._isClosing; })).toBe(true);
   const closed = await axTree(page);
   expect(closed.coveredRequest).toBe(true);
   expect(closed.behind).toBe(true);

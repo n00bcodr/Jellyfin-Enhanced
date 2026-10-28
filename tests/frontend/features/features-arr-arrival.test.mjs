@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = ['arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-arrival.js', 'arr/status/status-details.js'];
@@ -34,7 +35,7 @@ const page = (type = 'Episode') => `<div id="itemDetailPage" class="page library
  * The real status modules on a details page, with the arrival rule at fast timings. `answers(path, n)`
  * answers each plugin call (status reads and the arrival route); `items` are what Jellyfin returns per id.
  */
-function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvshows`, type, answers = () => null, items = {}, apiClient = {}, config = {}, html } = {}) {
+function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvshows`, type, answers = () => null, items = {}, apiClient = {}, config = {}, html, clock = null } = {}) {
   const calls = [];
   const replays = [];
   const itemReads = [];
@@ -45,6 +46,8 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
   const h = createHarness({
     html: html ?? page(type),
     url: `http://jellyfin.test/web/index.html${hash}`,
+    // A manual clock for the page's timers and Date when the test passes one (helpers/fake-clock.mjs).
+    globals: clock ? clock.globals : {},
     // Jellyfin answers the viewer's item reads (the destination check before a move) unless a test says otherwise.
     apiClient: { getItem: async (user, id) => ({ Id: id }), ...apiClient },
     JE: {
@@ -408,11 +411,11 @@ for (const kind of ['movie', 'episode']) {
 
 // LRR2: a picker the page had, missing at the check (Jellyfin mid-redraw), is not a redraw that took;
 // and a version removed while a retry waits must not stay the target or fence a later arrival.
-const retryPage = (t, kind) => {
+const retryPage = (t, kind, clock = null) => {
   let versions = 2;
   const h = setup(t, kind === 'movie'
-    ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
-    : { answers: () => episode('ready', { versions }) });
+    ? { clock, hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) }
+    : { clock, answers: () => episode('ready', { versions }) });
   Object.assign(h.A.timing, { settle: 15, gap: 140, batch: 25 });
   const picker = h.document.createElement('select');
   picker.className = 'selectSource';
@@ -425,23 +428,26 @@ const retryPage = (t, kind) => {
 };
 
 for (const kind of ['movie', 'episode']) {
+  // F49: on a manual clock (timers and Date.now), so the check at settle, the picker's return at 55 ms and the retry after
+  // the gap keep their order however busy the machine is; on real timers a late timer could reorder them.
   test(`${kind}: a picker missing while Jellyfin redraws is not counted as drawn (review probe)`, async t => {
-    const f = retryPage(t, kind), { h } = f;
+    const clock = fakeClock({ date: true });
+    const f = retryPage(t, kind, clock), { h } = f;
     await h.D.update(false);
     // The first redraw takes the picker away and puts the old one back after the check: no item render.
-    f.render(() => { if (h.host.shows.length === 1) { f.picker.remove(); setTimeout(() => h.view.appendChild(f.picker), 55); } else f.draw(); });
+    f.render(() => { if (h.host.shows.length === 1) { f.picker.remove(); h.window.setTimeout(() => h.view.appendChild(f.picker), 55); } else f.draw(); });
     f.set(3);
     await h.D.update(true);
-    await sleep(100);
+    await clock.advance(100);
     assert.equal(h.A.state().base.versions, 2, 'not recorded as drawn while the picker was missing');
     for (let n = 0; n < 3; n++) await h.D.update(true);
-    await sleep(300);
+    await clock.advance(300);
     assert.equal(f.picker.options.length, 3, 'retried once the picker was back');
     assert.equal(h.A.state().base.versions, 3);
     assert.equal(h.host.shows.length, 2, 'one retry');
     h.D.stop();
     await h.D.update(false);
-    await sleep(180);
+    await clock.advance(180);
     assert.equal(f.picker.options.length, 3, 'a cached-view restore stays reconciled');
     assert.equal(h.host.shows.length, 2);
   });
@@ -518,10 +524,11 @@ for (const kind of ['movie', 'episode']) {
 
   // LRR3: the picker the page was shown with can go missing before JE's first redraw; and repeated
   // LibraryChanged notifications must not renew an unchanged failed change without bound.
-  const eventPage = (t, kind, initial = 2) => {
+  const eventPage = (t, kind, initial = 2, clock = null) => {
     const handlers = [];
     let versions = initial;
     const h = setup(t, {
+      clock,
       apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
       items: { [OLD]: { Id: OLD, SeasonId: SEASON, SeriesId: SERIES } },
       ...(kind === 'movie'
@@ -540,25 +547,28 @@ for (const kind of ['movie', 'episode']) {
       event: data => handlers[0]({ MessageType: 'LibraryChanged', Data: data }) };
   };
 
+  // F50: on a manual clock (timers and Date.now), so the first redraw's check lands before the picker comes back and the
+  // retry after it, however busy the machine is.
   test(`${kind}: the picker the page was shown with, missing before the first redraw, is not counted as drawn (review probe)`, async t => {
-    const f = eventPage(t, kind), { h } = f;
+    const clock = fakeClock({ date: true });
+    const f = eventPage(t, kind, 2, clock), { h } = f;
     await h.D.update(false);
     assert.equal(f.picker.options.length, 2);
     f.picker.remove(); // Jellyfin takes its controls away before JE's own redraw
     f.render(() => {});
     f.set(3);
     await h.D.update(true);
-    await sleep(55);
+    await clock.advance(55);
     assert.equal(h.A.state().base.versions, 2, 'not drawn while the picker was missing');
     h.view.appendChild(f.picker); // the old two-option controls come back
     f.render(f.draw);
     for (let n = 0; n < 3; n++) await h.D.update(true);
-    await sleep(350);
+    await clock.advance(350);
     assert.equal(f.picker.options.length, 3, 'retried once the picker was back');
     assert.equal(h.A.state().base.versions, 3);
     h.D.stop();
     await h.D.update(false);
-    await sleep(180);
+    await clock.advance(180);
     assert.equal(f.picker.options.length, 3);
     assert.equal(h.A.state().base.versions, 3);
   });

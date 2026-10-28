@@ -4,15 +4,21 @@
 <script>
 window.JellyfinEnhanced = {core:{}, helpers:{}, CONFIG:{}, pluginConfig:{}, t:key => ({jellyseerr_modal_cancel:'Cancel',jellyseerr_modal_request:'Request'}[key] || key)};
 window.saved=0; window.closeCount=0;
+// The signed-in viewer JE's session and owners are bound to (as jellyfin-web's ApiClient exposes them).
+window.ApiClient = {getCurrentUserId:()=>'user-a', accessToken:()=>'token-user-a', serverId:()=>'server', getUrl:path=>path};
 </script>
-<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js"></script>
 <script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/navigation.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/session.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/session-action.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js"></script>
 <script src="/Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-styles.js"></script>
 <script src="/Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/modal.js"></script>
 <script>
-window.openRequest = (subtitle='Synthetic Series • 日本語') => {
- window.requestModal = JellyfinEnhanced.jellyseerrModal.create({title:'Request seasons', subtitle, bodyHtml:'<label for="season">Season</label><select id="season"><option value="1">Season 1</option><option value="2">Season 2</option></select>', onSave:(modal,button,close)=>{window.saved++;document.querySelector('#output').textContent='Requested season '+modal.querySelector('#season').value;close();},onClose:()=>window.closeCount++});
+// The modal takes the owner of the gesture that opened it (D46S2-R6): tests open it with a real click on #open, which
+// runs window.nextOpen (once) when a test set one, else the season request below.
+window.openRequest = (operation, subtitle='Synthetic Series • 日本語') => {
+ window.requestModal = JellyfinEnhanced.jellyseerrModal.create({operation, title:'Request seasons', subtitle, bodyHtml:'<label for="season">Season</label><select id="season"><option value="1">Season 1</option><option value="2">Season 2</option></select>', onSave:(modal,button,close)=>{window.saved++;document.querySelector('#output').textContent='Requested season '+modal.querySelector('#season').value;close();},onClose:()=>window.closeCount++});
  window.requestModal.show();
 };
-document.querySelector('#open').addEventListener('click',()=>openRequest());
+document.querySelector('#open').addEventListener('click',event=>{const open=window.nextOpen||openRequest;window.nextOpen=null;open(event);});
 </script></body></html>

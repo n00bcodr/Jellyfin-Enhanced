@@ -9,7 +9,7 @@ npm run test:browser
 npm run test:visual
 ```
 
-The suite runs desktop Chromium, mobile Chromium (Pixel 7 viewport/touch emulation, not Android), and desktop Firefox. It starts and stops its own loopback fixture server on port 4179 (set `JE_BROWSER_PORT` to use another). External requests are blocked except explicitly intercepted locale fixtures. Unexpected console errors and page errors fail tests; retries are disabled. Traces and screenshots are retained for failures under `artifacts/browser`, alongside HTML and JUnit reports. `JE_CHROMIUM_PATH` is an optional local diagnostic override; use Playwright's pinned browser for baseline checks.
+The suite runs desktop Chromium, mobile Chromium (Pixel 7 viewport/touch emulation, not Android), and desktop Firefox. Cases tagged `@timing` (long-task budgets) run in their own `chromium-timing` and `mobile-chromium-timing` projects after the Chromium projects, one browser at a time, and Firefox runs after those, so a budget never measures the suite's own parallel workers; `--project <name> --no-deps` runs one project alone. It starts and stops its own loopback fixture server on port 4179 (set `JE_BROWSER_PORT` to use another). External requests are blocked except explicitly intercepted locale fixtures. Unexpected console errors and page errors fail tests; retries are disabled. Traces and screenshots are retained for failures under `artifacts/browser`, alongside HTML and JUnit reports. `JE_CHROMIUM_PATH` is an optional local diagnostic override; use Playwright's pinned browser for baseline checks.
 
 Covered behavior:
 

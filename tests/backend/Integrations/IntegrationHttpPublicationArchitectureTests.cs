@@ -56,10 +56,15 @@ public class IntegrationHttpPublicationArchitectureTests(ITestOutputHelper outpu
         var plugin = host.Services.GetRequiredService<IActionDescriptorCollectionProvider>().ActionDescriptors.Items
             .OfType<ControllerActionDescriptor>().Where(a => a.ControllerTypeInfo.Assembly == typeof(JellyfinEnhancedController).Assembly).ToArray();
         Assert.NotEmpty(plugin);
+#if JF12
         var native = NativeDetailsAllowlist.Routes.Where(r => r.Answer != FacadeAnswer.PassThrough).Select(r => new ControllerActionDescriptor
         {
             ControllerName = r.Controller, ActionName = r.Action, ControllerTypeInfo = typeof(IntegrationHttpPublicationArchitectureTests).GetTypeInfo(),
         }).ToArray();
+#else
+        // The native facade is Jellyfin 12 only (the plugin compiles it under JF12): a 10.11 build has the plugin's own routes.
+        var native = Array.Empty<ControllerActionDescriptor>();
+#endif
         var options = host.Services.GetRequiredService<IOptions<MvcOptions>>().Value;
         Audit(plugin.Concat(native), options);
         using var admissionServices = new ServiceCollection().BuildServiceProvider();
@@ -79,9 +84,11 @@ public class IntegrationHttpPublicationArchitectureTests(ITestOutputHelper outpu
         Assert.Contains(plugin, a => a.ControllerName == "AcquireDiscover");
         Assert.Contains(plugin, a => a.ControllerName == "AcquireListImport" && a.ActionName == "Resolve");
         Assert.Contains(plugin, a => a.ControllerName == "AcquireListImport" && a.ActionName == "FetchSource");
+#if JF12
         Assert.Contains(native, a => a.ControllerName == "Image" && a.ActionName == "GetItemImage");
         Assert.Contains(native, a => a.ControllerName == "UserLibrary" && a.ActionName == "GetItem");
         Assert.Contains(native, a => a.ControllerName == "TvShows" && a.ActionName == "GetEpisodes");
+#endif
         output.WriteLine($"Plugin MVC actions: {plugin.Length}; native facade actions: {native.Length}; exclusions: {NonTitleExclusions.Count}");
     }
 

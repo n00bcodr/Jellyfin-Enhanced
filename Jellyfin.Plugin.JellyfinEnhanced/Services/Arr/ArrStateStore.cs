@@ -116,6 +116,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Maximum synchronous disposal wait; tests shorten it when holding a writer.</summary>
         internal TimeSpan DisposeWait { get; set; } = TimeSpan.FromSeconds(5);
 
+        /// <summary>The clock <see cref="DisposeWait"/> is measured on; tests use a manual one.</summary>
+        internal TimeProvider DisposeClock { get; set; } = TimeProvider.System;
+
         /// <summary>The instance registry the store follows.</summary>
         public ArrInstanceRegistry Registry => _factory.Registry;
 
@@ -540,7 +543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (Volatile.Read(ref _stopWaitExpired) != 0) return;
             try
             {
-                drain.WaitAsync(DisposeWait).GetAwaiter().GetResult();
+                drain.WaitAsync(DisposeWait, DisposeClock).GetAwaiter().GetResult();
             }
             catch (TimeoutException)
             {

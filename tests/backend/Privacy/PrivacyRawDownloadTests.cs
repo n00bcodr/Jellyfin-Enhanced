@@ -11,14 +11,20 @@ using Moq;
 
 namespace JE.Tests;
 
+// GetDownload: on the 10.11 build the pinned 10.11.11 Jellyfin.Api's LibraryController.GetDownload needs a newer
+// MediaBrowser.Controller (FileSystemHelper.ResolveLinkTarget) than the 10.11.0 package the plugin and these tests compile
+// against and share (a real 10.11.11 host ships the matching one), so its cases run on Jellyfin 12 only until the pins
+// agree. GetFile runs on both builds.
 [Collection("Plugin singleton")]
 public class PrivacyRawDownloadTests
 {
     [Theory]
+#if JF12
     [InlineData(false, false, "GetDownload")]
     [InlineData(false, true, "GetDownload")]
     [InlineData(true, false, "GetDownload")]
     [InlineData(true, true, "GetDownload")]
+#endif
     [InlineData(false, false, "GetFile")]
     [InlineData(false, true, "GetFile")]
     [InlineData(true, false, "GetFile")]
@@ -26,6 +32,8 @@ public class PrivacyRawDownloadTests
     public async Task NativeRawDownloadExecutorDeliversBytesBeforeResourceCompletionAndRetainsRanges(bool audio, bool range, string method)
         => await Download(audio ? "audio" : "video", range, false, false, true, method);
 
+#if JF12
+    // Every case goes through GetDownload (see above).
     [Theory]
     [InlineData("photo", false, false)]
     [InlineData("book", false, false)]
@@ -34,6 +42,7 @@ public class PrivacyRawDownloadTests
     [InlineData("metadata", false, false)]
     public async Task MixedDownloadsAndInstalledClassificationsKeepTheOuterOwner(string kind, bool classified, bool replaceResult)
         => await Download(kind, false, classified, replaceResult, false);
+#endif
 
     private static async Task Download(string kind, bool range, bool classified, bool replaceResult, bool streams, string method = "GetDownload")
     {
