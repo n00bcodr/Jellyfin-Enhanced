@@ -124,7 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private sealed record Entry(string Key, TmdbResponse Response, DateTimeOffset ExpiresAt, long Size)
         {
-            /// <summary>1 once the entry is on disk or a write of it was started (the server-side cache).</summary>
+            /// <summary>The server-side cache copy: <see cref="SavedNone"/>, <see cref="SavedPending"/> (a write started) or <see cref="SavedOnDisk"/> (committed).</summary>
             public int Saved;
 
             /// <summary>The server-side cache's generation sampled before the answer was read (its fetch, or the snapshot load).</summary>
@@ -1041,6 +1041,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // Sampled before the snapshot is read: a Clear of the server-side cache after it refuses saving these entries there.
                 var diskGeneration = DiskGeneration();
+                // A snapshot that is there is migrated (and retired) even when nothing in it can be used.
+                _legacy = new List<Entry>();
                 if (new FileInfo(_diskPath).Length > MaxSnapshotBytes)
                 {
                     _logger?.Warning("[TMDB cache] The saved cache file is too large; it was not loaded");
@@ -1085,13 +1087,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             FetchedAtUtc = entry.F > 0 && entry.F <= now.UtcDateTime.Ticks ? new DateTime(entry.F, DateTimeKind.Utc) : DateTime.MinValue,
                         };
+                        // Never valid longer than its own TTL, in memory as on disk: from its fetch when that is known (a
+                        // record claiming more is skipped), else at most a TTL from now.
+                        var ttl = SnapshotTtl(entry.K, entry.S);
+                        if (response.FetchedAtUtc > DateTime.MinValue)
+                        {
+                            if (!WithinTtl(UrlOf(entry.K), response, expiresAt)) continue;
+                        }
+                        else if (expiresAt > now + ttl)
+                        {
+                            expiresAt = now + ttl;
+                        }
+
                         var size = (entry.K.Length + entry.C.Length + response.ETag.Length) * 2L + EntryOverheadBytes;
                         if (_totalBytes + size > MaxCacheBytes)
                         {
                             break;
                         }
 
-                        _entries[entry.K] = _lru.AddLast(new Entry(entry.K, response, expiresAt, size) { DiskGeneration = diskGeneration });
+                        var loadedEntry = new Entry(entry.K, response, expiresAt, size) { DiskGeneration = diskGeneration };
+                        _entries[entry.K] = _lru.AddLast(loadedEntry);
+                        if (response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.K))) _legacy.Add(loadedEntry);
                         _totalBytes += size;
                         loaded++;
                     }
@@ -1111,7 +1127,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool StorableSnapshotEntry(DiskEntry entry)
         {
-            if (!(entry.S is >= 200 and <= 299 or 404) || entry.C.Length > BoundedBody.MaxBytes) return false;
+            // The bound a TMDB read has: its UTF-8 body, not its characters.
+            if (!(entry.S is >= 200 and <= 299 or 404) || !entry.K.Contains('|', StringComparison.Ordinal)
+                || !UrlOf(entry.K).StartsWith(UpstreamPrefix, StringComparison.Ordinal) || Encoding.UTF8.GetByteCount(entry.C) > BoundedBody.MaxBytes) return false;
             try
             {
                 using var _ = JsonDocument.Parse(entry.C);
@@ -1122,6 +1140,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
         }
+
+        private static TimeSpan SnapshotTtl(string key, int status) => status == 404 ? NotFoundTtl : GetTtl(UrlOf(key)[UpstreamPrefix.Length..]);
 
         private void SaveToDisk()
         {
@@ -1277,6 +1297,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _diskOn;
         private int _promoting;
         private long _promoteAgainAt;
+        // The valid, migratable records of the legacy snapshot, until it is retired (or migration gives up).
+        private List<Entry>? _legacy;
+        private int _migrationAttempts;
+        private const int MaxMigrationAttempts = 10;
+        private const int SavedNone = 0;
+        private const int SavedPending = 1;
+        private const int SavedOnDisk = 2;
         private readonly object _legacyFileLock = new();
 
         /// <summary>Answers read back from disk into memory (tests, diagnostics).</summary>
@@ -1421,7 +1448,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             else if (StoreLocked(key, record.Response, record.ExpiresAt) is { } stored)
                             {
                                 // Already on disk; no renewed lifetime (the record's own expiry).
-                                stored.Saved = 1;
+                                stored.Saved = SavedOnDisk;
                                 loaded = true;
                                 _diskHits++;
                             }
@@ -1468,8 +1495,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// generation sampled before it was read, so a Clear or a folder change since refuses it. Entries of unknown fetch
         /// time, free-text searches and records claiming longer than their TTL are left out. A write refused while its
         /// generation still holds (the disk busy or full, a failed write) stays to be saved and is tried again a minute
-        /// later; only when every eligible entry was saved is the legacy snapshot file renamed (<c>.migrated</c>), so it
-        /// isn't loaded or imported again; it is kept for a rollback by hand.
+        /// later. The legacy snapshot is migrated all or nothing: it is renamed (<c>.migrated</c>, kept for a rollback by
+        /// hand, never loaded again) only when every valid record it held is committed on disk (its own write, or a
+        /// newer answer for the same request) or was dropped by a Clear; a write still under way doesn't count. After
+        /// <see cref="MaxMigrationAttempts"/> incomplete attempts the snapshot is left alone for this run (logged once).
         /// </summary>
         internal async Task PromoteAsync()
         {
@@ -1480,25 +1509,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 List<Entry> pending;
                 lock (_lock)
                 {
-                    pending = _lru.Where(e => Volatile.Read(ref e.Saved) == 0 && e.ExpiresAt > now && e.Response.FetchedAtUtc > DateTime.MinValue
+                    pending = _lru.Where(e => Volatile.Read(ref e.Saved) == SavedNone && e.ExpiresAt > now && e.Response.FetchedAtUtc > DateTime.MinValue
                         && Durable(UrlOf(e.Key)) && WithinTtl(UrlOf(e.Key), e.Response, e.ExpiresAt)).ToList();
                 }
 
                 var failed = 0;
                 foreach (var entry in pending)
                 {
-                    if (Interlocked.Exchange(ref entry.Saved, 1) != 0 || await WriteAsync(entry).ConfigureAwait(false)) continue;
-                    // Invalidated since it was read (Clear, folder change): never saved. Otherwise it is still to be saved.
-                    if (_disk!.IsCurrent(entry.DiskGeneration))
-                    {
-                        Volatile.Write(ref entry.Saved, 0);
-                        failed++;
-                    }
+                    if (await SaveOnceAsync(entry).ConfigureAwait(false) == false) failed++;
                 }
 
-                if (failed == 0 && _disk?.Enabled == true)
+                var legacyDone = await MigrateLegacyAsync(now).ConfigureAwait(false);
+                if (failed == 0 && legacyDone)
                 {
-                    RetireLegacyFile();
                     Interlocked.Exchange(ref _promoteAgainAt, 0);
                 }
                 else
@@ -1514,6 +1537,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 Volatile.Write(ref _promoting, 0);
             }
+        }
+
+        /// <summary>
+        /// Saves an entry unless a write of it was started already: true when it is on disk (now or before), false when a
+        /// write of it failed or is still under way (to be tried again), null when a Clear or folder change dropped it.
+        /// </summary>
+        private async Task<bool?> SaveOnceAsync(Entry entry)
+        {
+            if (Interlocked.CompareExchange(ref entry.Saved, SavedPending, SavedNone) != SavedNone)
+            {
+                if (Volatile.Read(ref entry.Saved) == SavedOnDisk) return true;
+                return _disk!.IsCurrent(entry.DiskGeneration) ? false : null;
+            }
+
+            if (await WriteAsync(entry).ConfigureAwait(false)) return true;
+            if (!_disk!.IsCurrent(entry.DiskGeneration)) return null;
+            Volatile.Write(ref entry.Saved, SavedNone);
+            return false;
+        }
+
+        /// <summary>The legacy snapshot's migration (see <see cref="PromoteAsync"/>); true when nothing of it is left to do.</summary>
+        private async Task<bool> MigrateLegacyAsync(DateTimeOffset now)
+        {
+            var legacy = _legacy;
+            if (legacy == null || _disk?.Enabled != true) return true;
+            var complete = true;
+            foreach (var record in legacy)
+            {
+                if (record.ExpiresAt <= now) continue;
+                Entry? current;
+                lock (_lock) current = _entries.TryGetValue(record.Key, out var node) && node.Value.ExpiresAt > now ? node.Value : null;
+                if (current != null)
+                {
+                    // The answer memory holds for the request (the record itself, or a newer one) was given its save above:
+                    // only a committed one counts (a write under way or refused leaves the snapshot in place).
+                    if (Volatile.Read(ref current.Saved) != SavedOnDisk && _disk!.IsCurrent(current.DiskGeneration)) complete = false;
+                }
+                else if (await SaveOnceAsync(record).ConfigureAwait(false) == false)
+                {
+                    // Memory let the record go: it is saved from the snapshot itself.
+                    complete = false;
+                }
+            }
+
+            if (complete)
+            {
+                RetireLegacyFile();
+                _legacy = null;
+                return true;
+            }
+
+            if (++_migrationAttempts >= MaxMigrationAttempts)
+            {
+                _logger?.Warning($"[TMDB cache] Could not move the saved cache to the server-side cache after {MaxMigrationAttempts} attempts; the old file is kept and loaded again at the next start");
+                _legacy = null;
+                return true;
+            }
+
+            return false;
         }
 
         private void RetireLegacyFile()
@@ -1542,15 +1624,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (entries.Count == 0 || !DiskReady()) return;
             foreach (var entry in entries)
             {
-                if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key)) && Interlocked.Exchange(ref entry.Saved, 1) == 0)
-                    _ = SaveAsync(entry);
+                if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key))) _ = SaveOnceAsync(entry);
             }
-        }
-
-        // A write refused while its generation still holds is left for the next promotion.
-        private async Task SaveAsync(Entry entry)
-        {
-            if (!await WriteAsync(entry).ConfigureAwait(false) && _disk!.IsCurrent(entry.DiskGeneration)) Volatile.Write(ref entry.Saved, 0);
         }
 
         /// <summary>Never valid for longer than its own TTL from its fetch (the disk reader refuses such a record).</summary>
@@ -1568,8 +1643,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var keyHash = entry.Key[..bar];
                 var url = entry.Key[(bar + 1)..];
                 var bytes = Encode(entry, DiskDigest(keyHash, url), url);
-                return await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
+                var stored = await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
                     entry.DiskGeneration, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
+                if (stored) Volatile.Write(ref entry.Saved, SavedOnDisk);
+                return stored;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {

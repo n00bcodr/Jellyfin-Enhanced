@@ -409,6 +409,31 @@ public sealed class IntegrationTmdbDiskCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task AMigrationThatKeepsFailingGivesUpForThisRunAndTheSnapshotIsKeptForTheNextStart()
+    {
+        var legacy = Path.Combine(_root, "tmdb-cache.json");
+        Directory.CreateDirectory(_root);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("key")), 0, 8);
+        File.WriteAllText(legacy, JsonSerializer.Serialize(new { V = 1, Entries = new[] { new { K = hash + "|https://api.themoviedb.org/3/movie/603", S = 200, C = "{\"id\":603}",
+            E = (_clock.Now + TimeSpan.FromHours(5)).ToUnixTimeMilliseconds(), F = (_clock.Now - TimeSpan.FromHours(1)).UtcDateTime.Ticks } } }));
+        using var network = Tmdb();
+        var disk = Disk();
+        disk.Hook = point => { if (point == "commit") throw new IOException("refused"); };
+        var cache = Cache(network, disk, legacy: legacy);
+        for (var i = 0; i < 10; i++) await cache.PromoteAsync();
+        disk.Hook = null;
+        await cache.PromoteAsync(); // given up: the snapshot isn't retired in this run (memory entries are still saved)
+        Assert.True(File.Exists(legacy));
+        Assert.False(File.Exists(legacy + ".migrated"));
+
+        var restarted = Cache(network, Disk(), legacy: legacy);
+        await restarted.PromoteAsync();
+        Assert.Equal(1, Files());
+        Assert.False(File.Exists(legacy));
+        Assert.True(File.Exists(legacy + ".migrated"));
+    }
+
+    [Fact]
     public async Task WithTheServerCacheOffTheLegacySnapshotIsStillWrittenAndWithItOnItIsNot()
     {
         var legacy = Path.Combine(_root, "tmdb-cache.json");

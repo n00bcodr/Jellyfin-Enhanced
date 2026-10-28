@@ -892,8 +892,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             // Callers missing the same resource at once share one read (the saved fact, else the poster slot and TMDB);
-            // each publishes it under its own list metadata epoch, and only an answered read is remembered.
-            var read = await ListContinuation.Await(() => SharedPosterRead(key, keyHash, apiPath, asked, apiKey).WaitAsync(cancellationToken)).ConfigureAwait(false);
+            // each publishes it under its own list metadata epoch, and only an answered read is remembered. Past the
+            // table's bounds a caller reads on its own, under its own token (nothing of it is retained).
+            PosterRead read;
+            var shared = JoinPosterRead(key, keyHash, apiPath, asked, apiKey);
+            if (shared == null)
+            {
+                read = await ListContinuation.Await(() => OwnPosterReadAsync(keyHash, apiPath, asked, apiKey, cancellationToken)).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            else
+            {
+                try
+                {
+                    read = await ListContinuation.Await(() => shared.WaitAsync(cancellationToken)).ConfigureAwait(false);
+                }
+                finally
+                {
+                    LeavePosterRead(key, shared);
+                }
+            }
+
             if (!read.Answered) return (null, false, read.NotFound);
             return epoch.Publish(() =>
             {
@@ -916,35 +935,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _tmdbPostersFacts[key] = (poster, readAt);
         }
 
+        /// <summary>Most poster reads shared at once (more distinct misses read on their own).</summary>
+        internal const int MaxSharedPosterReads = 256;
+
+        /// <summary>Most callers waiting on one shared poster read (more read on their own).</summary>
+        internal const int MaxPosterReadWaiters = 64;
+
+        /// <summary>A shared poster read's own state: the callers waiting on it, whether it is sending, and its cancellation.</summary>
+        private sealed class PosterFlight
+        {
+            public CancellationTokenSource Cancel { get; } = new();
+
+            public int Waiters { get; set; }
+
+            public bool Sending { get; set; }
+        }
+
         /// <summary>
-        /// The read of <paramref name="key"/> already under way, or a new one, started here on the first caller's flow. No
-        /// caller's token stops it (it has its own timeout); it leaves the table when it ends.
+        /// Joins the read of <paramref name="key"/> under way, or starts one here on the first caller's flow (each counts as a
+        /// waiter until it leaves); null when the table is full or the read has too many waiters.
         /// </summary>
-        private Task<PosterRead> SharedPosterRead(string key, string keyHash, string apiPath, AnswerRequest asked, string apiKey)
+        private Task<PosterRead>? JoinPosterRead(string key, string keyHash, string apiPath, AnswerRequest asked, string apiKey)
         {
             TaskCompletionSource<PosterRead> owner;
+            PosterFlight flight;
             lock (_posterReadsGate)
             {
-                if (_posterReadsFacts.TryGetValue(key, out var running)) return running;
-                owner = new TaskCompletionSource<PosterRead>(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (_posterReadsFacts.TryGetValue(key, out var running))
+                {
+                    var joined = (PosterFlight)running.AsyncState!;
+                    if (joined.Waiters >= MaxPosterReadWaiters) return null;
+                    joined.Waiters++;
+                    return running;
+                }
+
+                if (_posterReadsFacts.Count >= MaxSharedPosterReads) return null;
+                flight = new PosterFlight { Waiters = 1 };
+                owner = new TaskCompletionSource<PosterRead>(flight, TaskCreationOptions.RunContinuationsAsynchronously);
                 _posterReadsFacts[key] = owner.Task;
             }
 
-            _ = RunPosterReadAsync(key, owner, keyHash, apiPath, asked, apiKey);
+            _ = RunPosterReadAsync(key, owner, flight, keyHash, apiPath, asked, apiKey);
             return owner.Task;
         }
 
-        private async Task RunPosterReadAsync(string key, TaskCompletionSource<PosterRead> owner, string keyHash, string apiPath, AnswerRequest asked, string apiKey)
+        /// <summary>
+        /// A caller stops waiting. When the last one leaves a read that hasn't started sending (it waits for its disk read or
+        /// a poster slot), the read is cancelled and leaves the table; one already sending finishes (the four slots and its
+        /// own timeout bound it), so a caller arriving next still joins it.
+        /// </summary>
+        private void LeavePosterRead(string key, Task<PosterRead> shared)
+        {
+            var flight = (PosterFlight)shared.AsyncState!;
+            bool cancel;
+            lock (_posterReadsGate)
+            {
+                cancel = --flight.Waiters == 0 && !flight.Sending && !shared.IsCompleted;
+                if (cancel && _posterReadsFacts.TryGetValue(key, out var current) && ReferenceEquals(current, shared)) _posterReadsFacts.Remove(key);
+            }
+
+            if (cancel) flight.Cancel.Cancel();
+        }
+
+        private async Task RunPosterReadAsync(string key, TaskCompletionSource<PosterRead> owner, PosterFlight flight, string keyHash, string apiPath, AnswerRequest asked, string apiKey)
         {
             var result = new PosterRead(null, false, false, default);
             try
             {
                 // A fact saved by an earlier read (the server-side cache) needs no poster slot or TMDB read; it keeps its
                 // original read time.
-                result = _posterFacts != null
-                    && await ListContinuation.Await(() => _posterFacts.ReadAsync(keyHash, apiPath, asked, CancellationToken.None)).ConfigureAwait(false) is { } saved
-                    ? new PosterRead(saved.Poster, true, false, saved.ReadAt)
-                    : await ListContinuation.Await(() => TmdbPosterAsync(apiPath, asked, apiKey, CancellationToken.None)).ConfigureAwait(false);
+                if (_posterFacts != null
+                    && await ListContinuation.Await(() => _posterFacts.ReadAsync(keyHash, apiPath, asked, flight.Cancel.Token)).ConfigureAwait(false) is { } saved)
+                {
+                    result = new PosterRead(saved.Poster, true, false, saved.ReadAt);
+                }
+                else
+                {
+                    // The slot is released by its handle, only when its wait succeeded.
+                    using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, flight.Cancel.Token).ConfigureAwait(false);
+                    lock (_posterReadsGate) flight.Sending = true;
+                    result = await ListContinuation.Await(() => TmdbPosterAsync(apiPath, asked, apiKey, CancellationToken.None)).ConfigureAwait(false);
+                }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -955,21 +1026,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 lock (_posterReadsGate)
                 {
                     if (_posterReadsFacts.TryGetValue(key, out var current) && ReferenceEquals(current, owner.Task)) _posterReadsFacts.Remove(key);
+                    owner.TrySetResult(result);
                 }
-
-                owner.TrySetResult(result);
             }
         }
 
-        // The one TMDB poster read of a resource (shared by every caller missing it at once): the poster slot, then TMDB.
+        // A caller past the shared table's bounds: its own read under its own token (the saved fact, else a poster slot and TMDB).
+        private async Task<PosterRead> OwnPosterReadAsync(string keyHash, string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (_posterFacts != null
+                    && await ListContinuation.Await(() => _posterFacts.ReadAsync(keyHash, apiPath, asked, cancellationToken)).ConfigureAwait(false) is { } saved)
+                {
+                    return new PosterRead(saved.Poster, true, false, saved.ReadAt);
+                }
+
+                using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
+                return await ListContinuation.Await(() => TmdbPosterAsync(apiPath, asked, apiKey, cancellationToken)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.Debug($"[Lists] TMDB poster {apiPath} failed: {UpstreamDiagnostics.Code(ex)}");
+                return new PosterRead(null, false, false, default);
+            }
+        }
+
+        // The one TMDB poster read of a resource, sent while its caller holds one of the four poster slots.
         private async Task<PosterRead> TmdbPosterAsync(string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
         {
             var failed = new PosterRead(null, false, false, default);
             var keyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8);
             try
             {
-                // The slot is released by its handle, only when its wait succeeded.
-                using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
                 using var metadataAdmission = new MetadataAdmission("list-posters");
                 var epoch = ListMetadataEpoch.Capture();
                 // Captured before the read: a Clear of the server-side cache after it refuses saving what it yields.
