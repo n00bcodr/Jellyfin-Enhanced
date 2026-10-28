@@ -140,6 +140,24 @@ public sealed class IntegrationTmdbDiskCacheTests : IDisposable
         Assert.Equal(3, network.Calls);
     }
 
+    [Theory]
+    [InlineData("search/movie?query=x", false)]
+    [InlineData("/search/movie?query=x", false)]
+    [InlineData("search//movie?query=x", false)]
+    [InlineData("SEARCH/company?query=x", false)]
+    [InlineData("./search/movie?query=x", false)]
+    [InlineData("movie/../search/movie?query=x", false)]
+    [InlineData("search?query=x", false)]
+    [InlineData("movie//603", false)]
+    [InlineData("movie/603/", false)]
+    [InlineData("movie/603%2F..", false)]
+    [InlineData("movie/603", true)]
+    [InlineData("tv/1399/season/1", true)]
+    [InlineData("discover/movie?with_genres=18&page=1", true)]
+    [InlineData("person/287/combined_credits", true)]
+    public void OnlyACanonicalNonSearchRouteIsEverWrittenToDisk(string resource, bool durable)
+        => Assert.Equal(durable, TmdbResponseCache.Durable("https://api.themoviedb.org/3/" + resource));
+
     [Fact]
     public async Task ExpiryTravelsWithTheRecordAndIsNeverExtended()
     {

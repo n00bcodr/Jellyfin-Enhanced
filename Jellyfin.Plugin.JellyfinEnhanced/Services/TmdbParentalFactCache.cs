@@ -107,17 +107,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return _disk.PutJsonAsync(Namespace, Key(scope, mediaType, tmdbId, region, tags), record, null, CancellationToken.None, generation, expires, readAt);
         }
 
-        /// <summary>Removes a title's stored facts for a region (both completeness variants) when one turned out unusable.</summary>
+        /// <summary>
+        /// Removes a title's stored facts for a region (both completeness variants) when one turned out unusable, and
+        /// refuses every write of them already under way, whether or not a file is there yet (other entries' writes go on).
+        /// </summary>
         internal async Task ForgetAsync(string scope, string mediaType, int tmdbId, string region)
         {
             if (_disk == null) return;
             foreach (var tags in new[] { true, false })
-            {
-                var key = Key(scope, mediaType, tmdbId, region, tags);
-                // Forget ends the store's generation; only an entry that is there is worth it.
-                if (await _disk.TryGetAsync(Namespace, key, CancellationToken.None).ConfigureAwait(false) != null)
-                    await _disk.ForgetAsync(Namespace, key, CancellationToken.None).ConfigureAwait(false);
-            }
+                await _disk.ForgetEntryAsync(Namespace, Key(scope, mediaType, tmdbId, region, tags), CancellationToken.None).ConfigureAwait(false);
         }
 
         private static string Key(string scope, string mediaType, int tmdbId, string region, bool tags)

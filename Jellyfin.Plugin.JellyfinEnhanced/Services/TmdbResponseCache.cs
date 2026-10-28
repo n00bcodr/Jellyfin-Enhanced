@@ -126,6 +126,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             /// <summary>1 once the entry is on disk or a write of it was started (the server-side cache).</summary>
             public int Saved;
+
+            /// <summary>The server-side cache's generation sampled before the answer was read (its fetch, or the snapshot load).</summary>
+            public long DiskGeneration;
         }
 
         /// <summary>One resource of a details-page bundle: its own cache key and the waiters for it.</summary>
@@ -692,13 +695,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var (result, isJson) = upstream.Result;
                     save = new List<Entry>();
                     if (StoreOutcomeLocked(key, result, isJson, ttl) is { } stored) save.Add(stored);
-                    if (isJson && result.IsSuccess) SeedNativeAppendLocked(key, result, save);
+                    if (isJson && result.IsSuccess) SeedNativeAppendLocked(key, result, save, fence);
+                    foreach (var entry in save) entry.DiskGeneration = diskGeneration;
                 }
 
                 PruneFencesLocked();
             }
 
-            if (save != null) SaveEntries(save, diskGeneration);
+            if (save != null) SaveEntries(save);
             Complete(owner, upstream);
         }
 
@@ -771,10 +775,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
+                foreach (var entry in save) entry.DiskGeneration = diskGeneration;
                 PruneFencesLocked();
             }
 
-            SaveEntries(save, diskGeneration);
+            SaveEntries(save);
 
             var fallbackAnswers = new Dictionary<BundleMember, TaskCompletionSource<TmdbResponse>>();
             foreach (var member in members)
@@ -1034,6 +1039,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
+                // Sampled before the snapshot is read: a Clear of the server-side cache after it refuses saving these entries there.
+                var diskGeneration = DiskGeneration();
+                if (new FileInfo(_diskPath).Length > MaxSnapshotBytes)
+                {
+                    _logger?.Warning("[TMDB cache] The saved cache file is too large; it was not loaded");
+                    return;
+                }
+
                 DiskFormat? data;
                 using (var stream = File.OpenRead(_diskPath))
                 {
@@ -1063,7 +1076,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
 
                         var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.E);
-                        if (expiresAt <= now || string.IsNullOrEmpty(entry.K) || _entries.ContainsKey(entry.K))
+                        if (expiresAt <= now || string.IsNullOrEmpty(entry.K) || _entries.ContainsKey(entry.K) || !StorableSnapshotEntry(entry))
                         {
                             continue;
                         }
@@ -1078,7 +1091,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             break;
                         }
 
-                        _entries[entry.K] = _lru.AddLast(new Entry(entry.K, response, expiresAt, size));
+                        _entries[entry.K] = _lru.AddLast(new Entry(entry.K, response, expiresAt, size) { DiskGeneration = diskGeneration });
                         _totalBytes += size;
                         loaded++;
                     }
@@ -1089,6 +1102,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
                 _logger?.Warning($"[TMDB cache] Failed to load cache from disk: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// A snapshot record the cache itself could have stored: a JSON 2xx or 404 whose body is valid JSON. Anything else
+        /// (an edited or damaged file) is skipped, so it is never served nor given a checksum on the server-side cache.
+        /// </summary>
+        private static bool StorableSnapshotEntry(DiskEntry entry)
+        {
+            if (!(entry.S is >= 200 and <= 299 or 404) || entry.C.Length > BoundedBody.MaxBytes) return false;
+            try
+            {
+                using var _ = JsonDocument.Parse(entry.C);
+                return true;
+            }
+            catch (JsonException)
+            {
+                return false;
             }
         }
 
@@ -1129,7 +1160,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         JsonSerializer.Serialize(stream, data);
                     }
-                    File.Move(tempPath, _diskPath, overwrite: true);
+
+                    // Decided again at the commit, in step with the move into the server-side cache: a save that began
+                    // while the cache was off never puts the snapshot back once the cache is on (and the file retired).
+                    lock (_legacyFileLock)
+                    {
+                        if (DiskReady())
+                        {
+                            File.Delete(tempPath);
+                            return;
+                        }
+
+                        File.Move(tempPath, _diskPath, overwrite: true);
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -1210,6 +1253,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const string UpstreamPrefix = "https://api.themoviedb.org/3/";
 
         private static readonly AsyncLocal<CachedOnlyProbe?> CachedOnly = new();
+        private static readonly char[] NonCanonical = { '%', '\\', ';', '#', ' ' };
+        private const long MaxSnapshotBytes = 64L * 1024 * 1024;
 
         // The parental evidence query (TitleParentalEvidenceProvider): its facts have their own namespace.
         private static readonly HashSet<string> EvidenceQueries = new(StringComparer.Ordinal)
@@ -1231,6 +1276,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _diskHits;
         private int _diskOn;
         private int _promoting;
+        private long _promoteAgainAt;
+        private readonly object _legacyFileLock = new();
 
         /// <summary>Answers read back from disk into memory (tests, diagnostics).</summary>
         internal int DiskHits => Volatile.Read(ref _diskHits);
@@ -1394,45 +1441,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return loaded;
         }
 
-        /// <summary>True while the server-side cache is on and usable; the first time it is, saves what memory already holds.</summary>
+        /// <summary>
+        /// True while the server-side cache is on and usable; the first time it is, saves what memory already holds (and
+        /// again a minute after a save that couldn't finish).
+        /// </summary>
         private bool DiskReady()
         {
             if (_disk == null) return false;
             var on = _disk.Enabled;
             if (!on) Volatile.Write(ref _diskOn, 0);
-            else if (Interlocked.Exchange(ref _diskOn, 1) == 0) _ = Task.Run(PromoteAsync);
+            else if (Interlocked.Exchange(ref _diskOn, 1) == 0 || PromotionDue()) _ = Task.Run(PromoteAsync);
             return on;
+        }
+
+        private bool PromotionDue()
+        {
+            var at = Interlocked.Read(ref _promoteAgainAt);
+            return at != 0 && _timeProvider.GetUtcNow().UtcTicks >= at && Interlocked.CompareExchange(ref _promoteAgainAt, 0, at) == at;
         }
 
         private long DiskGeneration() => _disk?.Generation ?? 0;
 
         /// <summary>
         /// Saves the fresh entries memory holds that aren't on disk yet (those fetched while the cache was off, and the
-        /// legacy snapshot's entries loaded at startup, with their original fetch time and expiry); entries of unknown
-        /// fetch time and free-text searches are left out. When everything was saved, the legacy snapshot file is renamed
-        /// (<c>.migrated</c>), so it isn't loaded or imported again; it is kept for a rollback by hand.
+        /// legacy snapshot's entries loaded at startup, with their original fetch time and expiry), each under the
+        /// generation sampled before it was read, so a Clear or a folder change since refuses it. Entries of unknown fetch
+        /// time, free-text searches and records claiming longer than their TTL are left out. A write refused while its
+        /// generation still holds (the disk busy or full, a failed write) stays to be saved and is tried again a minute
+        /// later; only when every eligible entry was saved is the legacy snapshot file renamed (<c>.migrated</c>), so it
+        /// isn't loaded or imported again; it is kept for a rollback by hand.
         /// </summary>
         internal async Task PromoteAsync()
         {
             if (Interlocked.Exchange(ref _promoting, 1) == 1) return;
             try
             {
-                var generation = DiskGeneration();
                 var now = _timeProvider.GetUtcNow();
                 List<Entry> pending;
                 lock (_lock)
                 {
                     pending = _lru.Where(e => Volatile.Read(ref e.Saved) == 0 && e.ExpiresAt > now && e.Response.FetchedAtUtc > DateTime.MinValue
-                        && Durable(UrlOf(e.Key))).ToList();
+                        && Durable(UrlOf(e.Key)) && WithinTtl(UrlOf(e.Key), e.Response, e.ExpiresAt)).ToList();
                 }
 
                 var failed = 0;
                 foreach (var entry in pending)
                 {
-                    if (Interlocked.Exchange(ref entry.Saved, 1) == 0 && !await WriteAsync(entry, generation).ConfigureAwait(false)) failed++;
+                    if (Interlocked.Exchange(ref entry.Saved, 1) != 0 || await WriteAsync(entry).ConfigureAwait(false)) continue;
+                    // Invalidated since it was read (Clear, folder change): never saved. Otherwise it is still to be saved.
+                    if (_disk!.IsCurrent(entry.DiskGeneration))
+                    {
+                        Volatile.Write(ref entry.Saved, 0);
+                        failed++;
+                    }
                 }
 
-                if (failed == 0 && _disk?.Enabled == true) RetireLegacyFile();
+                if (failed == 0 && _disk?.Enabled == true)
+                {
+                    RetireLegacyFile();
+                    Interlocked.Exchange(ref _promoteAgainAt, 0);
+                }
+                else
+                {
+                    Interlocked.Exchange(ref _promoteAgainAt, (_timeProvider.GetUtcNow() + TimeSpan.FromMinutes(1)).UtcTicks);
+                }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -1446,10 +1518,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void RetireLegacyFile()
         {
-            if (_diskPath == null || !File.Exists(_diskPath)) return;
+            if (_diskPath == null) return;
             try
             {
-                File.Move(_diskPath, _diskPath + ".migrated", overwrite: true);
+                // In step with a snapshot save's commit (which checks the cache again under the same lock).
+                lock (_legacyFileLock)
+                {
+                    if (!File.Exists(_diskPath)) return;
+                    File.Move(_diskPath, _diskPath + ".migrated", overwrite: true);
+                }
+
                 _logger?.Info("[TMDB cache] Moved to the server-side cache; the old snapshot was renamed tmdb-cache.json.migrated");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1458,18 +1536,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>Starts the disk writes of entries just stored (fetched after <paramref name="generation"/> was captured).</summary>
-        private void SaveEntries(List<Entry> entries, long generation)
+        /// <summary>Starts the disk writes of entries just stored (each under the generation sampled before its fetch).</summary>
+        private void SaveEntries(List<Entry> entries)
         {
             if (entries.Count == 0 || !DiskReady()) return;
             foreach (var entry in entries)
             {
                 if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key)) && Interlocked.Exchange(ref entry.Saved, 1) == 0)
-                    _ = WriteAsync(entry, generation);
+                    _ = SaveAsync(entry);
             }
         }
 
-        private async Task<bool> WriteAsync(Entry entry, long generation)
+        // A write refused while its generation still holds is left for the next promotion.
+        private async Task SaveAsync(Entry entry)
+        {
+            if (!await WriteAsync(entry).ConfigureAwait(false) && _disk!.IsCurrent(entry.DiskGeneration)) Volatile.Write(ref entry.Saved, 0);
+        }
+
+        /// <summary>Never valid for longer than its own TTL from its fetch (the disk reader refuses such a record).</summary>
+        private static bool WithinTtl(string upstreamUrl, TmdbResponse response, DateTimeOffset expiresAt)
+        {
+            var ttl = response.StatusCode == 404 ? NotFoundTtl : GetTtl(upstreamUrl[UpstreamPrefix.Length..]);
+            return expiresAt <= new DateTimeOffset(response.FetchedAtUtc) + ttl + TimeSpan.FromMinutes(1);
+        }
+
+        private async Task<bool> WriteAsync(Entry entry)
         {
             try
             {
@@ -1478,7 +1569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var url = entry.Key[(bar + 1)..];
                 var bytes = Encode(entry, DiskDigest(keyHash, url), url);
                 return await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
-                    generation, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
+                    entry.DiskGeneration, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -1490,7 +1581,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void ForgetOnDisk(string keyHash, string upstreamUrl)
         {
             if (_disk == null || !Durable(upstreamUrl)) return;
-            _ = _disk.ForgetAsync(DiskNamespace, DiskKey(keyHash, upstreamUrl), CancellationToken.None);
+            _ = _disk.ForgetEntryAsync(DiskNamespace, DiskKey(keyHash, upstreamUrl), CancellationToken.None);
             // A disk read that began before the file was removed (after the first fence) can't put it back now.
             lock (_lock)
             {
@@ -1531,7 +1622,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// a fresh copy or a read of them already exists, so the generic extras don't fetch them again. Reviews and
         /// anything else stay their own reads. A body that isn't this title (its id) seeds nothing. Caller holds _lock.
         /// </summary>
-        private void SeedNativeAppendLocked(string key, TmdbResponse response, List<Entry> save)
+        private void SeedNativeAppendLocked(string key, TmdbResponse response, List<Entry> save, long fence)
         {
             var bar = key.IndexOf('|', StringComparison.Ordinal);
             var match = NativeAppendPattern.Match(key[(bar + 1)..]);
@@ -1557,7 +1648,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var (name, part) in parts)
             {
                 var memberKey = prefix + UpstreamUrl(name.Length == 0 ? titlePath : titlePath + "/" + name, string.Empty);
-                if ((_entries.TryGetValue(memberKey, out var existing) && existing.Value.ExpiresAt > now) || _inFlight.ContainsKey(memberKey)) continue;
+                // A destination forgotten since the native read began is not refilled from it.
+                if ((_entries.TryGetValue(memberKey, out var existing) && existing.Value.ExpiresAt > now) || _inFlight.ContainsKey(memberKey)
+                    || FencedLocked(memberKey, fence)) continue;
                 if (StoreLocked(memberKey, part with { FetchedAtUtc = response.FetchedAtUtc }, source.Value.ExpiresAt) is { } stored) save.Add(stored);
             }
         }
@@ -1621,7 +1714,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var resource = upstreamUrl[UpstreamPrefix.Length..];
             var q = resource.IndexOf('?', StringComparison.Ordinal);
             var path = q >= 0 ? resource[..q] : resource;
-            if (path.Equals("search", StringComparison.OrdinalIgnoreCase) || path.StartsWith("search/", StringComparison.OrdinalIgnoreCase)) return false;
+            // Only a canonical route is ever written: a spelling the proxy also accepts (a leading or doubled slash, a dot
+            // segment, an escape) stays in memory, so no spelling of a search can reach the disk.
+            if (path.Length == 0 || path.IndexOfAny(NonCanonical) >= 0) return false;
+            var segments = path.Split('/');
+            if (segments.Any(segment => segment.Length == 0 || segment == "." || segment == "..")) return false;
+            if (segments[0].Equals("search", StringComparison.OrdinalIgnoreCase)) return false;
             return q < 0 || !EvidenceQueries.Contains(resource[q..]);
         }
 

@@ -1284,7 +1284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _tagFetchFailedAtFacts.TryRemove(key, out _);
             }
 
-            StoreSignature(key, resolved, now);
+            // The evidence lives from its TMDB read (a cached raw answer keeps its original fetch time), never from now.
+            StoreSignature(key, resolved, now, detail.ReadAtUtc is { } readAt && readAt <= now ? readAt : now);
             if (needTags && resolved.Adult != true && (resolved.Keywords == null || resolved.Genres == null))
             {
                 _tagFetchFailedAtFacts[key] = now;
@@ -1302,12 +1303,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// change bypass a tag-restricted user), so existing tags are kept only
         /// while the existing entry is itself still fresh.
         /// </summary>
-        private void StoreSignature(string key, Signature resolved, DateTime now)
+        private void StoreSignature(string key, Signature resolved, DateTime now) => StoreSignature(key, resolved, now, now);
+
+        /// <summary>
+        /// <see cref="StoreSignature(string, Signature, DateTime)"/> for evidence read at <paramref name="readAt"/>: the
+        /// entry lives from then. Tags kept from the current entry keep their own (older) time: a rating-only refresh never
+        /// extends them.
+        /// </summary>
+        private void StoreSignature(string key, Signature resolved, DateTime now, DateTime readAt)
         {
             using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _certCacheFacts.AddOrUpdate(
                 key,
-                _ => (resolved, false, now),
+                _ => (resolved, false, readAt),
                 (_, current) =>
                 {
                     var stored = resolved;
@@ -1315,10 +1323,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         stored = stored with { Adult = stored.Adult ?? current.Sig.Adult };
                     if (stored.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < SignatureTtl(key, current.Sig))
                     {
-                        return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
+                        return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, readAt < current.CachedAt ? readAt : current.CachedAt);
                     }
 
-                    return (stored, false, now);
+                    return (stored, false, readAt);
                 });
             TrimCache();
         }
