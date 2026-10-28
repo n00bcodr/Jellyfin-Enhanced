@@ -25,6 +25,8 @@ In mobile or TV web layouts, the player button appears beside the native setting
 
 Use **Search settings…** to filter sections by their contents, then select a section. On a phone, use the back-arrow button to return to the section list. Close the panel with ×, ++esc++, or ++question++ outside editable fields. On desktop, you can drag the header to move it.
 
+The panel is a dialog: it takes the focus when it opens, ++tab++ and ++shift+tab++ stay inside it, and the page behind it can't be reached until it closes. Screen readers announce it as *Jellyfin Enhanced*. ++esc++ closes only the topmost window (release notes over the panel close first), and focus returns to what opened the panel. Its saved-setting messages are announced too.
+
 !!! note "Use a supported web client"
 
     The panel needs a client that runs Jellyfin Enhanced's injected web scripts. If your native client cannot run them, change your account's preferences through the web client. Available entry points depend on your web client's layout and controls.
@@ -35,7 +37,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
-    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds.
+    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds. This applies only when you opened it with the pointer and haven't used the keyboard or focused anything in it since: opened from the keyboard (or a screen reader), or once a key is pressed or a control inside it takes the focus, it stays open until you close it. It never closes while its release notes are open over it.
 
     Modern layout has a mobile drawer rather than a desktop sidebar. Legacy layout has the sidebar. Jellyfin's user preferences menu uses `#/mypreferencesmenu`.
 
@@ -80,7 +82,7 @@ Shortcuts let you navigate Jellyfin and control playback from your keyboard. You
 2. Click or focus a binding and wait for **Waiting…**.
 3. Press the new combination. A dot titled **Modified by user** marks your override.
 
-While the editor is listening, ++backspace++ restores the current administrator binding. ++delete++ or the adjacent disable button disables the action. Re-enabling also restores the administrator binding.
+While the editor is listening, ++tab++ moves on to the next control and ++esc++ closes the panel; neither becomes a binding. ++backspace++ restores the current administrator binding. ++delete++ or the adjacent disable button disables the action. Re-enabling also restores the administrator binding.
 
 The stock bindings are:
 

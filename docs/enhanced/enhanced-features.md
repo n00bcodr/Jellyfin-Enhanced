@@ -287,7 +287,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 
 1. Open **Shortcuts** in the Enhanced panel.
 2. Click or focus a binding to show **Waiting…**, then press a key combination.
-3. While listening, use ++backspace++ to restore the current admin default, or ++delete++ or the disable control to mark the action **Disabled**. Re-enabling restores the admin default.
+3. While listening, use ++backspace++ to restore the current admin default, or ++delete++ or the disable control to mark the action **Disabled**. Re-enabling restores the admin default. ++tab++ moves on and ++esc++ closes the panel; neither is recorded.
 
 <figure class="je-video">
   <video autoplay loop muted playsinline controls preload="metadata" aria-label="Changing, disabling and resetting a keyboard shortcut">
