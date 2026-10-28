@@ -66,8 +66,9 @@ for (const version of ['12.2', '10.11.11']) {
       window.dispatchEvent(new Event('gamepadconnected'));
     }, HOST_INPUT[version]);
     await request(page, 603).focus();
-    await page.evaluate(() => { window.pad.buttons[0].pressed = true; });
-    await page.waitForTimeout(80);
+    // Held until jellyfin-web's gamepad loop has read it (its GamepadA key), not for a fixed time a busy runner's loop can miss.
+    await page.evaluate(() => { window.padKeys = 0; window.addEventListener('keydown', e => { if (e.key === 'GamepadA') window.padKeys++; }, true); window.pad.buttons[0].pressed = true; });
+    await expect.poll(() => page.evaluate(() => window.padKeys)).toBeGreaterThan(0);
     await page.evaluate(() => { window.pad.buttons[0].pressed = false; });
     await expect.poll(host.requests).toEqual([[603, 'user-a']]);
     await page.evaluate(() => { window.pad.connected = false; window.dispatchEvent(new Event('gamepaddisconnected')); });
