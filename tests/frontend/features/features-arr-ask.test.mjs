@@ -757,7 +757,9 @@ test('missing for a long while: the pill says Missing without a journey; fresh o
   assert.match(lines[0].text, /^Sonarr · Monitored; still nothing grabbed · since .* · last searched 3 h ago$/);
 });
 
-test('rows: a long-missing episode gets Search instead of Get it; a Kid\'s Search asks for it and waits for an OK', async t => {
+// F24: a season row's (and the banner's) plain Search never asks in its place, like the title's Search (UX2R-4); only the
+// title page's "Ask {contact} to search" asks. Nothing sent yet: it says so, and the title's Request asks.
+test('rows: a long-missing episode gets Search instead of Get it; a Kid\'s Search with nothing sent asks for nothing and says so', async t => {
   const h = setup(t, { status: longMissing() });
   await h.open();
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
@@ -766,14 +768,13 @@ test('rows: a long-missing episode gets Search instead of Get it; a Kid\'s Searc
   assert.ok(btn.classList.contains('je-ask-search'));
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search');
   assert.equal(btn.getAttribute('aria-label'), 'Search for episode 2: Two');
-  h.setRows(() => rowsBody({ source: 'destination', requests: { 2: 'waiting' } }));
   h.click(btn);
   await settle(20);
-  assert.equal(h.posts.length, 1);
-  assert.equal(h.posts[0].path, '/acquire/requests');
-  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }]);
-  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Waiting for OK');
-  same(h.toasts, ['Asked! Dad will take a look.']);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2'], 'the household search, for that episode');
+  assert.equal(h.posts.length, 0, 'no request');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Missing');
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get.je-ask-search'), 'Search stays');
+  same(h.toasts, ["Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it."]);
 });
 
 test('rows: an administrator\'s Search runs the arr search for exactly that episode and says what it found', async t => {
@@ -817,13 +818,13 @@ test('rows: someone else\'s Search on an episode a request already sent searches
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-searched').textContent, 'Nothing found yet · searched just now');
   same(h.toasts, ['Nothing found yet · searched just now']);
 
-  // Nothing sent for E4 yet: the server says so, and the Search asks for it like Get it.
+  // Nothing sent for E4 yet: the server says so, and the Search says so too; it asks for nothing (F24).
   answer = { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' } };
   h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   assert.equal(h.searches.at(-1).body.key, 'tv:tvdb:1:s1:e4');
-  assert.equal(h.posts.length, 1);
-  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
+  assert.equal(h.posts.length, 0);
+  assert.equal(h.toasts.at(-1), "Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it.");
 });
 
 test('banner: someone else\'s Search searches the season again when requests sent all of it, with no new request', async t => {
@@ -843,7 +844,7 @@ test('banner: someone else\'s Search searches the season again when requests sen
   same(h.toasts, ['Nothing found yet · searched just now']);
 });
 
-test('banner: someone else\'s Search searches again each episode a request sent and asks for the others', async t => {
+test('banner: someone else\'s Search searches again each episode a request sent and asks for none of the others', async t => {
   const h = setup(t, {
     status: longMissing(),
     server: {
@@ -856,20 +857,21 @@ test('banner: someone else\'s Search searches again each episode a request sent 
   await settle(30);
   // The season as a whole first (not every episode was sent), then episode by episode.
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1', 'tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
-  assert.equal(h.posts.length, 1, 'one ask, for the episode no request sent');
-  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
+  assert.equal(h.posts.length, 0, 'no ask for the episode no request sent (F24)');
   assert.ok(h.toasts.includes('Found a copy — downloading'));
 });
 
-test('rows: without the Manage drawer an administrator\'s Search asks like everyone else', async t => {
+test('rows: without the Manage drawer an administrator\'s Search is the household search like everyone else\'s, and asks for nothing', async t => {
   const h = setup(t, { status: longMissing({ admin: true }), server: { me: ADMIN_ME } });
   await h.open();
   h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
-  assert.equal(h.posts[0].path, '/acquire/requests');
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2']);
+  assert.ok(!h.posts.some(p => p.path === '/acquire/requests'), 'no request (F24)');
+  assert.ok(!h.posts.some(p => p.path === '/arr/admin/manage/search'), 'no administrator\'s search without the drawer');
 });
 
-test('banner: long-missing episodes get Search; an administrator\'s searches the season, a Kid\'s asks for them', async t => {
+test('banner: long-missing episodes get Search; an administrator\'s searches the season, a Kid\'s with nothing sent asks for nothing', async t => {
   const admin = setup(t, {
     status: longMissing({ admin: true }),
     config: { ArrManageDrawerEnabled: true },
@@ -889,7 +891,9 @@ test('banner: long-missing episodes get Search; an administrator\'s searches the
   await kid.open();
   kid.click(kid.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(20);
-  same(kid.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
+  same(kid.searches.map(s => s.body.key), ['tv:tvdb:1:s1', 'tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
+  assert.equal(kid.posts.length, 0, 'no request (F24)');
+  assert.equal(kid.toasts.at(-1), "Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it.");
 });
 
 // ------------------------------------------------------------------ review round 1
@@ -979,7 +983,7 @@ test('a request already sent gives way to Search once the episode is missing for
   assert.ok(two2.querySelector('.je-ask-get'));
 });
 
-test('a Search pressed by someone who asks shows its answer for a while, even after the season is read again', async t => {
+test('a Search pressed by someone who asks, with nothing sent, asks for nothing; after the season is read again it is still Search (F24)', async t => {
   const h = setup(t, {
     status: longMissing(),
     server: {
@@ -988,18 +992,18 @@ test('a Search pressed by someone who asks shows its answer for a while, even af
     }
   });
   await h.open();
-  h.setRows(() => rowsBody({ source: 'destination', requests: { 2: 'asked' } }));
   h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
-  assert.equal(h.posts[0].path, '/acquire/requests');
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2']);
+  assert.equal(h.posts.length, 0, 'no request');
+  same(h.toasts, ["Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it."]);
   const two = () => h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
-  assert.equal(two().querySelector('.je-arr-chip').textContent, 'Asked!');
-  // A new status read (the ask refreshes the title) reads the rows again: the server says "asked".
+  assert.equal(two().querySelector('.je-arr-chip').textContent, 'Missing');
+  // The page drawn again: nothing was asked, so Search is still offered.
   h.JE.internals.arrStatusEpisodes.render(h.document.getElementById('itemDetailPage'), longMissing(), { contact: 'Dad' });
   await settle(20);
-  assert.ok(h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length >= 2, 'the rows were read again');
-  assert.equal(two().querySelector('.je-arr-chip').textContent, 'Asked!');
-  assert.equal(two().querySelector('.je-ask-get'), null, 'no Search right after the person searched');
+  assert.equal(two().querySelector('.je-arr-chip').textContent, 'Missing');
+  assert.ok(two().querySelector('.je-ask-get.je-ask-search'), 'still Search');
 });
 
 test('Get it and Search are 44 px on every touch screen, not only on phones', t => {
@@ -1900,17 +1904,17 @@ test('UX2R-3 / UX2R2-5: a season whose numbering can\'t be established holds the
   }
 });
 
-// Review round 2 probe (a control): season-row and banner Search keep their documented single ask fallback.
-test('UX2R2 probe: season row and banner Search each keep exactly one ask fallback', async t => {
+// Review round 2 probe (a control), updated for F24: season-row and banner Search, pressed twice, search once and ask for
+// nothing (their former ask fallback is gone, like the title's Search).
+test('UX2R2 probe: season row and banner Search, pressed twice, search once and ask for nothing', async t => {
   for (const surface of ['row', 'banner']) {
     const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', displayMissing: surface === 'row' }) } });
     await h.open();
     const button = surface === 'row' ? h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get') : h.document.querySelector('.je-arr-banner .je-ask-get');
     h.click(button); h.click(button); await settle(30);
-    assert.equal(h.posts.length, 1, surface);
-    assert.equal(h.posts[0].path, '/acquire/requests');
-    same(h.posts[0].body.input.episodes, surface === 'row' ? [{ season: 1, episode: 2 }] : [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
+    assert.equal(h.posts.length, 0, surface);
     assert.equal(h.searches.length, surface === 'row' ? 1 : 3, surface);
+    same(h.toasts, ["Nothing has been asked for here yet, so there's nothing to search again. Use Request to ask for it."], surface);
   }
 });
 

@@ -1469,3 +1469,93 @@ test('an identity change without a page notification still drops a late answer',
   assert.equal(h.statusReads(), 2);
   assert.doesNotMatch(h.view.textContent, /2 of 6/);
 });
+
+// Phase 2 F41: the status names its set of versions (`versionFingerprint`: the server's stable hash of the version
+// ids and file sizes), so a removal and an arrival that keep the count are a change of their own, and a redraw for one
+// counts as drawn only once Jellyfin's picker lists other versions than it did (its option values: media source ids).
+const fingerprint = ids => `fp:${ids.join('+')}`;
+const setPage = (t, kind, initial = ['a', 'b']) => {
+  const handlers = [];
+  let ids = [...initial];
+  const answer = () => (kind === 'movie' ? movie(ids.length, { versionFingerprint: fingerprint(ids) }) : episode('ready', { versions: ids.length, versionFingerprint: fingerprint(ids) }));
+  const h = setup(t, {
+    apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+    ...(kind === 'movie' ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: answer } : { answers: answer })
+  });
+  Object.assign(h.A.timing, { settle: 15, gap: 60, batch: 25 });
+  const picker = h.document.createElement('select');
+  picker.className = 'selectSource';
+  h.view.appendChild(picker);
+  const draw = () => picker.replaceChildren(...ids.map(id => { const o = h.document.createElement('option'); o.value = id; o.textContent = id; return o; }));
+  draw();
+  let render = draw;
+  h.view.addEventListener('viewshow', () => render());
+  return { h, picker, draw, set: next => { ids = [...next]; }, render: fn => { render = fn; }, shown: () => [...picker.options].map(o => o.value),
+    event: data => handlers[0]({ MessageType: 'LibraryChanged', Data: data }) };
+};
+
+for (const kind of ['movie', 'episode']) {
+  test(`F41 ${kind}: a removal and an arrival that keep the count redraw Jellyfin's picker to the new set`, async t => {
+    const f = setPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(['a', 'c']); // B removed, C arrived: still two
+    await h.D.update(true);
+    assert.ok(await until(() => h.host.shows.length === 1, 2000), 'the other set is a change: Jellyfin redraws');
+    assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'c']), 2000));
+    assert.deepEqual(f.shown(), ['a', 'c']);
+    await h.D.update(true);
+    await sleep(150);
+    assert.equal(h.host.shows.length, 1, 'once');
+  });
+
+  test(`F41 ${kind}: a redraw for another set that leaves the old picker (same count) is not drawn; it is tried again, bounded`, async t => {
+    const f = setPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.render(() => {}); // Jellyfin's redraw fails: the picker still lists A and B
+    f.set(['a', 'c']);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().failures?.tries === 1, 2000), 'not drawn: the picker lists the old ids');
+    assert.equal(h.A.state().base.set, fingerprint(['a', 'b']));
+    f.render(f.draw);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'c']), 2000), 'the retry draws it');
+    assert.deepEqual(f.shown(), ['a', 'c']);
+    assert.equal(h.host.shows.length, 2);
+
+    // Always failing: given up after redrawTries, and add/remove notices don't renew it (the fingerprint says the set).
+    f.render(() => {});
+    f.set(['a', 'd']);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().abandoned?.set === fingerprint(['a', 'd']), 3000), 'given up after the bound');
+    const shows = h.host.shows.length;
+    assert.equal(shows, 2 + h.A.timing.redrawTries);
+    for (let n = 0; n < 3; n++) f.event({ ItemsAdded: [NEW], ItemsUpdated: [OLD], ItemsRemoved: ['ffffffffffffffffffffffffffffffff'] });
+    await sleep(300);
+    assert.equal(h.host.shows.length, shows, 'no renewal from LibraryChanged with a fingerprint');
+    assert.equal(h.A.state().renewals, 0);
+    // A read of yet another set is a change of its own, with its own tries.
+    f.render(f.draw);
+    f.set(['a', 'e']);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'e']), 2000));
+    assert.deepEqual(f.shown(), ['a', 'e']);
+  });
+
+  test(`F41 ${kind}: after a removal down to one, a stale two-option picker is not the redraw for a new second version (LRR4-1 limit)`, async t => {
+    const f = setPage(t, kind), { h } = f;
+    await h.D.update(false);
+    f.set(['a']); // B removed: Jellyfin doesn't redraw its page for a removal, its picker still lists A and B
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.versions === 1));
+    assert.deepEqual(f.shown(), ['a', 'b']);
+    f.render(() => {}); // the redraw for C fails
+    f.set(['a', 'c']);
+    await h.D.update(true);
+    assert.ok(await until(() => h.A.state().failures?.tries === 1, 2000), 'the stale picker (two options) is not taken for A and C');
+    assert.equal(h.A.state().base.versions, 1);
+    f.render(f.draw);
+    for (let n = 0; n < 3; n++) await h.D.update(true);
+    assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'c']), 2000));
+    assert.deepEqual(f.shown(), ['a', 'c']);
+  });
+}

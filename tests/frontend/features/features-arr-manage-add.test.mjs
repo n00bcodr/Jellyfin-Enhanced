@@ -441,3 +441,28 @@ test('a choice without an owner field still offers confirmation with the unowned
   await until(() => posts.length === 2);
   assert.equal(posts[1].overrideChoiceVersion, 0);
 });
+
+// Phase 2 F36: a title no arr has yet has no name in the overview; the drawer's heading is then the opener's name for the
+// title, or the plain "Manage" — never the title key.
+test('F36: the drawer heading never shows the title key: the opener\'s name, else a plain "Manage"', async t => {
+  const unnamed = () => ({ ...overview(true), title: null, instances: overview(true).instances.map(i => ({ ...i, inArr: false, arrId: undefined })) });
+  const keyOnly = setup(t, path => (path.startsWith('/arr/admin/manage?') ? unnamed() : null));
+  await keyOnly.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: keyOnly.NATIVE });
+  await until(() => keyOnly.document.querySelector('.je-manage-version'));
+  const heading = keyOnly.document.querySelector('.je-manage-title').textContent;
+  assert.equal(heading, translate('arr_manage_button'));
+  assert.doesNotMatch(heading, /tmdb|movie:/);
+  keyOnly.JE.arrManage.close();
+
+  const named = setup(t, path => (path.startsWith('/arr/admin/manage?') ? unnamed() : null));
+  await named.JE.arrManage.open({ key: 'movie:tmdb:961', name: 'The General' }, { operation: named.NATIVE });
+  await until(() => named.document.querySelector('.je-manage-version'));
+  assert.equal(named.document.querySelector('.je-manage-title').textContent, translate('arr_manage_title', { title: 'The General' }));
+});
+
+test('F36 control: the arr\'s own name wins over the opener\'s, with the scope after it', async t => {
+  const h = setup(t, path => (path.startsWith('/arr/admin/manage?') ? overview(true, 'tv') : null));
+  await h.JE.arrManage.open({ key: 'tv:tvdb:75565:s2', name: 'Something else' }, { operation: h.NATIVE });
+  await until(() => h.document.querySelector('.je-manage-version'));
+  assert.equal(h.document.querySelector('.je-manage-title').textContent, translate('arr_manage_title', { title: `Blake's 7 · ${translate('arr_hub_season', { list: 2 })}` }));
+});

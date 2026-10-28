@@ -876,6 +876,11 @@
     let artGeneration = 0;
     /** Elements whose artwork this module joined to jellyfin-web's preloader, with the policy generation it was asked under. */
     const artwork = new WeakMap();
+    /**
+     * At most this many images of one page are kept loaded out of view (the ones that left it last): older ones go back
+     * to jellyfin-web's own unloaded state, so a very long page never holds every image it ever showed (F30).
+     */
+    const RETAINED_MAX = 48;
 
     /**
      * The person's access or presentation policy moved (or the session did): the shown page's absent-title artwork
@@ -889,6 +894,8 @@
         artGeneration++;
         const state = current;
         if (!state || state.aborted) return;
+        // Nothing kept from before is kept on (see keepImages): every image is jellyfin-web's again once it leaves view.
+        state.retained?.clear();
         state.page.querySelectorAll('[style*="/Images/"]').forEach((node) => {
             if (!(node instanceof HTMLElement) || node.tagName === 'IMG') return;
             const url = /url\(["']?([^"')]+)["']?\)/.exec(node.style.backgroundImage || '')?.[1];
@@ -915,6 +922,8 @@
      *   - An image emptied after it was shown is put back as jellyfin-web leaves a loaded one (before anything is
      *     drawn without it), so coming back into view loads nothing; only one this page loaded under the policy and
      *     session that hold now (artPolicyMoved: anything from before goes back to jellyfin-web's own reload).
+     *   - Kept out of view: the last RETAINED_MAX images that left it. Older ones are emptied as jellyfin-web empties
+     *     them (it loads them again, preloader and background, when they come back), and are kept again once it has.
      * Nothing else changes: the URL and its signature are jellyfin-web's, it still fades a new image in, and a new
      * grant or policy is a new URL, a new page or a new request (artPolicyMoved), and loads anew.
      * @param {Object} state Page state.
@@ -922,12 +931,23 @@
      */
     function keepImages(state) {
         if (typeof MutationObserver !== 'function') return null;
+        // Images kept loaded out of view (element → its URL), the one that left view last at the end; and the ones handed
+        // back to jellyfin-web for the bound, with the policy generation they were kept under.
+        state.retained = new Map();
+        const released = new WeakMap();
         const observer = new MutationObserver((records) => {
             if (state.aborted || current !== state) return;
             for (const record of records) {
                 const node = /** @type {HTMLElement} */ (record.target);
+                if (node.tagName === 'IMG') continue;
+                // Handed back for the bound, then loaded again by jellyfin-web (under the same policy): kept again.
+                if (!node.classList.contains('lazy-hidden') && /\blazy-hidden\b/.test(record.oldValue || '')) {
+                    if (released.has(node) && released.get(node) === artGeneration && !node.hasAttribute('data-src')) artwork.set(node, artGeneration);
+                    released.delete(node);
+                    continue;
+                }
                 // Only as lazy-hidden is added: jellyfin-web starting its preloader, or emptying a loaded image.
-                if (node.tagName === 'IMG' || /\blazy-hidden\b/.test(record.oldValue || '') || !node.classList.contains('lazy-hidden')) continue;
+                if (/\blazy-hidden\b/.test(record.oldValue || '') || !node.classList.contains('lazy-hidden')) continue;
                 const src = node.getAttribute('data-src');
                 const match = src ? SIGNED_IMAGE.exec(src) : null;
                 if (!match || !isSynthetic(match[1])) continue;
@@ -948,10 +968,42 @@
                 const canvas = node.previousSibling;
                 if (node.classList.contains('blurhashed') && canvas?.nodeName === 'CANVAS') /** @type {Element} */ (canvas).classList.add('lazy-hidden');
                 node.parentNode?.querySelector?.('.cardPadder')?.classList.add('lazy-hidden-children');
+                state.retained.delete(node);
+                state.retained.set(node, src);
+                release(state, released);
             }
         });
         observer.observe(state.page, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, subtree: true });
         return observer;
+    }
+
+    /**
+     * Keeps a page's images kept out of view to RETAINED_MAX (see keepImages): the ones that left view first are emptied
+     * the way jellyfin-web empties a loaded image (background none, URL back in data-src, hidden, placeholder shown), so it
+     * loads them again when they come back. Images no longer on the page are only forgotten.
+     * @param {Object} state Page state.
+     * @param {WeakMap<Element, number>} released Images handed back, with the generation they were kept under.
+     * @returns {void}
+     */
+    function release(state, released) {
+        for (const [node] of state.retained) if (!state.page.contains(node)) state.retained.delete(node);
+        while (state.retained.size > RETAINED_MAX) {
+            const [node, src] = state.retained.entries().next().value;
+            state.retained.delete(node);
+            // Still as it was kept (shown by its URL, nothing for the lazy loader to load): emptied; anything else is
+            // jellyfin-web's own state already.
+            if (node.hasAttribute('data-src') || node.classList.contains('lazy-hidden') || !String(node.style.backgroundImage).includes(src)) continue;
+            released.set(node, artwork.get(node));
+            // Not kept when the class change below arrives (its own mutation): it is jellyfin-web's now.
+            artwork.delete(node);
+            const canvas = node.previousSibling;
+            if (node.classList.contains('blurhashed') && canvas?.nodeName === 'CANVAS') /** @type {Element} */ (canvas).classList.remove('lazy-hidden');
+            node.parentNode?.querySelector?.('.cardPadder')?.classList.remove('lazy-hidden-children');
+            node.style.backgroundImage = 'none';
+            node.setAttribute('data-src', src);
+            node.classList.remove('lazy-image-fadein-fast', 'lazy-image-fadein');
+            node.classList.add('lazy-hidden');
+        }
     }
 
     /**
@@ -970,6 +1022,9 @@
             state.absentObserver?.disconnect();
             state.page?.classList.remove(STATUS_CLASS);
             state.page?.querySelectorAll(`[${ABSENT_ATTR}]`).forEach(n => n.removeAttribute(ABSENT_ATTR));
+            // Marked nodes the page let go of (detached, moved elsewhere) keep no mark either.
+            state.absentMarked?.forEach(n => n.removeAttribute(ABSENT_ATTR));
+            state.absentMarked?.clear();
             state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             if (state.relookTimer) clearTimeout(state.relookTimer);
@@ -1274,17 +1329,36 @@
      */
     function markAbsent(state) {
         if (state.aborted || current !== state) return;
+        const seen = state.absentSeen || (state.absentSeen = new WeakMap());
+        // Every node this page marked: a mark lasts only while its reason does (still on the page; a row still has its
+        // synthetic id; the title's line still outside any row), so a row that lost its id, moved under a library card
+        // or left the page hides no estimate.
+        const marked = state.absentMarked || (state.absentMarked = new Set());
+        const lines = state.absentLines || (state.absentLines = new WeakSet());
+        for (const n of [...marked]) {
+            const id = n.getAttribute('data-id');
+            const stays = state.page.contains(n) && (lines.has(n) ? !n.closest('[data-id]') : id != null && isSynthetic(id));
+            if (stays) continue;
+            n.removeAttribute(ABSENT_ATTR);
+            marked.delete(n);
+            lines.delete(n);
+            if (id == null) seen.delete(n);
+        }
         state.page.querySelectorAll(`.itemMiscInfo-primary:not([${ABSENT_ATTR}])`).forEach((n) => {
-            if (!n.closest('[data-id]')) n.setAttribute(ABSENT_ATTR, '');
+            if (n.closest('[data-id]')) return;
+            n.setAttribute(ABSENT_ATTR, '');
+            marked.add(n);
+            lines.add(n);
         });
         // Each element's id is looked at once while it stays the same; a row pointed at the library item that arrived
         // (status-episodes) is a library row from then on.
-        const seen = state.absentSeen || (state.absentSeen = new WeakMap());
         state.page.querySelectorAll('[data-id]').forEach((n) => {
             const id = n.getAttribute('data-id');
             if (seen.get(n) === id) return;
             seen.set(n, id);
-            n.toggleAttribute(ABSENT_ATTR, isSynthetic(id));
+            const absent = isSynthetic(id);
+            n.toggleAttribute(ABSENT_ATTR, absent);
+            if (absent) marked.add(n); else marked.delete(n);
         });
     }
 

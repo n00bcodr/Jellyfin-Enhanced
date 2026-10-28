@@ -129,3 +129,43 @@ test('administrator disabling shortcuts leaves panel key available but player bi
   assert.deepEqual(h.actions, ['panel']);
   h.key.focus(); h.press(h.key, 'z'); assert.equal(h.saves.length, 0);
 });
+
+// Phase 2 F53: while a JE window is open (the More sheet, a request sheet, a dialog: a modal surface on the one stack),
+// JE's own keyboard shortcuts do nothing, so a key pressed inside it never acts on the page behind it. A popup (not
+// modal) doesn't stop them; once the window closes they work again.
+const viewerKey = (h, target, key) => h.trusted(target, new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+test('F53: JE shortcuts (global, player and the panel key) do nothing while a JE modal window is open', async t => {
+  const h = setup(t); h.JE.initializeEnhancedScript();
+  const opener = h.document.createElement('button'); opener.textContent = 'More'; h.document.body.append(opener);
+  const sheet = h.document.createElement('div'); sheet.innerHTML = '<h2>More</h2><button id="inside">Hide</button>';
+  let release = null;
+  h.pressIn(opener, e => { release = h.JE.openSurface(sheet, () => sheet.remove(), h.JE.ownerOf(e)); });
+  h.document.body.append(sheet);
+  await new Promise(r => setImmediate(r));
+  assert.ok(release, 'the window is on the surface stack');
+  assert.equal(h.JE.hasModalSurface(), true);
+  const before = h.window.location.hash;
+  const inside = sheet.querySelector('#inside');
+  inside.focus();
+  viewerKey(h, inside, 'H'); viewerKey(h, inside, 'a'); viewerKey(h, inside, '?');
+  assert.equal(h.window.location.hash, before, 'Go home did not run behind the window');
+  assert.deepEqual(h.actions, [], 'no player shortcut and no settings panel');
+  release();
+  assert.equal(h.JE.hasModalSurface(), false);
+  h.document.body.focus();
+  viewerKey(h, h.document.body, 'a');
+  assert.deepEqual(h.actions, ['audio'], 'shortcuts work again once it closed');
+});
+
+test('F53 control: a JE popup (not modal) leaves the shortcuts on', async t => {
+  const h = setup(t); h.JE.initializeEnhancedScript();
+  const opener = h.document.createElement('button'); h.document.body.append(opener);
+  const popup = h.document.createElement('div'); popup.innerHTML = '<button>One</button>';
+  h.pressIn(opener, e => { h.JE.openSurface(popup, () => popup.remove(), h.JE.ownerOf(e), { modal: false }); });
+  h.document.body.append(popup);
+  await new Promise(r => setImmediate(r));
+  assert.equal(h.JE.hasModalSurface(), false);
+  h.document.body.focus();
+  viewerKey(h, h.document.body, 'a');
+  assert.deepEqual(h.actions, ['audio']);
+});

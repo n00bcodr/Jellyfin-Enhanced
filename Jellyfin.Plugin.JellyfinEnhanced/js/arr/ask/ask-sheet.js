@@ -884,6 +884,8 @@
             state.episodes.clear();
         }
         fill();
+        // Drawn again when the season's verdict changes at the press (recheckNumbering).
+        state.fillEpisodes = fill;
         // The other seasons' rows are read ahead (a few), so switching season offers its episodes at once.
         for (const s of seasons.slice(0, PREFETCH_SEASONS)) numberingOf(state, s, fill);
         panel.appendChild(row);
@@ -929,20 +931,66 @@
         if (known !== 'checking' || state.numbering.has(key)) return known;
         state.numbering.set(key, 'checking');
         const variant = state.variant;
-        const language = (navigator.language || 'en').split('-')[0];
         const signal = state.reads.signal;
-        JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(s.itemId)}?language=${encodeURIComponent(language)}&variant=${encodeURIComponent(variant)}`, { signal })
+        readVerdict(state, s, variant).then((verdict) => {
+            // The sheet ended meanwhile: its answer is dropped.
+            if (state.done || signal.aborted) return;
+            state.numbering.set(key, verdict);
+            if (state.done || !state.sheet?.isConnected || state.episodeSeason !== s.season || state.variant !== variant) return;
+            sheetPaint(state.listTicket, () => { redraw(); refreshSheet(state); });
+        });
+        return 'checking';
+    }
+
+    /**
+     * Reads a season's rows for an edition (by its page id) and gives the one Aired/source rule's verdict: the numbering they
+     * carry (`destination`: the request target's own; `provider`: TMDB's while no Sonarr holds the series) and their aired
+     * episodes as the viewer may see them. Askable only for those two sources with something aired; a read that fails (or
+     * answers nothing usable) is `unknown`, which holds the season's single episodes.
+     * @param {Object} state Sheet state.
+     * @param {{season: number, itemId: string}} s Season.
+     * @param {string} variant Edition.
+     * @returns {Promise<{askable: boolean, source: string, numbers: Array<number>}>} Verdict.
+     */
+    function readVerdict(state, s, variant) {
+        const language = (navigator.language || 'en').split('-')[0];
+        return JE.arrAsk.call(`/acquire/requests/season/${encodeURIComponent(s.itemId)}?language=${encodeURIComponent(language)}&variant=${encodeURIComponent(variant)}`, { signal: state.reads.signal })
             .then(answer => (answer.status === 200 ? answer.body?.rows || null : null), () => null)
             .then((rows) => {
-                // The sheet ended meanwhile: its answer is dropped.
-                if (state.done || signal.aborted) return;
                 const source = rows ? JE.arrAsk.episodeSource(rows) : 'unknown';
                 const numbers = (Array.isArray(rows?.episodes) ? rows.episodes : []).filter(e => Number.isInteger(e?.episode) && e.aired === true).map(e => e.episode).sort((a, b) => a - b);
-                state.numbering.set(key, { source, numbers, askable: (source === 'destination' || source === 'provider') && numbers.length > 0 });
-                if (state.done || !state.sheet?.isConnected || state.episodeSeason !== s.season || state.variant !== variant) return;
-                sheetPaint(state.listTicket, () => { redraw(); refreshSheet(state); });
+                return { source, numbers, askable: (source === 'destination' || source === 'provider') && numbers.length > 0 };
             });
-        return 'checking';
+    }
+
+    /**
+     * Right before single episodes picked by TMDB's numbering are sent (F21): the season is read again with the same rule
+     * ({@link readVerdict}), since Sonarr may have taken the series in since the sheet read it, and then a number may name
+     * another episode there. Unchanged (still TMDB's, every pick still offered): they go. Otherwise the season shows its new
+     * verdict, the picks are cleared, nothing is sent and the sheet says why (pick again by Sonarr's numbers, or Try again).
+     * Picks by the target's own numbering go as they are.
+     * @param {Object} state Sheet state.
+     * @returns {Promise<boolean>} True when the picks were held (nothing may be sent).
+     */
+    async function recheckNumbering(state) {
+        if (state.fixed || state.choice !== 'episodes' || state.episodeSeason == null) return false;
+        const s = seasonsOf(state.title).find(x => x.season === state.episodeSeason);
+        const known = s ? verdictOf(state, s) : null;
+        if (!s?.itemId || known === 'checking' || known?.source !== 'provider') return false;
+        const variant = state.variant;
+        const picks = [...state.episodes];
+        const verdict = await readVerdict(state, s, variant);
+        // The sheet closed, or its owner ended, while the season was read: nothing is sent or said.
+        if (state.done || state.reads.signal.aborted || !state.action.current()) return true;
+        // The viewer changed the choice while it was read: what they see now decides, on the next press.
+        if (state.choice !== 'episodes' || state.episodeSeason !== s.season || state.variant !== variant) return true;
+        state.numbering.set(numberingKey(state, s), verdict);
+        if (verdict.source === 'provider' && verdict.askable && picks.every(n => verdict.numbers.includes(n))) return false;
+        state.episodes.clear();
+        sheetPaint(state.listTicket, () => { state.fillEpisodes?.(); refreshSheet(state); });
+        const words = !verdict.askable ? 'arr_sheet_numbering_unchecked' : verdict.source === 'destination' ? 'arr_sheet_numbering_changed' : 'arr_sheet_pick_none';
+        showMessage(state, tr(words, { season: s.season }), true);
+        return true;
     }
 
     /**
@@ -1119,6 +1167,30 @@
             state.primary.replaceChildren(el('span', null, tr('arr_sheet_asking')));
             showMessage(state, '', false);
         });
+        // Single episodes named by TMDB's numbering: checked again first (Sonarr may hold the series by now).
+        let changed;
+        try {
+            changed = await recheckNumbering(state);
+        } catch (_) {
+            changed = true;
+        }
+        if (changed) {
+            state.busy = false;
+            if (state.done) return;
+            if (!state.action.current()) { finish(state, null); return; }
+            sheetPaint(state.listTicket, () => {
+                state.primary.disabled = false;
+                state.primary.removeAttribute('aria-busy');
+                refreshSheet(state);
+            });
+            return;
+        }
+        // The sheet closed or its owner ended while the season was read: nothing is sent.
+        if (state.done || !state.action.current()) {
+            state.busy = false;
+            if (!state.done) finish(state, null);
+            return;
+        }
         let result;
         try {
             result = state.fixed ? await state.fixed.send() : await JE.arrAsk.ask(input, { bound: state.submitted.bound() });

@@ -317,7 +317,7 @@
         if (JE.pluginConfig?.ArrManageDrawerEnabled && JE.arrManage && titleStatus?.admin) {
             if (!source('manage', '.je-manage-open, .je-arr-modal-manage', 'requests', JE.t('arr_manage_button'), 'tune'))
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
-                    state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key }, { operation: submitted }) });
+                    state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key, name: displayName() }, { operation: submitted }) });
         }
         // What the admission proved (Open) and the providers' entries come once it has answered.
         if (!await gate || ended()) return [];

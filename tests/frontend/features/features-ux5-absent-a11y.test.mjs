@@ -342,3 +342,108 @@ test('UX5R-2 control: a library page shown after an absent one keeps the title\'
   assert.equal(h.page.querySelectorAll('[data-je-absent]').length, 0, 'no absent marks left behind');
   for (const ends of h.page.querySelectorAll('.endsAt')) assert.equal(shown(h, ends), true);
 });
+
+// ------------------------------------------------------------------ Phase 2 batch 3 UI leftovers (F54, F56, F58)
+
+/** The panel's Hidden Content wiring alone, with a Manage button, in the delivery mode `config` names. */
+function manageButton(t, config, { html = '', apiClient } = {}) {
+  const h = createHarness({
+    html: `${html}<button id="manageHiddenContentBtn">Manage</button>`,
+    JE: { pluginConfig: { HiddenContentEnabled: true, ...config }, t: key => key, nativeTabs: { register() {} } },
+    ...(apiClient ? { apiClient } : {}),
+  });
+  t.after(() => h.close());
+  const calls = { pages: 0, manager: 0 };
+  h.JE.hiddenContent = { updateSettings() {}, getSettings: () => ({}), showManagementPanel() { calls.manager++; } };
+  h.JE.hiddenContentPage = { showPage() { calls.pages++; } };
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  h.JE.internals.enhancedUi.wireHiddenContentListeners({ resetAutoCloseTimer() {} });
+  return { ...h, calls, button: h.document.getElementById('manageHiddenContentBtn') };
+}
+
+test('F54: in Plugin Pages mode Manage hidden content opens the companion\'s Hidden Content page', async t => {
+  const href = '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage';
+  const h = manageButton(t, { HiddenContentUsePluginPages: true },
+    { html: `<div class="mainDrawer"><a is="emby-linkbutton" data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage" href="${href}" data-plugin-pages="true">Hidden Content</a></div>` });
+  h.click(h.button);
+  await settle();
+  assert.equal(h.window.location.hash, href);
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+test('F54: in Custom Tabs mode Manage hidden content opens the Home tab whose entry holds the Hidden Content marker', async t => {
+  const reads = [];
+  const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: {
+    getUrl: path => `http://jellyfin.test/${path}`,
+    fetch: async (request) => { reads.push(request.url); return [{ Title: 'Bookmarks', ContentHtml: '<div class="sections bookmarks"></div>' }, { Title: 'Hidden', ContentHtml: '<div class="jellyfinenhanced hidden-content"></div>' }]; },
+  } });
+  h.click(h.button);
+  await settle();
+  assert.deepEqual(reads, ['http://jellyfin.test/CustomTabs/Config']);
+  assert.equal(h.window.location.hash, '#/home?tab=3', 'Custom Tabs puts its entries at tab 2 onwards, in order');
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+for (const [name, fetch] of [['no entry holds the marker', async () => [{ ContentHtml: '<div class="sections bookmarks"></div>' }]], ['the entries can\'t be read', async () => { throw new Error('403'); }]]) {
+  test(`F54: in Custom Tabs mode, when ${name}, Manage hidden content opens the manager window`, async t => {
+    const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: { getUrl: path => path, fetch } });
+    const before = h.window.location.hash;
+    h.click(h.button);
+    await settle();
+    assert.equal(h.window.location.hash, before);
+    assert.deepEqual(h.calls, { pages: 0, manager: 1 });
+  });
+}
+
+test('F56 (UX5R-3 probe): the fallback Hidden Content manager is on top of the settings panel both on the stack and as painted', async t => {
+  const h = panelPage(t);
+  h.JE.pluginConfig.HiddenContentEnabled = true;
+  h.JE.hiddenContent = { getSettings: () => ({}), getHiddenCount: () => 0 };
+  h.JE.internals.hiddenContent = { getHiddenData: () => ({ items: {} }) };
+  h.JE.helpers = { addCSS: (id, css) => { const style = h.document.createElement('style'); style.textContent = css; h.document.head.append(style); } };
+  h.load('enhanced/hiddencontent/hidden-content-styles.js');
+  h.JE.internals.hiddenContent.injectCSS();
+  h.load('enhanced/hiddencontent/hidden-content-panel.js');
+  const panel = await openPanel(h);
+  const opener = panel.querySelector('#manageHiddenContentBtn'); opener.focus();
+  h.pressIn(opener, e => h.JE.internals.hiddenContent.showManagementPanel(e)); await settle();
+  const overlay = h.document.querySelector('.je-hidden-management-overlay');
+  assert.ok(h.JE.isTopmostSurface(overlay));
+  assert.ok(panel.hasAttribute('inert'));
+  const overlayZ = Number(h.window.getComputedStyle(overlay).zIndex), panelZ = Number(h.window.getComputedStyle(panel).zIndex);
+  assert.ok(overlayZ > panelZ, `manager z-index ${overlayZ} must exceed settings ${panelZ}`);
+});
+
+// F58 (UX5R2-2 probes, ported): a mark lasts only while its reason does.
+test('F58: a row that loses its id loses its absent mark', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  assert.ok(row.hasAttribute('data-je-absent'));
+  row.removeAttribute('data-id'); await settle(3);
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'unidentified row retained absent classification');
+  // The same synthetic id back: marked again.
+  row.dataset.id = h.JE.titleDetails.syntheticId('episode', 1437, 1, 2); await settle(3);
+  assert.ok(row.hasAttribute('data-je-absent'));
+});
+
+test('F58: a marked row moved under a library card can\'t hide that card\'s estimate', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  const card = h.document.createElement('div'); card.className = 'card'; card.dataset.id = '1234567890abcdef1234567890abcdef';
+  h.page.append(card); row.removeAttribute('data-id'); card.append(row); await settle(3);
+  assert.equal(shown(h, row.querySelector('.endsAt')), true, 'stale absent descendant hides physical-card estimate');
+});
+
+test('F58: a marked row taken off the page keeps no mark, during the page and after it is disposed', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  const line = h.page.querySelector('.itemMiscInfo-primary');
+  assert.ok(line.hasAttribute('data-je-absent'));
+  row.remove(); await settle(3);
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'detached while the page is shown');
+  const detachedLine = line; detachedLine.remove();
+  h.window.location.hash = '#/details?id=1234567890abcdef1234567890abcdef';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'detached row retained a mark across page disposal');
+  assert.equal(detachedLine.hasAttribute('data-je-absent'), false, 'detached information line keeps no mark');
+});

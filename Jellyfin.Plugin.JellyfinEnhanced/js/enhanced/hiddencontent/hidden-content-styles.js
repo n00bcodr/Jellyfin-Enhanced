@@ -128,7 +128,8 @@
             .je-hidden-management-overlay {
                 position: fixed;
                 inset: 0;
-                z-index: 100000;
+                /* Above the settings panel (999999) it can be opened from: it is the topmost surface then. */
+                z-index: 1000000;
                 background: rgba(0,0,0,0.85);
                 backdrop-filter: blur(10px);
                 display: flex;

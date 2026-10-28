@@ -861,3 +861,87 @@ test('the startup look overlapping a restored page\'s look cannot release its ga
   await tick();
   assert.deepEqual(observed, { checking: true, documentChecking: true, loading: true });
 });
+
+// Phase 2 F30 (PDR-5): a long page keeps at most the last 48 images that left view loaded; older ones go back to
+// jellyfin-web's own unloaded state (it loads them again when they come back), and are kept again once it has.
+/** jellyfin-web's lazy loader on `node`: the preloader starts, then the image fades in. */
+async function hostLoads(h, node, url) {
+  node.setAttribute('data-src', url);
+  node.classList.add('lazy-hidden');
+  await tick();
+  node.style.backgroundImage = "url('" + url + "')";
+  node.removeAttribute('data-src');
+  node.classList.add('lazy-image-fadein');
+  node.classList.remove('lazy-hidden');
+  await tick();
+}
+/** jellyfin-web emptying a loaded `node` as it leaves the viewport. */
+async function hostUnloads(h, node) {
+  const shown = node.style.backgroundImage.slice(4, -1).replace(/"/g, '');
+  node.style.backgroundImage = 'none';
+  node.setAttribute('data-src', shown);
+  node.classList.remove('lazy-image-fadein-fast', 'lazy-image-fadein');
+  node.classList.add('lazy-hidden');
+  await tick();
+}
+const kept = n => !n.hasAttribute('data-src') && !n.classList.contains('lazy-hidden') && n.style.backgroundImage.startsWith('url(');
+const handedBack = n => n.hasAttribute('data-src') && n.classList.contains('lazy-hidden') && n.style.backgroundImage === 'none';
+
+test('F30: a page keeps only the last 48 images that left view; older ones are jellyfin-web\'s to load again', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const nodes = [];
+  for (let i = 0; i < 60; i++) {
+    const n = h.document.createElement('div');
+    n.className = 'cardImageContainer lazy';
+    h.page.append(n);
+    await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`));
+    nodes.push(n);
+  }
+  for (const n of nodes) await hostUnloads(h, n);
+  await tick();
+  assert.equal(nodes.filter(kept).length, 48, 'the last 48 stay loaded');
+  assert.ok(nodes.slice(12).every(kept), 'the ones that left view last');
+  assert.ok(nodes.slice(0, 12).every(handedBack), 'the older ones are as jellyfin-web left them');
+  assert.ok(nodes.slice(0, 12).every((n, i) => n.getAttribute('data-src').includes(`quality=${i}`)), 'each with its own address back');
+});
+
+test('F30: an image handed back is kept again once jellyfin-web has loaded it again; a policy change still ends all keeping', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const nodes = [];
+  for (let i = 0; i < 49; i++) {
+    const n = h.document.createElement('div');
+    h.page.append(n);
+    await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`));
+    nodes.push(n);
+  }
+  for (const n of nodes) await hostUnloads(h, n);
+  await tick();
+  const first = nodes[0];
+  assert.ok(handedBack(first));
+  // Back in view: jellyfin-web loads it (its preloader, the class already there), then it leaves view again.
+  const url = first.getAttribute('data-src');
+  first.style.backgroundImage = "url('" + url + "')";
+  first.removeAttribute('data-src');
+  first.classList.add('lazy-image-fadein');
+  first.classList.remove('lazy-hidden');
+  await tick();
+  await hostUnloads(h, first);
+  await tick();
+  assert.ok(kept(first), 'kept again');
+  assert.ok(handedBack(nodes[1]), 'the next oldest made room for it');
+  // The person's access moved: nothing kept from before is kept when it leaves view next.
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  const last = nodes.at(-1);
+  last.style.backgroundImage = "url('" + art(MOVIE) + "')";
+  await hostUnloads(h, last);
+  await tick();
+  assert.ok(handedBack(last), 'not kept across a policy change');
+});

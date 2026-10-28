@@ -193,6 +193,7 @@ const USER_PAGE_MANIFEST = [
   ['enhanced/settingspanel/ui-panel-settings.js', "const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });", 'audio language list: shown; saved only on the person\'s change (one field)'],
   ['enhanced/settingspanel/ui-panel-settings.js', 'await ApiClient.getSessions({ ControllableByUserId: userId })', 'devices for the remote-control picker (no setting)'],
   ['enhanced/settingspanel/ui-panel-settings.js', "ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet", 'random-source list: shown; saved only on the person\'s change (one field)'],
+  ['enhanced/settingspanel/ui-panel-hidden-content.js', "configs = await ApiClient.fetch({ url: ApiClient.getUrl('CustomTabs/Config')", 'Custom Tabs entries: which Home tab Manage hidden content opens (navigation only; no setting)'],
   ['enhanced/settingspanel/ui-panel-settings.js', 'const saved = await ApiClient.getItem(userId, savedId)', 'the name of a saved random source the list lacks (display)'],
   ['enhanced/settingspanel/ui-release-notes.js', 'const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);', 'release notes (display)']
 ];
@@ -222,5 +223,6 @@ test('every read on the Dashboard user pages and in the settings panel is listed
   for (const [entry, n] of matched) if (n !== 1) problems.push(`manifest entry matched ${n} sites: ${entry[1]}`);
   assert.deepEqual(problems, []);
   assert.equal(count, USER_PAGE_MANIFEST.length);
-  assert.equal(count, 13);
+  // 14: F54 added the panel's Custom Tabs entries read (Manage hidden content's destination).
+  assert.equal(count, 14);
 });
