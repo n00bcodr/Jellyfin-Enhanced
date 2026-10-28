@@ -170,12 +170,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var want in Wants(c, t, "import_batch_id=$b", ("$b", batchId)))
             {
                 var canonical = Canonical(c, t, want.Input.Key);
-                if (canonical == want.Input.Key) continue;
                 var input = want.Input with { Key = canonical };
                 var owned = want.OwnedInput == null ? null : want.OwnedInput with { Key = canonical };
-                Exec(c, t, "UPDATE wants SET title_key=$key,mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
-                    ("$key", canonical), ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id));
-                moved.Add(want.AcquisitionId);
+                // Only a want whose title moved on is rewritten (the row's own key decides).
+                if (Exec(c, t, "UPDATE wants SET title_key=$key,mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id AND title_key<>$key",
+                    ("$key", canonical), ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id)) > 0)
+                    moved.Add(want.AcquisitionId);
             }
             if (policy != null) foreach (var acquisition in moved) FollowWithin(c, t, acquisition, policy, now);
             // The titles changed now (they were invisible until the handover): pages following them read again.
