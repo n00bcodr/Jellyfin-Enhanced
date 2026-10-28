@@ -159,22 +159,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// Gets a resolved folder ready, through the confined access only (the folder is created and checked without
         /// following a link at any step): a folder that holds anything must already be the cache's (its marker is a
         /// regular file with the marker's text); an empty or new one is marked as the cache's; a file must be writable.
+        /// The checks and the marker go through one handle on the folder, and the folder's path must still lead to a
+        /// folder that is the cache's afterwards, so a folder moved in under the path meanwhile is never claimed.
         /// </summary>
         /// <param name="folder">A folder from <see cref="Resolve"/>.</param>
         /// <param name="supported">False acts as a platform without the confined calls (tests).</param>
         /// <returns>Null when ready, else a message for the admin.</returns>
         public string? Prepare(string folder, bool supported = true)
         {
+            const string CantCreate = "Jellyfin can't create that folder (or it is a link).";
+            const string CantWrite = "Jellyfin can't write to that folder.";
             if (CacheFolderAccess.For(folder, supported) is not { } access) return Unsupported;
-            if (!access.EnsureRoot()) return "Jellyfin can't create that folder (or it is a link).";
-            if (!access.HasMarker())
+            if (!access.EnsureRoot()) return CantCreate;
+            var error = access.WithFolder<string?>(CantCreate, cache =>
             {
-                if (!access.IsEmpty()) return "That folder already holds other files. The cache needs a folder of its own: pick a new or empty one.";
-                // Another preparation may have marked it a moment ago (its marker is then there and verified).
-                if (!access.CreateMarker() && !access.HasMarker()) return "Jellyfin can't write to that folder.";
-            }
+                if (!cache.HasMarker())
+                {
+                    if (cache.IsEmpty() is not { } empty) return "Jellyfin can't read that folder.";
+                    if (!empty) return "That folder already holds other files. The cache needs a folder of its own: pick a new or empty one.";
+                    // Another preparation may have marked it a moment ago (its marker is then there and verified).
+                    if (!cache.CreateMarker() && !cache.HasMarker()) return CantWrite;
+                }
 
-            return access.Writable() ? null : "Jellyfin can't write to that folder.";
+                return cache.Writable() ? null : CantWrite;
+            });
+            if (error != null) return error;
+            return access.Owned(false, _ => true) ? null : "That folder changed while Jellyfin was getting it ready. Check it holds nothing else, then save again.";
         }
 
         /// <summary>Why the cache can't run on this platform.</summary>

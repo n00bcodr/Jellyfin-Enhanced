@@ -1,4 +1,6 @@
 using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -10,15 +12,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <summary>
     /// The server-side cache's only way to touch its folder, confined to one validated folder (its real path).
     /// Every operation starts again from that folder: the folder is opened without following a link and its handle is
-    /// checked to be the validated folder (<c>/proc/self/fd</c>), then each step down
-    /// (<c>&lt;namespace&gt;/&lt;shard&gt;/&lt;name&gt;</c>, or a file of the folder itself) is opened from the previous
-    /// step's handle with <c>O_NOFOLLOW</c> (<c>openat</c>, <c>mkdirat</c>, <c>renameat</c>, <c>unlinkat</c>), and a
-    /// listing reads the folder through its open handle. A link anywhere, or the folder replaced by one, makes the
-    /// operation fail instead of reaching outside, and nothing can be swapped between a check and its use. This
-    /// needs Linux (x64, x86, Arm or Arm64); elsewhere <see cref="For"/> answers null and the cache stays off.
+    /// checked to be the validated folder (<c>/proc/self/fd</c>), then everything the operation does goes through
+    /// that one handle (a <see cref="CacheFolder"/>): each step down (<c>&lt;namespace&gt;/&lt;shard&gt;/&lt;name&gt;</c>,
+    /// or a file of the folder itself) is opened from the previous step's handle with <c>O_NOFOLLOW</c> (<c>openat</c>,
+    /// <c>mkdirat</c>, <c>renameat</c>, <c>unlinkat</c>, <c>statx</c>), and a listing reads each folder through its own
+    /// open handle. A link anywhere, or the folder replaced by one, makes the operation fail instead of reaching
+    /// outside, and nothing can be swapped between a check and its use. Anything that changes the folder (a write,
+    /// a removal, a sweep, Clear, the marker's time) first proves through that same handle that it is the cache's
+    /// own (its marker, <see cref="Owned"/>), so a folder moved in under the path after it was checked is never
+    /// written to or cleaned. This needs Linux (x64, x86, Arm or Arm64); elsewhere <see cref="For"/> answers null and
+    /// the cache stays off.
     /// </summary>
     internal abstract class CacheFolderAccess
     {
+        private volatile bool _lost;
+
         protected CacheFolderAccess(string root)
         {
             Root = root;
@@ -26,6 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
         /// <summary>The validated folder (its real path).</summary>
         internal string Root { get; }
+
+        /// <summary>True once an operation found the folder gone or no longer the cache's (no marker): it is prepared again before the next use.</summary>
+        internal bool Lost => _lost;
 
         /// <summary>True when this platform offers the confined calls.</summary>
         internal static bool Supported => LinuxFolderAccess.Supported;
@@ -43,131 +54,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>Creates the folder (and the missing folders above it) without following a link; true when it is there.</summary>
         internal abstract bool EnsureRoot();
 
-        /// <summary>Runs <paramref name="use"/> with a path that reads the open folder itself (null when it can't be opened).</summary>
-        internal abstract T WithRootPath<T>(Func<string?, T> use);
+        /// <summary>
+        /// Runs <paramref name="use"/> with the folder held open (checked to be the validated directory) and every
+        /// step going through that handle; <paramref name="failed"/> when it can't be opened. Not a proof that it is
+        /// the cache's own: see <see cref="Owned"/>.
+        /// </summary>
+        internal abstract T WithFolder<T>(T failed, Func<CacheFolder, T> use);
 
-        /// <summary>Opens a regular file for reading; null when missing, a link, not a regular file or outside the folder.</summary>
-        internal abstract SafeFileHandle? OpenRead(string ns, string shard, string name);
-
-        /// <summary>Creates a new file for writing (and the namespace and shard folders when missing); null when it can't.</summary>
-        internal abstract SafeFileHandle? CreateNew(string ns, string shard, string name);
-
-        /// <summary>Renames <paramref name="from"/> over <paramref name="to"/> in one shard folder.</summary>
-        internal abstract bool Rename(string ns, string shard, string from, string to);
-
-        /// <summary>Deletes one file (never through a link; a link itself is not deleted either).</summary>
-        internal abstract bool Delete(string ns, string shard, string name);
-
-        /// <summary>Removes an empty shard folder (or, with no shard, an empty namespace folder).</summary>
-        internal abstract void RemoveEmpty(string ns, string? shard);
-
-        /// <summary>Opens a file of the folder itself: for reading (a regular file only), or created new for writing.</summary>
-        internal abstract SafeFileHandle? OpenRootFile(string name, bool create);
-
-        /// <summary>Deletes a file of the folder itself.</summary>
-        internal abstract bool DeleteRootFile(string name);
-
-        /// <summary>A file's length and last write time; null when it can't be opened as above.</summary>
-        internal (long Length, DateTime Modified)? Stat(string ns, string shard, string name)
+        /// <summary>
+        /// Runs <paramref name="use"/> with the folder held open and proven the cache's own through that very handle
+        /// (its marker read from it), so what <paramref name="use"/> changes is in that folder and no other one
+        /// moved in under its path. <paramref name="failed"/> when it can't be opened or isn't the cache's (then
+        /// <see cref="Lost"/>).
+        /// </summary>
+        internal T Owned<T>(T failed, Func<CacheFolder, T> use)
         {
-            using var handle = OpenRead(ns, shard, name);
-            if (handle == null) return null;
-            try
+            var owned = false;
+            var result = WithFolder(failed, folder =>
             {
-                return (RandomAccess.GetLength(handle), File.GetLastWriteTimeUtc(handle));
-            }
-            catch (Exception)
-            {
-                return null;
-            }
+                if (!folder.HasMarker()) return failed;
+                owned = true;
+                return use(folder);
+            });
+            if (!owned) _lost = true;
+            return result;
         }
 
-        /// <summary>True when the file is still there (for counting what a failed removal or open left behind).</summary>
-        internal bool Exists(string ns, string shard, string name)
-            => WithRootPath(path => path != null && File.Exists(Path.Combine(path, ns, shard, name)));
+        /// <summary>Opens a regular file for reading; null when missing, a link, not a regular file or outside the folder. A read changes nothing, so it doesn't prove ownership.</summary>
+        internal SafeFileHandle? OpenRead(string ns, string shard, string name)
+            => WithFolder<SafeFileHandle?>(null, folder => folder.OpenRead(ns, shard, name));
 
-        /// <summary>True when the folder holds nothing at all.</summary>
-        internal bool IsEmpty() => WithRootPath(path =>
-        {
-            if (path == null) return false;
-            using var entries = Directory.EnumerateFileSystemEntries(path).GetEnumerator();
-            return !entries.MoveNext();
-        });
+        /// <summary>Creates a new file for writing (and the namespace and shard folders when missing) in the cache's own folder; null when it can't.</summary>
+        internal SafeFileHandle? CreateNew(string ns, string shard, string name)
+            => Owned<SafeFileHandle?>(null, folder => folder.CreateNew(ns, shard, name));
 
-        /// <summary>True when the folder holds the cache's marker: a regular file (not a link) with the marker's text.</summary>
-        internal bool HasMarker()
-        {
-            using var handle = OpenRootFile(ServerCacheLocation.MarkerName, create: false);
-            if (handle == null) return false;
-            try
+        /// <summary>Deletes one file of the cache's own folder (never through a link; a link itself is not deleted either).</summary>
+        internal bool Delete(string ns, string shard, string name)
+            => Owned(false, folder => folder.Delete(ns, shard, name));
+
+        /// <summary>Removes an empty shard folder (or, with no shard, an empty namespace folder) of the cache's own folder.</summary>
+        internal void RemoveEmpty(string ns, string? shard)
+            => Owned(false, folder =>
             {
-                var expected = Encoding.UTF8.GetBytes(ServerCacheLocation.MarkerText);
-                if (RandomAccess.GetLength(handle) != expected.Length) return false;
-                var actual = new byte[expected.Length];
-                var read = 0;
-                while (read < actual.Length)
-                {
-                    var n = RandomAccess.Read(handle, actual.AsSpan(read), read);
-                    if (n <= 0) return false;
-                    read += n;
-                }
-
-                return actual.AsSpan().SequenceEqual(expected);
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>Writes the cache's marker as a new file of the folder; false when it can't (one already there included).</summary>
-        internal bool CreateMarker()
-        {
-            using var handle = OpenRootFile(ServerCacheLocation.MarkerName, create: true);
-            if (handle == null) return false;
-            try
-            {
-                RandomAccess.Write(handle, Encoding.UTF8.GetBytes(ServerCacheLocation.MarkerText), 0);
+                folder.RemoveEmpty(ns, shard);
                 return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>True when a new file can be written to the folder (written and removed again).</summary>
-        internal bool Writable()
-        {
-            var name = ".je-write-check-" + Guid.NewGuid().ToString("N") + ".tmp";
-            using (var handle = OpenRootFile(name, create: true))
-            {
-                if (handle == null) return false;
-            }
-
-            DeleteRootFile(name);
-            return true;
-        }
-
-        /// <summary>Sets a regular file of the folder's last write time (the marker), never through a link.</summary>
-        internal void TouchRootFile(string name, DateTime when)
-        {
-            try
-            {
-                using var handle = OpenRootFile(name, create: false);
-                if (handle != null) File.SetLastWriteTimeUtc(handle, when);
-            }
-            catch (Exception)
-            {
-                // Only the dedicated-folder check reads it.
-            }
-        }
+            });
 
         /// <summary>The real path of <paramref name="path"/> (every link resolved); the part that doesn't exist yet is appended as given.</summary>
         internal static string RealPath(string path)
         {
             var full = Path.GetFullPath(path);
-            var missing = new System.Collections.Generic.Stack<string>();
+            var missing = new Stack<string>();
             var existing = full;
             while (!Directory.Exists(existing) && !File.Exists(existing) && new FileInfo(existing).LinkTarget == null)
             {
@@ -210,12 +147,132 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
     }
 
+    /// <summary>A file of the store's shape a listing found: where it is, its length and last write time.</summary>
+    internal readonly record struct CacheFile(string Ns, string Shard, string Name, long Length, DateTime Modified);
+
+    /// <summary>
+    /// The cache folder held open for one operation (<see cref="CacheFolderAccess.WithFolder"/>): everything here goes
+    /// through that handle, never the folder's path again, and is valid only inside that call.
+    /// </summary>
+    internal abstract class CacheFolder
+    {
+        /// <summary>Opens a regular file for reading; null when missing, a link or not a regular file.</summary>
+        internal abstract SafeFileHandle? OpenRead(string ns, string shard, string name);
+
+        /// <summary>Creates a new file for writing (and the namespace and shard folders when missing); null when it can't.</summary>
+        internal abstract SafeFileHandle? CreateNew(string ns, string shard, string name);
+
+        /// <summary>Renames <paramref name="from"/> over <paramref name="to"/> in one shard folder.</summary>
+        internal abstract bool Rename(string ns, string shard, string from, string to);
+
+        /// <summary>Deletes one file (never through a link; a link itself is not deleted either).</summary>
+        internal abstract bool Delete(string ns, string shard, string name);
+
+        /// <summary>Removes an empty shard folder (or, with no shard, an empty namespace folder).</summary>
+        internal abstract void RemoveEmpty(string ns, string? shard);
+
+        /// <summary>A regular file's length and last write time, read without opening it or following a link; null when there is none.</summary>
+        internal abstract (long Length, DateTime Modified)? Stat(string ns, string shard, string name);
+
+        /// <summary>
+        /// Adds every file of the store's shape (names the filters accept, regular files only, links never followed)
+        /// to <paramref name="into"/>, each namespace and shard folder listed through its own handle. False when a
+        /// folder or file couldn't be read: the listing is then incomplete (what could be read is still added).
+        /// </summary>
+        internal abstract bool List(Func<string, bool> isNamespace, Func<string, bool> isShard, Func<string, bool> isFile, List<CacheFile> into);
+
+        /// <summary>True when the folder holds nothing at all; null when it can't be read.</summary>
+        internal abstract bool? IsEmpty();
+
+        /// <summary>Opens a file of the folder itself: for reading (a regular file only), or created new for writing.</summary>
+        internal abstract SafeFileHandle? OpenOwnFile(string name, bool create);
+
+        /// <summary>Deletes a file of the folder itself.</summary>
+        internal abstract bool DeleteOwnFile(string name);
+
+        /// <summary>True when the folder holds the cache's marker: a regular file (not a link) with the marker's text.</summary>
+        internal bool HasMarker()
+        {
+            using var handle = OpenOwnFile(ServerCacheLocation.MarkerName, create: false);
+            if (handle == null) return false;
+            try
+            {
+                var expected = Encoding.UTF8.GetBytes(ServerCacheLocation.MarkerText);
+                if (RandomAccess.GetLength(handle) != expected.Length) return false;
+                var actual = new byte[expected.Length];
+                var read = 0;
+                while (read < actual.Length)
+                {
+                    var n = RandomAccess.Read(handle, actual.AsSpan(read), read);
+                    if (n <= 0) return false;
+                    read += n;
+                }
+
+                return actual.AsSpan().SequenceEqual(expected);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Writes the cache's marker as a new file of the folder; false when it can't (one already there included).</summary>
+        internal bool CreateMarker()
+        {
+            using var handle = OpenOwnFile(ServerCacheLocation.MarkerName, create: true);
+            if (handle == null) return false;
+            try
+            {
+                RandomAccess.Write(handle, Encoding.UTF8.GetBytes(ServerCacheLocation.MarkerText), 0);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>True when a new file can be written to the folder (written and removed again).</summary>
+        internal bool Writable()
+        {
+            var name = ".je-write-check-" + Guid.NewGuid().ToString("N") + ".tmp";
+            using (var handle = OpenOwnFile(name, create: true))
+            {
+                if (handle == null) return false;
+            }
+
+            DeleteOwnFile(name);
+            return true;
+        }
+
+        /// <summary>Sets the marker's last write time (never through a link): the sweeps keep it fresh.</summary>
+        internal void TouchMarker(DateTime when)
+        {
+            try
+            {
+                using var handle = OpenOwnFile(ServerCacheLocation.MarkerName, create: false);
+                if (handle != null) File.SetLastWriteTimeUtc(handle, when);
+            }
+            catch (Exception)
+            {
+                // Only the dedicated-folder check reads it.
+            }
+        }
+    }
+
     /// <summary>Anchored operations through libc on Linux (x64, x86, Arm, Arm64).</summary>
     internal sealed class LinuxFolderAccess : CacheFolderAccess
     {
         private const int ENOENT = 2;
         private const int EEXIST = 17;
+        private const int ENOTDIR = 20;
+        private const int ELOOP = 40;
         private const int AtRemoveDir = 0x200;
+        private const int AtSymlinkNoFollow = 0x100;
+        // statx: STATX_TYPE | STATX_MODE | STATX_MTIME | STATX_SIZE; the result's layout is the same on every architecture.
+        private const uint StatxWanted = 0x1 | 0x2 | 0x40 | 0x200;
+        private const int StatxBytes = 256;
+        private const int SIfMt = 0xF000, SIfReg = 0x8000;
         private const int ORdOnly = 0, OWrOnly = 1, OCreat = 0x40, OExcl = 0x80, ONonBlock = 0x800, OCloExec = 0x80000;
         private static readonly int ODirectory, ONoFollow;
         private static readonly Native? Lib;
@@ -287,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             if (Intact()) return true;
             // Down from the nearest folder that exists (each step a real directory, never a link), creating the rest.
-            var parts = new System.Collections.Generic.List<string>();
+            var parts = new List<string>();
             var existing = Root;
             int fd;
             while (true)
@@ -343,34 +400,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
-        /// <summary>Runs <paramref name="use"/> with the shard (or, with no shard, the namespace) folder's handle.</summary>
-        private T WithDir<T>(string ns, string? shard, bool create, T failed, Func<int, T> use)
-            => WithRoot(failed, root =>
-            {
-                var nsFd = OpenDir(root, ns, create);
-                if (nsFd < 0) return failed;
-                var shardFd = -1;
-                try
-                {
-                    if (shard == null) return use(nsFd);
-                    shardFd = OpenDir(nsFd, shard, create);
-                    return shardFd < 0 ? failed : use(shardFd);
-                }
-                finally
-                {
-                    if (shardFd >= 0) Lib!.Close(shardFd);
-                    Lib!.Close(nsFd);
-                }
-            });
-
-        internal override T WithRootPath<T>(Func<string?, T> use)
+        internal override T WithFolder<T>(T failed, Func<CacheFolder, T> use)
         {
             var root = OpenChecked(Root);
-            if (root < 0) return use(null);
+            if (root < 0) return failed;
             try
             {
-                // The open handle's /proc path reads exactly this folder, wherever its name points meanwhile.
-                return use(FdLink(root));
+                return use(new LinuxFolder(root));
             }
             finally
             {
@@ -403,29 +439,163 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             return fd < 0 ? null : new SafeFileHandle((IntPtr)fd, ownsHandle: true);
         }
 
-        internal override SafeFileHandle? OpenRead(string ns, string shard, string name)
-            => WithDir<SafeFileHandle?>(ns, shard, false, null, dir => OpenFile(dir, name));
-
-        internal override SafeFileHandle? CreateNew(string ns, string shard, string name)
-            => WithDir<SafeFileHandle?>(ns, shard, true, null, dir => CreateFile(dir, name));
-
-        internal override bool Rename(string ns, string shard, string from, string to)
-            => WithDir(ns, shard, false, false, dir => Lib!.RenameAt(dir, from, dir, to) == 0);
-
-        internal override bool Delete(string ns, string shard, string name)
-            => WithDir(ns, shard, false, false, dir => Lib!.UnlinkAt(dir, name, 0) == 0);
-
-        internal override void RemoveEmpty(string ns, string? shard)
+        /// <summary>A file's type, length and last write time under <paramref name="dir"/>, never following a link: 1 a regular file, 0 none (missing, a link or another type), -1 unreadable.</summary>
+        private static int StatAt(int dir, string name, out long length, out DateTime modified)
         {
-            if (shard == null) WithRoot(false, root => Lib!.UnlinkAt(root, ns, AtRemoveDir) == 0);
-            else WithDir(ns, null, false, false, dir => Lib!.UnlinkAt(dir, shard, AtRemoveDir) == 0);
+            length = 0;
+            modified = default;
+            var buffer = new byte[StatxBytes];
+            if (Lib!.Statx(dir, name, AtSymlinkNoFollow, StatxWanted, buffer) != 0)
+                return Marshal.GetLastPInvokeError() is ENOENT or ENOTDIR ? 0 : -1;
+            if ((BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(28)) & SIfMt) != SIfReg) return 0;
+            length = BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(40));
+            var seconds = BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(112));
+            var nanoseconds = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(120));
+            try
+            {
+                modified = DateTime.UnixEpoch.AddTicks((seconds * TimeSpan.TicksPerSecond) + (nanoseconds / 100));
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                modified = seconds < 0 ? DateTime.UnixEpoch : DateTime.MaxValue;
+            }
+
+            return 1;
         }
 
-        internal override SafeFileHandle? OpenRootFile(string name, bool create)
-            => WithRoot<SafeFileHandle?>(null, root => create ? CreateFile(root, name) : OpenFile(root, name));
+        /// <summary>The names in an open folder that <paramref name="wanted"/> accepts (read through its handle); <paramref name="complete"/> false when it couldn't be read.</summary>
+        private static List<string> Names(int dir, Func<string, bool> wanted, ref bool complete)
+        {
+            try
+            {
+                return Directory.EnumerateFileSystemEntries(FdLink(dir)).Select(Path.GetFileName).Where(n => !string.IsNullOrEmpty(n) && wanted(n!)).ToList()!;
+            }
+            catch (Exception)
+            {
+                complete = false;
+                return new List<string>();
+            }
+        }
 
-        internal override bool DeleteRootFile(string name)
-            => WithRoot(false, root => Lib!.UnlinkAt(root, name, 0) == 0);
+        /// <summary>Opens a listed folder from its parent's handle without following a link; -1 when it is gone, a link or not a folder (skipped), or can't be read (<paramref name="complete"/> false).</summary>
+        private static int OpenListed(int parent, string name, ref bool complete)
+        {
+            var fd = Lib!.OpenAt(parent, name, ORdOnly | ODirectory | ONoFollow | OCloExec, 0);
+            if (fd < 0 && Marshal.GetLastPInvokeError() is not (ENOENT or ENOTDIR or ELOOP)) complete = false;
+            return fd;
+        }
+
+        /// <summary>The folder held open by one operation; every call is relative to its handle.</summary>
+        private sealed class LinuxFolder : CacheFolder
+        {
+            private readonly int _root;
+
+            internal LinuxFolder(int root)
+            {
+                _root = root;
+            }
+
+            /// <summary>Runs <paramref name="use"/> with the shard (or, with no shard, the namespace) folder's handle.</summary>
+            private T InDir<T>(string ns, string? shard, bool create, T failed, Func<int, T> use)
+            {
+                var nsFd = OpenDir(_root, ns, create);
+                if (nsFd < 0) return failed;
+                var shardFd = -1;
+                try
+                {
+                    if (shard == null) return use(nsFd);
+                    shardFd = OpenDir(nsFd, shard, create);
+                    return shardFd < 0 ? failed : use(shardFd);
+                }
+                finally
+                {
+                    if (shardFd >= 0) Lib!.Close(shardFd);
+                    Lib!.Close(nsFd);
+                }
+            }
+
+            internal override SafeFileHandle? OpenRead(string ns, string shard, string name)
+                => InDir<SafeFileHandle?>(ns, shard, false, null, dir => OpenFile(dir, name));
+
+            internal override SafeFileHandle? CreateNew(string ns, string shard, string name)
+                => InDir<SafeFileHandle?>(ns, shard, true, null, dir => CreateFile(dir, name));
+
+            internal override bool Rename(string ns, string shard, string from, string to)
+                => InDir(ns, shard, false, false, dir => Lib!.RenameAt(dir, from, dir, to) == 0);
+
+            internal override bool Delete(string ns, string shard, string name)
+                => InDir(ns, shard, false, false, dir => Lib!.UnlinkAt(dir, name, 0) == 0);
+
+            internal override void RemoveEmpty(string ns, string? shard)
+            {
+                if (shard == null) Lib!.UnlinkAt(_root, ns, AtRemoveDir);
+                else InDir(ns, null, false, false, dir => Lib!.UnlinkAt(dir, shard, AtRemoveDir) == 0);
+            }
+
+            internal override (long Length, DateTime Modified)? Stat(string ns, string shard, string name)
+                => InDir<(long, DateTime)?>(ns, shard, false, null, dir => StatAt(dir, name, out var length, out var modified) == 1 ? (length, modified) : null);
+
+            internal override bool List(Func<string, bool> isNamespace, Func<string, bool> isShard, Func<string, bool> isFile, List<CacheFile> into)
+            {
+                var complete = true;
+                foreach (var ns in Names(_root, isNamespace, ref complete))
+                {
+                    var nsFd = OpenListed(_root, ns, ref complete);
+                    if (nsFd < 0) continue;
+                    try
+                    {
+                        foreach (var shard in Names(nsFd, isShard, ref complete))
+                        {
+                            var shardFd = OpenListed(nsFd, shard, ref complete);
+                            if (shardFd < 0) continue;
+                            try
+                            {
+                                foreach (var name in Names(shardFd, isFile, ref complete))
+                                {
+                                    switch (StatAt(shardFd, name, out var length, out var modified))
+                                    {
+                                        case 1:
+                                            into.Add(new CacheFile(ns, shard, name, length, modified));
+                                            break;
+                                        case -1:
+                                            complete = false;
+                                            break;
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                Lib!.Close(shardFd);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Lib!.Close(nsFd);
+                    }
+                }
+
+                return complete;
+            }
+
+            internal override bool? IsEmpty()
+            {
+                try
+                {
+                    using var entries = Directory.EnumerateFileSystemEntries(FdLink(_root)).GetEnumerator();
+                    return !entries.MoveNext();
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
+            internal override SafeFileHandle? OpenOwnFile(string name, bool create)
+                => create ? CreateFile(_root, name) : OpenFile(_root, name);
+
+            internal override bool DeleteOwnFile(string name) => Lib!.UnlinkAt(_root, name, 0) == 0;
+        }
 
         /// <summary>The libc entry points, bound once (no import resolver for the plugin's assembly is needed).</summary>
         private sealed class Native
@@ -448,12 +618,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             [UnmanagedFunctionPointer(CallingConvention.Cdecl, SetLastError = true)]
             private delegate int CloseFn(int fd);
 
+            [UnmanagedFunctionPointer(CallingConvention.Cdecl, SetLastError = true)]
+            private delegate int StatxFn(int dir, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, [Out] byte[] buffer);
+
             private OpenFn _open = null!;
             private OpenAtFn _openAt = null!;
             private MkdirAtFn _mkdirAt = null!;
             private RenameAtFn _renameAt = null!;
             private UnlinkAtFn _unlinkAt = null!;
             private CloseFn _close = null!;
+            private StatxFn _statx = null!;
 
             internal static Native? Load()
             {
@@ -470,6 +644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                             _renameAt = Bind<RenameAtFn>(lib, "renameat"),
                             _unlinkAt = Bind<UnlinkAtFn>(lib, "unlinkat"),
                             _close = Bind<CloseFn>(lib, "close"),
+                            _statx = Bind<StatxFn>(lib, "statx"),
                         };
                     }
                     catch (Exception)
@@ -496,6 +671,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             internal int UnlinkAt(int dir, string path, int flags) => _unlinkAt(dir, path, flags);
 
             internal void Close(int fd) => _close(fd);
+
+            internal int Statx(int dir, string path, int flags, uint mask, byte[] buffer) => _statx(dir, path, flags, mask, buffer);
         }
     }
 }
