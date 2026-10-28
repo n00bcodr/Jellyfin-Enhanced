@@ -228,7 +228,7 @@ test('UX-16: a failed search offers Try again: same query, bounded, focus kept, 
   assert.equal(retry.textContent, 'Trying again…');
   assert.equal(h.document.activeElement, retry, 'focus stays on the button while it works');
   // The retry's own deadline: what is left of 15 s after its capabilities read.
-  assert.ok(searchCalls()[1].options.timeoutMs > 0 && searchCalls()[1].options.timeoutMs <= bound);
+  assert.ok(searchCalls()[1].options.timeoutMs > 0 && searchCalls()[1].options.timeoutMs <= h.JE.internals.arrAskSearch.SEARCH_TIMEOUT_MS);
 
   // It fails again: a fresh Try again, focused.
   answers[1].d.resolve({ status: 503, body: {} });
@@ -520,4 +520,20 @@ test('UX4R-3: the "nothing in your library" line follows the query and goes when
   native.classList.remove('native-has-results');
   h.JE.internals.arrAskSearch.check();
   assert.equal(shown(h, line()), false);
+});
+
+test('UX-11 (lab, round 2): a row drawn before Jellyfin had local rows moves after its Movies row when they arrive, before paint', async t => {
+  const h = setup(t, { realObserver: true, html: EMPTY_SEARCH, routes: f => (f.path === '/acquire/search' ? page([card('movie:tmdb:1', 'Toy Story 6')]) : undefined) });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'toy story');
+  await until(() => h.document.querySelector('.je-discover-card'));
+  const section = h.document.querySelector('.je-ask-search-section');
+  // Jellyfin's search answers later: its message goes and its Movies row is added after the JE row.
+  h.window.requestAnimationFrame = () => 100;             // nothing after paint runs
+  h.document.getElementById('native-empty').remove();
+  h.document.querySelector('.searchResults').insertAdjacentHTML('beforeend', '<div class="verticalSection" id="movies"><div class="card" data-type="Movie"></div></div>');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(h.document.getElementById('movies').nextElementSibling, section, 'Jellyfin\'s own results come first');
+  assert.equal(shown(h, section.querySelector('.je-ask-search-local-none')), false);
 });

@@ -427,6 +427,17 @@
     }
 
     /**
+     * Keeps a drawn row for the box's query after Jellyfin's own rows (moved only when out of place) and
+     * Jellyfin's message in step with it.
+     * @returns {void}
+     */
+    function follow() {
+        if (!state.section && !state.hiddenNative) return;
+        if (state.section?.isConnected && queryOf(searchInput()) === state.query) place(state.section);
+        else syncNative();
+    }
+
+    /**
      * After a navigation: away from the search page the row goes; on it, the box is followed and a
      * query typed meanwhile is searched.
      * @returns {void}
@@ -447,9 +458,10 @@
         if (state.started || !JE.arrAsk?.enabled?.()) return;
         state.started = true;
         JE.helpers?.onBodyMutation?.('je-ask-search', check);
-        // Jellyfin's late "no results" message is hidden before it is painted (priority: run in the observer's
-        // own microtask); the row's line follows. A no-op while no row is up.
-        JE.helpers?.onBodyMutation?.('je-ask-search-native', () => syncNative(), { priority: 1 });
+        // Before paint (priority: run in the observer's own microtask): Jellyfin's late "no results" message is
+        // hidden and the row's line follows; rows Jellyfin adds later (a query that now has local results) get
+        // the row placed after them again. A no-op while no row is up.
+        JE.helpers?.onBodyMutation?.('je-ask-search-native', follow, { priority: 1 });
         JE.core?.navigation?.onNavigate?.(afterNavigate);
         check();
     }
