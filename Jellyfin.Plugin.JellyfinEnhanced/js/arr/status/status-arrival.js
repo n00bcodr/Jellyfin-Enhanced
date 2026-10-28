@@ -31,7 +31,10 @@
         gap: 15000,
         /** A movie or episode redraw that Jellyfin's version picker doesn't reflect is tried at most this often per change. */
         redrawTries: 3,
-        /** How often per page view a change given up on may get a fresh set of tries for the same count (Jellyfin adding or removing versions). */
+        /**
+         * How often per page view a change given up on may get a fresh set of tries for the same count (Jellyfin adding or
+         * removing versions), when the status carries no version fingerprint to tell the sets apart.
+         */
         redrawRenewals: 3,
         /**
          * A season or series page reloads once its status has stopped changing for this long: a season
@@ -191,18 +194,44 @@
     }
 
     /**
-     * What a status says is available: an episode or movie is there or not, and in how many versions
-     * (Jellyfin's version picker: files it keeps as one item); a season or series has so many episodes there.
+     * What a status says is available: an episode or movie is there or not, in how many versions
+     * (Jellyfin's version picker: files it keeps as one item) and which ones (`set`: the server's fingerprint
+     * of the version set, so a removal and an arrival that keep the count are a change too; null when it
+     * sends none; `at`: when it was read); a season or series has so many episodes there.
      * @param {Object} status Status.
-     * @returns {{ready: boolean, count: number|null, versions: number|null}} Signature.
+     * @returns {{ready: boolean, count: number|null, versions: number|null, set: string|null, at: number}} Signature.
      */
     function signature(status) {
         if (status.kind === 'season' || status.kind === 'series') {
             const count = status.summary?.ready;
-            return { ready: false, count: Number.isFinite(count) ? count : null, versions: null };
+            return { ready: false, count: Number.isFinite(count) ? count : null, versions: null, set: null };
         }
         const ready = status.stage === 'ready';
-        return { ready, count: null, versions: ready && Number.isFinite(status.versions) ? status.versions : null };
+        const versions = ready && Number.isFinite(status.versions) ? status.versions : null;
+        const set = versions != null && typeof status.versionsFingerprint === 'string' && status.versionsFingerprint ? status.versionsFingerprint : null;
+        return { ready, count: null, versions, set, at: Date.now() };
+    }
+
+    /**
+     * True when `now` names another set of versions than `before` with as many of them (a removal and an arrival
+     * that keep the count): only when both carry the server's fingerprint.
+     * @param {{versions: number|null, set: string|null}} now Signature now.
+     * @param {{versions: number|null, set: string|null}} before Signature the page was drawn with.
+     * @returns {boolean} Another set.
+     */
+    function otherSet(now, before) {
+        return now.versions != null && now.versions === before.versions && now.set != null && before.set != null && now.set !== before.set;
+    }
+
+    /**
+     * True when `now` is something the page doesn't show yet: more of the title ({@link more}), or another set
+     * of as many versions.
+     * @param {Object} now Signature now.
+     * @param {Object} before Signature the page was drawn with.
+     * @returns {boolean} Changed.
+     */
+    function differs(now, before) {
+        return more(now, before) || otherSet(now, before);
     }
 
     /**
@@ -246,6 +275,8 @@
             lostTimer: null, lostTries: 0, reloadedAt: shownBefore?.reloadedAt || 0, tried: new Set(), parents: new Set([norm(itemId)])
         };
         state.refreshed = false;
+        // JE's latest read of the item's versions, and when it was made (see reconciled).
+        state.truth = null;
         state.drawing = null;
         state.failures = null;
         state.abandoned = null;
@@ -323,9 +354,33 @@
     }
 
     /**
-     * Whether Jellyfin's own version picker on the page lists `base`'s versions.
+     * The versions Jellyfin's own picker on the page lists (its options' media source ids), or null without one.
      * @param {Object} state Page state.
-     * @param {{versions: number|null}} base Signature.
+     * @returns {string[]|null} Ids.
+     */
+    function pickerIds(state) {
+        const picker = state.view.querySelector('select.selectSource');
+        return picker ? [...picker.options].map(o => norm(o.value)).sort() : null;
+    }
+
+    /**
+     * The versions (media source ids) of a Jellyfin item read, in the picker's form; null when it lists none.
+     * @param {Object|null} item Item.
+     * @returns {string[]|null} Ids.
+     */
+    function sourceIds(item) {
+        const ids = Array.isArray(item?.MediaSources) ? item.MediaSources.map(m => norm(m?.Id)).filter(Boolean).sort() : [];
+        return ids.length ? ids : null;
+    }
+
+    /**
+     * Whether Jellyfin's own version picker on the page lists `base`'s versions: as many of them, and, when `base` is
+     * another set than the page was drawn with (both fingerprinted), exactly the versions of JE's own read of the item
+     * made after `base` was read (reload): the fingerprint can't be worked out in the browser, but that read is
+     * Jellyfin's item as it is now, in the picker's own ids. A picker Jellyfin didn't redraw, or redrew from an older
+     * read (an earlier set of the same burst), lists other ids; without such a read the redraw doesn't count yet.
+     * @param {Object} state Page state.
+     * @param {{versions: number|null, set: string|null}} base Signature.
      * @returns {boolean|null} True or false; null when there is nothing to check (one version, or no picker).
      */
     function reconciled(state, base) {
@@ -333,7 +388,11 @@
         const picker = state.view.querySelector('select.selectSource');
         if (picker) {
             state.pickerSeen = true;
-            return picker.options.length >= base.versions;
+            if (picker.options.length < base.versions) return false;
+            const drawnSet = state.base?.set;
+            if (base.set == null || drawnSet == null || base.set === drawnSet) return true;
+            const truth = state.truth;
+            return !!truth && truth.at >= (base.at || 0) && pickerIds(state).join('|') === truth.ids.join('|');
         }
         // The page's picker missing (Jellyfin mid-redraw) is not a redraw that took. Jellyfin shows one
         // whenever the item has more than one version, so a page drawn with several (or that showed one)
@@ -343,7 +402,8 @@
 
     /**
      * Gives a change given up on a fresh set of tries for the same count (Jellyfin added or removed
-     * versions), at most `redrawRenewals` times per page view.
+     * versions), at most `redrawRenewals` times per page view. Only for a status without the version
+     * fingerprint: with it, another set is a change of its own (its own tries).
      * @param {Object} state Page state.
      * @returns {void}
      */
@@ -355,13 +415,13 @@
     }
 
     /**
-     * True when two signatures say the same.
-     * @param {{ready: boolean, count: number|null, versions: number|null}} a Signature.
-     * @param {{ready: boolean, count: number|null, versions: number|null}} b Signature.
+     * True when two signatures say the same (the same set of versions, when both name one).
+     * @param {{ready: boolean, count: number|null, versions: number|null, set: string|null}} a Signature.
+     * @param {{ready: boolean, count: number|null, versions: number|null, set: string|null}} b Signature.
      * @returns {boolean} Same.
      */
     function same(a, b) {
-        return !!a && !!b && a.ready === b.ready && a.count === b.count && a.versions === b.versions;
+        return !!a && !!b && a.ready === b.ready && a.count === b.count && a.versions === b.versions && !otherSet(a, b);
     }
 
     /**
@@ -389,10 +449,10 @@
             state.failures = null;
         }
         // A change given up on that Jellyfin's picker shows now (it redrew by itself) is drawn, with no redraw.
-        if (state.abandoned && more(now, state.base) && reconciled(state, now) === true) commit(state, now);
+        if (state.abandoned && differs(now, state.base) && reconciled(state, now) === true) commit(state, now);
         const pending = state.pending;
         if (pending?.kind !== 'reload') return;
-        if (!more(now, state.base)) state.pending = null;
+        if (!differs(now, state.base)) state.pending = null;
         else if (!more(now, pending.base)) pending.base = now;
     }
 
@@ -432,7 +492,7 @@
             state.abandoned = target;
             return;
         }
-        if (more(latest, state.base)) plan(state, { kind: 'reload', base: latest });
+        if (differs(latest, state.base)) plan(state, { kind: 'reload', base: latest });
     }
 
     /**
@@ -506,10 +566,11 @@
         const ids = [].concat(data.ItemsAdded || [], data.ItemsUpdated || [], data.ItemsRemoved || [], data.FoldersAddedTo || [], data.FoldersRemovedFrom || []);
         if (!ids.some(id => state.parents.has(norm(id)))) return;
         const self = norm(state.id);
-        // Jellyfin added or removed items with the page's own item named: the same version count can be a
-        // different set of versions now, so a redraw given up on gets a fresh (bounded) chance. Its item
-        // being updated again (metadata, scans) is no such evidence.
-        if (state.abandoned && ids.some(id => norm(id) === self) && ((data.ItemsAdded || []).length || (data.ItemsRemoved || []).length)) renew(state);
+        // Jellyfin added or removed items with the page's own item named: without the server's version
+        // fingerprint the same version count can be a different set of versions now, so a redraw given up on
+        // gets a fresh (bounded) chance. With it, another set is a read of its own (track). Its item being
+        // updated again (metadata, scans) is no such evidence.
+        if (state.abandoned && state.abandoned.set == null && ids.some(id => norm(id) === self) && ((data.ItemsAdded || []).length || (data.ItemsRemoved || []).length)) renew(state);
         const removedFromPage = (data.FoldersRemovedFrom || []).some(id => norm(id) === self) && !(data.ItemsRemoved || []).some(id => norm(id) === self);
         if (removedFromPage && state.base && libraryId(state.id) && (state.kind === 'season' || state.kind === 'series')) {
             plan(state, { kind: 'reload', base: state.base, listed: true });
@@ -558,7 +619,7 @@
             return;
         }
         if (!listPage(state)) track(state, now);
-        if (more(now, expected(state))) plan(state, { kind: 'reload', base: now });
+        if (differs(now, expected(state))) plan(state, { kind: 'reload', base: now });
     }
 
     /**
@@ -630,7 +691,9 @@
     function higher(a, b) {
         const counts = [a.count, b.count].filter(n => n != null);
         const versions = [a.versions, b.versions].filter(n => n != null);
-        return { ready: a.ready || b.ready, count: counts.length ? Math.max(...counts) : null, versions: versions.length ? Math.max(...versions) : null };
+        // The set of the one with the most versions (the newer, `b`, of as many).
+        const from = (b.versions ?? -1) >= (a.versions ?? -1) ? b : a;
+        return { ready: a.ready || b.ready, count: counts.length ? Math.max(...counts) : null, versions: versions.length ? Math.max(...versions) : null, set: from.set ?? null, at: from.at ?? 0 };
     }
 
     /**
@@ -669,7 +732,7 @@
             ? { kind: 'reload', base: listPage(state) ? higher(waiting.base, action.base) : action.base, since: waiting.since }
             : { kind: 'reload', base: action.base, since: now };
         state.pending = next;
-        const changed = !waiting || action.listed || more(next.base, waiting.base);
+        const changed = !waiting || action.listed || differs(next.base, waiting.base);
         if (!changed && (state.timer || state.checking)) return;
         schedule(state, Math.min(timing.batch, next.since + timing.batchMax - now));
     }
@@ -733,7 +796,7 @@
         state.pending = null;
         // A slow host redraw (JE's own, in this view) that caught up meanwhile needs no other. Before one,
         // the picker can still list a version since removed, so its count proves nothing.
-        if (!listPage(state) && state.refreshed && more(action.base, state.base) && reconciled(state, action.base) === true) {
+        if (!listPage(state) && state.refreshed && differs(action.base, state.base) && reconciled(state, action.base) === true) {
             commit(state, action.base);
             return;
         }
@@ -849,8 +912,15 @@
         INTENTS.forEach(type => window.addEventListener(type, mark, { capture: true, passive: true }));
         state.endSettle = () => INTENTS.forEach(type => window.removeEventListener(type, mark, { capture: true }));
         try {
+            // Its versions as Jellyfin has them now: what the picker must list once the redraw took (reconciled).
+            const readAt = Date.now();
             const refreshed = JE.helpers?.getItemCached?.(state.id, { forceRefresh: true });
-            if (refreshed && typeof refreshed.catch === 'function') refreshed.catch(() => { /* Jellyfin reads it itself */ });
+            if (refreshed && typeof refreshed.then === 'function') {
+                refreshed.then((item) => {
+                    const ids = sourceIds(item);
+                    if (page === state && ids && (!state.truth || state.truth.at <= readAt)) state.truth = { ids, at: readAt };
+                }, () => { /* Jellyfin reads it itself */ });
+            }
         } catch {
             // Jellyfin reads the item itself.
         }

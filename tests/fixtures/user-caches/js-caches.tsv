@@ -30,10 +30,8 @@ arr/ask/ask-core.js	checks	revisioned	title checks, 30 s: dropped when the serve
 arr/ask/ask-core.js	meState	revisioned	what the person may ask for: dropped when the server's access revision moves (and on a user switch); the server decides every ask again
 arr/ask/ask-core.js	openIds	state	client request ids of asks in flight (idempotency), not an answer
 arr/ask/ask-core.js	seasonLists	revisioned	season lists the request sheet reuses, 5 min, keyed by the session and the requests write epoch: dropped when the server's access revision moves (and on a user switch); the server gates each TMDB read
-arr/ask/ask-episodes.js	bannerSearched	state	outcome of the administrator's own Search press
 arr/ask/ask-episodes.js	busy	state	episodes with a Search press running
 arr/ask/ask-episodes.js	local	state	optimistic states after the person's own ask, until the server agrees
-arr/ask/ask-episodes.js	searched	state	outcomes of the administrator's own Search presses, shown as chips
 arr/ask/ask-episodes.js	season	state	the open season sheet's own rows (read when it opens, under its generation; dropped when it closes)
 arr/ask/ask-sheet.js	current	state	the sheet being shown (its read is made on each open)
 arr/ask/ask-sheet.js	inflight	uncached	reads in flight only (removed when they settle)

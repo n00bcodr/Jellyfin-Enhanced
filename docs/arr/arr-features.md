@@ -638,6 +638,8 @@ again for you as you are now (if you were removed or keep changing, the Requests
       series grouping shows as one series, is its own copy). Jellyfin's multiple versions are followed too: a version
       added to the movie or episode you're looking at redraws the page, so Jellyfin's version picker and media info show
       it; when a higher resolution file joins it, Jellyfin makes that file the item (a new id) and the page moves there.
+      A version replaced by another (one removed and one added, the count unchanged) redraws the page too: the status
+      names the set of versions, and the redraw counts only once Jellyfin's picker lists the new set.
       A copy in another library is a separate item, and the page stays on the one it shows. A season or series page you come back to
       catches up on episodes that arrived while you were elsewhere, and while a season pack arrives file by file it is
       redrawn once things settle (at most 30 seconds after the first arrival).
@@ -1200,11 +1202,10 @@ ask fetch the episodes that are missing, one tap each.
       per "still looking" period, whichever page it was pressed on: a series Search right after a season's searches only
       the episodes left, and pressing it again when none are says "Searched for it a little while ago. We'll keep
       looking." When some of those episodes were never sent, the *Missing* line searches each episode a request sent (at
-      most ten) and asks for the others. For anything no request sent yet, a season's **Search** asks for it like
-      **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to Sonarr/Radarr as a search
-      for what they already monitor. The **Search** of a movie, series or episode page (on a computer and as a phone's
-      main button alike) never asks: when nothing was sent to search again it says so, and the page's **Request** asks;
-      only a button that reads **Ask {contact} to search** asks, as it says.
+      most ten) and asks for none of the others. A plain **Search** never asks, wherever it is: a movie, series or
+      episode page (on a computer and as a phone's main button alike), an episode's row on a season page and the season's
+      *Missing* line. When nothing was sent to search again it says so, and the title's **Request** asks; only a button
+      that reads **Ask {contact} to search** asks, as it says.
 
 ??? info "Paused: storage full, never a bare Missing"
     When the drive a download would land on has less free space than
@@ -1349,7 +1350,9 @@ way to the status pill while the pill shows.
     counts from the end of that day everywhere, and an unknown date never counts as aired) and that you may see, whichever way
     the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
     on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
-    you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
+    you can ask through has the series (or Seerr takes requests), and the sheet says so. Episodes picked by TMDB's numbers
+    are checked again when you press **Request**: if a Sonarr has taken the series in meanwhile, nothing is sent, the
+    season shows Sonarr's numbers and you pick again. Single episodes are held, with the
     whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
     read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
     or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode

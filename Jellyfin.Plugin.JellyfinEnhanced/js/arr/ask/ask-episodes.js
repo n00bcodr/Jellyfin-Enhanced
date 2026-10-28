@@ -1082,10 +1082,23 @@
     }
 
     /**
+     * What a plain Search says when nothing was asked for yet (nothing to search again): it asks for nothing in its place;
+     * the title's Request does. A page effect: said only while the press's owner is current.
+     * @param {{current: Function}} submitted The press's captured owner.
+     * @returns {void}
+     */
+    function notAskedYet(submitted) {
+        if (!submitted.current()) return;
+        announce(tr('arr_search_not_asked'));
+        JE.arrAsk.toast(tr('arr_search_not_asked'));
+    }
+
+    /**
      * Search for an episode missing for a long while. An administrator's Search runs the arr's own
      * search for that episode right away (Searching…, then what it found, in place of the button).
      * Everyone else's runs it too when requests already sent the episode (no new request); otherwise
-     * they ask for the episode like Get it (the request backend turns that into a search).
+     * it says nothing was asked for yet and asks for nothing: a plain Search never asks (the title's
+     * Request does, and on the title's page "Ask {contact} to search").
      * @param {Object} ep Episode status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
@@ -1123,11 +1136,11 @@
         if (JE.arrAsk.epoch() !== started) return;
         if (result && pressRefusal(result, button)) return;
         if (!result) {
-            // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
-            // edition of its binding, only while that ask reaches the copy.
+            // Nothing sent for it yet (or not missing for long enough): a plain Search never asks in its place (like the
+            // title's Search, UX2R-4); a household Search that ran says so. Its controls are drawn again.
             if (season?.itemId !== target.itemId) return;
-            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null, owner);
-            else JE.internals?.arrStatusEpisodes?.apply?.();
+            if (!instanceId && (!binding || binding.search)) notAskedYet(submitted);
+            JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
@@ -1673,7 +1686,8 @@
      * looks for exactly its monitored missing episodes) and shows what it found in the banner.
      * Everyone else's searches again for the season's episodes missing for a long while when requests
      * already sent every one of them (one search, no new request); otherwise for the ones requests
-     * already sent (one by one, at most ten), and asks for the rest like Get them.
+     * already sent (one by one, at most ten). It never asks for the rest: when none was sent it says
+     * nothing was asked for yet (the title's Request asks).
      * @param {Array<Object>} eps Episode statuses.
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
@@ -1696,7 +1710,6 @@
         numbers.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
-        let toAsk = [];
         try {
             if (instanceId) {
                 // Exactly the episodes it names (one EpisodeSearch for several, never the whole season).
@@ -1714,7 +1727,6 @@
                     const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined, bound: submitted.bound() }) : null;
                     if (JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
-                    else toAsk.push(ep.episode);
                     if (one && (one.reason === 'press_changed' || one.reason === 'press_unverified')) break;
                 }
                 result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
@@ -1728,18 +1740,14 @@
         }
         if (JE.arrAsk.epoch() !== started) return;
         if (result && pressRefusal(result, button)) return;
-        // A household Search asks for what no request sent yet (like Get them), in the edition of its binding, only while
-        // that ask reaches the copy.
-        const mayAsk = !instanceId && (!binding || (binding.search && binding.ask));
-        const asks = intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null;
+        // Nothing any request sent: a plain Search never asks in its place (like the title's Search, UX2R-4); a household
+        // Search that ran says so. Episodes no request sent yet beside searched ones are not asked for either.
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks, owner);
-            else JE.internals?.arrStatusEpisodes?.apply?.();
+            if (!instanceId && (!binding || binding.search)) notAskedYet(submitted);
+            JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
-        // Episodes no request sent yet are asked for like Get them.
-        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks, owner);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.

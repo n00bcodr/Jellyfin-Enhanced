@@ -279,6 +279,9 @@ export const SITES = {
     'initialize state started': [1, 'module', 'ui'],
     'initialize state unsubscribe': [1, 'module', 'ui'],
     'load state local': [1, 'module', 'cache'],
+    // F24: what a plain Search says when nothing was asked yet (it asks for nothing), under the press's captured owner.
+    'notAskedYet feedback announce': [1, 'press', 'effect'],
+    'notAskedYet feedback toast': [1, 'press', 'effect'],
     'onKey focus focus': [1, 'press', 'sync'],
     'openDetails focus focus': [1, 'press', 'sync'],
     'openDetails state origins': [1, 'module', 'registry'],
@@ -368,6 +371,8 @@ export const SITES = {
     'openOrAsk write arrAsk.ask': [1, 'press', 'transport'],
     'pickEpisodesPanel surface insert foreground': [3, 'press', 'render: a control or the numbering note inside the request sheet (build() registers the sheet on the surface stack)'],
     'pickSeasonsPanel surface insert foreground': [1, 'press', 'render: a control inside the request sheet (build() registers the sheet on the surface stack)'],
+    // F21: why single episodes picked by TMDB's numbering were held at the press (the sheet's own message line).
+    'recheckNumbering feedback showMessage': [1, 'press', 'effect'],
     'render focus focus': [1, 'press', 'sync'],
     'restoreFocus focus focus': [2, 'press', 'sync'],
     'searchButton feedback toast': [5, 'press', 'effect'],
@@ -867,9 +872,14 @@ export const SITES = {
     'go navigation location.replace': [1, 'press', 'sync'],
     'go navigation Page.show': [1, 'press', 'sync'],
     'goHome navigation location.replace': [1, 'press', 'sync'],
-    'keepImages state artwork': [1, 'module', 'ui'],
+    // F30: kept again once jellyfin-web loads an image handed back for the bound (release).
+    'keepImages state artwork': [2, 'module', 'ui'],
+    // F58: the marks this page set, reconciled on every pass (and cleared on dispose).
+    'markAbsent state marked': [4, 'module', 'ui'],
     'mountExtras dialog showCollectionRequestModal': [1, 'press', 'callee'],
     'moved state navigated': [1, 'module', 'ui'],
+    // F30: an image handed back to jellyfin-web for the retention bound is no longer kept.
+    'release state artwork': [1, 'module', 'ui'],
     'onView navigation go': [1, 'press', 'after: the page\'s own state (state.aborted, current === state): the view it was read for is still the one shown'],
     'onView state current': [1, 'module', 'ui'],
     'onView state fellBackFrom': [2, 'module', 'ui'],

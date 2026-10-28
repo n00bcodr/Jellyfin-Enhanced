@@ -2318,3 +2318,83 @@ test('UX2R4-1 probe: an episode with an unknown air date is never offered or sen
   assert.equal(h.posts.length, 0, 'an episode the Sonarr page classifies NotOut is not submitted as aired');
   closeSheet(h); await pending;
 });
+
+// Phase 2 F21: single episodes picked by TMDB's numbering (no Sonarr held the series when the sheet read the season) are
+// checked again at the press with the same Aired/source rule: Sonarr may hold the series by now, and then a number may name
+// another episode there. Changed: nothing is sent, the season shows Sonarr's numbers and the picks start over.
+test('F21: Sonarr takes the series in after the sheet read TMDB\'s numbering: the picks are held at the press, then go by Sonarr\'s numbers', async t => {
+  const server = fireflyServer({ source: 'provider' });
+  const h = setup(t, server);
+  fireflyPages(h);
+  const asks = asking(h);
+  const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+  await settle();
+  click(h, card(h, 'episodes'));
+  await settle();
+  assert.equal(toggles(h).length, 11, 'TMDB\'s numbers');
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="3"]'));
+  const readsBefore = server.state.reads.length;
+  // Sonarr adds the series meanwhile.
+  server.state.source = 'destination';
+  click(h, primary(h));
+  await settle(30);
+  assert.equal(server.state.reads.length, readsBefore + 1, 'the season was read again at the press');
+  assert.equal(asks.length, 0, 'nothing is sent by TMDB\'s numbers once Sonarr numbers the season');
+  assert.match(h.document.querySelector('.je-sheet-message').textContent, /Sonarr has this series now and numbers Season 1 its own way, so nothing was sent\. Pick the episodes again\./);
+  assert.ok(sheetEl(h), 'the sheet stays open');
+  assert.equal(toggles(h).length, 14, 'Sonarr\'s numbers now');
+  assert.equal(h.document.querySelector('.je-sheet-numbering:not([hidden])'), null, 'no TMDB note any more');
+  assert.ok(toggles(h).every(b => b.getAttribute('aria-pressed') !== 'true'), 'the picks start over');
+  click(h, primary(h));
+  await settle();
+  assert.equal(asks.length, 0, 'nothing picked: nothing sent');
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="12"]'));
+  const readsNow = server.state.reads.length;
+  click(h, primary(h));
+  await pending;
+  assert.equal(server.state.reads.length, readsNow, 'Sonarr\'s own numbering goes as it is (no read at the press)');
+  assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x12']);
+});
+
+test('F21: a press-time read that fails holds TMDB-numbered picks (fail closed) until Try again', async t => {
+  const server = fireflyServer({ source: 'provider' });
+  const h = setup(t, server);
+  fireflyPages(h);
+  const asks = asking(h);
+  const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+  await settle();
+  click(h, card(h, 'episodes'));
+  await settle();
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="3"]'));
+  server.state.rows = 'fail';
+  click(h, primary(h));
+  await settle(30);
+  assert.equal(asks.length, 0);
+  assert.match(h.document.querySelector('.je-sheet-message').textContent, /couldn't be checked/);
+  assert.equal(toggles(h).length, 0);
+  server.state.rows = 'ok';
+  click(h, h.document.querySelector('.je-sheet-numbering-retry'));
+  await settle(30);
+  assert.equal(toggles(h).length, 11, 'still TMDB\'s numbering');
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="3"]'));
+  click(h, primary(h));
+  await pending;
+  assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x3']);
+});
+
+test('F21 control: TMDB\'s numbering unchanged at the press: read once more, then sent as picked', async t => {
+  const server = fireflyServer({ source: 'provider' });
+  const h = setup(t, server);
+  fireflyPages(h);
+  const asks = asking(h);
+  const pending = h.Sheet.open(FIREFLY, { operation: h.NATIVE });
+  await settle();
+  click(h, card(h, 'episodes'));
+  await settle();
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="3"]'));
+  const readsBefore = server.state.reads.length;
+  click(h, primary(h));
+  await pending;
+  assert.equal(server.state.reads.length, readsBefore + 1);
+  assert.deepEqual(asks.at(-1).episodes.map(e => `${e.season}x${e.episode}`), ['1x3']);
+});
