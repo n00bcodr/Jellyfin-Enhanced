@@ -52,7 +52,45 @@
         'jellyfin.scan': 'arr_ops_audit_scan',
         'webhook.provision': 'arr_ops_audit_webhook_provision',
         'webhook.remove': 'arr_ops_audit_webhook_remove',
-        'webhook.manual-setup-shown': 'arr_ops_audit_webhook_manual'
+        'webhook.manual-setup-shown': 'arr_ops_audit_webhook_manual',
+        'request.dispatch': 'arr_ops_audit_request_dispatch',
+        'request.choice.claim': 'arr_ops_audit_choice_claim',
+        'request.choice.claim.identity_merge': 'arr_ops_audit_choice_merge',
+        'request.choice.claim.identity_split_fence': 'arr_ops_audit_choice_split_fence',
+        'request.choice.claim.migration': 'arr_ops_audit_choice_migration',
+        'request.choice.override': 'arr_ops_audit_choice_override',
+        'request.choice.override.identity_split': 'arr_ops_audit_choice_override_split',
+        denied: 'arr_ops_audit_denied'
+    };
+    // An audited outcome in plain words (the stored value stays in the row's details).
+    const OUTCOME_KEYS = {
+        succeeded: 'arr_ops_audit_outcome_succeeded',
+        failed: 'arr_ops_audit_outcome_failed',
+        unknown: 'arr_ops_audit_outcome_unknown',
+        rejected: 'arr_ops_audit_outcome_rejected',
+        denied: 'arr_ops_audit_outcome_rejected'
+    };
+    // The arr's queue states and statuses in the words Overview's Needs attention uses for the same download
+    // (its arr_ops_code_* labels), with the rest named plainly; the arr's own spelling stays in the diagnostics.
+    const QUEUE_STATE_KEYS = {
+        importBlocked: 'arr_ops_code_import_blocked',
+        importPending: 'arr_ops_code_import_waiting',
+        importFailed: 'arr_ops_state_import_failed',
+        importing: 'arr_ops_state_importing',
+        imported: 'arr_ops_state_imported',
+        failed: 'arr_ops_code_download_failed',
+        failedPending: 'arr_ops_code_download_failed',
+        downloading: 'arr_ops_state_downloading'
+    };
+    const QUEUE_STATUS_KEYS = {
+        downloadClientUnavailable: 'arr_ops_code_client_unavailable',
+        failed: 'arr_ops_code_download_failed',
+        warning: 'arr_ops_code_download_warning',
+        paused: 'arr_ops_state_paused',
+        queued: 'arr_ops_state_queued',
+        delay: 'arr_ops_state_delay',
+        completed: 'arr_ops_state_completed',
+        downloading: 'arr_ops_state_downloading'
     };
     const EVENT_KEYS = {
         grabbed: 'arr_manage_event_grabbed',
@@ -610,11 +648,49 @@
      * @returns {string} Text.
      */
     function downloadState(g) {
-        const parts = [g.state || g.status || ''];
+        const parts = [queueStateLabel(g)];
         if (typeof g.percent === 'number') parts.push(`${g.percent}%`);
         if (g.size) parts.push(size(g.size));
         if (g.eta && g.state === 'downloading') parts.push(tr('arr_ops_eta', { time: when(g.eta) }));
         return parts.filter(Boolean).join(' · ');
+    }
+
+    /**
+     * A download's state in plain words, as Overview names it: its Needs attention reason when it has one,
+     * else the arr's pipeline state, else the client's status (the arr's spelling when neither is known).
+     * @param {Object} g Queue group.
+     * @returns {string} Text.
+     */
+    function queueStateLabel(g) {
+        if (g.problem && g.problem !== 'not_in_jellyfin' && /^[a-z_]+$/.test(g.problem)) return tr(`arr_ops_code_${g.problem}`);
+        const key = QUEUE_STATE_KEYS[g.state] || QUEUE_STATUS_KEYS[g.status];
+        return key ? tr(key) : String(g.state || g.status || '');
+    }
+
+    // Technical details blocks the administrator opened, by key: a tab redrawn by the change feed keeps them open.
+    const openDiagnostics = new Set();
+
+    /**
+     * A collapsed "Technical details" block of name/value lines (the identifiers the arr and JE use).
+     * @param {Array<[string, *]>} facts Label key and value pairs; empty values are left out.
+     * @param {string} cls Class of the block.
+     * @param {string} key Stable key of the block (its row), so it stays open across redraws.
+     * @returns {HTMLElement|null} Block, or null when nothing is known.
+     */
+    function diagnostics(facts, cls, key) {
+        const shown = facts.filter(([, value]) => value != null && value !== '');
+        if (!shown.length) return null;
+        const box = el('details', `je-ops-diag ${cls}`);
+        box.open = openDiagnostics.has(key);
+        box.addEventListener('toggle', () => { if (box.open) openDiagnostics.add(key); else openDiagnostics.delete(key); });
+        box.appendChild(el('summary', '', tr('arr_ops_diag_title')));
+        const list = el('dl');
+        for (const [label, value] of shown) {
+            list.appendChild(el('dt', '', label.startsWith('arr_') ? tr(label) : label));
+            list.appendChild(el('dd', 'je-ops-path', String(value)));
+        }
+        box.appendChild(list);
+        return box;
     }
 
     /**
@@ -657,6 +733,9 @@
             }
             if (g.release) body.appendChild(el('div', 'je-ops-item-sub je-ops-path', g.release));
             for (const m of g.messages || []) body.appendChild(el('div', 'je-ops-msg', m));
+            const diag = diagnostics([['arr_ops_diag_state', g.state], ['arr_ops_diag_status', g.status], ['arr_ops_diag_health', g.health],
+                ['arr_ops_diag_reason', g.problem], ['arr_ops_diag_download_id', g.downloadId]], 'je-ops-queue-diag', `dl:${dk}`);
+            if (diag) body.appendChild(diag);
             if (ctx.results[dk]) body.appendChild(el('div', `je-ops-item-sub${ctx.results[dk].failed ? ' je-ops-bad' : ' je-ops-ok'}`, ctx.results[dk].message));
             const actions = el('div', 'je-ops-dl-actions');
             const busy = ctx.busy.has(dk);
@@ -905,10 +984,11 @@
      * @param {string[]} headings en.json keys of the column headings.
      * @param {Array<Array<string|Node>>} rows Cells.
      * @param {number[]} [wrap] Indexes of the columns that may break anywhere.
+     * @param {boolean} [labelled] Name each cell's column on phone cards (where the header row is hidden).
      * @returns {HTMLTableElement} Table.
      */
-    function table(headings, rows, wrap) {
-        const t = el('table', 'je-ops-table');
+    function table(headings, rows, wrap, labelled) {
+        const t = el('table', labelled ? 'je-ops-table je-ops-table-labelled' : 'je-ops-table');
         const head = el('thead');
         const hr = el('tr');
         headings.forEach((key, i) => hr.appendChild(el('th', wrap?.includes(i) ? 'je-ops-wrap' : '', tr(key))));
@@ -919,6 +999,8 @@
             const r = el('tr');
             for (const [i, c] of cells.entries()) {
                 const td = el('td', wrap?.includes(i) ? 'je-ops-wrap' : '');
+                // Phone cards hide the header row: each cell names its column (admin-styles.js).
+                if (labelled) td.dataset.label = tr(headings[i]);
                 if (c instanceof Node) td.appendChild(c);
                 else td.textContent = c == null ? '' : String(c);
                 r.appendChild(td);
@@ -1093,29 +1175,120 @@
     }
 
     /**
-     * Audit tab.
+     * Audit tab: one row per audited action, in plain words. Who and Title name people, titles and
+     * instances through the server's display names (names: users, titles, instances), with an honest
+     * fallback for an account or title nobody can name any more; the stored facts (action id, target,
+     * ids, revisions, profiles, folders, the original message) stay one tap away under Technical details.
      * @param {HTMLElement} panel Target.
-     * @param {Object} data Audit ({entries}).
+     * @param {Object} data Audit ({entries, names}).
      * @returns {void}
      */
     function renderAudit(panel, data) {
         const box = el('section', 'je-ops-box je-ops-section');
         box.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_audit_title')));
         const entries = data.entries || [];
+        const names = data.names || {};
         if (!entries.length) {
             box.appendChild(el('div', 'je-ops-empty', tr('arr_ops_audit_empty')));
         } else {
             box.appendChild(table(['arr_ops_col_when', 'arr_ops_col_who', 'arr_ops_col_action', 'arr_ops_col_title', 'arr_ops_col_result'],
-                entries.map(e => {
-                    const outcome = el('span', e.outcome === 'succeeded' ? 'je-ops-ok' : e.outcome === 'failed' ? 'je-ops-bad' : 'je-ops-warn', e.outcome);
-                    const result = el('span');
-                    result.appendChild(outcome);
-                    const more = [e.readBack, e.message].filter(Boolean).join(' · ');
-                    if (more) result.appendChild(document.createTextNode(` · ${more}`));
-                    return [when(e.time), e.userName || '—', actionLabel(e.action), [e.details?.title || e.details?.key || e.target, e.details?.instance].filter(Boolean).join(' · '), result];
-                }), [3, 4]));
+                entries.map(e => [when(e.time), auditActor(e, names), actionLabel(e.action), auditSubject(e, names), auditResult(e)]), [3, 4], true));
         }
         panel.appendChild(box);
+    }
+
+    /**
+     * Who acted: the name stored with the row, else the account's Jellyfin name, else what is known.
+     * @param {Object} e Audit entry.
+     * @param {Object} names Display names from the server.
+     * @returns {string} Text.
+     */
+    function auditActor(e, names) {
+        if (e.userName) return e.userName;
+        const id = String(e.userId || '');
+        if (id === 'system') return tr('arr_ops_audit_actor_system');
+        const name = names.users?.[id];
+        if (name) return name;
+        return tr(/^[0-9a-f]{32}$/i.test(id) ? 'arr_ops_audit_actor_removed' : 'arr_ops_audit_actor_unknown');
+    }
+
+    /**
+     * The title key an audit row acts on, as the server keys its title names: a search's details.key,
+     * a "key:" target, else the target itself.
+     * @param {Object} e Audit entry.
+     * @returns {string} Key ('' when none).
+     */
+    function auditTitleKey(e) {
+        const target = String(e.target || '');
+        return e.details?.key || (target.startsWith('key:') ? target.slice(4) : target);
+    }
+
+    /**
+     * The Title cell: the title's name (and year) and the instance, else the account a user-settings
+     * change was for, else the stored target as it is.
+     * @param {Object} e Audit entry.
+     * @param {Object} names Display names from the server.
+     * @returns {string} Text.
+     */
+    function auditSubject(e, names) {
+        const instance = names.instances?.[e.instanceId] || e.details?.instance || e.details?.instanceName || '';
+        let subject = e.details?.title || '';
+        if (!subject) {
+            const known = names.titles?.[auditTitleKey(e)];
+            if (known?.title) subject = known.title + (known.year ? ` (${known.year})` : '');
+        }
+        if (!subject && String(e.action || '').startsWith('users.')) {
+            subject = tr('arr_ops_audit_settings_of', { user: names.users?.[e.target] || tr('arr_ops_audit_actor_removed') });
+        }
+        if (!subject) subject = e.details?.key || e.target || '';
+        return [subject, instance].filter(Boolean).join(' · ');
+    }
+
+    /**
+     * Reads the "Name: value; …" facts of a choice row's stored message.
+     * @param {string} message Message.
+     * @returns {Object<string, string>} Facts by name.
+     */
+    function messageFacts(message) {
+        const facts = {};
+        for (const part of String(message || '').replace(/\.$/, '').split('; ')) {
+            const at = part.indexOf(': ');
+            if (at > 0) facts[part.slice(0, at)] = part.slice(at + 2);
+        }
+        return facts;
+    }
+
+    /**
+     * The Result cell: the outcome in plain words and a short summary, then the stored facts under
+     * Technical details.
+     * @param {Object} e Audit entry.
+     * @returns {HTMLElement} Cell content.
+     */
+    function auditResult(e) {
+        const result = el('span');
+        const cls = e.outcome === 'succeeded' ? 'je-ops-ok' : e.outcome === 'failed' ? 'je-ops-bad' : 'je-ops-warn';
+        result.appendChild(el('span', cls, OUTCOME_KEYS[e.outcome] ? tr(OUTCOME_KEYS[e.outcome]) : String(e.outcome || '')));
+        const action = String(e.action || '');
+        let summary;
+        if (action.startsWith('request.choice.')) {
+            const f = messageFacts(e.message);
+            summary = tr('arr_ops_audit_choice_summary', { revision: f.Revision || '?', profile: f.Profile || '?', root: f.Root || '?' });
+        } else if (action === 'request.dispatch') {
+            // The send's own words; the instance, profile and folder it used are under Technical details.
+            const text = String(e.message || '');
+            const at = text.indexOf(' Instance: ');
+            summary = at > 0 ? text.slice(0, at) : text;
+        } else {
+            summary = [e.readBack, e.message].filter(Boolean).join(' · ');
+        }
+        if (summary) result.appendChild(document.createTextNode(` · ${summary}`));
+        const facts = [['arr_ops_diag_action', action], ['arr_ops_diag_outcome', e.outcome], ['arr_ops_diag_target', e.target],
+            ['arr_ops_diag_user', e.userId], ['arr_ops_diag_instance', e.instanceId], ['arr_ops_diag_error', e.error],
+            ['arr_ops_diag_message', e.message], ['arr_ops_diag_read_back', e.readBack], ['arr_ops_diag_duration', e.durationMs ? `${e.durationMs} ms` : '']];
+        for (const [name, value] of Object.entries(e.details || {})) facts.push([name, value]);
+        const diag = diagnostics(facts, 'je-ops-audit-diag', `audit:${e.id}`);
+        if (diag) result.appendChild(diag);
+        return result;
     }
 
     /**
@@ -1125,7 +1298,9 @@
      */
     function actionLabel(action) {
         const key = ACTION_KEYS[action];
-        return key ? tr(key) : String(action || '');
+        if (key) return tr(key);
+        if (String(action || '').startsWith('users.')) return tr('arr_ops_audit_user_settings');
+        return String(action || '');
     }
 
     A.renderOverview = renderOverview;

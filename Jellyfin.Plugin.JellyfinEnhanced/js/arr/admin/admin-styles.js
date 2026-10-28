@@ -95,6 +95,12 @@
 .je-ops-auto-notice .je-ops-auto-line + .je-ops-auto-line { margin-top: 0.3em; }
 .je-ops-auto-notice .je-ops-btn { margin-top: 0.5em; }
 .je-ops-warnbox { padding: 0.6em 0.8em; border-radius: 8px; background: rgba(229,57,53,0.14); border-left: 3px solid #e53935; }
+.je-ops-diag { margin-top: 0.3em; font-size: 0.85em; }
+.je-ops-diag summary { cursor: pointer; opacity: 0.7; width: max-content; max-width: 100%; padding: 0.15em 0; }
+.je-ops-diag summary:hover, .je-ops-diag[open] summary { opacity: 1; }
+.je-ops-diag dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.15em 0.8em; margin: 0.3em 0 0.2em; padding: 0.4em 0.6em; border-radius: 6px; background: rgba(127,127,127,0.1); }
+.je-ops-diag dt { opacity: 0.7; }
+.je-ops-diag dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .je-ops-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
   .je-ops-item { flex-wrap: wrap; }
@@ -103,6 +109,9 @@
   .je-ops-table thead { display: none; }
   .je-ops-table tr { display: block; padding: 0.5em 0; border-top: 1px solid rgba(255,255,255,0.07); }
   .je-ops-table td { display: block; border: 0; padding: 0.1em 0.3em; }
+  .je-ops-table-labelled td[data-label]::before { content: attr(data-label); display: inline-block; min-width: 4.5em; margin-right: 0.5em; font-size: 0.85em; opacity: 0.6; }
+  .je-ops-diag summary { padding: 0.75em 0; }
+  .je-ops-diag dl { grid-template-columns: minmax(0, 1fr); }
   .je-ops-dialog-overlay { align-items: flex-end; padding: 0; }
   .je-ops-dialog { border-radius: 12px 12px 0 0; }
 }

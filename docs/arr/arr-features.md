@@ -769,7 +769,9 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
       date, its card and the Activity tab say "queue as of 14:05"; when it can't be read at all, "queue can't be
       read; last read 14:05", and the downloads last read are listed without any action (a click on one already
       open is refused and nothing is sent to the app).
-    - **Activity**: every download (a season pack is one download), with the app's own words, progress and
+    - **Activity**: every download (a season pack is one download), its state in the same words as the Overview
+      ("Import blocked", "Waiting to import", "Download stalled"; the app's own spelling, such as `importBlocked`, and
+      the download id are under **Technical details**), with the app's own words, progress and
       **Remove…** (keeps the download client's data; optionally blocklist the release and search for another
       copy), **Search again** and **Retry import** (where the app retries imports itself). Deleting the download's
       data too is offered only inside the Remove dialog ("Delete the download's data too…", where the download
@@ -787,7 +789,12 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
       both sides have and suggests the path mapping that would fix a mismatch ("/data/media → /media").
     - **Audit**: every action taken from Jellyfin Enhanced (who, what, where, the outcome and what the app
       answered), including refusals, and attempts by someone who isn't an administrator to use these actions
-      ("denied", at most once a minute per person and action). Each one is also copied into Jellyfin's own
+      ("denied", at most once a minute per person and action). Each row reads in plain words: who acted (their
+      Jellyfin name; "Automatic" for Jellyfin Enhanced itself; "Removed account" when the account no longer
+      exists), what was done ("Request sent", "Add settings replaced"), the title as your own request cards name it
+      and the instance, and the outcome with a short summary. The stored facts (action id, target, account and
+      instance ids, revisions, profile, root folder and the original message) are kept under **Technical
+      details**. On a phone each card names its fields. Each one is also copied into Jellyfin's own
       activity log (Dashboard → Activity) unless that setting is off.
 
     The tabs update when something changes (an app was read again, an action was recorded), with a fallback
@@ -923,7 +930,9 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       folder); each once, linked to the Overview or System tab (rows already listed when the alerts are switched on,
       or switched back on, stay on the Overview only, so turning them on doesn't send one alert per old row; a row
       that started while Jellyfin was restarting is still told). A daily list gathers the downloads Needs attention has
-      shown for hours. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
+      shown for hours. In the bell it reads as a count ("12 downloads have needed attention for over 6 h") with
+      **Open Overview** and **Show which**, which lists each download with its instance and its reason in the
+      Overview's words; phone and e-mail alerts keep the one-line list. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
       (at most once a day per title, whichever episode or season page it is sent from); like a request waiting for an OK,
       a reminder reaches only the administrators who can see the title. These alerts stay with
       administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
@@ -1682,7 +1691,7 @@ Approved requests go out through the request handling the administrator chose: s
 
 Administrators' **Manage › Add to {instance}** adds a title to the chosen instance as their own request routed there, so it shares the outgoing queue, read-back, change feed, and audit. It is offered only in Jellyfin Enhanced mode; adding to a 4K instance needs the phase-3 4K switch for that kind of title. See the [API reference](../advanced/api.md#requests-and-approvals-phase-3).
 
-A queued title has one owner and version for its add profile and root folder. Another administrator's different choices return `409 choice_conflict` with the current owner, version and values; identical choices are idempotent. Sonarr settings apply to the whole series, including disjoint season or episode requests. Season/episode selection and each request's charge remain separate. An explicitly confirmed `overrideChoiceVersion` can replace the observed version while every affected job is known unsent; a stale version is refused. The original administrator also confirms the current revision before replacing an already owned choice. Sending, uncertain and sent work cannot be changed through Add, even with confirmation. The latest choice stamp is retained across cancellations so an older confirmation cannot become valid again. Overrides retain an audit record, and Admin → Audit shows the dispatched profile id/name, root and instance in its result message.
+A queued title has one owner and version for its add profile and root folder. Another administrator's different choices return `409 choice_conflict` with the current owner, version and values; identical choices are idempotent. Sonarr settings apply to the whole series, including disjoint season or episode requests. Season/episode selection and each request's charge remain separate. An explicitly confirmed `overrideChoiceVersion` can replace the observed version while every affected job is known unsent; a stale version is refused. The original administrator also confirms the current revision before replacing an already owned choice. Sending, uncertain and sent work cannot be changed through Add, even with confirmation. The latest choice stamp is retained across cancellations so an older confirmation cannot become valid again. Overrides retain an audit record, and Admin → Audit shows the dispatched profile id/name, root and instance under the row's Technical details.
 
 Unedited approval of held uncertain work refreshes its approval authority while keeping the existing job's choice owner/version, input, identity and charge. This held-work resume path reads the destination back before retrying; a known-unsent result and a database reopen do not give the resuming approver ownership of someone else's settings. Authorization rebuilds carry the original choice stamp forward, and an explicit replacement still requires the current version. Historical selection prefers active work when effective versions tie; a newer cancelled version still prevents stale confirmations.
 

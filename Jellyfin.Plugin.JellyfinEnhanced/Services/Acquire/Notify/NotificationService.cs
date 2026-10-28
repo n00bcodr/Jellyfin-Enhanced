@@ -2330,6 +2330,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return p;
         }
 
+        /// <summary>Most downloads a stuck digest lists as fields (<c>entries</c>); its count still says how many there are.</summary>
+        internal const int DigestEntries = 50;
+
         private void StuckDigest(IReadOnlyList<AttentionItem> attention, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now)
         {
             var config = _config();
@@ -2341,10 +2344,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var stuckFor = TimeSpan.FromHours(Math.Clamp(config?.ArrNotifyAdminStuckHours ?? 6, 1, 168));
             // The downloads Needs attention has listed for hours (the arr's own words: import
             // blocked, failed, warnings, stalled, client unreachable).
-            var items = attention
-                .Where(a => DownloadCodes.Contains(a.Code) && a.Since is DateTime since && now.UtcDateTime - since >= stuckFor)
-                .Select(a => $"{a.Title ?? "?"}{(string.IsNullOrEmpty(a.Scope) ? string.Empty : " " + a.Scope)} ({a.Instance}, {a.Code})")
-                .ToList();
+            var stuck = attention.Where(a => DownloadCodes.Contains(a.Code) && a.Since is DateTime since && now.UtcDateTime - since >= stuckFor).ToList();
+            var items = stuck.Select(a => $"{a.Title ?? "?"}{(string.IsNullOrEmpty(a.Scope) ? string.Empty : " " + a.Scope)} ({a.Instance}, {a.Code})").ToList();
             // The day is marked done only once the list was read, in the same transaction as the
             // digests (a failure or a stop before they exist leaves the day's digest to the next round).
             var p = new Dictionary<string, string>
@@ -2352,6 +2353,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 ["count"] = items.Count.ToString(CultureInfo.InvariantCulture),
                 ["hours"] = ((int)stuckFor.TotalHours).ToString(CultureInfo.InvariantCulture),
                 ["items"] = string.Join("; ", items.Take(10)) + (items.Count > 10 ? $"; and {items.Count - 10} more" : string.Empty),
+                // The same downloads as fields, for the bell's expandable list (its reasons in the Overview's words).
+                ["entries"] = JsonSerializer.Serialize(stuck.Take(DigestEntries).Select(a => new Dictionary<string, string>
+                {
+                    ["title"] = a.Title ?? "?",
+                    ["scope"] = a.Scope ?? string.Empty,
+                    ["instance"] = a.Instance ?? string.Empty,
+                    ["code"] = a.Code,
+                })),
             };
             TellAdmins(items.Count > 0 ? admins() : Array.Empty<Guid>(), NotifyKind.StuckDigest, "stuck|" + day, null, p, now, tx =>
             {
