@@ -129,8 +129,10 @@ test('OK\'d requests read in family words (on its way when someone else asked), 
   assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
     "Dad OK'd Firefly S1E4",
     'Dune is on its way',
-    '1 download has needed attention for over 6 h: Dune'
+    '1 download has needed attention for over 6 h'
   ]);
+  // UX-15: the digest reads as its count; the downloads it lists (a digest stored before its fields: its one-line list) are a tap away.
+  assert.deepEqual([...rows[2].querySelectorAll('.je-notify-digest-list li')].map(li => li.textContent), ['Dune']);
   // The "OK'd" switch: absent while the server sends null, present (and saved) when it sends a value.
   h.document.body.insertAdjacentHTML('beforeend', `<div id="jellyfin-enhanced-panel">${h.N.buildSettingsHtml()}</div>`);
   const help = h.document.getElementById('jellyfin-enhanced-panel');
@@ -645,4 +647,71 @@ test('a notification created while the inbox is being read still becomes a toast
   await until(() => h.document.querySelectorAll('.je-notify-toast').length === 2);
   assert.deepEqual([...h.document.querySelectorAll('.je-notify-toast-text')].map(x => x.textContent).sort(), ['Casablanca is ready', 'Citizen Kane is ready']);
   assert.equal(h.JE.arrNotify.unread, 2);
+});
+
+
+// UX-15: a stuck-download digest filled most of a phone's inbox with a semicolon list of titles and reason codes.
+test('a 20-download digest is a short count with Open Overview, and its list (in Overview\'s words) only on demand', async t => {
+  const h = setup(t);
+  const entries = Array.from({ length: 20 }, (_, i) => ({ title: `Angelina Ballerina`, scope: `S01E${String(i + 1).padStart(2, '0')}`, instance: 'Sonarr', code: i ? 'import_blocked' : 'download_stalled' }));
+  h.state.inbox = {
+    unread: 2, more: false, items: [
+      item(9, 'stuck_digest', { count: '24', hours: '6', items: entries.map(e => `${e.title} ${e.scope} (${e.instance}, ${e.code})`).join('; '), entries: JSON.stringify(entries) }, { link: '#/requests?tab=overview' }),
+      item(8, 'ready', { title: 'Dune' }, { itemId: 'b'.repeat(32) })
+    ]
+  };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.refresh();
+  h.click(h.document.getElementById('je-notify-bell'));
+  const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
+  assert.equal(rows.length, 2);
+  const digest = rows[0];
+  assert.equal(digest.querySelector('.je-notify-text').textContent, '24 downloads have needed attention for over 6 h');
+  // Collapsed: nothing of the list shows, so the Ready row right after it stays in view.
+  const list = digest.querySelector('.je-notify-digest-list');
+  const toggle = digest.querySelector('.je-notify-digest-toggle');
+  assert.equal(list.hidden, true);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(toggle.getAttribute('aria-controls'), list.id);
+  assert.equal(toggle.textContent, 'Show which (20)');
+  assert.doesNotMatch(digest.textContent.replace(list.textContent, ''), /import_blocked|Angelina/);
+  assert.equal(rows[1].querySelector('.je-notify-text').textContent, 'Dune is ready');
+  // Expanded in place: every listed download, its reason as Overview names it, and how many more the Overview has.
+  h.click(toggle);
+  assert.equal(list.hidden, false);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  const lines = [...list.querySelectorAll('li')].map(li => li.textContent);
+  assert.equal(lines.length, 21);
+  assert.equal(lines[0], 'Angelina Ballerina S01E01 · Sonarr · Download stalled');
+  assert.equal(lines[19], 'Angelina Ballerina S01E20 · Sonarr · Import blocked');
+  assert.equal(lines[20], 'and 4 more on the Overview');
+  assert.equal(list.querySelector('strong').textContent, 'Angelina Ballerina S01E01');
+  assert.ok(h.document.querySelector('.je-notify-panel'), 'expanding keeps the inbox open');
+  // A redraw while it is open keeps it open; Hide closes it again.
+  h.JE.internals.arrNotify.state.items = [...h.JE.arrNotify.items];
+  await h.JE.arrNotify.refresh();
+  const again = h.document.querySelector('.je-notify-panel .je-notify-item .je-notify-digest-list');
+  assert.equal(again.hidden, false);
+  h.click(h.document.querySelector('.je-notify-digest-toggle'));
+  assert.equal(h.document.querySelector('.je-notify-digest-list').hidden, true);
+  // Open Overview: the administrators' tab the digest is about, and the digest is read.
+  h.click(h.document.querySelector('.je-notify-digest-open'));
+  assert.equal(h.window.location.hash, '#/requests?tab=overview');
+  assert.equal(h.document.querySelector('.je-notify-panel'), null);
+  await until(() => h.calls.some(c => c.path === '/acquire/notify/read' && JSON.stringify(c.body).includes('9')));
+});
+
+test('a digest whose fields can\'t be read lists nothing made up, and its count still opens the Overview', async t => {
+  const h = setup(t);
+  h.state.inbox = { unread: 1, more: false, items: [item(4, 'stuck_digest', { count: '2', hours: '6', entries: '{not json' }, { link: '#/requests?tab=overview' })] };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.refresh();
+  h.click(h.document.getElementById('je-notify-bell'));
+  const row = h.document.querySelector('.je-notify-panel .je-notify-item');
+  assert.equal(row.querySelector('.je-notify-text').textContent, '2 downloads have needed attention for over 6 h');
+  assert.equal(row.querySelector('.je-notify-digest-toggle'), null);
+  assert.ok(row.querySelector('.je-notify-digest-open'));
+  assert.deepEqual(plain(h.N.digestEntries({ params: { entries: JSON.stringify([{ title: 'X', code: '<b>' }, null, { code: 'import_blocked' }]) } })), [{ title: 'X', scope: '', instance: '', reason: '' }]);
 });
