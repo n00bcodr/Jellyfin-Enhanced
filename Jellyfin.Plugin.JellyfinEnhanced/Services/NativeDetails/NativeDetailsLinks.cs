@@ -133,10 +133,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>
         /// Reads <paramref name="read"/> and lets its answer out only when nothing it depends on moved while it ran: the
-        /// library's change marks and, for a viewer's answer (<paramref name="page"/>), the library topology, both compared
-        /// before and after. A read that crossed a change is read again (at most <see cref="Attempts"/> times); one that never
-        /// settles is withheld (false), so the caller links nowhere it can't vouch for. <paramref name="state"/> is the state
-        /// the published read began under (null: nothing may be kept).
+        /// library's change marks and, for a viewer's answer (<paramref name="page"/>), the live library topology, both taken
+        /// before the read and again after it. The topology is read again first and the change marks are compared last, so the
+        /// validation itself lies inside the checked interval: a change landing while it runs is seen. A read that crossed a
+        /// change is read again (at most <see cref="Attempts"/> times); one that never settles is withheld (false), so the
+        /// caller links nowhere it can't vouch for. <paramref name="state"/> is the state the published read began under
+        /// (null: nothing may be kept).
         /// </summary>
         private bool Settled<T>(Func<T> read, ViewerLinks? page, out T value, out State? state, out string topology)
         {
@@ -144,13 +146,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 var marks = Marks();
                 var at = Clock();
-                var before = page?.Topology() ?? string.Empty;
+                string? before = null;
+                if (page != null && (before = page.TopologyNow()) == null) break;
                 var answer = read();
-                if (Marks() == marks && (page == null || string.Equals(page.TopologyNow(), before, StringComparison.Ordinal)))
+                var after = page?.TopologyNow();
+                if ((page == null || (after != null && string.Equals(after, before, StringComparison.Ordinal))) && Marks() == marks)
                 {
                     value = answer;
                     state = marks.Revision is long revision ? new State(revision, marks.Changes, at) : null;
-                    topology = before;
+                    topology = before ?? string.Empty;
                     return true;
                 }
             }
@@ -203,8 +207,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private bool Finds(User viewer, string viewerRevision, ViewerLinks page, string kind, string name, Func<InternalItemsQuery, InternalItemsQuery> filter)
         {
             var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, kind, name);
-            if (page.Topology() is not { } topology) return false;
-            if (_visible.TryGetValue(key, out var hit) && Fresh(hit.State, Now()) && string.Equals(hit.Topology, topology, StringComparison.Ordinal)) return hit.Found;
+            if (Hit(key, page) is { } kept) return kept;
             bool Read()
             {
                 try
@@ -235,8 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private bool Opens(User viewer, string viewerRevision, ViewerLinks page, Guid id)
         {
             var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, "open", id.ToString("N", CultureInfo.InvariantCulture));
-            if (page.Topology() is not { } topology) return false;
-            if (_visible.TryGetValue(key, out var hit) && Fresh(hit.State, Now()) && string.Equals(hit.Topology, topology, StringComparison.Ordinal)) return hit.Found;
+            if (Hit(key, page) is { } kept) return kept;
             bool Read()
             {
                 try
@@ -252,6 +254,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!Settled(Read, page, out var opens, out var state, out var read)) return false;
             Keep(key, state, read, opens);
             return opens;
+        }
+
+        /// <summary>
+        /// A kept visibility answer, only while the live library topology (read now, for this very answer) is the one it was
+        /// read under and the library's state hasn't moved since (taken after that topology read). Null: read it.
+        /// </summary>
+        private bool? Hit(string key, ViewerLinks page)
+        {
+            if (!_visible.TryGetValue(key, out var hit)) return null;
+            var topology = page.TopologyNow();
+            return topology != null && string.Equals(hit.Topology, topology, StringComparison.Ordinal) && Fresh(hit.State, Now()) ? hit.Found : null;
         }
 
         private void Keep(string key, State? state, string topology, bool found)
@@ -311,7 +324,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             private readonly string _revision;
             private readonly string _serverId;
             private readonly LinkDiscovery _discovery;
-            private string? _topology;
 
             public ViewerLinks(NativeDetailsLinks owner, User viewer, string revision, string serverId, LinkDiscovery discovery)
             {
@@ -323,22 +335,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             /// <summary>
-            /// The library topology for this page, read before its first visibility answer and again after each read (<see
-            /// cref="TopologyNow"/>): removing a location or disabling a library changes what the viewer finds without any
-            /// item event. Null when it can't be read: then no library link is vouched for.
+            /// The library topology read now, for every visibility answer of this page (a kept one or a read): removing a
+            /// location or disabling a library changes what the viewer finds without any item event, also between two names
+            /// of one page. Null when it can't be read: then no library link is vouched for.
             /// </summary>
-            internal string? Topology() => _topology ?? TopologyNow();
-
-            /// <summary>The library topology read now (and kept as this page's), or null when it can't be read.</summary>
             internal string? TopologyNow()
             {
                 try
                 {
-                    return _topology = Acquire.ArrJellyfinView.TopologyOf(_owner._library);
+                    return Acquire.ArrJellyfinView.TopologyOf(_owner._library);
                 }
                 catch (Exception)
                 {
-                    return _topology = null;
+                    return null;
                 }
             }
 

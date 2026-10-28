@@ -19,7 +19,7 @@ namespace JE.Tests;
 /// library revision each answer it again at once, positive or negative; a change during a read never leaves its answer
 /// behind; the stores are bounded and a fallback lifetime bounds what none of those sees.
 /// </summary>
-public class NativeDetailsLinksRevisionTests
+public partial class NativeDetailsLinksRevisionTests
 {
     private const string Server = "0123456789abcdef0123456789abcdef";
 

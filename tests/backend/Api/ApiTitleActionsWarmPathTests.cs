@@ -29,7 +29,7 @@ namespace JE.Tests;
 /// re-read stays), and a request shares a finished copy scan only while nothing could have changed what it found.
 /// </summary>
 [Collection("Plugin singleton")]
-public class ApiTitleActionsWarmPathTests
+public partial class ApiTitleActionsWarmPathTests
 {
     private const int TmdbId = 693134;
 

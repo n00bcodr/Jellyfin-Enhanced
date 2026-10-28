@@ -181,21 +181,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             // The person as the caller read them decides the parental part too (no second read of them) when request
-            // visibility's fresh final read can confirm that read is the person now. When it doesn't confirm it, the person
-            // is read again and the whole decision (viewer rule, parental, request visibility, the library's copies and
-            // hidden seasons and episodes) is made again from that read alone.
+            // visibility's fresh final read can confirm that read is the person now. Only a decision so confirmed is
+            // answered: when the stamp doesn't confirm the read, the person is read again and the whole decision (viewer
+            // rule, parental, request visibility, the library's copies and hidden seasons and episodes) is made again from
+            // that read, confirmed the same way; a person who keeps changing is refused after three reads.
             if (HeldReadsConfirmable())
             {
-                var (held, current) = await TitleAccessAsync(viewer, title, true, ct).ConfigureAwait(false);
-                if (current) return held;
-                if (_parental.ReadAgain(viewer.Id) is not { } fresh) return Access.Refused;
-                access = await ViewerAccessAsync(fresh, details, ct).ConfigureAwait(false);
-                if (access != Access.Allowed) return access;
-                viewer = fresh;
+                for (var attempt = 0; attempt < Confirmations; attempt++)
+                {
+                    if (attempt > 0)
+                    {
+                        if (_parental.ReadAgain(viewer.Id) is not { } fresh) return Access.Refused;
+                        access = await ViewerAccessAsync(fresh, details, ct).ConfigureAwait(false);
+                        if (access != Access.Allowed) return access;
+                        viewer = fresh;
+                    }
+
+                    var (decided, current) = await TitleAccessAsync(viewer, title, true, ct).ConfigureAwait(false);
+                    if (current) return decided;
+                }
+
+                return Access.Refused;
             }
 
             return (await TitleAccessAsync(viewer, title, false, ct).ConfigureAwait(false)).Access;
         }
+
+        /// <summary>How many reads of the person a title decision tries before it refuses a person who keeps changing.</summary>
+        private const int Confirmations = 3;
 
         /// <summary>
         /// The title part of <see cref="SeeAsync(User, SyntheticId, bool, CancellationToken)"/>. <paramref name="held"/>: the
@@ -486,9 +499,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>True when the title may be shown.</returns>
         public bool MayListAbsent(User viewer, SyntheticId title)
         {
-            var shown = MayListAbsent(viewer, title, true, out var stale);
-            // As in SeeAsync: a read the fresh final stamp didn't confirm is replaced by a fresh read for the whole decision.
-            return stale ? ReadAgain(viewer) is { } fresh && MayListAbsent(fresh, title, false, out _) : shown;
+            // As in SeeAsync: only a decision whose read the fresh final stamp confirmed is answered; an unconfirmed read is
+            // replaced by a fresh read for the whole decision, confirmed the same way, and a person who keeps changing is left out.
+            for (var attempt = 0; attempt < Confirmations; attempt++)
+            {
+                var shown = MayListAbsent(viewer, title, true, out var stale);
+                if (!stale) return shown;
+                if (ReadAgain(viewer) is not { } fresh) return false;
+                viewer = fresh;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -556,9 +577,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>The library copy to link to, an absent title, or nothing.</returns>
         public ListedTitle Listed(User viewer, bool movie, int tmdb)
         {
-            var listed = Listed(viewer, movie, tmdb, true, out var stale);
-            // A read the fresh final stamp didn't confirm: the whole answer again (copies too) from a fresh read of the person.
-            return stale ? ReadAgain(viewer) is { } fresh ? Listed(fresh, movie, tmdb, false, out _) : ListedTitle.Left : listed;
+            // A read the fresh final stamp didn't confirm: the whole answer again (copies too) from a fresh read of the
+            // person, confirmed the same way; a person who keeps changing is left out.
+            for (var attempt = 0; attempt < Confirmations; attempt++)
+            {
+                var listed = Listed(viewer, movie, tmdb, true, out var stale);
+                if (!stale) return listed;
+                if (ReadAgain(viewer) is not { } fresh) return ListedTitle.Left;
+                viewer = fresh;
+            }
+
+            return ListedTitle.Left;
         }
 
         /// <summary><see cref="Listed(User, bool, int)"/>; <paramref name="held"/> and <paramref name="stale"/> as in <see cref="MayListAbsent(User, SyntheticId, bool, out bool)"/>.</summary>
