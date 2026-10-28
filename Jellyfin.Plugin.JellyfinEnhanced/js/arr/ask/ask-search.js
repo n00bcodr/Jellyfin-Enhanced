@@ -299,7 +299,7 @@
     /**
      * Draws the row for a query: the cards, a note with Try again when the search failed, nothing when
      * there is nothing the caller doesn't have. Focus in the row it replaces moves to the new row (its Try
-     * again, else its heading), never to the page.
+     * again, else its heading), or to the search box when there is no row now; never to the page.
      * @param {string} query Query.
      * @param {Object[]|null} results Cards (null: the search failed).
      * @param {Object} caps Capabilities.
@@ -311,13 +311,10 @@
         old.forEach(n => n.remove());
         state.section = null;
         state.query = query;
-        if (results && !results.length) {
-            syncNative();
-            return;
-        }
         const D = JE.internals?.arrDiscover;
-        if (!D?.buildCard) {
+        if ((results && !results.length) || !D?.buildCard) {
             syncNative();
+            if (hadFocus) searchInput()?.focus({ preventScroll: true });
             return;
         }
         D.injectStyles?.();

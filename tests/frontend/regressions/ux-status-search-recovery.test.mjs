@@ -238,6 +238,33 @@ test('UX-16: a failed search offers Try again: same query, bounded, focus kept, 
   assert.equal(h.document.getElementById('searchTextInput').value, 'ux-audit-unavailable');
 });
 
+test('UX-16: Try again that finds nothing removes the row and gives focus back to the search box', async t => {
+  const answers = [];
+  const h = setup(t, {
+    html: EMPTY_SEARCH,
+    routes: f => {
+      if (f.path !== '/acquire/search') return undefined;
+      const d = deferred();
+      answers.push({ d, f });
+      return d.promise;
+    }
+  });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'nothing like it');
+  await until(() => answers.length === 1);
+  answers[0].d.resolve({ status: 503, body: {} });
+  await until(() => h.document.querySelector('.je-ask-search-retry'));
+  const retry = h.document.querySelector('.je-ask-search-retry');
+  retry.focus();
+  retry.click();
+  await until(() => answers.length === 2);
+  answers[1].d.resolve(page([]));
+  await until(() => !h.document.querySelector('.je-ask-search-section'));
+  assert.equal(h.document.activeElement, h.document.getElementById('searchTextInput'));
+  assert.equal(h.document.getElementById('searchTextInput').value, 'nothing like it');
+  assert.equal(shown(h, h.document.getElementById('native-empty')), true, 'Jellyfin\'s own "no results" is true again');
+});
+
 test('UX-16: typing while Try again is on its way aborts it; its late answer is never drawn and the button never sticks busy', async t => {
   const answers = [];
   const h = setup(t, {
