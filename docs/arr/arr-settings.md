@@ -735,9 +735,13 @@ short note; nothing stored is changed, and saving keeps the values for when Seer
 - **Import from Seerr** (Sonarr and Radarr), **Move requests from Seerr...**, **Show the status in Seerr's more-info
   window** and **Read Seerr's requests every (minutes)**.
 
-The server enforces the same rule, so nothing reaches Seerr while it is off, whatever a browser still showing an
-older page asks for: **Move requests from Seerr** answers `409 seerr_off` (checked before the read and again before
-anything is written), **Import from Seerr** and the request quota answer `503`, and no Seerr account is looked up.
+The configuration page asks the server for this rule when it opens and after every save, so a change made elsewhere
+(another administrator, or adopting Jellyfin Enhanced) shows on the next save or reload; until the server answers, the
+Seerr-only settings stay greyed out. The server enforces the same rule, so nothing reaches Seerr while it is off,
+whatever a browser still showing an older page asks for: **Move requests from Seerr** answers `409 seerr_off` (checked
+before the read, again together with its first write, and once more as request handling is handed over; turning Seerr
+off during a move undoes it), **Import from Seerr** and the request quota answer `503`, no Seerr account is looked up,
+and no Seerr account picture is shown or fetched.
 
 The Requests page's **System** tab then describes the request handling actually in use instead of Seerr: with
 Jellyfin Enhanced handling requests, whether asking is on, how many Sonarr/Radarr instances can take requests and
