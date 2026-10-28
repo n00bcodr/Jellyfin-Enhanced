@@ -1129,6 +1129,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var inFlightKey = needTags ? key + "|tags" : key;
             if (JeEvidence)
             {
+                // Facts already verified and saved, or the raw answer already in memory or on disk, take no admission place.
+                var known = await KnownSignatureAsync(source, generation, key, mediaType, tmdbId, region, needTags, ct).ConfigureAwait(false);
+                if (known.Hit) return known.Value;
                 var admitted = await _admission.Read("parental:" + key, viewer,
                     () => (TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var value), value),
                     () => RunJeFetchAsync(source, inFlightKey, key, mediaType, tmdbId, region, needTags), null, ct).ConfigureAwait(false);
@@ -1174,20 +1177,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<Signature?> FetchAndCacheAsync(ITitleParentalEvidence source, string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
+        /// <summary>
+        /// JE evidence that needs no admission place: facts saved by an earlier verified read (scored here, under the
+        /// generation captured before they were read, with their original read time, so a restart never renews them),
+        /// else the raw TMDB answer when memory or disk already holds it (the ordinary scoring and caching). Hit false:
+        /// neither is known and the caller takes its admitted read. A generation change meanwhile answers unknown.
+        /// </summary>
+        private async Task<(bool Hit, Signature? Value)> KnownSignatureAsync(ITitleParentalEvidence source, long generation, string key,
+            string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
         {
-            TitleParentalEvidence? detail = null;
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            TitleParentalEvidence? stored = null;
+            try
+            {
+                stored = await source.ReadFactsAsync(mediaType, tmdbId, region, needTags, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A facts cache error is a miss, never an answer.
+            }
+
+            if (stored != null)
+            {
+                if (generation != EvidenceGeneration || source.EvidenceGeneration != EvidenceGeneration) return (true, null);
+                var resolved = SignatureFromEvidence(stored) with { EvidenceGeneration = source.EvidenceGeneration };
+                if (resolved.Adult == false && resolved.Score != null && stored.ReadAtUtc is { } readAt)
+                {
+                    // Its original read time: the signature lives no longer than the facts did.
+                    _certCacheFacts[key] = (resolved, false, readAt);
+                    if (resolved.Keywords != null && resolved.Genres != null) _tagFetchFailedAtFacts.TryRemove(key, out _);
+                    TrimCache();
+                    return (true, TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var merged) ? merged : resolved);
+                }
+
+                // No longer scorable here (the rating system changed): not used, and not kept.
+                await source.ForgetFactsAsync(mediaType, tmdbId, region).ConfigureAwait(false);
+            }
+
+            var raw = await TmdbResponseCache.CachedOnlyAsync(() => ReadEvidenceAsync(source, mediaType, tmdbId, region, needTags)).ConfigureAwait(false);
+            if (!raw.Hit) return (false, null);
+            var committed = CommitEvidence(source, key, mediaType, tmdbId, region, needTags, raw.Value);
+            if (generation != EvidenceGeneration) return (true, null);
+            return (true, TryGetTitleSignature(mediaType, tmdbId, region, needTags, out var current) ? current : committed);
+        }
+
+        private async Task<Signature?> FetchAndCacheAsync(ITitleParentalEvidence source, string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
+            => CommitEvidence(source, key, mediaType, tmdbId, region, needTags, await ReadEvidenceAsync(source, mediaType, tmdbId, region, needTags).ConfigureAwait(false));
+
+        private async Task<TitleParentalEvidence?> ReadEvidenceAsync(ITitleParentalEvidence source, string mediaType, int tmdbId, string region, bool needTags)
+        {
             try
             {
                 using var cts = new CancellationTokenSource(PerFetchTimeout);
-                detail = await source.ReadAsync(mediaType, tmdbId, region, needTags, cts.Token).ConfigureAwait(false);
+                return await source.ReadAsync(mediaType, tmdbId, region, needTags, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 // Timeouts and transport faults count as "could not verify" too.
                 _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId} ({ex.GetType().Name}).");
+                return null;
             }
+        }
 
+        private Signature? CommitEvidence(ITitleParentalEvidence source, string key, string mediaType, int tmdbId, string region, bool needTags, TitleParentalEvidence? detail)
+        {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (source.EvidenceGeneration != EvidenceGeneration) return null;
             var now = DateTime.UtcNow;
             if (detail == null)
@@ -1212,14 +1266,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var resolved = SignatureFromEvidence(detail) with { EvidenceGeneration = source.EvidenceGeneration };
-            if (source.CacheScope.StartsWith("je:", StringComparison.Ordinal) && resolved.Adult != true && resolved.Score == null)
+            var je = source.CacheScope.StartsWith("je:", StringComparison.Ordinal);
+            if (je && resolved.Adult != true && resolved.Score == null)
+            {
                 source.Forget(mediaType, tmdbId, needTags);
+                _ = source.ForgetFactsAsync(mediaType, tmdbId, region);
+            }
+            else if (je && resolved.Adult == false && resolved.Score != null)
+            {
+                // Verified complete and scorable: the remote facts (never this signature or a decision) may be saved.
+                var tags = resolved.Keywords != null && resolved.Genres != null;
+                if (!needTags || tags) _ = source.RememberFactsAsync(mediaType, tmdbId, region, detail, tags, CacheTtl());
+            }
+
             if (resolved.Keywords != null && resolved.Genres != null)
             {
                 _tagFetchFailedAtFacts.TryRemove(key, out _);
             }
 
-            StoreSignature(key, resolved, now);
+            // The evidence lives from its TMDB read (a cached raw answer keeps its original fetch time), never from now.
+            StoreSignature(key, resolved, now, detail.ReadAtUtc is { } readAt && readAt <= now ? readAt : now);
             if (needTags && resolved.Adult != true && (resolved.Keywords == null || resolved.Genres == null))
             {
                 _tagFetchFailedAtFacts[key] = now;
@@ -1237,12 +1303,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// change bypass a tag-restricted user), so existing tags are kept only
         /// while the existing entry is itself still fresh.
         /// </summary>
-        private void StoreSignature(string key, Signature resolved, DateTime now)
+        private void StoreSignature(string key, Signature resolved, DateTime now) => StoreSignature(key, resolved, now, now);
+
+        /// <summary>
+        /// <see cref="StoreSignature(string, Signature, DateTime)"/> for evidence read at <paramref name="readAt"/>: the
+        /// entry lives from then. Tags kept from the current entry keep their own (older) time: a rating-only refresh never
+        /// extends them.
+        /// </summary>
+        private void StoreSignature(string key, Signature resolved, DateTime now, DateTime readAt)
         {
             using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _certCacheFacts.AddOrUpdate(
                 key,
-                _ => (resolved, false, now),
+                _ => (resolved, false, readAt),
                 (_, current) =>
                 {
                     var stored = resolved;
@@ -1250,10 +1323,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         stored = stored with { Adult = stored.Adult ?? current.Sig.Adult };
                     if (stored.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < SignatureTtl(key, current.Sig))
                     {
-                        return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
+                        return (stored with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, readAt < current.CachedAt ? readAt : current.CachedAt);
                     }
 
-                    return (stored, false, now);
+                    return (stored, false, readAt);
                 });
             TrimCache();
         }

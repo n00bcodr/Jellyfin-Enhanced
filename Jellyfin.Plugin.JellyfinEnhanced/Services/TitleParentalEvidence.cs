@@ -22,7 +22,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// evidence is known-unrated. Null tag sets are unknown, while empty sets are verified empty. Local tags
     /// are Jellyfin item tags; remote tags are TMDB keywords (genres only extend the blocked-tag direction).
     /// </summary>
-    public sealed record TitleParentalEvidence(string? Certification, string Region, string[]? Keywords, string[]? Genres, bool? Adult);
+    public sealed record TitleParentalEvidence(string? Certification, string Region, string[]? Keywords, string[]? Genres, bool? Adult)
+    {
+        /// <summary>When the TMDB answer these facts come from was read (null: unknown); a cache hit never renews it.</summary>
+        internal DateTime? ReadAtUtc { get; init; }
+
+        /// <summary>When stored facts stop being valid (null: not read from the facts cache).</summary>
+        internal DateTime? ExpiresAtUtc { get; init; }
+
+        /// <summary>The facts cache's generation captured before the TMDB read (null: these facts can't be stored).</summary>
+        internal long? FactsGeneration { get; init; }
+    }
 
     /// <summary>A captured metadata source. Its scope and credentials cannot change during a lookup.</summary>
     public interface ITitleParentalEvidence
@@ -38,6 +48,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Discards raw facts the scoring gate could not verify, so its short retry TTL can recover.</summary>
         void Forget(string mediaType, int tmdbId, bool needTags) { }
+
+        /// <summary>
+        /// Facts this source verified before and saved (the server-side cache), or null; never contacts the source. The
+        /// caller still scores them under its captured generation and applies fresh local facets and the viewer's policy.
+        /// </summary>
+        Task<TitleParentalEvidence?> ReadFactsAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+            => Task.FromResult<TitleParentalEvidence?>(null);
+
+        /// <summary>Saves facts the scoring gate verified (complete and scorable), valid for <paramref name="ttl"/> from their read.</summary>
+        Task RememberFactsAsync(string mediaType, int tmdbId, string region, TitleParentalEvidence evidence, bool tags, TimeSpan ttl) => Task.CompletedTask;
+
+        /// <summary>Removes saved facts that turned out unusable.</summary>
+        Task ForgetFactsAsync(string mediaType, int tmdbId, string region) => Task.CompletedTask;
     }
 
     /// <summary>
@@ -50,13 +73,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IHttpClientFactory _http;
         private readonly TmdbResponseCache _tmdb;
         private readonly ILibraryManager? _library;
+        private readonly TmdbParentalFactCache? _facts;
 
         /// <summary>Creates the provider over the shared TMDB cache and native library.</summary>
-        public TitleParentalEvidenceProvider(IHttpClientFactory http, TmdbResponseCache tmdb, ILibraryManager? library = null)
+        /// <param name="http">HTTP client factory (Seerr mode).</param>
+        /// <param name="tmdb">The shared TMDB cache.</param>
+        /// <param name="library">The library (native facets).</param>
+        /// <param name="facts">Saved remote facts (the server-side cache), if any.</param>
+        public TitleParentalEvidenceProvider(IHttpClientFactory http, TmdbResponseCache tmdb, ILibraryManager? library = null, TmdbParentalFactCache? facts = null)
         {
             _http = http;
             _tmdb = tmdb;
             _library = library;
+            _facts = facts;
         }
 
         /// <summary>Captures the selected source and its configuration before a cache lookup or shared fetch.</summary>
@@ -73,6 +102,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public Task<TitleParentalEvidence?> ReadAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
                 => Source.ReadAsync(mediaType, tmdbId, region, needTags, ct);
             public void Forget(string mediaType, int tmdbId, bool needTags) => Source.Forget(mediaType, tmdbId, needTags);
+            public Task<TitleParentalEvidence?> ReadFactsAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+                => Source.ReadFactsAsync(mediaType, tmdbId, region, needTags, ct);
+            public Task RememberFactsAsync(string mediaType, int tmdbId, string region, TitleParentalEvidence evidence, bool tags, TimeSpan ttl)
+                => Source.RememberFactsAsync(mediaType, tmdbId, region, evidence, tags, ttl);
+            public Task ForgetFactsAsync(string mediaType, int tmdbId, string region) => Source.ForgetFactsAsync(mediaType, tmdbId, region);
         }
 
         private ITitleParentalEvidence CaptureSource()
@@ -81,7 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (config == null) return new Unavailable("off");
             var tmdbKey = config.GetTmdbApiKey() ?? string.Empty;
             if (string.Equals(config.ArrRequestBackend, "je", StringComparison.OrdinalIgnoreCase))
-                return new Tmdb(_tmdb, tmdbKey);
+                return new Tmdb(_tmdb, tmdbKey, _facts);
             // Status-only disables requesting, not the legacy metadata surfaces.
             if (!SeerrMetadataMode(config.ArrRequestBackend))
                 return new Unavailable("unknown-backend");
@@ -161,9 +195,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 => Task.FromResult<TitleParentalEvidence?>(null);
         }
 
-        private sealed class Tmdb(TmdbResponseCache client, string apiKey) : ITitleParentalEvidence
+        private sealed class Tmdb(TmdbResponseCache client, string apiKey, TmdbParentalFactCache? facts) : ITitleParentalEvidence
         {
             public string CacheScope { get; } = "je:" + Scope(apiKey);
+
+            public Task<TitleParentalEvidence?> ReadFactsAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+                => facts == null || string.IsNullOrWhiteSpace(apiKey) ? Task.FromResult<TitleParentalEvidence?>(null)
+                    : facts.ReadAsync(CacheScope, mediaType, tmdbId, region, needTags, ct);
+
+            public Task RememberFactsAsync(string mediaType, int tmdbId, string region, TitleParentalEvidence evidence, bool tags, TimeSpan ttl)
+                => facts == null ? Task.CompletedTask : facts.WriteAsync(CacheScope, mediaType, tmdbId, region, evidence, tags, ttl);
+
+            public Task ForgetFactsAsync(string mediaType, int tmdbId, string region)
+                => facts == null ? Task.CompletedTask : facts.ForgetAsync(CacheScope, mediaType, tmdbId, region);
 
             public void Forget(string mediaType, int tmdbId, bool needTags)
                 => client.Forget(mediaType + "/" + tmdbId.ToString(CultureInfo.InvariantCulture),
@@ -176,12 +220,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // English names match the established external-tag contract, independent of the viewer's language.
                 var query = "?language=en-US&append_to_response=" + ratings + (needTags ? ",keywords" : string.Empty);
                 var path = mediaType + "/" + tmdbId.ToString(CultureInfo.InvariantCulture);
+                // Captured before the read: a facts Clear or Forget after it refuses saving what it yields.
+                var factsGeneration = facts?.Generation;
                 var response = await client.GetAsync(path, query, apiKey, ct).ConfigureAwait(false);
                 if (!response.IsSuccess) return null;
                 try
                 {
                     using var doc = JsonDocument.Parse(response.Content);
                     var evidence = Parse(doc.RootElement, mediaType, tmdbId, region, ratings, needTags);
+                    // The original TMDB read time (a cached answer keeps it); unknown provenance is never saved.
+                    if (evidence != null && response.FetchedAtUtc > DateTime.MinValue)
+                        evidence = evidence with { ReadAtUtc = response.FetchedAtUtc, FactsGeneration = factsGeneration };
                     // The gate retries unknowns after five minutes; a partial 200 must not pin them in the
                     // raw client's six-hour positive cache. The gate still prevents a per-request retry storm.
                     if (evidence == null || (needTags && evidence.Adult != true && evidence.Keywords == null))

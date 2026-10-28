@@ -328,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             // Superseded (the generation moved on): it stays settled, never saved. Otherwise a later hit tries again.
-            if (!stored && _disk!.Generation == memory.Generation) _bytes.TryUpdate(key, memory, claimed);
+            if (!stored && _disk!.IsCurrent(memory.Generation)) _bytes.TryUpdate(key, memory, claimed);
         }
 
         private static bool IsImageType(string type) => type is "image/jpeg" or "image/png" or "image/webp";
@@ -361,7 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 Store(key, bytes, type, onDisk: false, generation: generation);
                 // Saved, or superseded by an invalidation since the fetch began: either way nothing is left to save.
                 if (_disk != null && (await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false)
-                        || _disk.Generation != generation)
+                        || !_disk.IsCurrent(generation))
                     && _bytes.TryGetValue(key, out var stored) && ReferenceEquals(stored.Bytes, bytes))
                 {
                     _bytes.TryUpdate(key, stored with { OnDisk = true }, stored);

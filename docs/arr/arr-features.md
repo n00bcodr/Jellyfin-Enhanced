@@ -1415,13 +1415,39 @@ The routes behind these pages are in the [API reference](../advanced/api.md#nati
 
 These pages' images (posters, backdrops, logos, cast photos, season posters and episode stills) come from TMDB. They
 are fetched by the server, a few at a time for each person, and kept in memory for a few hours. With **Keep TMDB
-artwork on the server** on ([Server-side cache](arr-settings.md#server-side-cache)), each image is also saved on disk
+artwork and metadata on the server** on ([Server-side cache](arr-settings.md#server-side-cache)), each image is also saved on disk
 when it is first fetched. After that, opening the title again, opening it for someone else, or opening it after a
 Jellyfin restart shows the images from disk without asking TMDB. An image read from disk doesn't use up the person's
 share of TMDB fetches, so a page full of already-saved artwork never waits behind images still being fetched.
 Images fetched longer ago than the age limit are fetched again. Past the size limit, the least recently used ones go
 first. Every request is still checked as before (the page's signed link, the parental limit, Hidden Content,
 Spoiler Guard, which blurs or hides protected artwork as usual).
+
+### Server-side cache for TMDB metadata
+
+The same setting keeps the TMDB metadata behind these pages on disk too, so a page that was opened before, by anyone,
+opens after a restart without asking TMDB again:
+
+- **TMDB answers**: the title, its seasons, cast and people, collections, the genre, studio and network pages, the
+  Discover and recommendation rows, cards' streaming services, and the metadata lists and home rows read. Each keeps
+  its own lifetime from when TMDB was asked: 6 hours for a title, person or season, 30 minutes for rows and discovery,
+  10 minutes for "no such title". Free-text searches are never written to disk (they stay in memory for 30 minutes).
+  Memory holds 24 MB of these; the disk holds far more, so a title that dropped out of memory is still read from disk.
+- **Parental facts**: the certification, adult flag and keyword and genre names TMDB gives a title, once Jellyfin
+  Enhanced has checked they are complete and usable. They are facts, never a decision: each viewer's parental limit,
+  blocked and allowed tags, the library's own rating and tags (which always win), Hidden Content and Spoiler Guard are
+  applied afresh every time. Kept for 24 hours from when TMDB was asked. An unknown, partial or failed answer is never
+  kept, so a restricted viewer's unknown titles stay hidden and are asked again a few minutes later, as before.
+- **List poster facts**: the poster path (or TMDB saying there is none) of a list placeholder's movie, series or
+  season, kept for 12 hours. A season without a poster still shows the series' poster; a season TMDB failed to answer
+  doesn't.
+
+A saved answer never takes a person's share of TMDB requests, so a page whose metadata is on disk doesn't wait behind
+others still being fetched. Nothing on disk lives longer than it would in memory, and a restart doesn't make it any
+younger. When a details page's own read of a title already holds what the extras (release dates, streaming services,
+a series' content ratings) need, those are taken from it instead of a second request to TMDB; reviews are still read
+on their own. With the setting off, TMDB answers are saved in the plugin's configuration folder as before; switching it
+on moves them into the cache folder.
 
 ### Discover and search (JE mode)
 
