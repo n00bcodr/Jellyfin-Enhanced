@@ -510,7 +510,7 @@ public class IntegrationSeerrMigrationTests
         var published = publication.Join(TimeSpan.FromSeconds(10));
         if (!settled) settlement.Interrupt();
         if (!published) publication.Interrupt();
-        Assert.True(settled && published, $"settlement finished={settled}, list publication finished={published}: lock-order deadlock");
+        Assert.True(settled && published, $"settlement finished={settled}, list publication finished={published}: lock-order deadlock ({error()?.GetBaseException().Message})");
         Assert.Null(error());
     }
 
@@ -556,23 +556,25 @@ public class IntegrationSeerrMigrationTests
         Assert.Single(m.R.Ledger.List(m.R.Admin, true));
     }
 
-    [Fact]
-    public async Task I4R1ListPublicationInsideTheBackendMonitorNeverWaitsForTheConfigurationLock()
+    // Settlement holds the configuration lock while a publication runs with the backend monitor already held (a nested
+    // facts publication), both held beforehand (the review's probe). The publication must not wait for the
+    // configuration lock, nor run any of its callbacks without it: it is refused as configuration_changed.
+    // prepare runs on the publishing thread before either monitor is held (a continuation captures its epoch there).
+    private static async Task NestedPublicationIsRefusedWithoutWaiting(Func<(IDisposable? Scope, Action Publish)> prepare)
     {
-        // The review's probe: settlement holds the configuration lock, a list publication runs with the backend monitor
-        // already held (a nested facts publication). The publication is refused instead of waiting, so neither stalls.
         using var m = new Mig();
         var staged = await StageR4(m);
         m.R.Policy.Configuration.ArrRequestBackend = "je";
-        var epoch = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListMetadataEpoch.Capture();
+        using var prepared = new ManualResetEventSlim();
         using var configurationHeld = new ManualResetEventSlim();
         using var backendHeld = new ManualResetEventSlim();
-        Exception? error = null;
-        bool? committed = null, published = null;
+        Exception? error = null, refusal = null;
+        bool? committed = null;
         var settlement = new Thread(() =>
         {
             try
             {
+                if (!prepared.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
                 lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
                 {
                     configurationHeld.Set();
@@ -586,21 +588,48 @@ public class IntegrationSeerrMigrationTests
         {
             try
             {
-                if (!configurationHeld.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
-                using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Shared.LockFacts())
+                var (scope, publish) = prepare();
+                prepared.Set();
+                using (scope)
                 {
-                    backendHeld.Set();
-                    published = epoch.Publish(() => true, () => false);
+                    if (!configurationHeld.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
+                    using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Shared.LockFacts())
+                    {
+                        backendHeld.Set();
+                        publish();
+                    }
                 }
             }
+            catch (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.BackendDisabledException ex) { refusal = ex; }
             catch (Exception ex) { error = ex; }
         }) { IsBackground = true };
         settlement.Start();
         publication.Start();
         BothFinish(settlement, publication, () => error);
+        Assert.Equal("configuration_changed", Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.BackendDisabledException>(refusal).Reason);
         Assert.True(committed);
-        Assert.False(published);
         Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+    }
+
+    [Fact]
+    public async Task I4R1ListPublicationInsideTheBackendMonitorNeverWaitsForTheConfigurationLock()
+    {
+        var epoch = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListMetadataEpoch.Capture();
+        var ran = 0;
+        await NestedPublicationIsRefusedWithoutWaiting(() => (null, () => epoch.Publish(() => { ran++; return true; }, () => { ran++; return false; })));
+        Assert.Equal(0, ran);
+    }
+
+    [Fact]
+    public async Task LOR1NestedContinuationRefusalNeverRechecksUnderTheBackendMonitor()
+    {
+        // The review's round-2 probe: a real list continuation's write, whose refusal callback rechecks the
+        // continuation (ListMetadataEpoch.IsCurrent: the configuration lock), nested inside the backend monitor.
+        using var h = new ListsHarness(seerr: true);
+        var wrote = 0;
+        await NestedPublicationIsRefusedWithoutWaiting(() => (new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListContinuation(h.Store, () => null),
+            () => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListContinuation.Write(() => wrote++)));
+        Assert.Equal(0, wrote);
     }
 
     [Theory]

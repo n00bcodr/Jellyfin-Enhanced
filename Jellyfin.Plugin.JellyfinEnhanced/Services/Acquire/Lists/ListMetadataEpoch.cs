@@ -36,14 +36,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // read's original snapshot in the enclosing composition and eventual HTTP stamp.
             EffectiveReadScope.Enlist(EffectiveRequestsBackend.Shared, Backend.Epoch);
             var configuration = JellyfinEnhanced.AnalyticsCredentialLock;
-            // A caller already inside the backend monitor (a nested facts publication) never waits for the outer lock:
-            // it publishes when the lock is free now, and is refused, as for a changed configuration, when it isn't.
-            var waits = !EffectiveRequestsBackend.Shared.HoldsGate;
             var entered = false;
+            // A caller already inside the backend monitor (a nested facts publication) never waits for the outer lock,
+            // and none of the callbacks (both are caller code) run there without it: when the lock is busy the
+            // enclosing publication is refused, as for a changed configuration, and handles that once its monitor
+            // is released. Every callback below runs with the configuration lock held.
+            if (EffectiveRequestsBackend.Shared.HoldsGate && !(entered = Monitor.TryEnter(configuration)))
+                throw new BackendDisabledException("configuration_changed");
             try
             {
-                if (waits) Monitor.Enter(configuration, ref entered);
-                else if (!(entered = Monitor.TryEnter(configuration))) return refused();
+                if (!entered) Monitor.Enter(configuration, ref entered);
                 return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () => IsCurrent ? effect() : refused());
             }
             catch (BackendDisabledException) { return refused(); }
