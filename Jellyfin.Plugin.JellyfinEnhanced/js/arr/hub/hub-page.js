@@ -1032,12 +1032,18 @@
 
     /**
      * Redraws just the tab strip (an admin tab's answer changed the Overview count), keeping focus
-     * on the same tab when it was there.
+     * on the same tab when it was there. An empty My requests drawn before the Discover tab was known
+     * (or gone) is drawn again instead, so its Discover button follows the tab.
      * @returns {void}
      */
     function refreshTabs() {
         const root = pageNode?.querySelector('.je-hub');
         if (!root || !state.visible) return;
+        if (state.tab === 'mine' && root.querySelector('.je-hub-empty-mine')
+            && !!root.querySelector('.je-hub-empty-discover') !== tabs().includes('discover')) {
+            render();
+            return;
+        }
         const strip = root.querySelector('.je-hub-tabs');
         const focus = strip && strip.contains(document.activeElement) ? focusedId(root) : null;
         renderTabs(root, tabs());
