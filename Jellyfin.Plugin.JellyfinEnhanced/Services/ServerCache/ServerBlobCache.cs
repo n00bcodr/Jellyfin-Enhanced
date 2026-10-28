@@ -143,9 +143,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private readonly SemaphoreSlim _sweepLock = new(1, 1);
         // Cancelled by Dispose (server shutdown): sweeps stop and nothing new is read or written.
         private readonly CancellationTokenSource _closing = new();
-        // The commit gate: renames under way (low bits) and whether Dispose has closed it (GateClosed). Lock-free, so a
-        // commit and Dispose never wait on each other: a commit either entered before the gate closed, or never commits.
-        private const int GateClosed = 1 << 30;
+        // The commit gate (CommitGate): every change of the folder enters it, and Dispose closes it. Lock-free, so a change
+        // and Dispose never wait on each other: a change either entered before the gate closed, or never starts.
         private int _commitGate;
         private readonly SemaphoreSlim _io = new(MaxConcurrentIo, MaxConcurrentIo);
         private readonly object _lock = new();
@@ -361,11 +360,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
                 if (now - read.Seen.Value.Modified >= TouchEvery)
                 {
-                    access.Owned(false, folder =>
+                    access.Owned(false, folder => Gated(() =>
                     {
                         Touch(folder, ns, shard, name, now);
                         return true;
-                    });
+                    }));
                 }
 
                 return read.Entry;
@@ -487,14 +486,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 await _io.WaitAsync(stop.Token).ConfigureAwait(false);
                 try
                 {
-                    using (var handle = access.CreateNew(ns, shard, temp))
+                    // The temporary file is created and written inside the commit gate (not once the store is shut down).
+                    if (!EnterCommit(ct)) return false;
+                    try
                     {
+                        using var handle = access.CreateNew(ns, shard, temp);
                         if (handle == null) return false;
                         created = true;
                         var header = Header(keyBytes, typeBytes, fetched, expires, BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8)), bytes.Length);
                         await RandomAccess.WriteAsync(handle, header, 0, ct).ConfigureAwait(false);
                         await RandomAccess.WriteAsync(handle, bytes, header.Length, ct).ConfigureAwait(false);
                         File.SetLastWriteTimeUtc(handle, now);
+                    }
+                    finally
+                    {
+                        ExitCommit();
                     }
 
                     // Renamed into place in the folder proven the cache's own through the handle the rename uses.
@@ -540,7 +546,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
             finally
             {
-                if (created && !committed) access.Delete(ns, shard, temp);
+                // Removed inside the gate; once shut down it stays (a leftover the next start's sweep removes).
+                if (created && !committed) Gated(() => access.Delete(ns, shard, temp));
                 lock (_lock)
                 {
                     _activeTemps.Remove(tempId);
@@ -669,7 +676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             var (shard, name) = Names(ns, key);
             var known = folder.TryStat(ns, shard, name, out var stat);
-            if ((known && stat == null) || !folder.Delete(ns, shard, name)) return false;
+            if ((known && stat == null) || !Gated(() => folder.Delete(ns, shard, name))) return false;
             if (stat is { } removed) Account(ns + "/" + shard + "/" + name, ns, Blocks(removed.Length), 0);
             // A file removed without knowing its size: the totals are counted again.
             else ScheduleSweep(force: true);
@@ -714,11 +721,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 // The marker is kept fresh through a handle of its own, proven the cache's again (not once shut down).
                 if (!_closing.IsCancellationRequested)
                 {
-                    access.Owned(false, folder =>
+                    access.Owned(false, folder => Gated(() =>
                     {
                         folder.TouchMarker(_now());
                         return true;
-                    });
+                    }));
                 }
                 lock (_lock) _lastSweep = swept.At;
                 if (swept.Removed > 0) _logger?.Debug($"[Server cache] Removed {swept.Removed} entries.");
@@ -871,8 +878,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 else if (present != null) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
             }
 
-            foreach (var (space, shard) in namespaces) folder.RemoveEmpty(space, shard);
-            foreach (var space in namespaces.Select(n => n.Ns).Distinct(StringComparer.Ordinal)) folder.RemoveEmpty(space, null);
+            foreach (var (space, shard) in namespaces)
+            {
+                Gated(() =>
+                {
+                    folder.RemoveEmpty(space, shard);
+                    return true;
+                });
+            }
+
+            foreach (var space in namespaces.Select(n => n.Ns).Distinct(StringComparer.Ordinal))
+            {
+                Gated(() =>
+                {
+                    folder.RemoveEmpty(space, null);
+                    return true;
+                });
+            }
             return (removed, complete);
         }
 
@@ -1002,7 +1024,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 var options = Options(ns) ?? new ServerCacheNamespace(ns);
                 if (ReadHead(folder, new Found(ns, shard, name, 0, default, false), options).Seen is not { } current) return false;
                 if (writeId != null ? current.WriteId != writeId : current.WriteId != null) return false;
-                if (!folder.Delete(ns, shard, name)) return false;
+                if (!Gated(() => folder.Delete(ns, shard, name))) return false;
                 Account(ns + "/" + shard + "/" + name, ns, Blocks(current.Length), 0);
                 return true;
             }
@@ -1016,7 +1038,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             lock (_lock)
             {
-                return _activeTemps.Contains(found.Id) || folder.Delete(found.Ns, found.Shard, found.Name)
+                return _activeTemps.Contains(found.Id) || Gated(() => folder.Delete(found.Ns, found.Shard, found.Name))
                     || (folder.TryStat(found.Ns, found.Shard, found.Name, out var left) && left == null);
             }
         }
@@ -1123,7 +1145,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (validated == null) error = _location.Resolve(configured, out full);
             var found = error == null ? CacheFolderAccess.For(full, _anchored) : null;
             if (error == null && found == null) error = ServerCacheLocation.Unsupported;
-            else if (error == null && create) error = _location.Prepare(full, _anchored);
+            else if (error == null && create)
+            {
+                // Preparing creates and marks the folder: inside the commit gate, never once the store is shut down.
+                if (!EnterCommit(CancellationToken.None)) return null;
+                error = PrepareGated(full);
+            }
             else if (error == null && !found!.Owned(false, _ => true)) return null;
             lock (_lock)
             {
@@ -1150,37 +1177,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
 
         /// <summary>
-        /// Stops the store (server shutdown) without waiting on any of its locks: the commit gate closes (a write that hasn't
-        /// started its rename never commits), sweeps stop at their next step and no new one starts, and a read or write
-        /// waiting for the disk gives up. A rename already under way and the running sweep are waited for at most a second.
+        /// Stops the store (server shutdown) without waiting on any of its locks: the commit gate closes (no change of the
+        /// folder starts afterwards: no write, rename, removal, time stamp or preparation), sweeps stop at their next step
+        /// and no new one starts, and a read or write waiting for the disk gives up. A change already inside the gate and the
+        /// running sweep are waited for at most a second.
         /// </summary>
         public void Dispose()
         {
-            int state;
-            do state = Volatile.Read(ref _commitGate);
-            while ((state & GateClosed) == 0 && Interlocked.CompareExchange(ref _commitGate, state | GateClosed, state) != state);
+            CommitGate.Close(ref _commitGate);
             _closing.Cancel();
             var sweep = Volatile.Read(ref _pendingSweep);
-            SpinWait.SpinUntil(() => (Volatile.Read(ref _commitGate) & ~GateClosed) == 0 && sweep.IsCompleted, TimeSpan.FromSeconds(1));
+            SpinWait.SpinUntil(() => CommitGate.Drained(ref _commitGate) && sweep.IsCompleted, TimeSpan.FromSeconds(1));
         }
 
-        /// <summary>Enters the commit gate right before a rename; false once Dispose closed it or <paramref name="ct"/> is cancelled.</summary>
-        private bool EnterCommit(CancellationToken ct)
+        /// <summary>Enters the commit gate right before a change of the folder; false once the store is shut down or <paramref name="ct"/> is cancelled.</summary>
+        private bool EnterCommit(CancellationToken ct) => CommitGate.TryEnter(ref _commitGate, ct);
+
+        private void ExitCommit() => CommitGate.Exit(ref _commitGate);
+
+        /// <summary>Runs one change of the folder inside the commit gate; false (nothing done) once the store is shut down.</summary>
+        private bool Gated(Func<bool> change)
         {
-            while (true)
+            if (!EnterCommit(CancellationToken.None)) return false;
+            try
             {
-                var state = Volatile.Read(ref _commitGate);
-                if ((state & GateClosed) != 0) return false;
-                if (Interlocked.CompareExchange(ref _commitGate, state + 1, state) != state) continue;
-                // Checked inside the gate: a caller that cancels (its own shutdown) and then waits for its writes either sees
-                // this rename finish or finds it never started.
-                if (!ct.IsCancellationRequested) return true;
+                return change();
+            }
+            finally
+            {
                 ExitCommit();
-                return false;
             }
         }
 
-        private void ExitCommit() => Interlocked.Decrement(ref _commitGate);
+        private string? PrepareGated(string full)
+        {
+            try
+            {
+                return _location.Prepare(full, _anchored);
+            }
+            finally
+            {
+                ExitCommit();
+            }
+        }
 
         /// <summary>Starts a sweep (after the debounce unless forced); one asked for while one runs runs after it.</summary>
         private void ScheduleSweep(bool force = false, bool full = false)

@@ -1187,6 +1187,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static readonly TimeSpan FinalSaveWait = TimeSpan.FromSeconds(1);
 
+        // The snapshot gate (ServerCache.CommitGate): every write, delete or rename of the snapshot files enters it, and
+        // Dispose closes it, so none starts after Dispose.
+        private int _snapshotGate;
+
+        /// <summary>Called at fixed points (tests): "retire" after the snapshot's retirement checked it is there, before its rename.</summary>
+        internal Action<string>? Hook { get; set; }
+
+        /// <summary>
+        /// Runs one change of the snapshot files inside the snapshot gate. Dispose's own final save always runs (before
+        /// Dispose returns); any other change only before Dispose closed the gate. False when refused.
+        /// </summary>
+        private bool SnapshotChange(bool final, Action change)
+        {
+            if (final)
+            {
+                change();
+                return true;
+            }
+
+            if (!ServerCache.CommitGate.TryEnter(ref _snapshotGate, _disposing.Token)) return false;
+            try
+            {
+                change();
+                return true;
+            }
+            finally
+            {
+                ServerCache.CommitGate.Exit(ref _snapshotGate);
+            }
+        }
+
         /// <summary>
         /// Takes <paramref name="gate"/>: Dispose's final save waits at most <see cref="FinalSaveWait"/>; any other save waits
         /// as long as it takes, but gives up once Dispose has cancelled. False when it wasn't taken.
@@ -1244,20 +1275,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Monitor.Exit(_lock);
                     }
 
-                    var dir = Path.GetDirectoryName(_diskPath);
-                    if (dir != null) Directory.CreateDirectory(dir);
-
                     var tempPath = _diskPath + ".tmp";
-                    using (var stream = File.Create(tempPath))
+                    var written = SnapshotChange(final, () =>
                     {
+                        var dir = Path.GetDirectoryName(_diskPath);
+                        if (dir != null) Directory.CreateDirectory(dir);
+                        using var stream = File.Create(tempPath);
                         JsonSerializer.Serialize(stream, data);
+                    });
+                    if (!written)
+                    {
+                        _dirty = true;
+                        return;
                     }
 
                     // Decided again at the commit, in step with the move into the server-side cache: a save that began
                     // while the cache was off never puts the snapshot back once the cache is on (and the file retired).
                     if (!TakeLock(_legacyFileLock, final))
                     {
-                        File.Delete(tempPath);
+                        SnapshotChange(final, () => File.Delete(tempPath));
                         _dirty = true;
                         return;
                     }
@@ -1267,12 +1303,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // A save other than Dispose's own never commits once Dispose has cancelled.
                         if (DiskReady(ct) || (!final && ct.IsCancellationRequested))
                         {
-                            File.Delete(tempPath);
+                            SnapshotChange(final, () => File.Delete(tempPath));
                             if (!final && ct.IsCancellationRequested) _dirty = true;
                             return;
                         }
 
-                        File.Move(tempPath, _diskPath, overwrite: true);
+                        if (!SnapshotChange(final, () => File.Move(tempPath, _diskPath, overwrite: true))) _dirty = true;
                     }
                     finally
                     {
@@ -1341,8 +1377,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // the server-side cache's folder or disk ends at once, a write not yet committed never commits, and nothing new
             // starts. What is still running is waited for, briefly (only a call stuck inside the file system could outlast it,
             // and when it returns it finds the cache disposed).
+            ServerCache.CommitGate.Close(ref _snapshotGate);
             _disposing.Cancel();
-            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0 && Volatile.Read(ref _writing) == 0, TimeSpan.FromSeconds(1));
+            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0 && Volatile.Read(ref _writing) == 0
+                && ServerCache.CommitGate.Drained(ref _snapshotGate), TimeSpan.FromSeconds(1));
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
             SaveOnDispose();
@@ -1759,7 +1797,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 try
                 {
                     if (_disposing.IsCancellationRequested || !File.Exists(_diskPath)) return;
-                    File.Move(_diskPath, _diskPath + ".migrated", overwrite: true);
+                    Hook?.Invoke("retire");
+                    // Admitted only now, after the existence check (which may have taken long): once Dispose closed the
+                    // gate the rename never starts.
+                    if (!SnapshotChange(final: false, () => File.Move(_diskPath, _diskPath + ".migrated", overwrite: true))) return;
                 }
                 finally
                 {

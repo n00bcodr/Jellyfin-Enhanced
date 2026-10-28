@@ -175,4 +175,46 @@ public sealed class ServerBlobCacheShutdownReviewTests : IDisposable
         Assert.True(File.Exists(legacy),"A migration abandoned at a managed monitor wait retired the snapshot after Dispose returned");
         Assert.False(File.Exists(legacy+".migrated"));
     }
+
+    // Review round 3 (HPR3-1), ported from the review clone. The reviewer paused the native stat behind File.Exists with
+    // an LD_PRELOAD shim; the same point (the existence check has returned, the rename hasn't started) is held here through
+    // the cache's own "retire" hook, so it runs in the ordinary suite. The control retires normally.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetirementStatThatReturnsAfterDisposeMustNotBeginMigration(bool dispose)
+    {
+        var retireRoot=Path.Combine(root,"retirement"); Directory.CreateDirectory(retireRoot);
+        var legacy=Path.Combine(retireRoot,"tmdb-cache.json"); var at=new DateTimeOffset(now);
+        var hash=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("key")),0,8);
+        File.WriteAllText(legacy,JsonSerializer.Serialize(new {V=1,Entries=new[] {new {
+            K=hash+"|https://api.themoviedb.org/3/movie/603",S=200,C="{\"id\":603}",
+            E=at.AddHours(6).ToUnixTimeMilliseconds(),F=at.UtcTicks}}}));
+        using var disk=new ServerBlobCache(()=>new(true,"",0,0),new ServerCacheLocation(retireRoot,Array.Empty<string>()),null,()=>now) {SweepDebounce=TimeSpan.Zero};
+        Assert.True(disk.Enabled); await disk.PendingSweep;
+        using var net=new IntegrationTransport((_,_)=>Task.FromResult(IntegrationTransport.Response("{}")));
+        using var raw=new TmdbResponseCache(net,new IntegrationTmdbDiskCacheTests.Clock {Now=at},null,disk,legacy,null);
+        var field=typeof(TmdbResponseCache).GetField("_legacy",BindingFlags.Instance|BindingFlags.NonPublic)!;
+        var records=field.GetValue(raw); Assert.NotNull(records); field.SetValue(raw,null);
+        await raw.PromoteAsync(); Assert.Single(Directory.GetFiles(retireRoot,"*.blob",SearchOption.AllDirectories)); field.SetValue(raw,records);
+        using var entered=new ManualResetEventSlim(); using var release=new ManualResetEventSlim();
+        raw.Hook=point=> { if(point=="retire") { entered.Set(); release.Wait(); } };
+        var promotion=Task.Run(raw.PromoteAsync);
+        bool before=false; Task? disposing=null;
+        try {
+            await Until(()=>entered.IsSet);
+            Assert.Equal(1,(int)Field(raw,"_promoting"));
+            Assert.Equal(0,(int)Field(disk,"_commitGate"));
+            if (dispose) {
+                disposing=Task.Run(raw.Dispose);
+                await Until(()=>((CancellationTokenSource)Field(raw,"_disposing")).IsCancellationRequested);
+                await disposing.WaitAsync(TimeSpan.FromMilliseconds(1800));
+            }
+            Assert.Equal(0,(int)Field(disk,"_commitGate"));
+            before=File.Exists(legacy);
+            Assert.True(before); Assert.False(File.Exists(legacy+".migrated"));
+        } finally { release.Set(); await promotion.WaitAsync(TimeSpan.FromSeconds(5)); if(disposing!=null) await disposing.WaitAsync(TimeSpan.FromSeconds(5)); }
+        Assert.True(File.Exists(legacy)==dispose,"Snapshot retirement began its rename after Dispose returned: cancellation was checked before the stalled File.Exists stat");
+        Assert.Equal(!dispose,File.Exists(legacy+".migrated"));
+    }
 }
