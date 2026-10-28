@@ -2,6 +2,7 @@ using System;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
@@ -34,12 +35,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // Same neutral dependency owner used by Publication.EnlistEffective; retain this
             // read's original snapshot in the enclosing composition and eventual HTTP stamp.
             EffectiveReadScope.Enlist(EffectiveRequestsBackend.Shared, Backend.Epoch);
+            var configuration = JellyfinEnhanced.AnalyticsCredentialLock;
+            // A caller already inside the backend monitor (a nested facts publication) never waits for the outer lock:
+            // it publishes when the lock is free now, and is refused, as for a changed configuration, when it isn't.
+            var waits = !EffectiveRequestsBackend.Shared.HoldsGate;
+            var entered = false;
             try
             {
-                lock (JellyfinEnhanced.AnalyticsCredentialLock)
-                    return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () => IsCurrent ? effect() : refused());
+                if (waits) Monitor.Enter(configuration, ref entered);
+                else if (!(entered = Monitor.TryEnter(configuration))) return refused();
+                return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () => IsCurrent ? effect() : refused());
             }
             catch (BackendDisabledException) { return refused(); }
+            finally { if (entered) Monitor.Exit(configuration); }
         }
     }
 }

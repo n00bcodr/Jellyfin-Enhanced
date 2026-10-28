@@ -36,6 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
         // monitor, including the callbacks run under it (CommitEffective, CommitSeerr, CommitFacts, Facts.Publish and
         // Facts.Cached, LockFacts), never acquires the configuration lock; configuration holders may read the backend.
         private readonly object _gate = new();
+        /// <summary>Whether the calling thread holds this backend's monitor (it must not then wait for the configuration lock).</summary>
+        internal bool HoldsGate => Monitor.IsEntered(_gate);
         private readonly SemaphoreSlim _transitions = new(1, 1);
         private readonly HashSet<Admission> _active = new();
         private bool _fenced;

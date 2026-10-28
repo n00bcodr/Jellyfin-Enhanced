@@ -498,6 +498,111 @@ public class IntegrationSeerrMigrationTests
     }
 
 
+    // ---- I4R-1: one lock order, the configuration lock outer and the backend monitor inner ----
+
+    private static System.Reflection.MethodInfo Settle => typeof(SeerrMigration).GetMethod("SettleHandover", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+    // Both threads must finish. An inverted order leaves each waiting on the other's monitor with no timeout, so a
+    // failure interrupts them (their locks unwind) instead of leaving the configuration lock held for later tests.
+    private static void BothFinish(Thread settlement, Thread publication, Func<Exception?> error)
+    {
+        var settled = settlement.Join(TimeSpan.FromSeconds(10));
+        var published = publication.Join(TimeSpan.FromSeconds(10));
+        if (!settled) settlement.Interrupt();
+        if (!published) publication.Interrupt();
+        Assert.True(settled && published, $"settlement finished={settled}, list publication finished={published}: lock-order deadlock");
+        Assert.Null(error());
+    }
+
+    private static void BlockedOnAMonitor(Thread thread)
+    {
+        var deadline = Environment.TickCount64 + 10_000;
+        while ((thread.ThreadState & ThreadState.WaitSleepJoin) == 0 && Environment.TickCount64 < deadline) Thread.Yield();
+        Assert.True((thread.ThreadState & ThreadState.WaitSleepJoin) != 0, "the list publication never waited");
+    }
+
+    [Fact]
+    public async Task I4R1ListPublicationWaitingForSettlementsConfigurationLockStillLetsSettlementFinish()
+    {
+        // A list metadata read publishing (ListMetadataEpoch.Publish) while a move settles under the configuration lock:
+        // the publication waits for that lock without holding the backend monitor the settlement reads next.
+        using var m = new Mig();
+        var staged = await StageR4(m);
+        m.R.Policy.Configuration.ArrRequestBackend = "je";
+        var epoch = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListMetadataEpoch.Capture();
+        using var configurationHeld = new ManualResetEventSlim();
+        Exception? error = null;
+        bool? committed = null, published = null;
+        var publication = new Thread(() => { try { published = epoch.Publish(() => true, () => false); } catch (Exception ex) { error = ex; } }) { IsBackground = true };
+        var settlement = new Thread(() =>
+        {
+            try
+            {
+                lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+                {
+                    configurationHeld.Set();
+                    BlockedOnAMonitor(publication);
+                    committed = (bool)Settle.Invoke(m.Service, new object[] { staged.BatchId!, true, m.R.Now })!;
+                }
+            }
+            catch (Exception ex) { error = ex; }
+        }) { IsBackground = true };
+        settlement.Start();
+        Assert.True(configurationHeld.Wait(TimeSpan.FromSeconds(10)));
+        publication.Start();
+        BothFinish(settlement, publication, () => error);
+        Assert.True(committed);
+        Assert.NotNull(published);
+        Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+    }
+
+    [Fact]
+    public async Task I4R1ListPublicationInsideTheBackendMonitorNeverWaitsForTheConfigurationLock()
+    {
+        // The review's probe: settlement holds the configuration lock, a list publication runs with the backend monitor
+        // already held (a nested facts publication). The publication is refused instead of waiting, so neither stalls.
+        using var m = new Mig();
+        var staged = await StageR4(m);
+        m.R.Policy.Configuration.ArrRequestBackend = "je";
+        var epoch = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListMetadataEpoch.Capture();
+        using var configurationHeld = new ManualResetEventSlim();
+        using var backendHeld = new ManualResetEventSlim();
+        Exception? error = null;
+        bool? committed = null, published = null;
+        var settlement = new Thread(() =>
+        {
+            try
+            {
+                lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+                {
+                    configurationHeld.Set();
+                    if (!backendHeld.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
+                    committed = (bool)Settle.Invoke(m.Service, new object[] { staged.BatchId!, true, m.R.Now })!;
+                }
+            }
+            catch (Exception ex) { error = ex; }
+        }) { IsBackground = true };
+        var publication = new Thread(() =>
+        {
+            try
+            {
+                if (!configurationHeld.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
+                using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Shared.LockFacts())
+                {
+                    backendHeld.Set();
+                    published = epoch.Publish(() => true, () => false);
+                }
+            }
+            catch (Exception ex) { error = ex; }
+        }) { IsBackground = true };
+        settlement.Start();
+        publication.Start();
+        BothFinish(settlement, publication, () => error);
+        Assert.True(committed);
+        Assert.False(published);
+        Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+    }
+
     [Theory]
     [InlineData(false, true)]
     [InlineData(true, true)]
