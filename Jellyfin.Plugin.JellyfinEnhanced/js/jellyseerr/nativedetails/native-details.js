@@ -979,6 +979,18 @@
     }
 
     /**
+     * True while `node` is (partly) inside the viewport.
+     * @param {Element} node Element.
+     * @returns {boolean} In view.
+     */
+    function inView(node) {
+        const r = node.getBoundingClientRect();
+        const width = window.innerWidth || document.documentElement.clientWidth || 0;
+        const height = window.innerHeight || document.documentElement.clientHeight || 0;
+        return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < height && r.left < width;
+    }
+
+    /**
      * Keeps a page's images kept out of view to RETAINED_MAX (see keepImages): the ones that left view first are emptied
      * the way jellyfin-web empties a loaded image (background none, URL back in data-src, hidden, placeholder shown), so it
      * loads them again when they come back. Images no longer on the page are only forgotten.
@@ -988,9 +1000,13 @@
      */
     function release(state, released) {
         for (const [node] of state.retained) if (!state.page.contains(node)) state.retained.delete(node);
-        while (state.retained.size > RETAINED_MAX) {
+        // Each kept image is looked at once per pass: one back in view (scrolled back to, already loaded, so jellyfin-web
+        // sent no signal) is in use, never emptied; it counts as the newest.
+        let looks = state.retained.size;
+        while (state.retained.size > RETAINED_MAX && looks-- > 0) {
             const [node, src] = state.retained.entries().next().value;
             state.retained.delete(node);
+            if (inView(node)) { state.retained.set(node, src); continue; }
             // Still as it was kept (shown by its URL, nothing for the lazy loader to load): emptied; anything else is
             // jellyfin-web's own state already.
             if (node.hasAttribute('data-src') || node.classList.contains('lazy-hidden') || !String(node.style.backgroundImage).includes(src)) continue;
@@ -1343,7 +1359,8 @@
             n.removeAttribute(ABSENT_ATTR);
             marked.delete(n);
             lines.delete(n);
-            if (id == null) seen.delete(n);
+            // Looked at anew when it comes back (a detached row put back unchanged is marked again).
+            seen.delete(n);
         }
         state.page.querySelectorAll(`.itemMiscInfo-primary:not([${ABSENT_ATTR}])`).forEach((n) => {
             if (n.closest('[data-id]')) return;

@@ -945,3 +945,33 @@ test('F30: an image handed back is kept again once jellyfin-web has loaded it ag
   await tick();
   assert.ok(handedBack(last), 'not kept across a policy change');
 });
+
+// Fix round 2 (review ULR-2), the reviewer's probes: an image scrolled back into view (already loaded, so jellyfin-web
+// sends no signal) is never the one emptied for the bound; and long churn stays bounded with no self-made loop.
+test('ULR-2: a kept image back in view is never emptied for the bound; the oldest out of view is', async t => {
+  const h = setup(t); const look = h.nd.onView(); await tick(); h.answer(0); await look;
+  const nodes = [];
+  for (let i = 0; i < 33; i++) { const n = h.document.createElement('div'); n.getBoundingClientRect = () => ({ top: -500, bottom: -400, left: 0, right: 100, width: 100, height: 100 }); h.page.append(n); await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`)); nodes.push(n); }
+  for (const n of nodes.slice(0, 32)) await hostUnloads(h, n);
+  nodes[0].getBoundingClientRect = () => ({ top: 100, bottom: 200, left: 0, right: 100, width: 100, height: 100 });
+  await hostUnloads(h, nodes[32]);
+  await tick();
+  assert.ok(kept(nodes[0]), 'still visible, but evicted as the oldest retained entry');
+  assert.ok(handedBack(nodes[1]), 'the oldest out of view made room instead');
+});
+
+test('ULR-2 control: four passes of bulk unload and reload over 80 images stay bounded and the observer settles', async t => {
+  const h = setup(t); const look = h.nd.onView(); await tick(); h.answer(0); await look;
+  const nodes = [];
+  for (let i = 0; i < 80; i++) { const n = h.document.createElement('div'); h.page.append(n); await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`)); nodes.push(n); }
+  for (let turn = 0; turn < 4; turn++) {
+    const order = turn % 2 ? [...nodes].reverse() : nodes;
+    for (const n of order) {
+      if (n.hasAttribute('data-src')) { const url = n.getAttribute('data-src'); n.style.backgroundImage = `url('${url}')`; n.removeAttribute('data-src'); n.classList.remove('lazy-hidden'); await tick(); }
+      await hostUnloads(h, n);
+      assert.ok(h.nd.current().retained.size <= 32);
+    }
+    await tick(); assert.equal(nodes.filter(kept).length, 32); assert.equal(nodes.filter(handedBack).length, 48);
+    const snapshot = nodes.map(n => n.outerHTML); await tick(); assert.deepEqual(nodes.map(n => n.outerHTML), snapshot, 'observer settles');
+  }
+});

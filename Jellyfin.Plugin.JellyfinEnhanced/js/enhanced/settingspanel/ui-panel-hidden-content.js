@@ -18,24 +18,40 @@
     const PLUGIN_PAGE_URL = '/JellyfinEnhanced/hiddenContentPage';
 
     /**
-     * The companion's own entry for JE's Hidden Content page: its sidebar link (legacy drawer) or its user-menu item
-     * (Jellyfin 12's Modern layout, no item id), either carrying the page's registered address. Null when it drew none.
-     * @returns {HTMLAnchorElement|null} The link.
+     * JE's Hidden Content page as a Plugin Pages route, from a link's `href`: only the companion's own route
+     * (`#/userpluginsettings.html`) with exactly one parameter, `pageUrl`, naming JE's page (or JE's page under this
+     * server's base path, as older Plugin Pages register it). The route is built here, never copied from the link.
+     * @param {string|null} href A link's href.
+     * @returns {string|null} The route, or null for any other destination.
      */
-    function pluginPageLink() {
-        return document.querySelector(`a[data-itemid="${PLUGIN_PAGE_ID}"][href*="userpluginsettings"]`)
-            || [...document.querySelectorAll('a[href*="userpluginsettings"]')].find(a => (a.getAttribute('href') || '').includes(PLUGIN_PAGE_URL)) || null;
+    function pluginPageRouteOf(href) {
+        const at = typeof href === 'string' ? href.indexOf('#/') : -1;
+        if (at < 0) return null;
+        const [path, query, ...rest] = href.slice(at + 1).split('?');
+        if (path !== '/userpluginsettings.html' || rest.length || query == null) return null;
+        const params = new URLSearchParams(query);
+        if ([...params.keys()].length !== 1 || params.getAll('pageUrl').length !== 1) return null;
+        const pageUrl = params.get('pageUrl');
+        let base = '';
+        try { base = new URL(ApiClient.serverAddress()).pathname.replace(/\/+$/, ''); } catch (_) { /* no base path */ }
+        return pageUrl === PLUGIN_PAGE_URL || (base && pageUrl === base + PLUGIN_PAGE_URL) ? `#/userpluginsettings.html?pageUrl=${pageUrl}` : null;
     }
 
     /**
-     * Where the Hidden Content list is in Plugin Pages mode: the companion's own entry for it (its link carries the
-     * page's registered address), else the companion's route for JE's page.
-     * @returns {string} The hash route.
+     * Whether the companion shows JE's Hidden Content page, and its route: from its sidebar link (legacy drawer, by JE's
+     * entry id) or its user-menu item (Jellyfin 12's Modern layout, no item id) when that names JE's page exactly; a
+     * link with JE's entry id that names anything else still says the page is registered, and the route is JE's own.
+     * @returns {{route: string}|null} The destination, or null when the companion drew no entry for it.
      */
-    function pluginPageRoute() {
-        const href = pluginPageLink()?.getAttribute('href') || '';
-        const at = href.indexOf('#/userpluginsettings');
-        return at >= 0 ? href.slice(at) : `#/userpluginsettings.html?pageUrl=${PLUGIN_PAGE_URL}`;
+    function pluginPageEntry() {
+        const canonical = `#/userpluginsettings.html?pageUrl=${PLUGIN_PAGE_URL}`;
+        const own = document.querySelector(`a[data-itemid="${PLUGIN_PAGE_ID}"]`);
+        if (own) return { route: pluginPageRouteOf(own.getAttribute('href')) || canonical };
+        for (const a of document.querySelectorAll('a[href*="userpluginsettings"]')) {
+            const route = pluginPageRouteOf(a.getAttribute('href'));
+            if (route) return { route };
+        }
+        return JE.internals?.hiddenContentPage?.pluginPagesExists ? { route: canonical } : null;
     }
 
     /**
@@ -77,18 +93,20 @@
             // The list is a Home tab then (hidden-content-custom-tab.js): the page of its own does nothing,
             // so go to the tab, named by id (native-tabs.js puts the right tab index in).
             window.location.hash = '#/home?tab=0&jeTab=hidden-content';
-        } else if (config.HiddenContentEnabled && config.HiddenContentUsePluginPages
-            && (JE.internals?.hiddenContentPage?.pluginPagesExists || pluginPageLink())) {
+        } else if (config.HiddenContentEnabled && config.HiddenContentUsePluginPages && pluginPageEntry()) {
             // The companion shows the list (JE's own page stays away then, hidden-content-page-nav.js).
-            window.location.hash = pluginPageRoute();
+            window.location.hash = pluginPageEntry().route;
         } else if (config.HiddenContentEnabled && config.HiddenContentUseCustomTabs) {
             const from = window.location.hash;
             const button = e?.currentTarget || e?.target;
+            // The press's owner, taken while it is dispatched: the manager window opened after the read is still a
+            // surface of it (over the settings panel), which the press itself no longer names by then.
+            const owner = JE.ownerOf?.(e) || null;
             const route = await customTabRoute();
             // The viewer moved on, or closed the panel, while the list was read: nothing happens.
             if (window.location.hash !== from || (button && !button.isConnected)) return;
             if (route) window.location.hash = route;
-            else JE.hiddenContent.showManagementPanel(e);
+            else JE.hiddenContent.showManagementPanel(owner || e);
         } else if (config.HiddenContentEnabled && JE.hiddenContentPage) {
             JE.hiddenContentPage.showPage();
         } else {

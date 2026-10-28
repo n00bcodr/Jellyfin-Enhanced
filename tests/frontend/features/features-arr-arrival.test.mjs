@@ -1476,10 +1476,12 @@ test('an identity change without a page notification still drops a late answer',
 const fingerprint = ids => `fp:${ids.join('+')}`;
 const setPage = (t, kind, initial = ['a', 'b']) => {
   const handlers = [];
-  let ids = [...initial];
-  const answer = () => (kind === 'movie' ? movie(ids.length, { versionsFingerprint: fingerprint(ids) }) : episode('ready', { versions: ids.length, versionsFingerprint: fingerprint(ids) }));
+  let ids = [...initial], extra = '';
+  const answer = () => (kind === 'movie' ? movie(ids.length, { versionsFingerprint: fingerprint(ids) + extra }) : episode('ready', { versions: ids.length, versionsFingerprint: fingerprint(ids) + extra }));
+  // JE's item read (the reload's forced refresh) answers Jellyfin's item as it is now: its versions' media source ids.
+  const items = { get [OLD]() { return { Id: OLD, MediaSources: ids.map(id => ({ Id: id })) }; } };
   const h = setup(t, {
-    apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+    apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } }, items,
     ...(kind === 'movie' ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: answer } : { answers: answer })
   });
   Object.assign(h.A.timing, { settle: 15, gap: 60, batch: 25 });
@@ -1490,7 +1492,7 @@ const setPage = (t, kind, initial = ['a', 'b']) => {
   draw();
   let render = draw;
   h.view.addEventListener('viewshow', () => render());
-  return { h, picker, draw, set: next => { ids = [...next]; }, render: fn => { render = fn; }, shown: () => [...picker.options].map(o => o.value),
+  return { h, picker, draw, set: next => { ids = [...next]; }, fp: x => { extra = x; }, render: fn => { render = fn; }, shown: () => [...picker.options].map(o => o.value),
     event: data => handlers[0]({ MessageType: 'LibraryChanged', Data: data }) };
 };
 
@@ -1559,3 +1561,37 @@ for (const kind of ['movie', 'episode']) {
     assert.deepEqual(f.shown(), ['a', 'c']);
   });
 }
+
+// Fix round 2 (review ULR-3), the reviewer's probe: Jellyfin's redraw lags the burst and lists an earlier set (A+C) while
+// the status says A+D; that picker is not the newest set, which is redrawn again (bounded), never committed meanwhile.
+for (const kind of ['movie', 'episode']) test(`ULR-3 ${kind}: an intermediate picker from a same-count burst never commits the latest set; the next redraw that lists it does`, async t => {
+  const f = setPage(t, kind), { h } = f; await h.D.update(false);
+  f.set(['a', 'c']); await h.D.update(true);
+  f.set(['a', 'd']);
+  f.render(() => { f.picker.replaceChildren(...['a', 'c'].map(id => { const o = h.document.createElement('option'); o.value = id; return o; })); });
+  await h.D.update(true);
+  assert.ok(await until(() => h.host.shows.length === 1, 2000));
+  await sleep(100);
+  assert.deepEqual(f.shown(), ['a', 'c']);
+  await h.D.update(true); await sleep(100);
+  assert.notEqual(h.A.state().base.set, fingerprint(['a', 'd']), 'latest fingerprint must not be committed when the picker is an intermediate older set; ' + JSON.stringify({ picker: f.shown(), shows: h.host.shows.length }));
+  // Jellyfin keeps listing the earlier set: retried within redrawTries, then given up, never drawn as A+D.
+  assert.ok(await until(() => h.A.state().abandoned?.set === fingerprint(['a', 'd']), 3000), 'given up after the bound');
+  assert.equal(h.host.shows.length, h.A.timing.redrawTries, 'bounded');
+  assert.notEqual(h.A.state().base.set, fingerprint(['a', 'd']));
+  // The next set Jellyfin lists for real is drawn.
+  f.render(f.draw);
+  f.set(['a', 'e']);
+  await h.D.update(true);
+  assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'e']), 2000));
+  assert.deepEqual(f.shown(), ['a', 'e']);
+});
+
+for (const kind of ['movie', 'episode']) test(`ULR-3 ${kind}: a file replaced in place (same ids, new fingerprint) is drawn after one redraw that lists Jellyfin's versions`, async t => {
+  const f = setPage(t, kind), { h } = f; await h.D.update(false);
+  // Same ids, another fingerprint (the server's hash covers sizes): stands in for a file replaced at the same path.
+  f.fp('size2');
+  await h.D.update(true);
+  assert.ok(await until(() => h.A.state().base.set === fingerprint(['a', 'b']) + 'size2', 2000));
+  assert.equal(h.host.shows.length, 1, 'one redraw, not redrawTries');
+});

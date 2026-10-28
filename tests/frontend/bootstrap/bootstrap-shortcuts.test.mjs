@@ -143,7 +143,6 @@ test('F53: JE shortcuts (global, player and the panel key) do nothing while a JE
   h.document.body.append(sheet);
   await new Promise(r => setImmediate(r));
   assert.ok(release, 'the window is on the surface stack');
-  assert.equal(h.JE.hasModalSurface(), true);
   const before = h.window.location.hash;
   const inside = sheet.querySelector('#inside');
   inside.focus();
@@ -151,7 +150,6 @@ test('F53: JE shortcuts (global, player and the panel key) do nothing while a JE
   assert.equal(h.window.location.hash, before, 'Go home did not run behind the window');
   assert.deepEqual(h.actions, [], 'no player shortcut and no settings panel');
   release();
-  assert.equal(h.JE.hasModalSurface(), false);
   h.document.body.focus();
   viewerKey(h, h.document.body, 'a');
   assert.deepEqual(h.actions, ['audio'], 'shortcuts work again once it closed');
@@ -164,8 +162,26 @@ test('F53 control: a JE popup (not modal) leaves the shortcuts on', async t => {
   h.pressIn(opener, e => { h.JE.openSurface(popup, () => popup.remove(), h.JE.ownerOf(e), { modal: false }); });
   h.document.body.append(popup);
   await new Promise(r => setImmediate(r));
-  assert.equal(h.JE.hasModalSurface(), false);
   h.document.body.focus();
   viewerKey(h, h.document.body, 'a');
   assert.deepEqual(h.actions, ['audio']);
+});
+
+// F53's helper (not a behavioural regression: the tests above are): true only while a modal JE surface is open.
+test('F53 helper: JE.hasModalSurface follows the stack (modal yes, popup no, released no)', async t => {
+  const h = setup(t);
+  const opener = h.document.createElement('button'); h.document.body.append(opener);
+  const sheet = h.document.createElement('div'); sheet.innerHTML = '<button>In</button>';
+  let release = null;
+  h.pressIn(opener, e => { release = h.JE.openSurface(sheet, () => sheet.remove(), h.JE.ownerOf(e)); });
+  h.document.body.append(sheet);
+  await new Promise(r => setImmediate(r));
+  assert.equal(h.JE.hasModalSurface(), true);
+  release();
+  assert.equal(h.JE.hasModalSurface(), false);
+  const popup = h.document.createElement('div');
+  h.pressIn(opener, e => { h.JE.openSurface(popup, () => popup.remove(), h.JE.ownerOf(e), { modal: false }); });
+  h.document.body.append(popup);
+  await new Promise(r => setImmediate(r));
+  assert.equal(h.JE.hasModalSurface(), false);
 });
