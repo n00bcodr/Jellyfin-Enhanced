@@ -1,3 +1,6 @@
+#if JF12
+// Partial of ApiNativeDetailsTests, whose rig and the native-details pages it drives are Jellyfin 12 only (the plugin
+// compiles them under JF12), like the rest of that class.
 using System.Net;
 using Jellyfin.Data;
 using System.Reflection;
@@ -640,3 +643,4 @@ public partial class ApiNativeDetailsTests
         public bool Tag(string name) => false;
     }
 }
+#endif
