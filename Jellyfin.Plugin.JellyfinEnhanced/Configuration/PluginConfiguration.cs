@@ -1376,6 +1376,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Days an entry of the server-side cache is kept after it was fetched. 0 = no age limit.</summary>
         public int ServerCacheMaxAgeDays { get; set; } = 30;
 
+        /// <summary>
+        /// Records how long each server stage of an absent-title read takes (admission, TMDB cache and sends, parental
+        /// evidence, projection, publication): a <c>Server-Timing</c> header for administrators and a Debug line in the
+        /// plugin log, stage names and durations only. Off by default (the <c>JE_STAGE_TIMINGS=1</c> environment flag also
+        /// turns it on).
+        /// </summary>
+        public bool StageTimingsEnabled { get; set; } = false;
+
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
         public string ShokoUrl { get; set; }

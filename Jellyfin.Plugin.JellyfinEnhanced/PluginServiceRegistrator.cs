@@ -264,6 +264,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHttpContextAccessor();
             serviceCollection.AddSingleton<Services.NativeDetails.ViewerMetadataScopeFilter>();
             serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.NativeDetails.ViewerMetadataScopeFilter>(int.MinValue));
+            // Admin-switched stage timings of absent-title reads (off by default): outermost, so its header follows every owner.
+            serviceCollection.AddSingleton<Services.StageTimingsFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.StageTimingsFilter>(int.MinValue));
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
             // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----

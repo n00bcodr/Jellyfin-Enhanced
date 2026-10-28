@@ -328,6 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Task<TmdbResponse> shared;
             TaskCompletionSource<TmdbResponse>? owner = null;
             List<BundleMember>? bundleMembers = null;
+            var joinedPending = false;
             long fence;
             lock (_lock)
             {
@@ -336,12 +337,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 fence = _fenceClock;
                 if (!refresh && TryGetFreshLocked(key, out var cached))
                 {
+                    StageTimings.Count(Stage.TmdbHit);
                     return Task.FromResult(cached);
                 }
 
                 if (_inFlight.TryGetValue(key, out var pending))
                 {
                     shared = pending;
+                    joinedPending = true;
                 }
                 else if (target.HasValue && !AnyBundleMemberCachedLocked(keyPrefix, target.Value))
                 {
@@ -405,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, null, diskGeneration, fence);
             }
 
-            return shared.WaitAsync(cancellationToken);
+            return joinedPending ? StageTimings.Wait(shared.WaitAsync(cancellationToken), Stage.TmdbJoin) : shared.WaitAsync(cancellationToken);
         }
 
         /// <summary>
@@ -508,13 +511,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var key = GetKeyHash(apiKey) + "|" + upstreamUrl;
                 if (!skipCache && TryGetFreshLocked(key, out var cached))
                 {
+                    StageTimings.Count(Stage.TmdbHit);
                     joined = Task.FromResult(cached);
                     return true;
                 }
 
                 if (_inFlight.TryGetValue(key, out var pending))
                 {
-                    joined = pending;
+                    joined = StageTimings.Wait(pending, Stage.TmdbJoin);
                     return true;
                 }
             }
@@ -926,7 +930,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<(TmdbResponse Response, bool IsJson)> FetchUpstreamAsync(string requestUri)
         {
             using var timeout = new CancellationTokenSource(UpstreamTimeout);
-            await _upstreamSlots.WaitAsync(timeout.Token).ConfigureAwait(false);
+            using (StageTimings.Time(Stage.TmdbSlot)) await _upstreamSlots.WaitAsync(timeout.Token).ConfigureAwait(false);
+            using var timed = StageTimings.Time(Stage.TmdbSend);
             try
             {
                 using var response = await TmdbTransport.GetAsync(_httpClientFactory, requestUri,
@@ -1438,6 +1443,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var loaded = false;
+            using var timed = StageTimings.Time(Stage.TmdbDisk);
             try
             {
                 var entry = await _disk!.TryGetAsync(DiskNamespace, DiskKey(keyHash, upstreamUrl), ct).ConfigureAwait(false);

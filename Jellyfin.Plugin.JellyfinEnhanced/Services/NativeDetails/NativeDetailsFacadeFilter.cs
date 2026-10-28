@@ -308,7 +308,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var code = _serverConfig.Configuration?.MetadataCountryCode;
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
             var revision = _policy.Revision(viewer);
-            var links = _links.For(viewer, revision, serverId, await DiscoveryAsync(viewer, ct).ConfigureAwait(false));
+            var discovery = await DiscoveryAsync(viewer, ct).ConfigureAwait(false);
+            using var timed = StageTimings.Time(Stage.Project);
+            var links = _links.For(viewer, revision, serverId, discovery);
             return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links, _presentation?.Load(viewer.Id, http).Revision);
         }
 
@@ -402,7 +404,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (title.IsMovie)
             {
                 var movie = await _source.MovieAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
-                return movie.Data is { } m ? Ok(dtos.Movie(title, m, await logo.ConfigureAwait(false))) : Failed(movie);
+                if (movie.Data is not { } m) return Failed(movie);
+                var movieLogo = await logo.ConfigureAwait(false);
+                using (StageTimings.Time(Stage.Project)) return Ok(dtos.Movie(title, m, movieLogo));
             }
 
             var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
@@ -410,7 +414,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             switch (title.Kind)
             {
                 case SyntheticKind.Series:
-                    return Ok(dtos.Series(title, s, await logo.ConfigureAwait(false)));
+                    var seriesLogo = await logo.ConfigureAwait(false);
+                    using (StageTimings.Time(Stage.Project)) return Ok(dtos.Series(title, s, seriesLogo));
                 case SyntheticKind.Season:
                     var summary = NativeDetailsDtos.Seasons(s).FirstOrDefault(e => NativeDetailsDtos.Int(e, "seasonNumber") == title.Season);
                     if (summary.ValueKind != JsonValueKind.Object) return new NotFoundResult();

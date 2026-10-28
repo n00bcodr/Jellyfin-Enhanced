@@ -57,20 +57,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             lock (_lock)
             {
                 var hit = cached();
-                if (hit.Hit) return Task.FromResult(hit.Value);
-                if (_tasks.TryGetValue(path, out var running)) return ((Task<T>)running).WaitAsync(ct);
+                if (hit.Hit)
+                {
+                    StageTimings.Count(Stage.MetaHit);
+                    return Task.FromResult(hit.Value);
+                }
+                if (_tasks.TryGetValue(path, out var running)) return StageTimings.Wait(((Task<T>)running).WaitAsync(ct), Stage.MetaJoin);
                 // An expired evidence/slot waiter owns no cold work. Check after the cache probe
                 // and free join, before capacity or budget can turn its deadline into a busy answer.
                 // Existing owners keep their places and continue warming the cache independently.
                 ct.ThrowIfCancellationRequested();
                 if (viewer == Guid.Empty || !_scheduler.TryAdmit(viewer))
                 {
+                    StageTimings.Count(Stage.MetaBusy);
                     Viewer.Value?.Refuse();
                     return Task.FromResult(busy);
                 }
                 if (budget != null && !budget.Take(viewer))
                 {
                     _scheduler.Leave(viewer, false);
+                    StageTimings.Count(Stage.MetaBusy);
                     Viewer.Value?.Refuse();
                     return Task.FromResult(busy);
                 }
@@ -93,8 +99,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             Exception? failure = null;
             try
             {
-                await _scheduler.TurnAsync(viewer).ConfigureAwait(false);
+                using (StageTimings.Time(Stage.MetaAdmit)) await _scheduler.TurnAsync(viewer).ConfigureAwait(false);
                 ran = true;
+                using var timed = StageTimings.Time(Stage.MetaFetch);
                 using var scope = MetadataTaskProbe.Own(new(viewer, path, "external", owner));
                 using var admission = new MetadataAdmission("viewer:" + viewer.ToString("N"));
                 try { result = await fetch().ConfigureAwait(false); }

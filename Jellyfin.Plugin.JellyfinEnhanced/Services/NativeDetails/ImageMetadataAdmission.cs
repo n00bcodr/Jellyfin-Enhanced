@@ -47,7 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 // Expiry uses the existing optional image refusal/placeholder contract. A cancelled
                 // caller cannot detach shared work or relinquish its outstanding place early.
-                entered = await _running.WaitAsync(QueueWait).ConfigureAwait(false);
+                using (StageTimings.Time(Stage.ImageAdmit)) entered = await _running.WaitAsync(QueueWait).ConfigureAwait(false);
                 if (entered)
                 {
                     using var admission = new MetadataAdmission("image:" + viewer.ToString("N"), images: true);

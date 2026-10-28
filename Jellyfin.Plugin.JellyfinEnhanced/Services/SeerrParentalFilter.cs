@@ -599,6 +599,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (policy.EvidenceGeneration != EvidenceGeneration) return null;
             var type = NormalizeMediaType(mediaType);
             if (tmdbId <= 0 || type == null) return false;
+            using var timed = StageTimings.Time(Stage.Evidence);
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -274,10 +274,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> TitleAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
         {
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
+            using var feed = StageTimings.Time(Stage.Feed);
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = movie ? await _source.MovieAsync(tmdb, viewer.Id, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
+            using var projection = StageTimings.Time(Stage.Project);
             if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
             body.Remove("mediaInfo");
             var media = ProviderMetadata.Obj(data, "mediaInfo");
@@ -290,10 +292,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> SeasonAsync(User viewer, int tmdb, int season, CancellationToken ct)
         {
             if (tmdb <= 0 || season is < 0 or > 65535) return new(FeedOutcome.Invalid, null);
+            using var feed = StageTimings.Time(Stage.Feed);
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, SyntheticId.SeasonOf(tmdb, season), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new(access, null);
             var answer = await _source.SeasonAsync(tmdb, season, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
+            using var projection = StageTimings.Time(Stage.Project);
             var body = JsonNode.Parse(data.GetRawText())!.AsObject();
             body.Remove("mediaInfo");
             return new(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), "tv:tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "season", scopeKind: "season", season: season) ?? body.ToJsonString());

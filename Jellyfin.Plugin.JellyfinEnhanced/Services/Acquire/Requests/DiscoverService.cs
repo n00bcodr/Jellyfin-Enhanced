@@ -459,6 +459,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var result = new Dictionary<string, bool?>(StringComparer.Ordinal);
             if (!viewer.HasParentalLimit) return result;
+            using var timed = StageTimings.Time(Stage.DiscoverEvidence);
             var absent = rows.DistinctBy(r => r.Key).Where(r => Lookup(viewer, r) is { Seen.Count: 0, IsProvenAbsent: true }).ToList();
             var checks = absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer, budget.Token)).ToArray();
             try { await Task.WhenAll(checks).WaitAsync(budget.Token).ConfigureAwait(false); }

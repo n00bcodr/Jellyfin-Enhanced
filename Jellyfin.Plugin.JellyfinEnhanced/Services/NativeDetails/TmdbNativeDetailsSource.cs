@@ -312,6 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 // actually ends; cancelling a cache waiter would leave its work unowned.
                 var response = await _tmdb.GetAsync(path, query, key, CancellationToken.None).ConfigureAwait(false);
                 if (!response.IsSuccess) return response.StatusCode == 404 ? SourceAnswer.Missing : SourceAnswer.Unavailable;
+                using var timed = StageTimings.Time(Stage.SourceMap);
                 using var doc = JsonDocument.Parse(response.Content);
                 if (doc.RootElement.ValueKind != JsonValueKind.Object) return SourceAnswer.Unavailable;
                 using var mapped = JsonDocument.Parse(map(doc.RootElement).ToJsonString());
@@ -335,7 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 var answer = await FeedAsync(path, viewer, fetch, ct).ConfigureAwait(false);
                 if (!answer.Busy || DateTime.UtcNow >= until) return answer;
-                await Task.Delay(250, ct).ConfigureAwait(false);
+                using (StageTimings.Time(Stage.SourceBusy)) await Task.Delay(250, ct).ConfigureAwait(false);
             }
         }
 
@@ -354,7 +355,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
         {
-            if (TryCached(path, out var hit)) return Task.FromResult(hit);
+            if (TryCached(path, out var hit))
+            {
+                StageTimings.Count(Stage.SourceHit);
+                return Task.FromResult(hit);
+            }
+
             return KnownThenAdmittedAsync(path, viewer, fetch, ct);
         }
 

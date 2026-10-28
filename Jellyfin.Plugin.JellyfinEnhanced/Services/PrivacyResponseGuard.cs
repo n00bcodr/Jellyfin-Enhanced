@@ -367,6 +367,7 @@ public sealed class PrivacyResponseGuard : IDisposable
     /// </summary>
     public bool Holds(bool live = true)
     {
+        using var timed = StageTimings.Time(Stage.Publish);
         if (!BackendHolds()) return false;
         PrivacyReadSet[] reads;
         lock (_lock)
