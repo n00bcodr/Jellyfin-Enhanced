@@ -371,6 +371,23 @@ test('F54: in Plugin Pages mode Manage hidden content opens the companion\'s Hid
   assert.deepEqual(h.calls, { pages: 0, manager: 0 });
 });
 
+test('F54: in Plugin Pages mode on Jellyfin 12\'s Modern layout (the companion\'s entry is a user-menu item) Manage opens that page', async t => {
+  const href = '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage';
+  const h = manageButton(t, { HiddenContentUsePluginPages: true },
+    { html: `<div role="menu" hidden><a class="MuiMenuItem-root" role="menuitem" href="#/userpluginsettings.html?pageUrl=/Other/page" data-plugin-pages="true">Other</a><a class="MuiMenuItem-root" role="menuitem" href="${href}" data-plugin-pages="true">Hidden Content</a></div>` });
+  h.click(h.button);
+  await settle();
+  assert.equal(h.window.location.hash, href);
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+test('F54 control: in Plugin Pages mode with no companion entry drawn, Manage opens JE\'s own page (which then shows)', async t => {
+  const h = manageButton(t, { HiddenContentUsePluginPages: true });
+  h.click(h.button);
+  await settle();
+  assert.deepEqual(h.calls, { pages: 1, manager: 0 });
+});
+
 test('F54: in Custom Tabs mode Manage hidden content opens the Home tab whose entry holds the Hidden Content marker', async t => {
   const reads = [];
   const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: {

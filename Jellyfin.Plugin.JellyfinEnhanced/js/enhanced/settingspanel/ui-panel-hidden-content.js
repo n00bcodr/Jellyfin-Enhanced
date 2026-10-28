@@ -18,13 +18,22 @@
     const PLUGIN_PAGE_URL = '/JellyfinEnhanced/hiddenContentPage';
 
     /**
+     * The companion's own entry for JE's Hidden Content page: its sidebar link (legacy drawer) or its user-menu item
+     * (Jellyfin 12's Modern layout, no item id), either carrying the page's registered address. Null when it drew none.
+     * @returns {HTMLAnchorElement|null} The link.
+     */
+    function pluginPageLink() {
+        return document.querySelector(`a[data-itemid="${PLUGIN_PAGE_ID}"][href*="userpluginsettings"]`)
+            || [...document.querySelectorAll('a[href*="userpluginsettings"]')].find(a => (a.getAttribute('href') || '').includes(PLUGIN_PAGE_URL)) || null;
+    }
+
+    /**
      * Where the Hidden Content list is in Plugin Pages mode: the companion's own entry for it (its link carries the
      * page's registered address), else the companion's route for JE's page.
      * @returns {string} The hash route.
      */
     function pluginPageRoute() {
-        const link = document.querySelector(`a[data-itemid="${PLUGIN_PAGE_ID}"][href*="userpluginsettings"]`);
-        const href = link?.getAttribute('href') || '';
+        const href = pluginPageLink()?.getAttribute('href') || '';
         const at = href.indexOf('#/userpluginsettings');
         return at >= 0 ? href.slice(at) : `#/userpluginsettings.html?pageUrl=${PLUGIN_PAGE_URL}`;
     }
@@ -66,7 +75,7 @@
             // so go to the tab, named by id (native-tabs.js puts the right tab index in).
             window.location.hash = '#/home?tab=0&jeTab=hidden-content';
         } else if (config.HiddenContentEnabled && config.HiddenContentUsePluginPages
-            && (JE.internals?.hiddenContentPage?.pluginPagesExists || document.querySelector(`a[data-itemid="${PLUGIN_PAGE_ID}"]`))) {
+            && (JE.internals?.hiddenContentPage?.pluginPagesExists || pluginPageLink())) {
             // The companion shows the list (JE's own page stays away then, hidden-content-page-nav.js).
             window.location.hash = pluginPageRoute();
         } else if (config.HiddenContentEnabled && config.HiddenContentUseCustomTabs) {
