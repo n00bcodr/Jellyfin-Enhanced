@@ -342,3 +342,35 @@ test('UX-21: without the Discover tab (someone who may not ask) the empty state 
   panel.querySelector('.je-hub-empty-search').click();
   assert.equal(h.window.location.hash, '#/search');
 });
+
+test('UX-21: at phone width the tab strip scrolls the selected tab into view (Discover chosen from the empty state)', async t => {
+  const h = setup(t, { hash: '#/requests' });
+  // jsdom has no layout: a 390 px strip whose tabs sit 110 px apart, the fourth one (Discover) past its right edge.
+  const proto = h.window.HTMLElement.prototype;
+  const strip = node => node.classList?.contains('je-hub-tabs');
+  const scrolled = new WeakMap();
+  Object.defineProperty(proto, 'scrollWidth', { configurable: true, get() { return strip(this) ? 560 : 0; } });
+  Object.defineProperty(proto, 'clientWidth', { configurable: true, get() { return strip(this) ? 390 : 0; } });
+  Object.defineProperty(proto, 'scrollLeft', { configurable: true, get() { return scrolled.get(this) || 0; }, set(v) { scrolled.set(this, v); } });
+  const rect = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function () {
+    if (strip(this)) return { left: 0, right: 390, top: 0, bottom: 40, width: 390, height: 40 };
+    if (this.classList?.contains('je-hub-tab')) {
+      const i = [...this.parentElement.children].indexOf(this);
+      const left = i * 110 - (scrolled.get(this.parentElement) || 0);
+      return { left, right: left + 100, top: 0, bottom: 40, width: 100, height: 40 };
+    }
+    return rect.call(this);
+  };
+  h.JE.initializeArrHub();
+  await until(() => hubPage(h)?.querySelector('.je-hub-empty-discover'));
+  assert.equal(hubPage(h).querySelector('.je-hub-tabs').scrollLeft, 0, 'My requests is already in view');
+  hubPage(h).querySelector('.je-hub-empty-discover').click();
+  await until(() => hubPage(h).querySelector('.je-hub-tab[aria-selected="true"]')?.dataset.tab === 'discover');
+  // Discover (index 3) spans 330–430: scrolled by 430 - 390 + 8.
+  assert.equal(hubPage(h).querySelector('.je-hub-tabs').scrollLeft, 48);
+  await until(() => {
+    const rows = [...hubPage(h).querySelectorAll('.je-discover-row')];
+    return rows.length > 0 && rows.every(r => r.hidden);
+  });
+});

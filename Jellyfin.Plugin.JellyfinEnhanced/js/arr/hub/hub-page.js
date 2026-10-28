@@ -841,6 +841,22 @@
             button.addEventListener('click', () => selectTab(id));
             strip.appendChild(button);
         }
+        revealSelectedTab(strip);
+    }
+
+    /**
+     * Scrolls a sideways-scrolling tab strip (phone width) so the selected tab is fully in view: a tab chosen
+     * from elsewhere (empty My requests' Discover, a deep link) is otherwise cut off at the strip's edge.
+     * @param {HTMLElement} strip Tab strip.
+     * @returns {void}
+     */
+    function revealSelectedTab(strip) {
+        const selected = strip.querySelector('.je-hub-tab[aria-selected="true"]');
+        if (!selected || strip.scrollWidth <= strip.clientWidth) return;
+        const box = strip.getBoundingClientRect();
+        const tab = selected.getBoundingClientRect();
+        if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 8;
+        else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 8;
     }
 
     /**
