@@ -185,26 +185,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // The key each row names its title by, and that title's canonical key (what the names are resolved for).
             var rows = entries.Select(e => (Key: AuditTitleKey(e), Entry: e)).Where(r => r.Key.HasValue).ToArray();
             var keys = rows.Select(r => r.Key!.Value).Distinct().ToArray();
-            // Named only as the caller's own request cards would name them (RequestHubProjection.AuditTitlesAsync).
-            var meta = _projection == null || keys.Length == 0 || ArrCaller.PersonId(User) is not { } caller
-                ? new Dictionary<string, Services.Acquire.Requests.HubTitleMeta>(StringComparer.Ordinal)
-                : await _projection.AuditTitlesAsync(rows.Select(r => (r.Key!.Value.Title, r.Entry)), caller, cancellationToken).ConfigureAwait(false);
-            var titles = new Dictionary<string, object>(StringComparer.Ordinal);
-            foreach (var (raw, title) in keys)
+            var caller = ArrCaller.PersonId(User);
+            // The one delivery gate: title names are judged by the caller's privacy policies (Hidden Content, parental
+            // limits), so the answer leaves only when the read-set of the attempt that built it still holds (else built
+            // again, bounded; then 503).
+            var answer = await Services.PrivacyDelivery.DeliverAsync<IActionResult>(caller ?? Guid.Empty, async () =>
             {
-                if (meta.TryGetValue(title, out var m) && !string.IsNullOrEmpty(m.Title)) titles[raw] = new { title = m.Title, year = m.Year };
-            }
-            return Ok(new
-            {
-                entries,
-                names = new
+                // Named only as the caller's own request cards would name them (RequestHubProjection.AuditTitlesAsync).
+                var meta = _projection == null || keys.Length == 0 || caller is not { } admin
+                    ? new Dictionary<string, Services.Acquire.Requests.HubTitleMeta>(StringComparer.Ordinal)
+                    : await _projection.AuditTitlesAsync(rows.Select(r => (r.Key!.Value.Title, r.Entry)), admin, cancellationToken).ConfigureAwait(false);
+                var titles = new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var (raw, title) in keys)
                 {
-                    users = AuditUserNames(entries),
-                    titles,
-                    instances = entries.Select(e => e.InstanceId).Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal)
-                        .Select(id => (id, name: _clients.Registry.Get(id)?.Name)).Where(x => !string.IsNullOrEmpty(x.name)).ToDictionary(x => x.id, x => x.name, StringComparer.Ordinal),
-                },
-            });
+                    if (meta.TryGetValue(title, out var m) && !string.IsNullOrEmpty(m.Title)) titles[raw] = new { title = m.Title, year = m.Year };
+                }
+                return Ok(new
+                {
+                    entries,
+                    names = new
+                    {
+                        users = AuditUserNames(entries),
+                        titles,
+                        instances = entries.Select(e => e.InstanceId).Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal)
+                            .Select(id => (id, name: _clients.Registry.Get(id)?.Name)).Where(x => !string.IsNullOrEmpty(x.name)).ToDictionary(x => x.id, x => x.name, StringComparer.Ordinal),
+                    },
+                });
+            }, HttpContext).ConfigureAwait(false);
+            return answer ?? StatusCode(503);
         }
 
         // The title an audit row acts on: the key as the row names it (a search's details "key", a "key:" target, else a
