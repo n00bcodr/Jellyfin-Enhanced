@@ -1341,6 +1341,59 @@ public class ApiArrStatusTests
     }
 
     [Fact]
+    public async Task AVersionsFingerprintTellsADifferentSetOfVersionsWithTheSameCount()
+    {
+        using var rig = new Rig();
+        var sintel = rig.View.Items[rig.Sintel].Ref;
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), hidden = Guid.NewGuid();
+        void Versions(params (Guid Id, long Size)[] others)
+        {
+            rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = sintel.Key, Path = sintel.Path, DateCreated = sintel.DateCreated, Versions = others.Length + 1, Size = 100 });
+            rig.View.SourcesByItem[rig.Sintel] = new[] { (Id: rig.Sintel, Size: 100L) }.Concat(others)
+                .Select(v => new JfSource { SourceId = v.Id, ItemId = rig.Sintel, BackingItemId = v.Id, Size = v.Size }).ToList();
+            rig.View.Rev++;
+        }
+        async Task<(int Count, string Print)> Read(StatusViewer viewer)
+        {
+            var status = Items(await Item(rig, viewer, rig.Sintel))[0];
+            return (status.GetProperty("versions").GetInt32(), status.GetProperty("versionsFingerprint").GetString()!);
+        }
+
+        Versions((a, 200));
+        var first = await Read(rig.Member);
+        Assert.Equal(2, first.Count);
+        Assert.Equal(first, await Read(rig.Member));
+        // One version removed and another added: the count stays, the fingerprint doesn't.
+        Versions((b, 200));
+        var swapped = await Read(rig.Member);
+        Assert.Equal(2, swapped.Count);
+        Assert.NotEqual(first.Print, swapped.Print);
+        // The same version's file replaced by another size.
+        Versions((b, 300));
+        var resized = await Read(rig.Member);
+        Assert.Equal(2, resized.Count);
+        Assert.NotEqual(swapped.Print, resized.Print);
+        Versions((b, 200));
+        Assert.Equal(swapped, await Read(rig.Member));
+        // A version the viewer can't open is neither counted nor in their fingerprint.
+        rig.View.AddItem(new JfItemRef { ItemId = hidden, Kind = "movie", Key = sintel.Key, Versions = 1 }, rig.Admin.UserId);
+        Versions((b, 200), (hidden, 400));
+        Assert.Equal(swapped, await Read(rig.Member));
+        var admin = await Read(rig.Admin);
+        Assert.Equal(3, admin.Count);
+        Assert.NotEqual(swapped.Print, admin.Print);
+        // One version: the item's own file, without reading its sources.
+        rig.View.SourcesByItem.Remove(rig.Sintel);
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = sintel.Key, Path = sintel.Path, DateCreated = sintel.DateCreated, Versions = 1, Size = 100 });
+        rig.View.Rev++;
+        Assert.Equal((1, ArrStatusService.VersionsFingerprint(new[] { (rig.Sintel, (long?)100) })), await Read(rig.Member));
+        Assert.Equal(ArrStatusService.VersionsFingerprint(new[] { (a, (long?)1), (b, (long?)2) }), ArrStatusService.VersionsFingerprint(new[] { (b, (long?)2), (a, (long?)1) }));
+        // Never on a series or a missing episode (as versions).
+        Assert.False(Items(await Item(rig, rig.Member, rig.Firefly))[0].TryGetProperty("versionsFingerprint", out _));
+        Assert.False(Items(await Item(rig, rig.Member, rig.Episode3))[0].TryGetProperty("versionsFingerprint", out _));
+    }
+
+    [Fact]
     public async Task AMovieWhoseFileJellyfinNowKeepsAsAVersionOfANewItemNamesThatItem()
     {
         // Jellyfin 12: a 2160p file lands next to the 1080p one; the 2160p file becomes the movie item (a new id)
