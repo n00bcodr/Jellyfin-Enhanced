@@ -144,7 +144,8 @@ public class ApiArrAdminTests
         rig.Audit.Append(new ArrAuditEntry { Time = at.AddSeconds(2), UserId = admin.ToString("N"), Action = "users.policy", Target = emma.ToString("N"), Outcome = "succeeded" });
         rig.Audit.Append(new ArrAuditEntry { Time = at.AddSeconds(3), UserId = "system", Action = "request.choice.claim.identity_merge", InstanceId = rig.SonarrId, Target = "tv:tvdb:75932", Outcome = "succeeded" });
 
-        using var doc = JsonDocument.Parse(Json(await rig.Controller.GetAudit(take: 10)));
+        // The audit answer writes and commits itself under the privacy response guard (an OkObjectResult subclass).
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsAssignableFrom<OkObjectResult>(await rig.Controller.GetAudit(take: 10)).Value));
         var entries = doc.RootElement.GetProperty("entries").EnumerateArray().ToList();
         Assert.Equal(4, entries.Count);
         // The rows themselves are as stored: ids, not names.
