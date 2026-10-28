@@ -680,6 +680,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal bool MayOpenLocal(string kind, int tmdb, string userId)
             => TryGetRestrictedPolicy(userId, out var policy) && JeEvidence && _evidence.MayOpenLocal(kind, tmdb, policy.NativeUser);
 
+        /// <summary>
+        /// The person read again now (a fresh read from Jellyfin), or null when they are unknown, deleted or disabled: what
+        /// a decision made from an earlier read of them falls back to when that read is no longer the person.
+        /// </summary>
+        /// <param name="userId">The person.</param>
+        /// <returns>The fresh read, or null.</returns>
+        internal Jellyfin.Database.Implementations.Entities.User? ReadAgain(Guid userId)
+        {
+            try
+            {
+                return Helpers.ArrCaller.Find(userId, _userManager) is { } user && !user.HasPermission(PermissionKind.IsDisabled) ? user : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// <summary><see cref="MayOpenLocal(string, int, string)"/> for a person already read (not read again).</summary>
         internal bool MayOpenLocal(string kind, int tmdb, Jellyfin.Database.Implementations.Entities.User user)
             => TryGetRestrictedPolicy(user, out var policy) && JeEvidence && _evidence.MayOpenLocal(kind, tmdb, policy.NativeUser);

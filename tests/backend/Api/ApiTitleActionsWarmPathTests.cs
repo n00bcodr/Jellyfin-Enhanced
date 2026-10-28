@@ -381,4 +381,182 @@ public class ApiTitleActionsWarmPathTests
             accessor.HttpContext = null;
         }
     }
+
+    // ---- Review round 2 (WPR-1 to WPR-4): ported reviewer probes ----
+
+    [Theory]
+    [InlineData("restricted")]
+    [InlineData("tags")]
+    [InlineData("folders")]
+    [InlineData("disabled")]
+    [InlineData("deleted")]
+    public async Task AReplacementDuringEvaluationIsNotConfirmedAndRetriesFresh(string change)
+    {
+        using var rig = new Rig();
+        await rig.Settle();
+        var next = Rig.Person(rig.Viewer.Id);
+        if (change == "restricted") next.MaxParentalRatingScore = 10;
+        if (change == "tags") next.SetPreference(PreferenceKind.BlockedTags, new[] { "horror" });
+        if (change == "folders") next.SetPermission(PermissionKind.EnableAllFolders, false);
+        if (change == "disabled") next.SetPermission(PermissionKind.IsDisabled, true);
+        var once = 0;
+        rig.OnScan = () => {
+            if (Interlocked.Exchange(ref once, 1) == 0)
+                rig.Lookup = id => change == "deleted" || id != next.Id ? null : next;
+        };
+        var input = new MutationInput { Key = "movie:tmdb:" + TmdbId, Scope = "movie" };
+        var before = rig.Reads;
+        var facts = rig.Requests.Evaluate(rig.Viewer, input, out var current);
+        Assert.False(current);
+        Assert.False(facts.Visible);
+        Assert.True(rig.Reads - before >= 3);
+    }
+
+    [Fact]
+    public async Task ACopyRemovedDuringTheSourceAwaitIsNotReturned()
+    {
+        using var rig = new Rig();
+        var key = TitleKey.Parse("movie:tmdb:" + TmdbId)!;
+        rig.OnPageRead = () => {
+            var copy = rig.AddCopy();
+            rig.Changed(copy);
+            Assert.Equal(copy.Id, rig.View.Copies(key, rig.View.Viewer(rig.Viewer.Id)!).Seen.Single().ItemId);
+            rig.Copies.Remove(copy);
+            rig.Library.Raise(l => l.ItemRemoved += null, rig.Library.Object, new ItemChangeEventArgs { Item = copy });
+        };
+        var (status, body) = await rig.Read();
+        Assert.Equal(200, status);
+        Assert.Equal("{\"allowed\":true,\"itemId\":null}", body);
+    }
+
+    [Fact]
+    public void AliasOrderDoesNotMatterAndRequestsNeverShare()
+    {
+        using var rig = new Rig();
+        var key = TitleKey.Parse("movie:tmdb:" + TmdbId)!;
+        var aliases = new[] { TitleKey.Parse("movie:tmdb:123")!, TitleKey.Parse("movie:imdb:tt0000001")! };
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        try {
+            var viewer = rig.View.Viewer(rig.Viewer.Id)!;
+            Assert.True(rig.View.Copies(key, viewer, aliases).IsProvenAbsent);
+            var before = rig.Scans;
+            Assert.True(rig.View.Copies(key, viewer, aliases.Reverse().ToArray()).IsProvenAbsent);
+            Assert.Equal(before, rig.Scans);
+            accessor.HttpContext = new DefaultHttpContext();
+            Assert.True(rig.View.Copies(key, viewer, aliases).IsProvenAbsent);
+            Assert.True(rig.Scans > before);
+        } finally { accessor.HttpContext = null; }
+    }
+
+    #if JF12
+    [Fact]
+    public void LosingLibraryAccessMovesTheNativeDetailsRevisionTheLinksAreKeyedBy()
+    {
+        using var rig = new Rig();
+        var genre = Guid.NewGuid();
+        rig.Library.Setup(l => l.GetGenreId("Science Fiction")).Returns(genre);
+        rig.Library.Setup(l => l.GetItemById(genre)).Returns(new Genre { Id = genre, Name = "Science Fiction" });
+        rig.Library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+            q.User!.HasPermission(PermissionKind.EnableAllFolders) ? new List<Guid> { Guid.NewGuid() } : new List<Guid>());
+        using var links = new NativeDetailsLinks(rig.Library.Object, null, () => rig.View.Revision);
+        const string server = "0123456789abcdef0123456789abcdef";
+        var before = rig.Policy.Revision(rig.Viewer);
+        Assert.Equal(genre, links.For(rig.Viewer, before, server, LinkDiscovery.None).Genre("Science Fiction", 878));
+        var next = Rig.Person(rig.Viewer.Id);
+        next.SetPermission(PermissionKind.EnableAllFolders, false);
+        var after = rig.Policy.Revision(next);
+        Assert.NotEqual(before, after);
+        Assert.Null(links.For(next, after, server, LinkDiscovery.None).Genre("Science Fiction", 878));
+    }
+    #endif
+
+    [Fact]
+    public void CopySharingIsBoundedPerRequest()
+    {
+        using var rig = new Rig();
+        var http = new DefaultHttpContext();
+        var accessor = new HttpContextAccessor { HttpContext = http };
+        try {
+            var viewer = rig.View.Viewer(rig.Viewer.Id)!;
+            for (var i = 1; i <= 260; i++) Assert.True(rig.View.Copies(TitleKey.Parse("movie:tmdb:" + i)!, viewer).IsProvenAbsent);
+            var entries = Assert.Single(http.Items.Values.OfType<System.Collections.IDictionary>());
+            Assert.Equal(256, entries.Count);
+        } finally { accessor.HttpContext = null; }
+    }
+
+    [Fact]
+    public async Task AMismatchRereadsThePersonForThePhysicalEpisodeDecision()
+    {
+        using var rig = new Rig();
+        rig.Viewer.SetPermission(PermissionKind.IsAdministrator, true);
+        var next = Rig.Person(rig.Viewer.Id);
+        next.SetPermission(PermissionKind.IsAdministrator, true);
+        next.MaxParentalRatingScore = 10;
+        var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid(), Name = "Show", Path = "/movies/show" };
+        series.SetProviderId(MetadataProvider.Tmdb, TmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var season = new MediaBrowser.Controller.Entities.TV.Season { Id = Guid.NewGuid(), IndexNumber = 1, SeriesId = series.Id, Path = "/movies/show/s1" };
+        var episode = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = 1, ParentIndexNumber = 1, SeriesId = series.Id, SeasonId = season.Id, Path = "/movies/show/s1/e1.mkv" };
+        rig.Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => {
+            if (q.IncludeItemTypes.Contains(BaseItemKind.Series)) return new List<BaseItem> { series };
+            if (q.IncludeItemTypes.Contains(BaseItemKind.Season)) return new List<BaseItem> { season };
+            if (q.IncludeItemTypes.Contains(BaseItemKind.Episode)) return new List<BaseItem> { episode };
+            return new List<BaseItem>();
+        });
+        rig.Library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>(), It.IsAny<User>())).Returns((Guid id, User u) =>
+            id == series.Id ? series : id == season.Id ? season : id == episode.Id && !u.MaxParentalRatingScore.HasValue ? episode : null!);
+        User live = rig.Viewer;
+        rig.Lookup = id => id == live.Id ? live : null;
+        var view = new Mock<IArrJellyfinView>();
+        view.SetupGet(v => v.Revision).Returns(1);
+        view.Setup(v => v.Viewer(It.IsAny<Guid>())).Returns(() => ArrJellyfinView.ViewerOf(live));
+        view.Setup(v => v.ViewerAsRead(It.IsAny<User>())).Returns((User u) => ArrJellyfinView.ViewerOf(u));
+        view.Setup(v => v.Copies(It.IsAny<TitleKey>(), It.IsAny<StatusViewer>(), It.IsAny<IReadOnlyCollection<TitleKey>>()))
+            .Returns(() => { live = next; return CopyLookup.Complete(new[] { new JfCopy { ItemId = series.Id, Visible = true } }); });
+        view.Setup(v => v.Seasons(It.IsAny<Guid>(), It.IsAny<StatusViewer>())).Returns(Array.Empty<JfSeason>());
+        view.Setup(v => v.Episodes(It.IsAny<Guid>(), It.IsAny<int?>(), It.IsAny<StatusViewer>(), It.IsAny<bool>())).Returns(Array.Empty<JfEpisode>());
+        var roots = new FakeLibraryAccess();
+        var requests = new RequestPolicy(view.Object, rig.Store, new ArrInstanceLibraries(rig.Store, roots), new TitleAliases(rig.Store, null), rig.Gate, rig.Arr.Factory, new UnavailableRequestBackend());
+        var policy = new NativeDetailsPolicy(rig.Gate, Mock.Of<INativeDetailsSource>(), roots, requests,
+            physical: new NativeDetailsLibrary(rig.Library.Object));
+        var title = SyntheticId.EpisodeOf(TmdbId, 1, 1);
+        Assert.True(policy.Physical(next, title).Hides(title));
+        Assert.False(policy.Physical(rig.Viewer, title).Hides(title));
+        var withHeldRead = await policy.SeeDetailsAsync(rig.Viewer, title, CancellationToken.None);
+        var withFreshRead = await policy.SeeDetailsAsync(next, title, CancellationToken.None);
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, withFreshRead);
+        Assert.Equal(withFreshRead, withHeldRead);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AParentFolderEditInvalidatesSharedCopyVisibility(bool requestPolicy)
+    {
+        using var rig = new Rig();
+        await rig.Settle();
+        rig.Viewer.SetPreference(PreferenceKind.BlockedTags, new[] { "restricted" });
+        var movie = rig.AddCopy();
+        var key = TitleKey.Parse("movie:tmdb:" + TmdbId)!;
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        try {
+            Assert.True(rig.View.Copies(key, rig.View.Viewer(rig.Viewer.Id)!).Seen.Single().Visible);
+            var input = new MutationInput { Key = key.ToString(), Scope = "movie" };
+            Assert.True(rig.Requests.Evaluate(rig.Viewer.Id, input).Visible);
+            var before = rig.View.Revision;
+            // Native IsVisibleStandalone checks each parent too. Editing only a parent's blocked tag hides the movie;
+            // neither the user's policy, the virtual-folder topology, nor the movie itself changed.
+            rig.Closed.Add(movie.Id);
+            rig.Library.Raise(l => l.ItemUpdated += null, rig.Library.Object, new ItemChangeEventArgs {
+                Item = new Folder { Id = Guid.NewGuid(), Path = "/movies", Tags = new[] { "restricted" } }
+            });
+            // Review WPR-1: a parent folder edit moves the view's revision (the authorization stamp) as well.
+            Assert.NotEqual(before, rig.View.Revision);
+            bool Visible() => requestPolicy ? rig.Requests.Evaluate(rig.Viewer.Id, input).Visible
+                : rig.View.Copies(key, rig.View.Viewer(rig.Viewer.Id)!).Seen.Single().Visible;
+            var withinRequest = Visible();
+            accessor.HttpContext = null;
+            Assert.False(Visible());
+            Assert.False(withinRequest);
+        } finally { accessor.HttpContext = null; }
+    }
 }

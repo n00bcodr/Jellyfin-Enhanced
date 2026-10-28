@@ -36,6 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly ILogger<ArrJellyfinView>? _logger;
         private readonly BridgeImportReadiness? _readiness;
         private long _revision;
+        private long _changes;
 
         /// <summary>Native rows per copy-query page; the eligible copy budget is separate.</summary>
         internal const int CopyPageSize = 100;
@@ -283,23 +284,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // One request asks the same title for the same person several times (the action menu: its real-copy check
             // before and after the metadata await, and request visibility in each admission). A finished scan is shared
             // within the request while nothing could have changed what it found: the same person with the same authority
-            // and library scope, the same ids, and no movie or series added, updated or removed since the scan began.
+            // and library scope, the same ids, and no library item of any kind (a title, or a parent folder whose tags or
+            // rating Jellyfin's own visibility check reads) added, updated or removed since the scan began.
             var phase = PhaseCopies(titleKey, viewer, aliases);
-            if (phase is { } shared && shared.Held is { } held) return held;
-            var revision = Revision;
+            if (phase?.Held is { } held) return held;
+            var mark = Mark();
             var lookup = Scan(titleKey, viewer, aliases);
-            if (phase is { } fill && lookup.IsComplete) fill.Keep(revision, lookup);
+            if (phase != null && lookup.IsComplete) phase.Keep(mark, lookup);
             return lookup;
         }
 
-        /// <summary>The key a request's copy lookups are shared under, and its kept lookup when still current.</summary>
-        private readonly record struct PhaseLookup(Dictionary<string, (long Revision, CopyLookup Lookup)> Lookups, string Key, CopyLookup? Held)
+        /// <summary>
+        /// The library's change marks now: <see cref="Revision"/> and every library item event of any kind. Taken BEFORE a scan,
+        /// so a scan that ran across a change is never shared afterwards.
+        /// </summary>
+        private (long Revision, long Changes) Mark() => (Revision, Interlocked.Read(ref _changes));
+
+        /// <summary>
+        /// One request's shared copy lookups (<see cref="PhaseCopies"/>): kept in the request's own items, dropped with it,
+        /// and keyed by the person's full authority as this viewer was read (the fingerprint), their policy revision, the
+        /// live library topology, the title and every alias; each served only while the library's change marks are those
+        /// taken before its scan.
+        /// </summary>
+        private sealed class PhaseLookup
         {
-            internal void Keep(long revision, CopyLookup lookup)
+            private readonly Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> _lookups;
+            private readonly string _key;
+
+            internal PhaseLookup(Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> lookups, string key, (long Revision, long Changes) now)
             {
-                lock (Lookups)
+                _lookups = lookups;
+                _key = key;
+                lock (_lookups)
                 {
-                    if (Lookups.Count < PhaseLookups || Lookups.ContainsKey(Key)) Lookups[Key] = (revision, lookup);
+                    Held = _lookups.TryGetValue(key, out var held) && held.Mark == now ? held.Lookup : null;
+                }
+            }
+
+            /// <summary>The kept lookup, when the library is unchanged since its scan began.</summary>
+            internal CopyLookup? Held { get; }
+
+            internal void Keep((long Revision, long Changes) mark, CopyLookup lookup)
+            {
+                lock (_lookups)
+                {
+                    if (_lookups.Count < PhaseLookups || _lookups.ContainsKey(_key)) _lookups[_key] = (mark, lookup);
                 }
             }
         }
@@ -313,19 +342,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The current request's shared copy lookups for this person and title, or null outside a request or for the
         /// library context. The key holds every input of the scan: the person, their full authority as this viewer was read
         /// (<see cref="Helpers.UserAuthority.Fingerprint"/>) and policy revision, the library topology as it is now (a
-        /// removed location or a disabled library changes it without any item event), the title and every alias. A kept
-        /// lookup is served only while <see cref="Revision"/> is the one taken before it was scanned.
+        /// removed location or a disabled library changes it without any item event), the title and every alias. Item and
+        /// parent-folder state (paths, providers, tags, ratings, parents) is covered by the change marks (<see cref="Mark"/>).
         /// </summary>
         private PhaseLookup? PhaseCopies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases)
         {
             if (viewer.IsLibraryContext || viewer.Handle is not User user) return null;
             var http = new Microsoft.AspNetCore.Http.HttpContextAccessor().HttpContext;
             if (http == null) return null;
-            Dictionary<string, (long Revision, CopyLookup Lookup)> lookups;
+            Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> lookups;
             lock (http.Items)
             {
-                if (http.Items.TryGetValue(PhaseCopiesKey, out var existing) && existing is Dictionary<string, (long Revision, CopyLookup Lookup)> found) lookups = found;
-                else http.Items[PhaseCopiesKey] = lookups = new Dictionary<string, (long Revision, CopyLookup Lookup)>(StringComparer.Ordinal);
+                if (http.Items.TryGetValue(PhaseCopiesKey, out var existing) && existing is Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)> found) lookups = found;
+                else http.Items[PhaseCopiesKey] = lookups = new Dictionary<string, ((long Revision, long Changes) Mark, CopyLookup Lookup)>(StringComparer.Ordinal);
             }
 
             var key = new StringBuilder()
@@ -335,11 +364,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .Append(TopologyOf(_libraryManager)).Append('\n')
                 .Append(titleKey);
             foreach (var alias in (aliases ?? Array.Empty<TitleKey>()).Select(a => a.ToString()).OrderBy(a => a, StringComparer.Ordinal)) key.Append('\n').Append(alias);
-            var text = key.ToString();
-            lock (lookups)
-            {
-                return new PhaseLookup(lookups, text, lookups.TryGetValue(text, out var held) && held.Revision == Revision ? held.Lookup : null);
-            }
+            return new PhaseLookup(lookups, key.ToString(), Mark());
         }
 
         /// <summary>One copy scan (<see cref="Copies"/>).</summary>
@@ -1019,7 +1044,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
-            if (e.Item is Movie or Series or Season or Episode) Interlocked.Increment(ref _revision);
+            Interlocked.Increment(ref _changes);
+            // Titles, and the folders above them: Jellyfin's own visibility check reads every parent's tags and rating, and a
+            // library or folder edit can hide what lives under it. Playlists are nobody's parent.
+            if (e.Item is Movie or Series or Season or Episode || (e.Item is Folder && e.Item is not MediaBrowser.Controller.Playlists.Playlist)) Interlocked.Increment(ref _revision);
         }
     }
 }

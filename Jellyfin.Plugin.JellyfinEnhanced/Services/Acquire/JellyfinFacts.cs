@@ -396,7 +396,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// </summary>
     public interface IArrJellyfinView
     {
-        /// <summary>Changes whenever a movie, series, season or episode is added, updated or removed.</summary>
+        /// <summary>Changes whenever a movie, series, season, episode or a folder above them (any folder but a playlist) is added, updated or removed.</summary>
         long Revision { get; }
 
         /// <summary>The viewer for a user id, or null for an unknown user.</summary>

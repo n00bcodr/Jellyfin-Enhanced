@@ -1,5 +1,7 @@
 #if JF12
+using Jellyfin.Data;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 using MediaBrowser.Controller.Entities;
@@ -147,10 +149,12 @@ public class NativeDetailsLinksRevisionTests
         Assert.False(rig.SciFi());
         Assert.Equal(4, rig.Count);
         // The topology can't be read: never a kept answer.
+        // The topology can't be read: no library link is vouched for (and nothing is asked or kept).
+        rig.Finds.Add("genre");
         rig.Library.Setup(l => l.GetVirtualFolders()).Throws(new InvalidOperationException("db"));
-        rig.SciFi();
-        rig.SciFi();
-        Assert.Equal(6, rig.Count);
+        Assert.False(rig.SciFi());
+        Assert.False(rig.SciFi());
+        Assert.Equal(4, rig.Count);
     }
 
     [Fact]
@@ -181,12 +185,18 @@ public class NativeDetailsLinksRevisionTests
     {
         using var rig = new Rig();
         var once = 0;
-        // The read sees the old library; the change lands while it runs.
+        // The read sees the old library; the change lands while it runs: it is read again before anything is published.
         rig.DuringQuery = () => { if (Interlocked.Exchange(ref once, 1) == 0) rig.Raise(change, new Movie { Id = Guid.NewGuid() }); };
         Assert.True(rig.SciFi());
-        rig.Finds.Remove("genre");
-        Assert.False(rig.SciFi());
         Assert.Equal(2, rig.Count);
+        // The settled read is the one kept.
+        Assert.True(rig.SciFi());
+        Assert.Equal(2, rig.Count);
+        // A library that keeps changing under every read: the answer is withheld (no library link), never published.
+        rig.DuringQuery = () => rig.Raise(change, new Movie { Id = Guid.NewGuid() });
+        rig.Revision++;
+        Assert.False(rig.SciFi());
+        Assert.Equal(5, rig.Count);
     }
 
     [Fact]
@@ -236,6 +246,111 @@ public class NativeDetailsLinksRevisionTests
         rig.Raise("updated", person);
         Assert.Null(rig.For().Person("Timothée Chalamet", 1190668));
         rig.Library.Verify(l => l.GetPerson("Timothée Chalamet"), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void AChangeDuringTheReadWithholdsTheOldPositiveAnswer()
+    {
+        // Review WPR-3: the last visible title is removed while the read runs; the read's old ids must not be published.
+        using var rig = new Rig();
+        var once = 0;
+        rig.Library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+        {
+            var wasVisible = rig.Finds.Contains("genre");
+            if (Interlocked.Exchange(ref once, 1) == 0)
+            {
+                rig.Finds.Remove("genre");
+                rig.Raise("removed", new Movie { Id = Guid.NewGuid() });
+            }
+
+            return wasVisible ? new List<Guid> { Guid.NewGuid() } : new List<Guid>();
+        });
+        Assert.False(rig.SciFi());
+    }
+
+    [Fact]
+    public void ALocationRemovedDuringTheReadWithholdsItsAnswer()
+    {
+        using var rig = new Rig();
+        var once = 0;
+        var reads = 0;
+        rig.Library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+        {
+            reads++;
+            var wasVisible = rig.Finds.Contains("genre");
+            if (Interlocked.Exchange(ref once, 1) == 0)
+            {
+                // The library's only location is removed while the read runs: no item event on either host.
+                rig.Locations = Array.Empty<string>();
+                rig.Finds.Remove("genre");
+            }
+
+            return wasVisible ? new List<Guid> { Guid.NewGuid() } : new List<Guid>();
+        });
+        // The topology read after the query tells: read again, under the new topology.
+        Assert.False(rig.SciFi());
+        Assert.Equal(2, reads);
+    }
+
+    [Fact]
+    public void AGenreLosingLibraryAccessChangesTheAuthorityKey()
+    {
+        using var rig = new Rig();
+        rig.Viewer.SetPermission(PermissionKind.EnableAllFolders, true);
+        string Authority(User u) => Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority.Fingerprint(u);
+        rig.Library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+            q.User!.HasPermission(PermissionKind.EnableAllFolders) ? new List<Guid> { Guid.NewGuid() } : new List<Guid>());
+        Assert.True(rig.SciFi(Authority(rig.Viewer)));
+        var next = new User("viewer", "default", "default") { Id = rig.Viewer.Id };
+        next.SetPermission(PermissionKind.EnableAllFolders, false);
+        Assert.False(rig.SciFi(Authority(next), next));
+    }
+
+    [Fact]
+    public void ATitleMovedOutOfAndBackIntoReachAnswersAgain()
+    {
+        using var rig = new Rig();
+        Assert.True(rig.SciFi());
+        var movie = new Movie { Id = Guid.NewGuid(), Path = "/hidden/movie.mkv" };
+        rig.Finds.Remove("genre");
+        rig.Raise("updated", movie);
+        Assert.False(rig.SciFi());
+        movie.Path = "/movies/movie.mkv";
+        rig.Finds.Add("genre");
+        rig.Raise("updated", movie);
+        Assert.True(rig.SciFi());
+        Assert.Equal(3, rig.Count);
+    }
+
+    [Fact]
+    public void ARenamedStudioReplacesTheNameAnswerAtOnce()
+    {
+        using var rig = new Rig();
+        Assert.Equal(rig.Studio, rig.For().Studio("Legendary Pictures", 923, false));
+        var renamed = new Studio { Id = rig.Studio, Name = "Renamed" };
+        rig.Library.Setup(l => l.GetStudioId("Legendary Pictures")).Returns(Guid.NewGuid());
+        rig.Library.Setup(l => l.GetItemById(rig.Studio)).Returns(renamed);
+        rig.Raise("updated", renamed);
+        Assert.Null(rig.For().Studio("Legendary Pictures", 923, false));
+    }
+
+    [Fact]
+    public void APersonImageChangeReplacesTheImageTag()
+    {
+        using var rig = new Rig();
+        var person = new Person { Id = Guid.NewGuid(), Name = "Actor" };
+        person.SetProviderId(MetadataProvider.Tmdb, "123");
+        person.ImageInfos = new[] { new ItemImageInfo { Type = ImageType.Primary, Path = "/actor.jpg" } };
+        var tag = "before";
+        var images = new Mock<MediaBrowser.Controller.Drawing.IImageProcessor>();
+        images.Setup(i => i.GetImageCacheTag(person, It.IsAny<ItemImageInfo>())).Returns(() => tag);
+        rig.Library.Setup(l => l.GetPerson("Actor")).Returns(person);
+        rig.Library.Setup(l => l.GetItemById<BaseItem>(person.Id, rig.Viewer)).Returns(person);
+        using var links = new NativeDetailsLinks(rig.Library.Object, images.Object, () => rig.Revision);
+        Assert.Equal("before", links.For(rig.Viewer, "r", Server, LinkDiscovery.None).Person("Actor", 123)?.ImageTag);
+        tag = "after";
+        rig.Raise("updated", person);
+        Assert.Equal("after", links.For(rig.Viewer, "r", Server, LinkDiscovery.None).Person("Actor", 123)?.ImageTag);
     }
 
     [Fact]

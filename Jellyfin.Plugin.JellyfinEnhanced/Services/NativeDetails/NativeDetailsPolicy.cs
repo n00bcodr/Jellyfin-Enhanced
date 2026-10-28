@@ -181,12 +181,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             // The person as the caller read them decides the parental part too (no second read of them) when request
-            // visibility's fresh final read can confirm that read is the person now; otherwise, or when it doesn't
-            // confirm it, everything is decided from fresh reads of the person, as before.
+            // visibility's fresh final read can confirm that read is the person now. When it doesn't confirm it, the person
+            // is read again and the whole decision (viewer rule, parental, request visibility, the library's copies and
+            // hidden seasons and episodes) is made again from that read alone.
             if (HeldReadsConfirmable())
             {
                 var (held, current) = await TitleAccessAsync(viewer, title, true, ct).ConfigureAwait(false);
                 if (current) return held;
+                if (_parental.ReadAgain(viewer.Id) is not { } fresh) return Access.Refused;
+                access = await ViewerAccessAsync(fresh, details, ct).ConfigureAwait(false);
+                if (access != Access.Allowed) return access;
+                viewer = fresh;
             }
 
             return (await TitleAccessAsync(viewer, title, false, ct).ConfigureAwait(false)).Access;
@@ -481,20 +486,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>True when the title may be shown.</returns>
         public bool MayListAbsent(User viewer, SyntheticId title)
         {
+            var shown = MayListAbsent(viewer, title, true, out var stale);
+            // As in SeeAsync: a read the fresh final stamp didn't confirm is replaced by a fresh read for the whole decision.
+            return stale ? ReadAgain(viewer) is { } fresh && MayListAbsent(fresh, title, false, out _) : shown;
+        }
+
+        /// <summary>
+        /// <see cref="MayListAbsent(User, SyntheticId)"/>. <paramref name="held"/>: the person as the caller read them, while
+        /// request visibility's fresh final read confirms them (a refusal from that read stands: it fails closed);
+        /// <paramref name="stale"/> is true (and the answer is no) when it didn't. Otherwise the parental part reads the
+        /// person by id and the library parts use <paramref name="viewer"/>.
+        /// </summary>
+        private bool MayListAbsent(User viewer, SyntheticId title, bool held, out bool stale)
+        {
+            stale = false;
             if (!title.IsTitle) return false;
             var mediaType = title.IsMovie ? "movie" : "tv";
-            // As in SeeAsync: the person as the caller read them, while request visibility's fresh final read confirms
-            // them (a refusal from that read stands: it fails closed); else fresh reads of the person, as before.
-            if (HeldReadsConfirmable())
+            if (held && HeldReadsConfirmable())
             {
                 if (!_parental.MaySeeAbsent(mediaType, title.TmdbId, viewer, out _)) return false;
                 var visible = LibraryVisible(viewer, title, true, out var current);
                 if (current) return visible && !Physical(viewer, title).Hides(title);
+                stale = true;
+                return false;
             }
 
             if (!_parental.MaySeeAbsent(mediaType, title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
         }
+
+        /// <summary>The person read again (null when unknown, deleted or disabled): the fallback of a read not confirmed current.</summary>
+        private User? ReadAgain(User viewer) => _parental.ReadAgain(viewer.Id);
 
         /// <summary>
         /// <see cref="MayListAbsent"/> that reads a rating the parental cache doesn't hold (a restart, an
@@ -534,6 +556,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>The library copy to link to, an absent title, or nothing.</returns>
         public ListedTitle Listed(User viewer, bool movie, int tmdb)
         {
+            var listed = Listed(viewer, movie, tmdb, true, out var stale);
+            // A read the fresh final stamp didn't confirm: the whole answer again (copies too) from a fresh read of the person.
+            return stale ? ReadAgain(viewer) is { } fresh ? Listed(fresh, movie, tmdb, false, out _) : ListedTitle.Left : listed;
+        }
+
+        /// <summary><see cref="Listed(User, bool, int)"/>; <paramref name="held"/> and <paramref name="stale"/> as in <see cref="MayListAbsent(User, SyntheticId, bool, out bool)"/>.</summary>
+        private ListedTitle Listed(User viewer, bool movie, int tmdb, bool held, out bool stale)
+        {
+            stale = false;
             if (tmdb <= 0) return ListedTitle.Left;
             PhysicalTitle copies;
             try
@@ -548,7 +579,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             if (copies.Shown.Count > 0) return ListedTitle.Copy(copies.Shown[0]);
             if (copies.Copies.Count > 0) return ListedTitle.Left;
-            return MayListAbsent(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb)) ? ListedTitle.Absent : ListedTitle.Left;
+            return MayListAbsent(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), held, out stale) ? ListedTitle.Absent : ListedTitle.Left;
         }
 
         private static bool ImportBlocked(PluginConfiguration config, User viewer)
