@@ -30,7 +30,7 @@ public class NativeDetailsStageTimingsFilterTests
         }
     }
 
-    private static async Task<(HttpContext Http, Callbacks Response, StageTimings? Inside, Guid Viewer)> Run(ApiPluginFixture plugin, bool admin, string path, string template, Action? stages = null)
+    private static async Task<(HttpContext Http, Callbacks Response, StageTimings? Inside, Guid Viewer)> Run(ApiPluginFixture plugin, bool admin, string path, string template, Action? stages = null, string? cacheControl = "private, no-store")
     {
         var http = new DefaultHttpContext();
         var response = new Callbacks();
@@ -47,6 +47,8 @@ public class NativeDetailsStageTimingsFilterTests
         {
             inside = StageTimings.Current;
             stages?.Invoke();
+            // The answer's own owner decides its cacheability (JE's private answers say private, no-store).
+            if (cacheControl != null) http.Response.Headers.CacheControl = cacheControl;
             // A response owner registered inside the action starts its own check before the header is written.
             var recorder = StageTimings.Current;
             http.Response.OnStarting(() => { recorder?.Add(Stage.Publish, 0); return Task.CompletedTask; });
@@ -84,6 +86,27 @@ public class NativeDetailsStageTimingsFilterTests
         plugin.Plugin.Configuration.StageTimingsEnabled = true;
         var (http, _, _, _) = await Run(plugin, true, "/Users/0f1e/Items/abcd", "Users/{userId}/Items/{itemId}", () => StageTimings.Count(Stage.TmdbHit));
         Assert.Contains("tmdb-hit;dur=", http.Response.Headers["Server-Timing"].ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("private, no-store", true)]
+    [InlineData("no-store", true)]
+    [InlineData("private, no-cache", true)]
+    [InlineData("private", true)]
+    [InlineData("public, max-age=31536000, immutable", false)]
+    [InlineData("max-age=3600", false)]
+    [InlineData("no-cache", false)]
+    [InlineData("private=\"Set-Cookie\", max-age=60", false)]
+    [InlineData(null, false)]
+    public async Task StageTimingsNeverAnnotateAnAnswerASharedCacheMayKeep(string? cacheControl, bool header)
+    {
+        using var plugin = new ApiPluginFixture();
+        plugin.Plugin.Configuration.StageTimingsEnabled = true;
+        var (http, _, _, _) = await Run(plugin, true, "/JellyfinEnhanced/title-actions/movie/693134", "JellyfinEnhanced/title-actions/{type}/{tmdbId}",
+            () => StageTimings.Count(Stage.Policy), cacheControl);
+        Assert.Equal(header, http.Response.Headers.ContainsKey("Server-Timing"));
+        // Cacheability is never widened or otherwise touched by the diagnostics.
+        Assert.Equal(cacheControl ?? string.Empty, http.Response.Headers.CacheControl.ToString());
     }
 
     [Fact]
