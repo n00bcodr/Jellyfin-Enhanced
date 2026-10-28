@@ -1311,8 +1311,8 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
   a downloading episode gets its ring;
 - **episodes**: **Get it** or *Search*.
 
-Nothing on these pages plays, so Jellyfin's *Ends at* estimate isn't shown on the title or its episode rows; the
-runtime and release date stay. An episode page has one status: Jellyfin's own red *Missing* (or *Unaired*) label gives
+Nothing on these pages plays, so Jellyfin's *Ends at* estimate isn't shown on the title or on its missing episodes'
+rows; the runtime and release date stay. An episode that is in the library keeps its own estimate in the list. An episode page has one status: Jellyfin's own red *Missing* (or *Unaired*) label gives
 way to the status pill while the pill shows.
 
 ??? info "How the page asks and updates"
