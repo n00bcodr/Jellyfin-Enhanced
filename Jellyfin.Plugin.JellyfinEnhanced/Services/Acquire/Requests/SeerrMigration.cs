@@ -129,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// False (with the value put back) when it couldn't be saved, and (with nothing changed) when
         /// <paramref name="addresses"/> is given and the live Seerr address set no longer matches it.
         /// </summary>
-        private bool Switch(string backend, string? addresses = null, bool requireSeerr = false)
+        private bool Switch(string backend, string? addresses = null)
         {
             var switched = false;
             // Commit/rollback are backend writers too. The import's own retained effect is released
@@ -140,8 +140,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var live = _config();
                     if (addresses != null && SeerrFacts.AddressFingerprint(live) != addresses) return;
-                    // A move hands over only while Seerr is still on, decided under the same lock as the write.
-                    if (requireSeerr && !Backends.EffectiveRequestsBackend.SeerrUsable(live)) return;
+                    // A move (the handover that carries the Seerr address set its requests were read from) hands over only
+                    // while Seerr is still on, decided under the same lock as the write.
+                    if (addresses != null && !Backends.EffectiveRequestsBackend.SeerrUsable(live)) return;
                     var before = live.ArrRequestBackend;
                     if (before == backend) { switched = true; return; }
                     live.ArrRequestBackend = backend;
@@ -336,7 +337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 try
                 {
                     BeforeSwitch?.Invoke();
-                    switched = Switch("je", read.AddressFingerprint, requireSeerr: true);
+                    switched = Switch("je", read.AddressFingerprint);
                 }
                 catch (Exception)
                 {

@@ -2089,7 +2089,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAdminUser()) return Forbid();
             var config = JellyfinEnhanced.Instance?.Configuration;
             var version = config?.ArrBackendIsolationVersion ?? 0;
-            bool Allows(string backend) => EffectiveRequestsBackend.AllowsSeerr(new PluginConfiguration { ArrRequestBackend = backend, ArrBackendIsolationVersion = version });
+            bool Allows(string backend) => EffectiveRequestsBackend.AllowsSeerr(version, backend);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new
             {
