@@ -43,7 +43,7 @@ public class CoreConfigurationWriterTests
             return next;
         };
         var apply = typeof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced).GetMethod("ApplyConfiguration", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var patch = Task.Run(() => apply.Invoke(f.Plugin, new object[] { build }));
+        var patch = Task.Run(() => apply.Invoke(f.Plugin, new object[] { build, false, false }));
         Assert.True(copied.Wait(TimeSpan.FromSeconds(5)));
         var write = Task.Run(writer);
         // The writer runs while the save holds its copy (it waits for the lock, or, unlocked, writes at once).

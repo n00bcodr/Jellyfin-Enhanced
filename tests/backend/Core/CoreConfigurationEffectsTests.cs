@@ -220,7 +220,7 @@ public class CoreConfigurationEffectsTests
         restored.MaintenanceModeEnabled = true;
         restored.MaintenanceModeAction = "none";
         var apply = typeof(EnhancedPlugin).GetMethod("ApplyConfiguration", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        apply.Invoke(f.Plugin, new object[] { (Func<PluginConfiguration?, MediaBrowser.Model.Plugins.BasePluginConfiguration>)(_ => restored) });
+        apply.Invoke(f.Plugin, new object[] { (Func<PluginConfiguration?, MediaBrowser.Model.Plugins.BasePluginConfiguration>)(_ => restored), false, false });
         // Nobody asks: the restore itself starts the reconcile (waited for passively, bounded).
         for (var i = 0; i < 100 && !f.Maintenance.GetStatus().IsActive; i++) await Task.Delay(50);
         Assert.True(f.Maintenance.GetStatus().IsActive);

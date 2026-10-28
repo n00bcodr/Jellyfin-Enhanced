@@ -84,7 +84,8 @@ internal static partial class UserCacheScan
                 if (function == null) continue;
                 // A GetOrAdd factory begins its own input read. A clock inside that factory is not sampled by
                 // the enclosing statement after its earlier awaits. Synchronous publication callbacks do run here.
-                var actualClock = statement.DescendantNodesAndSelf().OfType<ExpressionSyntax>().Where(e => ClockReads.Contains(e.ToString()))
+                // A clock read by its qualified name too (Helpers.MonotonicClock.Now()).
+                var actualClock = statement.DescendantNodesAndSelf().OfType<ExpressionSyntax>().Where(e => ClockReads.Any(c => e.ToString() == c || e.ToString().EndsWith("." + c, StringComparison.Ordinal)))
                     .Any(e =>
                     {
                         var owns = e.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
