@@ -182,6 +182,9 @@ public class IntegrationEvidenceCommitIntervalTests
         Assert.Equal(0, EvidenceRevision.Outstanding);
     }
 
+#if JF12
+    // These run Jellyfin 12.2's own host code (the pinned release's Emby.Server.Implementations and Jellyfin.Api, .NET 10);
+    // a 10.11 build cannot load them.
     [Fact]
     public async Task PinnedJellyfinCountryReplacementUsesTheSameWriterBarrier()
     {
@@ -272,6 +275,7 @@ public class IntegrationEvidenceCommitIntervalTests
         Assert.Equal("AU", server.MetadataCountryCode);
         Assert.False(EvidenceRevision.Advancing);
     }
+#endif
 
     [Fact]
     public async Task NestedThrowingAndOverlappingWritersReopenAdmissions()

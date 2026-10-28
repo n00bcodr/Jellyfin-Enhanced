@@ -1,3 +1,7 @@
+#if JF12
+// Runs the pinned release's own LibraryController.GetDownload. On the 10.11 build that is 10.11.11's Jellyfin.Api, which
+// needs a newer MediaBrowser.Controller (FileSystemHelper.ResolveLinkTarget) than the 10.11.0 package the plugin and the
+// tests compile against and share; a real 10.11.11 host ships the matching one. Jellyfin 12 only until the pins agree.
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using MediaBrowser.Controller.Entities;
@@ -98,3 +102,4 @@ public class PrivacyRawDownloadTests
         finally { BaseItem.MediaSourceManager = previous; }
     }
 }
+#endif
