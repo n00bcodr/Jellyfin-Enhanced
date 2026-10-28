@@ -269,6 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
+            CheckDiskNow();
             // A caller only asking what is already known (CachedOnlyAsync) never starts a read.
             if (CachedOnly.Value is { } probe) return CachedOnlyGetAsync(probe, apiPath, query, apiKey, bundle, refresh, cancellationToken);
             // What is saved on disk is loaded before any admission or upstream place is asked for.
@@ -1297,6 +1298,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _diskOn;
         private int _promoting;
         private long _promoteAgainAt;
+        private long _nextDiskCheck;
+        private static readonly TimeSpan DiskCheckEvery = TimeSpan.FromSeconds(30);
         // The valid, migratable records of the legacy snapshot, until it is retired (or migration gives up).
         private List<Entry>? _legacy;
         private int _migrationAttempts;
@@ -1479,6 +1482,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!on) Volatile.Write(ref _diskOn, 0);
             else if (Interlocked.Exchange(ref _diskOn, 1) == 0 || PromotionDue()) _ = Task.Run(PromoteAsync);
             return on;
+        }
+
+        /// <summary>
+        /// Looks at the server-side cache on the first request and then at most every <see cref="DiskCheckEvery"/> (memory
+        /// hits too), so switching it on, the snapshot loaded at startup, or a save due again are all noticed while every
+        /// answer still comes from memory.
+        /// </summary>
+        private void CheckDiskNow()
+        {
+            if (_disk == null) return;
+            var now = _timeProvider.GetUtcNow().UtcTicks;
+            var next = Interlocked.Read(ref _nextDiskCheck);
+            if (now < next || Interlocked.CompareExchange(ref _nextDiskCheck, now + DiskCheckEvery.Ticks, next) != next) return;
+            DiskReady();
         }
 
         private bool PromotionDue()

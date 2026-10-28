@@ -434,6 +434,29 @@ public sealed class IntegrationTmdbDiskCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task TheSnapshotMovesWhileEveryRequestHitsMemory()
+    {
+        // Found live: the snapshot loaded at startup answered every request from memory, so nothing ever looked at the
+        // cache and the migration never started. Nothing here calls PromoteAsync.
+        var legacy = Path.Combine(_root, "tmdb-cache.json");
+        Directory.CreateDirectory(_root);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("key")), 0, 8);
+        File.WriteAllText(legacy, JsonSerializer.Serialize(new { V = 1, Entries = new[] { new { K = hash + "|https://api.themoviedb.org/3/movie/603", S = 200, C = "{\"id\":603}",
+            E = (_clock.Now + TimeSpan.FromHours(5)).ToUnixTimeMilliseconds(), F = (_clock.Now - TimeSpan.FromHours(1)).UtcDateTime.Ticks } } }));
+        using var network = Tmdb();
+        _settings = _settings with { Enabled = false };
+        var cache = Cache(network, Disk(), legacy: legacy);
+        await cache.GetAsync("movie/603", string.Empty, "key", default); // memory
+        _settings = _settings with { Enabled = true };
+        _clock.Now += TimeSpan.FromSeconds(31);
+        await cache.GetAsync("movie/603", string.Empty, "key", default); // memory again: the cache is now looked at
+        await Until(() => !File.Exists(legacy));
+        Assert.Equal(1, Files());
+        Assert.True(File.Exists(legacy + ".migrated"));
+        Assert.Equal(0, network.Calls);
+    }
+
+    [Fact]
     public async Task WithTheServerCacheOffTheLegacySnapshotIsStillWrittenAndWithItOnItIsNot()
     {
         var legacy = Path.Combine(_root, "tmdb-cache.json");
