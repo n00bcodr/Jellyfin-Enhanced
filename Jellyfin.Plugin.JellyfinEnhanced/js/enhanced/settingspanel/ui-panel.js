@@ -10,10 +10,16 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    /** Closes the open panel through its one teardown (every close path ends there), or null when none is open. */
+    let closeOpenPanel = null;
+
     /**
      * Toggles the main settings and help panel for the plugin.
+     * @param {Event} [openEvent] The event that opened it. Only a real pointer click keeps the idle auto-close.
      */
-    JE.showEnhancedPanel = async () => {
+    JE.showEnhancedPanel = async (openEvent) => {
+        // A click with a pointer, not a key's or a remote's activation of a link (detail 0) or a programmatic call.
+        const openedByPointer = typeof MouseEvent !== 'undefined' && openEvent instanceof MouseEvent && openEvent.detail > 0;
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
         if (currentUserId) {
@@ -48,7 +54,8 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            if (closeOpenPanel) closeOpenPanel();
+            else existing.remove();
             return;
         }
         // Get theme-appropriate styles
@@ -115,6 +122,16 @@
         let offset = { x: 0, y: 0 };
         let autoCloseTimer = null;
         let isMouseInside = false;
+        // Auto-close is only for a panel opened with a pointer that never takes a key or the focus afterwards. Opened
+        // any other way (a key, a remote, a screen reader), or once a key is pressed or focus arrives inside it other
+        // than from a pointer press, it stays open until it is closed: a reader may read without sending any further
+        // event, and moving the pointer does not turn auto-close back on for that open.
+        let keyboardInUse = !openedByPointer;
+        let focusSettled = false;
+        // When the last pointer press inside the panel went down. Focus arriving soon after it is that press's (a
+        // toggle or the search box focuses as it goes down, a toggle's label at its click), so it is still pointer use.
+        let lastPointerPress = -Infinity;
+        const POINTER_FOCUS_WINDOW_MS = 400;
         // Listeners bound outside the panel element (matchMedia and friends) that
         // removing the panel would otherwise leak; drained on every close path.
         const panelMediaCleanups = [];
@@ -124,17 +141,10 @@
 
         const resetAutoCloseTimer = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            autoCloseTimer = null;
+            if (keyboardInUse) return;
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside && document.getElementById(panelId)) {
-                    help.remove();
-                    runPanelCleanups();
-                    document.removeEventListener('keydown', closeHelp);
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener, true);
-                    }
-                }
+                if (!isMouseInside && document.getElementById(panelId)) closePanel();
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
 
@@ -180,6 +190,21 @@
         help.addEventListener('mouseenter', () => { isMouseInside = true; if (autoCloseTimer) clearTimeout(autoCloseTimer); });
         help.addEventListener('mouseleave', () => { isMouseInside = false; resetAutoCloseTimer(); });
         help.addEventListener('click', resetAutoCloseTimer);
+        // Keyboard, remote or screen-reader use keeps the panel open (see keyboardInUse). Capture phase, so a control
+        // that stops its key's propagation still counts.
+        const noteKeyboardUse = () => {
+            keyboardInUse = true;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            autoCloseTimer = null;
+        };
+        help.addEventListener('keydown', noteKeyboardUse, true);
+        const notePointerPress = () => { lastPointerPress = performance.now(); };
+        help.addEventListener('pointerdown', notePointerPress, true);
+        help.addEventListener('mousedown', notePointerPress, true);
+        help.addEventListener('focusin', () => {
+            if (focusSettled && performance.now() - lastPointerPress > POINTER_FOCUS_WINDOW_MS) noteKeyboardUse();
+        });
+        setTimeout(() => { focusSettled = true; }, 0);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
 
         // Shared context handed to the split panel modules
@@ -337,17 +362,29 @@
                 && (ev.key === 'Escape' || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
             if (keyboardClose || (ev.type === 'click' && ev.target.id === 'closeSettingsPanel')) {
                 ev.stopPropagation();
-                if (autoCloseTimer) clearTimeout(autoCloseTimer);
-                help.remove();
-                runPanelCleanups();
-                document.removeEventListener('keydown', closeHelp);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener, true);
-                }
+                closePanel();
             }
         };
+
+        // The one teardown every close path ends in (its × button, Escape or '?', the auto-close timer, the opener
+        // toggling it closed): once.
+        let closed = false;
+        const closePanel = () => {
+            if (closed) return;
+            closed = true;
+            if (closeOpenPanel === closePanel) closeOpenPanel = null;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            autoCloseTimer = null;
+            help.remove();
+            runPanelCleanups();
+            document.removeEventListener('keydown', closeHelp);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (!JE.pluginConfig.DisableAllShortcuts) {
+                document.addEventListener('keydown', JE.keyListener, true);
+            }
+        };
+        closeOpenPanel = closePanel;
 
         const createToast = (featureKey, isEnabled) => {
             const feature = JE.t(featureKey);
