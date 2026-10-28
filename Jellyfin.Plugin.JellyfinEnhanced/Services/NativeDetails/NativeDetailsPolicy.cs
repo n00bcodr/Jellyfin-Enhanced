@@ -191,6 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config)
                     && _parental.AbsentVerdict(mediaType, title.TmdbId, viewer.Id.ToString("N")) == null ? Access.Unknown : Access.Refused;
             }
+            using var library = StageTimings.Time(Stage.Library);
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 

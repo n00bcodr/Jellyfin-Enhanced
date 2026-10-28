@@ -89,6 +89,14 @@ public partial class ApiNativeDetailsTests
         Assert.Equal(10_000, recorder.Of(Stage.TmdbHit).Count);
         Assert.Equal(0, recorder.Of(Stage.Publish).Count);
         Assert.Equal(StageTimings.StageCount, Enum.GetValues<Stage>().Length);
+        // Every stage is named after itself (kebab case), so a header entry can't be charged to another stage.
+        foreach (var stage in Enum.GetValues<Stage>())
+        {
+            var one = Task.Run(StageTimings.Begin).Result;
+            one.Add(stage, 0);
+            var expected = System.Text.RegularExpressions.Regex.Replace(stage.ToString(), "(?<!^)([A-Z])", "-$1").ToLowerInvariant();
+            Assert.Equal(expected, one.Header().Split(", ")[1].Split(';')[0]);
+        }
         var names = recorder.Header().Split(", ").Select(p => p.Split(';')[0]).ToArray();
         Assert.Equal(new[] { "total", "tmdb-hit" }, names);
         Assert.True(StageTimings.Flag("1") && StageTimings.Flag(" TRUE ") && !StageTimings.Flag("0") && !StageTimings.Flag(null) && !StageTimings.Flag("yes"));

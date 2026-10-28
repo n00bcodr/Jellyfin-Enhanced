@@ -12,6 +12,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         /// <summary>The title's viewer policy (<c>NativeDetailsPolicy.SeeAsync</c>), parental evidence included.</summary>
         Policy,
+        /// <summary>The policy's library visibility and physical-copy checks.</summary>
+        Library,
         /// <summary>A restricted viewer's absent-title parental evidence (its own eight-second bound).</summary>
         Evidence,
         /// <summary>Discover/search parental checks under the two-second evidence budget.</summary>
@@ -48,6 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         TmdbSend,
         /// <summary>An admitted artwork read waiting for its running place.</summary>
         ImageAdmit,
+        /// <summary>The viewer's link destinations a native DTO answer is built with.</summary>
+        Links,
         /// <summary>Building the response body (DTO or public JSON projection).</summary>
         Project,
         /// <summary>Reading an exact episode out of a projected season (title actions).</summary>
@@ -67,9 +71,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private static readonly string[] Names =
         {
-            "policy", "evidence", "discover-evidence", "copies", "feed", "source-hit", "source-map", "source-busy",
+            "policy", "library", "evidence", "discover-evidence", "copies", "feed", "source-hit", "source-map", "source-busy",
             "meta-hit", "meta-join", "meta-busy", "meta-admit", "meta-fetch", "tmdb-hit", "tmdb-join", "tmdb-disk",
-            "tmdb-slot", "tmdb-send", "img-admit", "project", "parse", "publish",
+            "tmdb-slot", "tmdb-send", "image-admit", "links", "project", "parse", "publish",
         };
 
         private static readonly AsyncLocal<StageTimings?> Local = new();

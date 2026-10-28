@@ -309,7 +309,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
             var revision = _policy.Revision(viewer);
             var discovery = await DiscoveryAsync(viewer, ct).ConfigureAwait(false);
-            using var timed = StageTimings.Time(Stage.Project);
+            using var timed = StageTimings.Time(Stage.Links);
             var links = _links.For(viewer, revision, serverId, discovery);
             return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links, _presentation?.Load(viewer.Id, http).Revision);
         }
