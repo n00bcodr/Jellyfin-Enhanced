@@ -305,8 +305,9 @@ stage: `policy`, `library` (the policy's library and physical-copy checks), `evi
 `source-hit`, `source-map`, `source-busy`, `meta-hit`, `meta-join`, `meta-busy`, `meta-admit` (waiting for a metadata
 place), `meta-fetch`, `tmdb-hit`, `tmdb-join`, `tmdb-disk`, `tmdb-slot`, `tmdb-send`, `image-admit`, `links` (the viewer's link destinations of a details answer), `project`, `parse`
 and `publish` (the final privacy check), each with its total milliseconds and `n=` count. Stages nest and parallel
-reads add up, so a stage can exceed `total`. The header goes only on answers no shared cache may keep (`private` or
-`no-store`, as these answers are); a cacheable answer, such as a font or script, never carries it. Every such request, an administrator's or not, also writes one Debug line
+reads add up, so a stage can exceed `total`. The header goes only on answers no shared cache may keep: one that is `private` or `no-store`
+already, or one that states no cache policy at all (a title's details), which is then marked `private`; a cacheable
+answer, such as a font or script, never carries it. Every such request, an administrator's or not, also writes one Debug line
 to the plugin log with the method, the route pattern, the status and the same numbers. Only stage names and durations
 are recorded, never a title, user, key or link, and nothing about what a viewer may see changes. Setting the
 environment variable `JE_STAGE_TIMINGS=1` on the server turns it on too.

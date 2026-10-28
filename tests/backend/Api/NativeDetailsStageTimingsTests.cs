@@ -1,5 +1,12 @@
+using System.Runtime.CompilerServices;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JE.Tests;
 
@@ -100,5 +107,60 @@ public partial class ApiNativeDetailsTests
         var names = recorder.Header().Split(", ").Select(p => p.Split(';')[0]).ToArray();
         Assert.Equal(new[] { "total", "tmdb-hit" }, names);
         Assert.True(StageTimings.Flag("1") && StageTimings.Flag(" TRUE ") && !StageTimings.Flag("0") && !StageTimings.Flag(null) && !StageTimings.Flag("yes"));
+    }
+
+    private sealed class StageTimingsHostControllers : IControllerActivator
+    {
+        public object Create(ControllerContext context) => RuntimeHelpers.GetUninitializedObject(context.ActionDescriptor.ControllerTypeInfo.AsType());
+        public void Release(ControllerContext context, object controller) { }
+    }
+
+    /// <summary>
+    /// The native details DTO through the real Jellyfin 12 MVC item action, the facade, publication filter and privacy commit
+    /// owner (STR2-1): the host states no cache policy for it, so an administrator's timed answer must still carry its
+    /// timings, marked private; a viewer's answer is left exactly as the host sends it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task StageTimingsKeepTheNativeDtoHeaderForAnAdministratorThroughRealMvc(bool admin)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.StageTimingsEnabled = true;
+        var viewer = rig.Person(admin: admin);
+        using var runtime = new PrivacyGeneratedPlaylistTests.HostRuntime();
+        using var server = new TestServer(new WebHostBuilder().ConfigureServices(s =>
+        {
+            s.AddLogging();
+            s.AddRouting();
+            s.AddAuthorization();
+            s.AddControllers(o =>
+            {
+                o.Filters.Add(new StageTimingsFilter());
+                o.Filters.Add(new PrivacyCommitFilter());
+                o.Filters.Add(rig.Filter);
+                o.Filters.Add(rig.R4PublicationFilter());
+            }).AddApplicationPart(runtime.Api);
+            s.AddSingleton<IControllerActivator>(new StageTimingsHostControllers());
+        }).Configure(app =>
+        {
+            app.Use(async (http, next) => { http.User = Me(viewer); await next(); });
+            app.UseRouting();
+            app.UseAuthorization();
+            app.UseEndpoints(e => e.MapControllers().AllowAnonymous());
+        }));
+        using var client = server.CreateClient();
+        using var response = await client.GetAsync("/Items/" + Id(SyntheticId.Movie(693134)) + "?userId=" + viewer.Id);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(200, (int)response.StatusCode);
+        Assert.Contains("693134", body, StringComparison.Ordinal);
+        Assert.Equal(admin, response.Headers.Contains("Server-Timing"));
+        if (admin)
+        {
+            Assert.Contains("policy;dur=", Assert.Single(response.Headers.GetValues("Server-Timing")), StringComparison.Ordinal);
+            Assert.True(response.Headers.CacheControl!.Private);
+            Assert.False(response.Headers.CacheControl.Public);
+        }
+        else Assert.Null(response.Headers.CacheControl);
     }
 }

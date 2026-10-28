@@ -11,7 +11,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <summary>
     /// Outermost owner of <see cref="StageTimings"/> while the admin switch (or <c>JE_STAGE_TIMINGS</c>) is on: one recorder
     /// per request; a <c>Server-Timing</c> header for an administrator's session on Jellyfin Enhanced's own routes and on
-    /// any answer that recorded a stage (the absent-title facade), only when the answer is already private or no-store; and
+    /// any answer that recorded a stage (the absent-title facade), only when no shared cache may keep the answer (one with no
+    /// cache policy is marked private; a shareable one gets none); and
     /// one Debug line per such request naming only the method, route template, status and stage numbers. Off: one
     /// configuration read, and the request is handed on without allocating.
     /// </summary>
@@ -35,6 +36,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Whether an answer may carry an administrator's timings, decided on its final headers as it starts. One that states
+        /// no cache policy at all (the host's own item answers, such as a native details DTO) is marked <c>private</c> with
+        /// them: narrowing only, so no shared cache keeps it. One that states a policy carries them only when no shared cache
+        /// may keep it (<see cref="Unshared"/>); a shareable answer (a font, a script) is left as it is, without them.
+        /// </summary>
+        internal static bool Annotate(IHeaderDictionary headers)
+        {
+            if (StringValues.IsNullOrEmpty(headers.CacheControl))
+            {
+                headers.CacheControl = "private";
+                return true;
+            }
+
+            return Unshared(headers.CacheControl);
+        }
+
+        /// <summary>
         /// Whether no shared cache may keep the answer: <c>no-store</c>, or <c>private</c> for the whole answer. Only such an
         /// answer carries an administrator's timings, so a proxy can never replay them to someone else.
         /// </summary>
@@ -53,10 +71,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 // Registered before every response owner below, so it runs after them (the guard's final check and every
-                // owner's Cache-Control included). Never widens what may be cached: a shareable answer gets no header.
+                // owner's Cache-Control included). Never widens what may be cached: a shareable answer gets no header, and
+                // one with no cache policy is marked private when it gets one.
                 http.Response.OnStarting(() =>
                 {
-                    if (admin && (own || recorder.Any) && Unshared(http.Response.Headers.CacheControl))
+                    if (admin && (own || recorder.Any) && Annotate(http.Response.Headers))
                         http.Response.Headers["Server-Timing"] = recorder.Header();
                     return Task.CompletedTask;
                 });
