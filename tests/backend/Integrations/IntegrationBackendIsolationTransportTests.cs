@@ -58,11 +58,11 @@ public class IntegrationBackendIsolationTransportTests
         await Call(controller, "GetJellyseerrUserRead", user, false, true);
         await Call(controller, "TryAutoImportJellyseerrUser", user, new[] { "http://seerr.test" }, http);
         await Call(controller, "LegacyCanRequest4kAsync", c, true, JellyseerrPermission.ADMIN);
-        await Call(controller, "ProxyJellyseerrRequestCore", "/api/v1/search", HttpMethod.Get, null, null);
+        await Call(controller, "ProxyJellyseerrRequestCore", "/api/v1/search", HttpMethod.Get, null, null, 0);
         await Call(controller, "ProbeJellyseerrStatusAsync");
         await Call(controller, "ComputeNextResetAsync", JObject.Parse("{\"movie\":{\"limit\":1,\"used\":1,\"days\":7}}"), "movie", "7", c);
         await Call(controller, "GetJellyseerrRequestsForUser", "7");
-        await Call(controller, "EnrichWithTmdbData", http, 603, "movie", "http://seerr.test", "test", 0L, DateTime.UtcNow);
+        await Call(controller, "EnrichWithTmdbData", http, 603, "movie", "http://seerr.test", "test", 0L, Jellyfin.Plugin.JellyfinEnhanced.Helpers.MonotonicClock.Now());
         await Call(controller, "IdentifyUrl", "http://seerr.test");
         await Call(controller, "ProxyAvatar", "/avatar.png");
         var users = Mock.Of<IUserManager>(); var library = Mock.Of<ILibraryManager>(); var data = Mock.Of<IUserDataManager>();

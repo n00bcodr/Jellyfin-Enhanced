@@ -84,7 +84,8 @@ public class IntegrationAcquireBoundaryInventoryTests
         Assert.InRange(count, 20, 90);
         var service = File.ReadAllText(Path.Combine(root, "Services/Acquire/Notify/NotificationService.cs"));
         foreach (var entry in new[] { "TickAsync", "SetFollowAsync", "EvaluateAsync", "ScanRequests", "ScanLedger", "FlushBatches", "DeliverRequestNoticesAsync", "AdminChecksAsync", "RebuildInterest", "RemindAsync", "NoteAlertsPaused", "Notify" })
-            Assert.Matches(@"\b" + entry + @"\([^\n]*\)\s*=> _store\.Ordering\.Run", service);
+            // An entry acquires the order itself (inside its admitted background scope where it reads Seerr facts).
+            Assert.Matches(@"\b" + entry + @"\([^\n]*\)\s*(?://[^\n]*\n\s*)*=> (?:SeerrFacts\.BackgroundAsync\(token => )?_store\.Ordering\.Run", service);
         var store = File.ReadAllText(Path.Combine(root, "Services/Acquire/Notify/NotifyStore.cs"));
         Assert.Contains("WithWriteOrder(() =>", store);
         Assert.Contains("Ordering.Run(work)", store);

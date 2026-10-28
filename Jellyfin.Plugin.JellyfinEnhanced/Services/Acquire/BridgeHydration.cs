@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
+
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
@@ -35,8 +36,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// </summary>
     public static class BridgeHydration
     {
-        // "{tmdb-227719}", "[tmdbid-45745]", "[imdbid=tt0133093]", "{tvdb-78874}": a provider tag left in a folder or file name.
-        private static readonly Regex ProviderTag = new(@"[\[\{]\s*(tmdb|tvdb|imdb)(id)?\s*[-=]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+        // "{tmdb-227719}", "[tmdbid-45745]", "[imdbid=tt0133093]", "{tvdb-78874}": a provider tag left in a folder or file name
+        // ('[' or '{', spaces, tmdb/tvdb/imdb in either case, an optional "id", spaces, '-' or '='), matched deterministically
+        // (no regular expression, so no match timeout on a loaded server: the request grammars' rule).
+        private static bool HasProviderTag(string name)
+        {
+            var text = name.AsSpan();
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] is not ('[' or '{')) continue;
+                var j = i + 1;
+                while (j < text.Length && char.IsWhiteSpace(text[j])) j++;
+                var rest = text[j..];
+                if (!(AsciiGrammar.StartsWithIgnoreCase(rest, "tmdb") || AsciiGrammar.StartsWithIgnoreCase(rest, "tvdb") || AsciiGrammar.StartsWithIgnoreCase(rest, "imdb"))) continue;
+                j += 4;
+                if (AsciiGrammar.StartsWithIgnoreCase(text[j..], "id")) j += 2;
+                while (j < text.Length && char.IsWhiteSpace(text[j])) j++;
+                if (j < text.Length && text[j] is '-' or '=') return true;
+            }
+            return false;
+        }
 
         /// <summary>Judges one item's facts (an episode's series facts included).</summary>
         /// <param name="facts">The item's facts.</param>
@@ -92,7 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (facts.NameLocked) return false;
             var name = facts.Name?.Trim();
             if (string.IsNullOrEmpty(name)) return true;
-            if (ProviderTag.IsMatch(name)) return true;
+            if (HasProviderTag(name)) return true;
             return !facts.HasOverview && !string.IsNullOrEmpty(resolvedFrom) && string.Equals(name, resolvedFrom.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 

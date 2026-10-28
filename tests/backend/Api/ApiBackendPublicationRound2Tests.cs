@@ -83,7 +83,7 @@ public class ApiBackendPublicationRound2Tests
         object?[] args = path switch
         {
             "reader" => ["http://seerr.test/api/v1/request", "test", CancellationToken.None],
-            "enrichment" => [client, 989987, "movie", "http://seerr.test", "test", typeof(JellyfinEnhancedController).GetField("_seerrResponseGeneration", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null), DateTime.UtcNow],
+            "enrichment" => [client, 989987, "movie", "http://seerr.test", "test", typeof(JellyfinEnhancedController).GetField("_seerrResponseGeneration", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null), Jellyfin.Plugin.JellyfinEnhanced.Helpers.MonotonicClock.Now()],
             _ => [],
         };
         var method = owner.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -151,7 +151,7 @@ public class ApiBackendPublicationRound2Tests
         var config = f.Plugin.Configuration;
         config.ArrRequestBackend = "seerr"; config.JellyseerrEnabled = config.JellyseerrShowReportButton = config.ActiveStreamsEnabled = true;
         config.JellyseerrUrls = "http://seerr.test"; config.JellyseerrApiKey = "test";
-        ((System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_seerrStatusCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!)["status"] = (true, DateTime.UtcNow);
+        ((System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_seerrStatusCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!)["status"] = (true, Jellyfin.Plugin.JellyfinEnhanced.Helpers.MonotonicClock.Now());
         var sessions = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
         sessions.SetupGet(x => x.Sessions).Returns(() =>
         {

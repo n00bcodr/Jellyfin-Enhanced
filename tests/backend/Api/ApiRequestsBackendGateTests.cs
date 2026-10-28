@@ -228,7 +228,7 @@ public class ApiRequestsBackendGateTests
         var c = f.Plugin.Configuration; c.ArrRequestBackend = "je";
         var type = typeof(JellyfinEnhancedController);
         var cache = (System.Collections.IDictionary)type.GetField("_userIdCache", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
-        var id = Guid.NewGuid().ToString("N"); cache[id] = ("7", DateTime.UtcNow);
+        var id = Guid.NewGuid().ToString("N"); cache[id] = SeerrSeeds.Id(id, "7");
         var read = type.GetMethod("TryGetCachedJellyseerrUserId", BindingFlags.NonPublic | BindingFlags.Static)!;
         try
         {
@@ -263,7 +263,7 @@ public class ApiRequestsBackendGateTests
         var controller = ApiAssetTests.Controller(f.Core, transport, users.Object, parental);
         controller.HttpContext.User = TestCallers.Principal(user.Id, true);
         var method = typeof(JellyfinEnhancedController).GetMethod("ProxyJellyseerrRequestCore", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var run = Task.Run(async () => await (Task<IActionResult>)method.Invoke(controller, new object?[] { "/api/v1/movie/989988", HttpMethod.Get, null, null })!);
+        var run = Task.Run(async () => await (Task<IActionResult>)method.Invoke(controller, new object?[] { "/api/v1/movie/989988", HttpMethod.Get, null, null, 0 })!);
         await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var transition = EffectiveRequestsBackend.Shared.TransitionAsync(() => { c.ArrRequestBackend = "je"; c.ArrBackendIsolationVersion = 1; }, default);
         release.Set();

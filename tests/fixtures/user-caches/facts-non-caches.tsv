@@ -59,6 +59,7 @@ JeBackupService._dataFolder	string	stable storage/server/recipient identity of t
 JellyfinEnhanced._evidencePreservingConfiguration	Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration?	synchronous configuration-save pairing identity, never a provider answer
 JellyfinEnhanced._restoringConfiguration	bool	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
 JellyfinEnhanced._writtenGeneration	long	database/configuration lifecycle and monotonic writer invalidation, no reusable provider answer
+JellyfinEnhanced.Instance	Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced?	service identity/reference, not a memoized computed answer
 JellyfinEnhancedController._avatarCacheDuration	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
 JellyfinEnhancedController._entryScript	(string Build, byte[] Script)?	entry script bytes of the running build, the same for everyone, no reusable provider answer
 JellyfinEnhancedController._lastManualImport	System.DateTime	lifecycle, read-version bookkeeping and admission scheduling, cached answers have separate generation envelopes
@@ -128,6 +129,7 @@ RequestIdentityService.PerKeyWarnInterval	System.TimeSpan	immutable capacity, li
 RequestIdentityService.UserCountCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
 RequestsHubService._hidden	Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserConfigurationManager?	service identity/reference, not a memoized computed answer
 RequestTitleLocks.Entry.Users	int	in-progress operation ownership, mutex identity, rate limits and unsent work queues, not reusable fact answers
+RetryOwners.Flights	System.Collections.Generic.Dictionary<(string, System.Guid, string), Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.RetryOwners.Flight>	process waiters joining one durable reservation revision, the database receipt owns replay and every caller rechecks authority before effects, no reusable provider answer
 ScopeResolution.None	Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ScopeResolution	fixed empty/unknown sentinel payload, never filled with provider observations
 SecretsMigration.Report.NeedsReentry	System.Collections.Generic.List<string>	single migration operation diagnostic output, never used as a provider fact, cache lookup or authorization decision
 SecretsMigration.Report.Notes	System.Collections.Generic.List<string>	single migration operation diagnostic output, never used as a provider fact, cache lookup or authorization decision
@@ -187,6 +189,7 @@ SpoilerSeerrPendingPromoter._activeSweeps	System.Collections.Concurrent.Concurre
 SpoilerSeerrPendingPromoter._pendingUsersByKey	System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<System.Guid, byte>>	reverse index of persisted per-user pending intents for scheduling local sweeps, provider facts are read afresh and no reusable provider answer is stored
 SpoilerSeerrPendingPromoter._sweepRerun	System.Collections.Concurrent.ConcurrentDictionary<string, byte>	per-user worker scheduling marker, the sweep reads current inputs instead of retaining a provider answer
 SpoilerSeerrPendingPromoter._sweepRunning	System.Collections.Concurrent.ConcurrentDictionary<string, byte>	per-user worker exclusion marker, the sweep reads current inputs instead of retaining a provider answer
+SpoilerTagDataStripper.RiderPass.SeriesKeys	System.Collections.Generic.Dictionary<System.Guid, string?>	one tag rider pass's series keys, built and discarded with that pass, no reusable provider answer
 SpoilerUserResolver._corruptionLog	System.Collections.Concurrent.ConcurrentDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.CorruptionEvent>	local configuration corruption diagnostics, never consulted for a title verdict or provider answer
 SpoilerUserResolver._warnedAt	System.Collections.Concurrent.ConcurrentDictionary<string, System.DateTime>	diagnostic log de-duplication only, no reusable provider answer or delivery decision
 SpoilerUserResolver.CollectionScopeCacheTtl	System.TimeSpan	immutable capacity, lifetime or scheduling parameter, never a cached provider answer
@@ -224,6 +227,8 @@ UserCacheRegistry.TaintedEnvelopeStores	long	registry/publication taint, provena
 UserCacheRegistry.TaintedHandouts	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
 UserCacheRegistry.TaintedStateCaptures	long	registry/publication taint, provenance and live admission bookkeeping, never a reusable domain answer
 UserConfigurationManager._incarnation	string	local document revision incarnation for writer concurrency, not a cached provider answer
+UserConfigurationManager._left	System.Collections.Concurrent.ConcurrentDictionary<string, (bool Exists, long Length, long Written)>	each per-user file's state at JE's last counted write (write bookkeeping), no reusable provider answer
+UserConfigurationManager._policyMemo	System.Collections.Generic.Dictionary<string, (byte[] Bytes, System.Lazy<string> Revision)>	bounded normalization fingerprints of policy bytes, reused only after an exact byte comparison with a fresh read, no reusable provider answer
 UserConfigurationManager._policyMemoBytes	long	policy memo byte accounting, no reusable provider answer
 UserConfigurationManager._policyNormalizations	int	policy normalization counter, no reusable provider answer
 UserConfigurationManager._saveEpoch	long	local configuration writer invalidation clock, not a cached provider answer

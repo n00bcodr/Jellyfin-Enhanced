@@ -61,7 +61,7 @@ public class ApiSeerrFactBoundaryTests
         c.JellyseerrEnabled = true; c.JellyseerrUrls = FakeSeerr.Url; c.JellyseerrApiKey = FakeSeerr.Key;
         var person = Guid.NewGuid();
         var identityCache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        identityCache[person.ToString()] = ("7", DateTime.UtcNow);
+        identityCache[person.ToString()] = SeerrSeeds.Id(person.ToString(), "7");
         using var seerr = new FakeSeerr();
         seerr.Users.Add(new System.Text.Json.Nodes.JsonObject { ["id"] = 7, ["jellyfinUserId"] = person.ToString() });
         var request = FakeSeerr.Request(1, "movie", 45745, 2, person, DateTime.UtcNow);
@@ -125,7 +125,7 @@ public class ApiSeerrLazyProofBoundaryTests
         person.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, false);
         var users = new Moq.Mock<MediaBrowser.Controller.Library.IUserManager>(); users.Setup(u => u.GetUserById(person.Id)).Returns(person);
         var identity = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        identity[person.Id.ToString()] = ("7", DateTime.UtcNow);
+        identity[person.Id.ToString()] = SeerrSeeds.Id(person.Id.ToString(), "7");
         var request = FakeSeerr.Request(1, "movie", 45745, 2, person.Id, DateTime.UtcNow); request["requestedBy"]!["id"] = 7; seerr.Requests.Add(request);
         radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 45745, "Sintel"));
         radarr.History.Add(FakeArr.HistoryRow(1, "downloadFolderImported", arr.Now.UtcDateTime, "dl", 45745, "Sintel"));
