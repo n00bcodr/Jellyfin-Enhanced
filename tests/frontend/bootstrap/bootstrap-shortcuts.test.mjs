@@ -47,6 +47,18 @@ for (const [key, modifiers] of [['k', {}], ['ArrowLeft', {}], [' ', {}], ['Enter
   });
 }
 
+// Phase 2 UX-13: the panel keeps keyboard focus inside it, so a keyboard user tabs through the key list. Focusing a key
+// starts listening; Tab must move on and Escape must reach the panel instead of being saved as the shortcut.
+for (const [key, modifiers] of [['Tab', {}], ['Tab', { shiftKey: true }], ['Escape', {}]]) {
+  test(`UX-13: ${modifiers.shiftKey ? 'Shift+' : ''}${key} on a listening key passes on and records nothing`, t => {
+    const h = setup(t); h.key.focus();
+    const event = h.press(h.key, key, modifiers);
+    assert.equal(event.defaultPrevented, false, 'the browser (or the panel) gets the key');
+    assert.equal(h.JE.state.activeShortcuts.CycleAudioTracks, 'A');
+    assert.equal(h.saves.length, 0);
+  });
+}
+
 test('editor rejects conflicts and modifier-only input, disables with Delete and restores with Backspace', t => {
   const h = setup(t); h.key.focus(); h.press(h.key, 's'); h.press(h.key, 'Control');
   assert.equal(h.saves.length, 0);

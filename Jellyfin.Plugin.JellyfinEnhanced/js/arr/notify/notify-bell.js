@@ -274,7 +274,8 @@
         settings.title = JE.arrNotify.tr('arr_notify_settings');
         settings.setAttribute('aria-label', JE.arrNotify.tr('arr_notify_settings'));
         settings.appendChild(icon('settings'));
-        settings.addEventListener('click', () => { close(); N.openSettings?.(); });
+        // The press's owner opens the panel (taken before the inbox it was made in closes).
+        settings.addEventListener('click', (e) => { const owner = JE.ownerOf?.(e); close(); N.openSettings?.(owner); });
         foot.appendChild(settings);
         return foot;
     }
