@@ -51,13 +51,15 @@ test('cancel and browser Back close without submitting', async ({ page }) => {
 });
 test('untrusted modal subtitles render as text', async ({ page }) => {
   const hostile = '<img src=x onerror="window.compromised=true"> & 日本語';
-  await page.evaluate(text => openRequest(text), hostile);
+  await page.evaluate(text => { window.nextOpen = operation => openRequest(operation, text); }, hostile);
+  await page.locator('#open').click();
   await expect(page.locator('.jellyseerr-season-subtitle')).toHaveText(hostile);
   await expect(page.locator('.jellyseerr-season-subtitle img')).toHaveCount(0);
   expect(await page.evaluate(() => window.compromised)).toBeUndefined();
 });
 test('modal fits viewport and has labelled controls @visual', async ({ page }) => {
-  await page.evaluate(() => openRequest('Synthetic Series'));
+  await page.evaluate(() => { window.nextOpen = operation => openRequest(operation, 'Synthetic Series'); });
+  await page.locator('#open').click();
   await page.evaluate(() => document.fonts.ready);
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Season', { exact: true })).toBeFocused();
@@ -114,11 +116,20 @@ async function languagePanel(page, { saved = 'zh-hk', user = 'user-a', fail = fa
   await page.route('**/Localization/Cultures', route => route.fulfill({ json: [{ TwoLetterISOLanguageName: 'de', DisplayName: 'Deutsch' }] }));
   await page.evaluate(({saved,user,fail}) => {
     document.querySelector('main').innerHTML = '<label for="displayLanguageSelect">Display language</label><select id="displayLanguageSelect"><option value="">Auto</option></select><button id="clearTranslationCacheButton">Clear translations</button>';
-    JellyfinEnhanced.currentSettings = { displayLanguage: saved };
-    window.ApiClient = { getCurrentUserId:()=>user, getUrl:path=>path, ajax: ({url}) => fail ? Promise.reject(new Error('fixture unavailable')) : fetch(url).then(r=>r.json()) };
+    // The panel saves through the user's settings document (enhanced/config.js): one PATCH of the changed fields, sent
+    // through the core transport. The boot read handed out the stored language.
     window.savedSettings=[];
-    JellyfinEnhanced.saveUserSettings = async (file,settings)=>savedSettings.push({file,settings:{...settings}});
+    window.ApiClient = { getCurrentUserId:()=>user, accessToken:()=>'token-'+user, serverId:()=>'server', getUrl:path=>path,
+      ajax: request => {
+        if (request.type === 'PATCH') { savedSettings.push({url:request.url, body:JSON.parse(request.data)}); return Promise.resolve({}); }
+        return fail ? Promise.reject(new Error('fixture unavailable')) : fetch(request.url).then(r=>r.json());
+      } };
+    JellyfinEnhanced.core.api = { ajax: options => ApiClient.ajax(options) };
+    JellyfinEnhanced.userConfig = { settings: { displayLanguage: saved } };
   }, {saved,user,fail});
+  for (const file of ['enhanced/translations.js', 'core/mutation-queue.js', 'enhanced/config.js'])
+    await page.addScriptTag({url:'/Jellyfin.Plugin.JellyfinEnhanced/js/' + file});
+  await page.evaluate(() => { JellyfinEnhanced.currentSettings = JellyfinEnhanced.loadSettings(); });
   await page.addScriptTag({url:'/Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js'});
   await page.evaluate(() => JellyfinEnhanced.internals.enhancedUi.wireLanguageControls({resetAutoCloseTimer:()=>{}}));
 }
@@ -129,7 +140,8 @@ test('language selector normalizes persisted region and saves only current user'
   await pauseClock(page); // the panel's page reload must not fire mid-test
   await page.evaluate(()=>localStorage.setItem('user-b-language','pr'));
   await page.getByLabel('Display language').selectOption('de');
-  expect(await page.evaluate(()=>({settings:savedSettings, a:localStorage.getItem('user-a-language'),b:localStorage.getItem('user-b-language')}))).toEqual({settings:[{file:'settings.json',settings:{displayLanguage:'de'}}],a:'de',b:'pr'});
+  await expect.poll(() => page.evaluate(() => savedSettings.length)).toBe(1);
+  expect(await page.evaluate(()=>({settings:savedSettings, a:localStorage.getItem('user-a-language'),b:localStorage.getItem('user-b-language')}))).toEqual({settings:[{url:'/JellyfinEnhanced/user-settings/user-a/settings.json',body:{Set:{displayLanguage:'de'}}}],a:'de',b:'pr'});
 });
 test('automatic language clears override and cache clearing preserves unrelated settings', async ({ page }) => {
   await languagePanel(page);
@@ -147,25 +159,36 @@ test('locale enumeration failure leaves automatic language usable', async ({ pag
   await expect(page.getByLabel('Display language')).toBeEnabled();
 });
 
+// The modal is a JE surface: only the viewer's input acts inside it (a script's change event, which selectOption
+// dispatches, is blocked, D46S2-R12-3). The viewer moves the focused select to the option with the arrow keys.
+async function viewerSelect(page, selector, value) {
+  const select = page.locator(selector);
+  await select.focus();
+  const [from, to] = await select.evaluate((el, value) => [el.selectedIndex, [...el.options].findIndex(o => o.value === value)], value);
+  expect(to, `option ${value}`).toBeGreaterThanOrEqual(0);
+  for (let i = from; i !== to; i += Math.sign(to - from)) await page.keyboard.press(to > from ? 'ArrowDown' : 'ArrowUp');
+  await expect(select).toHaveValue(value);
+}
 for (const is4k of [false, true]) {
   test(`advanced request options select matching ${is4k ? '4K' : 'regular'} default and refresh dependent fields`, async ({ page }) => {
-    await page.evaluate(is4k => {
+    await page.evaluate(is4k => window.nextOpen = operation => {
       const api = JellyfinEnhanced.jellyseerrModal;
-      const request = api.create({ title: 'Advanced request', subtitle: 'Fixture API data', bodyHtml: api.createAdvancedOptionsHTML('movie'), onSave:()=>{} });
+      const request = api.create({ operation, title: 'Advanced request', subtitle: 'Fixture API data', bodyHtml: api.createAdvancedOptionsHTML('movie'), onSave:()=>{} });
       request.show();
       api.populateAdvancedOptions(request.modalElement, {servers:[
         {id:2,name:'Zulu 4K',isDefault:true,is4k:true,activeProfileId:20,activeDirectory:'/4k',qualityProfiles:[{id:20,name:'Ultra HD'}],rootFolders:[{path:'/4k',freeSpace:1073741824}]},
         {id:1,name:'Alpha regular',isDefault:true,is4k:false,activeProfileId:10,activeDirectory:'/movies',qualityProfiles:[{id:10,name:'HD'}],rootFolders:[{path:'/movies',freeSpace:0}]}
       ]}, 'movie', is4k);
     }, is4k);
+    await page.locator('#open').click();
     await expect(page.locator('#movie-server')).toHaveValue(is4k ? '2' : '1');
     await expect(page.locator('#movie-quality')).toHaveValue(is4k ? '20' : '10');
     await expect(page.locator('#movie-folder')).toHaveValue(is4k ? '/4k' : '/movies');
     await expect(page.locator('#movie-server option')).toHaveText(['Select Server...', 'Alpha regular', 'Zulu 4K']);
-    await page.locator('#movie-server').selectOption(is4k ? '1' : '2');
+    await viewerSelect(page, '#movie-server', is4k ? '1' : '2');
     await expect(page.locator('#movie-quality option')).toHaveText(['Select Quality...', is4k ? 'HD' : 'Ultra HD']);
     await expect(page.locator('#movie-folder option')).toHaveText(['Select Folder...', is4k ? '/movies (0 Bytes)' : '/4k (1 GB)']);
-    await page.locator('#movie-server').selectOption('');
+    await viewerSelect(page, '#movie-server', '');
     await expect(page.locator('#movie-quality option')).toHaveCount(1);
     await expect(page.locator('#movie-folder option')).toHaveCount(1);
   });

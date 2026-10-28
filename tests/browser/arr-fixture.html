@@ -150,7 +150,7 @@ async function bootArrFixture() {
             return Object.entries(params).reduce((s, [k, v]) => s.split('{' + k + '}').join(String(v)), translations[key]);
         }
     };
-    const shared = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'core/lifecycle.js', 'core/dom-observer.js',
+    const shared = ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/mutation-queue.js', 'core/lifecycle.js', 'core/dom-observer.js',
         'core/ui-kit.js', 'core/api-client.js', 'enhanced/config.js', 'enhanced/helpers.js', 'enhanced/header-actions.js'];
     const manifest = await fetch(root + 'component-scripts.json').then(r => r.json());
     const arrDirs = ask ? /^arr\/(live|status|manage|hub|notify|admin|ask)\// : /^arr\/(live|status|manage|hub|notify|admin)\//;

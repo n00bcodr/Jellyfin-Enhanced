@@ -61,6 +61,10 @@ function dataFor(admin = true, origin = 'http://127.0.0.1:4179') {
         notInJellyfin: [{ instanceId: 'r1', instance: card.name, title: 'Importing Film', arrPath: '/fixture/movies/Importing Film/file.mkv',
           jellyfinPath: '/media/Importing Film/file.mkv', importedAt: AS_OF, problem: 'not_scanned', library: 'Movies' }],
         missingTitles: { titles: [], counts: {} }, pathDoctor: [] }, settings: { libraryPendingMinutes: 10, lowDiskPercent: 10, seerrHandoffGraceMinutes: 15 } },
+    // The Overview's Automation card (admin-automation.js): the status shape the frontend suite renders it from.
+    automation: { phase4: { enabled: true, effective: true }, engine: { enabled: true, effective: true }, shadowOverride: false, killAll: false,
+      backend: 'je', contract: { backend: 'je', guarantees: [], notGuaranteed: [], unavailableRecipes: [] },
+      recipes: [], targets: [], budgets: [], held: {}, migration: null, accountingUnavailable: false },
     audit: { entries: [{ time: AS_OF, userName: 'Fixture admin', action: 'queue.search', target: 'Stalled Film', outcome: 'succeeded', message: 'Fixture action' }] },
     inbox: { unread: 2, more: true, items: [
       { id: 2, kind: 'ready', createdAt: AS_OF, read: false, params: { title: 'Ready Film' }, itemId: 'd'.repeat(32), link: '#/requests' },
@@ -89,7 +93,7 @@ async function installArrRoutes(page, { admin = true, origin, extra = [], patter
     ['GET /acquire/hub', () => data.hub], ['GET /acquire/status', () => data.status],
     ['GET /arr/admin/manage', () => data.manage],
     ...['overview', 'activity', 'system'].map(tab => [`GET /arr/admin/hub/${tab}`, () => data[tab]]),
-    ['GET /arr/admin/audit', () => data.audit],
+    ['GET /arr/admin/audit', () => data.audit], ['GET /arr/admin/automation/status', () => data.automation],
     ...['/arr/admin/manage/search', '/arr/admin/queue/action', '/arr/admin/hub/search', '/arr/admin/bridge/scan'].map(path => [`POST ${path}`, () => outcome]),
     ['POST /arr/admin/queue/confirm', () => ({ token: 'fixture-confirm', expiresAt: '2099-11-14T00:00:00Z', download: data.activity.queue[0] })],
     ['GET /acquire/notify/inbox', () => data.inbox], ['POST /acquire/notify/read', () => ({ changed: 2, unread: 0 })],
@@ -111,6 +115,9 @@ async function installArrRoutes(page, { admin = true, origin, extra = [], patter
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== new URL(origin).origin) return route.abort();
+    // The mock host's own item read (enhanced/helpers.js getItemCached reads Jellyfin over HTTP): the details item.
+    const item = request.method() === 'GET' && /^\/Users\/[0-9a-f]{32}\/Items\/([0-9a-f]{32})$/.exec(url.pathname);
+    if (item) return route.fulfill({ json: { Id: item[1], Name: item[1] === ITEM ? 'Importing Film' : 'Fixture item', Type: 'Movie', ProviderIds: item[1] === ITEM ? { Tmdb: '2' } : {} } });
     if (!url.pathname.startsWith('/JellyfinEnhanced/')) return route.continue();
     const path = url.pathname.slice('/JellyfinEnhanced'.length);
     const key = `${request.method()} ${path}`;

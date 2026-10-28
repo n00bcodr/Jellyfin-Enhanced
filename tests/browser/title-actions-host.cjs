@@ -8,7 +8,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const read = file => readFileSync(path.join(root, file), 'utf8');
 const en = JSON.parse(read('Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json'));
-const MODULES = ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/lifecycle.js', 'core/api-client.js', 'core/ui-kit.js',
+const MODULES = ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/mutation-queue.js', 'core/lifecycle.js', 'core/api-client.js', 'core/ui-kit.js',
   'jellyseerr/seerr-status.js', 'jellyseerr/api.js', 'jellyseerr/modal.js', 'jellyseerr/ui/ui-icons.js', 'jellyseerr/ui/ui-styles.js', 'jellyseerr/ui/ui-quota.js',
   'jellyseerr/ui/ui-popover.js', 'jellyseerr/ui/ui-buttons.js', 'jellyseerr/ui/ui-badges.js', 'jellyseerr/ui/ui-cards.js', 'jellyseerr/ui/ui-results.js',
   'jellyseerr/ui/ui-request-modals.js', 'jellyseerr/ui/ui-season-modal.js', 'jellyseerr/issue-reporter.js',
