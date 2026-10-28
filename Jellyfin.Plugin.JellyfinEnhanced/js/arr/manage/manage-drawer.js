@@ -1177,8 +1177,10 @@
         button.appendChild(content);
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            // The press's owner: the operation a title action pressed it for, else the page (native).
-            open(absent ? { key } : { itemId }, { operation: JE.ownerOf(e) });
+            // The press's owner: the operation a title action pressed it for, else the page (native). The page's title is the
+            // heading's name while no arr names the title.
+            const name = page.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent?.trim() || '';
+            open({ ...(absent ? { key } : { itemId }), name }, { operation: JE.ownerOf(e) });
         });
         host.appendChild(button);
     }

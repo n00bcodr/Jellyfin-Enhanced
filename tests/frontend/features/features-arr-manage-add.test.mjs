@@ -466,3 +466,17 @@ test('F36 control: the arr\'s own name wins over the opener\'s, with the scope a
   await until(() => h.document.querySelector('.je-manage-version'));
   assert.equal(h.document.querySelector('.je-manage-title').textContent, translate('arr_manage_title', { title: `Blake's 7 · ${translate('arr_hub_season', { list: 2 })}` }));
 });
+
+test('F36: the details page\'s own Manage button names the drawer after the page\'s title', async t => {
+  const unnamed = { ...overview(true), title: null, instances: overview(true).instances.map(i => ({ ...i, inArr: false, arrId: undefined })) };
+  const h = setup(t, path => (path.startsWith('/arr/admin/manage?') ? unnamed : null));
+  const page = h.document.createElement('div');
+  page.innerHTML = '<div class="nameContainer"><h1 class="itemName">The General</h1><h4 class="itemName originalTitle">El General</h4></div><div class="mainDetailButtons"></div>';
+  h.document.body.appendChild(page);
+  h.JE.internals.arrManage.attachDetails(page, { admin: {}, itemId: 'f5e445a8368ae1b1bb5d6378ddd7b68d', key: 'movie:tmdb:961' });
+  const button = page.querySelector('.je-manage-open');
+  assert.ok(button);
+  h.click(button);
+  await until(() => h.document.querySelector('.je-manage-version'));
+  assert.equal(h.document.querySelector('.je-manage-title').textContent, translate('arr_manage_title', { title: 'The General' }));
+});
