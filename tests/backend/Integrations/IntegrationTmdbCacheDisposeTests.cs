@@ -148,4 +148,67 @@ public sealed class IntegrationTmdbCacheDisposeTests
         f.Raw.Dispose();
         Assert.Contains("movie/604", File.ReadAllText(f.Legacy));
     }
+
+    // Hardening-pack review (HPR-1), ported from the review clone: a write queued on the disk, a fetch already under way
+    // and a timer save already waiting on the folder all observe the same disposal.
+ [Fact] public async Task PromotionQueuedOnBlobIoMustNotCommitAfterDispose() {
+  await using var f=new Fixture(); await f.Disk.PendingSweep;
+  f.Settings=f.Settings with {Enabled=true}; Assert.True(f.Disk.Enabled); await f.Disk.PendingSweep;
+  var io=(SemaphoreSlim)Field(f.Disk,"_io");
+  for(var i=0;i<ServerBlobCache.MaxConcurrentIo;i++) await io.WaitAsync();
+  var promotion=f.Raw.PromoteAsync();
+  try {
+   await Until(()=>Number(f.Disk,"_pendingIo")>0);
+   await Task.Run(f.Raw.Dispose).WaitAsync(TimeSpan.FromSeconds(3));
+   Assert.Equal(0,f.Blobs);
+  } finally { io.Release(ServerBlobCache.MaxConcurrentIo); }
+  await promotion; await f.Drain();
+  Assert.Equal(0,f.Blobs);
+  Assert.True(File.Exists(f.Legacy));
+  Assert.False(File.Exists(f.Legacy+".migrated"));
+ }
+
+ [Theory]
+ [InlineData(false)]
+ [InlineData(true)]
+ public async Task RequestAlreadyFetchingMustNotStartSavingAfterDispose(bool dispose) {
+  var root=Path.Combine(Path.GetTempPath(),"hpr-dispose-fetch-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+  var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+  using var net=new IntegrationTransport(async (_,ct)=> { await release.Task.WaitAsync(ct); return IntegrationTransport.Response("{\"id\":604}"); });
+  var clock=new IntegrationTmdbDiskCacheTests.Clock {Now=DateTimeOffset.UtcNow};
+  var disk=new ServerBlobCache(()=>new(true,"",0,0),new ServerCacheLocation(root,Array.Empty<string>()),null,()=>clock.Now.UtcDateTime) {SweepDebounce=TimeSpan.Zero};
+  var raw=new TmdbResponseCache(net,clock,null,disk,null,null);
+  try {
+   var request=raw.GetAsync("movie/604","","key",default);
+   await Until(()=>net.Calls==1);
+   if(dispose) await Task.Run(raw.Dispose).WaitAsync(TimeSpan.FromSeconds(3));
+   release.SetResult(); await request;
+   await Until(()=>Number(disk,"_pendingIo")==0);
+   await disk.PendingSweep;
+   Assert.Equal(dispose ? 0 : 1,Directory.EnumerateFiles(root,"*.blob",SearchOption.AllDirectories).Count());
+  } finally { release.TrySetResult(); raw.Dispose(); await disk.PendingSweep; Directory.Delete(root,true); }
+ }
+
+ [Fact] public async Task DirtyTimerAlreadyWaitingOnPreparationMustNotKeepDisposeWaiting() {
+  await using var f=new Fixture(); await f.Disk.PendingSweep;
+  await f.Raw.GetAsync("movie/604","","key",default);
+  var timer=(Timer)Field(f.Raw,"_debounceSaveTimer"); timer.Change(Timeout.Infinite,Timeout.Infinite);
+  Task? disposing=null; Task? forgetting=null; var completed=false;
+  using(new PreparationHold(f.Disk)) {
+   f.Settings=f.Settings with {Enabled=true};
+   var before=Volatile.Read(ref f.ReadyCalls);
+   timer.Change(0,Timeout.Infinite);
+   await Until(()=>Volatile.Read(ref f.ReadyCalls)>before);
+   forgetting=Task.Run(()=>f.Raw.Forget("movie/603","","key"));
+   await Until(()=>(bool)Field(f.Raw,"_dirty"));
+   disposing=Task.Run(f.Raw.Dispose);
+   completed=await Task.WhenAny(disposing,Task.Delay(1500))==disposing;
+   // Release the holder before asserting so the failing probe also cleans up.
+  }
+  await forgetting!.WaitAsync(TimeSpan.FromSeconds(4));
+  await disposing!.WaitAsync(TimeSpan.FromSeconds(4));
+  await Task.Run(()=> { lock(Field(f.Raw,"_saveLock")) { } }).WaitAsync(TimeSpan.FromSeconds(4));
+  await f.Drain();
+  Assert.True(completed,"Dispose still waits on _saveLock held by the timer's uncancellable DiskReady");
+ }
 }

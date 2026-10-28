@@ -1151,18 +1151,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static TimeSpan SnapshotTtl(string key, int status) => status == 404 ? NotFoundTtl : GetTtl(UrlOf(key)[UpstreamPrefix.Length..]);
 
-        /// <summary>Writes the snapshot file, unless the server-side cache is on and usable.</summary>
-        private void SaveToDisk() => SaveSnapshot(CancellationToken.None);
+        /// <summary>
+        /// Writes the snapshot file, unless the server-side cache is on and usable (the debounce timer). Once Dispose has
+        /// cancelled, it gives up its waits (the server-side cache's folder preparation, the save and snapshot locks) and
+        /// never commits: what it would have written stays dirty for Dispose's own final save.
+        /// </summary>
+        private void SaveToDisk()
+        {
+            try
+            {
+                SaveSnapshot(final: false);
+            }
+            catch (OperationCanceledException) when (_disposing.IsCancellationRequested)
+            {
+                _dirty = true;
+            }
+        }
 
         /// <summary>
-        /// Dispose's final save: a wait for the server-side cache's folder preparation is given up and nothing is written
-        /// (the cache is switched on then, so the snapshot is not the disk copy to keep).
+        /// Dispose's final save of what is still unsaved: each lock is waited for at most <see cref="FinalSaveWait"/>, and a
+        /// wait for the server-side cache's folder is given up (the cache is switched on then, so the snapshot is not the
+        /// disk copy to keep).
         /// </summary>
         private void SaveOnDispose()
         {
             try
             {
-                SaveSnapshot(_disposing.Token);
+                SaveSnapshot(final: true);
             }
             catch (OperationCanceledException) when (_disposing.IsCancellationRequested)
             {
@@ -1170,17 +1185,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private void SaveSnapshot(CancellationToken ct)
+        private static readonly TimeSpan FinalSaveWait = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// Takes <paramref name="gate"/>: Dispose's final save waits at most <see cref="FinalSaveWait"/>; any other save waits
+        /// as long as it takes, but gives up once Dispose has cancelled. False when it wasn't taken.
+        /// </summary>
+        private bool TakeLock(object gate, bool final)
         {
-            if (_diskPath == null)
+            if (final) return Monitor.TryEnter(gate, FinalSaveWait);
+            while (!Monitor.TryEnter(gate, 50))
+            {
+                if (_disposing.IsCancellationRequested) return false;
+            }
+
+            return true;
+        }
+
+        private void SaveSnapshot(bool final)
+        {
+            if (_diskPath == null || !TakeLock(_saveLock, final))
             {
                 return;
             }
 
-            lock (_saveLock)
+            try
             {
+                // The final save writes only what is still unsaved (a save Dispose interrupted leaves it dirty).
+                if (final && !_dirty) return;
                 _dirty = false;
                 Interlocked.Exchange(ref _firstDirtyTicks, 0);
+                var ct = _disposing.Token;
                 // The server-side cache is then the one disk copy (entries are written there as they are fetched).
                 if (DiskReady(ct)) return;
 
@@ -1188,7 +1223,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     var now = _timeProvider.GetUtcNow();
                     var data = new DiskFormat { V = DiskSchemaVersion };
-                    lock (_lock)
+                    if (!TakeLock(_lock, final))
+                    {
+                        _dirty = true;
+                        return;
+                    }
+
+                    try
                     {
                         foreach (var entry in _lru)
                         {
@@ -1197,6 +1238,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 data.Entries.Add(new DiskEntry { K = entry.Key, S = entry.Response.StatusCode, C = entry.Response.Content, E = entry.ExpiresAt.ToUnixTimeMilliseconds(), F = entry.Response.FetchedAtUtc.Ticks });
                             }
                         }
+                    }
+                    finally
+                    {
+                        Monitor.Exit(_lock);
                     }
 
                     var dir = Path.GetDirectoryName(_diskPath);
@@ -1210,15 +1255,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     // Decided again at the commit, in step with the move into the server-side cache: a save that began
                     // while the cache was off never puts the snapshot back once the cache is on (and the file retired).
-                    lock (_legacyFileLock)
+                    if (!TakeLock(_legacyFileLock, final))
                     {
-                        if (DiskReady(ct))
+                        File.Delete(tempPath);
+                        _dirty = true;
+                        return;
+                    }
+
+                    try
+                    {
+                        // A save other than Dispose's own never commits once Dispose has cancelled.
+                        if (DiskReady(ct) || (!final && ct.IsCancellationRequested))
                         {
                             File.Delete(tempPath);
+                            if (!final && ct.IsCancellationRequested) _dirty = true;
                             return;
                         }
 
                         File.Move(tempPath, _diskPath, overwrite: true);
+                    }
+                    finally
+                    {
+                        Monitor.Exit(_legacyFileLock);
                     }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1226,6 +1284,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _dirty = true; // retry on the next debounce cycle / Dispose
                     _logger?.Warning($"[TMDB cache] Failed to save cache to disk: {ex.Message}");
                 }
+            }
+            finally
+            {
+                Monitor.Exit(_saveLock);
             }
         }
 
@@ -1275,14 +1337,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Dispose()
         {
             _disposed = true;
-            // A background check or save is cancelled: a wait for the server-side cache's folder ends at once, and nothing
-            // is saved or migrated after it. Only one stuck inside a file-system call is waited for, briefly; when that call
-            // returns it finds the cache disposed and starts nothing.
+            // Every background check, promotion, migration, disk write and timer save observes this cancellation: a wait for
+            // the server-side cache's folder or disk ends at once, a write not yet committed never commits, and nothing new
+            // starts. What is still running is waited for, briefly (only a call stuck inside the file system could outlast it,
+            // and when it returns it finds the cache disposed).
             _disposing.Cancel();
-            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0, TimeSpan.FromSeconds(1));
+            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0 && Volatile.Read(ref _writing) == 0, TimeSpan.FromSeconds(1));
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
-            if (_dirty) SaveOnDispose();
+            SaveOnDispose();
         }
 
         // ---- server-side cache (disk tier) ------------------------------------
@@ -1331,6 +1394,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _promoteAgainAt;
         private long _nextDiskCheck;
         private int _checking;
+        // Disk writes of this cache under way (Dispose waits for them).
+        private int _writing;
         private static readonly TimeSpan DiskCheckEvery = TimeSpan.FromSeconds(30);
         // The valid, migratable records of the legacy snapshot, until it is retired (or migration gives up).
         private List<Entry>? _legacy;
@@ -1625,6 +1690,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<bool?> SaveOnceAsync(Entry entry)
         {
+            // Disposed: nothing is saved (the entry stays unsaved).
+            if (_disposing.IsCancellationRequested) return false;
             if (Interlocked.CompareExchange(ref entry.Saved, SavedPending, SavedNone) != SavedNone)
             {
                 if (Volatile.Read(ref entry.Saved) == SavedOnDisk) return true;
@@ -1645,6 +1712,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var complete = true;
             foreach (var record in legacy)
             {
+                // Disposed: the snapshot stays for the next start.
+                if (_disposing.IsCancellationRequested) return false;
                 if (record.ExpiresAt <= now) continue;
                 Entry? current;
                 lock (_lock) current = _entries.TryGetValue(record.Key, out var node) && node.Value.ExpiresAt > now ? node.Value : null;
@@ -1661,7 +1730,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (complete)
+            if (complete && !_disposing.IsCancellationRequested)
             {
                 RetireLegacyFile();
                 _legacy = null;
@@ -1683,11 +1752,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (_diskPath == null) return;
             try
             {
-                // In step with a snapshot save's commit (which checks the cache again under the same lock).
-                lock (_legacyFileLock)
+                // In step with a snapshot save's commit (which checks the cache again under the same lock). A migration still
+                // waiting when Dispose cancels gives up, and one that gets the lock afterwards finds it disposed: the
+                // snapshot stays for the next start.
+                if (!TakeLock(_legacyFileLock, final: false)) return;
+                try
                 {
-                    if (!File.Exists(_diskPath)) return;
+                    if (_disposing.IsCancellationRequested || !File.Exists(_diskPath)) return;
                     File.Move(_diskPath, _diskPath + ".migrated", overwrite: true);
+                }
+                finally
+                {
+                    Monitor.Exit(_legacyFileLock);
                 }
 
                 _logger?.Info("[TMDB cache] Moved to the server-side cache; the old snapshot was renamed tmdb-cache.json.migrated");
@@ -1701,7 +1777,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Starts the disk writes of entries just stored (each under the generation sampled before its fetch).</summary>
         private void SaveEntries(List<Entry> entries)
         {
-            if (entries.Count == 0 || !DiskReady()) return;
+            if (_disposed || entries.Count == 0 || !DiskReady()) return;
             foreach (var entry in entries)
             {
                 if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key))) _ = SaveOnceAsync(entry);
@@ -1717,13 +1793,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<bool> WriteAsync(Entry entry)
         {
+            Interlocked.Increment(ref _writing);
             try
             {
                 var bar = entry.Key.IndexOf('|', StringComparison.Ordinal);
                 var keyHash = entry.Key[..bar];
                 var url = entry.Key[(bar + 1)..];
                 var bytes = Encode(entry, DiskDigest(keyHash, url), url);
-                var stored = await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
+                // Cancelled by Dispose: a write waiting for the disk, or not yet committed, never lands.
+                var stored = await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, _disposing.Token,
                     entry.DiskGeneration, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
                 if (stored) Volatile.Write(ref entry.Saved, SavedOnDisk);
                 return stored;
@@ -1731,6 +1809,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 return false;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _writing);
             }
         }
 

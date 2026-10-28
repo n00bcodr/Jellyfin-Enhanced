@@ -181,6 +181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     if (!cache.CreateMarker() && !cache.HasMarker()) return CantWrite;
                 }
 
+                // What the folder holds must be measurable (statx), or its size could never be kept to the cap.
+                if (!cache.CanMeasure()) return Unsupported;
                 return cache.Writable() ? null : CantWrite;
             });
             if (error != null) return error;
