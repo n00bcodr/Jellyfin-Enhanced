@@ -1430,8 +1430,13 @@ discovery and search row stay as they are, and neither of these appears.
   "Because you watched …" (recommendations for up to three titles you watched lately; the row is left out when there
   are none). Rows scroll sideways on wider screens and become a two-column grid on phones; **More** loads the next page.
 - **Not in your library** row on Jellyfin's search page: while you type, the titles you don't have yet are shown after
-  Jellyfin's own Movies and Shows rows. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
-  search results are switched on (Seerr's row isn't drawn then, and there is never a second row).
+  all of Jellyfin's own result rows (Movies, Shows, Episodes, People and the rest), never above one. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
+  search results are switched on (Seerr's row isn't drawn then, and there is never a second row). When nothing in your
+  library matches, Jellyfin's "Sorry! No results found" gives way to a short *Nothing in your library matches "…"* line
+  above the row, so the page never says there are no results above titles you can ask for. If the search for titles
+  you don't have fails (or gets no answer within 15 seconds), the row says so with **Try again**: it searches the same
+  words again, keeps keyboard focus in the row (or back in the search box if nothing is found), and typing meanwhile
+  replaces it.
 
 ??? info "Seerr's request buttons in JE mode"
     Seerr no longer takes requests once Jellyfin Enhanced handles them, so every
@@ -1522,6 +1527,8 @@ lists requests made through Jellyfin Enhanced.
       **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
 
 ??? info "My requests and arrival"
+    With nothing asked for yet, My requests offers **Discover** (when you have that tab) and **Search** right in its
+    empty message.
     **My requests** adds your own requests to the list, one row per title and edition, grouped like the existing rows. Cancel withdraws only that edition's unsent requests. Requests not
       sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
       requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
@@ -2274,8 +2281,10 @@ With *Home rows* on (under phase 4 and *Ask for it*, off by default), each perso
 built from their own requests and the titles they follow:
 
 - **Your requests**: what they asked for that isn't here yet, each with a progress ring and one word for where it stands
-  ("Downloading", "Waiting for an OK", "Not out yet"). A Manager sees only their own requests here; the ones waiting for
-  their OK stay in the chip bar above the rows ("3 need your OK · 1 stuck").
+  ("Downloading", "Waiting for an OK", "Not out yet"). The word follows the same status as the Requests page, Manage and
+  the title's page: a title nothing was grabbed for after the "still looking" hours reads **Missing** here too, not
+  "Looking". A Manager sees only their own requests here; the ones waiting for their OK stay in the chip bar above the
+  rows ("3 need your OK · 1 stuck").
 - **Coming soon for you**: their requests and follows with a date in the next 30 days (the next episode, a release),
   soonest first. A followed title no Sonarr/Radarr holds yet gets its date from TMDB: a series' next episode, a movie's
   digital (else physical) release; cinema dates aren't shown, as they can't be watched at home.

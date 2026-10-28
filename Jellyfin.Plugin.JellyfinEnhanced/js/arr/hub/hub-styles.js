@@ -20,6 +20,7 @@ body.je-hub-active #fallbackPage { display: none !important; }
 .je-hub-note { padding: 0.7em 1em; border-radius: 8px; background: rgba(255,255,255,0.05); margin: 0 0 1em; opacity: 0.9; }
 .je-hub-note-warn { background: rgba(245,158,11,0.10); border-left: 3px solid #f59e0b; }
 .je-hub-empty { padding: 2.5em 1em; text-align: center; opacity: 0.75; }
+.je-hub-empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.6em; margin: -1.5em 1em 2em; }
 .je-hub-group { margin: 0 0 1.6em; }
 .je-hub-group-title { font-size: 1.05em; font-weight: 600; opacity: 0.85; margin: 0 0 0.6em; }
 .je-hub-list { display: flex; flex-direction: column; gap: 0.6em; }

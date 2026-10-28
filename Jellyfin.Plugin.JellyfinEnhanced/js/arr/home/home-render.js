@@ -157,7 +157,7 @@
     }
 
     /**
-     * The one-word state of a request ("Downloading", "Needs OK", "Airs Fri", "Nov 14"); '' without a status.
+     * The one-word state of a request ("Downloading", "Needs OK", "Missing", "Airs Fri", "Nov 14"); '' without a status.
      * @param {Object} card Card.
      * @returns {string} Text.
      */
@@ -174,7 +174,9 @@
                 if (!date) return tr('home_state_not_out');
                 return card.kind === 'tv' ? tr('home_state_airs', { date }) : date;
             }
-            case 'looking': return tr('home_state_looking');
+            // The status owner's own test (JE.arrStatus.searchable): nothing grabbed past the stale-search threshold
+            // reads Missing here as on the Requests page, Manage and the title's page.
+            case 'looking': return JE.arrStatus?.searchable?.(status) ? tr('home_state_missing') : tr('home_state_looking');
             case 'downloading': return code === 'queued' || code === 'delay_held' ? tr('home_state_queued') : tr('home_state_downloading');
             case 'almostReady': return tr('home_state_almost');
             case 'ready': return tr('home_state_ready');
