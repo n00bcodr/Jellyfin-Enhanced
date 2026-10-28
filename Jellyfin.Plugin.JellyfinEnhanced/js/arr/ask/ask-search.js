@@ -4,7 +4,7 @@
  * GET /JellyfinEnhanced/acquire/search (TMDB movies and series through the server, filtered for the
  * caller: Kids only get titles within their parental limits) and the titles the caller doesn't have
  * are shown as a row of the shared Discover cards (Request / "Ask {contact}" / Notify me) after
- * Jellyfin's own Movies and Shows rows. Only in JE mode and for people who may ask. In JE mode this row
+ * all of Jellyfin's own rows. Only in JE mode and for people who may ask. In JE mode this row
  * replaces Seerr's search row (Seerr no longer takes requests, so JE.internals.arrAskSearch.replacesSeerr()
  * tells the Seerr search not to draw one); Kids don't get it when the server hides search from them
  * (ArrKidsHideSearch). Every search carries an intent token (query, page, user epoch, sequence): a
@@ -214,16 +214,22 @@
     }
 
     /**
-     * Waits for a promise until a deadline (ms since the epoch); rejects with a TimeoutError after it.
-     * The promise itself is left to finish (a shared read other callers may use).
+     * Waits for a promise while a signal is live; rejects with the signal's reason (or an AbortError) once it
+     * aborts. The promise itself is left to finish (a shared read other callers may use).
      * @param {Promise<*>} promise Promise.
-     * @param {number} deadline Deadline.
+     * @param {AbortSignal} signal Signal.
      * @returns {Promise<*>} Its value.
      */
-    function beforeDeadline(promise, deadline) {
+    function whileLive(promise, signal) {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' })), Math.max(0, deadline - Date.now()));
-            Promise.resolve(promise).then(value => { clearTimeout(timer); resolve(value); }, err => { clearTimeout(timer); reject(err); });
+            const stop = () => reject(signal.reason || Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            if (signal.aborted) {
+                stop();
+                return;
+            }
+            signal.addEventListener('abort', stop, { once: true });
+            Promise.resolve(promise).then(value => { signal.removeEventListener('abort', stop); resolve(value); },
+                err => { signal.removeEventListener('abort', stop); reject(err); });
         });
     }
 
@@ -292,33 +298,41 @@
     async function search(query) {
         const token = intent(query, 1);
         state.token = token;
-        // One deadline for the whole search: the capabilities read and then the search itself.
+        // One deadline for the whole search, from the keystroke's or Try again's moment: the capabilities read,
+        // the wait in the client's request queue (an aborted queued request leaves the queue and is never sent)
+        // and the search itself. A newer keystroke aborts the same controller.
         const deadline = Date.now() + SEARCH_TIMEOUT_MS;
+        const controller = new AbortController();
+        state.controller = controller;
+        const timer = setTimeout(() => controller.abort(Object.assign(new Error('timed out'), { name: 'TimeoutError' })), SEARCH_TIMEOUT_MS);
+        let answer = null;
         let caps;
         try {
-            caps = await beforeDeadline(JE.arrAsk.me(), deadline);
-        } catch (err) {
+            try {
+                caps = await whileLive(JE.arrAsk.me(), controller.signal);
+            } catch (err) {
+                if (!current(token)) return;
+                console.warn(`${logPrefix} capabilities not read in time (${err?.message || err})`);
+                state.controller = null;
+                state.token = null;
+                // A row on the page (a Try again) says the search failed again; with none, nothing is drawn.
+                if (state.section) draw(query, null, null);
+                return;
+            }
             if (!current(token)) return;
-            console.warn(`${logPrefix} capabilities not read in time (${err?.message || err})`);
-            state.token = null;
-            // A row on the page (a Try again) says the search failed again; with none, nothing is drawn.
-            if (state.section) draw(query, null, null);
-            return;
-        }
-        if (!current(token)) return;
-        if (!allowed(caps)) {
-            clear();
-            return;
-        }
-        const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        state.controller = controller;
-        const lang = (navigator.language || 'en').split('-')[0].toLowerCase();
-        let answer = null;
-        try {
-            answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller?.signal, timeoutMs: Math.max(1, deadline - Date.now()) });
-        } catch (err) {
-            if (!current(token)) return;
-            console.warn(`${logPrefix} search failed (${err?.message || err})`);
+            if (!allowed(caps)) {
+                clear();
+                return;
+            }
+            const lang = (navigator.language || 'en').split('-')[0].toLowerCase();
+            try {
+                answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller.signal, timeoutMs: Math.max(1, deadline - Date.now()) });
+            } catch (err) {
+                if (!current(token)) return;
+                console.warn(`${logPrefix} search failed (${err?.message || err})`);
+            }
+        } finally {
+            clearTimeout(timer);
         }
         if (!current(token)) return;
         state.controller = null;
@@ -385,19 +399,19 @@
     }
 
     /**
-     * Puts the row after Jellyfin's last Movies / Shows row (by card type, not by the localised
-     * title), else at the end of the results; leaves it where it is when it is already there, so
-     * the page's own observers aren't woken for nothing. Jellyfin's own nodes are never changed.
+     * Puts the row after Jellyfin's last row of results, whatever its kind (Movies, Shows, Episodes, People,
+     * ...), else at the end of the results; never above one of Jellyfin's rows. Leaves it where it is when
+     * it already follows them, so the page's own observers aren't woken for nothing. Jellyfin's own nodes
+     * are never changed.
      * @param {HTMLElement} section Row.
      * @returns {void}
      */
     function place(section) {
         const page = document.querySelector('#searchPage:not(.hide)');
         if (!page) return;
-        const sections = [...page.querySelectorAll(`.verticalSection:not(.${SECTION_CLASS}):not(.jellyseerr-section)`)];
-        const primary = sections.filter(s => ['movie', 'series'].includes(s.querySelector('[data-type]')?.dataset.type?.toLowerCase())).pop();
-        if (primary) {
-            if (primary.nextElementSibling !== section) primary.after(section);
+        const last = [...page.querySelectorAll(`.verticalSection:not(.${SECTION_CLASS}):not(.jellyseerr-section)`)].pop();
+        if (last) {
+            if (!section.isConnected || !(last.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING)) last.after(section);
         } else {
             const container = page.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page') || page;
             if (section.parentElement !== container || container.lastElementChild !== section) container.appendChild(section);

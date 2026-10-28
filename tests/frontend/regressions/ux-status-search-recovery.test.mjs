@@ -537,3 +537,77 @@ test('UX-11 (lab, round 2): a row drawn before Jellyfin had local rows moves aft
   assert.equal(h.document.getElementById('movies').nextElementSibling, section, 'Jellyfin\'s own results come first');
   assert.equal(shown(h, section.querySelector('.je-ask-search-local-none')), false);
 });
+
+// ------------------------------------------------------------------ fix round 3 (review UX4R2-1, UX4R2-2)
+
+test('UX4R2-1: a Try again waiting in the client request queue is cancelled at its 15 s deadline and never sent', async t => {
+  const holds = Array.from({ length: 4 }, () => deferred());
+  const h = setup(t, { realTransport: true, html: EMPTY_SEARCH, routes: f => {
+    if (f.path.startsWith('/hold')) return holds[Number(f.path.slice(5))].promise;
+    if (f.path === '/acquire/search') return { status: 503, body: {} };
+    return undefined;
+  } });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'dune');
+  await until(() => h.document.querySelector('.je-ask-search-retry'));
+  const retry = h.document.querySelector('.je-ask-search-retry');
+  // Four normal requests hold every slot of the core transport.
+  const holding = holds.map((_, i) => h.JE.core.api.pluginResponse(`/hold${i}`).catch(() => null));
+  await until(() => h.fetches.filter(f => f.path.startsWith('/hold')).length === 4);
+  // The search's own deadline (the only ~15 s timer) is run at once; every other timer keeps its delay.
+  const timers = [];
+  const original = h.window.setTimeout.bind(h.window);
+  h.window.setTimeout = (fn, delay, ...args) => { timers.push(delay); return original(fn, delay >= 14000 && delay <= 15000 ? 25 : delay, ...args); };
+  retry.focus();
+  retry.click();
+  assert.ok(timers.some(d => d >= 14000 && d <= 15000), 'the deadline starts at the press');
+  await until(() => h.document.querySelector('.je-ask-search-retry') !== retry && h.document.querySelector('.je-ask-search-retry'));
+  const again = h.document.querySelector('.je-ask-search-retry');
+  assert.equal(again.getAttribute('aria-busy'), null, 'the busy state ended at the deadline');
+  assert.equal(h.document.activeElement, again, 'focus is on the fresh Try again');
+  assert.equal(h.searches().length, 1, 'the queued search was not sent');
+  // The slots free up: the cancelled search never goes out afterwards.
+  holds.forEach(d => d.resolve({ ok: true }));
+  await Promise.all(holding);
+  await wait(40);
+  assert.equal(h.searches().length, 1, 'no search after its deadline');
+  assert.equal(h.document.querySelector('.je-ask-search-retry'), again);
+});
+
+const nativeRow = (id, type) => `<div class="verticalSection" id="${id}"><div class="card" data-type="${type}"></div></div>`;
+
+test('UX4R2-2: the row never moves above any of Jellyfin\'s rows (Movies, Episodes, People; before and after it, added and removed)', async t => {
+  const h = setup(t, { realObserver: true, html: EMPTY_SEARCH, routes: f => (f.path === '/acquire/search' ? page([card('movie:tmdb:1', 'Found')]) : undefined) });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'found');
+  await until(() => h.document.querySelector('.je-discover-card'));
+  await wait(80);
+  const results = h.document.querySelector('.searchResults');
+  const section = h.document.querySelector('.je-ask-search-section');
+  const order = () => [...results.children].map(n => n.id || (n === section ? 'JE' : n.className.split(' ')[0]));
+  h.window.requestAnimationFrame = () => 100;             // only before-paint work runs
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+
+  // Jellyfin inserts Movies and Episodes before the row: the already-correct order is kept.
+  results.insertAdjacentHTML('afterbegin', nativeRow('movies', 'Movie') + nativeRow('episodes', 'Episode'));
+  await settle();
+  assert.deepEqual(order().filter(x => x !== 'native-empty'), ['movies', 'episodes', 'JE']);
+
+  // A People row arrives after the row: the row moves below it.
+  results.insertAdjacentHTML('beforeend', nativeRow('people', 'Person'));
+  await settle();
+  assert.deepEqual(order().filter(x => x !== 'native-empty'), ['movies', 'episodes', 'people', 'JE']);
+
+  // Rows go away (Movies, then the last one): the row stays below the rest and never moves up past one.
+  h.document.getElementById('movies').remove();
+  await settle();
+  assert.deepEqual(order().filter(x => x !== 'native-empty'), ['episodes', 'people', 'JE']);
+  h.document.getElementById('people').remove();
+  await settle();
+  assert.deepEqual(order().filter(x => x !== 'native-empty'), ['episodes', 'JE']);
+
+  // A future kind of row Jellyfin adds between: still above the row.
+  h.document.getElementById('episodes').insertAdjacentHTML('afterend', nativeRow('musicvideos', 'MusicVideo'));
+  await settle();
+  assert.deepEqual(order().filter(x => x !== 'native-empty'), ['episodes', 'musicvideos', 'JE']);
+});

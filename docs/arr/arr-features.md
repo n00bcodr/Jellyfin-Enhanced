@@ -1421,7 +1421,7 @@ discovery and search row stay as they are, and neither of these appears.
   "Because you watched …" (recommendations for up to three titles you watched lately; the row is left out when there
   are none). Rows scroll sideways on wider screens and become a two-column grid on phones; **More** loads the next page.
 - **Not in your library** row on Jellyfin's search page: while you type, the titles you don't have yet are shown after
-  Jellyfin's own Movies and Shows rows. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
+  all of Jellyfin's own result rows (Movies, Shows, Episodes, People and the rest), never above one. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
   search results are switched on (Seerr's row isn't drawn then, and there is never a second row). When nothing in your
   library matches, Jellyfin's "Sorry! No results found" gives way to a short *Nothing in your library matches "…"* line
   above the row, so the page never says there are no results above titles you can ask for. If the search for titles

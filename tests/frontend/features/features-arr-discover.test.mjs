@@ -352,7 +352,7 @@ function typeInto(h, value) {
   input.dispatchEvent(new h.window.Event('input'));
 }
 
-test('the search row is debounced, drops stale answers by intent token and sits after Jellyfin\'s Movies row', async t => {
+test('the search row is debounced, drops stale answers by intent token and sits after Jellyfin\'s last row', async t => {
   const answers = [];
   const h = setup(t, {
     html: SEARCH_HTML,
@@ -383,13 +383,14 @@ test('the search row is debounced, drops stale answers by intent token and sits 
   const section = h.document.querySelector('.je-ask-search-section');
   assert.equal(section.querySelector('.sectionTitle').textContent, 'Not in your library');
   assert.deepEqual([...section.querySelectorAll('.je-discover-card')].map(c => c.dataset.key), ['movie:tmdb:2']);
-  assert.equal(h.document.getElementById('movies').nextElementSibling, section);
+  // UX task 4 round 3 (coordinator): after Jellyfin's last row of any kind (here People), never above one.
+  assert.equal(h.document.getElementById('people').nextElementSibling, section);
   assert.ok(section.querySelector('.je-discover-request'));
 
   // Jellyfin re-renders the results and drops our row: it comes back without a new search.
   section.remove();
   h.mutations.forEach(fn => fn());
-  assert.equal(h.document.getElementById('movies').nextElementSibling, section);
+  assert.equal(h.document.getElementById('people').nextElementSibling, section);
   assert.equal(h.searches().length, 2);
 
   // Clearing the box removes the row; leaving the search page too.
