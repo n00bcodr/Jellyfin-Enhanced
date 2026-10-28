@@ -98,6 +98,21 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
 .je-arr-ring-busy svg { animation: je-arr-spin 1.6s linear infinite; }
 @keyframes je-arr-spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
 @media (prefers-reduced-motion: reduce) { .je-arr-ring-busy svg { animation: none; } .je-arr-progress-fill { transition: none; } }
+/* D95: download progress on the artwork (cards, the details poster, list placeholders). Over the image, never in the flow. */
+.je-arr-art { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  background: rgba(0,0,0,0.42); border-radius: inherit; }
+.je-arr-art-ring { position: relative; width: 46%; max-width: 9em; min-width: 2.6em; aspect-ratio: 1 / 1; container-type: inline-size; }
+.je-arr-art-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+.je-arr-art-track { fill: rgba(0,0,0,0.55); stroke: rgba(255,255,255,0.28); stroke-width: 3; }
+.je-arr-art-bar { fill: none; stroke: #4a9eff; stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray 0.4s ease; }
+.je-arr-art-almost .je-arr-art-bar { stroke: #a78bfa; }
+.je-arr-art-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff;
+  font-weight: 700; font-size: 1em; font-size: 27cqi; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.8); font-variant-numeric: tabular-nums; }
+.je-arr-art-icon { font-size: 1.3em; }
+.je-arr-art-busy svg { animation: je-arr-spin 1.6s linear infinite; }
+.je-arr-art-almost .je-arr-art-ring { animation: je-arr-art-pulse 2.4s ease-in-out infinite; }
+@keyframes je-arr-art-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.72; transform: scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .je-arr-art-busy svg, .je-arr-art-almost .je-arr-art-ring { animation: none; } .je-arr-art-bar { transition: none; } }
 @media (max-width: 600px) {
   .je-arr-journey { flex-direction: column; gap: 0.5em; }
   .je-arr-stop { flex-direction: row; align-items: center; gap: 0.5em; min-width: 0; padding: 0; }

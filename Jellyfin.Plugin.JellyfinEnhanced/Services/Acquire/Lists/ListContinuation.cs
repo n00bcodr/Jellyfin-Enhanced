@@ -29,6 +29,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ListStore _store;
         private readonly Func<ListOutcome?> _current;
         private readonly long _restore;
+        private readonly ListMetadataEpoch _backend = ListMetadataEpoch.Capture();
         private ListOutcome? _refused;
 
         /// <summary>Starts a continuation for the calling flow (and everything it awaits).</summary>
@@ -58,7 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             lock (Lifecycle)
             {
-                _refused ??= _store.RestoreVersion != _restore ? NotFound() : _current();
+                _refused ??= _store.RestoreVersion != _restore ? NotFound()
+                    : !_backend.IsCurrent ? ListOutcome.Error(409, "configuration_changed", "The request backend changed. Try the list operation again.")
+                    : _current();
                 if (_refused != null)
                 {
                     throw new ListAccessLostException(_refused, "The list operation or its access changed.");
@@ -76,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        /// <summary>A write and the check allowing it, together under the lifecycle lock (also without a continuation).</summary>
+        /// <summary>A write and its lifecycle/backend admission, serialized with configuration commits (also without a continuation).</summary>
         /// <typeparam name="T">Result.</typeparam>
         /// <param name="effect">The write (synchronous).</param>
         /// <returns>Its result.</returns>
@@ -84,8 +87,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             lock (Lifecycle)
             {
-                Ambient.Value?.Check();
-                return effect();
+                var execution = Ambient.Value;
+                return (execution?._backend ?? ListMetadataEpoch.Capture()).Publish(() =>
+                {
+                    execution?.Check();
+                    return effect();
+                }, () =>
+                {
+                    execution?.Check(); // records the durable refusal and throws
+                    throw new ListAccessLostException(ListOutcome.Error(409, "configuration_changed", "The request backend changed. Try the list operation again."), "The request backend changed.");
+                });
             }
         }
 

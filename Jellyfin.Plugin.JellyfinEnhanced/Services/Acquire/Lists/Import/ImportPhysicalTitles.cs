@@ -183,16 +183,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     internal sealed class ImportPhysicalProjection
     {
         private readonly IImportPhysicalTitles _physical;
-        private readonly User _viewer;
-        private readonly Dictionary<string, ImportPhysical> _reads = new(StringComparer.Ordinal);
+        private User _viewer = null!;
+        private Dictionary<string, ImportPhysical> _reads = new(StringComparer.Ordinal);
 
         /// <summary>Creates the projection.</summary>
         /// <param name="physical">The library reader.</param>
         /// <param name="viewer">The viewer.</param>
         public ImportPhysicalProjection(IImportPhysicalTitles physical, User viewer)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             _physical = physical;
-            _viewer = viewer;
+            _viewerFacts = viewer;
         }
 
         /// <summary>What the library holds of the title for the viewer.</summary>
@@ -201,18 +202,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>The physical title.</returns>
         public ImportPhysical Read(CompletedIdentity identity, int? season)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (identity.Keys.Count == 0)
             {
                 return ImportPhysical.None; // no id: nothing in the library is held under it
             }
 
             var key = identity.Text() + "|" + (season?.ToString(CultureInfo.InvariantCulture) ?? "-");
-            if (!_reads.TryGetValue(key, out var physical))
+            if (!_readsFacts.TryGetValue(key, out var physical))
             {
-                _reads[key] = physical = _physical.Read(_viewer, identity, season);
+                _readsFacts[key] = physical = _physical.Read(_viewerFacts, identity, season);
             }
 
             return physical;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, ImportPhysical>> _readsFactsOwner = new();
+        private Dictionary<string, ImportPhysical> _readsFacts { get => _readsFactsOwner.Read(ref _reads, () => new(StringComparer.Ordinal)); set => _readsFactsOwner.Store(ref _reads, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<User> _viewerFactsOwner = new(prepared: true);
+        private User _viewerFacts { get => _viewerFactsOwner.Read(ref _viewer, () => default!); set => _viewerFactsOwner.Store(ref _viewer, value); }
     }
 }

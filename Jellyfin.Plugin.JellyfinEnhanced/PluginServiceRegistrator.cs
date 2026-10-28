@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+            serviceCollection.TryAddEnumerable(ServiceDescriptor.Singleton<Microsoft.Extensions.Http.IHttpMessageHandlerBuilderFilter, TmdbEgressFilter>());
             // Build-target vs host-version check; logged at startup and surfaced
             // on the config page so a jf10 zip on a Jellyfin 12 host is not silent.
             serviceCollection.AddSingleton<HostCompatibilityService>();
@@ -38,7 +39,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // request can leave through (the arr and Seerr clients below, and the default one Seerr falls back to). It
             // only acts on writes made in an automation context (AutomationTransportContext); everything else passes.
             serviceCollection.AddTransient<Services.Acquire.Automation.AutomationTransportHandler>();
-            serviceCollection.AddHttpClient(string.Empty)
+            // TMDB must never follow a redirect beneath the fixed-host/admission guard.
+            // TmdbEgressFilter installs the outermost handler on this owned constant name.
+            serviceCollection.AddHttpClient(TmdbTransport.ClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+            serviceCollection.AddHttpClient(PluginHttp.DefaultClient)
                 .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>();
 
             // a named HttpClient with AllowAutoRedirect=false so
@@ -73,8 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
             // (Seerr's requests, read in the background by the read model) and the per-user status service.
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
-            serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
-            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.AddSingleton<Services.Acquire.SeerrFacts>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrFacts>());
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
@@ -91,6 +97,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton(sp => new Services.Acquire.ArrInstanceLibraries(sp.GetRequiredService<Services.Arr.ArrStateStore>(), sp.GetRequiredService<Services.Acquire.IJellyfinLibraryAccess>()) { Parental = sp.GetRequiredService<Services.SeerrParentalFilter>() });
             serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
+            // ---- Bridge fix (new imports are hydrated before they are Ready): the one readiness gate the bridge feeds and
+            // the Jellyfin view, list adapter, notifications, Ready playlist and request fulfilment read.
+            serviceCollection.AddSingleton<Services.Acquire.BridgeImportReadiness>();
+            // ---- end bridge fix
             serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();
             serviceCollection.AddSingleton<Services.Acquire.ArrQueueActionService>();
             serviceCollection.AddSingleton<Services.Arr.ArrActivityMirror>();
@@ -141,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 3c: collection gaps (what the caller has of a collection, what is missing).
             serviceCollection.AddSingleton<Services.Acquire.Requests.CollectionGapsService>();
             // Seerr to JE authority transfer (admin dry run, complete-or-nothing import, rollback by batch).
-            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigrationReader>();
+
             // Holds JE's own Seerr request writes (proxy, Requests page, outbox) off while a move runs.
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrRequestWriteFence>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigration>();
@@ -252,6 +262,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Home.HomeProjection>();
             serviceCollection.AddHostedService<Services.Acquire.Home.HssSectionsAdapter>();
             serviceCollection.AddHttpContextAccessor();
+            serviceCollection.AddSingleton<Services.NativeDetails.ViewerMetadataScopeFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.NativeDetails.ViewerMetadataScopeFilter>(int.MinValue));
+            // Admin-switched stage timings of absent-title reads (off by default): outermost, so its header follows every owner.
+            serviceCollection.AddSingleton<Services.StageTimingsFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.StageTimingsFilter>(int.MinValue));
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
             // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----
@@ -318,6 +333,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.IListSourceFetcher, Services.Acquire.Lists.Sources.ListSourceFetcher>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.ListSourcePreview>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.ListMetadataService>();
+            // Validated list poster facts, kept in the server-side cache across restarts.
+            serviceCollection.AddSingleton(sp => new Services.Acquire.Lists.ListPosterFactCache(sp.GetService<Services.ServerCache.ServerBlobCache>()));
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbListMetadataSource>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.IListMetadataSource, Services.Acquire.Lists.Import.ListMetadataSources>();
             // ---- end Phase 4c2 ----
@@ -338,6 +355,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotifyDispatcher>());
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotificationService>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotificationService>());
+            // Public TMDB data kept on disk under the "Server-side cache" settings (absent titles' artwork first).
+            serviceCollection.AddSingleton(sp =>
+            {
+                var paths = sp.GetRequiredService<IServerApplicationPaths>();
+                var location = new Services.ServerCache.ServerCacheLocation(
+                    System.IO.Path.Combine(paths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced"),
+                    new[]
+                    {
+                        paths.ProgramDataPath, paths.ProgramSystemPath, paths.DataPath, paths.CachePath, paths.TempDirectory,
+                        paths.LogDirectoryPath, paths.ConfigurationDirectoryPath, paths.PluginsPath, paths.WebPath,
+                        paths.InternalMetadataPath, paths.RootFolderPath, paths.ImageCachePath,
+                    },
+                    // A dedicated folder inside Jellyfin's cache folder is allowed (never the cache folder itself).
+                    paths.CachePath);
+                var cache = new Services.ServerCache.ServerBlobCache(
+                    () => Services.ServerCache.ServerCacheSettings.From(JellyfinEnhanced.Instance?.Configuration),
+                    location,
+                    sp.GetRequiredService<Logger>());
+                // A saved change (a lower cap or age, another folder, the switch) applies right away.
+                if (JellyfinEnhanced.Instance is { } plugin) plugin.ConfigurationChanged += (_, _) => cache.SettingsChanged();
+                return cache;
+            });
+            serviceCollection.AddTransient<ServerCacheMaintenanceTask>();
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
             serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
             serviceCollection.AddTransient<JeBackupTask>();
@@ -374,7 +414,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
-            serviceCollection.AddSingleton<SeerrParentalFilter>();
+            serviceCollection.AddSingleton(sp => new SeerrParentalFilter(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Library.IUserManager>(),
+                sp.GetRequiredService<MediaBrowser.Model.Globalization.ILocalizationManager>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Configuration.IServerConfigurationManager>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.NativeDetails.ViewerMetadataAdmission>(),
+                sp.GetService<TitleParentalEvidenceProvider>()));
+            // A2 — backend-neutral parental evidence; policy and caching stay in the shared gate.
+            serviceCollection.AddSingleton<TitleParentalEvidenceProvider>();
+            // Its verified remote facts, kept in the server-side cache across restarts (facts only, never a decision).
+            serviceCollection.AddSingleton(sp => new TmdbParentalFactCache(sp.GetService<Services.ServerCache.ServerBlobCache>()));
+            // End A2.
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the
@@ -501,7 +553,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
             // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
             // (synthetic ids are then refused; every other request passes straight through).
-            serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.SeerrNativeDetailsSource>();
+            // ---- A1: the pages' metadata source is the request mode's, picked on every call: TMDB in Jellyfin Enhanced
+            // mode (never Seerr), Seerr in every other mode exactly as before.
+            serviceCollection.AddSingleton<Services.NativeDetails.ViewerMetadataAdmission>();
+            serviceCollection.AddSingleton<Services.NativeDetails.SeerrNativeDetailsSource>();
+            serviceCollection.AddSingleton(sp => new Services.NativeDetails.TmdbNativeDetailsSource(
+                sp.GetRequiredService<TmdbResponseCache>(),
+                sp.GetRequiredService<Services.Acquire.TitleAliases>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.NativeDetails.ViewerMetadataAdmission>()));
+            serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.ModeNativeDetailsSource>();
+            // ---- end A1 ----
             serviceCollection.AddSingleton(sp =>
             {
                 var policy = new Services.NativeDetails.NativeDetailsPolicy(
@@ -528,7 +590,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The grant key is kept in the plugin's data folder, so open pages survive a restart.
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsArtwork(
                 sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
-                JellyfinEnhanced.Instance?.DataFolderPath));
+                JellyfinEnhanced.Instance?.DataFolderPath,
+                disk: sp.GetRequiredService<Services.ServerCache.ServerBlobCache>()));
             // Where cast, genres, studios and tags on those pages lead (the library's own pages first; read only).
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsLinks(
                 sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
@@ -564,6 +627,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 o.Filters.AddService<PosterTagImageFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
+            // E1: one live effective-backend owner, guarding shared, fallback and list transports.
+            serviceCollection.AddSingleton(sp => Services.Acquire.Backends.EffectiveRequestsBackend.Shared.WithLogger(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Services.Acquire.Backends.EffectiveRequestsBackend>>()));
+            serviceCollection.AddSingleton<Services.Acquire.Backends.IEffectiveRequestsBackend>(sp => sp.GetRequiredService<Services.Acquire.Backends.EffectiveRequestsBackend>());
+            serviceCollection.AddTransient<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            // PluginHttp maps the plugin's fallback acquisition to its owned constant name.
+            // Keep E1's gate and v0 fallback behavior there without reconfiguring Jellyfin's unnamed client.
+            serviceCollection.AddHttpClient(PluginHttp.DefaultClient)
+                .AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>()
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler());
+            serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
+                .AddHttpMessageHandler<Services.Acquire.Backends.SeerrIsolationTransportHandler>();
+            serviceCollection.AddSingleton<Services.Acquire.Backends.RequestedTitlesProjection>();
+            serviceCollection.AddSingleton<Services.Acquire.Backends.SeerrIsolationActionFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Backends.SeerrIsolationActionFilter>(int.MinValue + 100));
+            // End E1.
         }
     }
 }

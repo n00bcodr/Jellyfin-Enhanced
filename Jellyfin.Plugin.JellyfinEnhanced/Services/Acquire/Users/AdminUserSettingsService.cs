@@ -194,7 +194,7 @@ public sealed class AdminUserSettingsService
                 consents=new { available=fileAvailable,person=id.ToString("N"),stored=fileAvailable?consents:null,grant,grantAvailable,
                     eligible=person.HasPermission(PermissionKind.IsAdministrator)||(policyAvailable&&facts.Role=="Trusted")||grant!=null ? (bool?)true : grantAvailable&&policyAvailable ? false : null,
                     recipes=AutomationRecipes.All.Select(r=>new {recipe=r,control=Control(c,r),preference=consents.GetValueOrDefault(r==AutomationRecipes.AutoSeason?"autoSeasonRequests":r==AutomationRecipes.AutoMovie?"autoMovieRequests":""),legacy=AutomationRecipes.IsLegacy(r)}).ToArray(),lists=ListSummary(id) },
-                seerr=new { blocked,autoImport=c.JellyseerrAutoImportUsers,account=facts.SeerrUser,permissions=facts.SeerrPermissions,
+                seerr=new { enabled=Backends.EffectiveRequestsBackend.SeerrUsable(c),blocked,autoImport=c.JellyseerrAutoImportUsers,account=facts.SeerrUser,permissions=facts.SeerrPermissions,
                     adminUrl=SeerrAdminUrl(c),state=blocked?"blocked":facts.SeerrUser!=null?"linked":facts.SeerrUnlinked?"unlinked":"unavailable",quotaSource=c.ArrRequestBackend=="seerr"?"seerr":"je" },
                 safety=new { parentalLimit=person.MaxParentalRatingScore,role=facts.Role,alwaysApproval=facts.Role=="Kid",rules=HouseholdRules.Parse(c.ArrHouseholdRules),rulesEnabled=HouseholdFlags.RulesApply(c) },
                 ready,
@@ -267,7 +267,7 @@ public sealed class AdminUserSettingsService
         if (available) try {
             _requests.Ledger.Database.Read(connection => {
                 using (var cmd = connection.CreateCommand()) {
-                    cmd.CommandText = "SELECT user_id,COUNT(*) FROM wants WHERE status='pending' GROUP BY user_id";
+                    cmd.CommandText = "SELECT user_id,COUNT(*) FROM wants WHERE status='pending' AND " + Requests.RequestLedger.NotStaged + " GROUP BY user_id";
                     using var rows = cmd.ExecuteReader();
                     while (rows.Read()) if (Guid.TryParse(rows.GetString(0), out var id) && ids.Contains(id)) pending[id] = rows.GetInt32(1);
                 }

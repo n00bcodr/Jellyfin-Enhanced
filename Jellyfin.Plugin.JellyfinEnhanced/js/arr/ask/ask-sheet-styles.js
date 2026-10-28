@@ -9,9 +9,13 @@
     'use strict';
 
     const CSS = `
-.je-sheet-backdrop { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 1em; }
-.je-sheet { position: relative; background: #202124; color: #eee; border-radius: 14px; width: 100%; max-width: 32em; max-height: 90vh; overflow: auto;
+.je-sheet-shell-backdrop, .je-sheet-backdrop { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 1em; }
+.je-sheet, .je-sheet-shell { position: relative; background: #202124; color: #eee; border-radius: 14px; width: 100%; max-width: 32em; max-height: 90vh; overflow: auto;
   padding: 1.1em 1.3em 1.2em; box-shadow: 0 10px 40px rgba(0,0,0,0.55); box-sizing: border-box; }
+.je-sheet-busy { display: flex; align-items: center; gap: 0.7em; padding: 0.6em 0 0.2em; opacity: 0.8; }
+.je-sheet-busy::before { content: ''; width: 1.1em; height: 1.1em; border-radius: 50%; border: 2px solid rgba(127,127,127,0.45); border-top-color: currentColor; animation: je-sheet-spin 0.8s linear infinite; flex: none; }
+@keyframes je-sheet-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .je-sheet-busy::before { animation: none; } }
 .je-sheet-handle { display: none; width: 3em; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.3); margin: 0 auto 0.9em; }
 .je-sheet-head { display: flex; gap: 0.9em; align-items: center; margin-bottom: 1em; }
 .je-sheet-poster { width: 3.4em; height: 5.1em; border-radius: 6px; object-fit: cover; background: rgba(127,127,127,0.25); flex: none; }
@@ -40,6 +44,10 @@
 .je-sheet-toggle { font: inherit; color: inherit; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
   min-height: 2.6em; min-width: 2.9em; padding: 0.2em 0.9em; }
 .je-sheet-toggle[aria-pressed="true"] { background: #6d4aff; border-color: #8b5cf6; color: #fff; }
+.je-sheet-toggle[disabled] { opacity: 0.45; cursor: default; }
+.je-sheet-numbering[hidden] { display: none; }
+.je-sheet-numbering.je-sheet-note { margin: 0.3em 0 0.4em; }
+.je-sheet-numbering-checking { opacity: 0.75; font-size: 0.9em; margin: 0.2em 0; }
 .je-sheet-note { display: flex; gap: 0.6em; align-items: flex-start; margin: 1em 0 0; padding: 0.75em 1em; border-radius: 10px; font-weight: 600; line-height: 1.35; }
 .je-sheet-note-icon { font-size: 1.3em; }
 .je-sheet-note-attention { border: 1px solid rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); color: #f5b041; }
@@ -57,10 +65,10 @@
 .layout-tv .je-sheet-card:focus, .layout-tv .je-sheet-toggle:focus, .layout-tv .je-sheet-primary:focus, .layout-tv .je-sheet-secondary:focus, .layout-tv .je-sheet-check input:focus
   { outline: 3px solid #fff; outline-offset: 2px; }
 .je-sheet-tv { padding: 0; }
-.je-sheet-tv .je-sheet { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; padding: 2em 4em; font-size: 1.15em; }
+.je-sheet-tv .je-sheet, .je-sheet-tv .je-sheet-shell { max-width: none; width: 100%; height: 100%; max-height: none; border-radius: 0; padding: 2em 4em; font-size: 1.15em; }
 .je-sheet-tv .je-sheet-actions { flex-direction: row-reverse; justify-content: flex-start; }
 .je-sheet-tv .je-sheet-primary { width: auto; min-width: 16em; }
-.je-sheet-light .je-sheet { background: #fff; color: #202124; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+.je-sheet-light .je-sheet, .je-sheet-light .je-sheet-shell { background: #fff; color: #202124; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
 .je-sheet-light .je-sheet-handle { background: rgba(0,0,0,0.3); }
 .je-sheet-light .je-sheet-card { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.22); }
 .je-sheet-light .je-sheet-card:hover { background: rgba(0,0,0,0.06); }
@@ -104,8 +112,8 @@
 .je-ask-mount-row .je-arr-chip { margin-left: 0; min-height: 2.2em; font-size: 0.9em; }
 
 @media (max-width: 600px) {
-  .je-sheet-backdrop { align-items: flex-end; padding: 0; }
-  .je-sheet { border-radius: 18px 18px 0 0; max-height: 88vh; max-width: none; padding: 0.7em 1em 1.2em; }
+  .je-sheet-backdrop, .je-sheet-shell-backdrop { align-items: flex-end; padding: 0; }
+  .je-sheet, .je-sheet-shell { border-radius: 18px 18px 0 0; max-height: 88vh; max-width: none; padding: 0.7em 1em 1.2em; }
   .je-sheet-handle { display: block; }
   .je-sheet-card, .je-sheet-toggle, .je-sheet-secondary { min-height: 44px; }
   .je-sheet-toggle { min-width: 44px; }

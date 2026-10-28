@@ -37,7 +37,7 @@ internal static partial class UserCacheScan
         var found = new List<LateStamp>();
         foreach (var cache in caches)
         {
-            if (cache.Symbol is not { } symbol || cache.Ticketed) continue;
+            if (cache.Symbol is not { } symbol || cache.Ticketed || cache.Type.StartsWith("Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<", StringComparison.Ordinal)) continue;
             var sites = new List<SyntaxNode>();
             foreach (var (name, model) in Names(plugin, symbol))
             {
@@ -70,6 +70,32 @@ internal static partial class UserCacheScan
                 if (clock == null) continue;
                 var function = site.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
                 if (function == null) continue;
+                // Synchronous publication callbacks run at this call site. Their enclosing async read owns the
+                // input deadline too; stopping at the lambda hid the planted proxy late stamp on the old baseline.
+                while (function is AnonymousFunctionExpressionSyntax
+                    && function.Parent is ArgumentSyntax { Parent.Parent: InvocationExpressionSyntax invocation }
+                    && plugin.ModelOf(site.SyntaxTree).GetSymbolInfo(invocation).Symbol is IMethodSymbol publisher
+                    && publisher.Name is "Publish" or "TryPublishSeerr" or "PublishSeerr"
+                    && (publisher.ContainingType.ToDisplayString().Contains("Seerr", StringComparison.Ordinal)
+                        || publisher.ContainingType.ToDisplayString().Contains("EffectiveRequestsBackend", StringComparison.Ordinal)))
+                {
+                    function = function.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
+                }
+                if (function == null) continue;
+                // A GetOrAdd factory begins its own input read. A clock inside that factory is not sampled by
+                // the enclosing statement after its earlier awaits. Synchronous publication callbacks do run here.
+                var actualClock = statement.DescendantNodesAndSelf().OfType<ExpressionSyntax>().Where(e => ClockReads.Contains(e.ToString()))
+                    .Any(e =>
+                    {
+                        var owns = e.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
+                        while (owns is AnonymousFunctionExpressionSyntax && owns.Parent is ArgumentSyntax { Parent.Parent: InvocationExpressionSyntax invocation }
+                            && plugin.ModelOf(site.SyntaxTree).GetSymbolInfo(invocation).Symbol is IMethodSymbol p
+                            && p.Name is "Publish" or "TryPublishSeerr" or "PublishSeerr"
+                            && (p.ContainingType.ToDisplayString().Contains("Seerr", StringComparison.Ordinal) || p.ContainingType.ToDisplayString().Contains("EffectiveRequestsBackend", StringComparison.Ordinal)))
+                            owns = owns.Ancestors().FirstOrDefault(a => a is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax);
+                        return owns == function;
+                    });
+                if (!actualClock) continue;
                 var awaited = function.DescendantNodes().OfType<AwaitExpressionSyntax>()
                     .Any(a => a.Span.End <= statement.SpanStart && a.Ancestors().FirstOrDefault(x => x is BaseMethodDeclarationSyntax or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or AccessorDeclarationSyntax) == function);
                 if (!awaited) continue;

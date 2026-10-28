@@ -78,8 +78,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (aliases == null || TitleKey.Parse(key) is not { } parsed || !ledger.Database.Available) return null;
             try
             {
+                using var effect = SeerrFacts.BeginEffect();
                 var keys = Keys(aliases, parsed);
-                if (keys.Count < 2 || ledger.Unify(keys, policy, now) is not { } merge) return null;
+                // The combined resolver may reach an arr identity through a Seerr-only id. Record
+                // each actual arr-only proof independently before writing the combined incidental
+                // join. The enclosing effect still fences all writes if those original inputs retire.
+                TitleMerge? local = null;
+                foreach (var candidate in keys.Select(TitleKey.Parse).OfType<TitleKey>())
+                {
+                    var proved = ledger.UnifyJeAliases(aliases.ArrOnly(candidate).Prepend(candidate).Select(k => k.ToString()), policy, now);
+                    if (proved == null) continue;
+                    local = proved;
+                    feed?.Bump(proved.Keys.Concat(proved.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
+                }
+                var merge = keys.Count < 2 ? null : ledger.Unify(keys, policy, now);
+                if (merge == null) return local;
                 feed?.Bump(merge.Keys.Concat(merge.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
                 return merge;
             }
@@ -99,11 +112,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="key">A title key (any of its ids).</param>
         internal static TitleKey Held(RequestLedger ledger, TitleAliases? aliases, TitleKey key)
         {
+            using var publication = SeerrFacts.BeginPublication();
             var given = key.Title.ToString();
+            if (ledger.Choices.IdentityFenced(given)) return key.Title;
             var held = ledger.CanonicalKey(given);
             if (held != given) return TitleKey.Parse(held) ?? key.Title;
             var known = aliases?.Canonical(key.Title) ?? key.Title;
-            return TitleKey.Parse(ledger.CanonicalKey(known.ToString())) ?? known;
+            return publication.Publish(() => TitleKey.Parse(ledger.CanonicalKey(known.ToString())) ?? known);
         }
 
         /// <summary>
@@ -122,9 +137,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="learn">Learn the title's other ids first (an entry that may write; a read-only check doesn't).</param>
         internal static MutationInput? Entry(RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, ArrChangeFeed? feed, MutationInput? input, DateTimeOffset now, bool learn = true)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var normalized = input?.Normalize();
             if (normalized == null || TitleKey.Parse(normalized.Key) is not { } key) return null;
             if (learn) Learn(ledger, policy, aliases, feed, normalized.Key, now);
+            if (ledger.Choices.IdentityFenced(normalized.Key)) return normalized;
             var held = Held(ledger, aliases, key).ToString();
             return held == normalized.Key ? normalized : normalized with { Key = held };
         }

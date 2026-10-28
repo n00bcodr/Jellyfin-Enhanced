@@ -83,14 +83,21 @@
      * @returns {Promise<{tvId: number, movieId: number, native: boolean, title: string}|null>}
      */
     async function resolveFeeds({ id: tagName, signal }) {
-        const status = await JE.jellyseerrAPI?.checkUserStatus();
+        // Jellyfin Enhanced is the request backend (A1): its native keyword search and feeds, or no row; Seerr's
+        // status and account are never asked for (D88).
+        const je = JE.discoveryFilter.jeFeeds?.() ?? null;
+        if (je === false) return null;
+        let native = !!je;
+        if (!je) {
+            const status = await JE.jellyseerrAPI?.checkUserStatus();
 
-        if (signal.aborted) return null;
+            if (signal.aborted) return null;
 
-        if (!status?.active) return null;
-        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
-        const native = !!JE.discoveryFilter.useNativeFeeds?.(status);
-        if (status.userFound === false && !native) return null;
+            if (!status?.active) return null;
+            // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+            native = !!JE.discoveryFilter.useNativeFeeds?.(status);
+            if (status.userFound === false && !native) return null;
+        }
 
         // Search for TMDB keyword
         const keywordId = await searchTmdbKeyword(tagName, signal, native);

@@ -105,6 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// </summary>
         public async Task<ArrResult<(ArrSystemStatus Status, ArrCapabilities Capabilities)>> GetSystemStatusAsync(bool refresh = false, CancellationToken cancellationToken = default)
         {
+            var readStartedAt = DateTimeOffset.UtcNow;
             lock (_statusLock)
             {
                 if (!refresh && _status is { } cached && DateTimeOffset.UtcNow - cached.At < StatusCacheTtl)
@@ -132,7 +133,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var capabilities = ArrCapabilities.For(Connection.Kind, status.Version);
             lock (_statusLock)
             {
-                _status = (status, capabilities, DateTimeOffset.UtcNow);
+                _status = (status, capabilities, readStartedAt);
             }
             return ArrResult<(ArrSystemStatus, ArrCapabilities)>.Success((status, capabilities));
         }

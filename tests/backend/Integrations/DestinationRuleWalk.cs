@@ -37,6 +37,8 @@ internal sealed class DestinationRuleWalk
         ["RequestWant"] = new[] { "TargetKey" },
         ["RequestAuthorization"] = new[] { "InstanceId", "ConnectionGeneration", "SeerrSource" },
         ["RequestPolicyFacts"] = new[] { "InstanceId", "ConnectionGeneration", "SeerrSource" },
+        ["TitleChoiceRecord"] = new[] { "Title", "Destination", "ProfileId", "RootFolder" },
+        ["RequestChoice"] = new[] { "ProfileId", "RootFolder" },
         ["RequestLedger"] = new[] { "TargetKey", "SeerrTargetKey" },
     };
 
@@ -46,8 +48,9 @@ internal sealed class DestinationRuleWalk
         ["TitleKey"] = new[] { "IsMovie", "Kind" },
     };
 
-    // The request types: a call into a plugin helper that is given one of these is followed.
-    private static readonly HashSet<string> RequestTypes = new(StringComparer.Ordinal) { "MutationInput", "RequestWant", "RequestJob", "RequestAuthorization", "RequestEpisode" };
+    // Structured records expose the protected members above; looking one up by a title does not
+    // make its revision, quota or other metadata a destination. Helpers receiving them are followed.
+    private static readonly HashSet<string> RequestTypes = new(StringComparer.Ordinal) { "MutationInput", "RequestWant", "RequestJob", "RequestAuthorization", "RequestEpisode", "RequestPolicyFacts", "TitleChoiceRecord", "RequestChoice" };
 
     // Calls that compare what they are given (their receiver and arguments).
     private static readonly HashSet<string> Comparing = new(StringComparer.Ordinal)
@@ -344,12 +347,17 @@ internal sealed class DestinationRuleWalk
                     "Serves" when args.Count == 4 => ("true", $"{args[1]} == {args[3]}"),
                     "Serves" => ("true", $"{args[1]}.InstanceId == {args[0]}.InstanceId"),
                     "SameOptions" => ("true", $"{args[0]}.SeerrRootFolder == {args[1]}.SeerrRootFolder"),
+                    "ArrChoiceScopesOverlap" => ("false", $"{args[0]}.Overlaps({args[1]})"),
+                    "ArrChoiceDiffers" => ("false", $"{args[1]}.ProfileId.HasValue && {args[1]}.ProfileId != {args[0]}.ProfileId || {args[1]}.RootFolder != null && {args[1]}.RootFolder != {args[0]}.RootFolder"),
+                    "ArrChoiceConflicts" => ("false", $"{args[0]}.ProfileId.HasValue && {args[1]}.ProfileId.HasValue && {args[1]}.ProfileId != {args[0]}.ProfileId || {args[0]}.RootFolder != null && {args[1]}.RootFolder != null && {args[1]}.RootFolder != {args[0]}.RootFolder"),
                     "RoutingChanged" => ("false", $"{args[0]}.InstanceId != {args[1]}.InstanceId"),
+                    "SameInput" => ("false", (string?)null),
                     "SeerrHas" => ("true", $"{args[0]}.SeerrServerId == {args[1]}"),
                     "SameTitle" => ("true", $"{args[0]}.Key == {args[1]}.Key"),
                     "SameEdition" => ("true", $"{args[0]}.Key == {args[1]}.Key && {args[0]}.Variant == {args[1]}.Variant"),
                     "Edition" => ("(Key: \"\", Variant: \"\")", $"(Key: {args[0]}.Key, Variant: {args[0]}.Variant)"),
-                    _ => ("default", (string?)null),
+                    // The replacement must compile in unary and generic inference contexts too.
+                    _ => ($"default({method.ReturnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})", (string?)null),
                 };
                 sites.Add(new RuleSite(file, MemberOf(call), method.Name, call.GetLocation().GetLineSpan().StartLinePosition.Line + 1, call.Span, call.ToString(), "(" + without + ")", raw == null ? null : "(" + raw + ")"));
             }

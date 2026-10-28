@@ -89,6 +89,96 @@
     }
 
     /**
+     * True on the page of a season that isn't in the library (native details): its own rows are TMDB's episodes.
+     * @returns {boolean} Absent.
+     */
+    function absentSeason() {
+        return !!(season?.itemId && JE.titleDetails?.isSynthetic?.(season.itemId));
+    }
+
+    /**
+     * True when the season's status says an arr holds it (its episodes' states come from the arr, not TMDB's list).
+     * @returns {boolean} Held by an arr.
+     */
+    function arrHolds() {
+        return (season?.statusRef?.episodes || []).some(e => e?.reason?.code !== 'not_in_arr');
+    }
+
+    /**
+     * True when an absent season's own (TMDB) rows give way to rows of the request target's Sonarr (UX-3): its Sonarr holds
+     * the series, so the season is its list, with its numbers, titles and air days (JE draws them; never TMDB's facts on them).
+     * @returns {boolean} Replaced.
+     */
+    function replaced() {
+        return absentSeason() && season?.rows?.source === 'destination';
+    }
+
+    /**
+     * Why an episode's own control is held, or null when it may be asked for (or searched): Jellyfin's own rows of a library
+     * season are never held (Jellyfin's facts for the item the arr's episode is matched to); every other row (JE's, an absent
+     * season's) only when the season rows carry the request target's numbering (JE.arrAsk.singleEpisodesAskable). Seerr's
+     * rounded asks (whole seasons), the banner's and the series' asks for every missing episode stay: they name the arr's own
+     * numbers.
+     * @param {Object|undefined} ep Episode status.
+     * @returns {'differently'|'unchecked'|null} Reason.
+     */
+    function heldFor(ep) {
+        if (!ep || rounded() || numberingPending()) return null;
+        if (ep.row && !absentSeason()) return null;
+        // The latest read failed: the season's numbering isn't established now, whatever was read before.
+        if (season?.failed) return 'unchecked';
+        const rows = season?.rows;
+        const context = { arrHolds: arrHolds() };
+        if (JE.arrAsk.singleEpisodesAskable?.(rows, context) !== true) return JE.arrAsk.heldReason?.(rows, context) || 'unchecked';
+        // The season rows say it hasn't aired (an unknown or placeholder date, by the one airing rule): never asked for by number,
+        // as Pick episodes doesn't offer it, whatever the status says.
+        return (Array.isArray(rows?.episodes) ? rows.episodes : []).some(e => e?.episode === ep.episode && e.aired === false) ? 'unchecked' : null;
+    }
+
+    /**
+     * True while an episode's own control is held ({@link heldFor}).
+     * @param {Object|undefined} ep Episode status.
+     * @returns {boolean} Held.
+     */
+    function held(ep) {
+        return heldFor(ep) != null;
+    }
+
+    /**
+     * True while the season's rows are still being read for the first time: no row control is offered until it is known
+     * whose numbering they carry.
+     * @returns {boolean} Pending.
+     */
+    function numberingPending() {
+        return !!season?.loading && !season.rows;
+    }
+
+    /**
+     * The words of a held episode (chip and sentence), in the shape of the block words.
+     * @param {'differently'|'unchecked'} reason Why it is held ({@link heldFor}).
+     * @returns {{chip: string, text: string, detail: string}} Words.
+     */
+    function heldWords(reason) {
+        const keys = reason === 'differently' ? ['arr_ask_numbering_chip', 'arr_ask_numbering_text'] : ['arr_ask_numbering_unchecked_chip', 'arr_ask_numbering_unchecked_text'];
+        const text = tr(keys[1]);
+        return { chip: tr(keys[0]), text, detail: text };
+    }
+
+    /**
+     * The line above a held season's episodes (or in an episode's dialog): why single episodes can't be asked for.
+     * @param {'differently'|'unchecked'} reason Why ({@link heldFor}).
+     * @param {string} signature Signature (the line is replaced when it changes).
+     * @returns {HTMLElement} Line.
+     */
+    function heldNote(reason, signature) {
+        const note = pausedNote(heldWords(reason), signature);
+        note.classList.add('je-ask-numbering-note');
+        const glyph = note.querySelector('.je-ask-paused-icon');
+        if (glyph) glyph.textContent = 'format_list_numbered';
+        return note;
+    }
+
+    /**
      * The request state shown for an episode: an optimistic one right after an ask, else the server's
      * (the episode's own ask first, then an ask for the whole season), in the edition of the control's own binding
      * (D53, edition round 19: a 4K copy's control reads the 4K asks, never a standard ask, and the other way round).
@@ -594,7 +684,7 @@
         if (parts && !parts.list && !parts.page?.querySelector('#listChildrenCollapsible.hide')) return out;
         let upcoming = false;
         for (const ep of status.episodes || []) {
-            if (ep.row || ep.stage === 'ready' || ep.stage === 'none') continue;
+            if ((ep.row && !replaced()) || ep.stage === 'ready' || ep.stage === 'none') continue;
             if (ep.stage === 'notOut') {
                 if (upcoming) continue;
                 upcoming = true;
@@ -629,7 +719,14 @@
     function ensureRows(status) {
         const itemId = normalize(status.itemId);
         if (!itemId) return;
-        if (season && season.itemId === itemId && (season.loading || season.statusRef === status)) return;
+        const language = (navigator.language || 'en').split('-')[0];
+        // Progress objects have no metadata identity. Availability/copy changes and asks invalidate;
+        // unchanged sibling progress shares rows for one minute, with language scoped to the read.
+        const revision = JSON.stringify([status.copy, (status.episodes || []).map(ep => [ep.episode, ep.itemId, ep.row, ep.stage === 'ready'])]);
+        if (season && season.itemId === itemId && season.language === language) {
+            season.statusRef = status;
+            if (season.loading || (season.revision === revision && Date.now() < season.expires)) return;
+        }
         const fresh = !season || season.itemId !== itemId;
         if (fresh) {
             pendingFocus = null;
@@ -638,7 +735,8 @@
             bannerSearched = null;
             closeDialog();
         }
-        const mine = { itemId, rows: fresh ? null : season.rows, caps: fresh ? null : season.caps, loading: true, statusRef: status, generation: ++generation };
+        // A failed read leaves the season unestablished until a read succeeds (its kept rows are for display only).
+        const mine = { itemId, rows: fresh ? null : season.rows, failed: fresh ? false : !!season.failed, caps: fresh ? null : season.caps, loading: true, statusRef: status, language, revision, expires: Date.now() + 60000, generation: ++generation };
         season = mine;
         load(mine);
     }
@@ -649,7 +747,7 @@
      * @returns {Promise<void>}
      */
     async function load(target) {
-        const lang = (navigator.language || 'en').split('-')[0];
+        const lang = target.language;
         // The caller's capabilities are read alongside (an administrator's Search doesn't depend on the rows'
         // canRequest); the rows don't wait for them, and the page is applied again when they arrive.
         let rows = null;
@@ -663,6 +761,8 @@
         }
         if (season !== target || target.generation !== generation) return;
         target.loading = false;
+        // UX2R3-1: rows kept from an earlier read never authorize an episode once a read has failed.
+        target.failed = !rows;
         if (rows) {
             target.rows = rows;
             // The server's answer replaces optimistic states it agrees with (or knows better).
@@ -709,10 +809,15 @@
             if (ep.row && ep.itemId) byId.set(normalize(ep.itemId), ep);
         }
         let list = parts.list;
+        // A Sonarr-held absent season: its own (TMDB) episode rows give way to the Sonarr rows JE draws.
+        const swap = replaced();
         page.querySelectorAll('.listItem[data-id]').forEach((row) => {
+            if (!list && row.getAttribute('data-type') === 'Episode') list = row.closest('.itemsContainer');
+            const gone = swap && row.getAttribute('data-type') === 'Episode';
+            row.classList.toggle('je-ask-replaced', gone);
+            if (gone) return;
             const ep = byId.get(normalize(row.getAttribute('data-id')));
             decorateNative(row, ep);
-            if (!list && row.getAttribute('data-type') === 'Episode') list = row.closest('.itemsContainer');
         });
         syncDrawnRows(page, status, ctx, list, season?.rows?.displayMissing ? (parts.drawn || new Set()) : new Set(), byNumber);
         decorateBanner(parts.banner, status);
@@ -731,13 +836,16 @@
      * @returns {void}
      */
     function syncNote(page, list, status) {
-        const words = list ? blockedWordsOf((status.episodes || []).filter(ep => offerable(ep) && !shownState(ep)), status) : null;
+        const open = (status.episodes || []).filter(ep => offerable(ep) && !shownState(ep));
+        const reason = list ? open.map(heldFor).find(Boolean) || null : null;
+        const holding = !!reason;
+        const words = holding ? heldWords(reason) : list ? blockedWordsOf(open, status) : null;
         const existing = page.querySelector('.je-ask-season-note');
-        const signature = words ? `${words.chip}|${words.detail || words.text}` : '';
+        const signature = words ? `${holding ? 'held' : 'paused'}|${words.chip}|${words.detail || words.text}` : '';
         if (existing && (!words || existing.dataset.sig !== signature || existing.nextElementSibling !== list)) existing.remove();
         else if (existing) return;
         if (!words) return;
-        const note = pausedNote(words, signature);
+        const note = holding ? heldNote(reason, signature) : pausedNote(words, signature);
         note.classList.add('je-ask-season-note');
         list.insertAdjacentElement('beforebegin', note);
     }
@@ -803,12 +911,16 @@
         // On TV a row is one focus target (Jellyfin's own rows are buttons there): Get it lives in the
         // episode's dialog (JE rows) or on the episode's page (Jellyfin's rows), never inside a row.
         const open = !!chipEl && !!ep && offerable(ep) && !shownState(ep) && !chipEl.classList.contains('je-arr-chip-overlay') && !isTv();
-        const placeable = open && offered(ep);
+        // Held (the arr and TMDB number the season differently): the row says so where its button would be.
+        const reason = open ? heldFor(ep) : null;
+        const hold = !!reason;
+        const waiting = open && !(ep.row && !absentSeason()) && numberingPending();
+        const placeable = open && !hold && !waiting && offered(ep);
         const outcome = placeable ? searchedOutcome(ep.episode) : null;
         const want = placeable && !outcome;
         const existing = scope.querySelector(`.je-ask-get[data-je-ask-episode="${ep?.episode}"]`) || scope.querySelector('.je-ask-get');
         syncSearched(chipEl, scope, outcome);
-        syncPaused(chipEl, scope, open && !placeable ? blockedWords(editionOf([ep])) : null);
+        syncPaused(chipEl, scope, hold ? heldWords(reason) : open && !waiting && !placeable ? blockedWords(editionOf([ep])) : null);
         if (!want) {
             if (existing && !busy.has(Number(existing.dataset.jeAskEpisode))) existing.remove();
             return;
@@ -845,7 +957,7 @@
      * @returns {string} Intent.
      */
     function rowIntent(ep, status) {
-        if (!ep || !offerable(ep) || !offered(ep, status)) return '';
+        if (!ep || held(ep) || !offerable(ep) || !offered(ep, status)) return '';
         return intentOf(modeOf(ep, status), [ep], status || season?.statusRef || null, ep.key);
     }
 
@@ -966,11 +1078,12 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (scope && season?.itemId !== scope) return;
+            const owner = JE.ownerOf(e);
+            if (!owner || (scope && season?.itemId !== scope)) return;
             // Checked at the press: the episode's button as the server and the caller's capabilities say now; the server is sent
             // what it was drawn to do and works it out again.
             const now = fresh => rowIntent((fresh.episodes || []).find(x => x.episode === ep.episode), fresh);
-            act(btn, pressScope([ep.episode], btn), now, (intent, origin) => (mode === 'search' ? searchEpisode(ep, btn, scope, intent, origin) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent, origin)));
+            act(btn, pressScope([ep.episode], btn), now, (intent, origin) => (mode === 'search' ? searchEpisode(ep, btn, scope, intent, origin, owner) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent, origin, owner)));
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -999,14 +1112,17 @@
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope, intent, origin) {
-        // The Search's origin (the click): the search, the ask it falls back to and what they show, in that session only.
+    async function searchEpisode(ep, button, scope, intent, origin, owner) {
+        // The Search's origin (the click): the search, the ask it falls back to and what they show, in that session only;
+        // its press owner (D46S2-R11) goes with them.
         origin = JE.core.userWrite.originOf(origin);
         const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
-        if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        if (!owner || !target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token (the click's origin is checked too).
         const started = JE.arrAsk.epoch();
@@ -1022,7 +1138,10 @@
             // A household Search runs on the standard request target: never for a copy it doesn't reach. Under a copy's
             // binding without its administrator's instance or a household Search that reaches it, nothing runs (no other
             // edition or instance in its place): the controls are drawn again.
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent, session: origin }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent, session: origin }) : null;
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent, session: origin, bound: submitted.bound() }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent, session: origin, bound: submitted.bound() }) : null;
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             busy.delete(ep.episode);
         }
@@ -1032,12 +1151,14 @@
             // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
             // edition of its binding, only while that ask reaches the copy (as this click's).
             if (season?.itemId !== target.itemId) return;
-            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null, origin);
+            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null, origin, owner);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) searched.set(ep.episode, { chip: result.chip, tone: result.tone, at: Date.now() });
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
@@ -1055,14 +1176,18 @@
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): the ask is exactly that (a whole-series
      * ask only when it was drawn as one, never widened at the press), and the server is sent it to work out again.
      * @param {any} [origin] The click's origin (a Search falling back to this passes its own).
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope, variant, intent, origin) {
+    async function getEpisodes(episodes, button, search, scope, variant, intent, origin, owner) {
         origin = JE.core.userWrite.originOf(origin);
         const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const rows = target?.rows;
-        if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        if (!owner || !rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
+        const place = button?.closest('.listItem, .je-arr-banner') || null;
+        const placeEpisode = place?.classList.contains('je-ask-row') ? place.dataset.jeAskEpisode : null;
         // Seerr mode: the button asks for the whole season, so every episode of it waits for the answer.
         const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
         affected.forEach(n => busy.add(n));
@@ -1084,7 +1209,7 @@
                 if (!input) result = { ok: false, state: rounded ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
             const expect = intent ? { ...intent, mode: 'get', episodes: [...episodes].sort((a, b) => a - b), seasons: input?.scope === 'seasons' ? input.seasons : intent.seasons } : null;
-            if (!result && JE.arrAsk.epoch() === started && current()) result = await JE.arrAsk.ask(input, expect ? { expect, session: origin } : { session: origin });
+            if (!result && JE.arrAsk.epoch() === started && current()) result = await JE.arrAsk.ask(input, { ...(expect ? { expect } : {}), session: origin, bound: submitted.bound() });
         } finally {
             affected.forEach(n => busy.delete(n));
         }
@@ -1102,6 +1227,8 @@
             const shown = result.state === 'waiting' ? 'waiting' : result.state === 'nothing' ? null : result.state === 'declined' ? 'declined' : 'asked';
             if (shown && stillHere) affected.forEach(n => local.set(n, { state: shown, at: Date.now(), search: !!search }));
         }
+        // The answer is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(words.text);
         JE.arrAsk.toast(words.text);
         if (stillHere) {
@@ -1195,9 +1322,10 @@
         if (!list || !wanted.size) return;
         // Episode numbers of the native rows, to place JE's rows between them.
         const natives = [];
+        const byId = new Map((status.episodes || []).filter(e => e.itemId).map(e => [normalize(e.itemId), e]));
         list.querySelectorAll(':scope > .listItem[data-id]').forEach((row) => {
             const id = normalize(row.getAttribute('data-id'));
-            const ep = (status.episodes || []).find(e => e.itemId && normalize(e.itemId) === id);
+            const ep = byId.get(id);
             if (ep) natives.push({ n: ep.episode, row });
         });
         for (const n of [...wanted].sort((a, b) => a - b)) {
@@ -1298,7 +1426,8 @@
         if (still) image.style.backgroundImage = `url("https://image.tmdb.org/t/p/w300${still}")`;
         else image.appendChild(S.icon('tv', 'je-ask-row-placeholder'));
         if (spoiler) image.classList.add('je-ask-row-spoiler');
-        image.addEventListener('click', () => openDetails(ep, ctx));
+        // Every entry path opens the episode's details only for a press someone made (D46S2-R12-5).
+        image.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         content.appendChild(image);
 
         const body = S.el('div', 'listItemBody je-ask-row-body');
@@ -1310,7 +1439,7 @@
         bdi.textContent = `${ep.episode}. ${title}`;
         open.appendChild(bdi);
         open.title = tr('arr_ask_row_open', { episode: ep.episode });
-        open.addEventListener('click', () => openDetails(ep, ctx));
+        open.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         heading.appendChild(open);
         body.appendChild(heading);
 
@@ -1340,7 +1469,7 @@
         infoButton.title = tr('arr_ask_row_open', { episode: ep.episode });
         infoButton.setAttribute('aria-label', tr('arr_ask_row_open', { episode: ep.episode }));
         infoButton.appendChild(S.icon('info_outline'));
-        infoButton.addEventListener('click', () => openDetails(ep, ctx));
+        infoButton.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         buttons.appendChild(infoButton);
         content.appendChild(buttons);
         row.appendChild(content);
@@ -1376,7 +1505,7 @@
         for (const type of ['contextmenu', 'mousedown', 'pointerdown', 'touchstart']) row.addEventListener(type, (e) => e.stopPropagation());
         row.addEventListener('click', (e) => {
             e.stopPropagation();
-            openDetails(ep, ctx);
+            if (JE.ownerOf(e)) openDetails(ep, ctx, e);
         });
         const image = S.el('div', 'listItemImage listItemImage-large listItemImage-large-tv je-ask-row-image');
         const still = typeof meta.still === 'string' && STILL.test(meta.still) ? meta.still : null;
@@ -1535,9 +1664,10 @@
             btn.dataset.intent = plan.intent;
             // Checked at the press: the banner's button as the server and the caller's capabilities say now; the server is sent
             // what it was drawn to do and works it out again.
-            btn.addEventListener('click', () => {
-                if (season?.itemId !== scope) return;
-                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, (intent, origin) => (search ? searchBanner(offerEps, status, btn, intent, origin) : getEpisodes(offer, btn, false, scope, binding?.variant, intent, origin)));
+            btn.addEventListener('click', (e) => {
+                const owner = JE.ownerOf(e);
+                if (!owner || season?.itemId !== scope) return;
+                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, (intent, origin) => (search ? searchBanner(offerEps, status, btn, intent, origin, owner) : getEpisodes(offer, btn, false, scope, binding?.variant, intent, origin, owner)));
             });
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
@@ -1557,16 +1687,18 @@
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
+     * @param {Object} owner The original press owner.
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button, intent, origin) {
+    async function searchBanner(eps, status, button, intent, origin, owner) {
         // The Search's origin (the click): every search of it, the ask it falls back to and what they show, in that
-        // session only (a loop never goes on as the next person).
+        // session only (a loop never goes on as the next person); its press owner goes with them.
         origin = JE.core.userWrite.originOf(origin);
         const current = () => JE.core.userWrite.isBound(origin);
         const target = season;
         const numbers = eps.map(ep => ep.episode);
-        if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        if (!owner || !target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        const submitted = JE.captureSubmitted(owner);
         const key = eps.length === 1 ? eps[0].key : status.key;
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
@@ -1581,18 +1713,18 @@
         try {
             if (instanceId) {
                 // Exactly the episodes it names (one EpisodeSearch for several, never the whole season).
-                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent, session: origin });
+                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent, session: origin, bound: submitted.bound() });
             } else if (binding && !binding.search) {
                 // Neither its administrator's instance nor a household Search reaches this copy: nothing runs (no ask in
                 // another edition or on another instance in its place); the controls are drawn again below.
                 result = null;
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent, session: origin }) : null;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent, session: origin, bound: submitted.bound() }) : null;
                 if (!current() || JE.arrAsk.epoch() !== started) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined, session: origin }) : null;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined, session: origin, bound: submitted.bound() }) : null;
                     if (!current() || JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);
@@ -1600,6 +1732,10 @@
                 }
                 result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
             }
+        } catch (error) {
+            // Never sent (its owner ended first): nothing to say.
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
@@ -1611,15 +1747,17 @@
         const asks = intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks, origin);
+            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks, origin, owner);
             else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks, origin);
+        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks, origin, owner);
         if (!current()) return;
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
@@ -1628,14 +1766,19 @@
 
     /**
      * The episode's status details (from a JE row): title, air date, runtime, overview, the status
-     * pill and journey, and Get it. A focus-trapped dialog; Escape or Close returns focus. It closes
-     * by itself when the page changes (navigation, another season, a sign-out).
+     * pill and journey, and Get it. A surface on the one stack (D46S2-R12-5): admitted for the press that opened it
+     * BEFORE the dialog shown so far is touched, registered with openSurface (only while it is the topmost surface
+     * does it take Escape, Back, Tab, the D-pad and focus; the page behind is covered), and closed once: Close, Escape,
+     * its owner ending, or the page changing (navigation, another season, a sign-out). Focus goes back to its opener.
      * @param {Object} ep Episode status.
      * @param {Object} ctx Response context.
+     * @param {Event|Object} press The press (or the owner) it opens for.
      * @returns {void}
      */
-    function openDetails(ep, ctx) {
+    function openDetails(ep, ctx, press) {
         const S = JE.arrStatus;
+        const owner = JE.admitSurface(press, 'the episode details');
+        if (!owner) return;
         closeDialog();
         const opener = document.activeElement;
         const meta = metaOf(ep.episode) || {};
@@ -1662,14 +1805,19 @@
         if (meta.overview && !spoiler) dialog.appendChild(S.el('p', 'je-ask-dialog-overview', meta.overview));
         const actions = S.el('div', 'je-ask-dialog-actions');
         // Why it can't be asked for now, above the buttons (an administrator's Search stays below it).
-        if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
+        if (offerable(ep) && !shownState(ep) && held(ep)) {
+            const note = heldNote(heldFor(ep), '');
+            note.id = `${titleId}-paused`;
+            dialog.appendChild(note);
+            dialog.setAttribute('aria-describedby', note.id);
+        } else if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
             const note = pausedNote(blockedWords(editionOf([ep])), '');
             note.id = `${titleId}-paused`;
             dialog.appendChild(note);
             // Read out with the dialog's name (focus lands on a button; the reason is plain text).
             dialog.setAttribute('aria-describedby', note.id);
         }
-        if (offerable(ep) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
+        if (offerable(ep) && !held(ep) && !(!(ep.row && !absentSeason()) && numberingPending()) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
             const get = getItButton(ep);
             // Seerr mode: why the button asks for the whole season, in words above it.
             if (get.dataset.rounded === '1') dialog.appendChild(S.el('p', 'je-ask-dialog-note', roundedWords().note));
@@ -1687,58 +1835,47 @@
         actions.appendChild(closeBtn);
         dialog.appendChild(actions);
         backdrop.appendChild(dialog);
+        // Escape, Back and Tab are the surface stack's. TV remotes' arrows move between the dialog's buttons only (the
+        // page behind stays put), only while it is the topmost surface and for the viewer's key (D46S2-R12-6).
         const onKey = (e) => {
-            if (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack' || (e.key === 'Backspace' && !/input|textarea/i.test(e.target?.tagName || ''))) {
-                e.preventDefault();
-                e.stopPropagation();
-                close();
-            } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                // TV remotes: move between the dialog's buttons only (the page behind stays put).
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const at = focusables.indexOf(document.activeElement);
-                const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
-                focusables[(at + step + focusables.length) % focusables.length].focus();
-            } else if (e.key === 'Tab') {
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                const first = focusables[0];
-                const last = focusables[focusables.length - 1];
-                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-            }
+            if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) || !JE.surfaceInput(backdrop, e)) return;
+            const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
+            if (!focusables.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const at = focusables.indexOf(document.activeElement);
+            const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
+            focusables[(at + step + focusables.length) % focusables.length].focus();
         };
         const shownAt = location.href;
         const offNavigate = JE.core?.navigation?.onNavigate?.(() => { if (location.href !== shownAt) close(false); });
+        let release = null;
         /**
-         * Closes the dialog and (unless the page changed under it) returns focus to what opened it.
-         * @param {boolean} [restore] Return focus to the opener (default true).
+         * Closes the dialog; the stack gives focus back (its opener while live, else the page).
          * @returns {void}
          */
-        function close(restore) {
+        function close() {
             if (shownDialog?.close === close) shownDialog = null;
-            document.removeEventListener('keydown', onKey, true);
+            backdrop.removeEventListener('keydown', onKey);
             if (typeof offNavigate === 'function') offNavigate();
-            if (!backdrop.isConnected) return;
-            backdrop.remove();
-            if (restore !== false && opener && document.contains(opener) && typeof opener.focus === 'function') opener.focus();
+            release?.();
+            if (backdrop.isConnected) backdrop.remove();
         }
+        release = JE.openSurface(backdrop, () => close(), owner, { opener });
+        if (!release) { if (typeof offNavigate === 'function') offNavigate(); return; }
         shownDialog = { itemId: season?.itemId || null, close };
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-        document.addEventListener('keydown', onKey, true);
+        backdrop.addEventListener('keydown', onKey);
         document.body.appendChild(backdrop);
         (actions.querySelector('button') || closeBtn).focus();
     }
 
     /**
-     * Closes the episode dialog if one is shown, without moving focus to its opener (the page it
-     * was opened from is gone or belongs to someone else).
+     * Closes the episode dialog if one is shown (its page went, or another dialog replaces it).
      * @returns {void}
      */
     function closeDialog() {
-        if (shownDialog) shownDialog.close(false);
+        if (shownDialog) shownDialog.close();
     }
 
     /**
@@ -1766,7 +1903,7 @@
         // An ask made elsewhere (the request sheet, the series page) changes this season's states.
         unsubscribe = JE.arrAsk.onChange(() => {
             if (!season) return;
-            const again = { ...season, loading: true, generation: ++generation };
+            const again = { ...season, loading: true, expires: Date.now() + 60000, generation: ++generation };
             season = again;
             load(again);
         });

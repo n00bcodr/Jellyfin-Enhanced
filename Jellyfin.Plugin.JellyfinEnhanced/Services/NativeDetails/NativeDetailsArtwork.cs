@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache;
 using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
@@ -46,7 +47,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// through the policy revision. Fetches go only to https://image.tmdb.org, bounded in size, time
     /// and concurrency, behind a bounded byte cache of public source images; images not in that cache
     /// are fetched for one viewer at most at <see cref="UpstreamBurst"/> at once, then
-    /// <see cref="UpstreamPerSecond"/> a second (a busy series page needs about 90).
+    /// <see cref="UpstreamPerSecond"/> a second (a busy series page needs about 90). With the server-side
+    /// cache on, fetched images are also kept on disk (<see cref="ServerBlobCache"/>, namespace
+    /// <see cref="DiskNamespace"/>): an image read from there costs no upstream budget or admission place,
+    /// survives a restart and is served with the content type it was fetched with.
     /// </summary>
     public sealed class NativeDetailsArtwork
     {
@@ -70,14 +74,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>How long a grant is accepted after the hour it was minted in.</summary>
         public const int GrantLifetimeHours = 24;
 
+        /// <summary>The server-side cache namespace of TMDB artwork.</summary>
+        public const string DiskNamespace = "artwork";
+
         private const string KeyFile = "native-details-artwork.key";
         private readonly byte[] _key;
         private readonly IHttpClientFactory _http;
         private readonly ViewerBudget _budget;
         private readonly Func<DateTime> _now;
-        private readonly SemaphoreSlim _fetchGate = new(8);
-        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At)> _bytes = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, Lazy<Task<(byte[] Bytes, string ContentType)?>>> _inFlight = new(StringComparer.Ordinal);
+        private readonly ImageMetadataAdmission _images = new();
+        private readonly ServerBlobCache? _disk;
+        // OnDisk: nothing left to save (the image is, or was, in the server-side cache, or its save was superseded by a
+        // Clear, Forget, folder change or switch-off). Generation: the server-side cache's generation from before the
+        // bytes were fetched; every save of them carries it, so an invalidation since then refuses the save.
+        private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk, long Generation)> _bytes = new(StringComparer.Ordinal);
         private long _cachedBytes;
 
         /// <summary>Creates the artwork service with a key in memory.</summary>
@@ -90,9 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="http">HTTP clients.</param>
         /// <param name="keyDirectory">Folder for the grant key (the plugin's data folder), or null for memory only.</param>
         /// <param name="now">Clock (tests).</param>
-        public NativeDetailsArtwork(IHttpClientFactory http, string? keyDirectory, Func<DateTime>? now = null)
+        /// <param name="disk">The server-side cache, if any (it decides itself whether it is on).</param>
+        public NativeDetailsArtwork(IHttpClientFactory http, string? keyDirectory, Func<DateTime>? now = null, ServerBlobCache? disk = null)
         {
             _http = http;
+            _disk = disk;
+            _disk?.Register(new ServerCacheNamespace(DiskNamespace, MaxEntryBytes: MaxImageBytes));
             _now = now ?? (() => DateTime.UtcNow);
             _budget = new ViewerBudget(UpstreamBurst, UpstreamPerSecond, _now);
             _key = LoadKey(keyDirectory);
@@ -142,10 +155,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         internal bool IsCached(string path, string size)
             => _bytes.TryGetValue(size + path, out var hit) && _now() - hit.At < CacheTtl;
 
+        /// <summary>
+        /// True when the image is in the byte cache or the server-side cache (read into the byte cache, so
+        /// the fetch that follows is served from memory): no upstream fetch needed.
+        /// </summary>
+        /// <param name="path">A TMDB file path.</param>
+        /// <param name="size">A TMDB size.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>Cached.</returns>
+        internal async Task<bool> IsCachedAsync(string path, string size, CancellationToken ct)
+            => IsCached(path, size) || (IsSafeTmdbPath(path) && await FromDiskAsync(size + path, ct).ConfigureAwait(false) != null);
+
         /// <summary>Upstream fetches made (for tests and the proof's measurements).</summary>
         public int UpstreamFetches => _upstreamFetches;
 
+        /// <summary>Images served from the server-side cache (for tests and the proof's measurements).</summary>
+        public int DiskHits => _diskHits;
+
         private int _upstreamFetches;
+        private int _diskHits;
 
         /// <summary>True for a TMDB file path of the expected shape ("/abc123.jpg"); anything else is never fetched.</summary>
         /// <param name="path">Path.</param>
@@ -237,48 +265,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="size">A TMDB size from <see cref="SizeFor"/>.</param>
         /// <param name="ct">Cancellation for this caller.</param>
         /// <returns>The bytes and content type, or null.</returns>
-        public async Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, CancellationToken ct)
+        public Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, CancellationToken ct)
+            => FetchAsync(path, size, ViewerMetadataAdmission.EffectiveViewer ?? Guid.Empty, ct);
+
+        /// <summary>Fetches public bytes under a separate, bounded image owner; privacy remains the facade's responsibility.</summary>
+        /// <param name="path">A safe TMDB path.</param>
+        /// <param name="size">A supported width.</param>
+        /// <param name="viewer">The validated grant's viewer.</param>
+        /// <param name="ct">Cancels this wait, not the shared operation.</param>
+        /// <returns>Bytes, or null for bounded admission/queue refusal and upstream failure.</returns>
+        public async Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, Guid viewer, CancellationToken ct)
         {
             if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture))) return null;
             var key = size + path;
-            if (_bytes.TryGetValue(key, out var hit) && DateTime.UtcNow - hit.At < CacheTtl) return (hit.Bytes, hit.ContentType);
-            // The shared fetch removes its own entry when it ends, whether or not anyone still waits.
-            return await _inFlight.GetOrAdd(key, k => Shared(k, size, path)).Value.WaitAsync(ct).ConfigureAwait(false);
-        }
-
-        /// <summary>Upstream fetches still running (for tests: none may outlive its fetch).</summary>
-        internal int InFlightCount => _inFlight.Count;
-
-        private Lazy<Task<(byte[] Bytes, string ContentType)?>> Shared(string key, string size, string path)
-        {
-            Lazy<Task<(byte[] Bytes, string ContentType)?>>? lazy = null;
-            lazy = new Lazy<Task<(byte[] Bytes, string ContentType)?>>(async () =>
+            if (_bytes.TryGetValue(key, out var memory) && _now() - memory.At < CacheTtl)
             {
-                try
-                {
-                    return await FetchUpstreamAsync(key, size, path).ConfigureAwait(false);
-                }
-                finally
-                {
-                    _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<(byte[] Bytes, string ContentType)?>>>(key, lazy!));
-                }
-            });
-            return lazy;
+                // Shown while the server-side cache was off (or before it was switched on): saved now, once.
+                if (!memory.OnDisk && _disk != null) await PersistAsync(key, memory).ConfigureAwait(false);
+                return (memory.Bytes, memory.ContentType);
+            }
+            // Taken before the fetch: a Clear while it runs keeps its result off the disk.
+            var generation = _disk?.Generation ?? 0;
+            // Read before admission: a disk hit takes no admission place and makes no upstream request.
+            if (await FromDiskAsync(key, ct).ConfigureAwait(false) is { } disk) return disk;
+            return await _images.Read(key, viewer,
+                () => _bytes.TryGetValue(key, out var hit) && _now() - hit.At < CacheTtl
+                    ? ((byte[] Bytes, string ContentType)?)(hit.Bytes, hit.ContentType) : null,
+                () => FetchUpstreamAsync(key: key, size: size, path: path, generation: generation), ct).ConfigureAwait(false);
         }
 
-        private async Task<(byte[] Bytes, string ContentType)?> FetchUpstreamAsync(string key, string size, string path)
+        /// <summary>An image from the server-side cache, kept in the byte cache too; null when it isn't there (or is off).</summary>
+        private async Task<(byte[] Bytes, string ContentType)?> FromDiskAsync(string key, CancellationToken ct)
         {
-            await _fetchGate.WaitAsync().ConfigureAwait(false);
+            if (_disk == null) return null;
+            var entry = await _disk.TryGetAsync(DiskNamespace, key, ct).ConfigureAwait(false);
+            // Only what an upstream fetch would accept is served, with the type it was stored with.
+            if (entry == null || !IsImageType(entry.ContentType) || entry.Bytes.Length > MaxImageBytes) return null;
+            Interlocked.Increment(ref _diskHits);
+            Store(key, entry.Bytes, entry.ContentType, onDisk: true, generation: 0);
+            return (entry.Bytes, entry.ContentType);
+        }
+
+        /// <summary>
+        /// Saves an image the byte cache holds but the server-side cache doesn't (fetched while that was off, or its save
+        /// was skipped: disk busy, over the cap), with its fetch time and the generation from before its fetch, so the
+        /// store refuses it after any Clear, Forget, folder change or switch-off since. Concurrent hits save it once. A save
+        /// refused for being off, busy or over the cap is tried again on a later hit; one superseded by an invalidation
+        /// never is, and neither is an image that was saved and then cleared.
+        /// </summary>
+        private async Task PersistAsync(string key, (byte[] Bytes, string ContentType, DateTime At, bool OnDisk, long Generation) memory)
+        {
+            var claimed = memory with { OnDisk = true };
+            if (!_bytes.TryUpdate(key, claimed, memory)) return;
+            var stored = false;
+            try
+            {
+                stored = await _disk!.PutAsync(DiskNamespace, key, memory.Bytes, memory.ContentType, CancellationToken.None, memory.Generation, fetchedAt: memory.At).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Optional: the image is still served from memory.
+            }
+
+            // Superseded (the generation moved on): it stays settled, never saved. Otherwise a later hit tries again.
+            if (!stored && _disk!.IsCurrent(memory.Generation)) _bytes.TryUpdate(key, memory, claimed);
+        }
+
+        private static bool IsImageType(string type) => type is "image/jpeg" or "image/png" or "image/webp";
+
+        /// <summary>Admitted image operations, including queued work (tests).</summary>
+        internal int InFlightCount => _images.Count;
+
+        private async Task<(byte[] Bytes, string ContentType)?> FetchUpstreamAsync(string key, string size, string path, long generation)
+        {
             try
             {
                 Interlocked.Increment(ref _upstreamFetches);
                 using var timeout = new CancellationTokenSource(FetchTimeout);
-                var client = _http.CreateClient();
-                using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("https://image.tmdb.org/t/p/" + size + path));
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                using var response = await TmdbTransport.GetAsync(_http, "https://image.tmdb.org/t/p/" + size + path, MetadataAdmission.Required, timeout.Token).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) return null;
                 var type = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                if (type is not ("image/jpeg" or "image/png" or "image/webp")) return null;
+                if (!IsImageType(type)) return null;
                 if (response.Content.Headers.ContentLength > MaxImageBytes) return null;
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
                 using var buffer = new System.IO.MemoryStream();
@@ -291,20 +358,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
 
                 var bytes = buffer.ToArray();
-                Store(key, bytes, type);
+                Store(key, bytes, type, onDisk: false, generation: generation);
+                // Saved, or superseded by an invalidation since the fetch began: either way nothing is left to save.
+                if (_disk != null && (await _disk.PutAsync(DiskNamespace, key, bytes, type, CancellationToken.None, generation).ConfigureAwait(false)
+                        || !_disk.IsCurrent(generation))
+                    && _bytes.TryGetValue(key, out var stored) && ReferenceEquals(stored.Bytes, bytes))
+                {
+                    _bytes.TryUpdate(key, stored with { OnDisk = true }, stored);
+                }
+
                 return (bytes, type);
             }
             catch (Exception)
             {
                 return null;
             }
-            finally
-            {
-                _fetchGate.Release();
-            }
         }
 
-        private void Store(string key, byte[] bytes, string type)
+        private void Store(string key, byte[] bytes, string type, bool onDisk, long generation)
         {
             if (Interlocked.Add(ref _cachedBytes, bytes.Length) > MaxCacheBytes)
             {
@@ -316,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (_bytes.TryGetValue(key, out var previous)) Interlocked.Add(ref _cachedBytes, -previous.Bytes.Length);
-            _bytes[key] = (bytes, type, DateTime.UtcNow);
+            _bytes[key] = (bytes, type, DateTime.UtcNow, onDisk, generation);
         }
 
         private string Sign(byte[] payload)

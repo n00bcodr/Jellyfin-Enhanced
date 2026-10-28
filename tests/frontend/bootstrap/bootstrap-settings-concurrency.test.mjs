@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Stage 1 fix round 7: the per-user settings store writes operations, never whole documents, and every caller (panel,
 // legacy whole-document writers, bookmarks, Does the Dog Die) reads and writes through its one document. Another tab or
 // device that changed something else between this page's read and its save keeps its change. plugin.js, session.js,
@@ -111,7 +112,7 @@ test('R7-6: trigger picks changed after the picks could not be read keep the sto
     await settle();
     const box = [...h.document.querySelectorAll('.je-ddd-row')].find(row => row.textContent.includes('Two'))?.querySelector('input');
     if (!box.checked) { box.checked = true; box.dispatchEvent(new h.window.Event('change')); }
-    h.document.querySelector('.je-ddd-save').click();
+    clickAsViewer(h.document.querySelector('.je-ddd-save'));
     await settle();
   }
   assert.deepEqual([...server.documents.Ddd.Triggers].sort(), [1, 2], 'the stored pick (1) stays, the new one (2) is added');

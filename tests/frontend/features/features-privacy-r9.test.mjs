@@ -106,14 +106,14 @@ for(const mediaType of ['movie','tv'])for(const enabled of [false,true])test(`co
  await h.api.loadState();
  const data={id:42,title:'Title',mediaInfo:{jellyfinMediaId:'aabb'},jeSpoiler:{guarded:!enabled}};
  const button=h.api.buildSeerrToggle(data,mediaType,{detail:true});h.document.body.append(button);await tick();
- h.setGets('down');button.click();await until(()=>!button.disabled,'accepted toggle');
+ h.setGets('down');h.click(button);await until(()=>!button.disabled,'accepted toggle');
  assert.equal(h.api.isLoadOk(),false,'other consumers stay fail-closed');
  assert.equal(button.getAttribute('aria-pressed'),String(enabled),'clicked title shows confirmed outcome over stale copies');
  assert.equal(h.api.isTmdbEnabled(mediaType,42,'aabb'),enabled);
  assert.equal(h.api.isTmdbKnown(mediaType,99),false,'unrelated title is unknown');
  assert.equal(h.api.isKnownForKind(mediaType==='movie'?'movie':'series','ccdd'),false,'unrelated copy is not confirmed');
  if(!enabled)assert.equal(h.api.isEnabledForKind(mediaType==='movie'?'movie':'series','ccdd'),true,'stale sibling mirror remains conservative');
- button.click();await until(()=>!button.disabled,'second toggle');
+ h.click(button);await until(()=>!button.disabled,'second toggle');
  const writes=h.calls.filter(c=>c.method!=='GET');assert.deepEqual(writes.map(c=>c.method),enabled?['POST','DELETE']:['DELETE','POST'],'next click reverses the confirmed outcome');
  h.setGets('up');const now=h.window.Date.now;h.window.Date.now=()=>now()+6000;await h.api.loadState();
  assert.equal(h.api.isLoadOk(),true);assert.equal(button.getAttribute('aria-pressed'),String(!enabled));
@@ -127,7 +127,7 @@ for(const detail of [false,true])test(`mounted provider ${detail?'detail/modal':
  await until(()=>h.api.isLoadOk(),'recovery');assert.equal(button.getAttribute('aria-pressed'),'true');
  h.switchUser();h.server.ProviderTitles={};await h.api.loadState();
  assert.equal(button.getAttribute('aria-pressed'),'true','outgoing view never paints incoming state');assert.equal(button.disabled,true);
- button.click();await tick();assert.equal(h.calls.filter(c=>c.method!=='GET').length,0);
+ h.click(button);await tick();assert.equal(h.calls.filter(c=>c.method!=='GET').length,0);
 });
 for(const failedBatch of [1,2])test(`parent identity batches release retry work when batch ${failedBatch} fails`,async t=>{
  let fail=true,parentCalls=0;const count=failedBatch===1?60:120;

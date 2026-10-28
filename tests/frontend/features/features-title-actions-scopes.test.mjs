@@ -30,7 +30,7 @@ for (const [name, interrupt] of INTERRUPTS) {
   test(`4K popup (body-portaled): ${name} while it is open → the popup closes and its option sends nothing`, async t => {
     const h = setup(t, { asks: false });
     await openWindow(h);
-    moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
+    h.click(moreInfo(h).querySelector('.jellyseerr-split-arrow')); await settle();
     assert.ok(popup(h), 'the 4K popup is open');
     await interrupt(h); await delivered();
     assert.equal(popup(h), null, 'the popup did not outlive its operation');
@@ -43,9 +43,9 @@ for (const [name, interrupt] of INTERRUPTS) {
 test('4K popup: option pressed with the transport pool full, the person leaves, released → 0 sends', async t => {
   const h = setup(t, { asks: false });
   await openWindow(h);
-  moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
+  h.click(moreInfo(h).querySelector('.jellyseerr-split-arrow')); await settle();
   const release = h.holdPool();
-  popup(h).querySelector('.je-4k-popup-item').click(); await settle();
+  h.click(popup(h).querySelector('.je-4k-popup-item')); await settle();
   await h.leave();
   await release(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
@@ -54,8 +54,8 @@ test('4K popup: option pressed with the transport pool full, the person leaves, 
 test('control: the 4K popup on the current operation requests once', async t => {
   const h = setup(t, { asks: false });
   await openWindow(h);
-  moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
-  popup(h).querySelector('.je-4k-popup-item').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.jellyseerr-split-arrow')); await settle();
+  h.click(popup(h).querySelector('.je-4k-popup-item')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });
 
@@ -65,7 +65,7 @@ test('the More Info window\'s own More sheet (JE requests off) offers no second 
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   const more = moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more');
   assert.ok(more, 'the window has the action bar');
-  more.click(); await settle();
+  h.click(more); await settle();
   const entries = [...h.document.querySelectorAll('.je-actions-entry')].map(n => n.dataset.action);
   assert.ok(entries.length > 0, 'the sheet is open');
   assert.equal(entries.includes('request'), false, 'no second window over the one it is pressed in');
@@ -77,11 +77,11 @@ test('control: the native More Info window (no operation) keeps its popup and re
   // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t, { asks: false });
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
-  moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
+  h.click(moreInfo(h).querySelector('.jellyseerr-split-arrow')); await settle();
   assert.ok(popup(h), 'natively the popup is the window\'s own');
-  popup(h).querySelector('.je-4k-popup-item').click(); await delivered();
+  h.click(popup(h).querySelector('.je-4k-popup-item')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
-  moreInfo(h).querySelector('.jellyseerr-split-arrow')?.click(); await settle();
+  { const arrow = moreInfo(h).querySelector('.jellyseerr-split-arrow'); if (arrow) h.click(arrow); } await settle();
   await h.leave();
   assert.equal(popup(h), null);
 });
@@ -93,11 +93,11 @@ for (const [name, interrupt] of INTERRUPTS) {
     const h = setup(t, { asks: false });
     await openWindow(h);
     const details = h.hold('GET', '/jellyseerr/collection/2344');
-    moreInfo(h).querySelector('.je-collection-card-button').click(); await settle();
+    h.click(moreInfo(h).querySelector('.je-collection-card-button')); await settle();
     await interrupt(h);
     details.resolve(); await delivered();
     const form = seerrModal(h);
-    if (form) { form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered(); }
+    if (form) { h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered(); }
     assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
     await gone();
     assert.equal(seerrModal(h), null, 'no collection form for an ended operation');
@@ -106,12 +106,12 @@ for (const [name, interrupt] of INTERRUPTS) {
   test(`Collection: ${name} while its form is open → the form closes; Save sends nothing`, async t => {
     const h = setup(t, { asks: false });
     await openWindow(h);
-    moreInfo(h).querySelector('.je-collection-card-button').click(); await delivered();
+    h.click(moreInfo(h).querySelector('.je-collection-card-button')); await delivered();
     const form = seerrModal(h);
     assert.ok(form, 'the collection form is open');
     await interrupt(h); await delivered(); await gone();
     assert.equal(form.isConnected, false, 'the form did not outlive its operation');
-    form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+    h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
     assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
   });
 }
@@ -119,9 +119,9 @@ for (const [name, interrupt] of INTERRUPTS) {
 test('Collection: Save with the transport pool full, the row re-renders, released → 0 sends', async t => {
   const h = setup(t, { asks: false });
   await openWindow(h);
-  moreInfo(h).querySelector('.je-collection-card-button').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-collection-card-button')); await delivered();
   const release = h.holdPool();
-  seerrModal(h).querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(seerrModal(h).querySelector('.jellyseerr-modal-button-primary')); await settle();
   remount(h);
   await release(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
@@ -130,8 +130,8 @@ test('Collection: Save with the transport pool full, the row re-renders, release
 test('control: the Collection form on the current operation requests once', async t => {
   const h = setup(t, { asks: false });
   await openWindow(h);
-  moreInfo(h).querySelector('.je-collection-card-button').click(); await delivered();
-  seerrModal(h).querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-collection-card-button')); await delivered();
+  h.click(seerrModal(h).querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });
 
@@ -140,7 +140,7 @@ test('control: the Collection form on the current operation requests once', asyn
 /** The window's Request with advanced options: the movie request modal opens from inside the window, with its selects filled. */
 async function openAdvanced(h) {
   await openWindow(h);
-  moreInfo(h).querySelector('.jellyseerr-split-main').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.jellyseerr-split-main')); await delivered();
   const form = seerrModal(h);
   assert.ok(form, 'the advanced movie request modal is open');
   for (const [id, value] of [['movie-server', '1'], ['movie-quality', '4'], ['movie-folder', '/movies']]) {
@@ -156,7 +156,7 @@ test('advanced movie modal (opened from inside the window, no explicit origin): 
   const form = await openAdvanced(h);
   remount(h); h.a.scan(); await delivered(); await gone();
   assert.equal(form.isConnected, false, 'the modal is in the window\'s operation\'s scope');
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
 });
 
@@ -164,7 +164,7 @@ test('advanced movie modal: Save with the transport pool full, the row re-render
   const h = setup(t, { asks: false, advanced: true });
   const form = await openAdvanced(h);
   const release = h.holdPool();
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await settle();
   remount(h);
   await release(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
@@ -173,7 +173,7 @@ test('advanced movie modal: Save with the transport pool full, the row re-render
 test('control: the advanced movie modal on the current operation requests once', async t => {
   const h = setup(t, { asks: false, advanced: true });
   const form = await openAdvanced(h);
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });
 
@@ -220,7 +220,7 @@ test('bfcache: the Report form is open, pagehide (persisted) → it closes; its 
   assert.ok(form, 'the Report form is open');
   h.pagehide(true); await settle(); h.pageshow(true); await settle();
   form.querySelector('input[name="issue-type"]').checked = true;
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered(); await gone();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered(); await gone();
   assert.equal(form.isConnected, false, 'the form closed with its operation');
   assert.equal(h.sent('POST', '/jellyseerr/issue').length, 0);
 });
@@ -237,7 +237,7 @@ for (const [name, depart, restore] of [
     const form = seerrModal(h);
     form.querySelector('input[name="issue-type"]').checked = true;
     const release = h.holdPool();
-    form.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+    h.click(form.querySelector('.jellyseerr-modal-button-primary')); await settle();
     depart(h); await settle(); restore(h); await settle();
     await release(); await delivered();
     assert.equal(h.sent('POST', '/jellyseerr/issue').length, 0);
@@ -268,7 +268,7 @@ test('control: jellyfin-web\'s own view pagehide/pageshow/freeze events (bubblin
   for (const type of ['pagehide', 'pageshow', 'freeze', 'resume']) h.page.dispatchEvent(new h.window.CustomEvent(type, { bubbles: true }));
   await settle();
   assert.equal(open.isConnected, true, 'the sheet stays open');
-  open.querySelector('.je-sheet-primary').click(); await delivered();
+  h.click(open.querySelector('.je-sheet-primary')); await delivered();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
 
@@ -281,19 +281,20 @@ test('bfcache control: after pageshow a fresh press on the restored page works (
   assert.ok(more, 'the restored row has its controls');
   await press(h, 'request'); await delivered();
   assert.ok(sheet(h), 'a fresh press opens the sheet');
-  sheet(h).querySelector('.je-sheet-primary').click(); await delivered();
+  h.click(sheet(h).querySelector('.je-sheet-primary')); await delivered();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
 
 test('bfcache: the Manage drawer and the title-action sheet close on pagehide', async t => {
   const h = setup(t);
   h.a.initialize(); mount(h); await settle();
-  await press(h, 'manage'); await delivered();
-  const drawer = h.document.querySelector('.je-manage-overlay');
-  assert.ok(drawer);
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  // The sheet open, and the drawer opened over it (a covered row takes no press: D46S2-R12-9).
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   const offer = h.document.querySelector('.je-actions-backdrop');
   assert.ok(offer);
+  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await delivered();
+  const drawer = h.document.querySelector('.je-manage-overlay');
+  assert.ok(drawer);
   h.pagehide(true); await settle();
   assert.equal(drawer.isConnected, false);
   assert.equal(offer.isConnected, false);

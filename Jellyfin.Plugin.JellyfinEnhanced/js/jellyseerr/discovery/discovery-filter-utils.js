@@ -421,13 +421,14 @@
     /**
      * Builds the sessionStorage key for one TMDB genre list.
      * @param {'tv'|'movie'} mediaType - Which list
+     * @param {boolean} [native] - The list the server's native route answered (Seerr's otherwise)
      * @returns {string|null} The key, or null while the server or user is unknown
      */
-    function genreListStorageKey(mediaType) {
+    function genreListStorageKey(mediaType, native = false) {
         const serverId = JE.session?.getServerId?.();
         const userId = JE.session?.getUserId?.();
         if (!serverId || !userId) return null;
-        return `${GENRE_LIST_STORAGE_PREFIX}${serverId}:${userId}:${mediaType}`;
+        return `${GENRE_LIST_STORAGE_PREFIX}${serverId}:${userId}:${native ? 'native:' : ''}${mediaType}`;
     }
 
     /**
@@ -462,7 +463,8 @@
      * @returns {Promise<any>} The genre list (the endpoint's body when fetched)
      */
     async function fetchTmdbGenreList(mediaType, options = {}) {
-        const storageKey = genreListStorageKey(mediaType);
+        // Kept per source: a list Seerr answered is never handed to the native reader, nor the other way round.
+        const storageKey = genreListStorageKey(mediaType, !!options.native);
         const stored = storageKey ? readStoredGenreList(storageKey) : null;
         if (stored) return stored;
 
@@ -1129,8 +1131,23 @@
      * @returns {boolean}
      */
     function useNativeFeeds(status) {
+        const je = jeFeeds();
+        if (je !== null) return je;
         return !!status?.active && status.userFound === false && JE.internals?.arrAskSeerr?.jeMode?.() === true
             && !!JE.titleDetails?.available?.();
+    }
+
+    /**
+     * The discovery rows' source when Jellyfin Enhanced is the request backend (A1; public config
+     * NativeAbsentDetails.Source "tmdb", whatever the request switches say and whatever Seerr settings remain
+     * stored): true when the server's native feeds answer (native details on, TMDB ready), false when nothing
+     * does (no row). null in Seerr mode, where the viewer's Seerr status decides as before. Asked BEFORE any Seerr
+     * status, account or cache: such a server's rows never read Seerr (D88).
+     * @returns {boolean|null}
+     */
+    function jeFeeds() {
+        if (JE.pluginConfig?.NativeAbsentDetails?.Source !== 'tmdb') return null;
+        return !!JE.titleDetails?.available?.();
     }
 
     // Inject styles on load
@@ -1158,6 +1175,7 @@
         fetchWithManagedRequest,
         fetchTmdbGenreList,
         useNativeFeeds,
+        jeFeeds,
         createSessionCache,
         createCardsFragment,
         appendCards,

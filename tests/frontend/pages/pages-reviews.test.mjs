@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
@@ -83,37 +84,37 @@ test('admin viewers see moderation controls and missing translations use readabl
 test('review form rejects empty input, counts characters, saves trimmed content and preserves input on failure',async t=>{
   const h=await setup(t);const mutations=[];
   h.JE.core.api.plugin=async(path,options)=>{mutations.push({path,options});throw Error('offline');};
-  h.document.querySelector('.je-review-write-btn').click();
+  clickAsViewer(h.document.querySelector('.je-review-write-btn'));
   const textarea=h.document.querySelector('textarea');const submit=h.document.querySelector('.je-review-submit-btn');
   assert.equal(h.document.activeElement,textarea);assert.equal(textarea.maxLength,2000);
-  submit.click();assert.equal(mutations.length,0);assert.equal(h.document.querySelector('.je-review-form-error').textContent,'reviews_form_error_empty');
+  clickAsViewer(submit);assert.equal(mutations.length,0);assert.equal(h.document.querySelector('.je-review-form-error').textContent,'reviews_form_error_empty');
   textarea.value='  Test review  ';textarea.dispatchEvent(new h.window.Event('input'));
   assert.equal(h.document.querySelector('.je-review-char-count').textContent,'15');
-  submit.click();await nextTurn();
+  clickAsViewer(submit);await nextTurn();
   assert.equal(mutations.length,1);assert.equal(mutations[0].path,'/reviews/movie/7');
   assert.equal(mutations[0].options.method,'POST');assert.equal(mutations[0].options.skipRetry,true);
   assert.equal(mutations[0].options.body.content,'Test review');assert.equal(mutations[0].options.body.rating,null);
   assert.equal(submit.disabled,false);assert.equal(textarea.value,'  Test review  ');
   assert.equal(h.document.querySelector('.je-review-form-error').textContent,'reviews_form_error_save');
-  h.document.querySelector('.je-review-cancel-btn').click();assert.equal(h.document.querySelector('.je-review-form'),null);
+  clickAsViewer(h.document.querySelector('.je-review-cancel-btn'));assert.equal(h.document.querySelector('.je-review-form'),null);
 });
 test('review star picker supports half stars and rating-only submissions',async t=>{
   const h=await setup(t);const mutations=[];
   h.JE.core.api.plugin=async(path,options)=>{mutations.push({path,options});throw Error('offline');};
-  h.document.querySelector('.je-review-write-btn').click();
+  clickAsViewer(h.document.querySelector('.je-review-write-btn'));
   const star=h.document.querySelector('[data-value="4"]');star.getBoundingClientRect=()=>({left:100,width:20});
   star.dispatchEvent(new h.window.MouseEvent('click',{clientX:105}));
   assert.equal(h.document.querySelector('.je-star-label').textContent,'3.5/5');
-  h.document.querySelector('.je-review-submit-btn').click();await nextTurn();
+  clickAsViewer(h.document.querySelector('.je-review-submit-btn'));await nextTurn();
   assert.equal(mutations[0].options.body.rating,3.5);assert.equal(mutations[0].options.body.content,'');
-  h.document.querySelector('.je-star-clear-btn').click();assert.equal(h.document.querySelector('.je-star-label').textContent,'');
+  clickAsViewer(h.document.querySelector('.je-star-clear-btn'));assert.equal(h.document.querySelector('.je-star-label').textContent,'');
 });
 for(const admin of [false,true]){
   test(`review deletion uses ${admin?'moderation':'own-user'} endpoint with one mutation and refresh`,async t=>{
     const h=await setup(t,{admin,reviews:[{userId:admin?'other-user':'user-a',userName:'Reviewer',content:'Delete me'}]});
     const calls=[];h.window.confirm=()=>true;
     h.JE.core.api.plugin=async(path,options)=>{calls.push({path,options});return {reviews:[]};};
-    h.document.querySelector('.je-review-delete-btn').click();await nextTurn();
+    clickAsViewer(h.document.querySelector('.je-review-delete-btn'));await nextTurn();
     assert.equal(calls[0].path,admin?'/reviews/admin/otheruser/movie/7':'/reviews/movie/7');
     assert.equal(calls[0].options.method,'DELETE');assert.equal(calls[0].options.skipRetry,true);
     assert.equal(calls.filter(c=>c.options?.method==='DELETE').length,1);
@@ -122,14 +123,14 @@ for(const admin of [false,true]){
 }
 test('review canceled deletion makes no mutation',async t=>{
   const h=await setup(t,{reviews:[{userId:'user-a',content:'Keep me'}]});h.window.confirm=()=>false;
-  const count=h.calls.length;h.document.querySelector('.je-review-delete-btn').click();await nextTurn();
+  const count=h.calls.length;clickAsViewer(h.document.querySelector('.je-review-delete-btn'));await nextTurn();
   assert.equal(h.calls.length,count);assert.ok(h.document.querySelector('.je-user-review-card'));
 });
 test('review moderation 404 displays actionable error and refreshes actual state',async t=>{
   const h=await setup(t,{admin:true,reviews:[{userId:'other-user',content:'Old review'}]});const alerts=[];const requests=[];
   h.expectConsoleError('Reviews: Delete failed');h.window.confirm=()=>true;h.window.alert=message=>alerts.push(message);
   h.JE.core.api.plugin=async(path,options)=>{requests.push({path,options});if(options?.method==='DELETE')throw {status:404};return {reviews:[]};};
-  h.document.querySelector('.je-review-delete-btn').click();await nextTurn();
+  clickAsViewer(h.document.querySelector('.je-review-delete-btn'));await nextTurn();
   assert.equal(alerts.length,1);assert.match(alerts[0],/No matching review to delete/);
   assert.equal(requests.length,2);assert.equal(h.document.querySelector('.je-user-review-card'),null);
 });
@@ -139,12 +140,12 @@ test('successful review creation refreshes persisted content and edit prepopulat
     if(options?.method==='POST'){saved.push(options.body);stored=[{userId:'user-a',userName:'Me',...options.body}];return {};}
     return {reviews:stored};
   };
-  h.document.querySelector('.je-review-write-btn').click();
-  h.document.querySelector('textarea').value='First version';h.document.querySelector('.je-review-submit-btn').click();await nextTurn();
+  clickAsViewer(h.document.querySelector('.je-review-write-btn'));
+  h.document.querySelector('textarea').value='First version';clickAsViewer(h.document.querySelector('.je-review-submit-btn'));await nextTurn();
   assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'First version');
   assert.equal(h.document.querySelector('.je-review-write-btn'),null);
-  h.document.querySelector('.je-review-edit-btn').click();assert.equal(h.document.querySelector('textarea').value,'First version');
-  h.document.querySelector('textarea').value='Updated version';h.document.querySelector('.je-review-submit-btn').click();await nextTurn();
+  clickAsViewer(h.document.querySelector('.je-review-edit-btn'));assert.equal(h.document.querySelector('textarea').value,'First version');
+  h.document.querySelector('textarea').value='Updated version';clickAsViewer(h.document.querySelector('.je-review-submit-btn'));await nextTurn();
   assert.equal(saved.length,2);assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'Updated version');
   assert.equal(h.document.querySelector('.je-review-form'),null);
 });

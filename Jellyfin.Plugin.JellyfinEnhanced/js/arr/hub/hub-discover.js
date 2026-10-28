@@ -301,6 +301,9 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             const title = { key: card.key, kind: series ? 'series' : 'movie', name: card.title, year: card.year ?? null, poster: card.poster ?? null };
             if (series && Array.isArray(card.mineSeasons)) title.askedSeasons = card.mineSeasons.slice();
             const operation = JE.ownerOf(e);
+            // A press with no owner (a script's click) asks for nothing (D46S2-R11-1).
+            if (!operation) return;
+            const submitted = JE.captureSubmitted(operation);
             // The ask belongs to this click's session, through the sheet, the ask and what its answer shows.
             const origin = JE.core.userWrite.origin();
             const current = () => JE.core.userWrite.isBound(origin);
@@ -312,15 +315,16 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
                 if (series || words) result = await sheet.open(title, options);
                 else if (typeof sheet?.openOrAsk === 'function') result = await sheet.openOrAsk(title, options);
                 else {
-                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(card.key), { session: origin });
+                    result = await JE.arrAsk.ask(JE.arrAsk.movieInput(card.key), { session: origin, bound: submitted.bound() });
                     if (!result.stale && current()) {
                         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('movie') : null;
-                        if (current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
+                        // The answer is a page effect (D46S2-R11-8): said only while the press's owner is current.
+                        if (current() && submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
                     }
                 }
             } catch (err) {
                 result = { ok: false, state: 'failed' };
-                if (current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
+                if (current() && submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
             }
             if (result?.stale || !current()) return;
             if (applyResult(card, result)) {

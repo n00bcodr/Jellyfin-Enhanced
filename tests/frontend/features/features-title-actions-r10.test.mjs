@@ -179,7 +179,7 @@ test('control: a native click that captures its owner before awaiting still open
   const h = setup(t, { asks: false });
   const opener = h.document.createElement('button'); h.document.body.append(opener);
   opener.onclick = async e => { const owner = h.JE.ownerOf(e); await Promise.resolve(); await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, owner); };
-  opener.click(); await delivered();
+  h.click(opener); await delivered();
   assert.equal(moreInfo(h)?.dataset.tmdbId, '603');
   assert.equal(h.JE.ownerOf(moreInfo(h)).native, true);
 });
@@ -188,7 +188,7 @@ test('controls: an unbound write inside a press is refused; a raw observer and a
   const h = setup(t, { asks: false }); const refusals = recordRefusals(h); h.a.initialize(); mount(h); await settle();
   const op = h.a.generation(); let done;
   const inner = button(h, e => h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.ownerOf(e)));
-  const outer = button(h, () => { done = h.JE.core.api.plugin('/arr/direct-write', { method: 'POST', body: {} }).catch(error => error); inner.click(); });
+  const outer = button(h, () => { done = h.JE.core.api.plugin('/arr/direct-write', { method: 'POST', body: {} }).catch(error => error); h.click(inner); });
   h.JE.press(outer, op); await done; await delivered();
   assert.equal(h.sent('POST', '/arr/direct-write').length, 0);
   assert.equal(moreInfo(h), null, 'the nested synthetic click has no owner');
@@ -337,7 +337,7 @@ test('R10-8: a Calendar title clicked, then another page opened before the provi
   h.load('arr/calendar/calendar-page-actions.js');
   const node = h.document.createElement('button'); node.className = 'je-calendar-event'; node.dataset.eventId = 'a'; h.document.body.append(node);
   node.addEventListener('click', h.JE.internals.calendarPage.handleEventClick);
-  node.click(); await delivered();
+  h.click(node); await delivered();
   assert.equal(h.sent('GET', '/items/by-providers').length, 1);
   await h.leave('#/details?id=new-title');
   gate.resolve('11111111111111111111111111111111'); await delivered();
@@ -352,7 +352,7 @@ test('control: the Calendar click whose lookup answers on the same page navigate
   h.load('arr/calendar/calendar-page-actions.js');
   const node = h.document.createElement('button'); node.className = 'je-calendar-event'; node.dataset.eventId = 'a'; h.document.body.append(node);
   node.addEventListener('click', h.JE.internals.calendarPage.handleEventClick);
-  node.click(); await delivered();
+  h.click(node); await delivered();
   assert.equal(h.window.location.hash, '#/details?id=11111111111111111111111111111111');
 });
 
@@ -418,7 +418,7 @@ test('AX2-2: an open native advanced form closes on an account switch, and its S
   h.switchUser(); await delivered();
   assert.equal(form.classList.contains('show'), false, 'closed');
   assert.ok(form.hasAttribute('inert'));
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 0);
 });
 
@@ -431,7 +431,7 @@ test('AX2-3: the search card\'s 4K popup is its opener\'s: after navigation it i
   assert.equal(h.JE.scopeOf(popup), owner, 'registered for the operation that opened it');
   await h.leave();
   assert.equal(popup.isConnected, false);
-  popup.querySelector('button').click(); await delivered();
+  h.click(popup.querySelector('button')); await delivered();
   assert.equal(posts(h).length, 0);
 });
 
@@ -456,7 +456,7 @@ test('AX2-7: a card\'s More opener whose admission answers after the search quer
   const h = await searchPage(t); h.window.history.replaceState({}, '', '#/search?query=old');
   requestCard(h, { id: 603, mediaType: 'movie', title: 'Movie A', mediaInfo: { status: 1 } }); h.a.initialize(); h.a.scan();
   const admission = h.hold('GET', '/title-actions/movie/603');
-  h.document.querySelector('.je-card-more').click(); await delivered();
+  h.click(h.document.querySelector('.je-card-more')); await delivered();
   assert.equal(h.sent('GET', '/title-actions/movie/603').length, 1);
   h.window.history.replaceState({}, '', '#/search?query=new');
   admission.resolve(); await delivered();
@@ -503,14 +503,14 @@ test('AX2-9: a dismissed request form is inert at once: Save during its exit ani
   assert.equal(form.classList.contains('show'), false);
   assert.equal(primary.disabled, true); assert.ok(form.hasAttribute('inert'));
   assert.equal(h.document.activeElement, opener, 'focus is back on its opener');
-  primary.click(); h.key(primary, 'Enter'); await delivered();
+  h.click(primary); h.key(primary, 'Enter'); await delivered();
   assert.equal(posts(h).length, 0);
 });
 
 test('AX2-10: Escape in a request form closes the form only; the More Info window underneath stays', async t => {
   const h = setup(t, { asks: false, advanced: true });
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
-  const info = moreInfo(h); info.querySelector('.jellyseerr-request-button').click();
+  const info = moreInfo(h); h.click(info.querySelector('.jellyseerr-request-button'));
   await wait(120); const form = seerrModal(h); assert.ok(form?.classList.contains('show'));
   form.querySelector('.jellyseerr-modal-button-primary').focus();
   h.key(form.querySelector('.jellyseerr-modal-button-primary'), 'Escape'); await delivered();
@@ -532,20 +532,32 @@ test('AX2-9: a popstate that did not leave the form\'s history entry (queued by 
   assert.equal(form.classList.contains('show'), false, 'Back closes it');
 });
 
-test('control: the host activating the focused control (a gamepad\'s OK: jellyfin-web clicks the focused element) is the viewer\'s; a synthetic click on another control, or inside an operation\'s press, is not', async t => {
+test('control (D46S2-R11-1 replaces Q-D46S2FIX10-2): focus alone is no gesture; the host\'s own verified gamepad activation of the focused control is the viewer\'s, and inside an operation\'s press it is refused', async t => {
   const h = setup(t, { asks: false }); const refusals = recordRefusals(h); h.a.initialize(); mount(h); await settle();
   const seen = [];
   const focused = h.document.createElement('button'); h.document.body.append(focused);
   const other = h.document.createElement('button'); h.document.body.append(other);
   for (const node of [focused, other]) node.addEventListener('click', e => seen.push(h.JE.ownerOf(e)));
+  /** jellyfin-web's gamepad OK (its gamepad-to-key module): a keyup Event on the focused element, then its click(). */
+  const gamepadOk = () => {
+    const key = new h.window.Event('keyup', { bubbles: true, cancelable: true });
+    key.key = 'GamepadA'; key.keyCode = 13;
+    const target = h.document.activeElement;
+    target.dispatchEvent(key);
+    if (!key.defaultPrevented) target.click();
+  };
   focused.focus();
   focused.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(seen[0], null, 'a synthetic click on the focused control is no one\'s');
+  // jellyfin-web's gamepad-to-key reads a connected gamepad (D46S2-R12-9: its chain is the viewer's only while one is).
+  Object.defineProperty(h.window.navigator, 'getGamepads', { configurable: true, value: () => [{ index: 0, connected: true, buttons: [] }] });
+  gamepadOk();
+  assert.equal(seen[1]?.native, true, 'the host\'s own activation of the focused control is native');
   other.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-  assert.equal(seen[0]?.native, true, 'the focused control\'s activation is native');
-  assert.equal(seen[1], null, 'another control\'s synthetic click has no owner');
-  // Inside an operation's press, the focused control's synthetic click is refused (that operation acts).
-  const outer = button(h, () => focused.click());
+  assert.equal(seen[2], null, 'another control\'s synthetic click has no owner');
+  // Inside an operation's press, the host's activation is refused (that operation acts).
+  const outer = button(h, () => gamepadOk());
   h.JE.press(outer, h.a.generation()); await delivered();
-  assert.equal(seen[2], null);
+  assert.equal(seen[3], null);
   assert.ok(refusals().some(m => /native owner was minted inside an operation/.test(m)));
 });

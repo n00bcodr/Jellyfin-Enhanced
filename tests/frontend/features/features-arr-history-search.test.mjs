@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads: searching the administrator's Activity history (words with a 300 ms pause,
 // event and instance chips, Prev / Next, "the newest N of M since …" per instance), with every read
 // fenced by an intent token: an answer for a search no longer asked is dropped, a reload during a
@@ -200,7 +201,7 @@ test('an answer for a search no longer asked is dropped, and exactly one read fo
   // While "alien" is read the admin changes the search twice and a feed reload arrives.
   h.type('aliens');
   h.input().dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  h.page().querySelector('[data-je-focus="history:event:failed"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:event:failed"]'));
   const reload = h.A().refresh(); // resolves with the read under way (and the one after it)
   // The old rows are dimmed under "Searching…" meanwhile.
   assert.equal(h.page().querySelector('.je-history-status').textContent, 'Searching…');
@@ -231,9 +232,9 @@ test('a late failure of an old search changes nothing; a failure of the search a
   h.allowConsoleError?.(/could not load/);
   h.JE.initializeArrStatus();
   await until(() => h.input());
-  h.page().querySelector('[data-je-focus="history:next"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:next"]'));
   await until(() => pending.length === 1);
-  h.page().querySelector('[data-je-focus="history:event:imported"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:event:imported"]'));
   pending[0].d.reject(Object.assign(new Error('HTTP 502'), { status: 502 }));
   await until(() => pending.length === 2);
   assert.equal(h.A().state.failed.activity, false, 'the old page\'s failure is not this search\'s');
@@ -245,17 +246,17 @@ test('a late failure of an old search changes nothing; a failure of the search a
   assert.match(error.textContent, /The history couldn't be searched\./);
   // No rows of another search under the error.
   assert.equal(h.page().querySelector('.je-history tbody'), null);
-  error.querySelector('[data-je-focus="history:clear"]').click();
+  clickAsViewer(error.querySelector('[data-je-focus="history:clear"]'));
   await until(() => pending.length === 3);
   assert.equal(pending[2].params.get('event'), null);
   pending[2].d.resolve(answer(pending[2].params));
   await until(() => titles(h)[0]?.startsWith('all|any|every|p1'));
   // Try again re-reads the search asked.
-  h.page().querySelector('[data-je-focus="history:event:failed"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:event:failed"]'));
   await until(() => pending.length === 4);
   pending[3].d.reject(new Error('offline'));
   await until(() => h.page().querySelector('.je-history-error'));
-  h.page().querySelector('[data-je-focus="history:retry"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:retry"]'));
   await until(() => pending.length === 5);
   assert.equal(pending[4].params.get('event'), 'failed');
   pending[4].d.resolve(answer(pending[4].params));
@@ -270,16 +271,16 @@ test('Prev / Next page through the search, focus stays on the pager, and a page 
   await until(() => h.page()?.querySelector('[data-je-focus="history:next"]'));
   const next = () => h.page().querySelector('[data-je-focus="history:next"]');
   next().focus();
-  next().click();
+  clickAsViewer(next());
   await until(() => h.page().querySelector('.je-history-page')?.textContent === 'Page 2 of 3');
   assert.equal(h.document.activeElement?.dataset.jeFocus, 'history:next');
-  next().click();
+  clickAsViewer(next());
   await until(() => h.page().querySelector('.je-history-page')?.textContent === 'Page 3 of 3');
   assert.equal(next().getAttribute('aria-disabled'), 'true');
   // Still focusable at the end (D-pad), and a click there reads nothing.
   assert.equal(h.document.activeElement, next());
   const before = h.calls.length;
-  next().click();
+  clickAsViewer(next());
   await wait(30);
   assert.equal(h.calls.length, before);
   // The history shrank: the server shows its last page, and the search asks for that page from then on.
@@ -288,7 +289,7 @@ test('Prev / Next page through the search, focus stays on the pager, and a page 
   await until(() => h.page().querySelector('.je-history-page')?.textContent === 'Page 2 of 2');
   assert.equal(h.A().state.history.page, 2);
   assert.equal(h.page().querySelector('.je-history-status').textContent, '60 events');
-  h.page().querySelector('[data-je-focus="history:prev"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:prev"]'));
   await until(() => h.page().querySelector('.je-history-page')?.textContent === 'Page 1 of 2');
   assert.equal(h.calls.at(-1).params.get('page'), '1');
 });
@@ -303,7 +304,7 @@ test('instance chips filter the search and say what that instance covers; no mat
   });
   h.JE.initializeArrStatus();
   await until(() => h.page()?.querySelector('[data-je-focus="history:instance:s1"]'));
-  h.page().querySelector('[data-je-focus="history:instance:s1"]').click();
+  clickAsViewer(h.page().querySelector('[data-je-focus="history:instance:s1"]'));
   await until(() => h.page().querySelector('.je-history-status')?.textContent === '3 events');
   assert.equal(h.calls.at(-1).params.get('instance'), 's1');
   assert.equal(h.page().querySelector('[data-je-focus="history:instance:s1"]').getAttribute('aria-pressed'), 'true');
@@ -313,7 +314,7 @@ test('instance chips filter the search and say what that instance covers; no mat
   h.input().dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await until(() => h.page().querySelector('.je-history-status')?.textContent === '0 events');
   assert.match(h.page().querySelector('.je-history-body .je-ops-empty').textContent, /No events match\. Try other words or filters\./);
-  h.page().querySelector('.je-history-body [data-je-focus="history:clear"]').click();
+  clickAsViewer(h.page().querySelector('.je-history-body [data-je-focus="history:clear"]'));
   await until(() => h.calls.at(-1).path === '/arr/admin/hub/activity?page=1');
   assert.equal(h.input().value, '');
   await until(() => h.page().querySelector('.je-history-status')?.textContent === '120 events');

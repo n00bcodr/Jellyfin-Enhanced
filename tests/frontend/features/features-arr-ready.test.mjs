@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
@@ -165,11 +166,11 @@ test('Remove needs a second press and then removes once', async () => {
   try {
     h.open(); await tick();
     const button = h.host().querySelector('[data-je-focus="ready-remove"]');
-    button.click();
+    clickAsViewer(button);
     await tick();
     assert.equal(h.calls.filter(c => c.path === '/acquire/ready/remove').length, 0);
     assert.equal(button.textContent, 'arr_ready_remove_confirm');
-    button.click();
+    clickAsViewer(button);
     await tick();
     assert.equal(h.calls.filter(c => c.path === '/acquire/ready/remove').length, 1);
     assert.match(h.host().textContent, /arr_ready_removed/);
@@ -188,8 +189,8 @@ test('a shared playlist is offered as "stop managing", and Remove reports it was
     h.open(); await tick();
     const button = h.host().querySelector('[data-je-focus="ready-remove"]');
     assert.equal(button.textContent, 'arr_ready_forget');
-    button.click(); await tick();
-    button.click(); await tick();
+    clickAsViewer(button); await tick();
+    clickAsViewer(button); await tick();
     assert.match(h.host().textContent, /arr_ready_kept/);
     assert.match(h.host().textContent, /arr_ready_state_kept/);
     assert.doesNotMatch(h.host().textContent, /arr_ready_removed|arr_ready_state_removed/);
@@ -206,8 +207,8 @@ test('a Remove the server didn\'t make says so instead of claiming it was remove
     h.open(); await tick();
     const button = h.host().querySelector('[data-je-focus="ready-remove"]');
     assert.equal(button.textContent, 'arr_ready_remove');
-    button.click(); await tick();
-    button.click(); await tick();
+    clickAsViewer(button); await tick();
+    clickAsViewer(button); await tick();
     assert.match(h.host().textContent, /arr_ready_save_failed/);
     assert.doesNotMatch(h.host().textContent, /arr_ready_removed/);
   } finally { h.close(); }

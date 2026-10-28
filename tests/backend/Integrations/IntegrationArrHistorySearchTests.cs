@@ -30,7 +30,7 @@ public class IntegrationArrHistorySearchTests
         public FakeSeerr Seerr { get; } = new();
         public ArrStateStore Store { get; }
         public FakeJellyfinView View { get; } = new();
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Status { get; }
         public ArrManageService Manage { get; }
         public ArrActionRunner Runner { get; }
@@ -74,7 +74,7 @@ public class IntegrationArrHistorySearchTests
             }
 
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, Feed);
             var audit = new ArrAuditLog(Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2);
             Runner = new ArrActionRunner(audit, new ArrConfirmationTokens());

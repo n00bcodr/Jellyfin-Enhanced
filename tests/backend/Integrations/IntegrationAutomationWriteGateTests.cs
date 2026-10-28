@@ -320,6 +320,9 @@ public class IntegrationAutomationWriteGateTests
         }
         else
         {
+            // The registry must claim the configured defaults before the transport race starts.
+            c.RadarrInstances = lab.Config.RadarrInstances;
+            c.SonarrInstances = lab.Config.SonarrInstances;
             var fixture = Fixture(lab, site);
             input = fixture.Input;
             var instance = lab.Instance(movie ? "Radarr" : "Sonarr").Id;
@@ -734,7 +737,7 @@ public class IntegrationAutomationWriteGateTests
                         break;
                     case "legacy":
                         waits.AddRange(walk.GateToSend(file, index, RuleGates[rule]));
-                        Assert.Contains("private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;", source, StringComparison.Ordinal);
+                        Assert.Contains("private string? DirectStop() => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.RequestWrite).Allowed ? \"backend_disabled\" : _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;", source, StringComparison.Ordinal);
                         break;
                 }
             }
@@ -820,7 +823,7 @@ public class IntegrationAutomationWriteGateTests
         ["blocking_collection_timeout"] = ("Services/Arr/ArrCallAttribution.cs", new[] { ("internal void Increment() => Interlocked.Increment(ref _calls);", "internal void Increment() { using var queue = new System.Collections.Concurrent.BlockingCollection<int>(); queue.TryTake(out _, 1); Interlocked.Increment(ref _calls); }") }, "a blocking wait (BlockingCollection.TryTake)"),
         ["blocking_http_factory_lambda_assignment"] = (ArrFile, new[] { ("_http = http;", "_http = () => { Thread.Sleep(1); return http(); };") }, "a blocking wait (Thread.Sleep)"),
         ["blocking_http_factory_assignment"] = (ArrFile, new[] { ("_http = http;", "_http = Pause; HttpClient Pause() { Thread.Sleep(1); return http(); }") }, "a blocking wait (Thread.Sleep)"),
-        ["blocking_wait_in_the_client_factory"] = ("Services/Arr/ArrClientFactory.cs", new[] { ("() => _httpClientFactory.CreateClient(ArrHttp.ClientName)", "() => { Thread.Sleep(1); return _httpClientFactory.CreateClient(ArrHttp.ClientName); }") }, "factory passed at ArrClientFactory.cs"),
+        ["blocking_wait_in_the_client_factory"] = ("Services/Arr/ArrClientFactory.cs", new[] { ("() => Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, ArrHttp.ClientName)", "() => { Thread.Sleep(1); return Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, ArrHttp.ClientName); }") }, "factory passed at ArrClientFactory.cs"),
         // The per-write admission (it waits for the database) after the last gate, as before round 5's fix.
         ["seerr_admission_after_the_last_gate"] = (SeerrFile, new[] { ("raw = await RawAsync(HttpMethod.Post", "admission?.Admit(SendWriteKind.Post, \"post\"); raw = await RawAsync(HttpMethod.Post") }, "a blocking wait (SemaphoreSlim.Wait)"),
         ["direct_admission_after_the_last_gate"] = ("Services/Acquire/Requests/DirectArrBackend.cs", new[] { ("if ((refusal = run.Guard()) == null) return true;", "if ((refusal = run.Guard()) == null) { run.Admission.Admit(SendWriteKind.Search, \"again\"); return true; }") }, "a blocking wait (SemaphoreSlim.Wait)"),
@@ -879,7 +882,7 @@ public class IntegrationAutomationWriteGateTests
         ["monitor_in_a_gate"] = (GateFile, new[] { ("\"kill_all\" => AutomationFlags.KilledAll(c)", "\"kill_all\" => System.Threading.Monitor.TryEnter(Ordered) && AutomationFlags.KilledAll(c)") }, "a lock (Monitor.TryEnter)"),
         ["file_in_a_gate"] = (GateFile, new[] { ("\"kill_target\" => AutomationFlags.KilledTarget(c, w.Target)", "\"kill_target\" => File.Exists(c.JellyseerrUrls) || AutomationFlags.KilledTarget(c, w.Target)") }, "file I/O (File.Exists)"),
         ["consent_read_in_the_decision"] = (GateFile, new[] { ("w.Recipe != null && f.Consented != true", "w.Recipe != null && !AutomationConsent.Allows(_consents, w.Requester, w.Recipe)") }, "file I/O (File."),
-        ["seerr_key_read_in_the_decision"] = (GateFile, new[] { ("SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)", "SeerrRequestReadModel.IsActive(c)") }, "a lock at"),
+        ["seerr_key_read_in_the_decision"] = (GateFile, new[] { ("SeerrFacts.IsActive(c, f.SeerrKey == true)", "SeerrFacts.IsActive(c)") }, "a lock at"),
         ["sleep_in_the_decision"] = (GateFile, new[] { ("hold = Decide(write, live, facts, admission);", "Thread.Sleep(1); hold = Decide(write, live, facts, admission);") }, "a blocking wait (Thread.Sleep)"),
         ["budget_read_in_the_judgement"] = ("Services/Acquire/Automation/AutomationAdmission.cs", new[] { ("var judged = AutomationBudgets.Judge(slot, config, now);", "var judged = _budgets.Recheck(slot.Category, slot.Scope, slot.Own!);") }, "a database call (AcquireDatabase.Read)"),
         ["sleep_in_the_budget_judgement"] = ("Services/Acquire/Automation/AutomationBudgets.cs", new[] { ("var windows = Windows(rows.Category, config);", "Thread.Sleep(1); var windows = Windows(rows.Category, config);") }, "a blocking wait (Thread.Sleep)"),

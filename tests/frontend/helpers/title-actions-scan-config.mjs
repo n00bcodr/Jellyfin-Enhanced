@@ -8,9 +8,7 @@ export const EXCLUDED_MODULES = {
   'core/mutation-queue.js': 'the low-level origin-bound transport; core-user-write and core-origin scans enforce its send boundary and every caller',
   'core/api-client.js': 'implements the transport entry points: its own fetch calls are the transport; every caller\'s call is the site',
   'arr/admin/admin-tabs.js': null, // in scope (removeDialog and its helpers); the hub-only functions are excused by site below
-  'arr/ask/ask-actions.js': 'the details page\'s smart actions under the status block (Get Season N, Get 4K, Search): outside the action row, never pressed by the bar',
   'arr/ask/ask-collection.js': 'a collection page\'s "Get the N missing" block: no details row, never pressed by the bar',
-  'arr/ask/ask-episodes.js': 'a season page\'s episode rows and their dialog: the request sheet never opens them',
   'arr/calendar/calendar-page-data.js': 'the Calendar page (no title action)',
   'arr/hub/hub-approvals.js': 'the Requests hub\'s approvals tab (no title action)',
   'arr/hub/hub-discover.js': 'the Requests hub\'s Discover cards\' own Request buttons (the bar\'s card sheet opens the bound request sheet instead)',
@@ -110,7 +108,7 @@ export const SITES = {
   'elsewhere/reviews.js': 12, 'enhanced/bookmarks/bookmarks-library-items.js': 3,
   'enhanced/bookmarks/bookmarks-library-replacements.js': 2, 'enhanced/bookmarks/bookmarks.js': 3,
   'enhanced/catchup/catchup-activity.js': 1, 'enhanced/catchup/catchup-core.js': 4, 'enhanced/config.js': 4,
-  'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 3,
+  'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 4,
   'enhanced/hiddencontent/hidden-content-buttons.js': 4, 'enhanced/hiddencontent/hidden-content-data.js': 2,
   'enhanced/hiddencontent/hidden-content-filter.js': 2, 'enhanced/hiddencontent/hidden-content-page-admin.js': 1,
   'enhanced/hiddencontent/hidden-content-save.js': 4, 'enhanced/homeremoval/features-remove-home.js': 3,
@@ -152,6 +150,7 @@ export const SITES = {
  */
 export const OPENERS = [
   { name: 'show', arg: 3, callee: /^(show|A\.show|JE\.titleActions\.show)$/, file: 'arr/actions/title-actions-sheet.js', label: 'title actions sheet' },
+  { name: 'pending', arg: 1, callee: /^(A\.pending|JE\.titleActions\.pending)$/, label: 'title actions loading shell' },
   { name: 'showLink', arg: 1, callee: /(^|\.)titleActions\.showLink$|^showLink$/, label: 'Share link sheet' },
   { name: 'open', arg: 1, prop: 'operation', callee: /(^|\.)arrAskSheet\.open$|^open$/, file: 'arr/ask/ask-sheet.js', label: 'request sheet' },
   { name: 'openOrAsk', arg: 1, prop: 'operation', callee: /(^|\.)arrAskSheet\.openOrAsk$|^openOrAsk$/, file: 'arr/ask/ask-sheet.js', label: 'one-tap ask / request sheet' },
@@ -224,22 +223,22 @@ export const HOST_DIALOG_MODULES = {
 
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
-  'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2,
-  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 5,
-  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 4, 'arr/hub/hub-page.js': 4,
+  'arr/actions/title-actions-hosts.js': 4, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 11,
+  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 6,
+  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 16, 'arr/ask/ask-sheet.js': 11, 'arr/hub/hub-discover.js': 5, 'arr/hub/hub-page.js': 4,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
-  'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 8,
-  'enhanced/hiddencontent/hidden-content-dialogs.js': 3, 'enhanced/hiddencontent/hidden-content-page-cards.js': 2,
-  'enhanced/hiddencontent/hidden-content-panel.js': 2, 'enhanced/itemdetails/features-details-page.js': 4,
+  'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 11,
+  'enhanced/hiddencontent/hidden-content-dialogs.js': 4, 'enhanced/hiddencontent/hidden-content-page-cards.js': 2,
+  'enhanced/hiddencontent/hidden-content-panel.js': 3, 'enhanced/itemdetails/features-details-page.js': 4,
   'enhanced/spoilerguard/detail-button.js': 12, 'enhanced/spoilerguard/dialog.js': 3,
   'enhanced/spoilerguard/seerr-toggle.js': 4, 'enhanced/spoilerguard/settings-tab.js': 1,
   'enhanced/spoilerguard/state.js': 10, 'jellyseerr/api.js': 1, 'jellyseerr/hss-discovery-handler.js': 2,
   'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 11,
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
-  'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
+  'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 7,
   'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
-  'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 9,
+  'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 10,
   'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,
   'core/session-action.js': 1,
   'jellyseerr/ui/ui-popover.js': 2,
@@ -251,6 +250,8 @@ export const OWNER_SITES = {
   'arr/ask/ask-collection.js': 2, 'arr/home/home-render.js': 4,
   // Play r21c: the list surface's openers (4c3), each taking its caller's explicit owner.
   'arr/lists/list-surface.js': 2,
+  // Phase 2 UX-13: the settings panel and the release notes it opens are surfaces of the press that opened them.
+  'enhanced/settingspanel/ui-panel.js': 1, 'enhanced/settingspanel/ui-release-notes.js': 1,
 };
 
 /**

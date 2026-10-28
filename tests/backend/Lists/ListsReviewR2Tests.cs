@@ -102,7 +102,7 @@ public class ListsReviewR2Tests
     }
 
     // R2-4: an ended show's season whose TMDB data has an undated episode between aired ones isn't complete until that
-    // episode is in too; only trailing undated episodes (never aired) are excused.
+    // episode is in too; stale display-only trailing rows do not extend freshly reconciled authority.
     [Fact]
     public void AnEndedShowsUndatedEpisodeBetweenAiredOnesIsStillRequired()
     {
@@ -115,6 +115,26 @@ public class ListsReviewR2Tests
             .ToList();
         season.Filled = Enumerable.Range(1, 10).Where(e => e != 5).Select(e => new FilledEpisode { ItemId = Guid.NewGuid().ToString("N"), S = 1, E = e }).ToList();
         Assert.False(PlaceholderProgress.IsComplete(season, today)); // E5 is a gap in the data, not unaired
+
+        // Cold/legacy display rows cannot grant authority. Refresh with ten explicit detailed coordinates;
+        // the undated interior E5 is independently required by the named last-aired E10.
+        var show = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = 40, name = "Old show", firstAirDate = "2001-01-01", posterPath = (string?)null,
+            status = "Ended", inProduction = false, externalIds = new { imdbId = (string?)null, tvdbId = (int?)null },
+            seasons = new[] { new { seasonNumber = 1, episodeCount = 10, airDate = "2001-01-01" } },
+            lastEpisodeToAir = new { seasonNumber = 1, episodeNumber = 10, airDate = "2001-01-10" }, nextEpisodeToAir = (object?)null,
+        });
+        var details = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            seasonNumber = 1, airDate = "2001-01-01", posterPath = (string?)null,
+            episodes = season.Expected.Take(10).Select(e => new { showId = 40, seasonNumber = e.S, episodeNumber = e.E, airDate = e.AirDate }),
+        });
+        ListMetadataService.Apply(season, ReconciledTv(season, show, today, details));
+        season.Expected.Add(new PlaceholderEpisode { S = 1, E = 11 }); // stale display row, absent from refreshed authority
+        Assert.DoesNotContain(season.CompletionAuthority!.Episodes, e => e.E == 11);
+        Assert.Contains(new EpisodeCoord(1, 5), CompletionEvaluator.Read(season, today).Missing);
+        Assert.False(PlaceholderProgress.IsComplete(season, today));
 
         season.Filled.Add(new FilledEpisode { ItemId = Guid.NewGuid().ToString("N"), S = 1, E = 5 });
         Assert.True(PlaceholderProgress.IsComplete(season, today)); // E11 (undated, after the last aired) isn't required

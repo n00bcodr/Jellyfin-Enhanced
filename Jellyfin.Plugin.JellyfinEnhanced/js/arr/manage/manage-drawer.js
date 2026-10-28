@@ -47,7 +47,6 @@
 
     let current = null; // { target, root, opener, unsubscribe, reloadTimer, generation, data, result, searching, queueBusy }
     let generation = 0;
-    let refocusing = false;
 
     /** Closes a drawer whose operation ended (another page, mount or feature-off); a user switch closes it anyway. */
     function ended(state) {
@@ -195,9 +194,9 @@
         root.tabIndex = -1;
         overlay.appendChild(root);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-        root.addEventListener('keydown', onKey);
+        // Escape, Back, Tab and focus are the surface stack's (D46S2-R12-6): only the topmost surface takes them, so a
+        // host dialog or the Remove dialog above the drawer keeps its own focus and keys.
         document.body.appendChild(overlay);
-        document.addEventListener('focusin', keepFocus, true);
         // The session that opened the drawer, and the operation it was opened for (if any), own every read, re-read,
         // retry and write of it; the transport checks both right before each send.
         const session = JE.createSessionAction();
@@ -214,56 +213,8 @@
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
-        root.focus();
+        JE.focusIn(overlay, root);
         await load(mine);
-    }
-
-    /**
-     * Esc closes; Tab stays inside the drawer (from the drawer itself, or anything that isn't one of
-     * its controls, Tab goes to the first control and Shift+Tab to the last).
-     * @param {KeyboardEvent} e Event.
-     * @returns {void}
-     */
-    function onKey(e) {
-        if (e.key === 'Escape') {
-            e.stopPropagation();
-            close();
-            return;
-        }
-        if (e.key !== 'Tab' || !current) return;
-        const focusable = [...current.root.querySelectorAll('button, a[href], select, input, [tabindex="0"]')].filter(n => !n.disabled);
-        if (!focusable.length) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        const active = document.activeElement;
-        if (!focusable.includes(active)) {
-            e.preventDefault();
-            (e.shiftKey ? last : first).focus();
-        } else if (e.shiftKey && active === first) {
-            e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && active === last) {
-            e.preventDefault();
-            first.focus();
-        }
-    }
-
-    /**
-     * The drawer is modal: focus that lands outside it while it is open (a control removed by a
-     * re-render, a click on the page behind on TV) comes back to the drawer, so Esc/Back and Tab
-     * keep working.
-     * @param {FocusEvent} e Event.
-     * @returns {void}
-     */
-    function keepFocus(e) {
-        // The hub's dialogs (Remove…) open above the drawer and keep focus themselves.
-        if (!current || refocusing || current.overlay.contains(e.target) || e.target?.closest?.('.je-ops-dialog-overlay')) return;
-        refocusing = true;
-        try {
-            current.root.focus();
-        } finally {
-            refocusing = false;
-        }
     }
 
     /**
@@ -353,17 +304,17 @@
         if (!current) return;
         const state = current;
         current = null;
+        state.adding = {};
         state.releaseAction?.();
         state.releaseScope?.();
         generation++;
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
         stopRetry(state);
-        document.removeEventListener('focusin', keepFocus, true);
         // The Remove dialog it opened (in the hub's dialog layer) goes with it.
         JE.internals.arrHub?.admin?.closeDialog?.('drawer');
         state.overlay.remove();
-        if (state.opener && typeof state.opener.focus === 'function' && document.contains(state.opener)) state.opener.focus();
+        // Focus went back through the stack as the drawer was released (its opener while live, else the page).
     }
 
     /**
@@ -390,7 +341,7 @@
         root.appendChild(head);
         if (!data) {
             root.appendChild(el('div', 'je-manage-empty', tr(failed ? 'arr_manage_error' : 'arr_manage_loading')));
-            if (hadFocus && !root.contains(document.activeElement)) root.focus();
+            if (hadFocus && !root.contains(document.activeElement)) refocus(root, root);
             return;
         }
         const chips = el('div', 'je-manage-chips');
@@ -422,8 +373,20 @@
         // Focus stays where it was (the same control after the re-render), else on the drawer.
         if (hadFocus && !root.contains(document.activeElement)) {
             const again = focused ? [...root.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === focused) : null;
-            (again || root).focus();
+            refocus(root, again || root);
         }
+    }
+
+    /**
+     * Focuses `node` of the drawer `root` only while the drawer is the topmost surface (D46S2-R12-6): a re-render or a
+     * delayed answer never takes focus from a dialog above it.
+     * @param {HTMLElement} root Drawer.
+     * @param {HTMLElement} node Control.
+     * @returns {void}
+     */
+    function refocus(root, node) {
+        const overlay = root.parentElement;
+        if (overlay) JE.focusIn(overlay, node);
     }
 
     /**
@@ -588,6 +551,8 @@
     async function openAdd(instance, data) {
         const state = current;
         if (!state || state.adding[instance.id]) return;
+        // A new instance starts a new sheet; no observed choice or confirmation crosses destinations.
+        state.adding = {};
         const sheet = { phase: 'loading', key: sheetKey(), options: null, profileId: '', rootFolder: '', seasons: [], message: '', failed: false };
         state.adding[instance.id] = sheet;
         renderShell(state.root, state.data || data);
@@ -623,7 +588,7 @@
      */
     function focusOn(id) {
         const target = current ? [...current.root.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === id) : null;
-        target?.focus?.();
+        if (target) refocus(current.root, target);
     }
 
     /**
@@ -648,7 +613,7 @@
             b.type = 'button';
             b.dataset.jeFocus = `add-cancel-${instance.id}`;
             b.addEventListener('click', () => {
-                if (!current || sheet.phase === 'sending') return;
+                if (!current || current.adding[instance.id] !== sheet || sheet.phase === 'sending') return;
                 delete current.adding[instance.id];
                 renderShell(current.root, current.data || data);
                 focusOn(`add-${instance.id}`);
@@ -671,17 +636,18 @@
         } else {
             const options = sheet.options || {};
             const sending = sheet.phase === 'sending';
+            const locked = sending || sheet.confirming === true;
             if (!options.defaultsValid && options.defaultsMessage) {
                 box.appendChild(el('div', 'je-manage-add-note je-manage-add-warn', tr('arr_manage_add_defaults_invalid', { message: options.defaultsMessage })));
             }
             box.appendChild(addSelect(instance, 'profile', tr('arr_manage_add_profile'), sheet.profileId,
-                (options.profiles || []).map(p => ({ value: String(p.id), label: p.name })), v => { sheet.profileId = v; }, sending));
+                (options.profiles || []).map(p => ({ value: String(p.id), label: p.name })), v => { sheet.profileId = v; }, locked));
             box.appendChild(addSelect(instance, 'folder', tr('arr_manage_add_folder'), sheet.rootFolder,
                 (options.rootFolders || []).map(f => ({
                     value: f.path,
                     label: f.freeSpace > 0 ? tr('arr_manage_add_folder_free', { path: f.path, free: size(f.freeSpace) }) : f.path,
                     disabled: f.accessible === false
-                })), v => { sheet.rootFolder = v; }, sending));
+                })), v => { sheet.rootFolder = v; }, locked));
             const seasons = options.title?.seasons;
             if (Array.isArray(seasons) && seasons.length) {
                 const set = el('fieldset', 'je-manage-add-seasons');
@@ -692,7 +658,7 @@
                     box2.type = 'checkbox';
                     box2.dataset.jeFocus = `add-season-${instance.id}-${season.seasonNumber}`;
                     box2.checked = sheet.seasons.includes(season.seasonNumber);
-                    box2.disabled = sending;
+                    box2.disabled = locked;
                     box2.addEventListener('change', () => {
                         sheet.seasons = box2.checked
                             ? [...new Set([...sheet.seasons, season.seasonNumber])].sort((a, b) => a - b)
@@ -707,6 +673,7 @@
             const message = el('div', `je-manage-add-message${sheet.failed ? ' je-manage-add-failed' : ''}`, sheet.message || '');
             message.setAttribute('aria-live', 'polite');
             box.appendChild(message);
+            if (sheet.choice && !sending) box.appendChild(choiceConflict(instance, data, sheet));
             const submit = el('button', 'je-manage-btn je-manage-btn-primary');
             submit.type = 'button';
             submit.dataset.jeFocus = `add-submit-${instance.id}`;
@@ -714,12 +681,115 @@
             submit.appendChild(JE.arrStatus.icon(sending ? 'hourglass_top' : 'add_circle_outline'));
             submit.appendChild(document.createTextNode(sending ? tr('arr_manage_add_sending', { instance: instance.name }) : tr('arr_manage_add_submit')));
             submit.addEventListener('click', () => submitAdd(instance, data));
-            actions.appendChild(submit);
+            if (!sheet.confirming) actions.appendChild(submit);
             if (!sending) actions.appendChild(closeSheet(tr('arr_manage_add_cancel')));
             if (href) actions.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-sheetlink-${instance.id}`));
         }
         box.appendChild(actions);
         return box;
+    }
+
+    /**
+     * Reads a conflict's queued choice as the server sends it (`RequestChoice`): a nonnegative integer
+     * revision (0 before an identity split's first job), a nullable profile and folder, and an owner
+     * id that is empty when no administrator owns the choice yet.
+     * @param {*} choice Wire value.
+     * @returns {{owner: string|null, version: number, profileId: number|null, rootFolder: string|null, name: null}|null} The choice, or null if malformed.
+     */
+    function wireChoice(choice) {
+        if (!choice || typeof choice !== 'object' || !Number.isSafeInteger(choice.version) || choice.version < 0) return null;
+        const profileId = choice.profileId ?? null;
+        const rootFolder = choice.rootFolder ?? null;
+        const owner = choice.owner ?? null;
+        if (profileId !== null && !(Number.isSafeInteger(profileId) && profileId > 0)) return null;
+        if (rootFolder !== null && !(typeof rootFolder === 'string' && rootFolder.trim())) return null;
+        if (owner !== null && typeof owner !== 'string') return null;
+        return { owner: owner && !/^[0-]+$/.test(owner) ? owner : null, version: choice.version, profileId, rootFolder, name: null };
+    }
+
+    /** Formats a profile from this instance's options, retaining its id if it has since disappeared. */
+    function choiceProfile(sheet, id) {
+        if (id === null) return tr('arr_manage_add_choice_profile_none');
+        const profile = sheet.options?.profiles?.find(p => p.id === Number(id));
+        return profile ? tr('arr_manage_add_choice_profile', { name: profile.name, id }) : tr('arr_manage_add_choice_profile_unknown', { id });
+    }
+
+    /** Renders a text-only queued choice and a separate, explicit confirmation of its observed version. */
+    function choiceConflict(instance, data, sheet) {
+        const state = current;
+        const choice = sheet.choice;
+        const owned = () => current === state && state.action.current() && state.adding[instance.id] === sheet && sheet.choice === choice && sheet.phase === 'form';
+        const box = el('div', 'je-manage-add-conflict');
+        box.setAttribute('role', 'status');
+        box.appendChild(el('strong', '', choice.owner
+            ? tr('arr_manage_add_choice_heading', { name: choice.name || tr('arr_manage_add_choice_owner_unknown') })
+            : tr('arr_manage_add_choice_heading_unowned')));
+        box.appendChild(el('div', '', choiceProfile(sheet, choice.profileId)));
+        box.appendChild(choice.rootFolder === null ? el('div', '', tr('arr_manage_add_choice_root_none')) : el('div', 'je-manage-add-choice-root', choice.rootFolder));
+        box.appendChild(el('div', '', tr('arr_manage_add_choice_version', { version: choice.version })));
+        if (data.kind !== 'movie') box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_series')));
+        const actions = el('div', 'je-manage-actions');
+        /** Adds an action that cannot outlive this exact sheet and observed choice. */
+        const button = (name, label, run) => {
+            const b = el('button', 'je-manage-btn', tr(label));
+            b.type = 'button';
+            b.dataset.jeFocus = `add-${name}-${instance.id}`;
+            b.addEventListener('click', () => { if (owned()) run(); });
+            actions.appendChild(b);
+            return b;
+        };
+        if (sheet.confirming) {
+            const confirmation = el('div', 'je-manage-add-confirm');
+            confirmation.appendChild(el('strong', '', tr('arr_manage_add_choice_replace')));
+            confirmation.appendChild(el('div', '', tr('arr_manage_add_choice_proposed', { profile: choiceProfile(sheet, sheet.profileId), root: sheet.rootFolder })));
+            box.appendChild(confirmation);
+            button('confirm', 'arr_manage_add_choice_confirm', () => {
+                if (!sheet.confirming) return;
+                // The acknowledgement is an argument to this one send, never a sticky field on the sheet.
+                submitAdd(instance, data, { sheet, choice });
+            });
+            button('keep', 'arr_manage_add_choice_keep', () => {
+                sheet.confirming = false;
+                renderShell(state.root, state.data || data);
+                focusOn(`add-replace-${instance.id}`);
+            });
+        } else {
+            // Only adoption depends on these options; an explicit replacement of the observed revision never does.
+            const queued = choice.profileId !== null || choice.rootFolder !== null;
+            const usable = queued &&
+                (choice.profileId === null || !!sheet.options?.profiles?.some(p => p.id === choice.profileId)) &&
+                (choice.rootFolder === null || !!sheet.options?.rootFolders?.some(f => f.path === choice.rootFolder && f.accessible !== false));
+            // Nothing queued (an identity split before its first job): there is nothing to adopt.
+            if (queued) {
+                const use = button('use', 'arr_manage_add_choice_use', () => {
+                    if (!usable) return;
+                    // A partial choice keeps this sheet's own selection for the field nobody queued.
+                    if (choice.profileId !== null) sheet.profileId = String(choice.profileId);
+                    if (choice.rootFolder !== null) sheet.rootFolder = choice.rootFolder;
+                    submitAdd(instance, data);
+                });
+                use.disabled = !usable;
+                if (!usable) box.appendChild(el('p', 'je-manage-add-note', tr('arr_manage_add_choice_unavailable')));
+            }
+            button('replace', 'arr_manage_add_choice_replace', () => {
+                sheet.confirming = true;
+                renderShell(state.root, state.data || data);
+                focusOn(`add-keep-${instance.id}`);
+            });
+        }
+        box.appendChild(actions);
+        return box;
+    }
+
+    /** Resolves the owner through the existing administrator user lookup, only for this sheet's observed choice. */
+    async function choiceOwner(state, sheet, instance, data, choice) {
+        const owned = () => current === state && state.action.current() && state.adding[instance.id] === sheet && sheet.choice === choice;
+        try {
+            const user = await boundApi(state, `/arr/admin/users/${encodeURIComponent(choice.owner)}`, { skipRetry: true }, owned);
+            if (!owned() || !user?.name) return;
+            choice.name = user.name;
+            renderShell(state.root, state.data || data);
+        } catch (_) { /* Keep the translated fallback if the owner no longer exists or cannot be read. */ }
     }
 
     /**
@@ -763,12 +833,14 @@
      * @param {Object} data Overview.
      * @returns {Promise<void>}
      */
-    async function submitAdd(instance, data, origin) {
+    async function submitAdd(instance, data, confirmation, origin) {
         // The add's origin (the submit click): sent, followed and shown in that session only.
         origin = JE.core.userWrite.originOf(origin);
         const state = current;
         const sheet = state?.adding?.[instance.id];
         if (!sheet || sheet.phase !== 'form') return;
+        if (confirmation && (confirmation.sheet !== sheet || confirmation.choice !== sheet.choice || !sheet.confirming)) return;
+        const overrideChoiceVersion = confirmation?.choice.version;
         const series = data.kind !== 'movie';
         if (!sheet.profileId || !sheet.rootFolder || (series && !sheet.seasons.length)) {
             sheet.failed = true;
@@ -778,6 +850,8 @@
             return;
         }
         sheet.phase = 'sending';
+        sheet.choice = null;
+        sheet.confirming = false;
         sheet.failed = false;
         sheet.message = tr('arr_manage_add_sending', { instance: instance.name });
         renderShell(state.root, state.data || data);
@@ -791,12 +865,13 @@
                     key: titleKey(data.key),
                     profileId: Number(sheet.profileId),
                     rootFolder: sheet.rootFolder,
+                    ...(overrideChoiceVersion === undefined ? {} : { overrideChoiceVersion }),
                     seasons: series ? sheet.seasons : undefined,
                     idempotencyKey: sheet.key
                 },
                 skipRetry: true,
                 session: origin
-            });
+            }, () => state.adding[instance.id] === sheet);
         } catch (err) {
             if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet || !JE.core.userWrite.isBound(origin)) return;
             sheet.phase = 'form';
@@ -804,6 +879,13 @@
             // A lost answer: the add may be recorded (sending again keeps its idempotency key: never a second add).
             sheet.message = JE.core.userWrite.outcome(err) === 'uncertain' ? tr('arr_write_unconfirmed')
                 : tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
+            const choice = wireChoice(err?.responseJSON?.choice);
+            if (err?.status === 409 && err?.responseJSON?.reason === 'choice_conflict' && data.addDirect && choice) {
+                sheet.choice = choice;
+                sheet.failed = false;
+                sheet.message = tr(choice.profileId === null && choice.rootFolder === null ? 'arr_manage_add_choice_explanation_empty' : 'arr_manage_add_choice_explanation');
+                if (choice.owner) choiceOwner(state, sheet, instance, data, sheet.choice);
+            }
             renderShell(state.root, state.data || data);
             focusOn(`add-submit-${instance.id}`);
             return;

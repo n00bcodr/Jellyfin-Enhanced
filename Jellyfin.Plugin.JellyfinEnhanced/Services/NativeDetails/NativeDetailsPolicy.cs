@@ -18,7 +18,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 {
     /// <summary>
     /// Who may see a not-in-library title's native page. One rule for every facade route:
-    /// the feature is on, a metadata backend is configured, the viewer may use requests (Seerr mode:
+    /// the feature is on, the request mode's metadata source is ready (<see cref="MetadataReady"/>: TMDB in
+    /// Jellyfin Enhanced mode, Seerr otherwise), the viewer may use requests (Seerr mode:
     /// a linked, not import-blocked account; JE mode: the request feature), Jellyfin's parental
     /// policy allows the title (fails closed on an unverified rating, like the request path), and the
     /// viewer can open a library the title would land in (RequestPolicy's visibility when the request
@@ -52,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             /// <summary>Refused (answered like a hidden item).</summary>
             Refused,
 
-            /// <summary>Can't be told right now (Seerr unreachable): retryable, the page falls back once.</summary>
+            /// <summary>Cannot be verified now (metadata/evidence unavailable or busy): retryable.</summary>
             Unknown,
         }
 
@@ -111,11 +112,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je";
 
         /// <summary>
-        /// True when a title's public details (details, ratings, a movie collection's parts) are answered:
-        /// native pages are on, or the request feature runs in Jellyfin Enhanced mode, where Seerr's
-        /// more-info window reads them for a viewer without a Seerr account (native pages or not).
+        /// True when Jellyfin Enhanced is the selected request backend, whatever the rollout switches say (Requests &amp;
+        /// downloads, A1/BEH-02): native details then read TMDB and never Seerr, even with Seerr settings still stored
+        /// (a strict-JE server answers every Seerr route with <c>backend_disabled</c>).
         /// </summary>
-        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeMode(config));
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether the JE backend is selected.</returns>
+        public static bool JeBackend(PluginConfiguration config) => config.ArrRequestBackend == "je";
+
+        /// <summary>
+        /// True when the Jellyfin Enhanced backend has its own metadata source for native details: TMDB through Jellyfin
+        /// Enhanced's key (Requests &amp; downloads, A1). Seerr's settings play no part.
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether JE's metadata is ready.</returns>
+        public static bool JeMetadataReady(PluginConfiguration config) => JeBackend(config) && !string.IsNullOrWhiteSpace(config.GetTmdbApiKey());
+
+        /// <summary>
+        /// True when native details have a metadata source in the request mode in effect: TMDB in Jellyfin Enhanced mode
+        /// (<see cref="JeMetadataReady"/>; Seerr is never read there, configured or not), Seerr in every other mode
+        /// (<see cref="SeerrConfigured"/>, as before). The one readiness rule for the pages, their feeds, the home
+        /// sections and the client's capability.
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether a metadata source is ready.</returns>
+        public static bool MetadataReady(PluginConfiguration config) => JeBackend(config) ? JeMetadataReady(config) : SeerrConfigured(config);
+
+        /// <summary>
+        /// True when a title's public details (details, ratings, a movie collection's parts) are answered:
+        /// native pages are on, or Jellyfin Enhanced is the request backend, where the more-info window reads
+        /// them instead of Seerr (native pages or not; A1/BEH-02).
+        /// </summary>
+        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeBackend(config));
 
         /// <summary>Whether the viewer may see this title's page (and its children).</summary>
         /// <param name="viewer">The effective viewer.</param>
@@ -149,11 +177,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private async Task<Access> SeeAsync(User viewer, SyntheticId title, bool details, CancellationToken ct)
         {
             if (!title.IsTitle) return Access.Refused;
+            using var timed = StageTimings.Time(Stage.Policy);
             var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
-            if (!await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
+            // A2 owned-copy exemption: keep the following library and exact season/episode visibility checks.
+            if (!_parental.MayOpenLocal(mediaType, title.TmdbId, viewer.Id.ToString("N"))
+                && !await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false))
+            {
+                // A known hidden native copy is a refusal even when public parental facts remain unavailable.
+                if (!LibraryVisible(viewer, title) || Physical(viewer, title).Hides(title)) return Access.Refused;
+                return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config)
+                    && _parental.AbsentVerdict(mediaType, title.TmdbId, viewer.Id.ToString("N")) == null ? Access.Unknown : Access.Refused;
+            }
+            using var library = StageTimings.Time(Stage.Library);
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 
@@ -258,7 +296,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>
         /// The viewer-level part of <see cref="MaySeeAsync"/>, the same for every title: the feature is on,
-        /// the viewer is enabled, Seerr is configured and (Seerr mode) the viewer is linked and not
+        /// the viewer is enabled, the metadata source is ready and (Seerr mode) the viewer is linked and not
         /// import-blocked. Artwork requests re-run it, since grants outlive the page that minted them.
         /// </summary>
         /// <param name="viewer">The effective viewer.</param>
@@ -286,8 +324,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (!(details ? PublicDetailsEnabled(config) : FeatureEnabled(config)) || viewer.HasPermission(PermissionKind.IsDisabled)) return Access.Refused;
-            if (!SeerrConfigured(config!)) return Access.Refused;
-            if (JeMode(config!)) return Access.Allowed;
+            if (!MetadataReady(config!)) return Access.Refused;
+            // The JE backend (A1/BEH-02): no Seerr account is asked for, so Seerr is never read here.
+            if (JeBackend(config!)) return Access.Allowed;
             if (ImportBlocked(config!, viewer)) return Access.Refused;
             return await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) switch
             {
@@ -435,11 +474,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="ct">Cancellation.</param>
         /// <returns>True when the title may be shown.</returns>
         public async Task<bool> MayListAbsentAsync(User viewer, SyntheticId title, CancellationToken ct)
+            => await ListAbsentAccessAsync(viewer, title, ct).ConfigureAwait(false) == Access.Allowed;
+
+        /// <summary>Artwork revalidation keeps transient evidence/admission failure distinct from refusal.</summary>
+        public async Task<Access> ListAbsentAccessAsync(User viewer, SyntheticId title, CancellationToken ct)
         {
-            if (MayListAbsent(viewer, title)) return true;
-            if (!title.IsTitle) return false;
-            if (!await _parental.MaySeeAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return false;
-            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+            if (MayListAbsent(viewer, title)) return Access.Allowed;
+            if (!title.IsTitle) return Access.Refused;
+            using var timed = StageTimings.Time(Stage.Policy);
+            var evidence = await _parental.CheckAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
+            if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
+            if (!evidence.Value) return Access.Refused;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 
         /// <summary>
@@ -546,8 +592,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 + "|" + string.Join(',', viewer.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).OrderBy(g => g))
                 + "|" + viewer.HasPermission(PermissionKind.IsDisabled)
                 + "|" + FeatureEnabled(config)
-                + "|" + (config != null && SeerrConfigured(config))
+                // The metadata source is ready (Seerr mode: Seerr configured, the same fact as before).
+                + "|" + (config != null && MetadataReady(config))
                 + "|" + (config != null && JeMode(config)) + "|" + (config != null && RequestsOn(config))
+                // The JE backend selected (Seerr mode's text stays as it was).
+                + (config != null && JeBackend(config) ? "|je" : string.Empty)
                 + "|" + (config != null && ImportBlocked(config, viewer))
                 + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture)
                 // Any other access-deciding change ends the grants too.
@@ -559,11 +608,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private IReadOnlyList<JfLibraryRoot> Roots()
         {
-            var cached = _roots;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var cached = _rootsFacts;
             if (cached is { } c && DateTime.UtcNow - c.At < LibrariesTtl) return c.Roots;
             var roots = _libraries.Libraries();
-            _roots = (roots, DateTime.UtcNow);
+            _rootsFacts = (roots, DateTime.UtcNow);
             return roots;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<(IReadOnlyList<JfLibraryRoot> Roots, DateTime At)?> _rootsFactsOwner = new();
+        private (IReadOnlyList<JfLibraryRoot> Roots, DateTime At)? _rootsFacts { get => _rootsFactsOwner.Read(ref _roots, () => default!); set => _rootsFactsOwner.Store(ref _roots, value); }
     }
 }

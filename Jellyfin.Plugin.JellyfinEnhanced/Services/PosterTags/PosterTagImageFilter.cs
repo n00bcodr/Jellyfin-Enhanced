@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         };
 
         private static readonly TimeSpan WarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> WarnedAt = new();
+        private static ConcurrentDictionary<string, DateTime> WarnedAt = new();
 
         private readonly RequestIdentityService _identity;
         private readonly PosterTagSettingsProvider _settings;
@@ -386,29 +386,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             switch (result)
             {
                 case PhysicalFileResult physical when !string.IsNullOrEmpty(physical.FileName):
-                {
-                    var contentType = NormalizeContentType(physical.ContentType);
-                    if (contentType == null || !File.Exists(physical.FileName)) return null;
-                    // Jellyfin writes a resized image into its cache on the first
-                    // request for that size, and concurrent first requests each
-                    // re-encode it in place (SkiaEncoder: SKFileWStream truncates
-                    // and rewrites the same path). A reader in that window can get
-                    // a file of the right length, ending in a valid end marker,
-                    // with a zero-filled hole in the middle. Key on the settled
-                    // file and refuse a read that changed under us, so a composite
-                    // is never drawn from (or cached for) a half-written file.
-                    var file = await WaitForSettledFileAsync(physical.FileName, cancellationToken).ConfigureAwait(false);
-                    var identity = "file:" + file.FullName + "|" + file.Length + "|" + file.LastWriteTimeUtc.Ticks;
-                    return new BaseImageInfo(new PosterTagBaseImage(contentType, identity, () => ReadUnchangedAsync(file)), false);
-                }
+                    {
+                        var contentType = NormalizeContentType(physical.ContentType);
+                        if (contentType == null || !File.Exists(physical.FileName)) return null;
+                        // Jellyfin writes a resized image into its cache on the first
+                        // request for that size, and concurrent first requests each
+                        // re-encode it in place (SkiaEncoder: SKFileWStream truncates
+                        // and rewrites the same path). A reader in that window can get
+                        // a file of the right length, ending in a valid end marker,
+                        // with a zero-filled hole in the middle. Key on the settled
+                        // file and refuse a read that changed under us, so a composite
+                        // is never drawn from (or cached for) a half-written file.
+                        var file = await WaitForSettledFileAsync(physical.FileName, cancellationToken).ConfigureAwait(false);
+                        var identity = "file:" + file.FullName + "|" + file.Length + "|" + file.LastWriteTimeUtc.Ticks;
+                        return new BaseImageInfo(new PosterTagBaseImage(contentType, identity, () => ReadUnchangedAsync(file)), false);
+                    }
 
                 case FileContentResult content when content.FileContents is { Length: > 0 } bytes:
-                {
-                    var contentType = NormalizeContentType(content.ContentType);
-                    if (contentType == null) return null;
-                    var identity = "bytes:" + Convert.ToHexString(SHA256.HashData(bytes));
-                    return new BaseImageInfo(new PosterTagBaseImage(contentType, identity, () => Task.FromResult(bytes)), true);
-                }
+                    {
+                        var contentType = NormalizeContentType(content.ContentType);
+                        if (contentType == null) return null;
+                        var identity = "bytes:" + Convert.ToHexString(SHA256.HashData(bytes));
+                        return new BaseImageInfo(new PosterTagBaseImage(contentType, identity, () => Task.FromResult(bytes)), true);
+                    }
 
                 default:
                     return null;
@@ -565,10 +565,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private void WarnRateLimited(string key, string message)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
-            var stored = WarnedAt.AddOrUpdate(key, now, (_, last) => (now - last) >= WarnInterval ? now : last);
+            var stored = WarnedAtFacts.AddOrUpdate(key, now, (_, last) => (now - last) >= WarnInterval ? now : last);
             if (stored != now) return;
             _logger.Warning(message);
         }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> WarnedAtFactsOwner = new();
+        private static ConcurrentDictionary<string, DateTime> WarnedAtFacts { get => WarnedAtFactsOwner.Read(ref WarnedAt, () => new()); set => WarnedAtFactsOwner.Store(ref WarnedAt, value); }
     }
 }

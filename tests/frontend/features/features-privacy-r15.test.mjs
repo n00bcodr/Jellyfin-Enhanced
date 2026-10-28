@@ -1,3 +1,4 @@
+import { nestedConcurrency } from '../helpers/discovery.mjs';
 // R15: native-card visibility has one writer. Every other path (button repaint, deliberate hide callbacks, Unhide
 // recovery, the disable path, the session reset) only requests a re-decision, and the one writer uses every rule.
 // Model: writer x retained node x ordinary scan; an observer checks every class change against the full rule set.
@@ -76,9 +77,9 @@ const WRITERS={
  'title-confirm':{node:'library',rules:['none'],act:r=>r.click(),want:()=>true},
  'confirm-hide':{node:'idonly',rules:['none'],act:r=>r.click(),want:()=>true},
  'scoped-off':{node:'nextup',rules:['none'],settings:{filterNextUp:false},
-  act:async r=>{await r.click();r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide').click();},want:()=>false},
+  act:async r=>{await r.click();r.h.click(r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide'));},want:()=>false},
  'scoped-on':{node:'nextup',rules:['none'],
-  act:async r=>{await r.click();r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide').click();},want:()=>true},
+  act:async r=>{await r.click();r.h.click(r.h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide'));},want:()=>true},
  restore:{node:'library',rules:['legacy-id','provider','both'],extra:true,act:r=>r.api.unhideItem('x1'),want:()=>true},
  inactive:{node:'library',rules:['legacy-id','provider'],act:r=>r.api.updateSettings({enabled:false}),want:()=>false},
  session:{node:'title',rules:['legacy-id','provider'],act:(r,rules)=>r.switchUser(RULES[rules]),want:()=>true}
@@ -100,7 +101,7 @@ async function runCell(t,writer,rules){
 
 const rows=[];
 for(const [writer,spec] of Object.entries(WRITERS))for(const rules of spec.rules)rows.push({writer,rules,want:spec.want(rules)});
-describe('every visibility writer x retained node x ordinary scan',{concurrency:8},()=>{
+describe('every visibility writer x retained node x ordinary scan',{concurrency:nestedConcurrency},()=>{
  for(const {writer,rules,want} of rows)test(`${writer} x ${rules} -> ${want?'hidden':'visible'}`,async t=>{
   const r=await runCell(t,writer,rules);
   assert.deepEqual(r.violations,[],'no write disagrees with the full rule set, and a resolved marker records the applied effect');

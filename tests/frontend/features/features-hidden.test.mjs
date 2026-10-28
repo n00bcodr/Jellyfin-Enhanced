@@ -30,7 +30,7 @@ for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','p
    assert.ok(dialog,'confirmation opens');assert.equal(writes.length,0,'no persistence before confirmation');
    assert.equal(card.classList.contains('je-hidden'),false);
    if(mode==='switch') h.switchUser();
-   dialog.querySelector(mode==='cancel'?'.je-hide-confirm-cancel':'.je-hide-confirm-hide').click();
+   h.click(dialog.querySelector(mode==='cancel'?'.je-hide-confirm-cancel':'.je-hide-confirm-hide'));
   }else assert.equal(dialog,null);
   await new Promise(r=>setImmediate(r));h.flush();
   assert.equal(writes.length,mode==='cancel'||mode==='switch'?0:1);
@@ -216,10 +216,10 @@ for (const library of [true,false]) test(`native recommendation cards use their 
 test('failed provider Undo keeps translated failure and retry control until confirmed',async t=>{
  let fail=true;const h=setup(t,{ajax:async()=>{if(fail)throw new Error('rejected');return {success:true};},items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.api.showUndoToast('Film','movie:tmdb:42');
- const button=h.document.querySelector('.je-undo-btn');button.click();await new Promise(r=>setImmediate(r));
+ const button=h.document.querySelector('.je-undo-btn');h.click(button);await new Promise(r=>setImmediate(r));
  assert.equal(h.document.querySelector('.je-undo-toast-text').textContent,'hidden_content_save_failed_persistent');
  assert.equal(button.disabled,false);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
- fail=false;button.click();await new Promise(r=>setImmediate(r));assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
+ fail=false;h.click(button);await new Promise(r=>setImmediate(r));assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
 });
 
 

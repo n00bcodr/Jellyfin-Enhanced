@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,7 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool _disposed;
         // The last address list and its fingerprint (library scans nudge once per added item); one reference, swapped whole.
         private sealed record SourceCache(string? Urls, string Source);
-        private volatile SourceCache? _source;
+        private SourceCache? _source;
 
         // One pending batch of nudges for one Seerr and job.
         private sealed class Owner
@@ -105,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (_config() is not PluginConfiguration config) return;
                 if (!config.TriggerSeerrScanOnItemAdded) return;
-                if (!config.JellyseerrEnabled) return;
+                if (!EffectiveRequestsBackend.AllowsSeerr(config) || !config.JellyseerrEnabled) return;
 
                 // Seerr's recently-added scan only inspects movies and series (and crawls
                 // their seasons/episodes itself). Filtering on the parent kinds avoids
@@ -131,7 +132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void OnRequestConfirmed(RequestJob job)
         {
             var config = _config();
-            if (config is not { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true } || !SharedRequestFacts.LedgerAuthority(config)) return;
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config is not { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true } || !SharedRequestFacts.LedgerAuthority(config)) return;
             if (job.Authorization.Backend != "je" || TitleKey.Parse(job.Input.Key) is not { } key) return;
             Nudge(key.IsMovie ? RadarrScanJobId : SonarrScanJobId);
         }
@@ -139,10 +140,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The owner key of the configured Seerr: its address set (a key rotation is the same Seerr).
         private string SourceOf(PluginConfiguration config)
         {
-            var cached = _source;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var cached = _sourceFacts;
             if (cached != null && cached.Urls == config.JellyseerrUrls) return cached.Source;
-            var source = SeerrMigrationReader.AddressFingerprint(config);
-            _source = new SourceCache(config.JellyseerrUrls, source);
+            var source = SeerrFacts.AddressFingerprint(config);
+            _sourceFacts = new SourceCache(config.JellyseerrUrls, source);
             return source;
         }
 
@@ -154,7 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Nudge(string jobId, int count = 1)
         {
             var config = _config();
-            if (config == null || !config.JellyseerrEnabled) return;
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || !config.JellyseerrEnabled) return;
             var source = SourceOf(config);
             var debounce = TimeSpan.FromSeconds(ClampDebounceSeconds(config.SeerrScanDebounceSeconds));
             lock (_stateLock)
@@ -228,9 +230,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // The automatic scan trigger is on (live configuration).
-        private bool On() => _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
+        private bool On() => EffectiveRequestsBackend.AllowsSeerr(_config()) && _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
 
-        private async Task DispatchOwnerAsync(Owner owner, string source, int batch)
+        private Task DispatchOwnerAsync(Owner owner, string source, int batch)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => DispatchOwnerAsyncFactsCore(owner, source, batch), CancellationToken.None);
+
+        private async Task DispatchOwnerAsyncFactsCore(Owner owner, string source, int batch)
         {
             var requeue = false;
             try
@@ -239,6 +244,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // The switch was checked when the changes arrived, up to an hour ago: read it again here and right
                 // before each run; turned off since, the batch is dropped.
                 if (!On()) return;
+                if (!EffectiveRequestsBackend.AllowsSeerr(config))
+                {
+                    _logger.Info("[RequestsBackend] Seerr scan denied: backend_disabled");
+                    return;
+                }
                 var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))
@@ -299,7 +309,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True/false from Seerr's job list; null when this address can't be read. A job list without the
         // job (or an older Seerr without the flag) counts as not running, as before.
-        private async Task<bool?> IsRunningAsync(string url, string apiKey, string jobId)
+        private Task<bool?> IsRunningAsync(string url, string apiKey, string jobId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => IsRunningAsyncCore(url, apiKey, jobId))
+                : IsRunningAsyncCore(url, apiKey, jobId);
+
+        private async Task<bool?> IsRunningAsyncCore(string url, string apiKey, string jobId)
         {
             var endpoint = $"{url.TrimEnd('/')}/api/v1/settings/jobs";
             try
@@ -328,7 +343,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return DispatchAsync(0);
         }
 
-        private async Task<IReadOnlyList<DispatchResult>> DispatchAsync(int batchSize)
+        private Task<IReadOnlyList<DispatchResult>> DispatchAsync(int batchSize)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.BackgroundAsync(token => DispatchAsyncFactsCore(batchSize), CancellationToken.None);
+
+        private async Task<IReadOnlyList<DispatchResult>> DispatchAsyncFactsCore(int batchSize)
         {
             var results = new List<DispatchResult>();
             try
@@ -339,6 +357,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return results;
                 }
 
+                if (!EffectiveRequestsBackend.AllowsSeerr(config))
+                {
+                    _logger.Info("[RequestsBackend] Seerr scan denied: backend_disabled");
+                    return results;
+                }
                 var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))
@@ -371,7 +394,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return results;
         }
 
-        private async Task<DispatchResult> PostScanTrigger(string url, string apiKey, string jobId)
+        private Task<DispatchResult> PostScanTrigger(string url, string apiKey, string jobId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => PostScanTriggerCore(url, apiKey, jobId))
+                : PostScanTriggerCore(url, apiKey, jobId);
+
+        private async Task<DispatchResult> PostScanTriggerCore(string url, string apiKey, string jobId)
         {
             // previously reported `Success = response.IsSuccessStatusCode`,
             // which is true for a 200 + Cloudflare HTML challenge body — the
@@ -456,5 +484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public int StatusCode { get; set; }
             public string Body { get; set; } = string.Empty;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<SourceCache?> _sourceFactsOwner = new();
+        private SourceCache? _sourceFacts { get => _sourceFactsOwner.Read(ref _source, () => default!); set => _sourceFactsOwner.Store(ref _source, value); }
     }
 }

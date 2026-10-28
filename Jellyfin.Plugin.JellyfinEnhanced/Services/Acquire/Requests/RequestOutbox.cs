@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
     public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)
     {
+        /// <summary>Allowlisted add-choice names resolved by the direct backend; never configuration or credentials.</summary>
+        public IReadOnlyDictionary<string, string>? AddChoiceDetails { get; init; }
         /// <summary>A refusal at the final send; the job is parked for human review.</summary>
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);
         /// <summary>An uncertain send; the reservation remains until a scoped fresh read resolves it.</summary>
@@ -155,6 +158,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect(ct);
             if (!_ledger.Database.Available) return;
             // Open 4K requests nothing can take now say so (and are released when a 4K target is back).
             foreach (var held in _ledger.HoldWithout4k(_policy.Has4kTarget, _now()))
@@ -178,6 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 HouseholdRuleVerdict? heldRules = null;
                 var transportStarted = false;
                 var settledByRead = false;
+                var backendEpoch = EffectiveRequestsBackend.Shared.Current.Epoch;
                 // Automatic work (recipes, list sync) and work only phase 4 creates: the write gate before any transport
                 // (and again immediately before every write, in Guard below). A read-back is never held.
                 var want = _automation == null ? null : _ledger.Find(job.WantId);
@@ -185,7 +190,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var admission = job.State == "maybe_sent" ? null : _automation?.Admission(job, want);
                 try
                 {
-                    if (hold != null)
+                    var effective = EffectiveRequestsBackend.EvaluateConfiguration(_policy.Configuration);
+                    if (job.Authorization.Backend == "seerr" && !effective.AllowSeerrTransport
+                        || effective.IsolationVersion != 0 && job.Authorization.Backend == "je" && !effective.AllowDirectRequests)
+                    {
+                        result = job.State == "maybe_sent" || job.Uncertain
+                            ? BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled")
+                            : BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
+                    }
+                    else if (hold != null)
                     {
                         result = hold.Park ? BackendResults.Hold(hold.Reason, hold.Message) : BackendResults.Later(hold.Reason, hold.Message, hold.Wait);
                     }
@@ -198,7 +211,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         }
                         string? Guard()
                         {
+                            var liveBackend = EffectiveRequestsBackend.EvaluateConfiguration(_policy.Configuration);
+                            if (job.Authorization.Backend == "seerr" && !liveBackend.AllowSeerrTransport
+                                || liveBackend.IsolationVersion != 0 && job.Authorization.Backend == "je" && !liveBackend.AllowDirectRequests)
+                                return "backend_disabled";
                             if (job.Input.Fingerprint != job.Fingerprint || job.Input.Scope != job.Authorization.Scope || job.Input.Variant != job.Authorization.Variant) return "idempotency_conflict";
+                            if (_ledger.Choices.Check(job) is { } choiceRefusal) return choiceRefusal;
                             if (_ledger.Database.Generation != generation) return "configuration_changed";
                             RequestPolicyFacts? requester = null;
                             RequestPolicyFacts? approver = null;
@@ -258,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
                             settledByRead = true;
                             // A hold after the write (Seerr has the request, not as chosen) stays held for a person.
-                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
+                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked && result.Outcome.Reason != "backend_disabled") result = RequestBackendResult.Uncertain(job.WantId);
                             else if (result.VerifiedNotSent && !result.Confirmed)
                                 result = result with { Retryable = true, Parked = false };
                         }
@@ -282,9 +300,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                             {
                                 // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
-                                result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
+                                result = job.Authorization.Backend == "seerr" && !EffectiveRequestsBackend.AllowsSeerr(_policy.Configuration)
+                                    ? BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled")
+                                    : await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
                                 settledByRead = true;
-                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
+                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked && result.Outcome.Reason != "backend_disabled") result = RequestBackendResult.Uncertain(job.WantId);
                             }
                         }
                     }
@@ -300,7 +320,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // later attempt that is refused or fails before writing proves nothing about what the earlier one wrote.
                 if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
-                var completed = _ledger.Complete(job, generation, result, _now());
+                var completed = false;
+                if (job.Authorization.Backend != "seerr" || !result.Confirmed) completed = _ledger.Complete(job, generation, result, _now());
+                else if (!Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.TryPublishSeerr(backendEpoch, () => completed = _ledger.Complete(job, generation, result, _now())))
+                {
+                    result = BackendResults.Maybe(job.WantId, "The original backend changed; delivery remains unconfirmed.", "backend_disabled");
+                    completed = _ledger.Complete(job, generation, result, _now());
+                }
                 if (completed && heldRules != null && result.Outcome.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule) _ledger.HeldByRules(job.WantId, heldRules);
                 if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
@@ -309,9 +335,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
                 // The same wait again (still no Seerr account, a season still not listed): one audit row for it, not one per check.
                 if (completed && RequestLedger.RepeatsWait(job, result)) continue;
+                var choices = AddChoices(job, result);
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
-                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message });
+                    InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = AddChoiceMessage(result.Outcome.Message, choices, job.Authorization.ChoiceVersion),
+                    Details = choices });
             }
+        }
+        // Admin Audit renders Message. Keep the display summary on the audit row only; request
+        // receipts retain household wording, and only these allowlisted add facts are appended.
+        private static string AddChoiceMessage(string message, IReadOnlyDictionary<string, string>? choices, long version)
+        {
+            if (choices == null) return message;
+            var parts = new List<string>();
+            if (choices.TryGetValue("instanceName", out var instance)) parts.Add("Instance: " + instance);
+            if (choices.TryGetValue("qualityProfileId", out var profile))
+                parts.Add("Profile: " + profile + (choices.TryGetValue("qualityProfileName", out var name) ? " (" + name + ")" : ""));
+            if (!choices.ContainsKey("qualityProfileId")) parts.Add("Profile: missing");
+            parts.Add("Root: " + (choices.TryGetValue("rootFolder", out var root) ? root : "missing"));
+            if (version > 1) parts.Add("Choice override version: " + version.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return message + " " + string.Join("; ", parts) + ".";
+        }
+        private static IReadOnlyDictionary<string, string>? AddChoices(RequestJob job, RequestBackendResult result)
+        {
+            if (job.Authorization.Backend != "je" || job.Input.ProfileId == null && job.Input.RootFolder == null && result.Outcome.Reason is not ("invalid_defaults" or "invalid_choice")) return null;
+            var details = new Dictionary<string, string>();
+            if (job.Input.ProfileId is { } profile) details["qualityProfileId"] = profile.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (job.Input.RootFolder is { } root) details["rootFolder"] = root;
+            if (result.AddChoiceDetails != null)
+                foreach (var name in new[] { "instanceName", "qualityProfileId", "qualityProfileName", "rootFolder", "rootFolderName" })
+                    if (result.AddChoiceDetails.TryGetValue(name, out var value)) details[name] = value;
+            return details;
         }
         // Finishes noted merges whose work settled (RequestLedger.SettleMerges); lists showing them are told.
         private void Settle()

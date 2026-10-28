@@ -118,6 +118,42 @@ internal sealed class NotifyGateWalk
 
     private static bool IsDelegate(INamedTypeSymbol type) => type.TypeKind == TypeKind.Delegate;
 
+    // E1 adds private bodies behind SeerrFacts scope forwarders. Treat a body as its owner only when every
+    // reference is a direct invocation from that owner's scope. A new bypass caller invalidates this mapping.
+    private readonly Dictionary<IMethodSymbol, string> _scopedOwners = new(SymbolEqualityComparer.Default);
+
+    private string ScopedOwnerName(IMethodSymbol method)
+    {
+        if (_scopedOwners.TryGetValue(method, out var known)) return known;
+        var result = method.Name;
+        const string suffix = "FactsCore";
+        if (method.DeclaredAccessibility == Accessibility.Private && method.Name.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            var name = method.Name[..^suffix.Length];
+            var wrappers = method.ContainingType.GetMembers(name).OfType<IMethodSymbol>().Where(w =>
+                SymbolEqualityComparer.Default.Equals(w.ReturnType, method.ReturnType) && w.Parameters.Length == method.Parameters.Length &&
+                w.Parameters.Zip(method.Parameters).All(p => SymbolEqualityComparer.Default.Equals(p.First.Type, p.Second.Type))).ToList();
+            if (wrappers.Count == 1)
+            {
+                var wrapper = wrappers[0];
+                var references = Scope().SelectMany(s => s.Tree.GetRoot().DescendantNodes().OfType<IdentifierNameSyntax>()
+                    .Where(n => SymbolEqualityComparer.Default.Equals(s.Model.GetSymbolInfo(n).Symbol, method))
+                    .Select(n => (Node: n, s.Model))).ToList();
+                if (references.Count > 0 && references.All(r =>
+                    r.Node.Parent is InvocationExpressionSyntax call && call.Expression == r.Node &&
+                    SymbolEqualityComparer.Default.Equals(Member(r.Model, call), wrapper) &&
+                    call.Ancestors().OfType<InvocationExpressionSyntax>().Any(scope =>
+                        r.Model.GetSymbolInfo(scope).Symbol is IMethodSymbol scopeMethod &&
+                        scopeMethod.ContainingType.ToDisplayString() == "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts" &&
+                        scopeMethod.Name is "Compose" or "ComposeAsync" or "BackgroundAsync")))
+                    result = name;
+            }
+        }
+        _scopedOwners[method] = result;
+        return result;
+    }
+
+
     // Nothing handed in: no parameter (or field) carries a configuration or preferences into the notify path.
     private void Signatures(List<string> problems)
     {
@@ -219,7 +255,7 @@ internal sealed class NotifyGateWalk
             {
                 if (!Is(model.GetTypeInfo(made).Type, plan)) continue;
                 var where = Member(model, made);
-                if (!(Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol m && GateMethods.Contains(m.Name))))
+                if (!(Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol m && GateMethods.Contains(ScopedOwnerName(m)))))
                     problems.Add($"a verdict made outside the gate at {Where(made)}");
             }
 
@@ -227,7 +263,7 @@ internal sealed class NotifyGateWalk
             {
                 if (model.GetSymbolInfo(call).Symbol is not IMethodSymbol { IsStatic: true } m || !Is(m.ContainingType, plan) || !Is(m.ReturnType, plan)) continue;
                 var where = Member(model, call);
-                if (!(Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(g.Name)))
+                if (!(Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(ScopedOwnerName(g))))
                     problems.Add($"a verdict made outside the gate at {Where(call)}");
             }
         }
@@ -408,7 +444,7 @@ internal sealed class NotifyGateWalk
             {
                 if (model.GetSymbolInfo(access).Symbol is not IPropertySymbol p || !Is(p.ContainingType, plan)) continue;
                 var where = Member(model, access);
-                var inGate = Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(g.Name));
+                var inGate = Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(ScopedOwnerName(g)));
                 if (p.Name is "Verdict" or "Sends" && !inGate)
                     problems.Add($"the verdict read directly (not through the table) at {Where(access)}: {Line(access)}");
                 if (SymbolEqualityComparer.Default.Equals(p, effectProperty) && !(access.Parent is SwitchStatementSyntax s && s.Expression == access))
@@ -419,7 +455,7 @@ internal sealed class NotifyGateWalk
             {
                 if (!Is(model.GetTypeInfo(swtch.Expression).Type, effect)) continue;
                 var owner = Member(model, swtch);
-                var site = owner?.Name ?? "?";
+                var site = owner is IMethodSymbol method ? ScopedOwnerName(method) : owner?.Name ?? "?";
                 EffectSites.Add(site + " at " + Where(swtch));
                 // A method handed a verdict (it acts on it for its callers) isn't where the event is consumed: its callers are.
                 var deciding = swtch.Expression is MemberAccessExpressionSyntax m && SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(m).Symbol, effectProperty)
@@ -462,7 +498,7 @@ internal sealed class NotifyGateWalk
             foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(c => IsFinal(model, c)))
             {
                 var where = Member(model, call);
-                if (Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(g.Name))) continue;
+                if (Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(ScopedOwnerName(g)))) continue;
                 if (call.Parent is not EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator } || model.GetDeclaredSymbol(declarator) is not ILocalSymbol local)
                 {
                     problems.Add($"a verdict of the gate not kept to be acted on at {Where(call)}: {Line(call)}");
@@ -566,6 +602,15 @@ internal sealed class NotifyGateWalk
                         pending.Push(core.OriginalDefinition);
                     }
                 }
+                // The scoped forwarder returns a task without awaiting it. Follow its private body
+                // only when the existing all-references proof identifies this exact wrapper as owner.
+                foreach (var call in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    if (model.GetSymbolInfo(call).Symbol is IMethodSymbol body &&
+                        (Is(body.ContainingType, Dispatcher) || Is(body.ContainingType, Service)) &&
+                        body.Name != method.Name && ScopedOwnerName(body) == method.Name)
+                        pending.Push(body.OriginalDefinition);
+                }
                 var awaits = declaration.DescendantNodes().OfType<AwaitExpressionSyntax>()
                     .Where(a => !a.Ancestors().TakeWhile(x => x != declaration).Any(x => x is AnonymousFunctionExpressionSyntax))
                     .Select(a => (Await: a, Call: Awaited(a.Expression))).ToList();
@@ -578,7 +623,7 @@ internal sealed class NotifyGateWalk
                     return clash ? m.ContainingType.Name + "." + m.Name : m.Name;
                 }
 
-                var labels = named.Select(n => method.Name + ":" + Callee(n.Symbol, n.Call)).ToList();
+                var labels = named.Select(n => ScopedOwnerName(method) + ":" + Callee(n.Symbol, n.Call)).ToList();
                 for (var i = 0; i < labels.Count; i++)
                 {
                     var same = labels.Count(l => l == labels[i]);

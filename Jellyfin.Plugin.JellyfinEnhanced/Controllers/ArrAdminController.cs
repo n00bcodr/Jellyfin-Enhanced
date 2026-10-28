@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -9,6 +10,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
@@ -51,14 +53,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private readonly ArrClientFactory _clients;
         private readonly ArrAuditLog _audit;
+        private readonly Services.Acquire.Requests.RequestLedger? _ledger;
+        private readonly Services.Acquire.Requests.RequestHubProjection? _projection;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
 
         /// <summary>Creates the controller.</summary>
-        public ArrAdminController(ArrClientFactory clients, ArrAuditLog audit, IUserManager userManager, Logger logger)
+        public ArrAdminController(ArrClientFactory clients, ArrAuditLog audit, IUserManager userManager, Logger logger, Services.Acquire.Requests.RequestLedger? ledger = null, Services.Acquire.Requests.RequestHubProjection? projection = null)
         {
             _clients = clients;
             _audit = audit;
+            _ledger = ledger;
+            _projection = projection;
             _userManager = userManager;
             _logger = logger;
         }
@@ -163,14 +169,101 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(result);
         }
 
-        /// <summary>The newest audited arr actions (admin view).</summary>
+        /// <summary>
+        /// The newest audited arr actions (admin view), as stored, plus <c>names</c>: the display names of the people
+        /// (Jellyfin user names), titles (as the caller's own request cards name them) and instances the rows refer to
+        /// by id. Ids nobody can name any more (a deleted account, a removed instance) are left out of it.
+        /// </summary>
         [HttpGet("arr/admin/audit")]
         [Authorize]
-        public IActionResult GetAudit([FromQuery] int take = 50)
+        public async Task<IActionResult> GetAudit([FromQuery] int take = 50, CancellationToken cancellationToken = default)
         {
             if (!IsAdmin()) return Forbid();
             if (!FeatureOn()) return NotFound(new { error = "disabled" });
-            return Ok(new { entries = _audit.ReadRecent(Math.Clamp(take, 1, 500)) });
+            var count = Math.Clamp(take, 1, 500);
+            var choices = _ledger?.Database.Available == true ? _ledger.Choices.Audit(count) : Array.Empty<ArrAuditEntry>();
+            var entries = _audit.ReadRecent(count).Concat(choices).OrderByDescending(x => x.Time).Take(count).ToArray();
+            // The key each row names its title by, and that title's canonical key (what the names are resolved for).
+            var rows = entries.Select(e => (Key: AuditTitleKey(e), Entry: e)).Where(r => r.Key.HasValue).ToArray();
+            var keys = rows.Select(r => r.Key!.Value).Distinct().ToArray();
+            var caller = ArrCaller.PersonId(User);
+            // The one delivery gate: title names are judged by the caller's privacy policies (Hidden Content, parental
+            // limits), so the answer leaves only when the read-set of the attempt that built it still holds (else built
+            // again, bounded; then 503).
+            var answer = await Services.PrivacyDelivery.DeliverAsync<IActionResult>(caller ?? Guid.Empty, async () =>
+            {
+                // Named only as the caller's own request cards would name them (RequestHubProjection.AuditTitlesAsync).
+                var meta = _projection == null || keys.Length == 0 || caller is not { } admin
+                    ? new Dictionary<string, Services.Acquire.Requests.HubTitleMeta>(StringComparer.Ordinal)
+                    : await _projection.AuditTitlesAsync(rows.Select(r => (r.Key!.Value.Title, r.Entry)), admin, cancellationToken).ConfigureAwait(false);
+                var titles = new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var (raw, title) in keys)
+                {
+                    if (meta.TryGetValue(title, out var m) && !string.IsNullOrEmpty(m.Title)) titles[raw] = new { title = m.Title, year = m.Year };
+                }
+                return new GuardedJsonResult(new
+                {
+                    entries,
+                    names = new
+                    {
+                        users = AuditUserNames(entries),
+                        titles,
+                        instances = entries.Select(e => e.InstanceId).Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal)
+                            .Select(id => (id, name: _clients.Registry.Get(id)?.Name)).Where(x => !string.IsNullOrEmpty(x.name)).ToDictionary(x => x.id, x => x.name, StringComparer.Ordinal),
+                    },
+                });
+            }, HttpContext).ConfigureAwait(false);
+            return answer ?? StatusCode(503);
+        }
+
+        /// <summary>
+        /// A protected JSON answer that writes and commits itself under the response guard the delivery gate installed
+        /// (the shape of the tag cache's segmented result): its read-set is checked again at the commit, an answer whose
+        /// inputs changed since the gate is withheld (an empty, uncached 503), and the global commit filter finds it
+        /// committed. Serialized with MVC's own JSON options, so its bytes are what <c>Ok(value)</c> would write.
+        /// </summary>
+        private sealed class GuardedJsonResult(object value) : OkObjectResult(value)
+        {
+            /// <inheritdoc />
+            public override async Task ExecuteResultAsync(ActionContext context)
+            {
+                var http = context.HttpContext;
+                var options = http.RequestServices?.GetService(typeof(Microsoft.Extensions.Options.IOptions<JsonOptions>)) is Microsoft.Extensions.Options.IOptions<JsonOptions> mvc
+                    ? mvc.Value.JsonSerializerOptions
+                    : new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+                var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(Value, Value!.GetType(), options);
+                var guard = Services.PrivacyResponseGuard.Find(http);
+                guard?.Bind(http, owned: true);
+                var response = http.Response;
+                response.StatusCode = StatusCodes.Status200OK;
+                response.ContentType = "application/json; charset=utf-8";
+                response.ContentLength = bytes.Length;
+                await response.Body.WriteAsync(bytes, http.RequestAborted).ConfigureAwait(false);
+                if (guard == null || await guard.TryCommitAsync().ConfigureAwait(false) || guard.Stopped) return;
+                guard.Stop();
+            }
+        }
+
+        // The title an audit row acts on: the key as the row names it (a search's details "key", a "key:" target, else a
+        // request's or choice's target; the Audit tab looks names up by it) and the title's canonical key. Rows that
+        // already carry their title (the action runner's details) need no lookup.
+        internal static (string Raw, string Title)? AuditTitleKey(ArrAuditEntry entry)
+        {
+            if (entry.Details?.TryGetValue("title", out var named) == true && !string.IsNullOrEmpty(named)) return null;
+            var raw = entry.Details?.TryGetValue("key", out var key) == true ? key : entry.Target.StartsWith("key:", StringComparison.Ordinal) ? entry.Target[4..] : entry.Target;
+            return Services.Acquire.TitleKey.Parse(raw)?.Title.ToString() is { } title ? (raw, title) : null;
+        }
+
+        // Jellyfin user names of the accounts audit rows name by id: who acted, and the account a user-settings change was for.
+        private Dictionary<string, string> AuditUserNames(IEnumerable<ArrAuditEntry> entries)
+        {
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var id in entries.SelectMany(e => e.Action.StartsWith("users.", StringComparison.Ordinal) ? new[] { e.UserId, e.Target } : new[] { e.UserId }).Distinct(StringComparer.Ordinal))
+            {
+                if (!Guid.TryParseExact(id, "N", out var user)) continue;
+                if (ArrCaller.Find(user, _userManager)?.Username is { Length: > 0 } name) names[id] = name;
+            }
+            return names;
         }
 
         /// <summary>

@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public const int Order = -1000;
 
         private const int MaxSplitIds = 200;
-        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> BodyProperties = new();
+        private static ConcurrentDictionary<Type, PropertyInfo[]> BodyProperties = new();
 
         private readonly IUserManager _users;
         private readonly ILibraryManager _library;
@@ -104,6 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return;
             }
 
+            // All synthetic requests enter the HTTP owner, including future facade actions and refusals.
+            PrivacyResponseGuard.Of(context.HttpContext);
+            PrivacyResponseGuard.Admit(context.HttpContext, _parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
             var result = await AnswerAsync(context, hits, serverId).ConfigureAwait(false);
             if (result == null)
             {
@@ -134,6 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private static void Scan(string name, object? value, string serverId, bool deep, ref List<(string, SyntheticId)>? hits)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             switch (value)
             {
                 case null:
@@ -161,7 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             var type = value.GetType();
             if (!deep || type.IsPrimitive || type.IsEnum || value is IEnumerable) return;
-            foreach (var property in BodyProperties.GetOrAdd(type, Properties))
+            foreach (var property in BodyPropertiesFacts.GetOrAdd(type, Properties))
             {
                 object? inner;
                 try
@@ -304,7 +308,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var code = _serverConfig.Configuration?.MetadataCountryCode;
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
             var revision = _policy.Revision(viewer);
-            var links = _links.For(viewer, revision, serverId, await DiscoveryAsync(viewer, ct).ConfigureAwait(false));
+            var discovery = await DiscoveryAsync(viewer, ct).ConfigureAwait(false);
+            using var timed = StageTimings.Time(Stage.Links);
+            var links = _links.For(viewer, revision, serverId, discovery);
             return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links, _presentation?.Load(viewer.Id, http).Revision);
         }
 
@@ -319,7 +325,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return Task.FromResult(LinkDiscovery.None);
+            // The request mode's metadata source answers those pages (TMDB in Jellyfin Enhanced mode, A1; Seerr otherwise).
+            if (config == null || !NativeDetailsPolicy.MetadataReady(config)) return Task.FromResult(LinkDiscovery.None);
             return Task.FromResult(new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, config.JellyseerrShowTagDiscovery));
         }
 
@@ -336,8 +343,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     if (person.Data is not { } p) return Failed(person);
                     return NativeDetailsPolicy.PersonAllowed(viewer, p) ? Ok(dtos.Person(page, p)) : new NotFoundResult();
                 case SyntheticKind.Genre:
-                    var movie = await _source.GenresAsync(true, ct).ConfigureAwait(false);
-                    var tv = await _source.GenresAsync(false, ct).ConfigureAwait(false);
+                    var movie = await _source.GenresAsync(true, viewer.Id, ct).ConfigureAwait(false);
+                    var tv = await _source.GenresAsync(false, viewer.Id, ct).ConfigureAwait(false);
                     var genre = GenreName(movie, page.TmdbId) ?? GenreName(tv, page.TmdbId);
                     if (genre != null) return Ok(dtos.NamePage(page, genre));
                     // Not in a list that answered: unknown; a list that couldn't be read: retryable.
@@ -393,11 +400,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, User viewer, SyntheticId title, CancellationToken ct)
         {
-            var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, ct);
+            var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, viewer.Id, ct);
             if (title.IsMovie)
             {
                 var movie = await _source.MovieAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
-                return movie.Data is { } m ? Ok(dtos.Movie(title, m, await logo.ConfigureAwait(false))) : Failed(movie);
+                if (movie.Data is not { } m) return Failed(movie);
+                var movieLogo = await logo.ConfigureAwait(false);
+                using (StageTimings.Time(Stage.Project)) return Ok(dtos.Movie(title, m, movieLogo));
             }
 
             var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
@@ -405,7 +414,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             switch (title.Kind)
             {
                 case SyntheticKind.Series:
-                    return Ok(dtos.Series(title, s, await logo.ConfigureAwait(false)));
+                    var seriesLogo = await logo.ConfigureAwait(false);
+                    using (StageTimings.Time(Stage.Project)) return Ok(dtos.Series(title, s, seriesLogo));
                 case SyntheticKind.Season:
                     var summary = NativeDetailsDtos.Seasons(s).FirstOrDefault(e => NativeDetailsDtos.Int(e, "seasonNumber") == title.Season);
                     if (summary.ValueKind != JsonValueKind.Object) return new NotFoundResult();
@@ -429,7 +439,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (title.Kind is not (SyntheticKind.Season or SyntheticKind.Episode)) return Ok(Array.Empty<BaseItemDto>());
             var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (series.Data is not { } s) return Failed(series);
-            var logo = await _source.LogoPathAsync(false, title.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             // The parts the viewer can open in the library are themselves (a season of a series Jellyfin has
             // but this season isn't in it), never a stand-in from public data.
             var physical = _policy.Physical(viewer, false, title.TmdbId, null);
@@ -462,7 +472,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (Arg<bool?>(context, "isMissing") == false) return Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
             var data = await _source.SeriesAsync(series.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (data.Data is not { } s) return Failed(data);
-            var logo = await _source.LogoPathAsync(false, series.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, series.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             var special = Arg<bool?>(context, "isSpecialSeason");
             // A season the library has but hides from this viewer is never drawn from public data instead.
             var physical = _policy.Physical(viewer, false, series.TmdbId, null);
@@ -517,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (physical.Hidden || physical.HiddenSeasons.Contains(number.Value)) return new NotFoundResult();
             var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, viewer.Id, ct).ConfigureAwait(false);
             if (seasonData.Data is not { } se) return empty;
-            var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, ct).ConfigureAwait(false);
+            var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             var options = Options(context);
             // An episode the viewer can open in the library is listed as itself; a file holding several episodes
             // (E01-E02) once, at its first, with no stand-in for the others it holds.
@@ -550,7 +560,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var limit = Math.Clamp(Arg<int?>(context, "limit") ?? 12, 1, 50);
             // Native builds the Similar DTOs with exactly the requested fields (LibraryController.GetSimilarItems).
             var options = new DtoOptions { Fields = Arg<ItemFields[]>(context, "fields") ?? Array.Empty<ItemFields>() };
-            var data = await _source.RecommendationsAsync(title.IsMovie, title.TmdbId, ct).ConfigureAwait(false);
+            var data = await _source.RecommendationsAsync(title.IsMovie, title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (data is not { } d) return Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
             // Parental filtering happens before paging and totals.
             var path = $"/api/v1/{(title.IsMovie ? "movie" : "tv")}/{title.TmdbId}/recommendations?page=1";
@@ -622,6 +632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) || _policy.Revision(viewer) != grant.PolicyRevision) return new NotFoundResult();
+            PrivacyResponseGuard.Admit(context.HttpContext, _parental, grant.Viewer, grant: true);
             // Grants outlive their page: the viewer-level eligibility (Seerr linkage) and, for a title's own
             // artwork, the title-level one (cached rating, request visibility) are checked again.
             if (!await _policy.ViewerMayUseAsync(viewer, ct).ConfigureAwait(false)) return new NotFoundResult();
@@ -631,11 +642,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return new NotFoundResult();
             if (page.IsTitle)
             {
-                if (!await _policy.MayListAbsentAsync(viewer, page, ct).ConfigureAwait(false)) return new NotFoundResult();
+                var access = await _policy.ListAbsentAccessAsync(viewer, page, ct).ConfigureAwait(false);
+                if (access == NativeDetailsPolicy.Access.Unknown) return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+                if (access != NativeDetailsPolicy.Access.Allowed) return new NotFoundResult();
             }
             else if (page.Kind == SyntheticKind.Person)
             {
-                if ((await _source.PersonAsync(page.TmdbId, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
+                if ((await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
             }
             else
             {
@@ -653,9 +666,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var height = Arg<int?>(context, "fillHeight") ?? Arg<int?>(context, "maxHeight") ?? Arg<int?>(context, "height");
             if (width == null && height is int h) width = grant.Type == ImageType.Backdrop ? h * 16 / 9 : grant.Type == ImageType.Logo ? h * 4 : h * 2 / 3;
             var size = NativeDetailsArtwork.SizeFor(grant.Type, width);
-            // One viewer can't make the server fetch without bound: images not cached yet come out of their budget.
-            if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
-            var image = await _artwork.FetchAsync(grant.Path, size, ct).ConfigureAwait(false);
+            // One viewer can't make the server fetch without bound: images not cached yet (in memory or in the
+            // server-side cache) come out of their budget.
+            if (!await _artwork.IsCachedAsync(grant.Path, size, ct).ConfigureAwait(false) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
+            var image = await _artwork.FetchAsync(grant.Path, size, grant.Viewer, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
             // The one delivery gate after the fetch (the last await): the artwork is projected under the viewer's policy
             // revisions (an absent title has no watched state or owner of its own) and leaves only when they still hold.
@@ -727,7 +741,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 var hidden = HiddenContentPolicy.Load(_userConfig, viewer.Id, context.HttpContext, _library);
                 hidden.BindLibraryIds(_library, query.Items.Select(i => i.Id));
-                var kept = query.Items.Where(dto => {
+                var kept = query.Items.Where(dto =>
+                {
                     var key = SyntheticId.TryParse(dto.Id, _host.SystemId, out var synthetic) && synthetic.IsTitle
                         ? HiddenContentPolicy.TitleIdentity(synthetic.IsMovie ? "movie" : "tv", synthetic.TmdbId.ToString()) : null;
                     return !hidden.IsHidden(key, dto.Id.ToString(), dto.SeriesId?.ToString(), surface)
@@ -802,6 +817,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private static IActionResult Refuse(string method)
             => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) ? new NotFoundResult() : new StatusCodeResult(StatusCodes.Status403Forbidden);
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Type, PropertyInfo[]>> BodyPropertiesFactsOwner = new();
+        private static ConcurrentDictionary<Type, PropertyInfo[]> BodyPropertiesFacts { get => BodyPropertiesFactsOwner.Read(ref BodyProperties, () => new()); set => BodyPropertiesFactsOwner.Store(ref BodyProperties, value); }
     }
 }
 #endif

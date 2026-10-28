@@ -47,10 +47,19 @@ public sealed class HiddenContentPolicy
     private HiddenContentPolicy(UserHiddenContent? data, bool master, bool remove)
     {
         var settings = data?.Settings ?? new();
-        _settings = new HiddenContentSettings { Enabled = settings.Enabled, FilterLibrary = settings.FilterLibrary,
-            FilterDiscovery = settings.FilterDiscovery, FilterSearch = settings.FilterSearch, FilterUpcoming = settings.FilterUpcoming,
-            FilterCalendar = settings.FilterCalendar, FilterRecommendations = settings.FilterRecommendations, FilterRequests = settings.FilterRequests,
-            FilterNextUp = settings.FilterNextUp, FilterContinueWatching = settings.FilterContinueWatching };
+        _settings = new HiddenContentSettings
+        {
+            Enabled = settings.Enabled,
+            FilterLibrary = settings.FilterLibrary,
+            FilterDiscovery = settings.FilterDiscovery,
+            FilterSearch = settings.FilterSearch,
+            FilterUpcoming = settings.FilterUpcoming,
+            FilterCalendar = settings.FilterCalendar,
+            FilterRecommendations = settings.FilterRecommendations,
+            FilterRequests = settings.FilterRequests,
+            FilterNextUp = settings.FilterNextUp,
+            FilterContinueWatching = settings.FilterContinueWatching
+        };
         _master = master;
         _remove = remove;
         DocumentRevision = UserConfigurationManager.ContentRevision(data ?? new UserHiddenContent());
@@ -218,15 +227,22 @@ public sealed class HiddenContentPolicy
     private bool Filters(string surface)
     {
         if (!_settings.Enabled || (!_master && !(_remove && surface is "continuewatching" or "nextup"))) return false;
-        return surface switch {
-            "library" or "details" => _settings.FilterLibrary, "discovery" => _settings.FilterDiscovery,
-            "search" => _settings.FilterSearch, "upcoming" => _settings.FilterUpcoming, "calendar" => _settings.FilterCalendar,
-            "recommendations" => _settings.FilterRecommendations, "requests" => _settings.FilterRequests,
-            "nextup" => _settings.FilterNextUp, "continuewatching" => _settings.FilterContinueWatching, _ => false
+        return surface switch
+        {
+            "library" or "details" => _settings.FilterLibrary,
+            "discovery" => _settings.FilterDiscovery,
+            "search" => _settings.FilterSearch,
+            "upcoming" => _settings.FilterUpcoming,
+            "calendar" => _settings.FilterCalendar,
+            "recommendations" => _settings.FilterRecommendations,
+            "requests" => _settings.FilterRequests,
+            "nextup" => _settings.FilterNextUp,
+            "continuewatching" => _settings.FilterContinueWatching,
+            _ => false
         };
     }
 
-    private bool Matches(Dictionary<string, HashSet<string>> map, string? key, string surface)
+    private bool Matches(IReadOnlyDictionary<string, HashSet<string>> map, string? key, string surface)
         => key != null && map.TryGetValue(key, out var scopes) && scopes.Any(s => s == "global" || s == surface
             || s == "homesections" && surface is "nextup" or "continuewatching");
 

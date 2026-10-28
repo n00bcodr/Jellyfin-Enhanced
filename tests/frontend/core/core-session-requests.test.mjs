@@ -45,7 +45,10 @@ for(const method of ['GET','POST','DELETE'])for(const mode of ['both','server','
  h.JE.core.api.manager.CONFIG.retry.baseDelayMs=1;
  const pending=h.JE.core.api.plugin('/retry',{method,session:h.JE.core.userWrite.origin()});const outcome=pending.then(v=>({v}),e=>({e}));
  h.switchUser(mode);first.resolve(jsonResponse({},503));const result=await outcome;
- assert.equal(result.e?.name,'AbortError');assert.equal(sent.length,1,'only the original A request reaches transport');
+ assert.equal(sent.length,1,'only the original A request reaches transport');
+ // A read is aborted; a sent write keeps what happened to it (D46S2-R12-4): sent, answered 503, never "unsent".
+ if(method==='GET')assert.equal(result.e?.name,'AbortError');
+ else {assert.equal(result.e?.status,503);assert.equal(result.e?.jeSent,true);assert.deepEqual({...h.JE.core.api.writeOutcome(result.e)},{outcome:'failed',sent:true});}
 });
 /** Finds raw mutating calls, treating dynamic methods/options as potential writes. */
 function nonCoreWrites(source,file) {
@@ -150,10 +153,12 @@ for(const mode of ['identity','server','token'])test(`unobserved ${mode} transit
  assert.equal((await h.JE.core.api.plugin('/private',{cacheKey:'private'})).call,1);
  h.switchUser(mode);assert.equal((await h.JE.core.api.plugin('/private',{cacheKey:'private'})).call,2);
 });
-for(const responseMode of ['json','status'])test(`${responseMode} rejected body under a stale session is AbortError`,async t=>{
+for(const responseMode of ['json','status'])test(`${responseMode} rejected body of a sent write under a stale session stays sent (no answer)`,async t=>{
  const body=deferred(),started=deferred();const h=setup(t,async()=>({ok:true,status:200,text(){started.resolve();return body.promise;}}));
  const outcome=h.JE.core.api.plugin('/body-error',{responseMode,method:'POST',skipRetry:true,session:h.JE.core.userWrite.origin()}).then(value=>({value}),error=>({error}));
- await started.promise;h.switchUser();body.reject(new TypeError('Failed to fetch'));assert.equal((await outcome).error?.name,'AbortError');
+ await started.promise;h.switchUser();body.reject(new TypeError('Failed to fetch'));
+ // A sent write whose answer was lost: sent, with no answer (never "unsent", never a fresh AbortError: D46S2-R12-4).
+ const {error}=await outcome;assert.equal(error?.jeSent,true);assert.deepEqual({...h.JE.core.api.writeOutcome(error)},{outcome:'failed',sent:true});
 });
 test('public authHeaders keeps its no-argument contract for the read-only change feed',t=>{
  const h=setup(t,async()=>jsonResponse({}));assert.equal(h.JE.core.api.authHeaders()['X-Emby-Token'],'token-a');
@@ -179,4 +184,21 @@ for(const kind of ['discovery','ratings']) for(const mode of ['identity','server
 }
 for(const kind of ['discovery','ratings'])test(`${kind} reader still publishes the same session body`,async t=>{
  const h=setup(t,async()=>jsonResponse({score:99}));const result=await legacyReader(h,kind)();assert.equal((kind==='ratings'?result.rt:result).score,99);
+});
+
+for (const mode of ['same', 'both', 'epoch', 'server']) test(`write response metadata belongs to its submitting session (${mode})`, async t => {
+ const response = deferred();
+ const h = setup(t, () => response.promise);
+ let revisions = 0, builds = 0;
+ h.JE.core.revision = { noteResponse: () => revisions++ };
+ h.JE.core.build.noteAnswer = () => builds++;
+ const pending = h.JE.core.api.pluginResponse('/acquire/requests', { method: 'POST', body: {}, session: h.JE.core.userWrite.origin() }).then(value => ({value}), error => ({error}));
+ await tick();
+ if (mode !== 'same') h.switchUser(mode);
+ response.resolve(jsonResponse({ok: true}, 201));
+ const result = await pending;
+ if (mode === 'same') assert.equal(result.value.body.ok, true);
+ else assert.equal(h.JE.core.api.writeOutcome(result.error).outcome, 'accepted', 'the sent write retains its real answer');
+ assert.equal(revisions, mode === 'same' ? 1 : 0, 'old response revisions never reach a different session');
+ assert.equal(builds, mode === 'same' ? 1 : 0, 'old response build feedback never reaches a different session');
 });

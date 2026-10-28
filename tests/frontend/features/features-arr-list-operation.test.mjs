@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Phase 4c3b1: who owns list authoring work, at the surface boundary. Explicit, bounded cases (not a generated operation
 // model): the r5 triggers (document pagehide / bfcache restore, away-and-back on the same title, a held collection read
 // that must not open a form after its owner ended) and the r6 classes (a refresh reopen and an async fallback keep the
@@ -383,7 +384,7 @@ test('check at execution: held paints, awaited continuations and listeners re-ch
     endIt({ s, op, fx });
     policy.resolve(L.gate.policy(() => false, false));
     read.resolve('late');
-    button.click();
+    clickAsViewer(button);
     assert.equal(await continued, null, `${name}: the continuation stops`);
     await s.settle();
     // A listener is the person's own input (it makes the next intent): only a newer intent leaves it working.
@@ -403,7 +404,7 @@ test('check at execution: held paints, awaited continuations and listeners re-ch
   const button = s.document.createElement('button');
   s.document.body.appendChild(button);
   fx.on(button, 'click', () => ran.push('clicked'));
-  button.click();
+  clickAsViewer(button);
   assert.deepEqual(ran, [7, false, 'clicked']);
   assert.equal(node.textContent, 'now');
   // A presenter's destroyed state is its own: the shared ticket stays current for others.

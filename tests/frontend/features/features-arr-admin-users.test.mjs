@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,22 +24,22 @@ test('transport sends PATCH with a separate JSON read and never rewrites persona
 test('an edit made while Save waits survives its answer and a conflict keeps the draft',async()=>{
  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
  try{await tick();const pending=deferred();h.JE.arrAdminUsersApi.patch=()=>pending.promise;
- let field=h.document.querySelector('[data-field="quotaLimit"]');field.value='3';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('[data-je-user-save]').click();
+ let field=h.document.querySelector('[data-field="quotaLimit"]');field.value='3';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));clickAsViewer(h.document.querySelector('[data-je-user-save]'));
  field=h.document.querySelector('[data-field="quotaLimit"]');field.value='8';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));pending.resolve(view());await tick();
  assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
- h.JE.arrAdminUsersApi.patch=async()=>{throw {status:409};};h.document.querySelector('[data-je-user-save]').click();await tick();
+ h.JE.arrAdminUsersApi.patch=async()=>{throw {status:409};};clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();
  assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');assert.match(h.document.querySelector('[data-je-admin-user]').textContent,/conflict/);
  }finally{h.close();}
 });
 test('admin demotion on navigation immediately removes private DOM and drafts',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');try{await tick();assert.ok(h.document.querySelector('[data-je-admin-user]'));h.window.ApiClient.getCurrentUser=async()=>({Policy:{IsAdministrator:false}});await h.go(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`);assert.equal(h.document.querySelector('[data-je-admin-user]'),null);}finally{h.close();}});
 test('delayed React mount and repeated lifecycle mutations produce one retained section',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'');try{await tick();assert.equal(h.document.querySelector('[data-je-admin-user]'),null);h.document.body.innerHTML='<div id="usersEditPage"><div class="content-primary"><form></form></div></div>';h.mutate();h.mutate();await tick();assert.equal(h.document.querySelectorAll('[data-je-admin-user]').length,1);h.mutate();await tick();assert.equal(h.document.querySelectorAll('[data-je-admin-user]').length,1);}finally{h.close();}});
-test('native Save cannot silently persist a JE draft and display inheritance stays null',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"><form><button type="submit">Native Save</button></form></div></div>');try{await tick();h.document.querySelector('form:not([data-je-admin-user])').addEventListener('submit',e=>e.preventDefault());const field=h.document.querySelector('[data-field="acquisitionBadges"]');field.value='';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('form:not([data-je-admin-user]) button').click();await tick();assert.equal(h.writes.length,0);h.document.querySelector('[data-je-user-save]').click();await tick();assert.equal(h.writes[0].body.acquisitionBadges,null);assert.deepEqual(Object.keys(h.writes[0].body).sort(),['acquisitionBadges','revision']);}finally{h.close();}});
+test('native Save cannot silently persist a JE draft and display inheritance stays null',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"><form><button type="submit">Native Save</button></form></div></div>');try{await tick();h.document.querySelector('form:not([data-je-admin-user])').addEventListener('submit',e=>e.preventDefault());const field=h.document.querySelector('[data-field="acquisitionBadges"]');field.value='';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));clickAsViewer(h.document.querySelector('form:not([data-je-admin-user]) button'));await tick();assert.equal(h.writes.length,0);clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.equal(h.writes[0].body.acquisitionBadges,null);assert.deepEqual(Object.keys(h.writes[0].body).sort(),['acquisitionBadges','revision']);}finally{h.close();}});
 test('unavailable components never present editable defaults or consent controls',async()=>{const data=view();data.policy.available=false;data.display.available=false;data.consents.available=false;const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();assert.equal(h.document.querySelector('[data-group="policy"] input'),null);assert.equal(h.document.querySelector('[data-group="display"] select'),null);assert.equal(h.document.querySelector('[data-field="autoMovieRequests"],[data-field="listSwapIn"]'),null);assert.match(h.document.querySelector('[data-je-admin-user]').textContent,/unavailable/);}finally{h.close();}});
 test('a server/account epoch change rejects a pending transport response',async()=>{let epoch=1;const pending=deferred();const h=createHarness({JE:{session:{getEpoch:()=>epoch}},fetch:()=>pending.promise});try{h.load('core/mutation-queue.js');h.load('arr/adminusers/admin-users-api.js');const read=h.JE.arrAdminUsersApi.read(A);epoch++;pending.resolve(jsonResponse(view()));await assert.rejects(read,error=>error.stale===true);}finally{h.close();}});
 test('a cached native current-user object cannot keep administrator data after demotion',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');try{await tick();h.window.ApiClient.getUser=async()=>({Policy:{IsAdministrator:false}});await h.go(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`);assert.equal(h.document.querySelector('[data-je-admin-user]'),null);}finally{h.close();}});
 test('a synchronous native permission-read failure removes private data',async()=>{const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');try{await tick();h.window.ApiClient.getUser=()=>{throw new Error('session unavailable');};await h.go(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`);assert.equal(h.document.querySelector('[data-je-admin-user]'),null);}finally{h.close();}});
 test('a known JE unlimited count is distinguished from an unknown backend limit',async()=>{for(const backend of ['je','seerr']){const data=view();data.policy.backend=backend;data.policy.limit=null;const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();const line=[...h.document.querySelectorAll('p')].find(n=>n.textContent.startsWith('arr_user_effectiveLimit:'));assert.equal(line.textContent,`arr_user_effectiveLimit: arr_user_${backend==='je'?'unlimited':'unknown'}`);}finally{h.close();}}});
-test('clearing an assigned ntfy topic stays cleared when the native reply omits null fields',async()=>{const data=view();data.notifications={available:true,topic:'old-topic',ntfy:true,assigned:true};const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();h.JE.arrAdminUsersApi.assignTopic=async(id,body)=>{assert.equal(id,A);assert.equal(body.topic,'');return {id:A,ntfy:false};};const field=h.document.querySelector('[data-group="notifications"] input');field.value='';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('[data-je-user-save]').click();await tick();assert.equal(h.document.querySelector('[data-group="notifications"] input').value,'');}finally{h.close();}});
+test('clearing an assigned ntfy topic stays cleared when the native reply omits null fields',async()=>{const data=view();data.notifications={available:true,topic:'old-topic',ntfy:true,assigned:true};const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();h.JE.arrAdminUsersApi.assignTopic=async(id,body)=>{assert.equal(id,A);assert.equal(body.topic,'');return {id:A,ntfy:false};};const field=h.document.querySelector('[data-group="notifications"] input');field.value='';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.equal(h.document.querySelector('[data-group="notifications"] input').value,'');}finally{h.close();}});
 test('Ready playlist and TV messages are shown read-only: stored, switch and in effect, with no save control',async()=>{const data=view();data.ready={available:true,playlistGate:true,playlistStored:true,playlistEffective:true,state:'active',entries:4,messagesGate:false,messagesStored:true,messagesEffective:false};const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();const section=h.document.querySelector('[data-je-admin-user]');const group=section.querySelector('[data-group="ready"]');assert.ok(group);assert.equal(group.querySelector('h2').textContent,'arr_user_ready');assert.equal(group.querySelector('input,select,button'),null);assert.match(group.textContent,/arr_user_readyPlaylistStored: arr_user_yes/);assert.match(group.textContent,/arr_user_readyState: arr_user_readyState_active/);assert.match(group.textContent,/arr_user_readyEntries: 4/);assert.match(group.textContent,/arr_user_readyMessagesEffective: arr_user_no/);const shown=[...group.querySelectorAll(':scope > p')].map(p=>p.textContent);for(const label of ['readyPlaylistStored','readyState','readyMessagesStored'])assert.ok(shown.some(text=>text.startsWith('arr_user_'+label+':')),label+' is shown, not folded into details');const children=[...group.children];assert.ok(children.findIndex(n=>n.tagName==='DETAILS')>Math.max(...['readyPlaylistStored','readyState','readyMessagesStored'].map(label=>children.findIndex(n=>n.textContent.startsWith('arr_user_'+label+':')))),'the choices come before the details');assert.match(group.querySelector('details').textContent,/arr_user_readyPlaylistGate: arr_user_yes.*arr_user_readyEntries: 4.*arr_user_readyMessagesEffective: arr_user_no/);}finally{h.close();}
  const missing=view();const h2=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>missing);try{await tick();const group=h2.document.querySelector('[data-je-admin-user] [data-group="ready"]');assert.match(group.textContent,/arr_user_unavailable/);}finally{h2.close();}});
 // 4f review round 2: the read-only Ready state shows "lost" as itself, not as off.
@@ -74,7 +75,7 @@ for(const completion of ['read','save','summary'])test(`an old ${completion} com
   if(completion==='save'){
    h.JE.arrAdminUsersApi.patch=()=>pending.promise;
    const field=h.document.querySelector('[data-field="quotaLimit"]');field.value='3';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));
-   h.document.querySelector('[data-je-user-save]').click();
+   clickAsViewer(h.document.querySelector('[data-je-user-save]'));
   }else if(completion==='summary'){
    h.JE.arrAdminUsersApi.summary=()=>pending.promise;
    h.document.body.innerHTML=`<div id="userProfilesPage"><div class="localUsers"><div class="card" data-userid="${A}"><div class="cardFooter"></div></div></div></div>`;
@@ -104,7 +105,7 @@ test('B1: single Save advances successful revisions while pending edits and fail
   };
   const change=(field,value)=>{const input=h.document.querySelector(`[data-field="${field}"]`);input.value=value;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));};
   change('listStatus','false');change('poolId','family');change('blocked','true');change('quotaLimit','3');
-  h.document.querySelector('[data-je-user-save]').click();change('quotaLimit','8');
+  clickAsViewer(h.document.querySelector('[data-je-user-save]'));change('quotaLimit','8');
   const saved=view();saved.policy.stored.quotaLimit=3;saved.revisions={policy:'p2',display:'d2','pool-membership':'g2','seerr-import':'s2'};revision='p2';pending.resolve(saved);await tick();
   assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
   assert.equal(h.document.querySelector('[data-group="policy"] [role="status"]').textContent,'arr_user_unsaved');
@@ -112,7 +113,7 @@ test('B1: single Save advances successful revisions while pending edits and fail
    assert.equal(writes.find(w=>w.group===group).body.revision,expected);
    assert.equal(h.document.querySelector(`[data-group="${group}"] [role="status"]`).textContent,'arr_user_conflict');
   }
-  h.document.querySelector('[data-je-user-save]').click();await tick();
+  clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();
   const second=writes.filter(w=>w.group==='policy')[1];assert.equal(second.body.revision,'p2');assert.equal(second.body.quotaLimit,8);
   assert.equal(h.document.querySelector('[data-group="policy"] [role="status"]').textContent,'arr_user_saved');
  }finally{h.close();}
@@ -156,7 +157,7 @@ for(const family of ['12','10'])test(`${family}: native tab position, selection,
   assert.equal(tab.previousElementSibling.textContent,'access');assert.equal(tab.nextElementSibling.textContent,'parentalcontrol');
   assert.equal(h.document.querySelector('[data-je-admin-user]'),null,'JE only owns its own panel');
   assert.equal(tab.textContent,'arr_user_tab');
-  tab.click();await tick();assert.equal(h.window.location.hash,je);await h.go(je);
+  clickAsViewer(tab);await tick();assert.equal(h.window.location.hash,je);await h.go(je);
   tab=h.document.querySelector('[data-je-user-tab]');let panel=h.document.querySelector('[data-je-admin-user]');assert.ok(panel);assert.equal(panel.tagName,'FORM');assert.equal(panel.closest('form:not([data-je-admin-user])'),null);
   assert.equal(h.document.querySelector('.userLibraryAccessForm').hidden,true);
   assert.equal(tab.getAttribute('aria-selected'),'true');assert.equal(tab.tabIndex,0);
@@ -170,7 +171,7 @@ for(const family of ['12','10'])test(`${family}: native tab position, selection,
   assert.equal(panel.querySelectorAll('[data-group] > h2').length,8);assert.ok(panel.querySelector('.fieldDescription'));assert.ok(panel.querySelector('details > summary'));
   const input=panel.querySelector('[data-field="quotaLimit"]');input.value='9';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));
   for(let i=0;i<8;i++){h.mutate();await tick();}assert.equal(h.document.querySelectorAll('[data-je-user-tab]').length,1);assert.equal(h.document.querySelectorAll('[data-je-admin-user]').length,1);
-  h.document.querySelector('[data-je-user-tab]').previousElementSibling.click();assert.equal(h.window.location.hash,native('access'),'native Access leaves the JE tab even though React still considers Access selected');
+  clickAsViewer(h.document.querySelector('[data-je-user-tab]').previousElementSibling);assert.equal(h.window.location.hash,native('access'),'native Access leaves the JE tab even though React still considers Access selected');
   await h.go(native('access'));assert.equal(h.document.querySelector('[data-je-admin-user]'),null);assert.equal(h.document.querySelector('.userLibraryAccessForm').hidden,false);
   if(family==='12')assert.equal(h.document.querySelector('[data-native="access"]').getAttribute('aria-selected'),'true');
   // Back and Forward replay the actual recorded locations.
@@ -191,19 +192,19 @@ test('one Save sends only dirty groups, continues after a failure and uses nativ
   const toasts=[];h.window.require=(deps,callback)=>callback(msg=>toasts.push(msg),{translate:key=>'native:'+key});await tick();
   const change=(field,v)=>{const input=h.document.querySelector(`[data-field="${field}"]`);input.value=v;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));};
   let calls=[];h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{calls.push({group,body});if(group==='display')throw {status:409};const result=view();result.policy.stored.quotaLimit=7;result.revisions.policy='p2';return result;};
-  change('quotaLimit','7');change('listStatus','false');change('blocked','true');h.document.querySelector('[data-je-user-save]').click();await tick();
+  change('quotaLimit','7');change('listStatus','false');change('blocked','true');clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();
   assert.deepEqual(calls.map(c=>c.group),['policy','display','seerr-import']);
   assert.equal(h.document.querySelector('[data-group="display"] [role="status"]').textContent,'arr_user_conflict');assert.equal(h.document.querySelector('[data-field="listStatus"]').value,'false');
   assert.equal(toasts.at(-1),'arr_user_saveError');
   calls=[];h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{calls.push({group,body});const result=view();result.display.stored.listStatus=false;return result;};
-  h.document.querySelector('[data-je-user-save]').click();await tick();assert.deepEqual(calls.map(c=>c.group),['display']);assert.equal(toasts.at(-1),'native:SettingsSaved');
-  h.document.querySelector('[data-je-user-save]').click();await tick();assert.equal(calls.length,1,'unchanged groups never sent');
+  clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.deepEqual(calls.map(c=>c.group),['display']);assert.equal(toasts.at(-1),'native:SettingsSaved');
+  clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.equal(calls.length,1,'unchanged groups never sent');
  }finally{h.close();}
 });
 
 test('native toast remains available on current Jellyfin without the removed AMD loader',async()=>{
  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
- try{await tick();const input=h.document.querySelector('[data-field="quotaLimit"]');input.value='6';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('[data-je-user-save]').click();await tick();assert.equal(h.document.querySelector('.toastContainer .toast').textContent,'arr_user_settingsSaved');h.reset();assert.equal(h.document.querySelector('[data-je-user-toast]'),null);}finally{h.close();}
+ try{await tick();const input=h.document.querySelector('[data-field="quotaLimit"]');input.value='6';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.equal(h.document.querySelector('.toastContainer .toast').textContent,'arr_user_settingsSaved');h.reset();assert.equal(h.document.querySelector('[data-je-user-toast]'),null);}finally{h.close();}
 });
 
 for(const family of ['12','10'])for(const tab of ['profile','access','parentalcontrol','password'])test(`${family} ${tab}: one tab and no JE panel on native routes`,async()=>{
@@ -215,14 +216,14 @@ for(const family of ['12','10'])for(const tab of ['profile','access','parentalco
 
 test('returning controls to their stored values sends no unchanged sections',async()=>{
  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
- try{await tick();const input=h.document.querySelector('[data-field="quotaLimit"]');input.value='6';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));input.value='';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('[data-je-user-save]').click();await tick();assert.equal(h.writes.length,0);}finally{h.close();}
+ try{await tick();const input=h.document.querySelector('[data-field="quotaLimit"]');input.value='6';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));input.value='';input.dispatchEvent(new h.window.Event('change',{bubbles:true}));clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();assert.equal(h.writes.length,0);}finally{h.close();}
 });
 
 test('reverting an in-flight edit to its pre-save value remains a new draft',async()=>{
  const data=view();data.policy.stored.quotaLimit=3;
  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
  try{await tick();const pending=deferred();h.JE.arrAdminUsersApi.patch=()=>pending.promise;
- const change=n=>{const input=h.document.querySelector('[data-field="quotaLimit"]');input.value=n;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));};change('6');h.document.querySelector('[data-je-user-save]').click();change('3');const saved=view();saved.policy.stored.quotaLimit=6;saved.revisions.policy='p2';pending.resolve(saved);await tick();assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'3');assert.equal(h.document.querySelector('[data-group="policy"] [role="status"]').textContent,'arr_user_unsaved');
+ const change=n=>{const input=h.document.querySelector('[data-field="quotaLimit"]');input.value=n;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));};change('6');clickAsViewer(h.document.querySelector('[data-je-user-save]'));change('3');const saved=view();saved.policy.stored.quotaLimit=6;saved.revisions.policy='p2';pending.resolve(saved);await tick();assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'3');assert.equal(h.document.querySelector('[data-group="policy"] [role="status"]').textContent,'arr_user_unsaved');
  }finally{h.close();}
 });
 
@@ -236,7 +237,7 @@ test('React attribute-only tab updates reconcile selection and indicator without
 });
 
 function edit(h,field,value){const input=h.document.querySelector(`[data-field="${field}"]`);input.value=value;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));}
-function save(h){h.document.querySelector('[data-je-user-save]').click();}
+function save(h){clickAsViewer(h.document.querySelector('[data-je-user-save]'));}
 function status(h,group){return h.document.querySelector(`[data-group="${group}"] [role="status"]`).textContent;}
 
 test('a native-tab conflict explains the available reload action and retains the draft',async()=>{
@@ -332,8 +333,36 @@ test('list-page and home-row preferences render and save as tri-state Display ro
   for(const field of added){const select=h.document.querySelector(`[data-group="display"] [data-field="${field}"]`);assert.ok(select,field);assert.deepEqual([...select.options].map(o=>o.value),['','true','false']);assert.ok(typeof en['arr_user_'+field]==='string'&&en['arr_user_'+field].length>0,'en.json label for '+field);}
   assert.equal(h.document.querySelector('[data-field="listPlaylistUi"]').value,'false');assert.equal(h.document.querySelector('[data-field="homeRowSoon"]').value,'true');assert.equal(h.document.querySelector('[data-field="homeRowArrived"]').value,'');
   const change=(field,value)=>{const el=h.document.querySelector(`[data-field="${field}"]`);el.value=value;el.dispatchEvent(new h.window.Event('change',{bubbles:true}));};
-  change('homeRowArrived','false');change('listPlaylistUi','');h.document.querySelector('[data-je-user-save]').click();await tick();
+  change('homeRowArrived','false');change('listPlaylistUi','');clickAsViewer(h.document.querySelector('[data-je-user-save]'));await tick();
   const write=h.writes.find(w=>w.group==='display');assert.ok(write);assert.equal(write.body.homeRowArrived,false);assert.equal(write.body.listPlaylistUi,null);assert.equal(write.body.revision,'d1');
   assert.ok(!('homeOpsStrip' in write.body));
  }finally{h.close();}
+});
+test('UX-7: with Seerr off the Seerr group shows no identity, keeps the stored import exclusion read-only, links only to Seerr setup; quota help follows the backend',async()=>{
+ const data=view();data.seerr={enabled:false,state:'unavailable',blocked:true,adminUrl:'http://seerr.test/users',quotaSource:'je'};
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+ try{await tick();
+  const group=h.document.querySelector('[data-group="seerr-import"]');
+  assert.match(group.textContent,/arr_user_seerrOff/);
+  assert.doesNotMatch(group.textContent,/arr_user_state_unavailable|arr_user_linkState|arr_user_account/);
+  const select=group.querySelector('[data-field="blocked"]');
+  assert.equal(select.disabled,true);assert.equal(select.value,'true','the stored exclusion is shown as it is');
+  assert.deepEqual([...group.querySelectorAll('a')].map(a=>[a.textContent,a.getAttribute('href')]),[['arr_user_seerrSetup','#/configurationpage?name=Jellyfin%20Enhanced']]);
+  const policy=h.document.querySelector('[data-group="policy"]').textContent;
+  assert.match(policy,/arr_user_quotaHelpJe/);assert.doesNotMatch(policy,/arr_user_quotaHelp(?!Je)/);
+ }finally{h.close();}
+});
+test('UX-7 control: with Seerr on (or an older server) the Seerr group and the Seerr quota wording are as before',async()=>{
+ for(const enabled of [true,undefined]){
+  const data=view();data.policy.backend='seerr';data.seerr={enabled,state:'linked',account:'Ann',blocked:false,adminUrl:'http://seerr.test/users',quotaSource:'seerr'};
+  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+  try{await tick();
+   const group=h.document.querySelector('[data-group="seerr-import"]');
+   assert.doesNotMatch(group.textContent,/arr_user_seerrOff/);
+   assert.match(group.textContent,/arr_user_state_linked/);assert.match(group.textContent,/arr_user_importHelp/);
+   assert.equal(group.querySelector('[data-field="blocked"]').disabled,false);
+   assert.equal(group.querySelector('a').getAttribute('href'),'http://seerr.test/users');
+   assert.match(h.document.querySelector('[data-group="policy"]').textContent,/arr_user_quotaHelp(?!Je)/);
+  }finally{h.close();}
+ }
 });

@@ -18,6 +18,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public RequestLedger(AcquireDatabase database) { _db = database; }
         /// <summary>The database, including its restore generation.</summary>
         public AcquireDatabase Database => _db;
+        /// <summary>The durable owner of title-wide add settings.</summary>
+        public TitleChoiceRegistry Choices => new(_db);
         internal static long Ms(DateTimeOffset at) => at.ToUnixTimeMilliseconds();
         internal static string Id(Guid user) => user.ToString("N", CultureInfo.InvariantCulture);
         internal static string NewId() => Guid.NewGuid().ToString("N");
@@ -28,9 +30,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             using var cmd = Cmd(c, t, sql, args);
             return cmd.ExecuteScalar()?.ToString();
         }
+        /// <summary>
+        /// Wants a move from Seerr imported but hasn't handed over yet (their batch is <c>staged</c>): no reader, list,
+        /// action or dispatch sees them until the handover commits the batch; a refused handover discards it whole.
+        /// </summary>
+        internal const string NotStaged = "(import_batch_id IS NULL OR import_batch_id NOT IN (SELECT id FROM import_batches WHERE state='staged'))";
+
         private static List<RequestWant> Wants(SqliteConnection c, SqliteTransaction? t, string where = "1=1", params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE " + where + " ORDER BY created_at,id", args);
+            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE (" + where + ") AND " + NotStaged + " ORDER BY created_at,id", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestWant>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), Guid.Parse(r.GetString(2)), r.GetString(3), r.GetString(4),
@@ -210,7 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
         /// <summary>
         /// The target a Seerr-mode ask goes to while Jellyfin Enhanced points at the Seerr <paramref name="source"/>
-        /// (<see cref="SeerrRequestReadModel.SourceOf"/>): Seerr picks its own server, so no instance or connection.
+        /// (<see cref="SeerrFacts.SourceOf"/>): Seerr picks its own server, so no instance or connection.
         /// </summary>
         internal static string SeerrTargetKey(string? source)
             => TargetKey(new RequestAuthorization(Guid.Empty, null, string.Empty, string.Empty, string.Empty, "seerr", string.Empty, string.Empty, string.Empty, source));
@@ -546,7 +554,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// scope), so the same id with another press is a conflict, never the first ask's receipt.
         /// </summary>
         private static string Idempotency(CreateRequest request, MutationInput normalized)
-            => request.Identity ?? PressChecks.RequestIdentity(request.Operation, request.Expect, normalized);
+            => request.Identity ?? PressChecks.RequestIdentity(request.Operation, request.Expect, normalized, request.OverrideChoiceVersion);
 
         /// <summary>
         /// Whether the person's key was already used for a request recorded here (D53, edition round 22: one key namespace per
@@ -576,16 +584,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
             if (SingleSeason(policy.Configuration, facts, normalized) is { } oneSeason) return oneSeason;
             if (facts.Role != "Admin" && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
+            if (CheckTitleChoice(c, t, user, normalized, facts, request.OverrideChoiceVersion, allowChanges: !automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role == "Admin") is { } choiceConflict) return choiceConflict;
+            normalized = Canonical(c, t, normalized);
+            var admittedInput = facts.Backend == "je" && TitleChoiceRegistry.Current(c, t, normalized, Authorize(facts, null, normalized, false)) is { } admittedChoice
+                ? normalized with { ProfileId = normalized.ProfileId ?? admittedChoice.ProfileId, RootFolder = normalized.RootFolder ?? admittedChoice.RootFolder }
+                : normalized;
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
             // An ask that chooses a Seerr destination doesn't approve someone else's pending ask without it (that would
             // send the shared scope to Seerr's defaults and leave the chosen destination unused).
             if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
-                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
-                    .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
+                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant))
+                    .Where(w => !w.Follower && Active(w) && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) &&
+                        (w.Status == "pending" ? w.Input.Extra(new[] { normalized }) == null : normalized.HasArrRouting && facts.Backend == "je")))
                 {
-                    var approved = ApproveCore(c, t, pending.Id, user, null, policy, now);
+                    // Manage Add may authorize a viewer's pending ask instead of creating its own job. Its
+                    // explicit profile/root must therefore become that approval's input, while the viewer
+                    // keeps their own scope and charge. ApproveCore persists the edits in the want and job.
+                    var edits = normalized.HasArrRouting ? pending.Input.WithArrChoices(admittedInput) : null;
+                    // Coverage ignores add settings. Reconcile them with the actual owner before acknowledging
+                    // a follower/duplicate. ApproveCore alone owns authorization, replacement and persistence.
+                    if (pending.Status != "pending" && RequestDestination.SameInput(edits, pending.Input) &&
+                        Jobs(c, t, "want_id=$w AND state IN ('queued','retry')", ("$w", pending.Id)).All(j => TitleChoiceRegistry.Check(c, t, j) == null)) continue;
+                    var approved = ApproveCore(c, t, pending.Id, user, edits, policy, now, reconcileArrChoices: pending.Status != "pending");
+                    if (approved.HttpStatus >= 400 && edits != null)
+                        return approved with { Message = approved.Reason is "request_in_flight" or "request_changed"
+                            ? "These add choices could not be applied: the shared request is already sending or sent. Check the title in Manage before changing its profile or folder."
+                            : approved.Message };
                     if (approved.HttpStatus != 200) continue;
                 }
             }
@@ -650,6 +676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var stored = normalized;
             Exec(c, t, "INSERT INTO wants(id,acquisition_id,user_id,client_request_id,fingerprint,title_key,variant,mutation_input,owned_input,status,reason,cost,parental_signature,is_follower,created_at,updated_at) VALUES($id,$a,$u,$client,$f,$key,$v,$input,$owned,$status,$r,$cost,$p,$follower,$at,$at)",
                 ("$id", id), ("$a", acquisition), ("$u", Id(user)), ("$client", request.ClientRequestId), ("$f", normalized.Fingerprint), ("$key", stored.Key), ("$v", stored.Variant), ("$input", stored.Canonical), ("$owned", extra?.Canonical), ("$status", status), ("$r", reason), ("$cost", cost), ("$p", facts.ParentalSignature), ("$follower", extra == null), ("$at", Ms(now)));
+            AcceptActiveAliases(c, t, stored.Key);
             Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", TargetKey(facts)), ("$id", id));
             if (origin != null)
                 Exec(c, t, "UPDATE wants SET origin_kind=$kind,origin_source_id=$source,origin_detail=$detail,operation_id=$operation WHERE id=$id",
@@ -661,7 +688,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial", facts.Pool?.Id);
             Fault?.Invoke("reservation");
-            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now);
+            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now, defaults: ChoiceDefaults(policy, facts.InstanceId));
             Fault?.Invoke("job");
             if (status == "queued" && extra != null && auto) ReleasePendingFollowers(c, t, acquisition, user, policy, now, false);
             Record(c, t, id, null, user, "create", "accepted", reason, stored.Key, now);
@@ -833,17 +860,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static RequestAuthorization Authorize(RequestPolicyFacts facts, RequestPolicyFacts? approver, MutationInput input, bool edited)
             => new(facts.UserId, approver?.UserId, "request", input.Scope, input.Variant, facts.Backend, facts.InstanceId, facts.ConnectionGeneration,
                 facts.Revision, facts.SeerrSource, facts.SeerrUser, facts.SeerrPermissions, edited);
+        // Jobs supply the immutability fence, including disjoint and uncertain work. Ownership
+        // comes only from the registry; the outbox's bounded due list is not this inventory.
+        private static List<RequestJob> TitleChoiceJobs(SqliteConnection c, SqliteTransaction t, MutationInput input, string target, bool history = false)
+            => ReadJobs(c, t, "want_id IN (SELECT id FROM wants WHERE " + TitleIs + " AND variant=$v)" + (history ? "" : " AND state<>'cancelled'"), false,
+                ("$key", input.Key), ("$v", input.Variant))
+                .Where(j => j.Authorization.Backend == "je" && RequestDestination.SameTarget(TargetKey(j.Authorization), target)).ToList();
+        private static bool HasChoice(MutationInput input) => input.ProfileId != null || input.RootFolder != null;
+        private static bool ChoiceDiffers(MutationInput current, MutationInput proposed)
+            => RequestDestination.ArrChoicesDiffer(current.ProfileId, current.RootFolder, proposed);
+        private static RequestOutcome? CheckTitleChoice(SqliteConnection c, SqliteTransaction t, Guid actor, MutationInput input, RequestPolicyFacts facts, long? overrideVersion, string? correctionWant = null, bool allowChanges = true, Model.Arr.ArrInstanceDefaults? defaults = null)
+        {
+            if (facts.Backend != "je") return null;
+            var auth = Authorize(facts, null, input, false);
+            var jobs = TitleChoiceJobs(c, t, input, TargetKey(facts));
+            var current = TitleChoiceRegistry.Current(c, t, input, auth);
+            foreach (var job in jobs.Where(j => ChoiceDiffers(j.Input, input)))
+                if (job.Uncertain || job.State is "sending" or "maybe_sent" or "succeeded")
+                    return RequestOutcome.Refused(job.State == "succeeded" ? "request_changed" : "request_in_flight", 409, "conflict") with
+                    { Message = "These add choices could not be applied: the title is already sending or sent. Check the title in Manage before changing its profile or folder." };
+            if (current == null)
+            {
+                if (!TitleChoiceRegistry.IsIdentityFenced(c, t, input.Key)) return null; // Only executable work claims a new title.
+                if (allowChanges && overrideVersion != null && TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion.Value, actor).Accepted) return null;
+                return RequestOutcome.Refused("choice_conflict", 409, "conflict") with
+                {
+                    Choice = allowChanges || facts.Role == "Admin" ? TitleChoiceRegistry.SplitConflict(c, t, input.Key) : null,
+                    Message = "This title's learned identity changed. Cancel or settle ambiguous work, then explicitly confirm the corrected identity and add choices.",
+                };
+            }
+            if (!HasChoice(input) && !current.Conflicted && overrideVersion == null) return null;
+            var conflict = TitleChoiceRegistry.Conflicts(current, input);
+            if (!allowChanges && HasChoice(input) && TitleChoiceRegistry.Differs(current, input)) conflict = true;
+            if (allowChanges && overrideVersion != null)
+            {
+                if (TitleChoiceRegistry.Override(c, t, input, auth, overrideVersion.Value, actor).Accepted) return null;
+            }
+            else if (!conflict)
+            {
+                // Explicit partial/default adoption is a checked Claim. Read-only approval must not
+                // fill, adopt or bump an existing record, even through this common admission helper.
+                if (!allowChanges || TitleChoiceRegistry.Claim(c, t, input, auth, actor, defaults, current.Revision).Accepted) return null;
+            }
+            return RequestOutcome.Refused("choice_conflict", 409, "conflict") with
+            {
+                Choice = allowChanges || facts.Role == "Admin" ? current.Wire : null,
+                Message = TitleChoiceRegistry.IsIdentityFenced(c, t, input.Key)
+                    ? "This title's learned ids disagree. Cancel or settle ambiguous requests and correct conflicting source ids, then explicitly confirm the current revision to accept the corrected mapping and these add choices. Detached titles remain held."
+                    : "This title already has an administrator's profile and root folder choice. Series settings apply to the whole title; seasons remain separate. Use the current choices, or explicitly confirm replacing this version before it sends.",
+            };
+        }
         // linkReservation: the job carries the want's latest unlinked ask or approval charge (a followed new season's
         // charge, scope "s<n>", goes with that season's own job instead: see FollowJob).
-        private static string AddJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput input, RequestAuthorization auth, DateTimeOffset now, bool linkReservation = true)
+        private static Model.Arr.ArrInstanceDefaults? ChoiceDefaults(IRequestPolicy policy, string instance)
+            => TitleChoiceRegistry.Settings(policy.Configuration, instance);
+        private static string AddJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput input, RequestAuthorization auth, DateTimeOffset now, bool linkReservation = true, Model.Arr.ArrInstanceDefaults? defaults = null)
         {
+            var binding = TitleChoiceRegistry.Bind(c, t, input, auth, defaults);
+            (input, auth) = (binding.Input, binding.Authorization);
             var id = NewId();
             Exec(c, t, "INSERT INTO jobs(id,want_id,action,instance_id,connection_generation,mutation_input,idempotency_key,fingerprint,authorization_context,state,next_attempt,reason,created_at,updated_at) VALUES($id,$w,'request',$instance,$generation,$input,$key,$f,$auth,'queued',$at,'queued_outage',$at,$at)",
                 ("$id", id), ("$w", wantId), ("$instance", auth.InstanceId), ("$generation", auth.ConnectionGeneration), ("$input", input.Canonical), ("$key", "request:" + id), ("$f", input.Fingerprint), ("$auth", JsonSerializer.Serialize(auth)), ("$at", Ms(now)));
+            TitleChoiceRegistry.Link(c, t, id, binding.Id, binding.Revision);
             if (linkReservation)
                 Exec(c, t, "UPDATE reservations SET job_id=$job WHERE id=(SELECT id FROM reservations WHERE want_id=$w AND state='charged' AND job_id IS NULL AND (scope='initial' OR scope LIKE 'approval:%') ORDER BY rowid DESC LIMIT 1)", ("$job", id), ("$w", wantId));
             return id;
         }
+        // Authorization refresh preserves the send binding and leaves the independent registry reference
+        // untouched. New identities go through AddJob/TitleChoiceRegistry.Bind.
+        private static void ReauthorizeJob(SqliteConnection c, SqliteTransaction t, RequestJob job, RequestAuthorization refreshed, DateTimeOffset now)
+            => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
+                ("$auth", JsonSerializer.Serialize(job.Authorization.CarryForward(refreshed))), ("$at", Ms(now)), ("$j", job.Id));
         /// <summary>Approves one pending row with fresh requester and approver checks in the transaction.</summary>
         public RequestOutcome Approve(string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now)
             => _db.Write((c, t) =>
@@ -856,7 +943,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
         // resumeHeld: an explicit approval may resume work held after part of it was written; an approver's matching ask
         // (an implicit approval) leaves such work alone.
-        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false)
+        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false, bool reconcileArrChoices = false)
         {
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
@@ -871,7 +958,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
             if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
             if (approver.Role != "Admin" && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
-            if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
+            if (CheckTitleChoice(c, t, actor, input, requester, null, reconcileArrChoices ? null : id, allowChanges: false) is { } choiceConflict)
+                return approver.Role == "Admin" ? choiceConflict : choiceConflict with { Choice = null, Message = "This title's add settings changed. Ask an administrator to review it in Manage." };
+            // Manage Add can reauthorize the known-unsent owner without moving its scope or charge.
+            // It cannot reopen sent work; normal approval retains its pending-only contract.
+            if (want.Status != "pending" && !(reconcileArrChoices && want.Status == "queued" && edits != null && requester.Backend == "je")) return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
@@ -882,6 +973,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // where it was; and what went out never moves, whatever the approval is.
             var verdict = RequestDestination.Approval(want.Input, want.TargetKey, input, TargetKey(requester), edits != null, jobs, resumeHeld);
             if (verdict.Refusal != null) return RequestOutcome.Refused(verdict.Refusal, 409);
+            if (reconcileArrChoices)
+            {
+                // Replace identities rather than editing a row an outbox worker may already have read.
+                // The claim and this transaction serialize: either the old claim wins (refused above),
+                // or that stale snapshot can no longer claim the cancelled job. Move only the reservation
+                // link; its owner, cost, charge time/order and scope remain exactly as charged.
+                var unsent = Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id));
+                if (unsent.Count == 0) return RequestOutcome.Refused("request_changed", 409);
+                foreach (var job in unsent)
+                {
+                    var replacement = job.Input.WithArrChoices(input);
+                    var next = AddJob(c, t, id, replacement, Authorize(requester, approver, replacement, true), now, linkReservation: false, defaults: ChoiceDefaults(policy, requester.InstanceId));
+                    if (ChoiceDiffers(job.Input, replacement) || job.TitleChoiceRevision != TitleChoiceRegistry.Current(c, t, replacement, job.Authorization)?.Revision)
+                        Record(c, t, id, next, actor, "choice_override", "accepted", "request_changed", input.Key, now);
+                    Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed',updated_at=$at WHERE id=$j", ("$at", Ms(now)), ("$j", job.Id));
+                    Exec(c, t, "UPDATE reservations SET job_id=$next WHERE job_id=$old", ("$next", next), ("$old", job.Id));
+                }
+                Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,reason='queued_outage',updated_at=$at WHERE id=$id",
+                    ("$input", input.Canonical), ("$owned", want.OwnedInput?.WithArrChoices(input).Canonical), ("$at", Ms(now)), ("$id", id));
+                var authorization = Authorize(requester, approver, input, true);
+                Approval(c, t, want, actor, "approve", null, edits, authorization, now);
+                Record(c, t, id, null, actor, "approve", "accepted", "queued_outage", input.Key, now);
+                return RequestOutcome.Accepted(id, "queued_outage", 200);
+            }
             var restamp = verdict.Reconfirms;
             if (targetChanged)
                 foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => !RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))))
@@ -896,7 +1011,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$j", ("$input", moved.Canonical), ("$f", moved.Fingerprint), ("$j", job.Id));
                 }
             }
-            else if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            else if (edits != null && !RequestDestination.SameInput(input, want.Input))
             {
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry'))", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed' WHERE want_id=$id AND state IN ('queued','retry')", ("$id", id));
@@ -914,8 +1029,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // A job waiting for something only a person can fix (a Seerr account) is checked again at once.
             Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE want_id=$id AND state='retry' AND next_attempt>$at", ("$at", Ms(now)), ("$id", id));
             foreach (var resume in held)
-                Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
-                    ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
+                ReauthorizeJob(c, t, resume, Authorize(requester, approver, resume.Input, edits != null), now);
             var own = Wants(c, t, "user_id=$u AND id<>$id", ("$u", Id(want.UserId)), ("$id", id));
             var covered = Wants(c, t, TitleIs + " AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
             // (maybe_sent here: only the held jobs resumed above.)
@@ -937,6 +1051,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             Exec(c, t, "UPDATE wants SET acquisition_id=$a,mutation_input=$input,owned_input=$owned,variant=$v,status=$state,reason=$reason,cost=$cost,is_follower=$follower,parental_signature=$p,updated_at=$at WHERE id=$id",
                 ("$a", acquisition), ("$input", stored.Canonical), ("$owned", extra?.Canonical), ("$v", stored.Variant), ("$state", confirmedScope ? "sent" : "queued"), ("$reason", confirmedScope ? "looking" : "queued_outage"), ("$cost", priorCost + cost), ("$p", requester.ParentalSignature), ("$follower", extra == null && existingJobs.Count == 0), ("$at", Ms(now)), ("$id", id));
+            AcceptActiveAliases(c, t, stored.Key);
             Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", TargetKey(requester)), ("$id", id));
             if (existingJobs.Count == 0)
                 Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',charge_seq=" + NextCharge + ",cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
@@ -945,11 +1060,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     ("$rid", NewId()), ("$id", id), ("$u", Id(want.UserId)), ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$scope", "approval:" + NewId()), ("$episodes", extra.Scope == "episodes" ? extra.Episodes.Length : 0));
             Fault?.Invoke("reservation");
             var auth = Authorize(requester, approver, extra ?? stored, edits != null);
-            if (extra != null) AddJob(c, t, id, extra, auth, now);
+            if (extra != null) AddJob(c, t, id, extra, auth, now, defaults: ChoiceDefaults(policy, requester.InstanceId));
             foreach (var season in followed) FollowJob(c, t, id, season, Authorize(requester, approver, season, false), now);
             Approval(c, t, want, actor, "approve", null, edits, auth, now);
             Record(c, t, id, null, actor, "approve", "accepted", "queued_outage", stored.Key, now);
-            if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            if (edits != null && !RequestDestination.SameInput(input, want.Input))
             {
                 WithdrawFollowers(c, t, want.AcquisitionId, now);
                 if (acquisition != want.AcquisitionId) WithdrawFollowers(c, t, acquisition, now);
@@ -1015,7 +1130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // keep it. Anything else (no such person, the feature off, authority changing, not seeing it) refuses a withdrawal.
         private static readonly IReadOnlySet<string> RoutingRefusals = new HashSet<string>(StringComparer.Ordinal)
         {
-            "invalid_instance", "instance_changed", "invalid_defaults", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
+            "invalid_instance", "instance_changed", "invalid_defaults", "invalid_choice", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
             "seerr_advanced_required", "backend_unavailable", "low_disk",
         };
         /// <summary>
@@ -1178,12 +1293,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static List<RequestJob> Jobs(SqliteConnection c, SqliteTransaction? t, string where, params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,want_id,mutation_input,authorization_context,state,attempts,next_attempt,reason,idempotency_key,fingerprint,COALESCE(json_extract(outcome,'$.certainty')='Unknown',0) FROM jobs WHERE " + where + " ORDER BY next_attempt,id LIMIT 100", args);
+            return ReadJobs(c, t, where, true, args);
+        }
+        private static List<RequestJob> ReadJobs(SqliteConnection c, SqliteTransaction? t, string where, bool bounded, params (string, object?)[] args)
+        {
+            using var cmd = Cmd(c, t, "SELECT id,want_id,mutation_input,authorization_context,state,attempts,next_attempt,reason,idempotency_key,fingerprint,COALESCE(json_extract(outcome,'$.certainty')='Unknown',0) FROM jobs WHERE " + where + " ORDER BY next_attempt,id" + (bounded ? " LIMIT 100" : ""), args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestJob>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), JsonSerializer.Deserialize<MutationInput>(r.GetString(2))!, JsonSerializer.Deserialize<RequestAuthorization>(r.GetString(3))!,
                 r.GetString(4), r.GetInt32(5), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(6)), r.GetString(7), r.GetString(8), r.GetString(9), r.GetInt64(10) == 1));
-            return list;
+            r.Close();
+            return list.Select(j => TitleChoiceRegistry.Display(c, t, j)).ToList();
         }
         /// <summary>One job by id, or null.</summary>
         public RequestJob? Job(string id) => _db.Read(c => Jobs(c, null, "id=$id", ("$id", id)).SingleOrDefault());
@@ -1200,7 +1320,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Jobs of a want, for administrative diagnostics and tests.</summary>
         public IReadOnlyList<RequestJob> ForWant(string id) => _db.Read(c => Jobs(c, null, "want_id=$id", ("$id", id)));
         /// <summary>Recovers uncertain writes after a process restart, never blindly re-sending them.</summary>
-        public void Recover(DateTimeOffset now) => _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
+        public void Recover(DateTimeOffset now)
+        {
+            _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
+            // A move's staged batch left by the process that ran it (or by a restored copy) never completes: rolled back.
+            DiscardStagedImports(now);
+        }
         /// <summary>Claims a due row under a database generation fence (after the send-time redundancy check: see <see cref="ClaimForDispatch"/>).</summary>
         public bool Claim(RequestJob job, long generation, DateTimeOffset now) => ClaimForDispatch(job, generation, now) == DispatchClaim.Claimed;
         /// <summary>What claiming a due job for its send did.</summary>

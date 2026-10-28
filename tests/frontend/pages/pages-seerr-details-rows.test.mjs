@@ -731,3 +731,18 @@ test('a series page\'s Request More reads its details the way the More Info wind
   assert.deepEqual([details,proxied],[[[615,'tv']],[]],outcome);
  }
 });
+
+// A1 fix round 1: with Jellyfin Enhanced the request backend (public config NativeAbsentDetails.Source "tmdb") the rows
+// come from its public route (api.js fetchRelated), so Seerr off completely (its user status inactive) still shows
+// them, and Seerr's user status is never asked for.
+test('JE backend with Seerr off: the Recommended and Similar rows are shown, without asking Seerr\'s user status',async t=>{
+ const h=setup(t,{status:{active:false,userFound:false,reason:'disabled'},config:{JellyseerrEnabled:false,NativeAbsentDetails:{Enabled:true,ContractVersion:1,Source:'tmdb'}}});
+ await h.render();await h.start();
+ assert.equal(h.counts.status,0,'no Seerr user status');
+ assert.deepEqual(h.after(),['Recommended','Similar']);
+ // Seerr mode: Seerr off means no rows, as before.
+ const seerr=setup(t,{status:{active:false,userFound:false,reason:'disabled'},config:{NativeAbsentDetails:{Enabled:true,ContractVersion:1,Source:'seerr'}}});
+ await seerr.render();await seerr.start();
+ assert.equal(seerr.counts.status,1);
+ assert.deepEqual(seerr.after(),[]);
+});

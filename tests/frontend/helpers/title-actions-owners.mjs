@@ -125,10 +125,10 @@ export const INTERRUPTS = [
 
 /** Opens the row's More sheet and presses `id`. */
 export async function press(h, id) {
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   const entry = h.document.querySelector(`.je-actions-entry[data-action="${id}"]`);
   assert.ok(entry, 'the sheet offers ' + id);
-  entry.click(); await settle();
+  h.click(entry); await settle();
 }
 
 /** ask-core reads capabilities once a minute: the next read goes to the server again. */
@@ -144,7 +144,7 @@ export async function submitReport(h) {
   const modal = [...h.document.querySelectorAll('.jellyseerr-season-modal')].at(-1);
   assert.ok(modal, 'the Report form is open');
   modal.querySelector('input[name="issue-type"]').checked = true;
-  modal.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-modal-button-primary')); await settle();
 }
 
 export const sheet = h => h.document.querySelector('.je-sheet');

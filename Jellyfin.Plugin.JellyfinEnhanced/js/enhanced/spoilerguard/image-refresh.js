@@ -47,10 +47,19 @@
         });
     };
 
-    internal.scheduleFullReload = function() {
+    /**
+     * Reloads the page 600 ms from now for `owner` (required, D46S2-R11-6: the toggle's press, or the page's own step):
+     * checked as the reload happens, so a navigation, an account switch or the document leaving in between reloads
+     * nothing. A newer request replaces a pending one.
+     * @param {any} owner
+     */
+    internal.scheduleFullReload = function(owner) {
+        const resolved = JE.requireOwner(owner, 'the Spoiler Guard reload');
+        if (!resolved) return;
         if (pendingReload) clearTimeout(pendingReload);
         pendingReload = setTimeout(function() {
             pendingReload = null;
+            if (!JE.effectOwner(resolved, 'the Spoiler Guard reload')) return;
             try { location.reload(); }
             catch (e) { console.warn(`${logPrefix} reload failed:`, e); }
         }, 600);

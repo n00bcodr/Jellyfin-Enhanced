@@ -141,7 +141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var isPerson = mediaType == "person";
                 var query = isPerson ? BuildPersonQuery(tmdbId) : BuildTitleQuery(mediaType, tmdbId);
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = RequestTimeout;
 
                 using var request = new HttpRequestMessage(HttpMethod.Get,

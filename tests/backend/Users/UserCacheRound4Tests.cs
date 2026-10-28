@@ -411,7 +411,7 @@ public class UserCacheOneSnapshotTests
         var (parental, transport) = Parental(arr, _ => current);
         using var _transport = transport;
         // The rating is known (read once for the kid).
-        Assert.False(await parental.MaySeeAbsentAsync("movie", 102, SeerrParentalFilter.PolicyFor(limited), default));
+        Assert.False(await parental.CheckAbsentAsync("movie", 102, SeerrParentalFilter.PolicyFor(limited), viewer.UserId, default));
         using var store = arr.Store();
         var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         // The status answer is keyed by the viewer read at the start (limit 5); the limit is widened meanwhile.
@@ -478,19 +478,27 @@ public class UserCacheRound4ScanTests
     [Fact]
     public void AWriteDispositionTheCodeDoesntKeepFails()
     {
+        // _pending is now behind the common facts-state accessor. Calibrate the legacy
+        // invalidate-only rule with a real plain answer cache, rather than that backing storage.
+        var planted = WriteGateWalk.Plugin.With("Services/Acquire/Stamps/AcquisitionStampFeeder.cs", text => text.Replace(
+            "        private static readonly TimeSpan Settle",
+            "        private readonly Dictionary<Guid, int> _plantedAnswer = new();\n"
+            + "        internal int ReadPlantedAnswer(Guid id) => _plantedAnswer.TryGetValue(id, out var value) ? value : 0;\n"
+            + "        internal void FillPlantedAnswer(Guid id, int value) => _plantedAnswer[id] = value;\n"
+            + "        internal void DropPlantedAnswer() => _plantedAnswer.Clear();\n"
+            + "        private static readonly TimeSpan Settle", StringComparison.Ordinal));
         var rows = UserCacheRegistryTests.Registry().Select(r => r.Member switch
         {
             "ListStore._index" => r with { Rules = "write:locked=_cacheLock" },
             "JellyfinBridge._missing" => r with { Rules = "write:fenced=_noSuchGeneration" },
             "PosterTagTileCache._map" => r with { Rules = "write:invalidated-on-write" },
-            "AcquisitionStampFeeder._pending" => r with { Rules = string.Empty },
             _ => r,
-        }).ToList();
-        var problems = UserCacheRegistryTests.Problems(WriteGateWalk.Plugin, rows);
+        }).Append(new UserCacheRegistryTests.Row("AcquisitionStampFeeder._plantedAnswer", "both", "independent", "entry", "fixture answer explicitly invalidated on write")).ToList();
+        var problems = UserCacheRegistryTests.Problems(planted, rows);
         Assert.Contains(problems, p => p.StartsWith("ListStore._index: locked by _cacheLock, but ", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.StartsWith("JellyfinBridge._missing: fenced by _noSuchGeneration, but ", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.StartsWith("PosterTagTileCache._map: unknown write disposition", StringComparison.Ordinal));
-        Assert.Contains(problems, p => p.StartsWith("AcquisitionStampFeeder._pending is dropped outside the code that fills it", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.StartsWith("AcquisitionStampFeeder._plantedAnswer is dropped outside the code that fills it", StringComparison.Ordinal));
         // The generation fence of the "not in Jellyfin" list, removed from one drop: caught.
         var unfenced = WriteGateWalk.Plugin.With("Services/Acquire/JellyfinBridge.cs", s =>
         {

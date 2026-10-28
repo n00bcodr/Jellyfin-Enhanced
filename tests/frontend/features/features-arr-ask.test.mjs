@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 3: asking from the client (ask-core.js) and missing episodes on season
 // pages (ask-episodes.js): Get it on missing rows, JE-drawn rows for episodes Jellyfin has no row for,
 // Jellyfin's own missing rows decorated, Get them on the banner, honest outcomes.
@@ -50,11 +51,13 @@ function season({ e2row = false } = {}) {
   };
 }
 
-function rowsBody({ displayMissing = true, canRequest = true, requests = {}, seasonRequest = null, blocked = null } = {}) {
+function rowsBody({ displayMissing = true, canRequest = true, requests = {}, seasonRequest = null, blocked = null, source } = {}) {
   return {
     outcome: 'accepted', reason: 'season', certainty: 'Succeeded', message: 'Season',
     rows: {
       key: 'tv:tvdb:1:s1', series: 'tv:tvdb:1', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing, canRequest, seasonRequest, blocked,
+      // Whose numbering the rows carry (UX-3, SeasonRows.source); left out, the round-1 shape (no source).
+      ...(source ? { source } : {}),
       episodes: [
         { episode: 1, request: requests[1] || null },
         { episode: 2, title: 'Two', overview: 'Second one.', runtime: 44, airDate: '2014-06-08', still: '/b2.jpg', request: requests[2] || null },
@@ -75,7 +78,7 @@ function setup(t, { rows = row(1), status = season(), config = {}, server = {}, 
   const navigations = [];
   let epoch = 0;
   let shownStatus = status;
-  let rowsAnswer = server.rows || (() => rowsBody());
+  let rowsAnswer = server.rows || (() => rowsBody({ source: 'destination' }));
   const h = createHarness({
     html: html ?? page(rows),
     url: `http://jellyfin.test/web/index.html#/details?id=${SEASON_ID}`,
@@ -285,7 +288,7 @@ test('rows mode: JE draws native-looking rows for missing episodes Jellyfin has 
   // Clicks inside a JE row never reach Jellyfin's list handlers.
   let reached = 0;
   h.list().addEventListener('click', () => reached++);
-  four.querySelector('.listItem-content').click();
+  h.click(four.querySelector('.listItem-content'));
   assert.equal(reached, 0);
   // One read of the season rows.
   assert.equal(h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length, 1);
@@ -297,8 +300,8 @@ test('Get it asks for that one episode and the chip says what the server answere
     server: { post: () => ({ status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', message: 'Asked!', requestId: 'f'.repeat(32) } }) }
   });
   await h.open();
-  h.setRows(() => rowsBody({ requests: { 2: 'waiting' } }));
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.setRows(() => rowsBody({ source: 'destination', requests: { 2: 'waiting' } }));
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input, { key: 'tv:tvdb:1', scope: 'episodes', variant: 'standard', seasons: [], episodes: [{ season: 1, episode: 2 }] });
@@ -316,7 +319,7 @@ test('a refused or failed ask keeps Get it and says so honestly', async t => {
   let answer = { status: 429, body: { outcome: 'quota_exceeded', reason: 'quota_exceeded', certainty: 'Rejected' } };
   const h = setup(t, { server: { post: () => answer } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"]');
   assert.equal(four.querySelector('.je-arr-chip').textContent, 'Missing');
@@ -324,7 +327,7 @@ test('a refused or failed ask keeps Get it and says so honestly', async t => {
   assert.equal(h.toasts.at(-1), "You've used this week's requests.");
   // Stage 1 fix round 12: a lost answer may have been recorded, so it is said as unconfirmed, never as not asked.
   answer = new TypeError('Failed to fetch');
-  four.querySelector('.je-ask-get').click();
+  h.click(four.querySelector('.je-ask-get'));
   await settle(20);
   assert.equal(h.toasts.at(-1), "Couldn't confirm your ask reached the server. Asking again won't ask twice.");
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
@@ -354,7 +357,7 @@ test('Jellyfin\'s own missing row is decorated: one label, dimmed, runtime and d
 });
 
 test('banner mode (missing episodes not shown as rows): states per episode and Get them for the rest', async t => {
-  const h = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'household' } }) } });
+  const h = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false, requests: { 2: 'household' } }) } });
   await h.open();
   same(h.episodes(), ['N1'], 'no JE rows without the display setting');
   const banner = h.document.querySelector('.je-arr-banner');
@@ -364,7 +367,7 @@ test('banner mode (missing episodes not shown as rows): states per episode and G
   const btn = action.querySelector('.je-ask-get');
   assert.equal(btn.textContent, 'downloadGet E4');
   assert.equal(btn.getAttribute('aria-label'), 'Get the missing episodes: E4');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
   assert.match(h.document.querySelector('.je-ask-banner-action').textContent, /E4 · Waiting for OK/);
@@ -377,14 +380,14 @@ function withGaps(status, gaps, role = 'standard') {
 
 test('a gap another copy plays is that copy\'s gap: the banner, Get them and the row chip name the copy; others stay plainly Missing', async t => {
   // E2 plays in the 4K copy right beside this standard copy's rows; nobody has E4.
-  const h = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await h.open();
   const banner = h.document.querySelector('.je-arr-banner');
   same([...banner.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing: E4', 'Missing in the standard copy: E2']);
   const btn = banner.querySelector('.je-ask-get');
   assert.equal(btn.textContent, 'downloadGet them in standard');
   assert.equal(btn.getAttribute('aria-label'), 'Get the episodes missing in the standard copy: E2, E4');
-  btn.click();
+  clickAsViewer(btn);
   await settle(20);
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
 
@@ -395,7 +398,7 @@ test('a gap another copy plays is that copy\'s gap: the banner, Get them and the
   same([...b.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing in the 4K copy: E2, E4']);
   assert.equal(b.querySelector('.je-ask-get').textContent, 'downloadGet E4 in 4K');
   // A custom copy: no request names it (D53, edition round 15), so nothing is offered under its name.
-  const custom = setup(t, { status: withCopy(season(), [2, 4], 'custom', { variant: null, ask: false, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const custom = setup(t, { status: withCopy(season(), [2, 4], 'custom', { variant: null, ask: false, search: false }), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await custom.open();
   same([...custom.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in this copy: E2, E4']);
   assert.equal(custom.document.querySelector('.je-arr-banner .je-ask-get'), null);
@@ -419,11 +422,11 @@ const KID_4K = { role: 'kid', canRequest: true, contact: 'Dad', asksFirst: true,
 
 test('one binding decides wording and action: Get them in 4K asks for the 4K edition; a copy no ask reaches gets no button under its name', async t => {
   // The 4K page: E2 and E4 are its gaps (the standard copy plays them); a 4K request lands on its Sonarr.
-  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(btn.textContent, 'downloadGet them in 4K');
-  btn.click();
+  clickAsViewer(btn);
   await settle(20);
   same({ variant: h.posts[0].body.input.variant, episodes: h.posts[0].body.input.episodes }, { variant: '4k', episodes: [{ season: 1, episode: 2 }, { season: 1, episode: 4 }] }, 'the 4K edition, as the button says');
 
@@ -433,21 +436,21 @@ test('one binding decides wording and action: Get them in 4K asks for the 4K edi
   const two = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   assert.equal(two.querySelector('.je-arr-chip').textContent, 'Missing in 4K');
   assert.equal(two.querySelector('.je-ask-get').getAttribute('aria-label'), 'Get episode 2 for the 4K copy: Two');
-  two.querySelector('.je-ask-get').click();
+  clickAsViewer(two.querySelector('.je-ask-get'));
   await settle(20);
   assert.equal(rows.posts[0].body.input.variant, '4k');
   // A title-wide gap on the same page keeps its plain Get it (a standard ask).
-  rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  clickAsViewer(rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   same({ variant: rows.posts[1].body.input.variant, label: rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent }, { variant: 'standard', label: 'Waiting for OK' });
 
   // Someone who may not ask for 4K: nothing under the 4K copy's name.
-  const no4k = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const no4k = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await no4k.open();
   assert.equal(no4k.document.querySelector('.je-arr-banner .je-ask-get'), null);
   // A copy no request reaches (an anime Sonarr: asks go to the standard one), or a server that names no binding: no button either.
   for (const copy of [{ variant: null, ask: false, search: false }, null]) {
-    const h2 = setup(t, { status: withCopy(season(), [2, 4], 'anime', copy), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+    const h2 = setup(t, { status: withCopy(season(), [2, 4], 'anime', copy), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
     await h2.open();
     assert.equal(h2.document.querySelector('.je-arr-banner .je-ask-get'), null, `binding ${JSON.stringify(copy)}`);
     same([...h2.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in the anime copy: E2, E4'], 'the words stay');
@@ -459,21 +462,21 @@ test('one binding decides Search: an administrator searches the copy\'s own inst
   const admin = setup(t, {
     status: { ...withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...fourK, instanceId: 'son4k' }) },
     config: { ArrManageDrawerEnabled: true },
-    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+    server: { me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
   });
   await admin.open();
   const btn = admin.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search in 4K');
-  btn.click();
+  clickAsViewer(btn);
   await settle(20);
   same({ path: admin.posts[0].path, instanceId: admin.posts[0].body.instanceId }, { path: '/arr/admin/manage/search', instanceId: 'son4k' }, 'the 4K Sonarr, never the standard one');
 
   // A Kid's Search runs on standard copies only: under the 4K name the button asks for the 4K edition instead.
-  const kid = setup(t, { status: withCopy(longMissing(), [2, 4], '4k', fourK), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const kid = setup(t, { status: withCopy(longMissing(), [2, 4], '4k', fourK), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await kid.open();
   const get = kid.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(get.querySelector('.je-ask-get-text').textContent, 'Get them in 4K');
-  get.click();
+  clickAsViewer(get);
   await settle(20);
   same(kid.searches, [], 'no household Search (it would search the standard copy)');
   assert.equal(kid.posts[0].body.input.variant, '4k');
@@ -482,19 +485,19 @@ test('one binding decides Search: an administrator searches the copy\'s own inst
   await rows.open();
   const row = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
   assert.equal(row.querySelector('.je-ask-get-text').textContent, 'Get it');
-  row.click();
+  clickAsViewer(row);
   await settle(20);
   same({ searches: rows.searches.length, variant: rows.posts[0].body.input.variant }, { searches: 0, variant: '4k' });
 
   // The standard copy: a household Search reaches it (its request target), as before.
   const standard = setup(t, {
     status: withCopy(longMissing(), [2, 4], 'standard', { variant: 'standard', ask: true, search: true }),
-    server: { rows: () => rowsBody({ displayMissing: false }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) }
+    server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) }
   });
   await standard.open();
   const search = standard.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(search.querySelector('.je-ask-get-text').textContent, 'Search in standard');
-  search.click();
+  clickAsViewer(search);
   await settle(30);
   same(standard.searches.map(x => x.body.key), ['tv:tvdb:1:s1']);
 });
@@ -505,7 +508,7 @@ test('check at click: "Search in 4K" for a 4K copy no ask reaches, after a permi
   // An administrator's page of a second 4K Sonarr's copy: a 4K ask goes to the default 4K Sonarr (another copy), so the
   // binding offers only the administrator's Search on the copy's own instance.
   const bound = { variant: '4k', ask: false, search: false };
-  const server = { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
+  const server = { me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
   const h = setup(t, { status: withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...bound, instanceId: 'son4kB' }), config: { ArrManageDrawerEnabled: true }, server });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
@@ -514,7 +517,7 @@ test('check at click: "Search in 4K" for a 4K copy no ask reaches, after a permi
   server.me = MEMBER_4K;
   h.setStatus(withCopy(longMissing(), [2, 4], '4k', bound));
   await h.JE.arrAsk.me(true);
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
   const now = h.document.querySelector('.je-arr-banner .je-ask-get');
@@ -532,7 +535,7 @@ test('check at click: a row\'s Search for that copy, after a permission change, 
   server.me = MEMBER_4K;
   h.setStatus(withCopy(longMissing(), [2], '4k', bound));
   await h.JE.arrAsk.me(true);
-  row.click();
+  clickAsViewer(row);
   await settle(40);
   same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-search'), null, 'no Search under the copy\'s name any more');
@@ -540,29 +543,29 @@ test('check at click: a row\'s Search for that copy, after a permission change, 
 
 test('check at click: "Get them in 4K" asks only while the 4K ask is still allowed and still reaches the copy', async t => {
   // The 4K permission is taken away after the page was drawn.
-  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const server = { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) };
   const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(btn.textContent, 'downloadGet them in 4K');
   server.me = { ...KID_4K, can4kSeries: false };
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   same(h.posts, [], 'no 4K ask once it is no longer allowed');
   assert.equal(h.document.querySelector('.je-arr-banner .je-ask-get'), null, 'nothing under the 4K copy\'s name any more');
 
   // The binding changed: a 4K ask no longer lands on this copy (the default 4K Sonarr is now another one).
-  const moved = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const moved = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await moved.open();
   moved.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
-  moved.document.querySelector('.je-arr-banner .je-ask-get').click();
+  clickAsViewer(moved.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(40);
   same(moved.posts, [], 'no ask for a copy it no longer reaches');
 
   // Nothing changed: it asks for exactly what it says.
-  const kept = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const kept = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await kept.open();
-  kept.document.querySelector('.je-arr-banner .je-ask-get').click();
+  clickAsViewer(kept.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(40);
   assert.equal(kept.posts[0]?.body.input.variant, '4k');
 });
@@ -591,21 +594,21 @@ test('a season that is not in the library at all: the banner lists it and leaves
       { key: 'tv:tvdb:1:s1:e4', season: 1, episode: 4, row: false, stage: 'notHere', reason: { code: 'not_in_arr' } }
     ]
   };
-  const h = setup(t, { status: absent, server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { status: absent, server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
   await h.open();
   const banner = h.document.querySelector('.je-arr-banner');
   assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
   assert.equal(banner.querySelector('.je-ask-get'), null, 'Get Season 1 on the page asks for the season');
   // Once part of it was asked for, the rest is offered on the banner again.
-  const partly = setup(t, { status: withEpisode(absent, 2, 'approved', 'approved'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'asked' } }) } });
+  const partly = setup(t, { status: withEpisode(absent, 2, 'approved', 'approved'), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false, requests: { 2: 'asked' } }) } });
   partly.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
   await partly.open();
   assert.equal(partly.document.querySelector('.je-arr-banner .je-ask-get').textContent, 'downloadGet E4');
 });
 
 test('people who cannot ask see the rows and states but no Get it; with phase 3 off nothing changes', async t => {
-  const watcher = setup(t, { server: { rows: () => rowsBody({ canRequest: false }) } });
+  const watcher = setup(t, { server: { rows: () => rowsBody({ source: 'destination', canRequest: false }) } });
   await watcher.open();
   same(watcher.episodes(), ['N1', 'JE2', 'JE3', 'JE4']);
   assert.equal(watcher.document.querySelector('.je-ask-get'), null);
@@ -639,14 +642,14 @@ test('the episode dialog shows the status and Get it, traps focus and gives it b
   await h.open();
   const title = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-row-title');
   title.focus();
-  title.click();
+  h.click(title);
   const dialog = h.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-title').textContent, '2. Two');
   assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Not being fetched/);
   assert.equal(dialog.getAttribute('aria-describedby'), null, 'nothing paused to read out');
   assert.equal(h.document.activeElement, dialog.querySelector('.je-ask-get'));
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
   assert.equal(h.document.activeElement, title);
 });
@@ -668,14 +671,14 @@ test('an episode the arr is looking for right now: "Looking for it", dimmed and 
   assert.ok(two.classList.contains('je-ask-dim'), 'still missing: dimmed');
   // E4 (not monitored) still offers Get it.
   assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
-  two.querySelector('.je-ask-row-title').click();
+  h.click(two.querySelector('.je-ask-row-title'));
   const dialog = h.document.querySelector('.je-ask-dialog');
   assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Looking for it/);
   assert.equal(dialog.querySelector('.je-ask-get'), null, 'the dialog offers nothing either');
   h.JE.internals.arrAskEpisodes.closeDialog();
 
   // Banner mode: listed as missing, its own chip says it is being looked for; Get E4 only.
-  const banner = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const banner = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await banner.open();
   const b = banner.document.querySelector('.je-arr-banner');
   assert.equal(b.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
@@ -685,14 +688,14 @@ test('an episode the arr is looking for right now: "Looking for it", dimmed and 
   // Every missing episode is being looked for: one "Looking for it" for all of them, nothing to ask for.
   const allFresh = freshLooking();
   Object.assign(allFresh.episodes[3], { stage: 'looking', reason: { code: 'looking' } });
-  const quiet = setup(t, { status: allFresh, server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const quiet = setup(t, { status: allFresh, server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await quiet.open();
   const qb = quiet.document.querySelector('.je-arr-banner');
   same([...qb.querySelectorAll('.je-ask-banner-action .je-arr-chip')].map(c => c.textContent), ['Looking for it']);
   assert.equal(qb.querySelector('.je-ask-get'), null);
 
   // Asking paused (storage full): nothing to explain on an episode nobody could ask for anyway.
-  const paused = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ canRequest: false, blocked: { reason: 'storage_full' } }) } });
+  const paused = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ source: 'destination', canRequest: false, blocked: { reason: 'storage_full' } }) } });
   await paused.open();
   const pausedTwo = paused.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   assert.equal(pausedTwo.querySelector('.je-arr-chip').textContent, 'Looking for it');
@@ -722,19 +725,19 @@ test('TV layout: a JE row is one focusable button that opens the dialog; arrows 
   assert.equal(two.querySelector('button, .je-ask-get'), null, 'no buttons inside a TV row');
   assert.equal(h.document.querySelector('.je-ask-get'), null, 'Get it is never inside a row on TV');
   two.focus();
-  two.click();
+  h.click(two);
   const dialog = h.document.querySelector('.je-ask-dialog');
   const buttons = [...dialog.querySelectorAll('button')];
   assert.equal(h.document.activeElement, buttons[0]);
   assert.equal(buttons[0].className.split(' ')[0], 'je-ask-get');
   let jellyfinSaw = 0;
   h.window.addEventListener('keydown', () => jellyfinSaw++);
-  h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+h.key(h.document.activeElement, 'ArrowRight');
   assert.equal(h.document.activeElement, buttons[1]);
-  h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+h.key(h.document.activeElement, 'ArrowRight');
   assert.equal(h.document.activeElement, buttons[0], 'wraps around');
   assert.equal(jellyfinSaw, 0, 'the page behind never sees the arrows');
-  buttons[0].click();
+  h.click(buttons[0]);
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }]);
@@ -795,8 +798,8 @@ test('rows: a long-missing episode gets Search instead of Get it; a Kid\'s Searc
   assert.ok(btn.classList.contains('je-ask-search'));
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search');
   assert.equal(btn.getAttribute('aria-label'), 'Search for episode 2: Two');
-  h.setRows(() => rowsBody({ requests: { 2: 'waiting' } }));
-  btn.click();
+  h.setRows(() => rowsBody({ source: 'destination', requests: { 2: 'waiting' } }));
+  h.click(btn);
   await settle(20);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].path, '/acquire/requests');
@@ -816,7 +819,7 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
     }
   });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].path, '/arr/admin/manage/search');
@@ -827,7 +830,7 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
   assert.equal(two.querySelector('.je-ask-get'), null, 'the outcome takes the button\'s place for a while');
   same(h.toasts, ['Nothing found yet · searched just now']);
   found = true;
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[1].body.key, 'tv:tvdb:1:s1:e4');
   assert.equal(h.toasts.at(-1), 'Found a copy — downloading');
@@ -836,9 +839,9 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
 
 test('rows: someone else\'s Search on an episode a request already sent searches again (no new request) and says what it found; otherwise it asks', async t => {
   let answer = { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } };
-  const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household' } }), search: () => answer } });
+  const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'household' } }), search: () => answer } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2']);
   assert.match(h.searches[0].body.idempotencyKey, /\S{8,}/);
@@ -848,7 +851,7 @@ test('rows: someone else\'s Search on an episode a request already sent searches
 
   // Nothing sent for E4 yet: the server says so, and the Search asks for it like Get it.
   answer = { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' } };
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   assert.equal(h.searches.at(-1).body.key, 'tv:tvdb:1:s1:e4');
   assert.equal(h.posts.length, 1);
@@ -859,12 +862,12 @@ test('banner: someone else\'s Search searches the season again when requests sen
   const h = setup(t, {
     status: longMissing(),
     server: {
-      rows: () => rowsBody({ displayMissing: false }),
+      rows: () => rowsBody({ source: 'destination', displayMissing: false }),
       search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } })
     }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(30);
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1'], 'one search for the season, not one per episode');
   same(h.posts, [], 'not a request');
@@ -876,12 +879,12 @@ test('banner: someone else\'s Search searches again each episode a request sent 
   const h = setup(t, {
     status: longMissing(),
     server: {
-      rows: () => rowsBody({ displayMissing: false }),
+      rows: () => rowsBody({ source: 'destination', displayMissing: false }),
       search: (body) => (body.key.endsWith(':e2') ? { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Found it.', found: true } } : { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Ask.' } })
     }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(30);
   // The season as a whole first (not every episode was sent), then episode by episode.
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1', 'tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
@@ -893,7 +896,7 @@ test('banner: someone else\'s Search searches again each episode a request sent 
 test('rows: without the Manage drawer an administrator\'s Search asks like everyone else', async t => {
   const h = setup(t, { status: longMissing({ admin: true }), server: { me: ADMIN_ME } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[0].path, '/acquire/requests');
 });
@@ -902,21 +905,21 @@ test('banner: long-missing episodes get Search; an administrator\'s searches the
   const admin = setup(t, {
     status: longMissing({ admin: true }),
     config: { ArrManageDrawerEnabled: true },
-    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+    server: { me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
   });
   await admin.open();
   const btn = admin.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search');
   assert.equal(btn.getAttribute('aria-label'), 'Search for the missing episodes: E2, E4');
-  btn.click();
+  admin.click(btn);
   await settle(20);
   same({ path: admin.posts[0].path, key: admin.posts[0].body.key }, { path: '/arr/admin/manage/search', key: 'tv:tvdb:1:s1' });
   assert.equal(admin.document.querySelector('.je-arr-banner .je-ask-searched').textContent, 'Searching…');
   assert.equal(admin.toasts.at(-1), 'Search started; it shows here when a copy turns up');
 
-  const kid = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const kid = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await kid.open();
-  kid.document.querySelector('.je-arr-banner .je-ask-get').click();
+  kid.click(kid.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(20);
   same(kid.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
 });
@@ -926,7 +929,7 @@ test('banner: long-missing episodes get Search; an administrator\'s searches the
 test('the banner is built once: re-applying the page keeps the banner, Get them and its focus (no rebuild loop)', async t => {
   let calls = 0;
   const h = setup(t, {
-    server: { rows: () => rowsBody({ displayMissing: false }) },
+    server: { rows: () => rowsBody({ source: 'destination', displayMissing: false }) },
     // A real body observer, as JE.helpers.onBodyMutation is: every added node re-applies the page.
     observe: (fn, win, doc) => new win.MutationObserver((m) => { if (++calls < 25) fn(m); }).observe(doc.body, { childList: true, subtree: true })
   });
@@ -968,7 +971,7 @@ test('a season without episode rows of Jellyfin\'s own: JE rows go in its empty 
 });
 
 test('a request already sent gives way to Search once the episode is missing for a long while; waiting, declined and fresh ones keep their chip', async t => {
-  const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'asked', 4: 'waiting' } }) } });
+  const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'asked', 4: 'waiting' } }) } });
   await h.open();
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   assert.equal(two.querySelector('.je-arr-chip').textContent, 'Missing');
@@ -978,30 +981,30 @@ test('a request already sent gives way to Search once the episode is missing for
   assert.equal(four.querySelector('.je-ask-get'), null);
 
   // Someone else's ask, and the dialog of a JE row, follow the same rule.
-  const household = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household', 4: 'declined' } }) } });
+  const household = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'household', 4: 'declined' } }) } });
   await household.open();
   assert.equal(household.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get .je-ask-get-text').textContent, 'Search');
   assert.equal(household.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Said no');
-  household.JE.internals.arrAskEpisodes.openDetails(longMissing().episodes[1], { contact: 'Dad' });
+  household.JE.internals.arrAskEpisodes.openDetails(longMissing().episodes[1], { contact: 'Dad' }, household.NATIVE);
   await settle();
   const dialog = household.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Search', 'the dialog offers Search too');
 
   // The banner: Search for E2 next to E4's waiting chip.
-  const banner = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'asked', 4: 'waiting' } }) } });
+  const banner = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', displayMissing: false, requests: { 2: 'asked', 4: 'waiting' } }) } });
   await banner.open();
   const action = banner.document.querySelector('.je-arr-banner .je-ask-banner-action');
   same([...action.querySelectorAll('.je-arr-chip')].map(c => c.textContent), ['E4 · Waiting for OK']);
   assert.equal(action.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Search for E2');
 
   // Still fresh (Looking for it): the sent ask keeps its chip.
-  const fresh = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ requests: { 2: 'asked' } }) } });
+  const fresh = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'asked' } }) } });
   await fresh.open();
   assert.equal(fresh.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Asked!');
   assert.equal(fresh.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'), null);
 
   // Seen live: unmonitored in Sonarr after the ask went out (nobody fetches it): not "Asked!", but Get it again.
-  const dropped = setup(t, { server: { rows: () => rowsBody({ requests: { 2: 'asked' } }) } });
+  const dropped = setup(t, { server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'asked' } }) } });
   await dropped.open();
   const two2 = dropped.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   assert.equal(two2.querySelector('.je-arr-chip').textContent, 'Missing');
@@ -1017,8 +1020,8 @@ test('a Search pressed by someone who asks shows its answer for a while, even af
     }
   });
   await h.open();
-  h.setRows(() => rowsBody({ requests: { 2: 'asked' } }));
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.setRows(() => rowsBody({ source: 'destination', requests: { 2: 'asked' } }));
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[0].path, '/acquire/requests');
   const two = () => h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
@@ -1056,7 +1059,7 @@ function otherSeason() {
 }
 
 function otherRows() {
-  const body = rowsBody();
+  const body = rowsBody({ source: 'destination' });
   body.rows.key = 'tv:tvdb:2:s1';
   body.rows.series = 'tv:tvdb:2';
   return body;
@@ -1065,7 +1068,7 @@ function otherRows() {
 function openDialog(h, episode = 2) {
   const title = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${episode}"] .je-ask-row-title`);
   title.focus();
-  title.click();
+  h.click(title);
   return { title, get: h.document.querySelector('.je-ask-dialog .je-ask-get') };
 }
 
@@ -1077,13 +1080,13 @@ test('the episode dialog closes when another season is shown, and its Get it nev
   // Another series' season is shown under the dialog (the router changed the page without a
   // navigation event JE saw): the dialog goes with the season it was opened for.
   h.setStatus(otherSeason());
-  h.setRows((n, path) => (path.includes(SEASON_B) ? otherRows() : rowsBody()));
+  h.setRows((n, path) => (path.includes(SEASON_B) ? otherRows() : rowsBody({ source: 'destination' })));
   h.window.location.hash = `#/details?id=${SEASON_B}`;
   await h.open();
   assert.ok(h.gets.some(p => p.includes(SEASON_B)), 'the new season was read');
   assert.equal(h.document.querySelector('.je-ask-dialog-backdrop'), null, 'the dialog closed with its season');
   // A press that still reaches the old button (it was on screen a moment ago) asks for nothing.
-  get.click();
+  h.click(get);
   await settle(20);
   same(h.posts, [], 'no request for the other series');
 });
@@ -1122,7 +1125,7 @@ test('an administrator\'s Search waiting for capabilities is dropped when someon
     server: { me: ADMIN_ME, meGate: () => gate, post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) }
   });
   await rowsSearch.open();
-  rowsSearch.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  rowsSearch.click(rowsSearch.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle();
   rowsSearch.switchUser();
   release();
@@ -1137,10 +1140,10 @@ test('the banner\'s Search waiting for capabilities is dropped when someone else
   const h = setup(t, {
     status: longMissing({ admin: true }),
     config: { ArrManageDrawerEnabled: true },
-    server: { me: ADMIN_ME, meGate: () => gate, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) }
+    server: { me: ADMIN_ME, meGate: () => gate, rows: () => rowsBody({ source: 'destination', displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle();
   h.switchUser();
   release();
@@ -1184,7 +1187,7 @@ test('storage full: an administrator still gets Search (the arr\'s own search, n
     config: { ArrManageDrawerEnabled: true },
     server: {
       me: ADMIN_ME,
-      rows: () => rowsBody({ canRequest: false, blocked: FULL_ADMIN }),
+      rows: () => rowsBody({ source: 'destination', canRequest: false, blocked: FULL_ADMIN }),
       post: path => (path === '/arr/admin/manage/search' ? { status: 200, body: { status: 'Succeeded', found: false } } : { status: 403, body: { outcome: 'blocked', reason: 'low_disk' } })
     }
   });
@@ -1205,9 +1208,9 @@ test('storage full: an administrator still gets Search (the arr\'s own search, n
   let dialog = h.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-get').dataset.mode, 'search');
   assert.equal(dialog.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
-  dialog.querySelector('.je-ask-dialog-close').click();
+  h.click(dialog.querySelector('.je-ask-dialog-close'));
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
-  row(2).querySelector('.je-ask-get').click();
+  h.click(row(2).querySelector('.je-ask-get'));
   await settle(20);
   same(h.posts.map(p => p.path), ['/arr/admin/manage/search'], 'only the arr\'s own search, never a request');
   same({ instanceId: h.posts[0].body.instanceId, key: h.posts[0].body.key }, { instanceId: 'son1', key: 'tv:tvdb:1:s1:e2' });
@@ -1220,14 +1223,14 @@ test('storage full: an administrator still gets Search (the arr\'s own search, n
   // Read out with the dialog's name (focus lands on Close; the reason is plain text).
   assert.ok(dialog.querySelector('.je-ask-paused-note').id);
   assert.equal(dialog.getAttribute('aria-describedby'), dialog.querySelector('.je-ask-paused-note').id);
-  dialog.querySelector('.je-ask-dialog-close').click();
+  h.click(dialog.querySelector('.je-ask-dialog-close'));
 });
 
 test('storage full in the banner: an administrator\'s Search for the long-missing ones and the paused line; once, not again above the list', async t => {
   const h = setup(t, {
     status: adminMixed(),
     config: { ArrManageDrawerEnabled: true },
-    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false, canRequest: false, blocked: FULL_ADMIN }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+    server: { me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false, canRequest: false, blocked: FULL_ADMIN }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
   });
   await h.open();
   const action = h.document.querySelector('.je-arr-banner .je-ask-banner-action');
@@ -1235,7 +1238,7 @@ test('storage full in the banner: an administrator\'s Search for the long-missin
   same([btn.querySelector('.je-ask-get-text').textContent, btn.getAttribute('aria-label')], ['Search for E2', 'Search for the missing episodes: E2']);
   assert.equal(action.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
   assert.equal(h.document.querySelector('.je-ask-season-note'), null, 'said once, in the banner');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same({ path: h.posts[0].path, key: h.posts[0].body.key }, { path: '/arr/admin/manage/search', key: 'tv:tvdb:1:s1:e2' });
   // Applying the page again keeps the banner as it is (no rebuild loop).
@@ -1246,7 +1249,7 @@ test('storage full in the banner: an administrator\'s Search for the long-missin
 });
 
 test('storage full: someone who may ask sees "Paused: storage full" and a plain sentence where Get it and Search would be, never a path', async t => {
-  const h = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ canRequest: false, blocked: FULL }) } });
+  const h = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ source: 'destination', canRequest: false, blocked: FULL }) } });
   await h.open();
   for (const n of [2, 4]) {
     const row = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
@@ -1260,27 +1263,27 @@ test('storage full: someone who may ask sees "Paused: storage full" and a plain 
   same(h.posts, []);
   same(h.searches, []);
 
-  const banner = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ displayMissing: false, canRequest: false, blocked: FULL }) } });
+  const banner = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false, canRequest: false, blocked: FULL }) } });
   await banner.open();
   const action = banner.document.querySelector('.je-arr-banner .je-ask-banner-action');
   assert.equal(action.querySelector('.je-ask-get'), null, 'no Get them, no Search');
   same([action.querySelector('.je-ask-paused-title').textContent, action.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', FAMILY_TEXT]);
 
   // An administrator without the Manage drawer has no Search of their own: paused like everyone else.
-  const noDrawer = setup(t, { status: adminMixed(), server: { me: ADMIN_ME, rows: () => rowsBody({ canRequest: false, blocked: FULL_ADMIN }) } });
+  const noDrawer = setup(t, { status: adminMixed(), server: { me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', canRequest: false, blocked: FULL_ADMIN }) } });
   await noDrawer.open();
   assert.equal(noDrawer.document.querySelector('.je-ask-get'), null);
   assert.equal(noDrawer.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, 'Paused: storage full');
 
   // Room again: Get it and Search as before, nothing paused.
-  const roomy = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody() } });
+  const roomy = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ source: 'destination' }) } });
   await roomy.open();
   same([...roomy.list().querySelectorAll('.je-ask-get')].map(b => b.dataset.mode), ['search', 'search']);
   assert.equal(roomy.document.querySelector('.je-ask-paused, .je-ask-paused-note'), null);
 });
 
 test('other refusals the request controls explain read "Can\'t ask right now"; an administrator learns which part needs a look', async t => {
-  const member = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ canRequest: false, blocked: { reason: 'instance_changed' } }) } });
+  const member = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ source: 'destination', canRequest: false, blocked: { reason: 'instance_changed' } }) } });
   await member.open();
   assert.equal(member.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, "Can't ask right now");
   assert.equal(member.document.querySelector('.je-ask-season-note .je-ask-paused-text').textContent, "This can't be asked for right now. Dad can sort it out.");
@@ -1304,7 +1307,7 @@ test('a refusal for storage is said in plain words: the ask\'s toast, and a Sear
   assert.equal(A.interpret(403, { outcome: 'blocked', reason: 'low_disk' }).state, 'blocked');
   assert.equal(A.describe({ state: 'blocked', reason: 'low_disk' }, MEMBER_ME).text, "Paused: storage full. There's no room for new downloads right now.");
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same(h.searches.length, 1);
   same(h.posts, [], 'no ask after the refused Search');
@@ -1325,7 +1328,7 @@ test('Seerr mode: an episode\'s Get it reads "Get Season 1" and says why, asks f
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1', 'the button says what it asks for before it is pressed');
   assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
   assert.equal(btn.title, 'Seerr takes whole seasons, so this asks for all of Season 1.');
-  btn.click();
+  h.click(btn);
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input, { key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] });
@@ -1338,20 +1341,20 @@ test('Seerr mode: an episode\'s Get it reads "Get Season 1" and says why, asks f
   const h2 = setup(t, { server: { me: SEERR_MEMBER } });
   await h2.open();
   await settle();
-  h2.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title').click();
+  h2.click(h2.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title'));
   const dialog = h2.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-note').textContent, 'Seerr takes whole seasons, so this asks for all of Season 1.');
   assert.equal(dialog.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Get Season 1');
 });
 
 test('Seerr mode: the banner\'s Get them reads "Get Season 1" and asks for the season', async t => {
-  const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await h.open();
   await settle();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-banner-action .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
   assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] }]);
 });
@@ -1378,7 +1381,7 @@ for (const width of [1280, 390]) for (const replacement of ['action', 'banner'])
     const original = banner.querySelector('.je-ask-get-many');
     original.focus();
     assert.equal(h.document.activeElement, original);
-    original.click();
+    clickAsViewer(original);
     await settle(40);
     assert.equal(h.posts.length, 1, 'the real checked press reached the request endpoint');
     assert.equal(h.posts[0].body.expect.mode, 'get');
@@ -1397,7 +1400,9 @@ for (const width of [1280, 390]) for (const replacement of ['action', 'banner'])
       settledRead = true;
       return rowsBody({ displayMissing: false, seasonRequest: successor === 'chip' ? 'declined' : null });
     });
-    h.setStatus(replacement === 'banner' ? withEpisode(season(), 3, 'notHere', 'unmonitored') : season());
+    // The season's rows are read again when its status revision moves (play's in-place arrivals keep an unchanged status
+    // from re-reading): the downloading episode gaining its library item keeps the banner, a regressed episode redraws it.
+    h.setStatus(replacement === 'banner' ? withEpisode(withEpisode(season(), 3, 'notHere', 'unmonitored'), 1, 'notHere', 'unmonitored') : ({ ...season(), episodes: season().episodes.map(e => e.episode === 3 ? { ...e, itemId: ID(3) } : e) }));
     await h.JE.internals.arrStatusDetails.update(true);
     await settle(40);
     assert.ok(settledRead && h.gets.filter(path => path.startsWith('/acquire/requests/season/')).length > reads, 'a real settled season refresh completed');
@@ -1419,7 +1424,7 @@ async function heldSeasonPress(t) {
   const h = setup(t, { server });
   await h.open();
   const original = h.document.querySelector('.je-arr-banner .je-ask-get-many');
-  original.focus(); original.click();
+  original.focus(); clickAsViewer(original);
   await settle(30);
   assert.equal(h.posts.length, 1, 'the actual request is pending');
   const other = h.document.createElement('button');
@@ -1432,7 +1437,7 @@ for (const move of ['keyboard', 'activation']) test(`focus: accepted pending req
   const { h, other, finish } = await heldSeasonPress(t);
   if (move === 'keyboard') h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
   other.focus();
-  if (move === 'activation') other.click();
+  if (move === 'activation') clickAsViewer(other);
   finish(); await settle(40);
   h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
   await h.JE.internals.arrStatusDetails.update(true); await settle(30);
@@ -1462,7 +1467,7 @@ for (const end of ['session', 'route', 'feature', 'container', 'stop']) test(`fo
 
 test('focus: a pending request yields to another real episode modal', async t => {
   const { h, other, finish } = await heldSeasonPress(t);
-  h.JE.internals.arrAskEpisodes.openDetails(season().episodes[2], {});
+  h.JE.internals.arrAskEpisodes.openDetails(season().episodes[2], {}, h.NATIVE);
   const modal = h.document.querySelector('[role="dialog"]');
   const active = h.document.activeElement;
   assert.ok(modal.contains(active));
@@ -1480,7 +1485,7 @@ test('focus: a programmatic unfocused season request never takes another control
   const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) } });
   await h.open();
   const other = h.document.createElement('button'); h.document.body.appendChild(other); other.focus();
-  h.document.querySelector('.je-arr-banner .je-ask-get-many').click(); await settle(40);
+  clickAsViewer(h.document.querySelector('.je-arr-banner .je-ask-get-many')); await settle(40);
   assert.equal(h.posts.length, 1);
   assert.equal(h.document.activeElement, other);
 });
@@ -1491,15 +1496,15 @@ test('focus: an older accepted season response cannot supersede a different seas
   const server = { post: () => first };
   const h = setup(t, { server });
   await h.open();
-  const original = h.list().querySelector('[data-je-ask-episode="2"] .je-ask-get'); original.focus(); original.click(); await settle(30);
+  const original = h.list().querySelector('[data-je-ask-episode="2"] .je-ask-get'); original.focus(); clickAsViewer(original); await settle(30);
   assert.equal(h.posts.length, 1);
   const nextId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2';
   const next = { ...season(), itemId: nextId, key: 'tv:tvdb:1:s2', episodes: season().episodes.map(ep => ({ ...ep, season: 2, key: ep.key.replace(':s1:', ':s2:') })) };
   h.setStatus(next);
-  h.setRows(() => { const body = rowsBody({ requests: h.posts.length > 1 ? { 4: 'waiting' } : {} }); return { ...body, rows: { ...body.rows, season: 2, key: 'tv:tvdb:1:s2' } }; });
+  h.setRows(() => { const body = rowsBody({ requests: h.posts.length > 1 ? { 4: 'waiting' } : {}, source: 'destination' }); return { ...body, rows: { ...body.rows, season: 2, key: 'tv:tvdb:1:s2' } }; });
   h.navigate(`#/details?id=${nextId}`); await h.open();
   server.post = () => ({ status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', requestId: 'e'.repeat(32) } });
-  const second = h.list().querySelector('[data-je-ask-episode="4"] .je-ask-get'); second.focus(); second.click(); await settle(40);
+  const second = h.list().querySelector('[data-je-ask-episode="4"] .je-ask-get'); second.focus(); clickAsViewer(second); await settle(40);
   assert.equal(h.posts.length, 2);
   same(h.posts[1].body.input.episodes, [{ season: 2, episode: 4 }]);
   const current = h.document.activeElement;
@@ -1517,7 +1522,7 @@ for (const [name, response] of [
 ]) test(`focus: ${name} season result shares the checked press lifecycle`, async t => {
   const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }), post: () => response } });
   await h.open();
-  const original = h.document.querySelector('.je-arr-banner .je-ask-get-many'); original.focus(); original.click(); await settle(40);
+  const original = h.document.querySelector('.je-arr-banner .je-ask-get-many'); original.focus(); clickAsViewer(original); await settle(40);
   h.setStatus(withEpisode(season(), 3, 'notHere', 'unmonitored'));
   await h.JE.internals.arrStatusDetails.update(true); await settle(30);
   const active = h.document.activeElement;
@@ -1535,7 +1540,7 @@ test('Seerr with partial requests off: the episode\'s button reads "Get the whol
   const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get the whole series');
   assert.equal(btn.title, 'Seerr takes whole series only, so this asks for every season.');
-  btn.click();
+  h.click(btn);
   await settle(30);
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] }]);
 });
@@ -1547,7 +1552,7 @@ test('Seerr mode: a button that did not say "Season" (drawn before the capabilit
   await h.open();
   const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get it', 'capabilities not known yet');
-  btn.click();
+  h.click(btn);
   release();
   await settle(30);
   assert.equal(h.posts.length, 0, 'nothing is asked behind a "Get it" label');
@@ -1583,13 +1588,13 @@ test('Seerr mode: a server refusal of single episodes reads in plain words', t =
 
 /** The rows answer with each edition's request states: `requests` (standard asks) and `requests4k` (4K asks). */
 function rowsByEdition({ requests = {}, requests4k = {}, displayMissing = true } = {}) {
-  const body = rowsBody({ displayMissing, requests });
+  const body = rowsBody({ source: 'destination', displayMissing, requests });
   for (const e of body.rows.episodes) e.request4k = requests4k[e.episode] || null;
   return body;
 }
 
 test('press: Seerr turning to whole-series after "Get Season 1" was drawn never sends the whole series; nothing is widened behind the label', async t => {
-  const server = { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) };
+  const server = { me: SEERR_MEMBER, rows: () => rowsBody({ source: 'destination', displayMissing: false }) };
   const h = setup(t, { server });
   h.JE.core.api.plugin = async (path) => (String(path).startsWith('/acquire/status?keys=')
     ? { items: [{ key: 'tv:tvdb:1', kind: 'series', seasons: [{ season: 0 }, { season: 1 }, { season: 2 }] }] }
@@ -1600,7 +1605,7 @@ test('press: Seerr turning to whole-series after "Get Season 1" was drawn never 
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
   // Seerr's partial-request setting is turned off after the page was drawn.
   server.me = { ...SEERR_MEMBER, seerrWholeSeries: true };
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   assert.ok(h.posts.every(p => JSON.stringify(p.body.input.seasons) === '[1]'), `posted ${JSON.stringify(h.posts.map(p => p.body.input))}`);
   assert.ok(h.posts.every(p => p.body.expect?.whole === false), 'whatever goes says what it was drawn as, so the server can refuse it');
@@ -1609,13 +1614,13 @@ test('press: Seerr turning to whole-series after "Get Season 1" was drawn never 
 
 test('press: a capabilities read that fails at the press sends nothing and says so', async t => {
   let fail = false;
-  const server = { me: MEMBER_ME, rows: () => rowsBody({ displayMissing: false }), meGate: () => (fail ? Promise.reject(new Error('offline')) : Promise.resolve()) };
+  const server = { me: MEMBER_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false }), meGate: () => (fail ? Promise.reject(new Error('offline')) : Promise.resolve()) };
   const h = setup(t, { server });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   assert.ok(btn, 'Get them drawn');
   fail = true;
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   same(h.posts, [], 'nothing sent on a failed check');
   assert.equal(h.toasts.at(-1), translate('arr_ask_check_failed'));
@@ -1632,8 +1637,8 @@ test('press: the episode dialog\'s Search and its row\'s Search for one episode 
   assert.ok(get && row, 'both offer Search for E2');
   // Both presses are checked while the first check's capability read is still out.
   server.meGate = () => gate;
-  get.click();
-  row.click();
+  clickAsViewer(get);
+  clickAsViewer(row);
   release();
   await settle(60);
   assert.equal(h.posts.filter(p => p.path === '/arr/admin/manage/search').length, 1, `posts ${JSON.stringify(h.posts.map(p => p.path))}`);
@@ -1642,13 +1647,13 @@ test('press: the episode dialog\'s Search and its row\'s Search for one episode 
 test('press: the same season read again while the press is checked still acts on what was drawn (never a silent drop)', async t => {
   let release;
   let held = false;
-  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }), meGate: () => (held ? new Promise(resolve => { release = resolve; }) : Promise.resolve()) };
+  const server = { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }), meGate: () => (held ? new Promise(resolve => { release = resolve; }) : Promise.resolve()) };
   const status = withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' });
   const h = setup(t, { status, server });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   held = true;
-  btn.click();
+  clickAsViewer(btn);
   await settle(5);
   // The status of the same season is read again (a live update): a new state object, the same facts.
   h.setStatus(JSON.parse(JSON.stringify(status)));
@@ -1662,13 +1667,13 @@ test('press: the same season read again while the press is checked still acts on
 });
 
 test('press: a refused press moves the focus to the control that replaced it, or a stable place on the page, never to nothing', async t => {
-  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await h.open();
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   btn.focus();
   // The binding moved after the page was drawn: a 4K ask no longer lands on this copy.
   h.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   same(h.posts, []);
   const active = h.document.activeElement;
@@ -1690,12 +1695,12 @@ test('press: a 4K copy\'s control reads the 4K asks; a standard ask never blocks
 
 test('press: an administrator\'s banner Search for E2 and E4 searches exactly E2 and E4', async t => {
   const h = setup(t, { status: longMissing({ admin: true }), config: { ArrManageDrawerEnabled: true }, server: {
-    me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } })
+    me: ADMIN_ME, rows: () => rowsBody({ source: 'destination', displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } })
   } });
   await h.open();
   const button = h.document.querySelector('.je-arr-banner .je-ask-get');
   assert.match(button.getAttribute('aria-label'), /E2, E4/);
-  button.click();
+  clickAsViewer(button);
   await settle(24);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].path, '/arr/admin/manage/search');
@@ -1706,31 +1711,31 @@ test('press: every season-page control sends what it was drawn to do, and a serv
   // Row Get it (title-wide).
   const a = setup(t);
   await a.open();
-  a.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  clickAsViewer(a.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same(a.posts[0].body.expect, { item: SEASON_ID, mode: 'get', episodes: [2], copy: null, variant: 'standard', dest: null, instance: null, whole: false, seasons: null });
   // Banner Get them in 4K (a copy's binding, with where the request lands).
-  const b = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  const b = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) } });
   await b.open();
-  b.document.querySelector('.je-arr-banner .je-ask-get').click();
+  clickAsViewer(b.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(20);
   same(b.posts[0].body.expect, { item: SEASON_ID, mode: 'get', episodes: [2, 4], copy: '4k', variant: '4k', dest: 'd4k', instance: null, whole: false, seasons: null });
   // An administrator's row Search (the instance it runs on).
   const c = setup(t, { status: longMissing({ admin: true }), config: { ArrManageDrawerEnabled: true }, server: { me: ADMIN_ME, post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) } });
   await c.open();
-  c.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  clickAsViewer(c.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same({ mode: c.posts[0].body.expect?.mode, instance: c.posts[0].body.expect?.instance, episodes: c.posts[0].body.expect?.episodes }, { mode: 'search', instance: 'son1', episodes: [2] });
   // A household Search.
-  const d = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household' } }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) } });
+  const d = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', requests: { 2: 'household' } }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) } });
   await d.open();
-  d.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  clickAsViewer(d.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same({ mode: d.searches[0].body.expect?.mode, episodes: d.searches[0].body.expect?.episodes, item: d.searches[0].body.expect?.item }, { mode: 'search', episodes: [2], item: SEASON_ID });
   // The server refuses a press that no longer matches: the page is drawn again and the person told, nothing claimed as asked.
   const e = setup(t, { server: { post: () => ({ status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } }) } });
   await e.open();
-  e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  clickAsViewer(e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(30);
   assert.equal(e.toasts.at(-1), translate('arr_ask_changed'));
   assert.notEqual(e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, translate('arr_ask_chip_asked'));
@@ -1740,7 +1745,7 @@ test('press: every season-page control sends what it was drawn to do, and a serv
 
 /** The rows answer with each edition's own policy answer: the standard edition's (`canRequest`, `blocked`) and the 4K one's. */
 function rowsPerEdition({ canRequest = true, blocked = null, canRequest4k = true, blocked4k = null, displayMissing = true } = {}) {
-  const body = rowsBody({ displayMissing, canRequest, blocked });
+  const body = rowsBody({ source: 'destination', displayMissing, canRequest, blocked });
   body.rows.canRequest4k = canRequest4k;
   body.rows.blocked4k = blocked4k;
   return body;
@@ -1763,7 +1768,7 @@ test('per edition: a 4K copy\'s Get it is offered while only the standard editio
   const btn = banner.document.querySelector('.je-arr-banner .je-ask-get');
   assert.ok(btn, 'Get them in 4K drawn');
   assert.equal(btn.textContent, 'downloadGet them in 4K');
-  btn.click();
+  clickAsViewer(btn);
   await settle(20);
   assert.equal(banner.posts.length, 1);
   assert.equal(banner.posts[0].body.input.variant, '4k');
@@ -1788,7 +1793,7 @@ test('per edition: a 4K copy\'s gap says the 4K edition\'s pause, and no 4K Get 
 
 test('focus: a refused press keeps the focus on the page however long the redraw after it takes', async t => {
   let release = null;
-  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const server = { me: KID_4K, rows: () => rowsBody({ source: 'destination', displayMissing: false }) };
   const h = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server });
   await h.open();
   const plugin = h.JE.core.api.plugin;
@@ -1801,7 +1806,7 @@ test('focus: a refused press keeps the focus on the page however long the redraw
   };
   const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
   btn.focus();
-  btn.click();
+  clickAsViewer(btn);
   await settle(40);
   assert.ok(release, 'the press reached the server');
   // Five seconds pass before the status read comes back and the page is drawn without the button.
@@ -1833,8 +1838,8 @@ test('focus: a Get it refused from the episode dialog on a TV keeps the focus on
   };
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   two.focus();
-  two.click();
-  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  clickAsViewer(two);
+  clickAsViewer(h.document.querySelector('.je-ask-dialog .je-ask-get'));
   await settle(40);
   assert.ok(release, 'the press reached the server');
   assert.equal(h.document.activeElement.dataset.jeAskEpisode, '2', 'the dialog gave the focus back to its row');
@@ -1856,7 +1861,7 @@ test('focus: on a TV, a Get it refused after a live redraw removed its row while
   server.post = () => ({ status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } });
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   two.focus();
-  two.click();
+  clickAsViewer(two);
   const get = h.document.querySelector('.je-ask-dialog .je-ask-get');
   assert.ok(get, 'the dialog offers Get it');
   // The episode arrives and the page is drawn again (a live update) while the dialog is still open: its row goes.
@@ -1868,7 +1873,7 @@ test('focus: on a TV, a Get it refused after a live redraw removed its row while
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]'), null, 'the row is gone before the press');
   assert.ok(h.document.querySelector('.je-ask-dialog .je-ask-get'), 'the dialog is still open');
   get.focus();
-  get.click();
+  clickAsViewer(get);
   await settle(40);
   h.JE.internals.arrStatusEpisodes.apply();
   await settle(10);
@@ -1888,8 +1893,8 @@ test('focus: when the host draws the list again under the recovered focus and mo
   };
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   two.focus();
-  two.click();
-  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  clickAsViewer(two);
+  clickAsViewer(h.document.querySelector('.je-ask-dialog .je-ask-get'));
   await settle(40);
   h.JE.internals.arrStatusEpisodes.apply();
   await settle(10);
@@ -1926,8 +1931,8 @@ test('focus: a refused press never takes the focus back from where the person mo
   };
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
   two.focus();
-  two.click();
-  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  clickAsViewer(two);
+  clickAsViewer(h.document.querySelector('.je-ask-dialog .je-ask-get'));
   await settle(40);
   // The person moves on to another row before the redraw.
   const other = h.list().querySelector('.je-ask-row:not([data-je-ask-episode="2"])') || h.list().firstElementChild;
@@ -1953,7 +1958,7 @@ test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an olde
   const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get');
   assert.ok(four, 'the ordinary Seerr ask stays');
   assert.equal(four.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
-  four.click();
+  clickAsViewer(four);
   await settle(20);
   assert.equal(h.posts.length, 1);
   same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
@@ -1971,8 +1976,8 @@ test('focus: an assistive-technology click ends the recovery before a later row 
     return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
   };
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
-  two.focus(); two.click();
-  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  two.focus(); clickAsViewer(two);
+  clickAsViewer(h.document.querySelector('.je-ask-dialog .je-ask-get'));
   await settle(40);
   h.JE.internals.arrStatusEpisodes.apply();
   await settle(10);
@@ -1983,7 +1988,7 @@ test('focus: an assistive-technology click ends the recovery before a later row 
   button.textContent = 'Show options';
   h.document.querySelector('#itemDetailPage').prepend(button);
   button.addEventListener('click', () => button.focus());
-  button.click();
+  clickAsViewer(button);
   assert.equal(h.document.activeElement, button, 'the person deliberately activated another control');
   priorRow.replaceWith(priorRow.cloneNode(true));
   h.JE.internals.arrStatusEpisodes.apply();
@@ -2003,8 +2008,8 @@ test('focus: activating the recovered control itself ends the recovery', async t
     return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
   };
   const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
-  two.focus(); two.click();
-  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  two.focus(); clickAsViewer(two);
+  clickAsViewer(h.document.querySelector('.je-ask-dialog .je-ask-get'));
   await settle(40);
   h.JE.internals.arrStatusEpisodes.apply();
   await settle(10);
@@ -2022,4 +2027,194 @@ test('focus: activating the recovered control itself ends the recovery', async t
   h.JE.internals.arrStatusEpisodes.apply();
   await settle(10);
   assert.equal(h.document.activeElement, top, 'the recovery ended at the activation; the later focus stands');
+});
+
+// ------------------------------------------------------------------ UX-3: one episode numbering across page, picker and arr
+
+test('singleEpisodesAskable: only the target\'s own numbering, or TMDB\'s while no arr holds the season, lets single episodes be asked for', t => {
+  const h = setup(t);
+  const { episodeSource: source, singleEpisodesAskable: ok, heldReason: why } = h.JE.arrAsk;
+  assert.equal(source({ source: 'destination' }), 'destination');
+  assert.equal(source({ source: 'made-up' }), 'unknown');
+  assert.equal(source(null), 'unknown');
+  assert.equal(ok({ source: 'destination' }, { arrHolds: true }), true);
+  assert.equal(ok({ source: 'provider' }, { arrHolds: false }), true);
+  // TMDB's numbers on a season an arr numbers itself: held (the rows were read before the arr had it, say).
+  assert.equal(ok({ source: 'provider' }, { arrHolds: true }), false);
+  // UX2R2-5/-6 class: unread, unknown, unchecked or no source at all never let a number through.
+  for (const rows of [null, {}, { source: 'unknown' }, { source: 'unchecked' }, { episodes: [{ episode: 1, title: 'One' }] }]) assert.equal(ok(rows, { arrHolds: false }), false, JSON.stringify(rows));
+  assert.equal(why({ episodes: [{ episode: 1, title: 'One' }] }, { arrHolds: true }), 'differently');
+  assert.equal(why({ source: 'provider', episodes: [{ episode: 1, title: 'One' }] }, { arrHolds: true }), 'differently');
+  assert.equal(why({ episodes: [] }, { arrHolds: true }), 'unchecked');
+  assert.equal(why({ source: 'unknown', episodes: [] }, { arrHolds: true }), 'unchecked');
+  assert.equal(why(null, { arrHolds: true }), 'unchecked');
+});
+
+/** The season of a title that isn't in the library: TMDB lists E1–E3, the arr E1–E4 (E2 and E4 missing, nobody fetching). */
+function absentSeason({ e2Day = '2014-06-08' } = {}) {
+  return {
+    key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'unmonitored' },
+    summary: { aired: 4, ready: 1, missing: 2 },
+    episodes: [
+      { key: 'tv:tvdb:1:s1:e1', season: 1, episode: 1, row: false, stage: 'ready', reason: { code: 'ready' }, airDate: '2014-06-01T00:00:00Z' },
+      { key: 'tv:tvdb:1:s1:e2', season: 1, episode: 2, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: `${e2Day}T00:00:00Z` },
+      { key: 'tv:tvdb:1:s1:e3', season: 1, episode: 3, row: false, stage: 'downloading', reason: { code: 'downloading' }, airDate: '2014-06-15T00:00:00Z' },
+      { key: 'tv:tvdb:1:s1:e4', season: 1, episode: 4, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: '2014-06-22T00:00:00Z' }
+    ]
+  };
+}
+
+function providerRows() {
+  const body = rowsBody();
+  body.rows.episodes = body.rows.episodes.filter(e => e.episode !== 4);
+  body.rows.providerEpisodes = [1, 2, 3];
+  return body;
+}
+
+test('UX-3 (round 3): when Sonarr holds an absent season its rows are Sonarr\'s, by Sonarr\'s numbers, titles and days, and ask for exactly those', async t => {
+  // Sonarr's list: E2 "Sonarr Two", E4 "Sonarr Four" (TMDB has no E4); the page's own rows are TMDB's and give way.
+  const status = absentSeason();
+  status.episodes = status.episodes.map(e => ({ ...e, itemId: e.episode === 2 ? ID(2) : null, row: e.episode === 2 }));
+  const sonarr = () => { const body = rowsBody({ source: 'destination' }); body.rows.source = 'destination';
+    body.rows.episodes = [{ episode: 1 }, { episode: 2, title: 'Sonarr Two', airDate: '2014-06-08', aired: true }, { episode: 3 }, { episode: 4, title: 'Sonarr Four', airDate: '2014-06-22', aired: true }]; return body; };
+  const h = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: sonarr } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  assert.ok(h.list().querySelector(`.listItem[data-id="${ID(2)}"]`).classList.contains('je-ask-replaced'), 'the TMDB row gives way');
+  assert.equal(h.list().querySelector(`.listItem[data-id="${ID(2)}"] .je-ask-get`), null);
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-ask-row-title bdi').textContent, '2. Sonarr Two');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title bdi').textContent, '4. Sonarr Four');
+  assert.ok(!h.list().textContent.includes('Second one.'), 'no TMDB facts on Sonarr\'s numbers');
+  assert.equal(h.document.querySelector('.je-ask-numbering-note'), null);
+  h.click(two.querySelector('.je-ask-get'));
+  await settle();
+  same(h.posts.map(p => p.body.input.episodes), [[{ season: 1, episode: 2 }]]);
+});
+
+test('UX-3 (round 3): an absent season no arr holds keeps its own TMDB rows, and they may be asked for by TMDB\'s numbers', async t => {
+  const status = absentSeason();
+  status.episodes = status.episodes.map(e => ({ ...e, reason: { code: 'not_in_arr' }, itemId: e.episode === 2 ? ID(2) : null, row: e.episode === 2 }));
+  const provider = () => { const body = rowsBody({ source: 'destination' }); body.rows.source = 'provider'; return body; };
+  const h = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: provider } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  const native = h.list().querySelector(`.listItem[data-id="${ID(2)}"]`);
+  assert.ok(!native.classList.contains('je-ask-replaced'));
+  assert.ok(native.querySelector('.je-ask-get'), 'TMDB\'s numbers are what a request names');
+});
+
+test('UX-3: when the arr numbers a season differently, its episodes shown with TMDB\'s facts are held and say why; nothing is sent', async t => {
+  const h = setup(t, { status: absentSeason({ e2Day: '2014-08-31' }), server: { rows: () => providerRows() } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  for (const n of [2, 4]) {
+    const r = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(r.querySelector('.je-ask-get'), null, `E${n} has no Get it`);
+    assert.equal(r.querySelector('.je-ask-paused').textContent, 'Numbered differently');
+  }
+  const note = h.document.querySelector('.je-ask-season-note.je-ask-numbering-note');
+  assert.ok(note, 'the season says why above its episodes');
+  assert.match(note.textContent, /numbered differently here and on TMDB/);
+  // The episode's dialog holds it too.
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-row-title'));
+  await settle();
+  const dialog = h.document.querySelector('.je-ask-dialog');
+  assert.ok(dialog.querySelector('.je-ask-numbering-note'));
+  assert.equal(dialog.querySelector('.je-ask-get'), null);
+  assert.equal(h.posts.length, 0);
+});
+
+test('UX-3: a library season\'s own Jellyfin rows are not held by TMDB\'s numbering', async t => {
+  const status = absentSeason({ e2Day: '2014-08-31' });
+  status.episodes[1] = { ...status.episodes[1], itemId: ID(2), row: true };
+  const h = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: () => providerRows() } });
+  await h.open();
+  const native = h.list().querySelector(`.listItem[data-id="${ID(2)}"]`);
+  assert.ok(native.querySelector('.je-ask-get'), 'Jellyfin\'s row shows Jellyfin\'s facts for the arr\'s episode');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'), null, 'JE\'s TMDB-described row is held');
+});
+
+test('UX2R-3 / UX2R2-5: a season whose numbering can\'t be established holds the rows it describes (fail closed), and says so', async t => {
+  for (const failure of ['error', 'no source', 'unknown', 'unchecked']) {
+    const h = setup(t, { status: absentSeason(), server: { rows: () => {
+      if (failure === 'error') return new Error('503');
+      const body = rowsBody({ source: 'destination' });
+      body.rows.episodes = body.rows.episodes.map(e => ({ episode: e.episode, request: e.request }));      // no facts to go by
+      if (failure === 'no source') delete body.rows.source;
+      else body.rows.source = failure;
+      return body;
+    } } });
+    h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+    await h.open();
+    if (failure === 'error') {
+      // No rows to draw JE's rows with: nothing is offered on a guess.
+      assert.equal(h.document.querySelectorAll('.je-ask-get').length, 0, failure);
+      // The page's own (TMDB) row of a missing episode isn't offered either while the season can't be read.
+      const status = absentSeason();
+      status.episodes[1] = { ...status.episodes[1], itemId: ID(2), row: true };
+      const facade = setup(t, { rows: row(1) + row(2, { virtual: true }), status, server: { rows: () => new Error('503') } });
+      facade.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+      await facade.open();
+      assert.ok(facade.list().querySelector(`.listItem[data-id="${ID(2)}"] .je-arr-chip`), 'the row is decorated');
+      assert.equal(facade.list().querySelector(`.listItem[data-id="${ID(2)}"] .je-ask-get`), null, 'held while unchecked');
+      continue;
+    }
+    const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+    assert.equal(two.querySelector('.je-ask-get'), null, failure);
+    assert.equal(two.querySelector('.je-ask-paused').textContent, "Couldn't check", failure);
+    assert.match(h.document.querySelector('.je-ask-numbering-note').textContent, /couldn't be checked right now/, failure);
+    assert.equal(h.posts.length, 0);
+  }
+});
+
+// Review round 2 probe (a control): season-row and banner Search keep their documented single ask fallback.
+test('UX2R2 probe: season row and banner Search each keep exactly one ask fallback', async t => {
+  for (const surface of ['row', 'banner']) {
+    const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ source: 'destination', displayMissing: surface === 'row' }) } });
+    await h.open();
+    const button = surface === 'row' ? h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get') : h.document.querySelector('.je-arr-banner .je-ask-get');
+    h.click(button); h.click(button); await settle(30);
+    assert.equal(h.posts.length, 1, surface);
+    assert.equal(h.posts[0].path, '/acquire/requests');
+    same(h.posts[0].body.input.episodes, surface === 'row' ? [{ season: 1, episode: 2 }] : [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
+    assert.equal(h.searches.length, surface === 'row' ? 1 : 3, surface);
+  }
+});
+
+// Review round 3 probe (UX2R3-1), ported: a failed browser refresh never reuses the rows of an earlier read to authorize.
+test('UX2R3-1 probe: a failed refresh cannot reuse a warm destination source to authorize single episodes', async t => {
+  const h = setup(t, { status: absentSeason(), server: { rows: () => { const b = rowsBody({ source: 'destination' }); b.rows.episodes = [{ episode: 2, title: 'Destination Two', airDate: '2014-06-08', aired: true }, { episode: 4, title: 'Destination Four', airDate: '2014-06-22', aired: true }]; return b; } } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID }; await h.open();
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
+  const firstReads = h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length;
+  h.setRows(() => new Error('synthetic unavailable'));
+  const updated = absentSeason(); updated.episodes[2] = { ...updated.episodes[2], row: true, itemId: ID(3) };
+  h.setStatus(updated); await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.ok(h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length > firstReads, 'a second rows read really failed');
+  const button = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  if (button) h.click(button); await settle(30);
+  assert.equal(h.posts.length, 0, 'unread current facts hold rather than authorize with the previous rows');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, "Couldn't check");
+  // A read that succeeds again re-establishes it.
+  h.setRows(() => { const b = rowsBody({ source: 'destination' }); b.rows.episodes = [{ episode: 2, title: 'Destination Two', airDate: '2014-06-08', aired: true }, { episode: 4, title: 'Destination Four', airDate: '2014-06-22', aired: true }]; return b; });
+  h.setStatus(absentSeason()); await h.JE.internals.arrStatusDetails.update(true); await settle(30);
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'), 'established again');
+});
+
+// Review round 5 probe (UX2R5-1), ported: the provider season page answer the server gave for TMDB's placeholder date before the
+// fix (status: aired, "not here"; rows: aired false). The page holds the episode as the picker does, and nothing is sent.
+test('UX2R5-1 probe: a provider page never offers or posts an episode its rows say hasn\'t aired', async t => {
+  const status = { key: 'tv:tvdb:100:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 1, ready: 0 },
+    episodes: [{ key: 'tv:tvdb:100:s1:e1', season: 1, episode: 1, itemId: ID(1), row: true, stage: 'notHere', reason: { code: 'not_in_arr' }, airDate: '0001-01-01T00:00:00Z' }] };
+  const rows = { key: 'tv:tvdb:100:s1', series: 'tv:tvdb:100', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing: false, canRequest: true, source: 'provider',
+    episodes: [{ episode: 1, title: 'Episode', airDate: '0001-01-01', aired: false }] };
+  const h = setup(t, { rows: row(1, { virtual: true }), status, server: { rows: () => ({ outcome: 'accepted', rows }) } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  const button = h.list().querySelector('.je-ask-get');
+  if (button) h.click(button);
+  await settle(30);
+  assert.equal(h.posts.length, 0, 'an episode refused as unaired in the picker is not requested by the page');
+  assert.equal(button, null, 'no request action for the unknown date');
 });

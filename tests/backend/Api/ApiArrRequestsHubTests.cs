@@ -44,7 +44,7 @@ public class ApiArrRequestsHubTests
         public FakeSeerr Seerr { get; } = new();
         public ArrStateStore Store { get; }
         public FakeJellyfinView View { get; } = new();
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Service { get; }
         public RequestsHubService Hub { get; }
         public ArrManageService Manage { get; }
@@ -99,7 +99,7 @@ public class ApiArrRequestsHubTests
             Sonarr.Episodes.Add(new JsonObject { ["id"] = 104, ["seriesId"] = 1, ["seasonNumber"] = 1, ["episodeNumber"] = 4, ["airDateUtc"] = "2002-10-11T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
 
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Service = new ArrStatusService(Store, View, Requests, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, Feed);
             Hub = new RequestsHubService(Service, Requests, () => Arr.Plugin.Plugin.Configuration);
             Audit = new ArrAuditLog(Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2);
@@ -1010,17 +1010,17 @@ public class ApiArrRequestsHubTests
         var json = FakeSeerr.Request(1, "movie", 603, 2, Guid.NewGuid(), Asked, is4k: true);
         json["media"]!["jellyfinMediaId"] = std.ToString("N");
         json["media"]!["jellyfinMediaId4k"] = item.ToString();
-        var fourK = SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
+        var fourK = SeerrFacts.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
         Assert.Equal(item, fourK.JellyfinItemId);
         json["is4k"] = false;
-        Assert.Equal(std, SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
+        Assert.Equal(std, SeerrFacts.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
         json["media"]!["jellyfinMediaId"] = "not-a-guid";
-        Assert.Null(SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
+        Assert.Null(SeerrFacts.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
         // Part of the request's signature: a change of the matched item is a change.
         json["media"]!["jellyfinMediaId"] = std.ToString("N");
-        var a = SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
+        var a = SeerrFacts.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
         json["media"]!["jellyfinMediaId"] = Guid.NewGuid().ToString("N");
-        Assert.NotEqual(a.Signature, SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.Signature);
+        Assert.NotEqual(a.Signature, SeerrFacts.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.Signature);
     }
 
     [Fact]

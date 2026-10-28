@@ -122,8 +122,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             if (!SecretProperties.TryGetValue(field, out var property))
                 throw new ArgumentException("Unknown credential property " + field, nameof(field));
-            property.SetValue(this, value);
+            if (string.Equals(ReadField(field), value, StringComparison.Ordinal)) return;
+            EvidenceWrite(() => property.SetValue(this, value));
         }
+
+        private static void EvidenceWrite(Action mutation) => Services.EvidenceRevision.Advance(mutation);
 
         /// <summary>True when <paramref name="field"/> is one of <see cref="StoredSecretFields"/>.</summary>
         public static bool IsStoredSecretField(string field) => StoredSecretFields.Contains(field, StringComparer.Ordinal);

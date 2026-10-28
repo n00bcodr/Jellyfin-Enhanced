@@ -26,6 +26,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Root folder (null: the instance's add default).</summary>
         [JsonPropertyName("rootFolder")] public string? RootFolder { get; set; }
 
+        /// <summary>Explicitly replace the observed title-wide choice while it is still known unsent.</summary>
+        [JsonPropertyName("overrideChoiceVersion")] public long? OverrideChoiceVersion { get; set; }
+
         /// <summary>Series only: the seasons to monitor.</summary>
         [JsonPropertyName("seasons")] public int[]? Seasons { get; set; }
 
@@ -240,6 +243,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (string.IsNullOrWhiteSpace(body.IdempotencyKey) || body.IdempotencyKey.Length > 64 || body.IdempotencyKey.Any(char.IsControl))
                 return RequestOutcome.Refused("idempotency_key_required", 400);
             var identity = MutationInput.Hash(JsonSerializer.Serialize(new { operation = "add", title = parsed.ToString(), instance = body.InstanceId.ToLowerInvariant(), body.ProfileId, body.RootFolder, seasons = body.Seasons?.Distinct().OrderBy(n => n).ToArray() }));
+            // An explicitly confirmed replacement of the title's add settings is part of what was asked (one durable owner, M9).
+            identity = PressChecks.WithChoiceOverride(identity, body.OverrideChoiceVersion);
             return await _requests.Ledger.Database.RetryOwners.ExecuteAsync(admin, body.IdempotencyKey, "add", identity,
                 token => AddOwnedAsync(admin, body, parsed, identity, token),
                 () => RequestOutcome.Refused(PressChecks.Conflict, 409), RetryOwners.UnresolvedRequest, ct, DateTimeOffset.UtcNow,
@@ -258,12 +263,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 seasons = (body.Seasons ?? Array.Empty<int>()).Distinct().OrderBy(s => s).ToArray();
                 if (seasons.Length is 0 or > 200 || seasons.Any(s => s is < 0 or > 10000)) return RequestOutcome.Refused("invalid_input", 400);
             }
+            ArrAddDefaults? effective = null;
             if (body.ProfileId != null || body.RootFolder != null)
             {
                 var system = await ArrAddRules.FreshSystemAsync(_store, instance, ct).ConfigureAwait(false);
                 var check = ArrAddRules.Check(instance, system, await TagsAsync(instance, ct).ConfigureAwait(false), body.ProfileId, body.RootFolder);
                 if (check.Defaults == null)
-                    return RequestOutcome.Refused(check.Reason == "defaults_unverified" ? "defaults_unverified" : "invalid_defaults", check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
+                    return RequestOutcome.Refused(check.Reason!, check.Reason == "defaults_unverified" ? 503 : 400, check.Reason == "defaults_unverified" ? "unavailable" : "denied") with { Message = check.Message };
+                effective = check.Defaults;
             }
             var input = new MutationInput
             {
@@ -272,12 +279,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Variant = instance.Role == ArrInstanceRole.FourK ? "4k" : "standard",
                 Seasons = seasons,
                 InstanceId = instance.Id,
-                ProfileId = body.ProfileId,
-                RootFolder = body.RootFolder,
+                ProfileId = effective?.ProfileId ?? body.ProfileId,
+                RootFolder = effective?.RootFolder ?? body.RootFolder,
             };
             // The administrator's key, in the same namespace as their asks (D53, edition round 22): an add is told apart by its
-            // operation in the request's identity, never by a key prefix of its own.
-            return await _requests.CreateAsync(admin, new CreateRequest(body.IdempotencyKey!.Trim(), input) { Operation = "add", Identity = identity }, ct).ConfigureAwait(false);
+            // operation in the request's identity, never by a key prefix of its own. An explicit choice-conflict consent travels
+            // with it, and is part of that identity.
+            return await _requests.CreateAsync(admin, new CreateRequest(body.IdempotencyKey!.Trim(), input, OverrideChoiceVersion: body.OverrideChoiceVersion) { Operation = "add", Identity = identity }, ct).ConfigureAwait(false);
         }
 
         // Tag ids and labels: from the library snapshot in memory (display labels; the add's own send checks its tag ids again),

@@ -147,7 +147,7 @@ const OWNERS = {
       h.opened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: op });
       await settle(); assert.ok(h.document.querySelector('.je-sheet .je-sheet-primary'), 'the request sheet is open');
     },
-    submit: h => { h.document.querySelector('.je-sheet .je-sheet-primary').click(); return h.opened; },
+    submit: h => { h.click(h.document.querySelector('.je-sheet .je-sheet-primary')); return h.opened; },
     sent: h => h.writes('POST', '/acquire/requests').length,
   },
   'JE one-tap ask (POST /acquire/requests)': {
@@ -170,7 +170,7 @@ const OWNERS = {
       await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: op }); await settle();
       assert.ok(h.document.querySelector('.je-manage [data-je-focus="search-r1"]'), 'the drawer shows Search now');
     },
-    submit: async h => { h.document.querySelector('.je-manage [data-je-focus="search-r1"]').click(); },
+    submit: async h => { h.click(h.document.querySelector('.je-manage [data-je-focus="search-r1"]')); },
     sent: h => h.writes('POST', '/arr/admin/manage/search').length,
   },
 };

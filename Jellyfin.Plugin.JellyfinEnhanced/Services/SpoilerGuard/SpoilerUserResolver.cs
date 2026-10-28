@@ -27,7 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const string ContextKeyUserState = "__JE_SpoilerBlur_UserState_Shared";
 
         private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedAt = new();
 
         // F7: cross-request in-memory cache of each user's spoiler state, keyed
         // by userId (N-format). An anonymous image burst on a shared IP probes
@@ -51,13 +51,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // automatically (self-invalidating) and two users with the same set share
         // safely. Short TTL bounds staleness from library edits.
         private static readonly TimeSpan CollectionScopeCacheTtl = TimeSpan.FromSeconds(30);
-        private static readonly ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCache
+        private static ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCache
             = new(StringComparer.Ordinal);
 
         static SpoilerUserResolver()
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // A collection's members changed: every memoized membership answer may be stale.
-            PrivacyInputs.CollectionChanged += _ => _collectionScopeCache.Clear();
+            PrivacyInputs.CollectionChanged += _ => _collectionScopeCacheFacts.Clear();
         }
 
         /// <summary>
@@ -86,7 +87,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static bool IsUserStateCachedForTest(string userIdN)
             => !string.IsNullOrEmpty(userIdN) && _userStateCache.TryGet(userIdN, out _);
 
-        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At, PrivacyFacts? Facts)> _providerTitles = new();
+        // An item's typed TMDB key (a library fact, the same for every viewer), with when it was read and the facts its read
+        // consumed (the item, or its absence): a memo hit replays them, compared with the live library at every check.
+        private ConcurrentDictionary<Guid, (string? Key, DateTime At, PrivacyFacts? Facts)> _providerTitles = new();
+        // Event eviction and late publication share one gate (the memo's storage can be replaced by its facts owner).
+        private readonly object _providerTitlesGate = new();
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
         private readonly RequestIdentityService _identity;
@@ -115,6 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // rule (and the collection-art lookup) can't drift between them.
         public Guid? FindOptedInCollectionForMovie(UserSpoilerBlur userState, Guid movieId)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (movieId == Guid.Empty || userState.Collections.Count == 0) return null;
             var collections = userState.Collections.Keys.Select(k => Guid.TryParse(k, out var guid) ? guid : Guid.Empty).Where(g => g != Guid.Empty).ToArray();
 
@@ -131,10 +137,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var factKey = "collection-scope:" + movieId.ToString("N") + ":" + PrivacyReads.SetOf(collections);
             void Record(Guid? result) => PrivacyReads.Query(factKey, result?.ToString("N") ?? "-",
                 check => (collections.FirstOrDefault(c => check.Memo("members:" + c.ToString("N"), () => PrivacyIdentities.MembersNow(_libraryManager, c)).Contains(movieId)) is var found && found != Guid.Empty ? found.ToString("N") : "-"),
-                cacheKey == null ? null : () => _collectionScopeCache.TryRemove(cacheKey, out _));
+                cacheKey == null ? null : () => _collectionScopeCacheFacts.TryRemove(cacheKey, out _));
             var now = DateTime.UtcNow;
             if (cacheKey != null
-                && _collectionScopeCache.TryGetValue(cacheKey, out var hit)
+                && _collectionScopeCacheFacts.TryGetValue(cacheKey, out var hit)
                 && (now - hit.CachedAt) < CollectionScopeCacheTtl)
             {
                 Record(hit.CollectionId);
@@ -166,15 +172,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (cacheKey != null && PrivacyInputs.LibraryChangesSince(readAt) is { } changed
                 && !collections.Any(changed.Contains))
             {
-                _collectionScopeCache[cacheKey] = (result, now, readAt);
+                _collectionScopeCacheFacts[cacheKey] = (result, now, readAt);
                 // Opportunistic eviction, mirroring the season-watched cache in
                 // SpoilerBlurImageFilter: snapshot-free, only removes expired.
-                if (_collectionScopeCache.Count > 1024)
+                if (_collectionScopeCacheFacts.Count > 1024)
                 {
-                    foreach (var kvp in _collectionScopeCache)
+                    foreach (var kvp in _collectionScopeCacheFacts)
                     {
                         if ((now - kvp.Value.CachedAt) >= CollectionScopeCacheTtl)
-                            _collectionScopeCache.TryRemove(kvp.Key, out _);
+                            _collectionScopeCacheFacts.TryRemove(kvp.Key, out _);
                     }
                 }
             }
@@ -240,16 +246,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void ForgetProviderTitle(Guid id)
         {
-            lock (_providerTitles) _providerTitles.TryRemove(id, out _);
+            lock (_providerTitlesGate) _providerTitlesFacts.TryRemove(id, out _);
         }
 
         private bool ProviderScope(UserSpoilerBlur state, Guid id, string kind, IEnumerable<KeyValuePair<string, string>>? providers)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (state.ProviderTitles.Count + state.PendingTmdb.Count == 0) return false;
             if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
             // The title's provider key is a fact of the answer however it is found: a memo hit replays the facts its read
             // consumed (the item, or its absence), compared with the live library at every check.
-            if (_providerTitles.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30))
+            if (_providerTitlesFacts.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30))
             {
                 if (hit.Facts is { } facts) PrivacyReadSet.Current?.Item(_libraryManager, id, facts);
                 else PrivacyReadSet.Current?.Absent(_libraryManager, id);
@@ -262,7 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var item = PrivacyReads.Item(_libraryManager, id);
                 hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), began,
                     item == null ? null : PrivacyFacts.Of(item, item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : PrivacyIdentities.ExtraOwner(_libraryManager, item)));
-                lock (_providerTitles)
+                lock (_providerTitlesGate)
                 {
                     // Event eviction and late publication share the same owner.
                     // Read-set comparison remains authoritative when an answer
@@ -271,8 +278,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var changed = PrivacyInputs.LibraryChangesSince(since);
                     if (changed != null && !changed.Contains(id))
                     {
-                        if (_providerTitles.Count >= 8192) _providerTitles.Clear();
-                        _providerTitles[id] = hit;
+                        if (_providerTitlesFacts.Count >= 8192) _providerTitlesFacts.Clear();
+                        _providerTitlesFacts[id] = hit;
                     }
                 }
             }
@@ -427,5 +434,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _corruptionLog.TryRemove(userKey, out _);
         }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)>> _collectionScopeCacheFactsOwner = new();
+        private static ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCacheFacts { get => _collectionScopeCacheFactsOwner.Read(ref _collectionScopeCache, () => new(StringComparer.Ordinal)); set => _collectionScopeCacheFactsOwner.Store(ref _collectionScopeCache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, (string? Key, DateTime At, PrivacyFacts? Facts)>> _providerTitlesFactsOwner = new();
+        private ConcurrentDictionary<Guid, (string? Key, DateTime At, PrivacyFacts? Facts)> _providerTitlesFacts { get => _providerTitlesFactsOwner.Read(ref _providerTitles, () => new()); set => _providerTitlesFactsOwner.Store(ref _providerTitles, value); }
     }
 }

@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -95,7 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private const int Declined = 3;
 
         private readonly IHttpClientFactory _http;
-        private readonly SeerrRequestReadModel _model;
+        private readonly SeerrFacts _model;
         private readonly TitleAliases? _aliases;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -108,10 +109,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // its earliest input's read, never longer than any input: a prepared entry ends with the account mapping it used
         // (Until) and its Seerr settings with their own read (SettingsUntil); the same deadlines are checked on the
         // stored times as well.
-        private readonly Helpers.WrittenStateCache<Guid, Prepared> _prepared = new(PreparedFor, 10000);
-        private readonly Helpers.WrittenStateCache<string, (int? Id, long At, SeerrAccountAuthority.Ticket Authority)> _ids = new(IdsFor, 10000, StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, ServerList> _serverLists = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, ServerDetails> _serverDetails = new(StringComparer.Ordinal);
+        private readonly SeerrFacts.PreparedCache<Guid, Prepared> _prepared = new(PreparedFor, 10000);
+        private readonly SeerrFacts.PreparedCache<string, (int? Id, long At, SeerrAccountAuthority.Ticket Authority)> _ids = new(IdsFor, 10000, StringComparer.Ordinal);
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<ServerList> _serverLists = new();
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<ServerDetails> _serverDetails = new();
         private SettingsRead? _settings;
 
         /// <summary>The binding verdict for Seerr options that fit Seerr's servers now.</summary>
@@ -130,7 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// for a Seerr account are woken (and the outbox signalled) as soon as Seerr links one to them. A title known only
         /// by its TVDB or IMDb id is found on TMDB through the shared cache.
         /// </summary>
-        public SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases aliases, RequestLedger ledger, RequestOutboxSignal signal, TmdbResponseCache tmdb)
+        public SeerrBackend(IHttpClientFactory http, SeerrFacts model, TitleAliases aliases, RequestLedger ledger, RequestOutboxSignal signal, TmdbResponseCache tmdb)
             : this(http, model, aliases, () => JellyfinEnhanced.Instance?.Configuration, () => DateTimeOffset.UtcNow, ledger.BindSeerrSend, user => Wake(ledger, signal, user),
                 (key, ct) => RequestHubProjection.TmdbIdOfAsync(tmdb, key, ct))
         {
@@ -157,7 +158,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// time since a start). <paramref name="findTmdb"/> names the TMDB id of a title no arr or Seerr request links one
         /// to (null: such a title is held).
         /// </summary>
-        internal SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null, Action<Guid>? linked = null,
+        internal SeerrBackend(IHttpClientFactory http, SeerrFacts model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null, Action<Guid>? linked = null,
             Func<TitleKey, CancellationToken, Task<int?>>? findTmdb = null)
         {
             _http = http;
@@ -208,6 +209,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task PrepareCoreAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { _prepared.Invalidate(user); return; }
+            await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Identity, ct, async token => { await PrepareAdmittedAsync(user, input, token, notifyLinked).ConfigureAwait(false); return true; }).ConfigureAwait(false);
+        }
+
+        private async Task PrepareAdmittedAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) { _prepared.Invalidate(user); return; }
             // Taken before anything is read: an unlink while this runs ends what it read; its facts live from here (on the
             // monotonic clock). The person's Seerr account authority too: a newer read of their account link (here or
             // anywhere: the proxy, another preparation) ends this one, and nothing it found is kept.
@@ -300,7 +308,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public RequestBackendBinding Binding(Guid user, MutationInput input)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => BindingCore(user, input), new RequestBackendBinding());
+
+        private RequestBackendBinding BindingCore(Guid user, MutationInput input)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return new RequestBackendBinding();
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             var (options, optionsStamp) = source != null && input.HasSeerrOptions ? HeldOptions(source, input) : (null, null);
@@ -335,6 +347,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         public async Task<IReadOnlyList<SeerrServerOptions>?> RequestOptionsAsync(bool movie, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.RequestRead, ct, token => RequestOptionsAdmittedAsync(movie, token)).ConfigureAwait(false);
+        }
+
+        private async Task<IReadOnlyList<SeerrServerOptions>?> RequestOptionsAdmittedAsync(bool movie, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null) return null;
@@ -434,7 +453,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public bool RepresentsSeerrServer(string? source, MutationInput input, string url, string apiKey)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => RepresentsSeerrServerCore(source, input, url, apiKey), false);
+
+        private bool RepresentsSeerrServerCore(string? source, MutationInput input, string url, string apiKey)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return false;
             if (source == null || TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int id
                 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(apiKey)) return false;
             var kind = key.IsMovie ? "radarr" : "sonarr";
@@ -582,10 +605,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         /// <remarks>Seerr's 4K Radarr/Sonarr setting as last read from the Seerr configured now (within the last hour).</remarks>
         public bool? FourKServer(bool movie)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => FourKServerCore(movie), (bool?)null);
+
+        private bool? FourKServerCore(bool movie)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
-            var held = Volatile.Read(ref _settings);
+            var held = _settingsFacts;
             if (source == null || held == null || held.Source != source || Helpers.MonotonicClock.Now() - held.At > FourKKnownFor.Ticks) return null;
             return movie ? held.Settings.Movie4k : held.Settings.Series4k;
         }
@@ -595,6 +623,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public async Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.RequestRead, ct, WholeSeriesOnlyAdmittedAsync).ConfigureAwait(false);
+        }
+
+        private async Task<bool?> WholeSeriesOnlyAdmittedAsync(CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null) return null;
@@ -608,13 +643,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Seerr's request settings and when their read began (a held read's own instant; they count SettingsFor from it).
         private async Task<(SeerrRequestSettings? Settings, long At)> SettingsReadAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {
-            var held = Volatile.Read(ref _settings);
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var held = _settingsFacts;
             if (!fresh && held != null && held.Source == source && Helpers.MonotonicClock.Now() - held.At < SettingsFor.Ticks) return (held.Settings, held.At);
             var at = Helpers.MonotonicClock.Now();
             if (await GetAsync(config, "/api/v1/settings/public", ct).ConfigureAwait(false) is not { } json) return (null, at);
             static bool? Tri(JsonElement e, string name) => e.TryGetProperty(name, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
             var settings = new SeerrRequestSettings(Tri(json, "partialRequestsEnabled"), Tri(json, "enableSpecialEpisodes") == true, Tri(json, "movie4kEnabled") == true, Tri(json, "series4kEnabled") == true);
-            Volatile.Write(ref _settings, new SettingsRead(source, settings, at));
+            _settingsFacts = new SettingsRead(source, settings, at);
             return (settings, at);
         }
 
@@ -638,6 +674,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </remarks>
         public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
+            return await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.RequestWrite, ct, token => SendAdmittedAsync(job, finalGuard, admission, token)).ConfigureAwait(false);
+        }
+
+        private async Task<RequestBackendResult> SendAdmittedAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Hold("backend_disabled", "The request's original backend is disabled.");
             if (finalGuard() is { } refusal) return Refused(job, refusal);
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
@@ -691,7 +734,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 payload = new System.Text.Json.Nodes.JsonObject
                 {
-                    ["mediaType"] = "tv", ["mediaId"] = tmdb, ["is4k"] = is4k,
+                    ["mediaType"] = "tv",
+                    ["mediaId"] = tmdb,
+                    ["is4k"] = is4k,
                     ["seasons"] = new System.Text.Json.Nodes.JsonArray(seasons.Select(n => (System.Text.Json.Nodes.JsonNode?)n).ToArray()),
                 };
             }
@@ -784,44 +829,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             switch (raw.Status)
             {
                 case 200 or 201 when raw.Json:
-                {
-                    // Seerr leaves out seasons that are already requested or on their way and creates the rest: the request
-                    // counts once a fresh read shows every sent season covered and this person's new request among them.
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
-                    if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
-                        : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
-                }
+                    {
+                        // Seerr leaves out seasons that are already requested or on their way and creates the rest: the request
+                        // counts once a fresh read shows every sent season covered and this person's new request among them.
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+                        if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
+                            : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
+                    }
                 case 202 when raw.Json && Message(raw.Body) is { } message && message.Contains("no seasons", StringComparison.OrdinalIgnoreCase):
-                {
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
-                        : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
-                }
+                    {
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
+                            : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
+                    }
                 case 409 when raw.Json:
-                {
-                    var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
-                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
-                    return verify.Matched == true
-                        ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
-                        : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
-                }
+                    {
+                        var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                        if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
+                        return verify.Matched == true
+                            ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
+                            : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
+                    }
                 case 202 when raw.Json:
                     return BackendResults.Maybe(job.WantId, "Seerr accepted the request without creating one; a fresh read decides.");
                 case 409:
                     return BackendResults.Failed("seerr_conflict", "Seerr reported a conflict without a readable answer.");
                 case 403 when raw.Json:
-                {
-                    var text = Message(raw.Body) ?? string.Empty;
-                    if (text.Contains("quota", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("quota_exceeded", "Seerr refused: over this person's Seerr quota.");
-                    if (text.Contains("4k", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("requests_4k_required", "Seerr refused: no 4K request permission.");
-                    if (text.Contains("blocklist", StringComparison.OrdinalIgnoreCase) || text.Contains("blacklist", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("blocked", "Seerr refused: the title is on its blocklist.");
-                    return BackendResults.Hold("seerr_refused", "Seerr refused the request for this person.");
-                }
+                    {
+                        var text = Message(raw.Body) ?? string.Empty;
+                        if (text.Contains("quota", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("quota_exceeded", "Seerr refused: over this person's Seerr quota.");
+                        if (text.Contains("4k", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("requests_4k_required", "Seerr refused: no 4K request permission.");
+                        if (text.Contains("blocklist", StringComparison.OrdinalIgnoreCase) || text.Contains("blacklist", StringComparison.OrdinalIgnoreCase)) return BackendResults.Hold("blocked", "Seerr refused: the title is on its blocklist.");
+                        return BackendResults.Hold("seerr_refused", "Seerr refused the request for this person.");
+                    }
                 case 401 or 403:
                     return BackendResults.Hold("service_down", "Seerr rejected Jellyfin Enhanced's API key.");
                 case 400 or 422:
@@ -840,6 +885,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public async Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled");
+            return await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.RequestRead, ct, token => ReadBackAdmittedAsync(job, token)).ConfigureAwait(false);
+        }
+
+        private async Task<RequestBackendResult> ReadBackAdmittedAsync(RequestJob job, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return BackendResults.Maybe(job.WantId, "The original backend is disabled; delivery remains unconfirmed.", "backend_disabled");
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null || source != job.Authorization.SeerrSource)
@@ -1003,6 +1055,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         internal async Task<SeerrSeasonFacts?> SeasonFactsAsync(string titleKey, string variant, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
+            return await Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, ct, token => SeasonFactsAdmittedAsync(titleKey, variant, token)).ConfigureAwait(false);
+        }
+
+        private async Task<SeerrSeasonFacts?> SeasonFactsAdmittedAsync(string titleKey, string variant, CancellationToken ct)
+        {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) return null;
             var config = _config();
             if (config == null || _model.SourceOf(config) == null) return null;
             if (TitleKey.Parse(titleKey) is not { IsMovie: false } key || await TmdbOfAsync(key, ct).ConfigureAwait(false) is not int tmdb) return null;
@@ -1126,6 +1185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task<Raw> RawAsync(HttpMethod method, string url, string key, int? apiUser, string? body, TimeSpan timeout, CancellationToken ct)
         {
+            if (!EffectiveRequestsBackend.AllowsSeerr(_config())) throw new BackendDisabledException("backend_disabled");
             if (string.IsNullOrEmpty(key)) return new Raw(Delivery.NotSent, 0, false, string.Empty);
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
             budget.CancelAfter(timeout);
@@ -1205,5 +1265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static int? Int(JsonElement e, string name) => DirectArrBackend.Int(e, name);
 
         private static string? Str(JsonElement e, string name) => DirectArrBackend.Str(e, name);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<SettingsRead?> _settingsFactsOwner = new();
+        private SettingsRead? _settingsFacts { get => _settingsFactsOwner.Read(ref _settings, () => default!); set => _settingsFactsOwner.Store(ref _settings, value); }
     }
 }

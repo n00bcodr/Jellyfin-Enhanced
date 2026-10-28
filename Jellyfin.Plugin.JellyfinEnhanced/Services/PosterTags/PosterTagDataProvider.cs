@@ -81,8 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly AcquisitionStampResolver _stamps;
         private readonly Logger _logger;
 
-        private readonly ConcurrentDictionary<Guid, MemoEntry> _memo = new();
-        private readonly ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>> _building = new();
+        private ConcurrentDictionary<Guid, MemoEntry> _memo = new();
+        private ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>> _building = new();
         private readonly SemaphoreSlim _buildSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
         // Bumped by every item event; a build that started before an event
@@ -246,16 +246,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private async Task<TagCacheEntry?> GetOrBuildAsync(BaseItem item, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
-            if (_memo.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl) return memo.Entry;
+            if (_memoFacts.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl) return memo.Entry;
 
             var mine = new Lazy<Task<TagCacheEntry?>>(() => BuildAsync(item), LazyThreadSafetyMode.ExecutionAndPublication);
-            var leader = _building.GetOrAdd(item.Id, mine);
+            var leader = _buildingFacts.GetOrAdd(item.Id, mine);
             var task = leader.Value;
             if (ReferenceEquals(leader, mine))
             {
                 _ = task.ContinueWith(
-                    _ => _building.TryRemove(new KeyValuePair<Guid, Lazy<Task<TagCacheEntry?>>>(item.Id, mine)),
+                    _ => _buildingFacts.TryRemove(new KeyValuePair<Guid, Lazy<Task<TagCacheEntry?>>>(item.Id, mine)),
                     CancellationToken.None,
                     TaskContinuationOptions.ExecuteSynchronously,
                     TaskScheduler.Default);
@@ -268,6 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // the build the others are waiting for).
         private async Task<TagCacheEntry?> BuildAsync(BaseItem item)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!await _buildSlots.WaitAsync(BuildWait).ConfigureAwait(false))
             {
                 _logger.Debug($"Native poster tags: tag data build for {item.Id} timed out waiting for a slot.");
@@ -284,8 +286,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 {
                     if (generation == _memoGeneration)
                     {
-                        if (_memo.Count >= MaxMemoEntries) TrimMemo();
-                        _memo[item.Id] = new MemoEntry(entry, builtAt);
+                        if (_memoFacts.Count >= MaxMemoEntries) TrimMemo();
+                        _memoFacts[item.Id] = new MemoEntry(entry, builtAt);
                     }
                 }
 
@@ -304,10 +306,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private void TrimMemo()
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Oldest quarter out; rare (only on a full memo).
-            foreach (var key in _memo.OrderBy(kvp => kvp.Value.BuiltAt).Take(MaxMemoEntries / 4).Select(kvp => kvp.Key).ToList())
+            foreach (var key in _memoFacts.OrderBy(kvp => kvp.Value.BuiltAt).Take(MaxMemoEntries / 4).Select(kvp => kvp.Key).ToList())
             {
-                _memo.TryRemove(key, out _);
+                _memoFacts.TryRemove(key, out _);
             }
         }
 
@@ -315,22 +318,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // source, language union), mirroring TagCacheMonitor.
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
-            if (e?.Item == null || (_memo.IsEmpty && _building.IsEmpty)) return;
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (e?.Item == null || (_memoFacts.IsEmpty && _buildingFacts.IsEmpty)) return;
             lock (_memoLock)
             {
                 _memoGeneration++;
-                _memo.TryRemove(e.Item.Id, out _);
+                _memoFacts.TryRemove(e.Item.Id, out _);
                 switch (e.Item)
                 {
                     case Episode episode:
-                        if (episode.SeasonId != Guid.Empty) _memo.TryRemove(episode.SeasonId, out _);
-                        if (episode.SeriesId != Guid.Empty) _memo.TryRemove(episode.SeriesId, out _);
+                        if (episode.SeasonId != Guid.Empty) _memoFacts.TryRemove(episode.SeasonId, out _);
+                        if (episode.SeriesId != Guid.Empty) _memoFacts.TryRemove(episode.SeriesId, out _);
                         break;
                     case Season season:
-                        if (season.SeriesId != Guid.Empty) _memo.TryRemove(season.SeriesId, out _);
+                        if (season.SeriesId != Guid.Empty) _memoFacts.TryRemove(season.SeriesId, out _);
                         break;
                 }
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, MemoEntry>> _memoFactsOwner = new();
+        private ConcurrentDictionary<Guid, MemoEntry> _memoFacts { get => _memoFactsOwner.Read(ref _memo, () => new()); set => _memoFactsOwner.Store(ref _memo, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>>> _buildingFactsOwner = new();
+        private ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>> _buildingFacts { get => _buildingFactsOwner.Read(ref _building, () => new()); set => _buildingFactsOwner.Store(ref _building, value); }
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
@@ -121,14 +122,16 @@ public class ListsResolverTests
         airing.Expected[2].AirDate = Past;
         Assert.False(PlaceholderProgress.IsComplete(airing, today));
         airing.Filled.Add(F(1, 3));
+        Assert.False(PlaceholderProgress.IsComplete(airing, today)); // display facts cannot mint authority
+        Refresh(airing, false);
         Assert.True(PlaceholderProgress.IsComplete(airing, today));
 
-        // Ended show: an announced episode that never aired isn't required.
+        // An undated known episode on an ended show cannot be excluded by inference.
         var cancelled = Season(1, 2);
         cancelled.InProduction = false;
         cancelled.Expected = new() { Ep(2, 1, Past), Ep(2, 2, null) };
         cancelled.Filled = new() { F(2, 1) };
-        Assert.True(PlaceholderProgress.IsComplete(cancelled, today));
+        Assert.False(PlaceholderProgress.IsComplete(cancelled, today));
 
         // Unknown production state or expected set: never complete.
         var unknown = Season(1, 3);
@@ -141,11 +144,35 @@ public class ListsResolverTests
 
         var series = Series(1);
         series.InProduction = true;
-        series.Expected = new() { Ep(1, 1, Past), Ep(2, 1, Past) };
-        series.Filled = new() { F(1, 1), F(2, 1) };
+        series.Expected = new() { Ep(1, 1, Past), Ep(1, 2, Past) };
+        series.Filled = new() { F(1, 1), F(1, 2) };
         Assert.False(PlaceholderProgress.IsComplete(series, today)); // a running show stays
         series.InProduction = false;
+        Assert.False(PlaceholderProgress.IsComplete(series, today));
+        Refresh(series, true);
         Assert.True(PlaceholderProgress.IsComplete(series, today));
+
+        void Refresh(Placeholder p, bool ended)
+        {
+            var last = p.Expected.OrderBy(e => e.S).ThenBy(e => e.E).Last();
+            var show = JsonSerializer.SerializeToElement(new
+            {
+                id = p.TmdbId, firstAirDate = Past, posterPath = (string?)null,
+                externalIds = new { imdbId = (string?)null, tvdbId = (int?)null },
+                status = ended ? "Ended" : "Returning Series", inProduction = !ended,
+                lastEpisodeToAir = new { seasonNumber = last.S, episodeNumber = last.E, airDate = Past },
+                nextEpisodeToAir = (object?)null,
+                seasons = p.Expected.GroupBy(e => e.S).Select(g => new { seasonNumber = g.Key, episodeCount = g.Count(), airDate = Past }).ToArray(),
+            });
+            var details = JsonSerializer.SerializeToElement(new
+            {
+                seasonNumber = p.SeasonNumber ?? 1, airDate = Past, posterPath = (string?)null,
+                episodes = p.Expected.Select(e => new { showId = p.TmdbId, seasonNumber = e.S, episodeNumber = e.E, airDate = Past }).ToArray(),
+            });
+            var facts = ListMetadataService.FromTv(p, show, details, today, today);
+            Assert.True(!facts.Partial, facts.Completion?.Reason ?? "provider fixture partial");
+            ListMetadataService.Apply(p, facts);
+        }
     }
 
     [Fact]

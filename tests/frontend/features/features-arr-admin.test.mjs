@@ -201,22 +201,22 @@ test('the Overview shows instance cards, Needs attention in the arrs\' words wit
   assert.match(page.querySelector('.je-ops-spark').textContent, /14 days: 13 grabs, 7 imports/);
 
   // Fixes: Retry import and Search now (a failed download no longer queued) post the actions.
-  page.querySelector('.je-ops-item[data-attention="import_waiting"] .je-ops-btn-primary').click();
+  h.click(page.querySelector('.je-ops-item[data-attention="import_waiting"] .je-ops-btn-primary'));
   await until(() => posts.length === 1);
   assert.equal(posts[0].path, '/arr/admin/queue/action');
   assert.deepEqual({ ...posts[0].body, idempotencyKey: undefined }, { instanceId: 'r1', downloadId: 'dlB', action: 'retry_import', idempotencyKey: undefined });
   await until(() => page.querySelector('.je-ops-banner'));
   assert.equal(page.querySelector('.je-ops-banner').textContent, 'Done. Finished.');
-  page.querySelector('.je-ops-item[data-attention="download_failed"] .je-ops-btn-primary').click();
+  h.click(page.querySelector('.je-ops-item[data-attention="download_failed"] .je-ops-btn-primary'));
   await until(() => posts.length === 2);
   assert.equal(posts[1].path, '/arr/admin/hub/search');
   assert.equal(posts[1].body.key, 'movie:tmdb:20367');
-  page.querySelector('.je-ops-item[data-attention="not_in_jellyfin"] .je-ops-btn-primary').click();
+  h.click(page.querySelector('.je-ops-item[data-attention="not_in_jellyfin"] .je-ops-btn-primary'));
   await until(() => posts.length === 3);
   assert.deepEqual([posts[2].path, posts[2].body.path], ['/arr/admin/bridge/scan', '/data/tv/The Flash/Season 09/E05.mkv']);
   assert.notEqual(posts[0].body.idempotencyKey, posts[1].body.idempotencyKey);
   // Open System switches tab.
-  page.querySelector('.je-ops-item[data-attention="low_disk"] .je-ops-btn-primary').click();
+  h.click(page.querySelector('.je-ops-item[data-attention="low_disk"] .je-ops-btn-primary'));
   assert.equal(h.window.location.hash, '#/requests?tab=system');
 });
 
@@ -245,20 +245,20 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
 
   // Tier 2: the dialog, with the season pack's blast radius; Esc closes it without a call.
   const remove = pack.querySelector('[data-je-focus="dl:s1|pack:remove"]');
-  remove.click();
+  h.click(remove);
   let dialog = h.document.querySelector('.je-ops-dialog');
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.match(dialog.textContent, /This download covers S02E01–E03; removing it affects all 3 episodes\./);
   assert.match(dialog.textContent, /its data is kept/);
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
   assert.equal(posts.length, 0);
-  remove.click();
+  h.click(remove);
   dialog = h.document.querySelector('.je-ops-dialog');
   const [blocklist, search] = dialog.querySelectorAll('input[type="checkbox"]');
   assert.equal(blocklist.checked, true);
   search.checked = false;
-  dialog.querySelector('.je-ops-btn-primary').click();
+  h.click(dialog.querySelector('.je-ops-btn-primary'));
   await until(() => posts.length === 1);
   assert.deepEqual({ ...posts[0].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'pack', action: 'remove', blocklist: true, searchAgain: false, idempotencyKey: 'k' });
 
@@ -268,28 +268,28 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
 
   // Tier 3, from inside the Remove dialog with its choices (blocklist on by default, search
   // again unticked here): the server's token, then the typed word.
-  remove.click();
+  h.click(remove);
   dialog = h.document.querySelector('.je-ops-dialog');
   dialog.querySelectorAll('input[type="checkbox"]')[1].checked = false;
   const deleteToo = dialog.querySelector('.je-ops-btn-danger');
   assert.equal(deleteToo.textContent, "Delete the download's data too…");
-  deleteToo.click();
+  h.click(deleteToo);
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   dialog = h.document.querySelector('.je-ops-dialog');
   assert.match(dialog.textContent, /deletes what the download client has of it/);
   assert.deepEqual([...dialog.querySelectorAll('.je-ops-delete-also li')].map(li => li.textContent), ["The release is blocklisted, so it won't be grabbed again."]);
   const confirm = dialog.querySelector('.je-ops-btn-danger');
   assert.equal(confirm.disabled, true);
-  confirm.click();
+  h.click(confirm);
   assert.equal(posts.length, 2); // only the confirm call
   const input = dialog.querySelector('input[type="text"]');
   input.value = 'delet';
-  input.dispatchEvent(new h.window.Event('input'));
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
   assert.equal(confirm.disabled, true);
   input.value = 'delete';
-  input.dispatchEvent(new h.window.Event('input'));
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
   assert.equal(confirm.disabled, false);
-  confirm.click();
+  h.click(confirm);
   await until(() => posts.length === 3);
   assert.equal(posts[1].path, '/arr/admin/queue/confirm');
   assert.deepEqual({ ...posts[1].body }, { instanceId: 's1', downloadId: 'pack' });
@@ -337,19 +337,23 @@ test('the System tab shows live state, health, tasks, Seerr, the bridge and the 
   assert.equal(problem('/data/kids'), 'OK');
   assert.match(text, /Sintel: expected at \/data\/movies\/Sintel, Jellyfin has it at \/rigmedia\/movies\/Sintel/);
   assert.match(text, /1 title has files in Sonarr\/Radarr but isn't in Jellyfin at all/);
-  page.querySelector('.je-ops-bridge .je-ops-item .je-ops-btn').click();
+  h.click(page.querySelector('.je-ops-bridge .je-ops-item .je-ops-btn'));
   await until(() => posts.length === 1);
   assert.deepEqual([posts[0].path, posts[0].body.instanceId, posts[0].body.path], ['/arr/admin/bridge/scan', 's1', '/data/tv/Firefly/Season 01/E5.mkv']);
 
-  page.querySelector('.je-hub-tab[data-tab="audit"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="audit"]'));
   await until(() => page.querySelector('.je-ops-table td'));
   const cells = [...page.querySelectorAll('.je-ops-table tbody tr')].map(r => [...r.children].map(c => c.textContent));
   assert.equal(cells[0][2], 'Remove and delete data');
   assert.equal(cells[0][3], 'Plan 9 · Radarr');
-  assert.match(cells[0][4], /^rejected · needs a fresh confirmation$/);
+  // UX-14: the outcome reads in plain words; the stored outcome is kept under Technical details.
+  const result = page.querySelector('.je-ops-table tbody tr').children[4];
+  const details = result.querySelector('details');
+  assert.match(result.textContent.slice(0, result.textContent.length - details.textContent.length), /^Refused · needs a fresh confirmation$/);
+  assert.match(details.textContent, /Outcomerejected/);
   assert.equal(cells[1][2], 'custom.thing');
   // Leaving the admin tabs stops the poll.
-  page.querySelector('.je-hub-tab[data-tab="mine"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="mine"]'));
   assert.equal(h.JE.internals.arrHub.admin.state.timer, null);
   assert.equal(h.JE.internals.arrHub.admin.state.tab, null);
 });
@@ -405,7 +409,7 @@ test('a failed System refresh keeps both Seerr read notices safely and clears th
   assert.ok(page.textContent.includes(reason));
   fail = false;
   recovered = true;
-  note.querySelector('.je-arr-stale-retry').click();
+  h.click(note.querySelector('.je-arr-stale-retry'));
   await until(() => !page.querySelector('.je-arr-stale-note'));
   assert.doesNotMatch(page.textContent, /Seerr holds 3412|latest read wasn't used/);
   assert.equal(h.window.badAliasRead, undefined);
@@ -462,7 +466,7 @@ test('dialogs: the Overview row knows a pack\'s size; focus survives a redraw; D
   // Remove & search again from the Overview (no Activity answer read): the pack's blast radius is there.
   const fix = page.querySelector('[data-je-focus="fix:a8:remove_search"]');
   fix.focus();
-  fix.click();
+  h.click(fix);
   const dialog = h.document.querySelector('.je-ops-dialog');
   assert.match(dialog.textContent, /removing it affects all 8 episodes/);
   // TV: jellyfin-web keeps D-pad focus inside a focuscontainer, and focus that escapes comes back.
@@ -472,13 +476,13 @@ test('dialogs: the Overview row knows a pack\'s size; focus survives a redraw; D
   // A poll redraws the panel while the dialog is open (the opener is replaced): Esc still returns focus to that fix.
   await h.JE.internals.arrHub.admin.refresh();
   assert.equal(fix.isConnected, false);
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
   assert.equal(h.document.activeElement?.dataset?.jeFocus, 'fix:a8:remove_search');
   assert.ok(h.document.activeElement.isConnected);
 
   // "delete it too?": the confirm answer arrives after the admin left the page: no dialog opens.
-  page.querySelector('[data-je-focus="delete:a8"]').click();
+  h.click(page.querySelector('[data-je-focus="delete:a8"]'));
   await until(() => release);
   assert.ok(page.querySelector('.je-ops-item[data-attention="download_warning"] .je-ops-btn[disabled], .je-ops-item[data-attention="download_warning"] [aria-busy="true"]') || h.JE.internals.arrHub.admin.state.busy.has('a8'));
   h.JE.internals.arrHub.admin.leave();
@@ -520,7 +524,7 @@ test('the Overview tab\'s count follows its answer, and the tabs follow the admi
   const A = h.JE.internals.arrHub.admin;
   assert.ok(A.state.timer);
   // Leaving stops following.
-  h.document.querySelector('.je-hub-tab[data-tab="mine"]').click();
+  h.click(h.document.querySelector('.je-hub-tab[data-tab="mine"]'));
   assert.equal(sub.off, true);
   assert.equal(A.state.unsubscribe, null);
   // The feed client accepts the key.
@@ -573,10 +577,10 @@ test('switching admin tabs closes the Remove dialog the tabs opened on the tab i
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
-  h.document.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl:s1|pack:remove"]'));
   assert.ok(h.document.querySelector('.je-ops-dialog'));
   // A toast's link (or a click on the strip) shows the Overview.
-  h.document.querySelector('.je-hub-tab[data-tab="overview"]').click();
+  h.click(h.document.querySelector('.je-hub-tab[data-tab="overview"]'));
   await until(() => h.document.querySelector('.je-ops-attention'));
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
   assert.equal(h.JE.internals.arrHub.admin.state.dialog, null);
@@ -606,7 +610,7 @@ test('the Manage drawer offers a download\'s non-destructive queue actions (phas
   assert.match(row.textContent, /S02E01–E03/);
   const labels = [...row.querySelectorAll('button')].map(b => b.textContent);
   assert.deepEqual(labels, ['Retry import', 'Search again', 'Remove…']);
-  row.querySelector('[data-je-focus="dl-retry_import-s1|pack"]').click();
+  h.click(row.querySelector('[data-je-focus="dl-retry_import-s1|pack"]'));
   await until(() => posts.length === 1);
   assert.deepEqual({ ...posts[0].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'pack', action: 'retry_import', idempotencyKey: 'k' });
   assert.equal(posts[0].path, '/arr/admin/queue/action');
@@ -614,14 +618,14 @@ test('the Manage drawer offers a download\'s non-destructive queue actions (phas
   // Remove…: the hub's dialog above the drawer, with the pack warning and without "delete the data".
   let stolen = 0;
   h.document.querySelector('.je-manage').addEventListener('focus', () => stolen++);
-  h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
   const dialog = h.document.querySelector('.je-ops-dialog');
   assert.match(dialog.textContent, /affects all 3 episodes/);
   assert.equal(dialog.querySelector('.je-ops-btn-danger'), null);
   // Focus stays in the dialog (the drawer doesn't pull it back, not even for a moment).
   assert.ok(dialog.contains(h.document.activeElement));
   assert.equal(stolen, 0);
-  dialog.querySelector('.je-ops-btn-primary').click();
+  h.click(dialog.querySelector('.je-ops-btn-primary'));
   await until(() => posts.length === 2);
   assert.deepEqual({ ...posts[1].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'pack', action: 'remove', blocklist: true, searchAgain: true, idempotencyKey: 'k' });
 });
@@ -656,7 +660,7 @@ test('the drawer\'s Remove dialog survives hub re-renders and goes away with the
   await until(() => h.document.querySelector('.je-hub-tab[data-tab="mine"]'));
   await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' }, { operation: h.NATIVE });
   await until(() => h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
-  h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
   assert.ok(h.document.querySelector('.je-ops-dialog'));
   // The hub re-reads (a 1 % progress tick on the followed title) and redraws its "My requests" tab.
   await h.JE.internals.arrHub.load();
@@ -684,13 +688,13 @@ test('two instances reporting the same download id are separate rows for busy st
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelectorAll('.je-ops-dl').length === 2);
-  h.document.querySelector('[data-je-focus="dl:r1|HASH1:search"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl:r1|HASH1:search"]'));
   await until(() => posts.length === 1);
   assert.equal(posts[0].instanceId, 'r1');
   assert.equal(h.document.querySelector('[data-je-focus="dl:r1|HASH1:search"]').getAttribute('aria-disabled'), 'true');
   assert.equal(h.document.querySelector('[data-je-focus="dl:r4|HASH1:search"]').getAttribute('aria-disabled'), null);
   // The other instance's row still works while the first one runs.
-  h.document.querySelector('[data-je-focus="dl:r4|HASH1:search"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl:r4|HASH1:search"]'));
   await until(() => posts.length === 2);
   assert.equal(posts[1].instanceId, 'r4');
   release({ status: 'Succeeded', message: 'Done.' });
@@ -713,28 +717,30 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
     const dialog = h.document.querySelector('.je-ops-dialog');
     const cancel = [...dialog.querySelectorAll('.je-ops-btn')].find(b => b.textContent === 'Cancel');
     removed.length = 0;
-    cancel.click();
+    h.click(cancel);
     assert.equal(h.document.querySelector('.je-ops-dialog'), null, 'Cancel closed the dialog');
     assert.equal(h.document.querySelector('.je-ops-dialog-overlay'), null);
     assert.equal(h.JE.internals.arrHub.admin.state.dialog, null);
-    assert.deepEqual(removed.sort(), ['focusin', 'keydown'], 'the focus trap listeners are gone');
+    // No local focus trap to remove: the surface stack takes the dialog's keys and focus (D46S2-R12-6).
+    assert.deepEqual(removed.filter(type => type === 'keydown' || type === 'focusin'), [], 'no local key or focus listeners');
+    assert.equal(h.JE.isTopmostSurface(dialog), false, 'the dialog left the surface stack');
   };
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
   const page = h.document.getElementById('je-requests-hub-page');
   // Tabs: Remove…
-  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  h.click(page.querySelector('[data-je-focus="dl:s1|pack:remove"]'));
   assert.equal(h.JE.internals.arrHub.admin.state.dialog?.owner, 'tabs');
   cancelled();
   // Tabs: Remove… → Delete the download's data too… (Tier 3).
-  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
-  h.document.querySelector('.je-ops-dialog .je-ops-btn-danger').click();
+  h.click(page.querySelector('[data-je-focus="dl:s1|pack:remove"]'));
+  h.click(h.document.querySelector('.je-ops-dialog .je-ops-btn-danger'));
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   cancelled();
   // The Manage drawer's Remove….
   await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' }, { operation: h.NATIVE });
   await until(() => h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
-  h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
+  h.click(h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
   assert.equal(h.JE.internals.arrHub.admin.state.dialog?.owner, 'drawer');
   cancelled();
 });
@@ -751,8 +757,8 @@ test('delete-data confirmation: a queue that is changing (409) says so and opens
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
   const page = h.document.getElementById('je-requests-hub-page');
-  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
-  h.document.querySelector('.je-ops-dialog .je-ops-btn-danger').click();
+  h.click(page.querySelector('[data-je-focus="dl:s1|pack:remove"]'));
+  h.click(h.document.querySelector('.je-ops-dialog .je-ops-btn-danger'));
   await until(() => h.JE.internals.arrHub.admin.state.banner);
   assert.equal(h.document.querySelector('.je-ops-warnbox'), null);
   assert.match(h.JE.internals.arrHub.admin.state.banner.message, /The queue is changing; try again in a moment\./);
@@ -801,7 +807,7 @@ test('a tab whose re-read fails keeps what it shows with a note, retries on its 
   assert.equal(note.getAttribute('role'), 'status');
   assert.ok(h.document.querySelector('.je-ops-dl'), 'the downloads stay on screen');
   fail = false;
-  note.querySelector('.je-arr-stale-retry').click();
+  h.click(note.querySelector('.je-arr-stale-retry'));
   await until(() => !h.document.querySelector('.je-arr-stale-note'));
   assert.equal(h.document.querySelector('.je-arr-stale-note'), null);
 });
@@ -956,7 +962,7 @@ test('Needs attention: three or more rows alike with only page-level fixes share
   assert.equal(toggle.textContent, 'Show all 11');
   assert.equal(ok.querySelector('.je-ops-group-list'), null);
   toggle.focus();
-  toggle.click();
+  h.click(toggle);
   let group = page.querySelector('.je-ops-group[data-attention="approved_not_in_arr"]');
   toggle = group.querySelector('button.je-ops-link');
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
@@ -1028,14 +1034,14 @@ test('a download that can\'t be removed with its data offers no delete option, i
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
   const page = h.document.getElementById('je-requests-hub-page');
-  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  h.click(page.querySelector('[data-je-focus="dl:s1|pack:remove"]'));
   const dialog = h.document.querySelector('.je-ops-dialog');
   assert.ok(dialog);
   assert.equal(dialog.querySelector('.je-ops-btn-danger'), null);
   assert.doesNotMatch(dialog.textContent, /Delete the download's data too/);
   // The other download allows it.
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  page.querySelector('[data-je-focus="dl:r1|dlB:remove"]').click();
+h.key(h.document, 'Escape');
+  h.click(page.querySelector('[data-je-focus="dl:r1|dlB:remove"]'));
   assert.ok(h.document.querySelector('.je-ops-dialog .je-ops-btn-danger'));
 });
 
@@ -1057,21 +1063,21 @@ test('the Overview\'s "delete it too?" sends Remove & search again\'s choices (b
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-item[data-attention="import_blocked"]'));
   const page = h.document.getElementById('je-requests-hub-page');
-  page.querySelector('[data-je-focus="delete:a1"]').click();
+  h.click(page.querySelector('[data-je-focus="delete:a1"]'));
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   const dialog = h.document.querySelector('.je-ops-dialog');
   assert.deepEqual([...dialog.querySelectorAll('.je-ops-delete-also li')].map(li => li.textContent), ["The release is blocklisted, so it won't be grabbed again.", 'Sonarr then searches for another copy.']);
   const input = dialog.querySelector('input[type="text"]');
   input.value = 'DELETE';
-  input.dispatchEvent(new h.window.Event('input'));
-  dialog.querySelector('.je-ops-btn-danger').click();
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
+  h.click(dialog.querySelector('.je-ops-btn-danger'));
   await until(() => posts.length === 2);
   assert.deepEqual({ ...posts[1].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'dlA', action: 'remove_with_data', blocklist: true, searchAgain: true, confirmationToken: 'TOKEN-2', idempotencyKey: 'k' });
 
   // Once the Activity answer says a download can't be removed with its data, the Overview doesn't offer it.
-  page.querySelector('.je-hub-tab[data-tab="activity"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="activity"]'));
   await until(() => page.querySelector('.je-ops-dl'));
-  page.querySelector('.je-hub-tab[data-tab="overview"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="overview"]'));
   await until(() => page.querySelector('.je-ops-item[data-attention="download_stalled"]'));
   assert.equal(page.querySelector('[data-je-focus="delete:a7"]'), null);
   assert.ok(page.querySelector('[data-je-focus="delete:a1"]'));
@@ -1104,4 +1110,154 @@ test('a tab retry is never sent after another account signs in', async t => {
   timers.runSince(mark);
   await wait(30);
   assert.equal(reads, before, 'the retry is not sent for the new account');
+});
+
+
+test('Admin Audit displays the actual request.dispatch profile and root message', t => {
+  const h = setup(t);
+  const entry = JSON.parse(readFileSync(process.env.JE_ARRADD_RENDER_RECEIPT || resolve(import.meta.dirname, '../../fixtures/arr-add-dispatch-audit.json'), 'utf8'));
+  const panel = h.document.createElement('div');
+  h.JE.internals.arrHub.admin.renderAudit(panel, { entries: [entry] });
+  assert.match(panel.textContent, /5 \(Ultra-HD\)/);
+  assert.match(panel.textContent, /\/selected/);
+  assert.match(panel.textContent, /Radarr/);
+  assert.equal(entry.action, 'request.dispatch');
+});
+
+// UX-14: the Audit tab named nobody (an empty Who, provider ids as titles, machine action names, every fact in one long
+// message, and phone cards without their column names). Rows now read in plain words from the server's names, with the
+// stored facts one tap away.
+test('Admin Audit names who acted and the title, labels actions plainly and keeps every stored fact under Technical details', t => {
+  const h = setup(t);
+  const panel = h.document.createElement('div');
+  const admin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const gone = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const emma = 'cccccccccccccccccccccccccccccccc';
+  h.JE.internals.arrHub.admin.renderAudit(panel, {
+    entries: [
+      { id: 'e1', time: new Date().toISOString(), userId: admin, action: 'request.dispatch', instanceId: 'r1', target: 'movie:tmdb:438631', outcome: 'succeeded',
+        message: 'Added to Radarr and searching. Instance: Radarr; Profile: 4 (HD-1080p); Root: /data/movies.', details: { instanceName: 'Radarr', qualityProfileId: '4' } },
+      { id: 'e2', time: new Date().toISOString(), userId: 'system', action: 'request.choice.claim.identity_merge', instanceId: 's1', target: 'tv:tvdb:75932', outcome: 'succeeded',
+        message: 'Choice claim.identity_merge; Actor: system; Expected revision: 2; Revision: 3; Profile: 4; Root: /data/tv; Tags: ; Series type: standard; Availability: released.' },
+      { id: 'e3', time: new Date().toISOString(), userId: gone, action: 'request.dispatch', instanceId: 'gone-instance', target: 'movie:tmdb:999', outcome: 'failed', error: 'invalid_choice', message: 'Radarr needs a profile.' },
+      { id: 'e4', time: new Date().toISOString(), userId: '', action: 'request.choice.claim', instanceId: 'r1', target: 'movie:tmdb:438631', outcome: 'succeeded', message: 'Choice claim; Revision: 1; Profile: missing; Root: missing.' },
+      { id: 'e5', time: new Date().toISOString(), userId: admin, action: 'users.policy', target: emma, outcome: 'succeeded' }
+    ],
+    names: {
+      users: { [admin]: 'Jake', [emma]: 'Emma' },
+      titles: { 'movie:tmdb:438631': { title: 'Dune', year: 2021 }, 'tv:tvdb:75932': { title: 'Fawlty Towers' } },
+      instances: { r1: 'Radarr', s1: 'Sonarr' }
+    }
+  });
+  const rows = [...panel.querySelectorAll('tbody tr')].map(r => [...r.children]);
+  const text = cell => cell.querySelector('span > span').textContent;
+  // Who.
+  assert.deepEqual(rows.map(r => r[1].textContent), ['Jake', 'Automatic', 'Removed account', 'Unknown account', 'Jake']);
+  // Action, in words.
+  assert.deepEqual(rows.map(r => r[2].textContent), ['Request sent', 'Add settings merged (same title)', 'Request sent', 'Add settings recorded', 'User settings changed']);
+  // Title: the name and the instance; an unknown title keeps its key; a settings change names its account.
+  assert.deepEqual(rows.map(r => r[3].textContent), ['Dune (2021) · Radarr', 'Fawlty Towers · Sonarr', 'movie:tmdb:999', 'Dune (2021) · Radarr', 'Settings of Emma']);
+  // Result: the outcome in words and a short summary; the facts are in a closed Technical details block.
+  assert.equal(text(rows[0][4]), 'Done');
+  assert.match(rows[0][4].textContent, /^Done · Added to Radarr and searching\.Technical details/);
+  assert.match(rows[1][4].textContent, /^Done · Version 3 · profile 4 · folder \/data\/tv/);
+  assert.match(rows[2][4].textContent, /^Failed · Radarr needs a profile\./);
+  const details = rows[0][4].querySelector('details.je-ops-diag');
+  assert.ok(details && !details.open);
+  const facts = Object.fromEntries([...details.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.equal(facts.Action, 'request.dispatch');
+  assert.equal(facts.Target, 'movie:tmdb:438631');
+  assert.equal(facts['User ID'], admin);
+  assert.equal(facts['Instance ID'], 'r1');
+  assert.match(facts.Message, /Profile: 4 \(HD-1080p\); Root: \/data\/movies/);
+  assert.equal(facts.qualityProfileId, '4');
+  const merge = Object.fromEntries([...rows[1][4].querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.match(merge.Message, /Expected revision: 2; Revision: 3/);
+  assert.equal(merge['User ID'], 'system');
+  // Phone cards name each cell's column (the header row is hidden there).
+  assert.ok(panel.querySelector('table').classList.contains('je-ops-table-labelled'));
+  assert.deepEqual(rows[0].map(c => c.dataset.label), ['When', 'Who', 'Action', 'Title', 'Result']);
+});
+
+test('an opened Technical details block stays open when the tab is drawn again', t => {
+  const h = setup(t);
+  const draw = () => {
+    const panel = h.document.createElement('div');
+    h.JE.internals.arrHub.admin.renderAudit(panel, { entries: [{ id: 'keep', time: new Date().toISOString(), userId: 'system', action: 'jellyfin.scan', target: 'library', outcome: 'succeeded' }] });
+    return panel.querySelector('details');
+  };
+  const first = draw();
+  first.open = true;
+  first.dispatchEvent(new h.window.Event('toggle'));
+  assert.equal(draw().open, true);
+});
+
+// UX-17: Activity spelled queue states as the arr does (importBlocked, importPending) while Overview named them.
+test('Activity names a download\'s state as Overview does and keeps the arr\'s spelling under Technical details', t => {
+  const h = setup(t);
+  const A = h.JE.internals.arrHub.admin;
+  const panel = h.document.createElement('div');
+  const row = (id, extra) => ({ instanceId: 'r1', instance: 'Radarr', downloadId: id, title: id, actions: [], ...extra });
+  A.renderActivity(panel, {
+    queue: [
+      row('blocked', { state: 'importBlocked', status: 'completed', health: 'warning', problem: 'import_blocked', percent: 100 }),
+      row('pending', { state: 'importPending', status: 'completed', health: 'warning', problem: 'import_waiting' }),
+      row('stalled', { state: 'downloading', status: 'downloading', health: 'ok', problem: 'download_stalled', percent: 35 }),
+      row('fine', { state: 'downloading', status: 'downloading', health: 'ok', percent: 10 }),
+      row('queued', { status: 'queued' }),
+      row('odd', { state: 'someNewState' })
+    ]
+  }, { results: {}, busy: new Set(), queue: () => {}, arrUrl: () => null, history: null });
+  const subs = [...panel.querySelectorAll('.je-ops-dl')].map(r => r.querySelector('.je-ops-item-sub').textContent.split(' · ')[0]);
+  assert.deepEqual(subs, ['Import blocked', 'Waiting to import', 'Download stalled', 'Downloading', 'Queued', 'someNewState']);
+  // The same words as Overview's Needs attention row for that download.
+  assert.equal(A.itemTitle({ code: 'import_blocked', title: 'Dune', instance: 'Radarr' }).split(' · ')[0], subs[0]);
+  assert.equal(A.itemTitle({ code: 'import_waiting', title: 'Dune', instance: 'Radarr' }).split(' · ')[0], subs[1]);
+  assert.doesNotMatch(panel.querySelector('.je-ops-dl').querySelector('.je-ops-item-sub').textContent, /importBlocked/);
+  const diag = panel.querySelector('.je-ops-dl .je-ops-queue-diag');
+  assert.ok(diag && !diag.open);
+  const facts = Object.fromEntries([...diag.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.deepEqual(facts, { 'Arr state': 'importBlocked', 'Client status': 'completed', Health: 'warning', 'Reason code': 'import_blocked', 'Download ID': 'blocked' });
+});
+
+test('UX-8: with Seerr off and Jellyfin Enhanced handling requests, System shows the request backend\'s health and no Seerr warning or threshold', async t => {
+  const je = { mode: 'je', requestsOn: true, seerrInUse: false, tmdbKey: false, instances: 2 };
+  const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { seerr: null, seerrRequests: 0, requestsBackend: je }) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-bridge'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  const text = page.textContent;
+  assert.doesNotMatch(text, /Seerr isn't set up/);
+  assert.equal([...page.querySelectorAll('.je-ops-box-title')].some(n => n.textContent === translate('arr_ops_seerr_title')), false, 'no Seerr box');
+  assert.doesNotMatch(text, /Seerr OK without Sonarr\/Radarr/);
+  assert.match(text, /Thresholds: not in Jellyfin after 10 min · low disk below 10% free/);
+  const box = page.querySelector('.je-ops-requests-backend');
+  assert.ok(box, 'the request backend box');
+  assert.equal(box.querySelector('.je-ops-box-title').textContent, translate('arr_ops_backend_title'));
+  assert.match(box.textContent, /Jellyfin Enhanced handles requests/);
+  assert.match(box.textContent, /Asking for titles is on\./);
+  assert.match(box.textContent, /2 Sonarr\/Radarr instances can take requests\./);
+  assert.match(box.querySelector('.je-ops-warn').textContent, /No TMDB key/);
+  assert.doesNotMatch(box.textContent, /Seerr(?! isn't needed)/, 'no Seerr wording beyond saying it isn\'t needed');
+});
+
+test('UX-8 control: Seerr handling requests (or an older server that doesn\'t say) keeps the Seerr box, its warning and its threshold', async t => {
+  for (const requestsBackend of [{ mode: 'seerr', requestsOn: true, seerrInUse: false, tmdbKey: true, instances: 1 }, undefined]) {
+    const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { seerr: null, seerrRequests: 0, requestsBackend }) : null) });
+    h.JE.initializeArrStatus();
+    await until(() => h.document.querySelector('.je-ops-bridge'));
+    const page = h.document.getElementById('je-requests-hub-page');
+    assert.match(page.textContent, /Seerr isn't set up/);
+    assert.match(page.textContent, /Seerr OK without Sonarr\/Radarr after 15 min/);
+    assert.equal(page.querySelector('.je-ops-requests-backend'), null);
+    h.window.close?.();
+  }
+  // Jellyfin Enhanced handling requests with Seerr still in use: both boxes, Seerr's request list as before.
+  const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { requestsBackend: { mode: 'je', requestsOn: true, seerrInUse: true, tmdbKey: true, instances: 1 } }) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-bridge'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.match(page.textContent, /15 requests held/);
+  assert.ok(page.querySelector('.je-ops-requests-backend'));
+  assert.match(page.textContent, /1 Sonarr\/Radarr instance can take requests\./);
 });

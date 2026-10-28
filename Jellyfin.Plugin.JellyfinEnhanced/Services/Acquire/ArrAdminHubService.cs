@@ -394,6 +394,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The thresholds in use (minutes / percent).</summary>
         public IReadOnlyDictionary<string, int> Settings { get; init; } = new Dictionary<string, int>();
+
+        /// <summary>Who handles requests and whether it has what it needs (Seerr is described only while it is in use).</summary>
+        public AdminRequestsBackend RequestsBackend { get; init; } = new();
+    }
+
+    /// <summary>The request backend as the System tab describes it.</summary>
+    public sealed class AdminRequestsBackend
+    {
+        /// <summary>The selected request handling: <c>je</c>, <c>seerr</c> or <c>status_only</c>.</summary>
+        public string Mode { get; init; } = "seerr";
+
+        /// <summary>True when requests can be made (Requests &amp; downloads with "Ask for it" on).</summary>
+        public bool RequestsOn { get; init; }
+
+        /// <summary>True when Seerr is set up and the request mode uses it.</summary>
+        public bool SeerrInUse { get; init; }
+
+        /// <summary>True when Jellyfin Enhanced has a TMDB key (its source for titles that aren't in the library).</summary>
+        public bool TmdbKey { get; init; }
+
+        /// <summary>Usable Sonarr/Radarr instances requests can go to.</summary>
+        public int Instances { get; init; }
     }
 
     /// <summary>
@@ -412,20 +434,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private readonly ArrStateStore _store;
         private readonly JellyfinBridge _bridge;
-        private readonly SeerrRequestReadModel? _requests;
+        private readonly SeerrFacts? _requests;
         private readonly ArrLiveService? _live;
         private readonly ArrWebhookReceiver? _webhooks;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
 
         /// <summary>The service (DI).</summary>
-        public ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrRequestReadModel requests, ArrLiveService live, ArrWebhookReceiver webhooks)
+        public ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrFacts requests, ArrLiveService live, ArrWebhookReceiver webhooks)
             : this(store, bridge, requests, live, webhooks, null, null)
         {
         }
 
         /// <summary>The service with explicit parts (tests).</summary>
-        internal ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrRequestReadModel? requests, ArrLiveService? live, ArrWebhookReceiver? webhooks, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
+        internal ArrAdminHubService(ArrStateStore store, JellyfinBridge bridge, SeerrFacts? requests, ArrLiveService? live, ArrWebhookReceiver? webhooks, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
         {
             _store = store;
             _bridge = bridge;
@@ -443,7 +465,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Enabled => JellyfinBridge.Phase2(_config());
 
         /// <summary>The Overview tab.</summary>
-        public async Task<AdminOverview> OverviewAsync(CancellationToken cancellationToken)
+        public Task<AdminOverview> OverviewAsync(CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => OverviewAsyncFactsCore(cancellationToken));
+
+        private async Task<AdminOverview> OverviewAsyncFactsCore(CancellationToken cancellationToken)
         {
             var config = _config();
             var now = _now().UtcDateTime;
@@ -489,7 +514,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// reader (<see cref="ArrStateStore.ReadInBackgroundAsync"/>), so the check alone never holds
         /// the queue and history at the Downloads page's pace.
         /// </param>
-        public async Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsync(CancellationToken cancellationToken, bool background = false)
+        public Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsync(CancellationToken cancellationToken, bool background = false)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => NeedsAttentionAsyncFactsCore(cancellationToken, background));
+
+        private async Task<IReadOnlyList<AttentionItem>> NeedsAttentionAsyncFactsCore(CancellationToken cancellationToken, bool background = false)
         {
             var config = _config();
             var now = _now().UtcDateTime;
@@ -658,7 +686,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         };
 
         /// <summary>The System tab.</summary>
-        public async Task<AdminSystem> SystemAsync(CancellationToken cancellationToken)
+        public Task<AdminSystem> SystemAsync(CancellationToken cancellationToken)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ComposeAsync(() => SystemAsyncFactsCore(cancellationToken));
+
+        private async Task<AdminSystem> SystemAsyncFactsCore(CancellationToken cancellationToken)
         {
             var config = _config();
             var list = new List<AdminSystemInstance>();
@@ -705,6 +736,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     ["libraryPendingMinutes"] = Math.Clamp(config?.ArrLibraryPendingMinutes ?? 10, 1, 1440),
                     ["seerrHandoffGraceMinutes"] = Math.Clamp(config?.ArrSeerrHandoffGraceMinutes ?? 15, 1, 1440),
                 },
+                RequestsBackend = new AdminRequestsBackend
+                {
+                    Mode = config?.ArrRequestBackend is "je" or "status_only" ? config.ArrRequestBackend : "seerr",
+                    RequestsOn = Backends.EffectiveRequestsBackend.EvaluateConfiguration(config).RequestsEnabled,
+                    SeerrInUse = Backends.EffectiveRequestsBackend.SeerrUsable(config),
+                    TmdbKey = !string.IsNullOrWhiteSpace(config?.GetTmdbApiKey()),
+                    Instances = list.Count,
+                },
             };
         }
 
@@ -717,6 +756,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// so a finished standard request never hides a stuck 4K one. Empty when phase 2 or Seerr is off.
         /// </summary>
         internal IReadOnlyList<HandoffFact> Handoffs(DateTime now, TimeSpan? grace)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => HandoffsFactsCore(now, grace));
+
+        private IReadOnlyList<HandoffFact> HandoffsFactsCore(DateTime now, TimeSpan? grace)
         {
             if (grace is not TimeSpan wait || _requests is not { Active: true } model) return Array.Empty<HandoffFact>();
             var result = new List<HandoffFact>();

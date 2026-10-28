@@ -389,14 +389,14 @@ public class IntegrationRequestBackendsTests
         Assert.Equal("invalid_defaults", none.Outcome.Reason);
         lab.Edit("Radarr", row => row["Defaults"] = Lab.Defaults(42, "/data/movies"));
         var profile = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
-        Assert.Equal("invalid_defaults", profile.Outcome.Reason);
+        Assert.Equal("invalid_choice", profile.Outcome.Reason);
         Assert.Contains("quality profile", profile.Outcome.Message, StringComparison.Ordinal);
         lab.Edit("Radarr", row => row["Defaults"] = Lab.Defaults(4, "/somewhere/else"));
         var folder = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
-        Assert.Equal("invalid_defaults", folder.Outcome.Reason);
+        Assert.Equal("invalid_choice", folder.Outcome.Reason);
         lab.Edit("Radarr", row => row["Defaults"] = Lab.Defaults(4, "/data/movies", 7));
         var tag = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
-        Assert.Equal("invalid_defaults", tag.Outcome.Reason);
+        Assert.Equal("invalid_choice", tag.Outcome.Reason);
         Assert.Empty(lab.Radarr.Writes);
         // With the tag present the same defaults pass, and the tag goes with the add.
         lab.Radarr.Tags.Remove(90);
@@ -505,6 +505,9 @@ public class IntegrationRequestBackendsTests
     private static (IntegrationRequestLedgerTests.Rig Rig, Lab Lab) Ledger(Lab lab)
     {
         var r = new IntegrationRequestLedgerTests.Rig();
+        // Admission records the same defaults the configured backend will use.
+        r.Policy.Configuration.RadarrInstances = lab.Config.RadarrInstances;
+        r.Policy.Configuration.SonarrInstances = lab.Config.SonarrInstances;
         // The rig's people now point at the lab's instances and their real connection generations.
         r.Policy.Adjust = (user, input, facts) =>
         {
@@ -853,7 +856,7 @@ public class IntegrationRequestBackendsTests
     {
         public FakeSeerr Seerr { get; } = new();
         public Lab Arr { get; } = new();
-        public SeerrRequestReadModel Model { get; }
+        public SeerrFacts Model { get; }
         public SeerrBackend Backend { get; }
         public Guid User { get; } = Guid.NewGuid();
         public PluginConfiguration Config => Arr.Config;
@@ -873,7 +876,7 @@ public class IntegrationRequestBackendsTests
             Config.JellyseerrApiKey = FakeSeerr.Key;
             Seerr.Users.Add(new JsonObject { ["id"] = 7, ["jellyfinUserId"] = User.ToString("N"), ["permissions"] = permissions, ["displayName"] = "Emma" });
             Seerr.Users.Add(new JsonObject { ["id"] = 8, ["jellyfinUserId"] = Guid.NewGuid().ToString("N"), ["permissions"] = 32, ["displayName"] = "Sam" });
-            Model = new SeerrRequestReadModel(Seerr.Transport, null, null, () => Config, () => Now);
+            Model = new SeerrFacts(Seerr.Transport, null, null, () => Config, () => Now);
             Backend = new SeerrBackend(Seerr.Transport, Model, null, () => Config, () => Now);
         }
 
@@ -1931,7 +1934,7 @@ public class IntegrationRequestBackendsTests
         Assert.Empty(lab.Radarr.Writes);
         // Overrides are checked against the snapshot before anything is recorded; bad input is refused.
         var badProfile = await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = instance.Id, Key = "movie:tmdb:962", ProfileId = 42, IdempotencyKey = "sheet-2" }, default);
-        Assert.Equal((400, "invalid_defaults"), (badProfile.HttpStatus, badProfile.Reason));
+        Assert.Equal((400, "invalid_choice"), (badProfile.HttpStatus, badProfile.Reason));
         Assert.Equal(400, (await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = lab.Instance("Sonarr").Id, Key = "tv:tvdb:75565", IdempotencyKey = "sheet-3" }, default)).HttpStatus);
         Assert.Equal(400, (await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = instance.Id, Key = "tv:tvdb:75565", Seasons = new[] { 1 }, IdempotencyKey = "sheet-4" }, default)).HttpStatus);
         Assert.Equal(400, (await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = instance.Id, Key = "movie:tmdb:962" }, default)).HttpStatus);

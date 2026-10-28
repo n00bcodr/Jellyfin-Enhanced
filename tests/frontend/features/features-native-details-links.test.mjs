@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, jsonResponse } from '../helpers/harness.mjs';
@@ -188,7 +189,7 @@ test('a filmography of movies and series keeps its order (roles first, best know
   await h.controller.render();
   const section = '.jellyseerr-person-discovery-section';
   assert.deepEqual(h.cards(section), ['2', '3', '4', '1']);
-  const click = mode => h.document.querySelector(`${section} .jellyseerr-filter-btn[data-mode="${mode}"]`).click();
+  const click = mode => clickAsViewer(h.document.querySelector(`${section} .jellyseerr-filter-btn[data-mode="${mode}"]`));
   click(h.filter.MODES.MOVIES);
   assert.deepEqual(h.cards(section), ['2', '3']);
   click(h.filter.MODES.TV);

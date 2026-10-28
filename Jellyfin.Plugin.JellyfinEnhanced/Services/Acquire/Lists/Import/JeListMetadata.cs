@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -10,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 {
     /// <summary>
     /// The list core's metadata (<see cref="IListMetadataSource"/>) read from TMDB with Jellyfin Enhanced's own key, for
-    /// households without Seerr (JE mode; behind <see cref="ListImportFlags.JeMetadata"/>). It reads the same three
+    /// JE households (enabled with lists by <see cref="ListImportFlags.JeMetadata"/>). It reads the same three
     /// resources the Seerr reader does (<c>movie/{id}</c>, <c>tv/{id}</c> with external ids, <c>tv/{id}/season/{n}</c>)
     /// through the shared <see cref="TmdbResponseCache"/> and turns them into <see cref="PlaceholderMetadata"/> with the
     /// list core's own transformations (<see cref="ListMetadataService.FromMovie"/>/<see cref="ListMetadataService.FromTv"/>,
@@ -51,6 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>Metadata or null.</returns>
         public async Task<PlaceholderMetadata?> FetchAsync(Placeholder placeholder, TimeSpan maxAge, DateTime todayUtc, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || !IsAvailable)
             {
                 return null;
@@ -58,11 +61,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var fresh = maxAge < CacheLifetime;
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
-            var fetchedAt = DateTime.UtcNow;
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, new AnswerRequest(placeholder.TmdbId, "movie"), fresh, cancellationToken)).ConfigureAwait(false);
-                return movie == null ? null : ListMetadataService.FromMovie(movie, fetchedAt);
+                return movie == null ? null : Admit(ListMetadataService.FromMovie(movie.Value.Read, movie.Value.FetchedAtUtc));
             }
 
             var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", ResponseContract.MetadataShow, new AnswerRequest(placeholder.TmdbId, "tv"), fresh, cancellationToken)).ConfigureAwait(false);
@@ -71,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return null;
             }
 
-            ContractRead? season = null;
+            (ContractRead Read, DateTime FetchedAtUtc)? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
                 // A season read that fails leaves season null: FromTv then marks the answer partial (it never shrinks the
@@ -79,19 +81,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, ResponseContract.MetadataSeason, new AnswerRequest(Season: number, Show: placeholder.TmdbId), fresh, cancellationToken)).ConfigureAwait(false);
             }
 
-            return ListMetadataService.FromTv(placeholder, tv, season, fetchedAt, todayUtc);
+            var fetchedAt = tv.Value.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.Value.FetchedAtUtc : season!.Value.FetchedAtUtc;
+            Dictionary<int, ContractRead>? seriesSeasons = null;
+            if (placeholder.Kind == PlaceholderKinds.Series)
+            {
+                var probe = ListMetadataService.FromTv(placeholder, tv.Value.Read, null, fetchedAt, todayUtc);
+                if (probe.Completion?.Reason != "series_rows_unavailable") return Admit(probe);
+                var numbers = tv.Value.Read.Rows("seasons").Select(s => s.Int("seasonNumber")).OfType<int>().Where(n => n >= 1)
+                    .Concat(_tmdb.CachedTvSeasons(placeholder.TmdbId.Value, Key)).Distinct().OrderBy(n => n).ToArray();
+                if (numbers.Length <= 64)
+                {
+                    seriesSeasons = new Dictionary<int, ContractRead>();
+                    using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    budget.CancelAfter(TimeSpan.FromSeconds(30));
+                    try
+                    {
+                        foreach (var n in numbers)
+                        {
+                            if (!epoch.IsCurrent) return null;
+                            var part = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + n.ToString(CultureInfo.InvariantCulture), string.Empty,
+                                ResponseContract.MetadataSeason, new AnswerRequest(Season: n, Show: placeholder.TmdbId), fresh, budget.Token)).ConfigureAwait(false);
+                            if (part == null || part.Value.Read.Verdict != ResponseVerdict.Valid) { seriesSeasons = null; break; }
+                            seriesSeasons[n] = part.Value.Read;
+                            if (part.Value.FetchedAtUtc < fetchedAt) fetchedAt = part.Value.FetchedAtUtc;
+                        }
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { seriesSeasons = null; }
+                }
+            }
+            return Admit(ListMetadataService.FromTv(placeholder, tv.Value.Read, season?.Read, fetchedAt, todayUtc, seriesSeasons));
+
+            PlaceholderMetadata? Admit(PlaceholderMetadata metadata)
+            {
+                metadata.ReadEpoch = epoch;
+                return epoch.Publish<PlaceholderMetadata?>(() => metadata, () => null);
+            }
         }
 
         // One TMDB resource in Seerr's field names (camelCase) as `schema` reads it against the request (its verdict and typed
         // values), or null (not found, an error, a Malformed answer: another title's or season's included). An answer that isn't Valid is dropped from TMDB's response cache (asked again
         // next time).
-        private async Task<ContractRead?> GetAsync(string path, string query, ResourceSchema schema, AnswerRequest asked, bool fresh, CancellationToken cancellationToken)
+        private async Task<(ContractRead Read, DateTime FetchedAtUtc)?> GetAsync(string path, string query, ResourceSchema schema, AnswerRequest asked, bool fresh, CancellationToken cancellationToken)
         {
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(Timeout);
-                var response = await _tmdb.GetAsync(path, query, Key, timeout.Token, refresh: fresh).ConfigureAwait(false);
+                var response = await _tmdb.GetListMetadataAsync(path, query, Key, timeout.Token, refresh: fresh).ConfigureAwait(false);
                 if (!response.IsSuccess)
                 {
                     return null;
@@ -106,7 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     _logger.Debug($"[Lists] TMDB metadata {path} answered {(read.Verdict == ResponseVerdict.Partial ? "in part" : "something JE can't read")} ({read.Reason})");
                 }
 
-                return read.Verdict == ResponseVerdict.Malformed ? null : read;
+                return read.Verdict == ResponseVerdict.Malformed ? null : (read, response.FetchedAtUtc);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -199,8 +235,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
     /// <summary>
     /// The list core's metadata source as registered (the 4c1 seam, <see cref="IListMetadataSource"/>): Seerr exactly as
-    /// before whenever Seerr is set up; otherwise, with <see cref="ListImportFlags.JeMetadata"/> on and a TMDB key saved,
-    /// TMDB (<see cref="TmdbListMetadataSource"/>). With neither, metadata is unavailable (custom entries and exact source
+    /// before in Seerr mode whenever Seerr is set up; JE mode always selects
+    /// TMDB (<see cref="TmdbListMetadataSource"/>), enabled with lists and a saved TMDB key. With neither, metadata is unavailable (custom entries and exact source
     /// metadata still work; nothing is invented). Posters keep coming from the existing reader (JE's TMDB key).
     /// </summary>
     public sealed class ListMetadataSources : IListMetadataSource

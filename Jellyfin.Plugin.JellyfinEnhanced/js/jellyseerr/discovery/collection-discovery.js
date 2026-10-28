@@ -138,6 +138,9 @@
         if (!isBoxSet) return;
         // Phase 4: the gaps block already answers this page (no Seerr reads either).
         if (JE.internals?.arrAskCollection?.covers?.(itemId) && JE.pluginConfig?.ArrCollectionGapsPhase4 === true) return;
+        // Jellyfin Enhanced is the request backend (A1): this row reads Seerr's collection, which such a server
+        // never reads (D88); the gaps block is its answer for the collection's missing movies.
+        if (JE.discoveryFilter?.jeFeeds?.() != null) return;
 
         // Fetch boxset info, user status, and page readiness in parallel
         // pageReadyPromise is started here but awaited later to overlap DOM wait with API calls

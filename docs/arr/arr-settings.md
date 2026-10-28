@@ -255,6 +255,63 @@ Back up Jellyfin Enhanced's own data: Jellyfin's backups don't include plugin da
     `<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`, then start Jellyfin. Keys in an
     encrypted backup can only be restored through the page.
 
+## Server-side cache
+
+Keeps the TMDB artwork of titles that aren't in the library on the Jellyfin server, and the TMDB metadata Jellyfin
+Enhanced reads (titles, seasons, people, collections, rows, the facts behind the parental limits and the posters of
+list placeholders), so opening such a title again, or after a restart, doesn't fetch it from TMDB again. It needs Jellyfin running on Linux (x64, x86, Arm or
+Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It sits on the plugin's **\*arr** tab, under
+**Requests & downloads (new)**, and is off by default.
+
+![Server-side cache settings](../images/server-cache-settings.png)
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Keep TMDB artwork and metadata on the server** | Off | Saves every poster, backdrop, logo, cast photo and season and episode image of a [title that isn't in the library](arr-features.md#server-side-cache-for-artwork) in the cache folder the first time it is fetched, and shows it from there afterwards. Also keeps [TMDB metadata, parental facts and list poster facts](arr-features.md#server-side-cache-for-tmdb-metadata) there for their own, shorter lifetimes. |
+| **Cache folder** | `server-cache` in the plugin's data folder | A full path on the server, writable by Jellyfin, and a folder of its own: new or empty (it is created if missing and marked as the cache's with a `.je-server-cache` file), or already the cache's. A folder that holds anything else is refused, and so is a cleanup or tidy run there. For a large cache, a new folder inside Jellyfin's cache folder is the recommended place (in Docker, `/cache/jellyfin-enhanced`): the default sits inside the plugin's configuration folder, which backups of `/config` copy. Refused: relative paths, the root of a drive, Jellyfin's cache folder itself and its own folders in it (`temp`, `transcodes`, `images`, …), a folder there that already holds other files, and Jellyfin's data, metadata, logs, configuration and plugin folders or a folder holding them, also when reached through a link. **Check folder** tests a path without saving it. A new folder starts empty; the old one is left as it is. |
+| **Largest size (GB)** | 2 | Past this, the entries used least recently are removed first, down to 90% of it. Inside it, TMDB metadata takes at most 256 MB, parental facts 128 MB and list poster facts 16 MB. Fractions such as 0.5 are fine; 0 means no limit. |
+| **Keep cached data for up to (days)** | 30 | An image fetched longer ago is fetched from TMDB again the next time it is shown. Metadata never lives longer than its own lifetime, whatever this says (see [what is kept](arr-features.md#server-side-cache-for-tmdb-metadata)). 0 means no age limit. |
+
+Under the settings, a line shows how many images and metadata entries the cache holds and how much space they take (counted in whole
+4 KiB blocks, as the disk stores them, writes under way included), and **Clear server-side cache** deletes them all (what was shown in the last
+few hours can still come from Jellyfin's memory until it restarts). Lowering the size or the
+age takes effect as soon as it is saved. The scheduled task **Tidy the server-side cache** (Dashboard → Scheduled
+Tasks, at startup and daily) removes what is past the age limit and over the size. The cache folder is never part
+of a [backup](#backup-restore).
+
+![Check folder refusing one of Jellyfin's own folders, and the line after Clear](../images/server-cache-folder-check.png)
+
+??? info "What is in the folder"
+    One file per image under `<folder>/artwork/<2 characters>/`, named by a hash (never by anything a browser sent),
+    holding the image, its type and when it was fetched, and a `.je-server-cache` file marking the folder as the
+    cache's. Metadata sits next to it in `tmdbjson/` (TMDB's answers), `tmdbparental/` (certifications, adult flags,
+    keyword and genre names) and `tmdbposter/` (list placeholders' poster paths), one file per entry, named by a hash of
+    the request and a hash of the TMDB key (never the key itself), holding when TMDB was asked and when the entry
+    expires. No user, search text, permission or decision is stored in any of them. In Jellyfin's cache folder, Jellyfin's own **Clean Cache Directory** task removes files there that
+    haven't been used for 30 days; that only means those images are fetched again. Every file operation stays inside
+    the folder, through handles that never follow a link (also when it lists or marks the folder). Only public TMDB images are kept: who may see an image (the
+    signed link of the page it is on, the parental limit, Hidden Content, Spoiler Guard) is checked on every request
+    exactly as without the cache. Clear and the tidy task only delete files the cache wrote, and never follow a link out
+    of the folder, so other files in a shared folder stay. A file that doesn't read back (cut short by a crash, edited)
+    is deleted and the image fetched again; a half-written file left by a crash is removed at the next start.
+
+## Diagnostics: stage timings
+
+**Time absent-title server stages** (plugin's **\*arr** tab, **Diagnostics**, off by default) measures where the
+server spends its time when a [title that isn't in the library](arr-features.md) is opened: its details, the
+title-action menu's check, the request sheet's reads and More Info. Each such response carries a `Server-Timing` header
+for administrators (the browser's developer tools show it under Network → Timing), with `total` and one entry per
+stage: `policy`, `library` (the policy's library and physical-copy checks), `evidence` (a restricted viewer's parental check), `discover-evidence`, `copies`, `feed`,
+`source-hit`, `source-map`, `source-busy`, `meta-hit`, `meta-join`, `meta-busy`, `meta-admit` (waiting for a metadata
+place), `meta-fetch`, `tmdb-hit`, `tmdb-join`, `tmdb-disk`, `tmdb-slot`, `tmdb-send`, `image-admit`, `links` (the viewer's link destinations of a details answer), `project`, `parse`
+and `publish` (the final privacy check), each with its total milliseconds and `n=` count. Stages nest and parallel
+reads add up, so a stage can exceed `total`. The header goes only on answers no shared cache may keep: one that is `private` or `no-store`
+already, or one that states no cache policy at all (a title's details), which is then marked `private`; a cacheable
+answer, such as a font or script, never carries it. Every such request, an administrator's or not, also writes one Debug line
+to the plugin log with the method, the route pattern, the status and the same numbers. Only stage names and durations
+are recorded, never a title, user, key or link, and nothing about what a viewer may see changes. Setting the
+environment variable `JE_STAGE_TIMINGS=1` on the server turns it on too.
+
 ## Bazarr
 
 Bazarr adds links to its movie and series overviews so you can manage subtitles. You can configure one Bazarr connection.
@@ -450,6 +507,9 @@ Under **Show where things have got to (status on pages)**:
 | Setting | Default | What it does |
 |---|---|---|
 | **Show status badges on posters** | On | Corner badge on poster cards while something downloads, is almost ready or takes longer than usual |
+| **Show the season summary on series pages** (`ArrStatusSeasonSummaryEnabled`) | Off | Chips under the title of series and season pages with what is here and what is missing: "Seasons 1, 3, 4 ready", "8 of 10 ready", "54 missing". What is on its way (downloading, almost ready, looking for it, airing next) shows either way, and so do the season's "Missing: E5, E6" line and the episode chips. Off: those pages keep no empty row for them |
+| **Show download progress on artwork** (`ArrStatusArtworkProgressEnabled`) | On | While a title downloads, its poster (cards, the details page, list placeholders) shows a ring with the percentage, a spinning ring while the percentage isn't known, and a gently pulsing full ring while it is almost ready; gone once it is ready. Works with the corner badges off too; with it on, the corner leaves the download ring to the artwork |
+| **Show the Sonarr/Radarr status line to admins** (`ArrStatusAdminLineEnabled`) | Off | The line administrators see under the status on details pages: the instance, the arr's own words and what would fix it ("Sonarr · Some episodes missing · Fix: search now in Sonarr"). The Manage panel shows the same details either way |
 | **"Missing" with Search after (hours)** | 24 | When "Looking for it" (nothing grabbed yet) becomes plainly **Missing** with a **Search** button (1-720) |
 | **What the family calls you** | (empty: "the admin") | Used in family texts: "Waiting for Dad to OK it" |
 | **Requests page** | On | The "Requests" sidebar page (`#/requests`): everyone's own requests (waiting for an OK, on the way, not out yet, said no), Coming soon and Ready. Administrators also get the Downloads and Calendar pages as tabs when those pages are on; with it on, the Downloads page's own sidebar link reads "Downloads" |
@@ -483,8 +543,10 @@ the alerts.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Show imports in Jellyfin right away** | On | After an import, refresh only the Jellyfin folder the file landed in (never a TV library's root; a new series folder is left to Jellyfin's library monitor when the library has real-time monitoring on, otherwise to its next library scan or Scan now). Needs path mappings when the apps and Jellyfin see the files under different paths |
+| **Show imports in Jellyfin right away** | On | After an import, refresh only the Jellyfin folder the file landed in (never a TV library's root: a brand-new series folder is added on its own, whatever the library's real-time monitoring), then have the new title's name, overview, artwork and media info read before it shows as Ready. Needs path mappings when the apps and Jellyfin see the files under different paths |
 | **"In Sonarr/Radarr, not in Jellyfin" after (minutes)** | 10 | When an import Jellyfin still doesn't list goes under Needs attention (1-1440) |
+| **Wait for an imported file to stop changing (seconds)** | 3 | Before Jellyfin is asked to read an imported file, its size and time must stay the same this long, so a copy still being written is never read half-done (0-60; 0 doesn't wait) |
+| **Wait for a new title's details before calling it Ready (minutes)** | 10 | A new movie or episode shows "Almost ready" while Jellyfin reads its details; if a metadata provider is down or has nothing for it, it shows Ready after this long anyway and the server log says what is missing (1-120) |
 | **Low disk warning below (% free)** | 10 | A root folder whose disk has less free space goes under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder) (1-50). With **Ask for it** on, asks whose download would land on such a disk (JE mode: the title's own folder, or the default root for a new title; Seerr mode: the default root) are paused and say *Paused: storage full*; administrators' Search still runs |
 | **Tell me when Seerr's OK reaches no Sonarr/Radarr after (minutes)** | 15 | When administrators are told that a request Seerr OK'd isn't in any Sonarr/Radarr (1-1440). The family sees "Taking longer than usual" only after the "still looking" hours |
 | **Copy actions into Jellyfin's activity log** | On | Every audited action (Search now, queue actions, Scan now, webhook set-up) also appears in Dashboard → Activity |
@@ -594,16 +656,20 @@ Radarr; in `seerr` mode they go to Seerr as the person who asked. How each is se
 [Sending requests](arr-features.md#sending-requests-phase-3). With phase 3 on and a request backend selected, the
 request controls appear for people who may ask (see [Requests & downloads](arr-features.md#missing-episodes-get-it-and-search-phase-3):
 Get it on season pages, the request sheet, series and collection actions, Approvals, Household and, in JE mode,
-Discover). With Seerr's experimental *Open titles that aren't in the library on Jellyfin's own details page* on, the
-same controls appear on those pages (see [Titles that aren't in the library](arr-features.md#titles-that-arent-in-the-library-native-details)).
+Discover). With the experimental *Open titles that aren't in the library on Jellyfin's own details page* on (see
+[Requests & discovery](#requests-discovery-seerr-or-jellyfin-enhanced)), the same controls appear on those pages (see
+[Titles that aren't in the library](arr-features.md#titles-that-arent-in-the-library-native-details)).
 
 ??? info "Add defaults per instance"
     With the master switch on, each Sonarr/Radarr card has *When Jellyfin Enhanced adds a
     title*: the quality profile, root folder and tags new titles get, plus Radarr's minimum availability or Sonarr's
     series type. Open the card of a saved instance to load its own profiles, folders and tags; values the instance no
     longer lists are shown as "(not in Radarr now)" rather than swapped for something else. In Jellyfin Enhanced mode a
-    request for a title the instance doesn't have yet waits for an administrator until both a profile and a folder are
-    set. Manage › Add to preselects these defaults.
+    request for a title the instance doesn't have yet waits for an administrator when neither the request nor the
+    instance supplies a valid profile and folder. Manage › Add to preselects saved defaults; you can also choose the
+    profile and folder in the sheet without saving instance defaults. These choices are kept when the add approves
+    a viewer's pending request, joins a known-unsent queued or retrying request, and when the outgoing queue retries it.
+    Different choices cannot alter a request already sending or sent; the sheet reports a conflict and asks you to check Manage.
 
 **Move requests from Seerr...** checks and then moves Seerr's pending and in-progress requests into Jellyfin Enhanced
 and switches `ArrRequestBackend` to `je` (see [Moving requests from Seerr](arr-features.md#moving-requests-from-seerr)).
@@ -656,6 +722,53 @@ a setting.
     for the series (10 when it doesn't hold the series); otherwise the fixed estimates: a movie 8 GB (4K 40), a season
     10 GB (4K 40), an episode 1 GB (4K 4). The estimate is fixed when the request is recorded or approved.
 
+#### Requests & discovery (Seerr or Jellyfin Enhanced)
+
+Settings that work with Seerr or with Jellyfin Enhanced handling requests live once, on the *arr tab under
+**Requests & discovery**. The Seerr tab keeps a link to each of them in its old place. Each setting is gated on what it
+really needs, not on "Enable Seerr integration"; until that is set up it is greyed out with a short note saying what is
+missing, and its stored value is kept.
+
+![Requests & discovery on the *arr tab, with Seerr off and Jellyfin Enhanced handling requests](../images/arr-requests-discovery-settings.png)
+
+| Setting | Default | Needs |
+|---|---|---|
+| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** (`NativeAbsentDetailsEnabled`) | Off | Request handling set to Jellyfin Enhanced and a TMDB API key (the pages read TMDB), or Seerr set up in the other modes |
+| **Only allow requesting one season at a time** (`JellyseerrSingleSeasonRequestOnly`) | Off | Seerr set up, or *Ask for it* on (Jellyfin Enhanced's request sheet and series buttons follow it in both request modes) |
+| **Automatic Advance Season Requests** (`AutoSeasonRequestEnabled`) and its options | Off | Seerr set up, or *Ask for it* on with a TMDB API key |
+| **Auto Movie Requests** (`AutoMovieRequestEnabled`) and its options | Off | A TMDB API key, plus Seerr set up or *Ask for it* on |
+
+What each one does is described with the Seerr settings ([details pages](../seerr/seerr-settings.md#more-info-and-detail-links),
+[one season at a time](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time),
+[automatic requests](../seerr/seerr-settings.md#automatic-requests)) and, for Jellyfin Enhanced handling, in
+[Automatic requests with "Ask for it"](arr-features.md#automatic-requests-with-ask-for-it).
+
+#### With Seerr off
+
+"Seerr is on" means one thing everywhere: Seerr is set up (turned on, with an address and a key) **and** backend
+isolation allows it (not yet adopted, or adopted with request handling set to Seerr). An install that adopted Jellyfin
+Enhanced or Status only counts as Seerr off even with Seerr's switch, address and key still stored. When Seerr is off,
+the configuration page keeps Seerr's own connection setup available and greys out what only Seerr can do, each with one
+short note; nothing stored is changed, and saving keeps the values for when Seerr is turned on again:
+
+- the **Seerr Recommendations Page** settings (Pages tab); the page, its sidebar link, its native Home tab and its Plugin
+  Pages entry are hidden while Seerr is off;
+- **Import from Seerr** (Sonarr and Radarr), **Move requests from Seerr...**, **Show the status in Seerr's more-info
+  window** and **Read Seerr's requests every (minutes)**.
+
+The configuration page asks the server for this rule when it opens and after every save, so a change made elsewhere
+(another administrator, or adopting Jellyfin Enhanced) shows on the next save or reload; until the server answers, the
+Seerr-only settings stay greyed out. The server enforces the same rule, so nothing reaches Seerr while it is off,
+whatever a browser still showing an older page asks for: **Move requests from Seerr** answers `409 seerr_off` (checked
+before the read, again together with its first write, and once more as request handling is handed over; turning Seerr
+off during a move undoes it), **Import from Seerr** and the request quota answer `503`, no Seerr account is looked up,
+and no Seerr account picture is shown or fetched.
+
+The Requests page's **System** tab then describes the request handling actually in use instead of Seerr: with
+Jellyfin Enhanced handling requests, whether asking is on, how many Sonarr/Radarr instances can take requests and
+whether a TMDB key is set (needed for titles that aren't in the library). Seerr's box and its "Seerr OK without
+Sonarr/Radarr" threshold appear only while Seerr is in use or is the selected request handling.
+
 #### Discover and search (JE mode)
 
 | Setting | Default | What it does |
@@ -666,6 +779,12 @@ Discover and the search row need request handling set to Jellyfin Enhanced and a
 [Discover and search (JE mode)](arr-features.md#discover-and-search-je-mode). In JE mode the search row replaces
 Seerr's (Seerr's **Show search results** setting no longer adds a second row), and Seerr's request buttons open
 Jellyfin Enhanced's request sheet.
+
+Parental rating and tag checks in JE mode use the same TMDB key, with Seerr completely disabled. Ratings use
+Jellyfin's metadata country. Missing metadata remains hidden for restricted people and can be retried later;
+it does not grant permission to request a title. Changing the metadata country or evidence connection also
+invalidates cached Discover/search and status decisions. Existing openable library copies keep Jellyfin's
+native entitlement for title/season metadata, including unrated copies. No extra parental-filter switch is needed.
 
 ### Everywhere and gentle automation (phase 4)
 
@@ -788,11 +907,11 @@ All off by default. Lists need phase 4 and *Ask for it*; each switch below also 
 | Import from a list URL (`ArrPhase4ListSourcesEnabled`) | off | List URLs. Each site below has its own switch, and a site that is off is never contacted. Letterboxd is never read directly; people are pointed to an MDBList mirror or a CSV export. Needs *Import lists*. |
 | MDBList public lists (`ArrPhase4ListMdblistEnabled`) | off | Public MDBList lists, read without a key. |
 | Let administrators read private MDBList lists with this server's MDBList key (`ArrPhase4ListMdblistApiEnabled`) | off | Only when an administrator chooses it for a list. It counts against the MDBList key's daily quota, which ratings share. A list MDBList doesn't serve publicly is never read through the key on its own. Needs *MDBList public lists* and an MDBList key. |
-| TMDB lists, collections and charts (`ArrPhase4ListTmdbEnabled`) | off | Needs the TMDB key. Without one, collections, trending and upcoming movies come through Seerr instead (each Seerr address in turn, as for every other Seerr read), and the review says so. |
+| TMDB lists, collections and charts (`ArrPhase4ListTmdbEnabled`) | off | Needs the TMDB key. JE mode also reads upcoming TV premieres directly from TMDB. In Seerr mode only, without one, collections, trending and upcoming movies come through Seerr instead (each Seerr address in turn, as for every other Seerr read), and the review says so. |
 | Chronolists watch orders (`ArrPhase4ListChronolistsEnabled`) | off | chronolists.com watch orders with exact TMDB ids. Runs of episodes become one entry each. |
 | Trakt lists, watchlists and charts (`ArrPhase4ListTraktEnabled`) | off | Needs a **Trakt client ID** (`ArrListTraktApiKey`), a stored credential kept on the server only. |
 | IMDb lists, watchlists and charts (unofficial) (`ArrPhase4ListImdbEnabled`) | off | An opt-in for IMDb's unofficial API, which may stop working without notice; the review always says so. IMDb CSV exports work without it. A person with parental limits never sees IMDb entries (they carry no TMDB id to check). |
-| Title details for list entries from TMDB when Seerr isn't set up (`ArrPhase4ListJeMetadataEnabled`) | off | Release dates, seasons and episode counts of list entries from TMDB with the server's key, when Seerr isn't set up. Needs *Lists* and the TMDB key. |
+| Title details for list entries from TMDB when Seerr isn't set up (`ArrPhase4ListJeMetadataEnabled`) | off | Legacy opt-in outside JE mode. In JE mode, *Lists* and the server's TMDB key enable release dates, seasons and episode counts automatically, regardless of this switch. JE never uses a saved Seerr connection as a fallback. |
 
 Per person (Jellyfin Enhanced panel, *Lists*, shown while lists are on): *Show titles not in the library on lists* and
 *Show where each list title's request stands* follow the household (default) or are hidden; *Let titles that arrive take
@@ -963,8 +1082,9 @@ See [Hidden Content filtering](troubleshooting-support.md#hidden-content-filteri
 
 Your list swap-in agreement changes only when you explicitly choose Yes or No in your own settings. Saving display preferences from another browser, administrator edits, and resetting display defaults preserve your current agreement. An older cached web client must reload to use the explicit agreement control.
 
-HSS sections also require the native absent-title pages and their configured Seerr metadata source. When either is
-unavailable in configuration, JE uses native home injection. The request backend may still be Jellyfin Enhanced.
+HSS sections also require the native absent-title pages and their metadata source: a TMDB key when request handling
+is Jellyfin Enhanced (Seerr may be off completely), Seerr configured and enabled in Seerr mode. When either is
+unavailable in configuration, JE uses native home injection.
 
 Home row and list display choices take effect on the next live refresh. Responses recheck current viewer
 access, parental limits, preferences and follows after slow reads, so a change made while a request is waiting
@@ -984,8 +1104,22 @@ Open **Jellyfin Enhanced** between **Access** and **Parental control** on the us
 - **Notifications:** the existing administrator ntfy assignment sets or clears a topic. Email verification, quiet hours and privacy are displayed without granting a new administrator consent action.
 - **Automation & lists:** stored personal choices, recipe modes, eligibility provenance and list attribution are read-only. An administrator's settings edit or global reset preserves personal consents.
 - **Display:** missing list entries, list request status, the missing entries on playlist and on collection pages, web acquisition badges, native acquisition stamps, native poster tags, and the three home rows (Your requests, Coming soon for you, Just arrived for you). Null follows the server, false hides and true shows only when server gates allow. Native acquisition stamps also require native poster tags. The administrators' server strip on home stays the administrator's own choice. These preferences never exempt the person from request policy.
-- **Seerr:** import exclusion is editable. Linked, unlinked, blocked and unavailable are different states. Opening a user page never imports or remaps an account.
+- **Seerr:** import exclusion is editable. Linked, unlinked, blocked and unavailable are different states. Opening a user page never imports or remaps an account. With Seerr off the group says so instead of showing an account, shows the stored import exclusion read-only (it applies again when Seerr is turned on) and links only to the plugin's Seerr connection settings. The quota help mentions Seerr only when Seerr handles requests.
 
 Save captures every changed section when pressed. Edits made while it runs, including a return to inheritance, stay unsaved until the next Save. A failed section keeps the value shown so it can be retried. A conflicting save keeps the draft and reports that another editor changed the source. Reloading the page discards unsaved changes. Other sections can still save when one fails. Unavailable or corrupt components are labelled separately, and their stored settings are preserved. Administrative configuration remains accessible while request/display features are switched off; effective behavior still follows those switches.
 
 For a person who has never opened JE settings, the first administrator display save uses the same initial defaults as their own first access and leaves personal consents unset. Resetting settings also honours the configured watch-progress defaults while retaining each person's consent choices.
+
+When metadata sources disagree about the expected episodes, a refresh retains prior display facts but withdraws completion authority until a coherent full response arrives. Retrying after a request-backend change reads under the current configuration.
+
+A coherent metadata refresh is required before an older list can complete or supply an automatically derived whole-series request scope. Partial or contradictory evidence withdraws completion authority while keeping the previous display counts. The list projection supplies `completion` and `completionReason` independently of those counts.
+The server's opt-in [backend isolation contract](backend-isolation.md) preserves existing configurations
+and supplies the local requested-title projection for JE consumers.
+The backend keeps a title's queued add choice in a durable `TitleChoiceRegistry`, separately from approval authority and per-season jobs. Reapproval, retries and restart retain that owner and revision. Learning that TMDB and TVDB jobs are the same title does not pick a winner when their owned choices differ: it holds dispatch until an administrator explicitly confirms the current conflict revision. The API continues to call that revision `choice.version`, acknowledged as `overrideChoiceVersion`.
+
+
+Approval does not grant a choice override. Inheriting the stored choice does not turn a Manager's ordinary request into an administrator routing edit. A Manage Add with omitted fields inherits the registry's current values before approving shared pending work; an older pending snapshot cannot restore its settings. Ordinary approval with differing settings returns `409 choice_conflict`. Use Manage Add and explicitly confirm `overrideChoiceVersion` to change an existing owned choice. Approval may claim an absent record as the approving user, but binding another job never fills or changes an existing record. Explicit partial-field completion and adoption of provisional defaults are audited claims checked against the admitted revision.
+
+Dispatch requires the recorded profile and root folder for a new add. An incomplete recorded choice is held as `invalid_choice`, even if the instance later acquires defaults. Select or explicitly confirm the settings in Manage Add; changing instance defaults alone does not repair a queued choice. Claims and overrides are committed with their actor, expected revision, resulting revision and settings; Admin → Audit shows the revision, profile and folder on the row and the full facts, including the original message, under Technical details. Dispatch messages likewise show the recorded candidate, including missing fields, under Technical details.
+
+A fresh resolver observation that contradicts a previously learned provider mapping freezes the merged identity and every newly observed id. Missing cache rows alone do not imply a split. Conflicting source rows with multiple ids from one provider also freeze dispatch; resolution waits for a coherent source correction, which advances the fence revision. Repeated identical evidence does not advance it. The background identity reconciliation and request-entry resolver use the same durable fence; restart, automatic approval, and an identical choice cannot clear it. Resolution uses the existing `409 choice_conflict` / `overrideChoiceVersion` flow: cancel or settle all ambiguous executable work first, then explicitly confirm Manage Add at the current revision. That confirmation accepts the newly observed provider pair, detaches orphan ids, and admits the requested title only. Detached titles remain conflicted until separately confirmed. Historical job references are never revived: the old canonicalized scope cannot safely tell us which half it originally meant. This conservative policy is reversible and introduces no new wire fields.

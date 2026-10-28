@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public IReadOnlyList<string> RequestedTitles() => !_db.Available ? Array.Empty<string>() : _db.Read(c =>
         {
             var list = new List<string>();
-            using var cmd = Cmd(c, null, "SELECT DISTINCT title_key FROM wants WHERE status IN ('pending','queued','sent','stale','fulfilled')");
+            using var cmd = Cmd(c, null, "SELECT DISTINCT title_key FROM wants WHERE status IN ('pending','queued','sent','stale','fulfilled') AND " + NotStaged);
             using var r = cmd.ExecuteReader();
             while (r.Read()) list.Add(r.GetString(0));
             return (IReadOnlyList<string>)list;

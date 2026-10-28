@@ -8,7 +8,7 @@ function gesture(h, fn) {
   const button = h.document.createElement('button');
   // The viewer's click: what opens is its owner's (JE.ownerOf(event)), passed explicitly.
   button.addEventListener('click', e => { result = fn(h.JE.ownerOf(e)); });
-  h.document.body.append(button); button.click(); button.remove();
+  h.document.body.append(button); h.click(button); button.remove();
   return result;
 }
 
@@ -355,7 +355,7 @@ test('series and seasons leave Request to the smart actions; the request feature
   await off.JE.internals.nativeDetails.onView();
   const legacy = off.document.querySelector('.je-native-absent-legacy-request');
   assert.ok(legacy, series);
-  legacy.click();
+  off.click(legacy);
   assert.deepEqual(off.modal, [[83867, 'tv']]);
 });
 
@@ -385,7 +385,7 @@ test('the modal\'s information, trailers, ratings, collection and spoiler switch
   assert.ok(extras.querySelector('.je-native-absent-spoiler'));
   assert.deepEqual(h.toggles, [[693134, 'movie']]);
   assert.ok(h.document.querySelector('.je-native-absent-ratings .je-rating'));
-  extras.querySelector('.je-collection-card-button').click();
+  h.click(extras.querySelector('.je-collection-card-button'));
   assert.deepEqual(h.collections, [[726871, 'Dune']]);
 });
 
@@ -452,7 +452,7 @@ test('a copy that arrives while the page is open gets Open; the page and its req
   const open = page.querySelector('.je-native-absent-open');
   assert.ok(open);
   assert.equal(h.mounts[0].destroyed, false);
-  open.click();
+  h.click(open);
   assert.deepEqual(h.shown, [`/details?id=${copy}&serverId=${SERVER}`]);
   nd.statusShown(page, { stage: 'ready', openItemId: null });
   assert.equal(page.querySelector('.je-native-absent-open'), null);
@@ -663,7 +663,7 @@ test('a row copied and left before the next look has one live Request when the p
   assert.equal(h.document.querySelectorAll('.je-native-absent-primary').length, 1);
   assert.equal(page.querySelector('.mainDetailButtons').firstElementChild, nd.current().primary);
   const before = h.modal.length;
-  buttons[0].click();
+  h.click(buttons[0]);
   assert.equal(h.modal.length, before + 1, 'the Request is live');
 });
 
@@ -705,7 +705,7 @@ test('a native row replaced by a copy of itself gets one working Report issue ic
   await look();
   assert.deepEqual(kinds(), expected, 'one icon, in its place');
   assert.equal(h.document.querySelectorAll('.jellyseerr-report-issue-icon').length, 1);
-  h.document.querySelector('.jellyseerr-report-issue-icon').click();
+  h.click(h.document.querySelector('.jellyseerr-report-issue-icon'));
   assert.deepEqual(opened.map(a => a[0]), ['693134'], 'the icon opens the issue dialog');
 });
 
@@ -806,7 +806,7 @@ for (const ask of [false, true]) {
       assert.equal(icons[0].parentElement, rowNow(), `${step}: the icon is in the row`);
       assert.equal(icons[0].nextElementSibling, nd.current().spoiler, `${step}: the icon stands just before Spoiler Guard`);
       const n = opened.length;
-      icons[0].click();
+      h.click(icons[0]);
       assert.equal(opened.length, n + 1, `${step}: the icon opens the issue dialog`);
     };
     const check = async (step) => {
@@ -823,7 +823,7 @@ for (const ask of [false, true]) {
       if (ask) {
         assert.equal(mounts.filter(m => !m.destroyed).length, 1, `${step}: one live mount`);
         const n = asked.length;
-        requests[0].click();
+        h.click(requests[0]);
         assert.equal(asked.length, n + 1, `${step}: Request answers`);
         assert.equal(asked.at(-1).destroyed, false, `${step}: the live mount answered`);
         // At most one smart-actions box: the newest one drawn, in the row; only its cost line shows.
@@ -839,11 +839,11 @@ for (const ask of [false, true]) {
         assert.ok(notes === '' || (lastBox && notes === lastBox.dataset.cost), `${step}: its cost line only (${notes})`);
       } else {
         const n = h.modal.length;
-        requests[0].click();
+        h.click(requests[0]);
         assert.equal(h.modal.length, n + 1, `${step}: Request opens the modal`);
       }
       const s = spoilerClicks.length;
-      state.spoiler.click();
+      h.click(state.spoiler);
       assert.equal(spoilerClicks.at(-1), state.spoiler, `${step}: Spoiler Guard answers`);
       assert.equal(spoilerClicks.length, s + 1);
     };
@@ -1002,7 +1002,7 @@ test('an outage on a page opened from outside Jellyfin stays in Jellyfin: the me
   assert.ok(box && box.textContent.includes('native_details_failed'));
   const button = box.querySelector('button');
   assert.equal(button.textContent, 'native_details_home');
-  button.click();
+  h.click(button);
   assert.deepEqual(home, [true]);
   assert.deepEqual(h.back, []);
 });
@@ -1368,7 +1368,66 @@ test('absent Hide survives action-row cloning with exactly one live provider con
   assert.equal(page.querySelectorAll('.je-detail-hide-btn').length,1);
  }
  const button=page.querySelector('.je-detail-hide-btn');
- await button.onclick({type:'click',target:button,preventDefault(){},stopPropagation(){}});
+ await h.viewerPress(button);
  assert.equal(writes.length,1);assert.equal(JSON.parse(writes[0].data).tmdbId,'693134');assert.equal(JSON.stringify(writes).includes(MOVIE),false);
  assert.equal(button.getAttribute('aria-label'),'hidden_content_unhide');
+});
+
+// Requests & downloads, A1: in Jellyfin Enhanced mode the pages read TMDB (public config NativeAbsentDetails.Source "tmdb")
+// and Seerr's More Info window, which reads Seerr, is never their fallback.
+const TMDB_CAP = { Enabled: true, ContractVersion: 1, Source: 'tmdb' };
+
+test('JE mode: a page that can\'t be loaded says so on the page; no Back, no Seerr window', async t => {
+  for (const inApp of [true, false]) {
+    const h = setup(t, { cap: TMDB_CAP, inApp, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => { throw Object.assign(new Error('down'), { status: 503 }); } });
+    await h.JE.internals.nativeDetails.onView();
+    await wait(400);
+    assert.deepEqual(h.back, []);
+    assert.deepEqual(h.modal, []);
+    const box = h.document.querySelector('.je-native-absent-refusal');
+    assert.ok(box && box.textContent.includes('native_details_failed'));
+    assert.ok(box.querySelector('button'));
+  }
+});
+
+test('JE mode: a title TMDB doesn\'t know (404) shows the page\'s unavailable state, never the Seerr window', async t => {
+  const h = setup(t, { cap: TMDB_CAP, inApp: true, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => { throw Object.assign(new Error('no'), { status: 404 }); } });
+  await h.JE.internals.nativeDetails.onView();
+  await wait(400);
+  const box = h.document.querySelector('.je-native-absent-refusal');
+  assert.ok(box && box.textContent.includes('native_details_unavailable'));
+  assert.deepEqual(h.modal, []);
+  assert.deepEqual(h.back, []);
+});
+
+test('JE mode: a provider key the server can\'t place opens its TMDB page when the id is known, never the Seerr window', async t => {
+  const h = setup(t, { cap: TMDB_CAP, resolve: () => null });
+  assert.equal(await h.td.openKey('movie:tmdb:438631', { owner: h.NATIVE }), true);
+  assert.equal(h.shown.at(-1), `/details?id=${h.td.syntheticId('movie', 438631)}&serverId=${SERVER}`);
+  assert.equal(await h.td.openKey('tv:tvdb:393189', { tmdbId: 83867, season: 1, owner: h.NATIVE }), true);
+  assert.equal(h.shown.at(-1), `/details?id=${h.td.syntheticId('season', 83867, 1)}&serverId=${SERVER}`);
+  // No TMDB id at all: the caller keeps its own way.
+  assert.equal(await h.td.openKey('tv:tvdb:5', { owner: h.NATIVE }), false);
+  assert.deepEqual(h.modal, []);
+  // Seerr's source (the default) keeps its one window for such a key, as before.
+  const seerr = setup(t, { resolve: () => null });
+  assert.equal(await seerr.td.openKey('movie:tmdb:438631', { owner: seerr.NATIVE }), true);
+  assert.deepEqual(seerr.modal, [[438631, 'movie']]);
+});
+
+test('the JE backend with Seerr settings kept (A1/BEH-02): no Seerr Request window on the page, and Seerr\'s account state never keeps a title off its page', async t => {
+  const h0 = setup(t);
+  const id = h0.td.syntheticId('series', 83867);
+  const item = { Id: id, Type: 'Series', Name: 'Andor', ProviderIds: { Tmdb: '83867', Tvdb: '393189' } };
+  // Request feature off and JellyseerrEnabled still stored: the Seerr source would offer Seerr's window; TMDB's never does.
+  const off = setup(t, { cap: TMDB_CAP, ask: false, seerr: true, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${id}&serverId=${SERVER}`, getItem: async () => item });
+  await off.JE.internals.nativeDetails.onView();
+  assert.equal(off.document.querySelector('.je-native-absent-legacy-request'), null);
+  assert.deepEqual(off.modal, []);
+  // A Seerr account refusal in the loaded user status doesn't send the viewer to Seerr's window instead of the page.
+  const h = setup(t, { cap: TMDB_CAP });
+  h.JE.jellyseerrAPI = { knownAccountRefusal: () => 'unlinked' };
+  assert.equal(gesture(h, owner => h.td.show(693134, 'movie', undefined, owner)), true);
+  assert.equal(h.shown.at(-1), `/details?id=${h.td.syntheticId('movie', 693134)}&serverId=${SERVER}`);
+  assert.deepEqual(h.modal, []);
 });

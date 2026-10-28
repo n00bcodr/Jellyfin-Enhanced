@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Requests & downloads, phase 4b: household rules on the Requests page, rendered by the real modules from server
 // answers. The Trusted role and a person's shared allowance on the Household tab, the administrators' request
 // conditions editor (load, edits, streaming services, shared allowances, Save with a confirmation that sends only
@@ -107,8 +108,8 @@ test('household rules on: Trusted is a role and a default role (never a role lim
   assert.equal(page.querySelector('[data-je-focus="household:role-limit:trusted"]'), null, 'Trusted has no limit');
   edit(h, page.querySelector(`[data-je-focus="household:role:${pid(2)}"]`), 'trusted');
   edit(h, page.querySelector('[data-je-focus="household:default-role"]'), 'trusted');
-  page.querySelector('[data-je-focus="household:save"]').click();
-  page.querySelector('[data-je-focus="household:confirm"]').click();
+  clickAsViewer(page.querySelector('[data-je-focus="household:save"]'));
+  clickAsViewer(page.querySelector('[data-je-focus="household:confirm"]'));
   await until(() => posted !== null);
   assert.deepEqual(posted, { defaultRole: 'trusted', users: { [pid(2)]: { role: 'trusted', quotaLimit: null } } });
 });
@@ -153,25 +154,25 @@ test('the conditions editor: edits per role, streaming services and shared allow
   assert.equal(h.document.activeElement.dataset.jeFocus, 'rules:member:genre:match');
   // Streaming: country, load the services, pick one.
   edit(h, q('rules:streaming:country'), 'gb');
-  q('rules:streaming:load').click();
+  clickAsViewer(q('rules:streaming:load'));
   await until(() => q('rules:streaming:s8'));
   tick(h, q('rules:streaming:s8'), true);
   // Pools: add one for Members, move it first, rename the old one.
-  q('rules:pool:add').click();
+  clickAsViewer(q('rules:pool:add'));
   const added = [...page.querySelectorAll('.je-rules-pool')].map(p => p.dataset.poolId).find(id => id !== 'kids');
   assert.match(added, /^pool-[a-z0-9]+$/);
   assert.equal(h.document.activeElement.dataset.jeFocus, `rules:pool:${added}:name`, 'focus moves to the new pool');
   assert.equal(page.querySelector(`[data-pool-id="${added}"] .je-rules-pool-use`).textContent, 'New: nothing used yet');
   tick(h, q(`rules:pool:${added}:role:member`), true);
   edit(h, q(`rules:pool:${added}:limit`), '12');
-  q(`rules:pool:${added}:up`).click();
+  clickAsViewer(q(`rules:pool:${added}:up`));
   assert.deepEqual([...page.querySelectorAll('.je-rules-pool')].map(p => p.dataset.poolId), [added, 'kids']);
   edit(h, q('rules:pool:kids:name'), 'Little ones');
 
-  q('rules:save').click();
+  clickAsViewer(q('rules:save'));
   assert.equal(page.querySelector('.je-rules-save .je-household-confirm').textContent, translate('arr_rules_confirm'));
   assert.equal(posts.length, 0, 'nothing is sent before the confirmation');
-  q('rules:confirm').click();
+  clickAsViewer(q('rules:confirm'));
   await until(() => posts.length === 1);
   assert.deepEqual(posts[0], {
     rules: { roles: {
@@ -210,8 +211,8 @@ test('the conditions editor sends one changed part alone, refuses an incomplete 
   assert.equal(page.querySelector('.je-rules-pools'), null, 'no pools editor while group quotas are off');
   // A language condition that does something without a code: said before anything is sent.
   edit(h, q('rules:trusted:language:otherwise'), 'review');
-  q('rules:save').click();
-  q('rules:confirm').click();
+  clickAsViewer(q('rules:save'));
+  clickAsViewer(q('rules:confirm'));
   assert.equal(page.querySelector('.je-rules-save .je-approval-result').textContent, translate('arr_rules_invalid_language'));
   assert.equal(posts.length, 0);
   // Back as served: only the streaming country changes.
@@ -219,8 +220,8 @@ test('the conditions editor sends one changed part alone, refuses an incomplete 
   assert.equal(page.querySelector('.je-rules-save [data-je-focus="rules:save"]'), null, 'no edits left');
   edit(h, q('rules:streaming:country'), 'us');
   answer = { status: 409, body: { outcome: 'denied', reason: 'rules_seerr_owned', certainty: 'Rejected' } };
-  q('rules:save').click();
-  q('rules:confirm').click();
+  clickAsViewer(q('rules:save'));
+  clickAsViewer(q('rules:confirm'));
   await until(() => posts.length === 1);
   assert.deepEqual(posts[0], { streamingCountry: 'US' });
   await until(() => page.querySelector('.je-rules-save .je-approval-result'));
@@ -228,9 +229,9 @@ test('the conditions editor sends one changed part alone, refuses an incomplete 
   assert.ok(q('rules:save'), 'the edits stay to fix or undo');
   // A country TMDB can't be asked about.
   edit(h, q('rules:streaming:country'), 'x');
-  q('rules:streaming:load').click();
+  clickAsViewer(q('rules:streaming:load'));
   assert.equal(page.querySelector('.je-rules-streaming .je-hub-note').textContent, translate('arr_rules_streaming_invalid_country'));
-  q('rules:discard').click();
+  clickAsViewer(q('rules:discard'));
   assert.equal(q('rules:streaming:country').value, '');
 });
 
@@ -426,7 +427,7 @@ test('a household change re-reads clean conditions, keeps edited ones (saying th
   assert.equal(page.querySelector('.je-rules .je-hub-note-warn').textContent, translate('arr_rules_changed'));
   assert.equal(reads, 2, 'edits are never thrown away by a re-read');
   assert.equal(q('rules:kid:size:gb').value, '30');
-  q('rules:discard').click();
+  clickAsViewer(q('rules:discard'));
   await until(() => reads === 3);
   await until(() => !page.querySelector('.je-rules .je-hub-note-warn'));
   assert.equal(q('rules:kid:size:match').value, 'none');

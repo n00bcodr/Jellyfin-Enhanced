@@ -76,9 +76,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private void AddSources(Guid id, Guid? series, IReadOnlyList<EpisodeCoord> coords, Placeholder scope, IReadOnlyList<User> users, List<ListEditionMatch> matches)
         {
+            // A just-imported copy whose metadata is still being read is not here yet (BridgeImportReadiness): never matched or swapped in.
+            if (_host.AwaitingMetadata(id)) return;
             foreach (var source in _host.GetMediaSources(id))
             {
-                if (source.Playable && (ListRules.EditionOf(scope) != ListRules.FourK || FourK(source)) && Accessible(source.ItemId, users))
+                if (source.Playable && !_host.AwaitingMetadata(source.ItemId) && (ListRules.EditionOf(scope) != ListRules.FourK || FourK(source)) && Accessible(source.ItemId, users))
                     matches.Add(new ListEditionMatch(source.ItemId, id, series, coords, source));
             }
         }

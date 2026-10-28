@@ -41,8 +41,14 @@
     let lifecycle = 0;
     const live = new Set();
     /** Ends every operation started so far (a user switch, the feature going off, disposal). */
-    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
+    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); JE.endScopes?.(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
+    /**
+     * Releases every operation that has ended (D46S2-R11-13): each route change and each reconciliation pass (once per
+     * pass, D46S2-R13-1) prunes the registry.
+     */
+    const prune = () => { for (const token of live) if (!token.current()) live.delete(token); };
+    for (const type of ['hashchange', 'popstate', 'je:navigate']) window.addEventListener(type, () => queueMicrotask(prune));
     // Leaving the document (pagehide, freeze) and coming back (pageshow from the cache, resume) end every operation in
     // core; the hosts reconcile fresh controls for the new one (no new view is shown on a restore).
     const own = event => event.target?.nodeType !== 1;
@@ -62,10 +68,28 @@
      */
     function generation(mount = () => true) {
         const born = lifecycle;
+        // Bounded (D46S2-R11-13): the registry holds only operations that are still current; an ended one (its route,
+        // session, document or mount gone) leaves it as the next one is minted, so it never grows with reconciliation
+        // passes or navigation.
+        for (const token of live) if (!token.current()) live.delete(token);
         const token = JE.operation({ mount: () => lifecycle === born && mount() !== false });
+        // Ending it releases it at once (D46S2-R12-8): an offer that closed, failed or was superseded is not kept until
+        // the next mint or route change.
+        const end = token.end;
+        token.end = () => { live.delete(token); end(); };
         live.add(token);
         return token;
     }
+    /**
+     * Finishes an owner (D46S2-R12-8): an OFFER (a menu's opening, a sheet's lease) ends on every terminal path — its
+     * normal close, a rejected or failed opening, a newer opening superseding it — and leaves the registry with it.
+     */
+    function finish(token) { if (token) token.end(); }
+    /**
+     * Releases a SUBMITTED operation from the registry once its run has settled (D46S2-R12-8): it is not ended (what it
+     * opened, a sheet or a drawer, lives on with its own scope and closes with it), but the registry no longer holds it.
+     */
+    function release(token) { if (token) live.delete(token); }
 
     /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
     const cancelled = error => error?.name === 'AbortError';
@@ -116,11 +140,20 @@
     /**
      * Presses an owner's control for a submitted operation: the click carries it (JE.press), and owners whose write
      * follows a confirmation or an await (Spoiler Guard, Hide, Report) take it from their event and recheck it right
-     * before writing.
+     * before writing. `origin`: the surface the press started in (default: the one the source is in), kept for the
+     * operation's feedback (D46S2-R14-1).
+     *
+     * One bounded dispatch lifetime (D46S2-R14-4): the press is one synchronous dispatch (JE.press returns once every
+     * listener has run), so the registry's strong hold on the operation ends with it — `release`, never `end`. What the
+     * press handed on keeps the operation by its own reference and lifetime: a confirmation is a surface registered for
+     * it (core scopes), a write carries its binding (checked at the send), a handler's continuation holds what it
+     * captured (JE.captureSubmitted); each still ends with the operation's session, route, mount and the bar's
+     * lifecycle, which do not depend on the registry.
      */
-    function dispatch(source, operation) {
+    function dispatch(source, operation, origin) {
         pressing.add(source);
-        try { return JE.press(source, operation); } finally { pressing.delete(source); }
+        try { return JE.press(source, operation, origin === undefined ? undefined : { origin }); }
+        finally { pressing.delete(source); release(operation); }
     }
 
     /**
@@ -137,6 +170,9 @@
             const { owner: live, native: own } = presses.get(node);
             if (pressing.has(node) || (own && !live.current())) return;
             event.preventDefault(); event.stopImmediatePropagation();
+            // Only a press someone made becomes the row's operation (D46S2-R11-1): the viewer's own (a trusted or the
+            // host's verified activation) or a title action's; a script's click is no one's and does nothing.
+            if (!JE.ownerOf(event)) return;
             // A fresh event (JE.press): click() is a no-op while this element's own click is still in progress.
             if (live.current()) dispatch(node, generation(() => live.current()));
         }, true);
@@ -148,20 +184,30 @@
         return (source === entry.control || source.isConnected) && !source.disabled && source.getAttribute('aria-disabled') !== 'true';
     }
 
-    /** One submitted operation, carried through admission, the owner's run and its confirmations. */
+    /**
+     * One submitted operation, carried through admission, the owner's run and its confirmations. It has a lifetime of
+     * its own (its session, route and mount), independent of the offer that showed the choice, and leaves the registry
+     * once its run has settled (D46S2-R12-8).
+     */
     async function invoke(c, entry, opener, operation = generation()) {
-        if (!operation.current() || entry.disabled) return false;
-        if (entry.source) {
-            if (c?.absent && !await admit(c, operation)) return false;
-            if (!operation.current() || !pressable(entry)) return false;
+        // Its origin (D46S2-R14-1): the surface its opener is in (More Info for its row and its More sheet), taken before
+        // the offer closes, so its feedback never lands in the closing sheet or a confirmation.
+        const origin = opener ? JE.surfaceRootOf?.(opener) ?? null : undefined;
+        if (origin !== undefined) JE.originate?.(operation, origin);
+        try {
+            if (!operation.current() || entry.disabled) return false;
+            if (entry.source) {
+                if (c?.absent && !await admit(c, operation)) return false;
+                if (!operation.current() || !pressable(entry)) return false;
+                entry.beforeRun?.();
+                dispatch(entry.source, operation, origin);
+                return true;
+            }
+            if (!await admit(c, operation) || !operation.current()) return false;
             entry.beforeRun?.();
-            dispatch(entry.source, operation);
-            return true;
-        }
-        if (!await admit(c, operation) || !operation.current()) return false;
-        entry.beforeRun?.();
-        const result = await entry.run(opener, operation);
-        return operation.current() && result !== false;
+            const result = await entry.run(opener, operation);
+            return operation.current() && result !== false;
+        } finally { release(operation); }
     }
 
     /** Registers a lazy capability (4c3b: provider returns null until permitted). No list storage lives here. */
@@ -178,14 +224,36 @@
         const out = [];
         const root = options.root;
         const displayName = () => c.name || root?.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
+        /** True when the host shows its own control for `selector` (it is then proxied, not read for). */
+        const shows = selector => { const node = root?.querySelector(selector); return !!node && !node.hidden && !node.classList.contains('hide'); };
         /** Finds an existing control, preserving its original handler and state. */
         function source(id, selector, group, label, icon) {
             const node = root?.querySelector(selector);
-            if (!node || node.hidden || node.classList.contains('hide')) return false;
+            if (!shows(selector)) return false;
             out.push({ id, source: node, group, label: node.getAttribute('aria-label') || node.title || label, icon,
                 state: id === 'manage' ? JE.t('title_actions_admin') : undefined });
             return true;
         }
+        // The independent reads start together (none waits on another); each is still awaited in the order below, and
+        // every continuation still checks the operation. `options.admission`: the opening's admission, read alongside:
+        // only the viewer's own reads (follows, capabilities, Seerr account) overlap it; nothing about the title is read
+        // before it answers, and once it refuses a title that isn't in the library nothing more is read and every read
+        // still out answers into nothing (a library title keeps its native controls, as without an opening).
+        const started = read => read && Promise.resolve(read).then(value => ({ value }), error => ({ error }));
+        let refused = false;
+        const gate = options.admission ? Promise.resolve(options.admission).then(ok => ok === true, () => false).then(ok => {
+            if (!ok && c.absent) refused = true;
+            return ok || !c.absent;
+        }) : Promise.resolve(true);
+        /** The opening has ended for these entries: its operation, or a refused admission of an absent title. */
+        const ended = () => refused || !action.current();
+        const settled = async read => { const r = await read; if (r?.error) throw r.error; return r?.value; };
+        const follows = JE.arrNotify?.enabled?.() && c.episode == null && !shows('.je-notify-follow') ? started(JE.arrNotify.loadFollows(false)) : null;
+        const statusRead = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey
+            ? started(gate.then(go => go && !ended() ? JE.arrStatus.fetchKey(c.titleKey) : null)) : null;
+        const capsRead = c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet ? started(JE.arrAsk.me()) : null;
+        const reportStatus = JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter && !shows('.jellyseerr-report-issue-icon') && JE.pluginConfig.JellyseerrEnabled
+            ? started(JE.jellyseerrAPI?.checkUserStatus?.()) : null;
         if (!source('guard', '.je-spoiler-pending-detail, .je-spoiler-pending-btn, .je-spoiler-blur-btn', 'view', JE.t('title_actions_guard'), 'blur_on')) {
             const node = JE.internals?.spoilerGuard?.buildSeerrToggle?.({ ...c.data, id: c.tmdbId }, c.type);
             if (node) out.push({ id: 'guard', group: 'view', label: node.title || JE.t('title_actions_guard'), icon: 'blur_on', control: node });
@@ -195,8 +263,8 @@
             if (node) out.push({ id: 'hide', group: 'view', label: node.title, icon: 'visibility', control: node });
         }
         if (JE.arrNotify?.enabled?.() && c.episode == null && !source('follow', '.je-notify-follow', 'requests', JE.t('title_actions_follow'), 'notifications_none')) {
-            await JE.arrNotify.loadFollows(false);
-            if (!action.current()) return [];
+            await settled(follows);
+            if (ended()) return [];
             out.push({ id: 'follow', group: 'requests', label: JE.t('title_actions_follow'), icon: 'notifications_none',
                 pressed: JE.arrNotify.isFollowing(c.key), run: async (_opener, submitted) => {
                     const on = !JE.arrNotify.isFollowing(c.key);
@@ -206,12 +274,12 @@
                 } });
         }
         // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
-        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
-        if (!action.current()) return [];
+        const status = statusRead ? await settled(statusRead) : null;
+        if (ended()) return [];
         const titleStatus = status?.items?.[0];
         if (c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet) {
-            const caps = await JE.arrAsk.me();
-            if (!action.current()) return [];
+            const caps = await settled(capsRead);
+            if (ended()) return [];
             // Not while the title is already asked for, on its way or here: the page's own request control shows no
             // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
             // A row (`options.reconcile`) gets it either way, marked `askable`: it follows the newest status (D46S2-R7-5).
@@ -231,11 +299,13 @@
             out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: (_opener, submitted) => root.jeRequest4k(submitted) });
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
-                const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;
+                const status = JE.pluginConfig.JellyseerrEnabled ? await settled(reportStatus) : null;
                 if (!action.current() || status?.cancelled) return [];
                 const permitted = status?.active === true && status.userFound === true && status.canReportIssues !== false;
+                // The title's Seerr record is read once the title is admitted.
+                if (permitted && (!await gate || ended())) return [];
                 const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type, action) : null;
-                if (!action.current()) return [];
+                if (ended()) return [];
                 const ok = permitted && (!JE.jellyseerrAPI?.reportContext || !!record?.mediaId);
                 const item = { jeAbsent: c.absent, Type: c.episode != null ? 'Episode' : c.season != null ? 'Season' : c.type === 'movie' ? 'Movie' : 'Series', IndexNumber: c.episode ?? c.season, ParentIndexNumber: c.season };
                 const control = ok && JE.jellyseerrIssueReporter.createReportButton?.(root || document.body, String(c.tmdbId), displayName(), c.type, null, item);
@@ -249,6 +319,8 @@
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
                     state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key }, { operation: submitted }) });
         }
+        // What the admission proved (Open) and the providers' entries come once it has answered.
+        if (!await gate || ended()) return [];
         const proof = admissions.get(c);
         // Open goes to the accessible actual copy; never offered on that copy's own page.
         const same = id => id && String(id).replace(/-/g, '').toLowerCase() === String(proof.itemId).replace(/-/g, '').toLowerCase();
@@ -267,10 +339,12 @@
         } });
         for (const provider of providers.values()) {
             const result = await provider(c, { action, root, surface: options.surface });
-            if (!action.current()) return [];
+            if (ended()) return [];
             if (result) out.push(...(Array.isArray(result) ? result : [result]));
         }
-        return action.current() ? out : [];
+        return ended() ? [] : out;
     }
-    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
+    /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
+    const registrySize = () => live.size;
+    Object.assign(A, { context, fromKey, routeKey, generation, finish, release, end, prune, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
 })(window.JellyfinEnhanced);

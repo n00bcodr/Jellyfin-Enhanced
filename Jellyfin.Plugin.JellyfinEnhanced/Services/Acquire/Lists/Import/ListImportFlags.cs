@@ -39,9 +39,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>Whether the MDBList API path may be used.</returns>
         public static bool MdblistApi(PluginConfiguration? config) => Provider(config, SourceKinds.Mdblist) && config!.ArrPhase4ListMdblistApiEnabled;
 
-        /// <summary>Title details from TMDB when Seerr isn't set up (list entries and their maintenance).</summary>
+        /// <summary>JE lists always use TMDB title details; the legacy opt-in remains for other backends.</summary>
         /// <param name="config">Configuration.</param>
         /// <returns>Whether the JE-only metadata path is on.</returns>
-        public static bool JeMetadata(PluginConfiguration? config) => ListFlags.Lists(config) && config!.ArrPhase4ListJeMetadataEnabled;
+        public static bool JeMetadata(PluginConfiguration? config) => ListFlags.Lists(config)
+            && (SeerrAddresses.IsJe(config) || config!.ArrPhase4ListJeMetadataEnabled);
     }
 }

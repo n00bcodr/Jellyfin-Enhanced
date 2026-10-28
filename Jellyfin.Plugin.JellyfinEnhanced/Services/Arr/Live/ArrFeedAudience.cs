@@ -85,10 +85,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly IArrRequestFacts? _requests;
         private readonly ArrInstanceLibraries _libraries;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (Verdict Verdict, DateTimeOffset At, string Stamp)> _cache = new();
-        private readonly ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _series = new();
-        private readonly ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)> _seasons = new();
-        private volatile AliasInputs? _registryStamp;
+        private ConcurrentDictionary<(Guid User, string Key, string? Instance), (SeerrFacts.Derived<Verdict> Verdict, DateTimeOffset At, string Stamp)> _cache = new();
+        private ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _series = new();
+        private ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)> _seasons = new();
+        private AliasInputs? _registryStamp;
 
         // The snapshots and their token are published together for concurrent route reads.
         private sealed record AliasInputs(IReadOnlyList<ArrConnection> Instances, object?[] Snapshots, string Stamp);
@@ -105,7 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _libraryManager = libraryManager;
             _userManager = userManager;
             _store = store;
-            _aliases = new Acquire.TitleAliases(store, requests as SeerrRequestReadModel);
+            _aliases = new Acquire.TitleAliases(store, requests as SeerrFacts);
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
             _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
@@ -149,6 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// <inheritdoc />
         public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes, IReadOnlySet<string>? askedFor = null, ICollection<string>? absent = null)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (changes.Count == 0) return Array.Empty<string>();
             // Request-list keys reach their owner only; everything else is a title key.
             var own = new List<string>();
@@ -179,10 +180,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (isAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !Acquire.ArrJellyfinView.HasParentalLimit(user))) return own.Concat(titles.Select(c => c.Key)).ToList();
             if (titles.Count == 0) return own;
             changes = titles;
-            if (_cache.Count > MaxCacheEntries) _cache.Clear();
-            if (_series.Count > MaxCacheEntries) _series.Clear();
-            if (_seasons.Count > MaxCacheEntries) _seasons.Clear();
+            if (_cacheFacts.Count > MaxCacheEntries) _cacheFacts.Clear();
+            if (_seriesFacts.Count > MaxCacheEntries) _seriesFacts.Clear();
+            if (_seasonsFacts.Count > MaxCacheEntries) _seasonsFacts.Clear();
 
+            var publication = _libraries.Parental?.CapturePublication();
             var now = _now();
             // What every answer depends on besides the key: a change to any of it decides afresh. The policy revision
             // is the one of the user the answers are decided with (not another read, which a change could land
@@ -190,9 +192,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             var stamp = Acquire.ArrJellyfinView.PolicyRevisionOf(user)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
                 + "|" + RegistryStamp()
+                + "|" + publication?.Revision
                 + "|" + _libraries.Revision
                 + "|" + (_requests?.Revision ?? 0).ToString(CultureInfo.InvariantCulture);
-            var visible = own;
+            var visible = new List<string>(own);
+            var unverified = new List<string>();
             foreach (var change in changes)
             {
                 if (!ArrTitleKey.TryParse(change.Key, out var type, out var id, out _, out _)) continue;
@@ -210,21 +214,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                     wantsProof |= v == Verdict.Absent;
                 }
                 if (shown) visible.Add(change.Key);
-                else if (wantsProof) absent?.Add(change.Key);
+                else if (wantsProof) unverified.Add(change.Key);
             }
+            if (publication?.Current == false) return own;
+            foreach (var key in unverified) absent?.Add(key);
             return visible;
         }
 
         // Registry and library snapshots: changing either invalidates cached alias decisions.
         private string RegistryStamp()
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var all = _store.Registry.All();
             var snapshots = all.SelectMany(i => new object?[] { _store.PeekLibrary(i.Id), _store.PeekQueue(i.Id), _store.PeekHistory(i.Id) }).ToArray();
-            var known = _registryStamp;
+            var known = _registryStampFacts;
             if (known != null && ReferenceEquals(known.Instances, all) && known.Snapshots.Length == snapshots.Length
                 && known.Snapshots.Zip(snapshots).All(p => ReferenceEquals(p.First, p.Second))) return known.Stamp;
             var stamp = Guid.NewGuid().ToString("N");
-            _registryStamp = new AliasInputs(all, snapshots, stamp);
+            _registryStampFacts = new AliasInputs(all, snapshots, stamp);
             return stamp;
         }
 
@@ -233,11 +240,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 
         private Verdict Cached(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var cacheKey = (user.Id, key, instanceId);
-            if (_cache.TryGetValue(cacheKey, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Verdict;
-            var verdict = Decide(user, key, instanceId, now, stamp);
-            _cache[cacheKey] = (verdict, now, stamp);
-            return verdict;
+            if (_cacheFacts.TryGetValue(cacheKey, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp) && hit.Verdict.TryRead(out var cached)) return cached;
+            var verdict = SeerrFacts.Derive(() => Decide(user, key, instanceId, now, stamp));
+            _cacheFacts[cacheKey] = (verdict, now, stamp);
+            return verdict.Read(Verdict.Hidden);
         }
 
         private Verdict Decide(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
@@ -314,25 +322,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // The series' Jellyfin copies (once per user and series while the answers hold).
         private SeriesCopies Copies(User user, int tvdbId, DateTimeOffset now, string stamp)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = (user.Id, tvdbId);
-            if (_series.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Copies;
+            if (_seriesFacts.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Copies;
             var title = TitleKey.Parse(ArrTitleKey.Series(tvdbId))!;
             var all = Find(new InternalItemsQuery(), BaseItemKind.Series, title, limit: 10).Select(i => i.Id).ToArray();
             var mine = all.Length == 0 ? Array.Empty<Guid>() : Find(new InternalItemsQuery(user), BaseItemKind.Series, title, limit: 10).Select(i => i.Id).ToArray();
             var copies = new SeriesCopies(all, mine);
-            _series[key] = (copies, now, stamp);
+            _seriesFacts[key] = (copies, now, stamp);
             return copies;
         }
 
         // A season's episode numbers in Jellyfin, every one and the user's (two queries per season).
         private SeasonEpisodes Episodes(User user, int tvdbId, int season, SeriesCopies copies, DateTimeOffset now, string stamp)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var key = (user.Id, tvdbId, season);
-            if (_seasons.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Episodes;
+            if (_seasonsFacts.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Episodes;
             var all = EpisodeNumbers(new InternalItemsQuery(), copies.All, season);
             var mine = copies.Mine.Length == 0 || all.IsEmpty ? new EpisodeNumberSet() : EpisodeNumbers(new InternalItemsQuery(user), copies.Mine, season);
             var episodes = new SeasonEpisodes(all, mine);
-            _seasons[key] = (episodes, now, stamp);
+            _seasonsFacts[key] = (episodes, now, stamp);
             return episodes;
         }
 
@@ -404,6 +414,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                && user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems).Length == 0;
 
         private static bool NoneSet(string[]? values) => (values ?? Array.Empty<string>()).All(string.IsNullOrWhiteSpace);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)>> _seriesFactsOwner = new();
+        private ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _seriesFacts { get => _seriesFactsOwner.Read(ref _series, () => new()); set => _seriesFactsOwner.Store(ref _series, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)>> _seasonsFactsOwner = new();
+        private ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)> _seasonsFacts { get => _seasonsFactsOwner.Read(ref _seasons, () => new()); set => _seasonsFactsOwner.Store(ref _seasons, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<(Guid User, string Key, string? Instance), (SeerrFacts.Derived<Verdict> Verdict, DateTimeOffset At, string Stamp)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<(Guid User, string Key, string? Instance), (SeerrFacts.Derived<Verdict> Verdict, DateTimeOffset At, string Stamp)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new()); set => _cacheFactsOwner.Store(ref _cache, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<AliasInputs?> _registryStampFactsOwner = new();
+        private AliasInputs? _registryStampFacts { get => _registryStampFactsOwner.Read(ref _registryStamp, () => default!); set => _registryStampFactsOwner.Store(ref _registryStamp, value); }
 
     }
 }

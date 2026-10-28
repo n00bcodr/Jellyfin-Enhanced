@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, deferred, jsonResponse } from '../helpers/harness.mjs';
+import { createHarness, deferred, jsonResponse, clickAsViewer } from '../helpers/harness.mjs';
 import { tab, settingsServer, en } from '../helpers/settings-tabs.mjs';
 
 // Stage 1 fix round 12: an action belongs to the session it was started in, from the person's gesture on, through every
@@ -31,11 +31,11 @@ test('R12-2: Hide entire show must keep the session from the confirmation before
   hc.getCardItemId = () => 'ep';
   h.load('enhanced/hiddencontent/hidden-content-buttons.js');
   hc.addLibraryHideButtons();
-  h.document.querySelector('.je-hide-btn').click();
+  clickAsViewer(h.document.querySelector('.je-hide-btn'));
   await new Promise(r => setImmediate(r));
   const choices = h.document.querySelectorAll('.je-hide-confirm-hide');
   assert.equal(choices.length, 3);
-  choices[2].click(); // A confirms Hide entire show; the series metadata read now waits.
+  clickAsViewer(choices[2]); // A confirms Hide entire show; the series metadata read now waits.
   user = 'user-b';
   h.JE.session.checkNow('account switch');
   await h.JE.readUserSettings('hidden-content.json');

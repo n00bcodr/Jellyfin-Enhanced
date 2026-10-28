@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed class LedgerRequestFacts : IArrRequestFacts
     {
         private readonly RequestLedger _ledger;
-        private readonly SeerrRequestReadModel _seerr;
+        private readonly SeerrFacts _seerr;
         private readonly TitleAliases _aliases;
         private readonly Func<DateTimeOffset> _now;
         /// <summary>
@@ -18,12 +18,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         internal static readonly TimeSpan SentUnseenFor = TimeSpan.FromMinutes(15);
         /// <summary>Creates the authority-selecting reader; it does no network I/O.</summary>
-        public LedgerRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases aliases)
+        public LedgerRequestFacts(RequestLedger ledger, SeerrFacts seerr, TitleAliases aliases)
             : this(ledger, seerr, aliases, null)
         {
         }
         /// <summary>The reader with an explicit clock (tests).</summary>
-        internal LedgerRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases aliases, Func<DateTimeOffset>? now)
+        internal LedgerRequestFacts(RequestLedger ledger, SeerrFacts seerr, TitleAliases aliases, Func<DateTimeOffset>? now)
         { _ledger = ledger; _seerr = seerr; _aliases = aliases; _now = now ?? (() => DateTimeOffset.UtcNow); }
         private static bool Direct => ArrInstanceLibraries.AbsentParentalEnabled && JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend == "je";
         // Seerr mode with Jellyfin Enhanced's request flow on: asks go through the ledger to Seerr, so some are held here first.
@@ -36,6 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// Enhanced points at now. Empty in Jellyfin Enhanced mode, with phase 3 off, or with no Seerr set up.
         /// </summary>
         internal IReadOnlyList<RequestWant> Held(TitleKey key)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => HeldFactsCore(key));
+
+        private IReadOnlyList<RequestWant> HeldFactsCore(TitleKey key)
         {
             if (!SeerrHeld || _seerr.CurrentSource is not { } source) return Array.Empty<RequestWant>();
             var wants = Wants(key);
@@ -109,6 +112,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         /// <remarks>Seerr mode: Seerr's requests together with the asks it doesn't know about yet (<see cref="Held"/>).</remarks>
         public RequestFacts? For(TitleKey titleKey, StatusViewer viewer)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForFactsCore(titleKey, viewer));
+
+        private RequestFacts? ForFactsCore(TitleKey titleKey, StatusViewer viewer)
         {
             if (!Direct) return Merge(_seerr.For(titleKey, viewer), HeldFacts(titleKey, Held(titleKey), viewer));
             return FactsOf(Wants(titleKey), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
@@ -121,6 +127,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// the episode or its season Seerr doesn't know about yet.
         /// </remarks>
         public RequestFacts? ForEpisode(TitleKey seriesKey, int season, int episode, StatusViewer viewer)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForEpisodeFactsCore(seriesKey, season, episode, viewer));
+
+        private RequestFacts? ForEpisodeFactsCore(TitleKey seriesKey, int season, int episode, StatusViewer viewer)
         {
             var part = new RequestEpisode(season, episode);
             if (!Direct) return Merge(_seerr.ForEpisode(seriesKey, season, episode, viewer), HeldFacts(seriesKey, Held(seriesKey).Where(w => w.Input.Covers(part)), viewer));
@@ -134,6 +143,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// requests for it, with the asks naming it Seerr doesn't know about yet.
         /// </remarks>
         public RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForSeasonFactsCore(seriesKey, season, viewer));
+
+        private RequestFacts? ForSeasonFactsCore(TitleKey seriesKey, int season, StatusViewer viewer)
         {
             if (!Direct) return Merge(_seerr.ForSeason(seriesKey, season, viewer), HeldFacts(seriesKey, Held(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer));
             return FactsOf(Wants(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
@@ -142,6 +154,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         /// <remarks>The configured authority, as <see cref="For"/>: the asks for that edition covering the part.</remarks>
         public RequestFacts? ForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForPartFactsCore(titleKey, fourK, seasons, episodes, viewer));
+
+        private RequestFacts? ForPartFactsCore(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
         {
             bool Covers(RequestWant w) => (w.Input.Variant == "4k") == fourK && ((seasons.Count == 0 && episodes.Count == 0)
                 || seasons.Any(n => w.Input.Seasons.Contains(n)) || episodes.Any(e => w.Input.Covers(new RequestEpisode(e.Season, e.Episode))));
@@ -152,6 +167,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         /// <remarks>Seerr mode: Seerr's word (as the Requests page reads it); Jellyfin Enhanced mode judges by the arrs (null).</remarks>
         public PartAvailability? AvailabilityForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => AvailabilityForPartFactsCore(titleKey, fourK, seasons, episodes, viewer));
+
+        private PartAvailability? AvailabilityForPartFactsCore(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
             => Direct ? null : _seerr.AvailabilityForPart(titleKey, fourK, seasons, episodes, viewer);
 
         private RequestFacts? HeldFacts(TitleKey key, IEnumerable<RequestWant> held, StatusViewer viewer)
@@ -316,13 +334,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
         }
         /// <inheritdoc />
-        public bool AskedBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
+        public bool AskedBy(TitleKey titleKey, Guid userId)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => AskedByFactsCore(titleKey, userId));
+
+        private bool AskedByFactsCore(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
         /// <inheritdoc />
-        public bool Requested(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled") : _seerr.Requested(titleKey) || Held(titleKey).Count > 0;
+        public bool Requested(TitleKey titleKey)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => RequestedFactsCore(titleKey));
+
+        private bool RequestedFactsCore(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled") : _seerr.Requested(titleKey) || Held(titleKey).Count > 0;
         /// <inheritdoc />
-        public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && (w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10))) : _seerr.AskedLatelyBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
+        public bool AskedLatelyBy(TitleKey titleKey, Guid userId)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => AskedLatelyByFactsCore(titleKey, userId));
+
+        private bool AskedLatelyByFactsCore(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && (w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10))) : _seerr.AskedLatelyBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
         /// <inheritdoc />
-        public bool RequestedLately(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10)) : _seerr.RequestedLately(titleKey) || Held(titleKey).Count > 0;
+        public bool RequestedLately(TitleKey titleKey)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => RequestedLatelyFactsCore(titleKey));
+
+        private bool RequestedLatelyFactsCore(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10)) : _seerr.RequestedLately(titleKey) || Held(titleKey).Count > 0;
     }
 
     /// <summary>

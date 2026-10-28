@@ -77,3 +77,16 @@ Run visual tests in the pinned Playwright Linux environment. Review the failed s
 Missing runtimes, dependencies, browser executables, or Docker access are failures, not skips. Check `dotnet --list-runtimes`, run `npm ci`, install the pinned Playwright browsers, or check `docker info` as appropriate. A host-startup failure should be investigated using the saved build/server logs. The host runner removes resources it created; it must never prune unrelated containers or networks.
 
 The test infrastructure uses synthetic data only. Do not substitute production credentials or a personal media library into fixtures.
+
+### Bounded suite execution
+
+`python3 tests/run.py fast --target jf12` retains the complete behavior and coverage gate.
+Optimizations can be measured independently:
+
+- `--speed-profile` opts into fail-fast runtime/SDK/dependency/worker preflight, `-m:4`, frontend immutable text caching, bounded file workers and TAP reporting. Without speed flags, prerequisite failures, continued diagnostics, the ordinary backend command, Node worker/reporter defaults, uncached instrumentation and historical artifacts retain their pre-tier behavior.
+- Within the profile, `JE_NODE_FILE_CONCURRENCY=1..8` bounds file workers (default 8), and `JE_NODE_NESTED_CONCURRENCY=1..8` bounds the two nested generated suites (default 8). The combined maximum is 22 asynchronous cases. `JE_FRONTEND_SHARDS=1..4` partitions the sorted inventory within that budget. Private counters/logs live beside the public report tree in `artifacts/.frontend-coverage-runs/`; immutable text lives in `artifacts/.frontend-instrumented`. `JE_INSTRUMENT_CACHE=0` disables the cache. Direct Node callers select the profile with `JE_SPEED_PROFILE=1`.
+- `--backend-shards 2` (also 3 or 4) partitions real xUnit discovery, keeping each disabled-parallelization collection together. `--backend-durations previous.trx` balances the serial-collection critical path and bounded collection slots using measured durations. Without a saved duration profile, assignment balances case counts. Each invocation builds afresh; each shard gets a writable copy, results and temporary directory. Strict accounting rejects missing, overlapping, empty, incomplete or failed partitions. Backend shards greater than one, duration profiles and witness options also enable the speed profile.
+- `--preflight-witnesses` runs the inherited StampFeed witness before the full backend gate. Its failure exits nonzero with **incomplete** status and certifies no remaining cases or coverage. Use a complete run to retain all failure evidence.
+- `--reuse-build` has been removed after three SS-E1 correctness recurrences and is rejected by the CLI. See [the design decision and future requirements](suite-speed.md#build-reuse-removed-ss-e1-three-recurrences).
+
+Backend shard coverage uses a union of Coverlet JSON line/branch identities, including untouched production documents. Percentages are calculated once from the union; shard percentages are never averaged. The jf10/jf12 CI matrix and all coverage floors remain unchanged. Continue to use the suite lane wrapper and its aggregate memory/CPU limits for full runs.

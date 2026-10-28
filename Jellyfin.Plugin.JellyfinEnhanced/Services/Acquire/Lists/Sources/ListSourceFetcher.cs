@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         private readonly SourceReadLimits _limits;
         private readonly ISourceReadAdmission _admission;
         private readonly SemaphoreSlim _gate;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, CallerBudget> _callers = new(StringComparer.Ordinal);
 
         /// <summary>Creates the fetcher (singleton).</summary>
@@ -171,6 +171,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <inheritdoc />
         public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var epoch = ListMetadataEpoch.Capture();
             // Provider switches and credentials are checked before the cache: a provider the admin just turned off stops
             // working at once, and nothing is sent to it.
             if (Unavailable(source, options) is { } unavailable)
@@ -178,10 +180,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return unavailable;
             }
 
-            var cacheKey = source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
-            if (!options.Fresh && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            var cacheKey = epoch.Generation + "|" + source.CanonicalUrl + "|" + options.AllowMdblistApi + "|" + options.Provider + "|" + CredentialStamp();
+            if (!options.Fresh && _cacheFacts.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return cached.Result;
+                return epoch.Publish(() => cached.Result, Changed);
             }
 
             // F29: a person's fetches that miss the cache go upstream only a few at a time and a bounded number per window.
@@ -220,24 +222,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
                 }
 
-                // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
-                // read again next time, so a corrected source is seen at once.
-                if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
+                return epoch.Publish(() =>
                 {
-                    PruneCache(result.Items.Count);
-                    _cache[cacheKey] = (readAt + CacheTtl, result);
-                }
-                else if (!result.Ok)
-                {
-                    _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
-                }
+                    // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
+                    // read again next time, so a corrected source is seen at once.
+                    if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
+                    {
+                        PruneCache(result.Items.Count);
+                        _cacheFacts[cacheKey] = (readAt + CacheTtl, result);
+                    }
+                    else if (!result.Ok)
+                    {
+                        _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
+                    }
 
-                return result;
+                    return result;
+                }, () => result.Ok ? Changed() : result);
             }
             finally
             {
                 _gate.Release();
             }
+
+            SourceFetchResult Changed() => SourceFetchResult.Fail(source, "configuration_changed", "The request backend changed while reading this source. Read it again.");
         }
 
         // Switches and credentials of each provider (no request is made without them).
@@ -252,6 +259,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             if (!ListImportFlags.Provider(config, source.Kind))
             {
                 return SourceFetchResult.Fail(source, SourceFailures.ProviderDisabled, "Lists from this site are turned off on this server.");
+            }
+
+            if (options.Provider == "seerr" && SeerrAddresses.IsJe(config))
+            {
+                return SourceFetchResult.Fail(source, SourceFailures.ProviderPinned, SeerrAddresses.InactiveSourceMessage);
             }
 
             if (source.Kind == SourceKinds.Trakt && TraktKey.Length == 0)
@@ -518,7 +530,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
             else
             {
-                provider = hasKey && !tvUpcoming ? "tmdb" : "seerr";
+                provider = SeerrAddresses.IsJe(Config) || (hasKey && !tvUpcoming) ? "tmdb" : "seerr";
+            }
+
+            if (provider == "tmdb" && !hasKey)
+            {
+                return SourceFetchResult.Fail(source, "tmdb_key_required", "TMDB lists and charts need the TMDB API key in Jellyfin Enhanced's settings.");
             }
 
             if (provider == "seerr" && !seerrAllowed)
@@ -639,12 +656,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var path = source.Shape == "trending"
                         ? $"trending/{media}/{source.Part("period")}"
                         : $"{media}/{source.Part("chart").Replace('-', '_')}";
+                    var upcomingTv = media == "tv" && source.Shape == "chart" && source.Part("chart") == "upcoming";
+                    if (upcomingTv) path = "discover/tv";
+                    // TMDB has no tv/upcoming resource: use its native upcoming-premiere filter.
+                    var query = upcomingTv ? "&first_air_date.gte=" + DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                        + "&sort_by=first_air_date.asc&include_adult=false&include_null_first_air_dates=false" : string.Empty;
                     var defaultType = media == "all" ? null : media;
                     var read = new SourceRead();
                     var items = new List<SourceItem>();
                     for (var page = 1; ; page++)
                     {
-                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
+                        var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture) + query, key, options, cancellationToken).ConfigureAwait(false)
                             ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
                         using var doc = JsonDocument.Parse(json);
                         Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);
@@ -690,6 +712,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         private async Task<string?> TmdbGetAsync(string path, string query, string key, SourceFetchOptions options, CancellationToken cancellationToken)
         {
+            if (MetadataAdmission.Current == null)
+                return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.ListImport,
+                    () => TmdbGetAsync(path, query, key, options, cancellationToken)).ConfigureAwait(false);
+
             // F17 + 4C2-SEC-03: read upstream every time (never TmdbResponseCache's 6 h copy: a sync must see the list as
             // it is now, and the pages of one snapshot must be of one age) and over the source transport (no redirects,
             // public addresses only). The fetcher's own short result cache keeps preview → apply → link to one read.
@@ -1125,41 +1151,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             switch (type)
             {
                 case "movie":
-                {
-                    var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
-                    var (tmdb, imdb, _) = TraktIds(movie);
-                    return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
-                }
+                    {
+                        var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
+                        var (tmdb, imdb, _) = TraktIds(movie);
+                        return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
+                    }
 
                 case "show":
-                {
-                    var target = hasShow ? show : element;
-                    var (tmdb, imdb, tvdb) = TraktIds(target);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
-                }
+                    {
+                        var target = hasShow ? show : element;
+                        var (tmdb, imdb, tvdb) = TraktIds(target);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
+                    }
 
                 case "season":
-                {
-                    if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
+                    }
 
                 case "episode":
-                {
-                    if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
-                        || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
                     {
-                        return SourceRow.Malformed;
-                    }
+                        if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
+                            || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
+                        {
+                            return SourceRow.Malformed;
+                        }
 
-                    var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
-                }
+                        var (tmdb, imdb, tvdb) = TraktIds(show);
+                        return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
+                    }
 
                 default:
                     return SourceRow.Malformed;
@@ -1417,32 +1443,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 case "tvSeries" or "tvMiniSeries":
                     return SourceRow.Of(new SourceItem("tv", null, id, null, title, year, null, null, null));
                 case "tvEpisode":
-                {
-                    if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
-                        || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                     {
-                        return SourceRow.Malformed;
-                    }
-
-                    var showId = ValidImdb(Str(show, "id"));
-                    var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
-                    int? season = null;
-                    int? episode = null;
-                    if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
-                    {
-                        if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                        if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
+                            || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                         {
-                            season = sn;
+                            return SourceRow.Malformed;
                         }
 
-                        if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                        var showId = ValidImdb(Str(show, "id"));
+                        var showTitle = show.TryGetProperty("titleText", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "text") : null;
+                        int? season = null;
+                        int? episode = null;
+                        if (series.TryGetProperty("displayableEpisodeNumber", out var number) && number.ValueKind == JsonValueKind.Object)
                         {
-                            episode = en;
-                        }
-                    }
+                            if (number.TryGetProperty("displayableSeason", out var s) && s.ValueKind == JsonValueKind.Object && int.TryParse(Str(s, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var sn))
+                            {
+                                season = sn;
+                            }
 
-                    return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
-                }
+                            if (number.TryGetProperty("episodeNumber", out var e) && e.ValueKind == JsonValueKind.Object && int.TryParse(Str(e, "text"), NumberStyles.None, CultureInfo.InvariantCulture, out var en))
+                            {
+                                episode = en;
+                            }
+                        }
+
+                        return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
+                    }
 
                 case "movie" or "tvMovie" or "short" or "tvShort" or "video" or "tvSpecial":
                     return SourceRow.Of(new SourceItem("movie", null, id, null, title, year, null, null, null));
@@ -1620,7 +1646,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             timeout.CancelAfter(Timeout);
             try
             {
-                var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
+                if (new Uri(transmission.Url).Host == "api.themoviedb.org")
+                {
+                    using var metadataResponse = await TmdbTransport.GetAsync(_httpClientFactory, transmission.Url,
+                        MetadataAdmission.Required, timeout.Token, SourceHttp.ClientName,
+                        prepare: outgoing =>
+                        {
+                            outgoing.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
+                            outgoing.Headers.Accept.ParseAdd(transmission.Accept);
+                            if (transmission.Headers != null)
+                                foreach (var (name, value) in transmission.Headers) outgoing.Headers.TryAddWithoutValidation(name, value);
+                        }, beforeSend: () => GateOpen(transmission)).ConfigureAwait(false);
+                var metadataStatus = (int)metadataResponse.StatusCode;
+                if (metadataStatus is >= 300 and < 400 && metadataStatus != 304)
+                {
+                    throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
+                }
+
+                var metadataText = metadataStatus == 200 || metadataStatus is >= 400 and < 500 ? await BoundedBody.ReadAsync(metadataResponse, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
+                return new HttpResult(metadataStatus, metadataText, RetryAfterOf(metadataResponse), HeadersOf(metadataResponse));
+                }
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, SourceHttp.ClientName);
                 using var request = new HttpRequestMessage(transmission.Method, transmission.Url);
                 request.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
                 request.Headers.Accept.ParseAdd(transmission.Accept);
@@ -1637,7 +1683,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     request.Content = new StringContent(transmission.Body, Encoding.UTF8, "application/json");
                 }
 
-                GateOpen(transmission); // the final check: nothing awaited between it and the send
+                GateOpen(transmission); // non-TMDB providers only; nothing awaited before their send
                 using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)
@@ -1683,7 +1729,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             timeout.CancelAfter(Timeout);
             try
             {
-                var client = _httpClientFactory.CreateClient(SeerrHttpHelper.NamedClient);
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, SeerrHttpHelper.NamedClient);
                 using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, transmission.Url, transmission.Credential ?? string.Empty);
                 GateOpen(transmission); // the final check: nothing awaited between it and the send
                 using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
@@ -1836,15 +1882,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // the entry budgets hold (F29: a stream of distinct URLs can't grow the cache without bound).
         private void PruneCache(int incoming)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
             var count = 0;
             var items = incoming;
             var live = new List<KeyValuePair<string, (DateTime ExpiresUtc, SourceFetchResult Result)>>();
-            foreach (var entry in _cache)
+            foreach (var entry in _cacheFacts)
             {
                 if (entry.Value.ExpiresUtc <= now)
                 {
-                    _cache.TryRemove(entry.Key, out _);
+                    _cacheFacts.TryRemove(entry.Key, out _);
                     continue;
                 }
 
@@ -1860,7 +1907,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     break;
                 }
 
-                if (_cache.TryRemove(entry.Key, out var removed))
+                if (_cacheFacts.TryRemove(entry.Key, out var removed))
                 {
                     count--;
                     items -= removed.Result.Items.Count;
@@ -2018,5 +2065,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             public int? RetryAfter { get; } = retryAfter;
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); set => _cacheFactsOwner.Store(ref _cache, value); }
     }
 }

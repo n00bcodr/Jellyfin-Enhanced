@@ -1,16 +1,29 @@
+import { randomUUID } from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createInstrumenter } from 'istanbul-lib-instrument';
+import { instrumentSource } from './instrumentation.mjs';
 import coverage from 'istanbul-lib-coverage';
-import { repositoryRoot } from './discovery.mjs';
+import { repositoryRoot, speedProfile } from './discovery.mjs';
 import { served } from './served-scripts.mjs';
+
+/** Dispatches a browser viewer gesture explicitly; ordinary script click() stays untrusted. */
+export function clickAsViewer(node) {
+  if (node.matches(':disabled')) return true;
+  const window = node.ownerDocument.defaultView;
+  const implOf = object => object[Object.getOwnPropertySymbols(object).find(symbol => String(symbol) === 'Symbol(impl)')];
+  const event = new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 });
+  const impl = implOf(event);
+  impl.isTrusted = true;
+  implOf(node)._dispatch(impl);
+  return !impl._canceledFlag;
+}
 
 export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 const collected = coverage.createCoverageMap({});
 if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
   mkdirSync(process.env.JE_COVERAGE_DIR, { recursive: true });
-  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}.json`), JSON.stringify(collected));
+  writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}${speedProfile ? '-' + randomUUID() : ''}.json`), JSON.stringify(collected));
 });
 
 /** Load real classic-script modules into a fresh browser realm; no network is permitted by default. */
@@ -64,7 +77,9 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     const response = await (write ? JE.core.userWrite.send(origin, transmit, path) : transmit());
     let body = null;
     try { const text = await response.text(); body = text ? JSON.parse(text) : null; } catch (_) { /* malformed fixture body */ }
-    return { status: response.status, body };
+    const value = response.headers.get('Retry-After');
+    const retryAfterMs = value ? Math.max(0, Number.isFinite(Number(value)) ? Number(value) * 1000 : Date.parse(value) - Date.now()) : 0;
+    return { status: response.status, body, ...(retryAfterMs > 0 ? { retryAfterMs } : {}) };
   });
   window.structuredClone = structuredClone;
   Object.assign(window, globals);
@@ -79,13 +94,13 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
       if (planted === source) throw new Error(`The plant does not apply to ${path}`);
       source = planted;
     }
-    if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
+    if (process.env.JE_COVERAGE_DIR) source = instrumentSource(source, file);
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;
   }
-  // The viewer's own gestures are trusted events, as a browser dispatches them; script-made ones are not (D46S2-R10:
-  // native authority is minted only from trusted events). A click() the test makes outside every production module
-  // is the viewer's; one a production module makes (its own synthetic click) stays untrusted, as in the browser.
+  // The viewer's own gestures are trusted events, as a browser dispatches them; every script-made one is untrusted,
+  // the test's own click() included (D46S2-R11: jsdom cannot make a trusted event, so trust comes only from the
+  // explicit test-only helpers below, which no production module can reach).
   const implOf = object => object[Object.getOwnPropertySymbols(object).find(symbol => String(symbol) === 'Symbol(impl)')];
   function dispatchTrusted(target, event) {
     const impl = implOf(event);
@@ -93,22 +108,11 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     implOf(target)._dispatch(impl);
     return !impl._canceledFlag;
   }
-  function fromProduction() {
-    const limit = Error.stackTraceLimit;
-    Error.stackTraceLimit = 200;
-    const stack = new Error().stack || '';
-    Error.stackTraceLimit = limit;
-    return stack.includes(jsRoot);
+  /** The viewer clicks `node` (a trusted click, as the browser dispatches one; a disabled control takes none). */
+  function viewerClick(node) {
+    if (node.matches(':disabled')) return true;
+    return dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 }));
   }
-  const syntheticClick = window.HTMLElement.prototype.click;
-  const clicking = new WeakSet();
-  window.HTMLElement.prototype.click = function () {
-    if (fromProduction()) return syntheticClick.call(this);
-    if (this.matches(':disabled') || clicking.has(this)) return;
-    clicking.add(this);
-    try { dispatchTrusted(this, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 })); }
-    finally { clicking.delete(this); }
-  };
   // Deferred feature actions use the shared identity primitive in the real bundle, and every document a feature writes
   // has its session-bound write queue (core/mutation-queue.js loads before every feature module in the bundle).
   load('core/session-action.js');
@@ -132,6 +136,20 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     },
     /** Dispatches `event` on `target` as the browser would for the viewer (trusted). Returns false when cancelled. */
     trusted: dispatchTrusted,
+    /** The viewer clicks `node` (trusted; test-only: a click() anywhere, a test's included, is untrusted). */
+    click: viewerClick,
+    /**
+     * The viewer presses inside `node` (a trusted click dispatched on it): `fn(event)` runs while it is dispatched and its
+     * result comes back. Inside a registered surface the press is that surface's owner's (JE.ownerOf(event)).
+     */
+    pressIn(node, fn) {
+      let result;
+      const listener = event => { result = fn(event); };
+      node.addEventListener('click', listener, { once: true });
+      dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      node.removeEventListener('click', listener);
+      return result;
+    },
     /**
      * The viewer clicks `node` (a trusted click through its onclick handler property), and the handler's own result
      * (the promise an async handler returns) comes back for the test to await.

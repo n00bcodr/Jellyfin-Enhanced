@@ -34,6 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal static Func<string>? LibraryTopology;
         private readonly IUserManager _userManager;
         private readonly ILogger<ArrJellyfinView>? _logger;
+        private readonly BridgeImportReadiness? _readiness;
         private long _revision;
 
         /// <summary>Native rows per copy-query page; the eligible copy budget is separate.</summary>
@@ -55,8 +56,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private const int BoundLogTitles = 256;
         private readonly Dictionary<string, DateTimeOffset> _boundLogged = new(StringComparer.Ordinal);
 
-        /// <summary>Creates the view and starts following library changes.</summary>
-        public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null)
+        /// <summary>Creates the view and starts following library changes (and the import readiness gate, when given).</summary>
+        public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null, BridgeImportReadiness? readiness = null)
         {
             _libraryManager = libraryManager;
             LibraryTopology = () =>
@@ -75,6 +76,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
+            _readiness = readiness;
+            // An import that starts or stops awaiting its metadata changes what is Ready: cached compositions read again.
+            if (_readiness != null) _readiness.Changed += OnReadinessChanged;
         }
 
         /// <inheritdoc />
@@ -182,6 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         LibraryId = library?.Id.ToString("N", CultureInfo.InvariantCulture),
                         LibraryName = library?.Name,
                         Placeholder = !Playable(movie),
+                        AwaitingMetadata = Awaiting(movie),
                         Versions = Playable(movie) ? movie.MediaSourceCount : 0,
                         PrimaryId = PrimaryOf(movie),
                     };
@@ -228,6 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         EpisodeEnd = episode.IndexNumberEnd,
                         Virtual = episode.IsMissingEpisode,
                         Placeholder = Placeholder(episode),
+                        AwaitingMetadata = Awaiting(episode),
                         Path = episode.Path,
                         DateCreated = Utc(episode.DateCreated),
                         Versions = Playable(episode) ? episode.MediaSourceCount : 0,
@@ -238,6 +244,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     return null;
             }
         }
+
+        /// <summary>
+        /// Reads the physical native identity used by parental evidence: an absolute file or series-folder path,
+        /// not a virtual item. This preserves the local-evidence contract, including disc metadata; it does not
+        /// inspect video sources or confer user access. The caller must still verify identity and native entitlement.
+        /// </summary>
+        internal static JfItemRef LocalEvidenceItem(BaseItem item) => new()
+        {
+            ItemId = item.Id,
+            Kind = item is Movie ? "movie" : "series",
+            Path = item.Path,
+            Virtual = item.IsVirtualItem,
+            Placeholder = string.IsNullOrWhiteSpace(item.Path) || !Path.IsPathFullyQualified(item.Path),
+        };
 
         /// <inheritdoc />
         /// <remarks>
@@ -397,6 +417,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     EpisodeEnd = e.IndexNumberEnd,
                     Virtual = e.IsMissingEpisode,
                     Placeholder = Placeholder(e),
+                    AwaitingMetadata = Awaiting(e),
                     DateCreated = Utc(e.DateCreated),
                 });
             }
@@ -504,7 +525,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else if (item is Episode e && FolderEpisode(e, series.Id) && (e.ParentIndexNumber ?? seasonNumbers.GetValueOrDefault(e.SeasonId)) is int s)
                 {
-                    episodes.Add(new JfEpisode { ItemId = e.Id, Season = s, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Virtual = e.IsMissingEpisode, Placeholder = Placeholder(e), DateCreated = Utc(e.DateCreated) });
+                    episodes.Add(new JfEpisode { ItemId = e.Id, Season = s, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Virtual = e.IsMissingEpisode, Placeholder = Placeholder(e), AwaitingMetadata = Awaiting(e), DateCreated = Utc(e.DateCreated) });
                 }
                 else
                 {
@@ -783,8 +804,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A movie's or episode's own file as its one source, without reading its media sources (dimensions unknown).
         /// None for a missing (virtual) item or a placeholder.
         /// </summary>
-        private static List<JfSource> ItsOwnSource(Video video)
-            => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
+        private List<JfSource> ItsOwnSource(Video video)
+            => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, AwaitingMetadata = Awaiting(video), DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
+
+        /// <summary>A just-imported movie or episode (or version) whose metadata the bridge hasn't confirmed yet (<see cref="BridgeImportReadiness"/>).</summary>
+        private bool Awaiting(BaseItem item, string? path = null) => _readiness?.Pending(item.Id, path ?? item.Path) == true;
 
         /// <summary>True for a movie or episode with a file (a missing episode is a virtual item without one).</summary>
         internal static bool Playable(Video video) => !video.IsVirtualItem && !video.IsPlaceHolder && !string.IsNullOrEmpty(video.Path);
@@ -831,6 +855,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Width = stream?.Width,
                     Height = stream?.Height,
                     Path = shortcut ? version.Path : source.Path,
+                    AwaitingMetadata = Awaiting(version, shortcut ? version.Path : source.Path),
                     DateCreated = Utc(version.DateCreated),
                 });
             }
@@ -898,7 +923,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
+            if (_readiness != null) _readiness.Changed -= OnReadinessChanged;
         }
+
+        private void OnReadinessChanged() => Interlocked.Increment(ref _revision);
 
         /// <summary>The TMDB id of a series, when Jellyfin has one.</summary>
         private static int? TmdbOf(Series? series)

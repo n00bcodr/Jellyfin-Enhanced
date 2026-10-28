@@ -708,7 +708,7 @@ public class ApiArrRoutesTests
         callers.Register(rig.Member, admin: false).SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, true); // every library, no limits
         var kidId = Guid.NewGuid();
         callers.Register(kidId, admin: false).MaxParentalRatingScore = 10;
-        var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
+        var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
         Assert.False(readModel.Active);
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), readModel);
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
@@ -773,7 +773,7 @@ public class ApiArrRoutesTests
         var someId = Guid.NewGuid();
         var some = callers.Register(someId, admin: false);                                 // not every library, no limits
         some.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, false);
-        var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
+        var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), readModel);
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
         cache[kidId.ToString()] = SeerrSeeds.Id(kidId.ToString(), "7");
@@ -897,14 +897,14 @@ public class ApiArrRoutesTests
         {
             ["name"] = "Old server's title", ["externalIds"] = new System.Text.Json.Nodes.JsonObject { ["tvdbId"] = 501 },
         };
-        using var model = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => rig.Arr.Now);
+        using var model = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts(seerr.Transport, null, null, () => config, () => rig.Arr.Now);
         Assert.True(await model.RefreshAsync(default));
         Assert.Equal(501, model.All.Single().TvdbId);
         var fields = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", fields)!.GetValue(null)!;
         var userKey = rig.Member.ToString();
         cache[userKey] = SeerrSeeds.Id(userKey, "7");
-        var proof = Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Shared;
+        var proof = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Shared;
         var proofKey = userKey + "|" + FakeSeerr.Url;
         Assert.NotNull(await proof.GetAsync(proofKey, () => Task.FromResult<IReadOnlySet<(int, string)>?>(new HashSet<(int, string)> { (9501, "tv") })));
         config.JellyseerrUrls = "http://replacement-seerr.lan:5055";
@@ -940,10 +940,10 @@ public class ApiArrRoutesTests
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), null);
         var fields = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", fields)!.GetValue(null)!;
-        var cacheLock = typeof(JellyfinEnhancedController).GetField("_userIdCacheLock", fields)!.GetValue(null)!;
+        var cacheLock = SeerrFactTestAccess.Gate;
         var users = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userCache", fields)!.GetValue(null)!;
-        var usersLock = typeof(JellyfinEnhancedController).GetField("_userCacheLock", fields)!.GetValue(null)!;
-        var proof = Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Shared;
+        var usersLock = SeerrFactTestAccess.Gate;
+        var proof = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Shared;
         JellyfinEnhancedController AsMember()
         {
             var controller = ApiAssetTests.Controller(rig.Arr.Plugin.Core, seerr.Transport, callers.Users.Object, rig.Arr.Transport, rig.Store, rig.Arr.Factory, audience);
@@ -979,7 +979,7 @@ public class ApiArrRoutesTests
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             // Await the actual background read after releasing Seerr, so both cache assertions run
             // after its writes, rather than depending on a sleep or observing an HTTP call early.
-            var entries = (System.Collections.IDictionary)proof.GetType().GetField("_entries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(proof)!;
+            var entries = (System.Collections.IDictionary)SeerrFactTestAccess.OwnershipEntries(proof);
             var entry = entries[SeerrSeeds.ProofKey(userKey, FakeSeerr.Url)]!;
             lock (entry) inflight = (Task)entry.GetType().GetProperty("Inflight")!.GetValue(entry)!;
             c.JellyseerrImportBlockedUsers = kidId.ToString("N");
@@ -1007,7 +1007,7 @@ public class ApiArrRoutesTests
             {
                 if (inflight == null)
                 {
-                    var entries = (System.Collections.IDictionary)proof.GetType().GetField("_entries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(proof)!;
+                    var entries = (System.Collections.IDictionary)SeerrFactTestAccess.OwnershipEntries(proof);
                     if (entries[SeerrSeeds.ProofKey(userKey, FakeSeerr.Url)] is { } entry)
                         lock (entry) inflight = (Task?)entry.GetType().GetProperty("Inflight")!.GetValue(entry);
                 }
@@ -1042,10 +1042,10 @@ public class ApiArrRoutesTests
         var audience = new ArrFeedAudience(jf.Library.Object, callers.Users.Object, rig.Store, null, new FakeJellyfinView(), null);
         var fields = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", fields)!.GetValue(null)!;
-        var cacheLock = typeof(JellyfinEnhancedController).GetField("_userIdCacheLock", fields)!.GetValue(null)!;
+        var cacheLock = SeerrFactTestAccess.Gate;
         var users = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userCache", fields)!.GetValue(null)!;
-        var usersLock = typeof(JellyfinEnhancedController).GetField("_userCacheLock", fields)!.GetValue(null)!;
-        var proof = Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Shared;
+        var usersLock = SeerrFactTestAccess.Gate;
+        var proof = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Shared;
         JellyfinEnhancedController AsMember()
         {
             var controller = ApiAssetTests.Controller(rig.Arr.Plugin.Core, seerr.Transport, callers.Users.Object, rig.Arr.Transport, rig.Store, rig.Arr.Factory, audience);
@@ -1086,7 +1086,7 @@ public class ApiArrRoutesTests
     public async Task TheAskedForCacheReusesFreshAnswersServesStaleOnesAtOnceAndDoesntRetryAFailureRightAway()
     {
         var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
-        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
+        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
         var reads = 0;
         IReadOnlySet<(int, string)>? answer = new HashSet<(int, string)> { (3, "movie") };
         Task<IReadOnlySet<(int TmdbId, string MediaType)>?> Read()
@@ -1110,12 +1110,12 @@ public class ApiArrRoutesTests
         Assert.Null(await cache.GetAsync("v", Read));
         Assert.Null(await cache.GetAsync("v", Read));
         Assert.Equal(3, reads);
-        now += Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Fresh;
+        now += Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Fresh;
         answer = new HashSet<(int, string)>();
         Assert.Empty((await cache.GetAsync("v", Read))!);
         Assert.Equal(4, reads);
         // Too old to serve: read again and waited for.
-        now += Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.MaxStale;
+        now += Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.MaxStale;
         answer = new HashSet<(int, string)> { (5, "tv") };
         Assert.Contains((5, "tv"), (await cache.GetAsync("u", Read))!);
     }
@@ -1126,7 +1126,7 @@ public class ApiArrRoutesTests
     public async Task ClearingAskedForProofDropsFreshAndStaleAnswers(bool stale)
     {
         var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
-        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
+        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache(() => now.UtcTicks, TimeSpan.FromSeconds(5));
         var key = Guid.NewGuid().ToString();
         var reads = 0;
         IReadOnlySet<(int, string)>? answer = new HashSet<(int, string)> { (3, "movie") };
@@ -1136,7 +1136,7 @@ public class ApiArrRoutesTests
             return Task.FromResult(answer);
         }
         Assert.Contains((3, "movie"), (await cache.GetAsync(key, Read))!);
-        if (stale) now += Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Fresh;
+        if (stale) now += Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Fresh;
 
         cache.Clear();
         answer = stale ? null : new HashSet<(int, string)> { (4, "movie") };
@@ -1149,7 +1149,7 @@ public class ApiArrRoutesTests
     [Fact]
     public async Task AnAskedForReadStartedBeforeClearCantPutItsAnswerBack()
     {
-        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache(wait: TimeSpan.FromSeconds(5));
+        var cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache(wait: TimeSpan.FromSeconds(5));
         var key = Guid.NewGuid().ToString();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gate = new TaskCompletionSource<IReadOnlySet<(int TmdbId, string MediaType)>?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1182,7 +1182,7 @@ public class ApiArrRoutesTests
     [Fact]
     public async Task SavingSeerrSettingsClearsTheSharedAskedForProofCache()
     {
-        var cache = Jellyfin.Plugin.JellyfinEnhanced.Helpers.SeerrAskedProofCache.Shared;
+        var cache = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.OwnershipCache.Shared;
         var key = Guid.NewGuid().ToString();
         var reads = 0;
         IReadOnlySet<(int, string)>? answer = new HashSet<(int, string)> { (3, "movie") };

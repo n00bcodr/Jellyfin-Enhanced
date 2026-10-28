@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -34,7 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly AutomationWriteGate _gate = new(() => JellyfinEnhanced.Instance?.Configuration);
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
-        private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
+        private Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
         private readonly object _movieCacheLock = new();
         // The person's Seerr account, read under their Seerr account authority (one lookup for both automatic requests).
         private readonly Helpers.Jellyseerr.SeerrAccountLookup _accounts = new("[Auto-Movie-Request]");
@@ -67,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal bool LedgerMode(PluginConfiguration? config) => _recorder != null && AutoRequestRecorder.Active(config);
 
         private static bool SeerrConfigured(PluginConfiguration config)
-            => config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
+            => EffectiveRequestsBackend.AllowsSeerr(config) && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
 
         private static string[] GetConfiguredUrls(string? urls)
         {
@@ -81,7 +82,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Checks a movie to determine if the next movie in collection should be requested.
         // Event-driven entry point called (from the recipe worker) when a user starts watching a movie.
         // The outcome is typed: a failed TMDB or Seerr lookup is a PreparationFailed, never "not in a collection".
-        public async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
+        public Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
+            => AutoRequestOutcome.RunOwnedAsync(token => CheckMovieForCollectionRequestAsyncFactsCore(movieItem, userId, token), ct);
+
+        private async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsyncFactsCore(BaseItem movieItem, Guid userId, CancellationToken ct = default)
         {
             // Everything this check writes is the recipe's: the transport checks each write against the gate (D41).
             using var automation = AutomationTransportContext.Enter(_gate, AutomationWrite.LegacySeerr(Recipe, _recorder != null));
@@ -100,13 +104,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
         // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
         // ledger). Null: it may go.
-        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
+        private string? DirectStop() => !EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.RequestWrite).Allowed ? "backend_disabled" : _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
 
         // One check; null when the direct path stopped for phase 3 and the check has to start again.
         private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
+            if (EffectiveRequestsBackend.IsStrictJe(config) && !ledger) return AutoRequestOutcome.Noop("requests_off");
             if (config == null || !config.AutoMovieRequestEnabled || (!ledger && !config.JellyseerrEnabled))
             {
                 return AutoRequestOutcome.Noop("disabled");
@@ -207,28 +213,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_movieCacheLock)
             {
                 // Clean up expired entries across all users
-                foreach (var cachedUserId in _requestedMovies.Keys.ToList())
+                foreach (var cachedUserId in _requestedMoviesFacts.Keys.ToList())
                 {
-                    var expired = _requestedMovies[cachedUserId]
+                    var expired = _requestedMoviesFacts[cachedUserId]
                         .Where(kvp => (DateTime.Now - kvp.Value).TotalHours >= 1)
                         .Select(kvp => kvp.Key).ToList();
-                    foreach (var k in expired) _requestedMovies[cachedUserId].Remove(k);
-                    if (_requestedMovies[cachedUserId].Count == 0) _requestedMovies.Remove(cachedUserId);
+                    foreach (var k in expired) _requestedMoviesFacts[cachedUserId].Remove(k);
+                    if (_requestedMoviesFacts[cachedUserId].Count == 0) _requestedMoviesFacts.Remove(cachedUserId);
                 }
 
-                if (!_requestedMovies.ContainsKey(user.Id.ToString()))
+                if (!_requestedMoviesFacts.ContainsKey(user.Id.ToString()))
                 {
-                    _requestedMovies[user.Id.ToString()] = new Dictionary<string, DateTime>();
+                    _requestedMoviesFacts[user.Id.ToString()] = new Dictionary<string, DateTime>();
                 }
 
-                if (_requestedMovies[user.Id.ToString()].ContainsKey(requestKey))
+                if (_requestedMoviesFacts[user.Id.ToString()].ContainsKey(requestKey))
                 {
                     _logger.Debug($"[Auto-Movie-Request] Already requested '{nextMovieInfo.Title}' (cached)");
                     return AutoRequestOutcome.Noop("already_requested", key.ToString());
                 }
 
                 // Reserve the slot so concurrent callers see it immediately
-                _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
+                _requestedMoviesFacts[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
             // Stopped before a POST (see DirectStop), here or right before every POST: with the rollout Shadow override,
@@ -237,7 +243,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 lock (_movieCacheLock)
                 {
-                    if (_requestedMovies.ContainsKey(user.Id.ToString())) _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    if (_requestedMoviesFacts.ContainsKey(user.Id.ToString())) _requestedMoviesFacts[user.Id.ToString()].Remove(requestKey);
                 }
                 if (stop == AutomationHolds.EngineChanged)
                 {
@@ -278,9 +284,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Remove sentinel so a future attempt can retry
             lock (_movieCacheLock)
             {
-                if (_requestedMovies.ContainsKey(user.Id.ToString()))
+                if (_requestedMoviesFacts.ContainsKey(user.Id.ToString()))
                 {
-                    _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    _requestedMoviesFacts[user.Id.ToString()].Remove(requestKey);
                 }
             }
             _logger.Warning($"[Auto-Movie-Request] ✗ Failed to request '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
@@ -323,60 +329,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Gets TMDB collection ID and name for a movie; Failed when TMDB couldn't be asked or answered with an error
         private async Task<(CollectionInfo? Collection, bool Failed)> GetTmdbCollectionIdAsync(string tmdbId)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
+            return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation, ReadMetadata).ConfigureAwait(false);
+            async Task<(CollectionInfo? Collection, bool Failed)> ReadMetadata()
             {
-                return (null, true);
-            }
-
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                var requestUrl = $"https://api.themoviedb.org/3/movie/{tmdbId}?api_key={config.GetTmdbApiKey()}";
-
-                var response = await httpClient.GetAsync(requestUrl);
-                if (!response.IsSuccessStatusCode)
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
-                    _logger.Debug($"[Auto-Movie-Request] TMDB returned {response.StatusCode} for movie {tmdbId}");
-                    // A movie TMDB doesn't know is definitively not in a collection; anything else is a failed lookup.
-                    return (null, response.StatusCode != System.Net.HttpStatusCode.NotFound);
+                    return (null, true);
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(content))
+                try
                 {
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("belongs_to_collection", out var collectionProp))
+                    var requestUrl = $"https://api.themoviedb.org/3/movie/{tmdbId}?api_key={config.GetTmdbApiKey()}";
+
+                    using var response = await TmdbTransport.GetAsync(_httpClientFactory, requestUrl, MetadataAdmission.Required, System.Threading.CancellationToken.None);
+                    if (!response.IsSuccessStatusCode)
                     {
-                        if (collectionProp.ValueKind != JsonValueKind.Null &&
-                            collectionProp.TryGetProperty("id", out var idProp) &&
-                            collectionProp.TryGetProperty("name", out var nameProp))
+                        _logger.Debug($"[Auto-Movie-Request] TMDB returned {response.StatusCode} for movie {tmdbId}");
+                        // A movie TMDB doesn't know is definitively not in a collection; anything else is a failed lookup.
+                        return (null, response.StatusCode != System.Net.HttpStatusCode.NotFound);
+                    }
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    using (JsonDocument doc = JsonDocument.Parse(content))
+                    {
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("belongs_to_collection", out var collectionProp))
                         {
-                            return (new CollectionInfo
+                            if (collectionProp.ValueKind != JsonValueKind.Null &&
+                                collectionProp.TryGetProperty("id", out var idProp) &&
+                                collectionProp.TryGetProperty("name", out var nameProp))
                             {
-                                Id = idProp.GetInt32(),
-                                Name = nameProp.GetString() ?? "Unknown Collection"
-                            }, false);
+                                return (new CollectionInfo
+                                {
+                                    Id = idProp.GetInt32(),
+                                    Name = nameProp.GetString() ?? "Unknown Collection"
+                                }, false);
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Auto-Movie-Request] Error querying TMDB: {ex.Message}");
-                return (null, true);
-            }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Auto-Movie-Request] Error querying TMDB: {ex.Message}");
+                    return (null, true);
+                }
 
-            return (null, false);
+                return (null, false);
+            }
         }
 
         // Gets next movie in collection from Jellyseerr collection endpoint. On the ledger path Seerr only names
         // the next part: its pending/processing status says nothing about JE's own requests once JE handles them
         // (moved requests stay pending in Seerr), so the ledger decides whether to record, merge or refuse.
-        private async Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
+        private Task<NextMovie> GetNextMovieInCollectionAsync(int collectionId, string currentTmdbId, bool ledger = false)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger))
+                : GetNextMovieInCollectionAsyncCore(collectionId, currentTmdbId, ledger);
+
+        private async Task<NextMovie> GetNextMovieInCollectionAsyncCore(int collectionId, string currentTmdbId, bool ledger)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return new NextMovie(null, "not_configured", false);
             }
@@ -504,59 +518,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // release order; library availability is checked against Jellyfin by the caller.
         private async Task<NextMovie> GetNextMovieFromTmdbAsync(int collectionId, string currentTmdbId, CancellationToken ct)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
+            return await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.Automation, ReadMetadata).ConfigureAwait(false);
+            async Task<NextMovie> ReadMetadata()
             {
-                return new NextMovie(null, "not_configured", false);
-            }
-            try
-            {
-                var httpClient = _httpClientFactory.CreateClient();
-                using var response = await httpClient.GetAsync($"https://api.themoviedb.org/3/collection/{collectionId}?api_key={config.GetTmdbApiKey()}", ct);
-                if (!response.IsSuccessStatusCode)
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
+                    return new NextMovie(null, "not_configured", false);
+                }
+                try
+                {
+                    using var response = await TmdbTransport.GetAsync(_httpClientFactory, $"https://api.themoviedb.org/3/collection/{collectionId}?api_key={config.GetTmdbApiKey()}", MetadataAdmission.Required, ct);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return new NextMovie(null, "tmdb_unavailable", true);
+                    }
+                    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                    if (!doc.RootElement.TryGetProperty("parts", out var partsElement) || partsElement.ValueKind != JsonValueKind.Array)
+                    {
+                        return new NextMovie(null, "tmdb_unavailable", true);
+                    }
+                    var parts = partsElement.EnumerateArray()
+                        .Where(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                        .Select(p => (Id: p.GetProperty("id").GetInt32(),
+                            Title: p.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "Unknown Title" : "Unknown Title",
+                            Release: p.TryGetProperty("release_date", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : (DateTime?)null))
+                        .OrderBy(p => p.Release ?? DateTime.MaxValue).ThenBy(p => p.Id)
+                        .ToList();
+                    var index = parts.FindIndex(p => p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == currentTmdbId);
+                    if (index < 0 || index >= parts.Count - 1)
+                    {
+                        return new NextMovie(null, "last_in_collection", false);
+                    }
+                    var nextPart = parts[index + 1];
+                    if (config.AutoMovieRequestCheckReleaseDate && (nextPart.Release == null || nextPart.Release > DateTime.Now))
+                    {
+                        return new NextMovie(null, "not_released", false);
+                    }
+                    return new NextMovie(new MovieInfo { TmdbId = nextPart.Id, Title = nextPart.Title }, null, false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Auto-Movie-Request] Error querying TMDB collection: {ex.Message}");
                     return new NextMovie(null, "tmdb_unavailable", true);
                 }
-                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-                if (!doc.RootElement.TryGetProperty("parts", out var partsElement) || partsElement.ValueKind != JsonValueKind.Array)
-                {
-                    return new NextMovie(null, "tmdb_unavailable", true);
-                }
-                var parts = partsElement.EnumerateArray()
-                    .Where(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
-                    .Select(p => (Id: p.GetProperty("id").GetInt32(),
-                        Title: p.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "Unknown Title" : "Unknown Title",
-                        Release: p.TryGetProperty("release_date", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : (DateTime?)null))
-                    .OrderBy(p => p.Release ?? DateTime.MaxValue).ThenBy(p => p.Id)
-                    .ToList();
-                var index = parts.FindIndex(p => p.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == currentTmdbId);
-                if (index < 0 || index >= parts.Count - 1)
-                {
-                    return new NextMovie(null, "last_in_collection", false);
-                }
-                var nextPart = parts[index + 1];
-                if (config.AutoMovieRequestCheckReleaseDate && (nextPart.Release == null || nextPart.Release > DateTime.Now))
-                {
-                    return new NextMovie(null, "not_released", false);
-                }
-                return new NextMovie(new MovieInfo { TmdbId = nextPart.Id, Title = nextPart.Title }, null, false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Auto-Movie-Request] Error querying TMDB collection: {ex.Message}");
-                return new NextMovie(null, "tmdb_unavailable", true);
             }
         }
 
         // Gets the quality profile of a movie from its existing Jellyseerr request
-        private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
+        private Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsync(string tmdbId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => GetOriginalMovieQualityProfileAsyncCore(tmdbId))
+                : GetOriginalMovieQualityProfileAsyncCore(tmdbId);
+
+        private async Task<QualityProfileSettings?> GetOriginalMovieQualityProfileAsyncCore(string tmdbId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }
@@ -716,7 +738,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Requests a movie from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing more is
         // sent). Neither: it failed.
-        private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+        private Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, _ => RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings))
+                : RequestMovieCore(tmdbId, jellyfinUserId, qualitySettings);
+
+        private async Task<(bool Sent, string? Stopped)> RequestMovieCore(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings)
         {
             // The account stopped being the person's (or Seerr was repointed) before the POST: once more, as theirs now.
             var (sent, stopped, superseded) = await RequestMovieOnce(tmdbId, jellyfinUserId, qualitySettings);
@@ -727,7 +754,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<(bool Sent, string? Stopped, bool Superseded)> RequestMovieOnce(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            if (!EffectiveRequestsBackend.AllowsSeerr(config) || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Movie-Request] Jellyseerr configuration is missing");
                 return (false, null, false);
@@ -809,18 +836,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return (false, null, false);
         }
 
-        // Gets the Jellyseerr user ID for a Jellyfin user (the Seerr configured now, under the person's account authority).
-        private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
-            => (await _accounts.ReadAsync(_httpClientFactory, _logger, jellyfinUserId).ConfigureAwait(false)).Id;
+        // Gets the Jellyseerr user ID for a Jellyfin user (the Seerr configured now, under the person's account authority),
+        // only while the effective backend allows Seerr, inside its admission.
+        private Task<string?> GetJellyseerrUserId(string jellyfinUserId)
+            => EffectiveRequestsBackend.AllowsSeerr(JellyfinEnhanced.Instance?.Configuration)
+                ? Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.RunSeerrAsync(SeerrUse.Metadata, CancellationToken.None, async _ => (await _accounts.ReadAsync(_httpClientFactory, _logger, jellyfinUserId).ConfigureAwait(false)).Id)
+                : Task.FromResult<string?>(null);
 
         // Clears the request cache (useful for testing or resetting)
         public void ClearRequestCache()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_movieCacheLock)
             {
-                _requestedMovies.Clear();
+                _requestedMoviesFacts.Clear();
             }
             _logger.Info("[Auto-Movie-Request] Cleared auto movie request cache");
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, Dictionary<string, DateTime>>> _requestedMoviesFactsOwner = new();
+        private Dictionary<string, Dictionary<string, DateTime>> _requestedMoviesFacts { get => _requestedMoviesFactsOwner.Read(ref _requestedMovies, () => new()); set => _requestedMoviesFactsOwner.Store(ref _requestedMovies, value); }
     }
 }

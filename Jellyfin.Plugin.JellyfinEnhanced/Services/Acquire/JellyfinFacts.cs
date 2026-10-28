@@ -196,6 +196,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public bool Playable => !Virtual && !Placeholder;
 
+        /// <summary>
+        /// A movie or episode an arr just imported whose Jellyfin metadata (title, overview, artwork, media info) is still
+        /// being read (<see cref="BridgeImportReadiness"/>): it plays, but nothing calls it Ready yet. Separate from
+        /// <see cref="Playable"/>, which stays Jellyfin's own fact.
+        /// </summary>
+        public bool AwaitingMetadata { get; init; }
+
         /// <summary>File or folder path (server-side matching only; never sent).</summary>
         public string? Path { get; init; }
 
@@ -274,6 +281,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The file (server-side matching only).</summary>
         public string? Path { get; init; }
 
+        /// <summary>A just-imported version whose Jellyfin metadata is still being read (<see cref="JfItemRef.AwaitingMetadata"/>): it qualifies for nothing yet.</summary>
+        public bool AwaitingMetadata { get; init; }
+
         /// <summary>When Jellyfin added this version (UTC).</summary>
         public DateTime? DateCreated { get; init; }
     }
@@ -324,6 +334,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Jellyfin plays it (D53, edition round 15: playable means playable): not missing (virtual) and not a placeholder.
         /// </summary>
         public bool Playable => !Virtual && !Placeholder;
+
+        /// <summary>A just-imported episode whose Jellyfin metadata is still being read (<see cref="JfItemRef.AwaitingMetadata"/>).</summary>
+        public bool AwaitingMetadata { get; init; }
 
         /// <summary>When Jellyfin added it (UTC).</summary>
         public DateTime? DateCreated { get; init; }
@@ -655,7 +668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The backend's own word on one edition of a title (or some of its seasons or episodes in that edition) being
         /// available: whether it says so, since when, and the Jellyfin item it matched. Composed exactly as the Requests
-        /// page composes a request's row (<see cref="SeerrRequestReadModel.AvailabilityOf"/>), so a list entry and the
+        /// page composes a request's row (<see cref="SeerrFacts.AvailabilityOf"/>), so a list entry and the
         /// Requests page agree. Null when this source has no such word (Jellyfin Enhanced mode judges by the arrs).
         /// </summary>
         /// <param name="titleKey">Movie or series key.</param>

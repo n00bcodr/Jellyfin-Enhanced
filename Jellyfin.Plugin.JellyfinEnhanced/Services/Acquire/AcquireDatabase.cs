@@ -473,6 +473,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
 
         private (bool Done, T Result) WriteCore<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise, FactVersion? version)
         {
+            using var effect = SeerrFacts.BeginEffect();
             ThrowIfUnavailable();
             _writer.Wait();
             try
@@ -623,6 +624,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         {
             var connection = new SqliteConnection(_connectionString);
             connection.Open();
+            connection.CreateFunction<string, bool>("je_alias_current", Helpers.UserCacheRegistry.ReadPersistedOrigin);
             using var pragmas = connection.CreateCommand();
             pragmas.CommandText = "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=30000;";
             pragmas.ExecuteNonQuery();
@@ -772,6 +774,25 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         transaction.Commit();
                     }
                 }
+                // Additive extension of unreleased schema 4. Keep every physical alias; the read view withholds
+                // incidental Seerr associations whose input generation is no longer authoritative.
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_alias_origins'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = "CREATE TABLE title_alias_origins(alias TEXT PRIMARY KEY NOT NULL,facts_generation TEXT NOT NULL);" +
+                            "INSERT INTO title_alias_origins SELECT a.alias,$origin FROM title_aliases a WHERE NOT EXISTS(SELECT 1 FROM wants WHERE title_key IN(a.alias,a.canonical)) AND NOT EXISTS(SELECT 1 FROM acquisitions WHERE title_key IN(a.alias,a.canonical));" +
+                            "CREATE VIEW active_title_aliases AS SELECT a.* FROM title_aliases a LEFT JOIN title_alias_origins o ON o.alias=a.alias WHERE o.alias IS NULL OR je_alias_current(o.facts_generation);";
+                        var legacy = Backends.EffectiveRequestsBackend.Shared.Current.IsolationVersion == 0;
+                        extend.Parameters.AddWithValue("$origin", legacy ? Helpers.UserCacheRegistry.PersistentGeneration : "legacy-unproven");
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
                 using (var tables = connection.CreateCommand())
                 {
                     tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_reconcile'";
@@ -809,6 +830,9 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 if (UserVersion(connection) >= 6) ContentArrivalHistory.Ensure(connection);
                 // Phase 4f (D47): the Ready tables and the restore policy, on every supported start and after every restore.
                 if (UserVersion(connection) >= 8) Ready.ReadyTables.Ensure(connection);
+                // The add-settings registry's migration of held jobs: its preimage is the one original copy taken above
+                // (NeedsRepairBackup classifies it from the original rows), never a copy of an earlier repair's result.
+                Requests.TitleChoiceRegistry.Ensure(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);
@@ -833,8 +857,10 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 && Count("SELECT COUNT(*) FROM wants WHERE target_key='' AND status IN ('pending','queued','sent','stale')") > 0) return true;
             if (version >= 4 && Count("SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='charge_seq'") == 0
                 && Count("SELECT COUNT(*) FROM reservations") > 0) return true;
-            return Count("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('retry_owners','retry_wants','request_search_slots')") < 3
-                && Count("SELECT COUNT(*) FROM request_inputs") > 0;
+            if (Count("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('retry_owners','retry_wants','request_search_slots')") < 3
+                && Count("SELECT COUNT(*) FROM request_inputs") > 0) return true;
+            // Held jobs whose add settings move into the one durable per-title registry (Manage Add): rows are rewritten.
+            return Requests.TitleChoiceRegistry.NeedsMigration(connection);
         }
 
         private void BackupBeforeMigration(SqliteConnection connection, int version)

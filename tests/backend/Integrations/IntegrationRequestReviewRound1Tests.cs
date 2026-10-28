@@ -272,18 +272,35 @@ public class IntegrationRequestReviewRound1Tests
     {
         using var r = new Rig(); var pending = await r.Create(r.Kid);
         await r.Service.ApproveAsync(pending.RequestId!, r.Manager, null, default);
+        var timeout = TimeSpan.FromMinutes(2);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var release = new ManualResetEventSlim(); var blocked = 0;
+        using var release = new ManualResetEventSlim(); var approverReads = 0;
         r.Policy.Adjust = (user, _, facts) =>
         {
-            if (user == r.Manager && Interlocked.Increment(ref blocked) == 2)
-            { entered.SetResult(); Assert.True(release.Wait(TimeSpan.FromSeconds(10))); }
+            if (user == r.Manager && Interlocked.Increment(ref approverReads) == 2)
+            {
+                entered.SetResult();
+                Assert.True(release.Wait(timeout), "The test did not release the held approver read.");
+            }
             return facts;
         };
-        var tick = Task.Run(() => r.Runner().TickAsync(default));
-        try { await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); r.Policy.People[r.Kid] = r.Policy.People[r.Kid] with { CanCreate = false, Revision = "revoked" }; }
-        finally { release.Set(); }
-        await tick;
+        // Evaluate is synchronous. Give its held read a dedicated thread so it cannot starve
+        // the continuation that changes the requester and releases it on a busy test host.
+        var tick = Task.Factory.StartNew(() => r.Runner().TickAsync(default),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+        try
+        {
+            await Task.WhenAny(entered.Task, tick).WaitAsync(timeout);
+            Assert.True(entered.Task.IsCompletedSuccessfully, "The outbox finished before the approver read was held.");
+            Assert.False(tick.IsCompleted);
+            Assert.True(r.Policy.People[r.Kid].CanCreate);
+            r.Policy.People[r.Kid] = r.Policy.People[r.Kid] with { CanCreate = false, Revision = "revoked" };
+        }
+        finally
+        {
+            release.Set();
+            await tick.WaitAsync(timeout);
+        }
         Assert.Equal(0, r.Backend.Sends); Assert.Equal("authorization_changed", Assert.Single(r.Ledger.ForWant(pending.RequestId!)).Reason);
     }
 

@@ -1586,7 +1586,7 @@ Signed-in users manage their own inbox, follows and delivery settings; administr
 | POST | `arr/admin/queue/confirm` | Admin, phase 2 (a non-administrator's call to this or the other phase-2 POST routes gets `403` and a `denied` audit line, at most one a minute per user and route): body `{"instanceId","downloadId"}`; what the download covers and a one-time `token` (two minutes, bound to this administrator, instance and download) for `remove_with_data`. `404` when it's no longer queued; `409 queue_changing` when a paged, partial or cut queue cannot be checked against the download's complete rows |
 | POST | `arr/admin/queue/action` | Admin, phase 2: body `{"instanceId","downloadId","action","blocklist","searchAgain","idempotencyKey","confirmationToken"}`; `action` is `remove` (keeps the client's data), `remove_with_data` (needs the token), `search` or `retry_import` (the app's `RefreshMonitoredDownloads`). Every row of the download is acted on; audited (refusals too); the answer has `status`, `message`, `readBack`, `auditId` |
 | POST | `arr/admin/hub/search` | Admin, phase 2: Search now by title key for a row that isn't queued (body as `arr/admin/manage/search`; a search refused before the app is called is audited too) |
-| POST | `arr/admin/bridge/scan` | Admin, phase 2: Scan now for an imported path as the app sees it (body `{"instanceId","path","idempotencyKey"}`): refreshes the nearest Jellyfin folder (then each new folder below it), or queues Jellyfin's scan of that one library when the path needs a TV library's root; paths outside every library, relative paths and paths with a `.` or `..` segment (either slash) are refused. Audited |
+| POST | `arr/admin/bridge/scan` | Admin, phase 2: Scan now for an imported path as the app sees it (body `{"instanceId","path","idempotencyKey"}`): refreshes the nearest Jellyfin folder (then each new folder below it), or adds a brand-new series folder of a TV library on its own (answer `added`; never a scan of the library), and has the item's metadata read back and repaired when it lacks its title, overview or artwork; paths outside every library, relative paths and paths with a `.` or `..` segment (either slash) are refused. Audited |
 
 ### Requests and approvals (phase 3)
 
@@ -1746,12 +1746,17 @@ folder or path.
 ### Native details pages
 
 The native page's own requests are answered by the facade and never touch the library.
+Their metadata source is the request backend's: with `ArrRequestBackend` `je` (rollout switches on or not, Seerr
+settings stored or not) every route below reads TMDB with
+Jellyfin Enhanced's own key and never contacts Seerr (shapes unchanged; ratings answer `null`; "Seerr can't answer"
+below then means TMDB can't), in Seerr mode Seerr. The public config's `NativeAbsentDetails` carries `Enabled` (switch on
+and that source ready) and `Source` (`tmdb` or `seerr`).
 
 | Method | Path | Access and contract |
 |---|---|---|
 | GET | `acquire/status/item/{pageId}` | The page's status by key, as for a library item; adds `openItemId` once a copy the caller can open plays (as above). An empty list when the caller may not open the page |
 | GET | `acquire/requests/season/{pageId}` | A season page's rows: every episode's metadata and the caller's request state; 404 when the caller may not open it |
-| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
+| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 503 `details_unavailable` with `Retry-After: 1` when JE-mode provider-id lookup is busy or unavailable; 403 for API keys or with the setting off |
 | GET | `native-details/person/{tmdbId}/filmography` | The filmography on a person's own page, filtered for the caller on the server: a library copy they can open carries its Jellyfin id, a title the library hides from them is left out, a title not in the library is listed only when its page would open for them. No Seerr account needed in Jellyfin Enhanced request mode. 404 when refused or unknown, 503 when Seerr can't answer, 504 while parental checks still run, 429 (`Retry-After`) when the list isn't cached and the caller has started too many new reads or already has 8 running or waiting (or the server has too many queued); 403 for API keys or with the setting off |
 | GET | `native-details/discover/{type}/{source}/{feedId}` | `type` `movie` or `tv`; `source` `genre`, `studio`, `network`, `company` or `keyword`; query `page`, `sortBy`. One page of a genre, studio, network or tag (TMDB keyword) discovery feed (`company`: a studio's own series, from TMDB), filtered and limited for the caller like the filmography; `totalPages` is the upstream count, so a page with every title left out isn't the end. Library pages' discovery rows use these for callers without a Seerr account |
 | GET | `native-details/title/{type}/{tmdbId}`, `native-details/title/{type}/{tmdbId}/ratings` | `type` `movie` or `tv`. A title's public details (Seerr's per-account `mediaInfo` replaced by the caller's own: `{status: 5, jellyfinMediaId}` for a library copy they can open, else Seerr's public state of an absent title) or its ratings (`null` when it has none), for its native page's extras and for Seerr's details window of a caller without a Seerr account, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode). Also answered with native pages off while requests run in Jellyfin Enhanced mode; ratings are limited like the feeds |
@@ -1762,6 +1767,20 @@ The native page's own requests are answered by the facade and never touch the li
 The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of
 the same per-account budget as these lists: a read nobody has made yet waits up to 3 seconds for room, then answers
 429 with `Retry-After: 2`. Jellyfin Enhanced's browser code waits at least that long before it asks again.
+In JE mode, this includes genre, recommendation and logo metadata, and the provider-id lookup used by the navigator.
+Status/season resolution also retains the effective viewer: a busy page lookup waits for the same short interval,
+then reports metadata unavailable (the status route returns its usual empty status). New distinct reads are bounded
+at eight per viewer and 48 server-wide through one task factory, including parental certification evidence
+before page/status resolution, collection filtering and artwork revalidation. Cached/running paths are shared for
+free; admission refusals are not cached. Missing parental evidence yields retryable unavailable details (`503`),
+while a verified parental refusal remains `404`. Artwork revalidation also returns `503` for unavailable evidence.
+Library collection gaps return `503 metadata_unavailable` with `Retry-After: 1` when admission refuses any
+required collection/evidence read, so a partial list is never acknowledged as complete.
+The status route retains its successful empty status; optional Similar/episode rails retain their empty-answer
+contracts. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
+until it ends, even if its waiter cancels. Raw TMDB cache reads have their own 30-second upstream timeout
+(including any raw-cache slot wait); admission/page waiting and the finite server queue are separate waits.
+
 
 #### Lists (phase 4)
 
@@ -1888,6 +1907,16 @@ Admin only. Jellyfin's own backups don't include plugin data.
 | POST | `admin/backup/inspect` | Multipart `file` (+ optional `passphrase`): describe a backup without changing anything |
 | POST | `admin/backup/restore` | Multipart `file`, `passphrase` (when it holds credentials) and `confirm=restore`: restore it; a safety copy of the current data is saved first |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
+
+### Server-side cache
+
+Admin only, `no-store`. See [Server-side cache](../arr/arr-settings.md#server-side-cache).
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `admin/server-cache` | Usage: `enabled`, `folder`, `folderError` (why the folder can't be used, else null), `files`, `bytes` (whole 4 KiB blocks), `maxBytes`, `maxAgeDays` and `namespaces[]` (`name`, `files`, `bytes`, `maxBytes`) |
+| POST | `admin/server-cache/check-folder` | Body `{"folder":"/path"}` (empty: the default): `{ok, folder, message}` (`folder` is the real path, every link resolved); creates and marks the folder if it is allowed and missing, saves nothing |
+| POST | `admin/server-cache/clear` | Deletes every cache entry (only files the cache wrote; nothing else in the folder) and answers `{removed, usage}` |
 
 ## Activity Feed & What's New
 

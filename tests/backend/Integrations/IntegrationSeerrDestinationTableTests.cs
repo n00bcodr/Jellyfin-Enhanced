@@ -542,8 +542,6 @@ public class IntegrationSeerrDestinationTableTests
     // no longer matches fails too. File, member (Type.Member), code (whitespace normalised, contained), why, requires.
     private static readonly (string File, string Member, string Code, string Why, (string Local, string Rule)? Requires)[] Allowed =
     {
-        ("RequestLedger.cs", "RequestLedger.Withdraw", "RoutingRefusals.Contains(facts.Refusal)",
-            "the policy refusal code alone decides whether stale routing permits withdrawal; no destinations or requests are compared", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "j.Authorization.InstanceId == want.Input.InstanceId",
             "the v2 migration works out which target a legacy request's own jobs went to; coverage after it uses Extra", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "== row.Episodes",
@@ -566,9 +564,9 @@ public class IntegrationSeerrDestinationTableTests
         ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "want.Input.Seasons.Contains(season)", "the season asked about against the request's own scope", null),
         ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "j.Input.Seasons.Contains(season)", "one request's own jobs: a new season once per request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", "s.SeasonNumber > current", "Sonarr's seasons after the request's own current one", null),
-        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", "n > current", "Seerr's seasons after the request's own current one", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsyncFactsCore", "n > current", "Seerr's seasons after the request's own current one", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
-        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsyncFactsCore", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTvdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTmdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
         ("RequestLedgerTitles.cs", "RequestLedger.Canonical", "key == input.Key", "the identity resolver itself: whether resolving the key changed it", null),
@@ -582,16 +580,21 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.OverSeries"] = (new[] { "SameTitle" }, "a Member's seasons of the title"),
         ["RequestLedger.SplitAtThreshold"] = (new[] { "SameTitle" }, "the series-threshold split: the person's seasons of the title"),
         ["RequestLedger.FollowWithin"] = (new[] { "Extra", "Extra", "Extra" }, "a merged title: who already covers whom"),
-        ["FutureSeasonCharges.FollowSeerrAsync"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
+        ["FutureSeasonCharges.FollowSeerrAsyncFactsCore"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
         ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
         ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
+        // CheckTitleChoice no longer grants a same-admin scope correction: replacing an owned
+        // choice requires the submitted revision, irrespective of overlap. Its admission/approval
+        // authorization is protected by TitleChoiceRegistryArchitectureTests instead.
+        ["RequestLedger.TitleChoiceJobs"] = (new[] { "SameTarget" }, "title-wide immutability fences stay within the request destination"),
+        ["RequestLedger.ChoiceDiffers"] = (new[] { "ArrChoicesDiffer" }, "title-choice edits use the common destination comparison without owning their values"),
         ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
-        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves", "SameInstance" },
+        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves", "SameInstance", "SameInput" },
             "own dedup and its representative, implicit approval, decline cooldown, shared coverage, confirmed scope"),
         ["RequestLedger.Coverage"] = (new[] { "SameTarget", "SameTarget" }, "shared coverage at a target"),
         ["RequestLedger.Confirmed"] = (new[] { "SameTarget" }, "what went out to a target"),
         ["RequestLedger.ConfirmedScope"] = (new[] { "Extra" }, "an ask already sent"),
-        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
+        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle", "SameInput", "SameInput" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
         ["RequestLedger.RehomeFollowers"] = (new[] { "Extra", "Extra", "SameTarget", "SameTarget" }, "followers moved with a request's target"),
         ["RequestLedger.DemoteUncoveredFollowers"] = (new[] { "Extra", "SameTarget" }, "followers left without coverage wait"),
         ["RequestLedger.ReleasePendingFollowers"] = (new[] { "Extra", "Extra" }, "waiting followers released by coverage"),
@@ -609,13 +612,13 @@ public class IntegrationSeerrDestinationTableTests
     };
 
     // Where the title identity itself is worked out: these look titles up by each alias on purpose.
-    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore" };
+    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore", "RequestLedger.IsRetainedIdentity" };
 
     // The rule file a listed path is in.
     private static string FileOf(string member) => member switch
     {
         "RequestLedger.ImportSeerr" => "RequestLedgerImport.cs",
-        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" => "RequestLedgerTitles.cs",
+        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" or "RequestLedger.IsRetainedIdentity" => "RequestLedgerTitles.cs",
         _ when member.StartsWith("FutureSeasonCharges.", StringComparison.Ordinal) => "FutureSeasonCharges.cs",
         _ => "RequestLedger.cs",
     };
@@ -679,6 +682,19 @@ public class IntegrationSeerrDestinationTableTests
         // The input type has no destination comparison of its own.
         Assert.DoesNotContain(typeof(MutationInput).GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic),
             m => m.Name.Contains("Destination", StringComparison.Ordinal) || m.Name.Contains("SameOptions", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("ProfileId")]
+    [InlineData("RootFolder")]
+    public void RegistryRoutingFieldsStillRequireTheDestinationRule(string field)
+    {
+        var mutant = DestinationRuleWalk.Plugin.With("Services/Acquire/Requests/RequestLedger.cs", source => source.Replace(
+            "var conflict = TitleChoiceRegistry.Conflicts(current, input);",
+            $"if (current.{field} != input.{field}) return null;\n var conflict = TitleChoiceRegistry.Conflicts(current, input);", StringComparison.Ordinal));
+        Assert.Empty(mutant.Errors("Services/Acquire/Requests/RequestLedger.cs"));
+        Assert.Contains(Problems(mutant, "RequestLedger.CheckTitleChoice", "RequestLedger.cs"),
+            p => p.StartsWith("not through RequestDestination:", StringComparison.Ordinal));
     }
 
     /// <summary>Each call to the rule in the ledger and charges files, as a mutation: taken out (A) or done by a raw comparison (B).</summary>
@@ -772,7 +788,8 @@ public class IntegrationSeerrDestinationTableTests
             _ => plugin.With("Services/Acquire/Requests/SeerrBackend.cs", text => text.Replace("=> RequestDestination.SeerrHas(", "=> SeerrHasByHand(", StringComparison.Ordinal)
                 .Replace("        // ---------------- transport ----------------", "        private static bool SeerrHasByHand(MutationInput input, int? server, int? profile, string? root) => server == input.SeerrServerId && profile == input.SeerrProfileId && root == input.SeerrRootFolder;\n\n        // ---------------- transport ----------------", StringComparison.Ordinal)),
         };
-        Assert.Empty(mutant.Errors());
+        var errors = mutant.Errors();
+        Assert.True(errors.Count == 0, string.Join("\n", errors));
         var problems = Problems(mutant);
         Assert.NotEmpty(problems);
         // The bypass in the charges file is found as a raw comparison there, not only as a path that lost its call.

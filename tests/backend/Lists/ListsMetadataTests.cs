@@ -39,19 +39,26 @@ public class ListsMetadataTests
         Assert.Equal(391153, meta.TvdbId);
         Assert.Equal("tt13146488", meta.ImdbId);
         Assert.Equal("/s2.jpg", meta.PosterPath);
-        // The season lists only E01 so far; the announced next episode is expected too (airing season).
-        Assert.Equal(new[] { (2, 1, "2025-08-21"), (2, 2, "2026-10-23") }, meta.Expected!.Select(e => (e.S, e.E, e.AirDate!)));
-        Assert.Equal(1, meta.EpisodeTotal);
+        // Three episodes are advertised, but only E01 and the next E02 are known: completeness stays unknown.
+        Assert.True(meta.Partial);
+        Assert.Null(meta.Expected);
+        Assert.Null(meta.EpisodeTotal);
+        // The announced next episode can close the set when it coherently accounts for every advertised coordinate.
+        // Keep the unselected empty S3: an explicit future premiere is consistent with the selected S2.
+        var coherentShow = Json(Peacemaker.Replace("\"seasonNumber\":2,\"episodeCount\":3", "\"seasonNumber\":2,\"episodeCount\":2", StringComparison.Ordinal)
+            .Replace("\"seasonNumber\":3,\"episodeCount\":0,\"airDate\":null", "\"seasonNumber\":3,\"episodeCount\":0,\"airDate\":\"2099-01-01\"", StringComparison.Ordinal));
+        var coherent = ListMetadataService.FromTv(season, coherentShow, Json(Season2), Today, Today);
+        Assert.False(coherent.Partial);
+        Assert.Equal(new[] { (2, 1, "2025-08-21"), (2, 2, "2026-10-23") }, coherent.Expected!.Select(e => (e.S, e.E, e.AirDate!)));
+        Assert.Equal(1, coherent.EpisodeTotal);
 
         var series = Ph("{\"kind\":\"series\",\"tmdbId\":110492,\"title\":\"Peacemaker\"}");
         var whole = ListMetadataService.FromTv(series, Json(Peacemaker), null, Today, Today);
         Assert.Equal("2022-01-13", whole.ReleaseDate);
-        // Seasons ≥ 1 from the episode counts; aired up to the last aired episode, then the dated next one, then unknown.
-        Assert.Equal(
-            new[] { (1, 1, true), (1, 2, true), (2, 1, true), (2, 2, false), (2, 3, false) },
-            whole.Expected!.Select(e => (e.S, e.E, PlaceholderProgress.IsAired(e, Today))));
-        Assert.Equal("2026-10-23", whole.Expected![3].AirDate);
-        Assert.Equal(3, whole.EpisodeTotal);
+        // The aggregate has unknown later chronology and an unannounced count-zero season: no positive authority.
+        Assert.True(whole.Partial);
+        Assert.Null(whole.Expected);
+        Assert.Null(whole.EpisodeTotal);
 
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":110492,\"seasonNumber\":2,\"title\":\"Peacemaker\",\"episodes\":[{\"s\":2,\"e\":1}]}");
         var listed = ListMetadataService.FromTv(episodes, Json(Peacemaker), Json(Season2), Today, Today);
@@ -143,8 +150,8 @@ public class ListsMetadataTests
         Assert.Equal("2028-01-01", unknown.ReleaseDate);
         Assert.Empty(unknown.Expected);
 
-        // With the season details, the data is complete.
-        Assert.False(ListMetadataService.FromTv(season, Json(Peacemaker), Json(Season2), Today, Today).Partial);
+        // A successful season read is still incomplete when it omits an advertised episode.
+        Assert.True(ListMetadataService.FromTv(season, Json(Peacemaker), Json(Season2), Today, Today).Partial);
 
         // Partial data never says "no longer in production" (the stale expected set could then complete the season);
         // "still in production" is taken.
@@ -174,7 +181,10 @@ public class ListsMetadataTests
 
         // A failed season read changes nothing.
         var partial = ListMetadataService.FromTv(episodes, Json(Peacemaker), null, Today, Today);
-        Assert.False(ListMetadataService.Apply(episodes, partial));
+        ListMetadataService.Apply(episodes, partial); // the new uncertainty reason may change; retained display facts do not
+        Assert.Equal("2025-08-21", episodes.Episodes[0].AirDate);
+        Assert.Null(episodes.Episodes[1].AirDate);
+        Assert.False(PlaceholderProgress.IsComplete(episodes, Today));
     }
 
     [Fact]

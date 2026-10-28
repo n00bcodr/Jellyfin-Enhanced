@@ -12,6 +12,7 @@ namespace JE.Tests;
 /// trace dropped), appName and version gates, size caps, retry/backoff for GETs only, paging and
 /// cancellation.
 /// </summary>
+[Collection("Plugin singleton")]
 public class IntegrationArrClientTests
 {
     private const string Key = "arr-test-key-000000000000000000";

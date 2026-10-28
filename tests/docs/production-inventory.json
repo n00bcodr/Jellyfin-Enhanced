@@ -183,7 +183,15 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsBackendController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
       "category": "Controllers"
     },
     {
@@ -327,15 +335,15 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/RegisteredCache.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/RequestOutcomeFilterAttribute.cs",
       "category": "Helpers"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ReviewVisibility.cs",
-      "category": "Helpers"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/SeerrAskedProofCache.cs",
       "category": "Helpers"
     },
     {
@@ -352,6 +360,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserAuthorityFields.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserCacheRegistry.State.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserCacheRegistry.cs",
       "category": "Helpers"
     },
     {
@@ -404,6 +420,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrUser.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/CompletionAuthority.cs",
       "category": "Model"
     },
     {
@@ -523,6 +543,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ServerCacheMaintenanceTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "category": "ScheduledTasks"
     },
@@ -631,6 +655,42 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/BackendChoice.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/BackendPublicationStamp.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/EffectiveReadScope.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/EffectiveRequestsBackend.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/RequestedTitlesProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/SeerrIsolationActionFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Backends/SeerrIsolationTransportHandler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgeHydration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgeImportReadiness.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
       "category": "Services"
     },
@@ -708,6 +768,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollageRenderer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/CompletionEvaluator.cs",
       "category": "Services"
     },
     {
@@ -831,11 +895,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListMetadataEpoch.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListOrder.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListPlaylistPlacement.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListPosterFactCache.cs",
       "category": "Services"
     },
     {
@@ -1163,6 +1235,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/TitleChoiceRegistry.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RequestsHubService.cs",
       "category": "Services"
     },
@@ -1172,6 +1248,42 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RetryOwners.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Background.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Cache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Derived.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Migration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.OwnershipCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.OwnershipReader.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.PreparedCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.Taint.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrFacts.cs",
       "category": "Services"
     },
     {
@@ -1407,6 +1519,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutonomousMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs",
       "category": "Services"
     },
@@ -1440,6 +1556,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/EvidenceRevision.cs",
       "category": "Services"
     },
     {
@@ -1479,11 +1599,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MediaResponseContract.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/FeedScheduler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ImageMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ModeNativeDetailsSource.cs",
       "category": "Services"
     },
     {
@@ -1539,7 +1671,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/TmdbNativeDetailsSource.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/TmdbNativeShape.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerBudget.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerMetadataAdmission.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ViewerMetadataScopeFilter.cs",
       "category": "Services"
     },
     {
@@ -1735,6 +1883,18 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/CacheFolderAccess.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/ServerBlobCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/ServerCacheSettings.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/ImageBlurService.cs",
       "category": "Services"
     },
@@ -1795,6 +1955,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StageTimings.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StageTimingsFilter.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
       "category": "Services"
     },
@@ -1819,6 +1987,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitleParentalEvidence.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs",
       "category": "Services"
     },
@@ -1831,7 +2003,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbEgressHandler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbParentalFactCache.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbTransport.cs",
       "category": "Services"
     },
     {
@@ -3960,6 +4144,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/requests-backend/seerr-capability",
+      "method": "GetSeerrCapability",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/settings/{type}",
       "method": "GetJellyseerrArrSettings",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -5820,6 +6013,13 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/requested-titles",
+      "method": "RequestedTitles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsBackendController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/hub",
       "method": "GetHub",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
@@ -5845,6 +6045,34 @@
       "following_attributes": [
         "Authorize",
         "PrivateResponse",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/server-cache",
+      "method": "Usage",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/server-cache/clear",
+      "method": "Clear",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/server-cache/check-folder",
+      "method": "CheckFolder",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ServerCacheController.cs",
+      "following_attributes": [
+        "Authorize",
         "BodyLimit"
       ]
     },
@@ -7989,6 +8217,30 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrStatusSeasonSummaryEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrStatusAdminLineEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrStatusArtworkProgressEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrHouseholdContactName",
       "type": "string",
       "initializer": "string.Empty",
@@ -8054,6 +8306,22 @@
     {
       "class": "PluginConfiguration",
       "name": "ArrLibraryPendingMinutes",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrBridgeStableSeconds",
+      "type": "int",
+      "initializer": "3",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrBridgeMetadataWaitMinutes",
       "type": "int",
       "initializer": "10",
       "constructor_assignment": null,
@@ -8248,6 +8516,46 @@
       "name": "BackupPassphrase",
       "type": "string",
       "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheEnabled",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCachePath",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheMaxSizeGb",
+      "type": "double",
+      "initializer": "2",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ServerCacheMaxAgeDays",
+      "type": "int",
+      "initializer": "30",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StageTimingsEnabled",
+      "type": "bool",
+      "initializer": "false",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -9689,6 +9997,14 @@
       "type": "int",
       "initializer": null,
       "constructor_assignment": "0",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrBackendIsolationVersion",
+      "type": "int",
+      "initializer": "0",
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -11645,6 +11961,11 @@
       "key": "JellyfinEnhancedRefreshCdnAssets"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ServerCacheMaintenanceTask.cs",
+      "class": "ServerCacheMaintenanceTask",
+      "key": "JellyfinEnhancedServerCacheMaintenance"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
@@ -11758,11 +12079,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 737,
-    "routes": 312,
-    "configuration_properties": 661,
+    "files": 783,
+    "routes": 317,
+    "configuration_properties": 672,
     "storage_references": 107,
-    "scheduled_tasks": 15,
+    "scheduled_tasks": 16,
     "locales": 33
   }
 }

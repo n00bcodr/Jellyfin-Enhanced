@@ -152,6 +152,43 @@ public class PrivacyReviewRound23ScopeTests
         Assert.True(committed, "a byte reached the client before the answer was validated");
     }
 
+    [Fact]
+    public async Task AnUnclassifiedHostAnswerKeepsItsOuterCommitOwnerAcrossProjection()
+    {
+        using var rig = new PrivacyHostShapeModelTests.Rig();
+        using var transport = new MemoryStream();
+        var http = new DefaultHttpContext();
+        http.Request.Method = "GET";
+        http.Response.Body = transport;
+        http.User = TestCallers.Principal(rig.Viewer, false);
+        var action = new ActionContext(http, new RouteData(), new ActionDescriptor());
+        var services = new ServiceCollection(); services.AddLogging(); services.AddControllers();
+        using var provider = services.BuildServiceProvider(); http.RequestServices = provider;
+        var owner = new PrivacyCommitFilter();
+        await owner.OnResourceExecutionAsync(new ResourceExecutingContext(action, [], []), async () =>
+        {
+            var guard = PrivacyResponseGuard.Find(http);
+            Assert.NotNull(guard);
+            var outer = http.Response.Body;
+            using var projection = new MemoryStream();
+            http.Response.Body = projection;
+            var delivery = new ResultExecutingContext(action, [], new ObjectResult(new BaseItemDto { Id = Guid.NewGuid(), Name = "Projected host answer" }), new object());
+            rig.Gate().OnResultExecuting(delivery);
+            await delivery.Result.ExecuteResultAsync(action);
+            await PrivacyResponseGuard.CommitAsync(http);
+            Assert.False(guard.Committed);
+            Assert.Empty(transport.ToArray());
+            Assert.NotEmpty(projection.ToArray());
+            http.Response.Body = outer;
+            await outer.WriteAsync(projection.ToArray());
+            Assert.False(guard.Committed);
+            Assert.Empty(transport.ToArray());
+            return new ResourceExecutedContext(action, []);
+        });
+        Assert.True(PrivacyResponseGuard.Find(http)!.Committed);
+        Assert.NotEmpty(transport.ToArray());
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // Read-set: every dependency of a verdict, and caches derived from the verdict.
 

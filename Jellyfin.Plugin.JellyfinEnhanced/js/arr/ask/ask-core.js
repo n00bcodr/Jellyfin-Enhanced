@@ -20,8 +20,14 @@
     /** Reasons of an accepted ask that mean "waits for an OK". */
     const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked', 'no_4k_instance', 'rule_review', 'group_quota']);
 
-    let meState = null; // { at, epoch, promise, value }
-    /** @type {Map<string, string>} input fingerprint -> clientRequestId kept until a definitive answer */
+    let meState = null; // { at, epoch (cacheEpoch), promise, value }
+    /**
+     * The pending submission of each input fingerprint (D46S2-R13-4): { id: its clientRequestId, epoch: the session it
+     * started in }, kept until that submission's definitive answer. A retry of the same pending ask reuses it; an answer
+     * removes only its own submission's entry, and only while that entry is still the installed one, so an older ask
+     * answered late (after a newer one replaced it, or after another account signed in) never takes a newer ask's id.
+     * @type {Map<string, {id: string, epoch: number}>}
+     */
     const openIds = new Map();
     /** @type {Set<Function>} */
     const listeners = new Set();
@@ -52,6 +58,15 @@
     function epoch() {
         return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
     }
+    /**
+     * The key of this module's caches (D46S2-R11-9): the session epoch and the requests family's write epoch (every
+     * ask, cancel or follow moves it as it is sent and as it is answered), so a capability or title check read after a
+     * write never comes from one that started before it.
+     * @returns {string} Key.
+     */
+    function cacheEpoch() {
+        return `${epoch()}:${JE.core?.api?.writeEpoch ? JE.core.api.writeEpoch('acquire') : 0}`;
+    }
 
     /**
      * A request to a plugin route; resolves with {status, body} for every HTTP answer (errors
@@ -80,7 +95,7 @@
     function me(force) {
         if (!enabled()) return Promise.resolve(null);
         const now = Date.now();
-        const current = epoch();
+        const current = cacheEpoch();
         if (!force && meState && meState.epoch === current && (meState.promise || now - meState.at < ME_TTL_MS)) {
             return meState.promise || Promise.resolve(meState.value);
         }
@@ -348,7 +363,8 @@
      *     POST; `expect` is what a season page's control was drawn to do (the server works it out again and refuses any
      *     difference: state 'changed').
      * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came, plus `stale`
-     *     when a bound ask was never sent (its operation or session ended).
+     *     when a bound ask was never sent (its operation or session ended), or `stale` and `accepted` (with the server's
+     *     answer) when it was answered after its owner ended: its state is reconciled, nothing is said.
      */
     async function ask(input, options) {
         // The ask's origin: the caller's (taken when the person acted, before its own waits), or the session now for a
@@ -356,20 +372,53 @@
         const origin = JE.core.userWrite.originOf(options?.session);
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
         const print = fingerprint(input);
-        const clientRequestId = options?.clientRequestId || openIds.get(print) || newClientId();
-        openIds.set(print, clientRequestId);
+        const started = epoch();
+        const installed = openIds.get(print);
+        const entry = installed && installed.epoch === started && (!options?.clientRequestId || options.clientRequestId === installed.id)
+            ? installed : { id: options?.clientRequestId || newClientId(), epoch: started };
+        openIds.set(print, entry);
+        const clientRequestId = entry.id;
+        /** A definitive answer ends this submission: its own entry goes, never one that replaced it. */
+        const settle = () => { if (openIds.get(print) === entry) openIds.delete(print); };
         let answer;
         try {
             answer = await call('/acquire/requests', { method: 'POST', body: options?.expect ? { clientRequestId, input, expect: options.expect } : { clientRequestId, input }, signal: options?.signal, bound: options?.bound, session: origin });
         } catch (err) {
-            // Bound to an operation or session that ended before the send: nothing was sent, nothing to say.
-            if (err?.name === 'AbortError' && options?.bound && JE.core.userWrite.outcome(err) !== 'uncertain') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
-            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
+            // Three outcomes (D46S2-R11-9). Answered after its owner ended (accepted): the server took it, so this
+            // session's state is reconciled (the clientRequestId is spent, the capability and title checks go, the
+            // surfaces showing the title re-read) with no page effect (`stale`: nobody is told on a newer page).
+            // Answered after another account signed in (D46S2-R12-4): still accepted — the origin's key is spent and its
+            // caches went with its session (onUserChange) — and nothing reaches the new account (no change event).
+            const written = JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : { outcome: 'failed', sent: false };
+            if (written.outcome === 'accepted') {
+                const answered = written.answer || {};
+                if (!(answered.status >= 500)) settle();
+                const result = { ...interpret(answered.status || 0, answered.body), clientRequestId, stale: true, accepted: true, sessionChanged: written.sessionChanged };
+                if (!written.sessionChanged && started === epoch() && JE.core.userWrite.isBound(origin) && (result.ok || result.state === 'unknown')) {
+                    meState = null;
+                    checks.clear();
+                    emit({ type: 'ask', key: input.key, input, result });
+                }
+                return result;
+            }
+            // Never sent (D46S2-R13-5: the transport's outcome says so, never the error's name): bound to an operation or
+            // session that ended before the send, nothing was sent and there is nothing to say; a caller's own abort
+            // before the send is its own.
+            if (written.outcome === 'unsent') {
+                if (options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
+                if (err?.name === 'AbortError') throw err;
+            }
+            // Its origin's session ended meanwhile: nothing is said on the next person's page (a sent ask stays sent).
             if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) {
-                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId: null, clientRequestId, stale: true };
+                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId: null, clientRequestId, stale: true, ...(written.sent ? { sent: true } : {}) };
+            }
+            // Sent, and its answer lost (an abort or a network failure after the send): the server may or may not have
+            // taken it. Unconfirmed, never a failure or an unsent cancellation; the id stays, so a retry is the same ask.
+            if (written.sent || JE.core.userWrite.outcome(err) === 'uncertain') {
+                console.warn(`${logPrefix} ask sent, no answer (${err?.message || err})`);
+                return { ...unconfirmedAsk(input, clientRequestId, 0), sent: true };
             }
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
-            if (JE.core.userWrite.outcome(err) === 'uncertain') return unconfirmedAsk(input, clientRequestId, 0);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };
         }
         // An answer that proves no outcome (RBS1-R13-5): a server error after the ask went out, or a success whose body
@@ -380,7 +429,7 @@
             return unconfirmedAsk(input, clientRequestId, answer.status);
         }
         // A server error may or may not have recorded the ask: keep the id so a retry is the same ask.
-        if (answer.status < 500) openIds.delete(print);
+        if (answer.status < 500) settle();
         const result = { ...interpret(answer.status, answer.body), clientRequestId };
         if (!JE.core.userWrite.isBound(origin)) return { ...result, stale: true };
         if (result.ok || result.state === 'unknown') {
@@ -431,13 +480,25 @@
         const origin = JE.core.userWrite.originOf(options?.session);
         if (!enabled() || !/^[0-9a-f]{32}$/i.test(String(requestId || ''))) return { ok: false, status: 0, state: 'invalid', outcome: '', reason: 'invalid_id', certainty: '', requestId: null };
         let answer;
+        let accepted = false;
         try {
             answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {}, bound: options?.bound, session: origin });
         } catch (err) {
-            console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
-            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId, stale: true };
-            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId };
-            return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
+            // Three outcomes (D46S2-R11-9): answered after its owner ended, the cancel happened (reconciled below, said by
+            // nobody); never sent, nothing happened.
+            const written = JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
+            if (written?.outcome === 'accepted' && !written.sessionChanged && JE.core.userWrite.isBound(origin)) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            // Taken after another account signed in (D46S2-R12-4): it happened, for the origin only; nothing for the new one.
+            else if (written?.outcome === 'accepted') return { ...interpret(written.answer?.status || 0, written.answer?.body), requestId, stale: true, accepted: true, sessionChanged: true };
+            else if (options?.bound && written?.outcome === 'unsent') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId, stale: true };
+            // Its origin's session ended meanwhile: nothing is said on the next person's page.
+            else if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'session_changed', certainty: '', requestId, stale: true, ...(written?.sent ? { sent: true } : {}) };
+            // Sent with its answer lost: the cancel may have been made — unconfirmed, never a failure or never-sent (D46S2-R13-5).
+            else if (written?.sent || JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, status: 0, state: 'unconfirmed', outcome: '', reason: 'unconfirmed', certainty: '', requestId, sent: true };
+            else {
+                console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
+                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
+            }
         }
         // The answer belongs to the cancel's session: nothing is published into the next person's page.
         if (!JE.core.userWrite.isBound(origin)) return { ...interpret(answer.status, answer.body), stale: true };
@@ -446,9 +507,11 @@
         const result = interpret(answer.status, answer.body);
         if (result.ok) {
             result.state = 'cancelled';
+            meState = null;
+            checks.clear();
             emit({ type: 'cancel', requestId, result });
         }
-        return result;
+        return accepted ? { ...result, stale: true, accepted: true } : result;
     }
 
     /**
@@ -598,7 +661,7 @@
         return block && typeof block.reason === 'string' ? block : null;
     }
 
-    /** @type {Map<string, {at: number, epoch: number, promise: Promise<Object|null>}>} title checks by key|variant, briefly */
+    /** @type {Map<string, {at: number, epoch: string, promise: Promise<Object|null>}>} title checks by key|variant (cacheEpoch), briefly */
     const checks = new Map();
     /** How long a title check is reused. */
     const CHECK_TTL_MS = 30000;
@@ -616,7 +679,7 @@
         const edition = variant === '4k' ? '4k' : 'standard';
         const id = `${key}|${edition}`;
         const now = Date.now();
-        const current = epoch();
+        const current = cacheEpoch();
         const hit = checks.get(id);
         if (hit && hit.epoch === current && now - hit.at < CHECK_TTL_MS) return hit.promise;
         const promise = call(`/acquire/requests/check?key=${encodeURIComponent(key)}&variant=${edition}`)
@@ -665,6 +728,8 @@
      */
     function toast(text, ms) {
         if (!text) return;
+        // A translation's {{icon:…}} arrives as JE's emoji markup: shown as its emoji, never as escaped tags.
+        text = String(text).replace(/<span class="je-emoji">([^<]*)<\/span>/g, '$1');
         const safe = typeof JE.escapeHtml === 'function' ? JE.escapeHtml(text) : String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
         if (typeof JE.toast === 'function') JE.toast(safe, ms || 3500);
         announce(text);
@@ -772,19 +837,25 @@
         const payload = { instanceId, key, idempotencyKey: newClientId() };
         if (options?.episodes?.length) payload.episodes = options.episodes;
         if (options?.expect) payload.expect = options.expect;
+        let accepted = false;
+        let sessionChanged = false;
         try {
             answer = await call('/arr/admin/manage/search', { method: 'POST', body: payload, bound: options?.bound, session: origin });
         } catch (err) {
-            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
-            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
-            if (JE.core.userWrite.outcome(err) === 'uncertain') {
-                return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention' };
-            }
-            const text = tr('arr_manage_search_failed', { message: err?.message || String(err) });
-            return { ok: false, state: 'failed', chip: '', text, tone: 'attention' };
+            // Three outcomes (D46S2-R11-9), decided by the transport (D46S2-R13-5), never by the error's name: answered
+            // after its owner ended or after another account signed in → the answer is read below like any other
+            // (D46S2-R13-6) and only its origin is reconciled; never sent → the caller's never-sent abort; its origin's
+            // session ended → nothing for the next person; sent with its answer lost → unconfirmed (it may have run).
+            const written = searchOutcome(err);
+            if (written.outcome === 'accepted') { answer = written.answer || { status: 0, body: null }; accepted = true; sessionChanged = written.sessionChanged; }
+            else if (written.outcome === 'unsent' && err?.name === 'AbortError') throw err;
+            else if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true, ...(written.sent ? { sent: true } : {}) };
+            else if (written.sent || JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention', sent: true };
+            else return { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: err?.message || String(err) }), tone: 'attention' };
         }
         // The answer belongs to the search's session: nothing is published into the next person's page.
-        if (!JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
+        // Its session ended with nothing accepted: nothing more (an accepted answer is read below, for its origin only).
+        if (!accepted && !JE.core.userWrite.isBound(origin)) return { ok: false, state: 'stale', chip: '', text: '', tone: 'attention', stale: true };
         const body = answer.body || {};
         let result;
         if (answer.status === 409 && (body.code === 'press_changed' || body.code === 'press_unverified')) {
@@ -799,8 +870,23 @@
         } else {
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
-        if (result.ok) emit({ type: 'search', key, result });
-        return result;
+        return searched(result, key, accepted, sessionChanged);
+    }
+
+    /** The transport's outcome of a Search's error (D46S2-R13-5): unsent, accepted (answered after its owner ended) or failed (`sent`). */
+    function searchOutcome(err) {
+        return JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : { outcome: err?.name === 'AbortError' ? 'unsent' : 'failed', sent: false };
+    }
+
+    /**
+     * A Search's interpreted answer as its caller gets it (D46S2-R13-6): answered for a current owner, the title's
+     * surfaces re-read on success; answered after its owner ended, `stale` and `accepted` with the same business
+     * result (a rejection stays a failure, a success a success) and the origin session's surfaces re-read; answered
+     * after another account signed in, also `sessionChanged`, and nothing reaches the new account.
+     */
+    function searched(result, key, accepted, sessionChanged) {
+        if (result.ok && !sessionChanged) emit({ type: 'search', key, result });
+        return accepted ? { ...result, stale: true, accepted: true, ...(sessionChanged ? { sessionChanged: true } : {}) } : result;
     }
 
     /**
@@ -809,7 +895,8 @@
      * scope that has been missing for a long while, the server runs the arr's search for exactly those
      * again (no new request, nothing charged, no OK needed) and says what it found. Resolves null when
      * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
-     * may not): the caller then asks for it instead, as before.
+     * may not): the caller then asks for it instead, as before. An answer that came after the Search's owner ended (or
+     * after another account signed in) never resolves null: it starts no ask (state 'skipped', `stale`).
      * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
      * @param {{expect?: Object, bound?: Object, session?: any}} [options] What a season page's control was drawn to do (the
      * server works it out again: a refusal is state 'changed' or 'unchecked', never "ask instead"); bound: the operation's
@@ -824,16 +911,22 @@
         const k = String(key || '');
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
+        let accepted = false;
+        let sessionChanged = false;
         try {
             answer = await call('/acquire/requests/search', { method: 'POST', body: options?.expect ? { key: k, idempotencyKey: newClientId(), expect: options.expect } : { key: k, idempotencyKey: newClientId() }, bound: options?.bound, session: origin });
         } catch (err) {
-            if (err?.name === 'AbortError' && JE.core.userWrite.outcome(err) !== 'uncertain') throw err;
-            if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return stale;
-            // Sent and its answer lost: the search may run; asking as well could ask twice for one title.
-            if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention' };
-            return null;
+            // As adminSearch (D46S2-R11-9, R13-5, R13-6). Nothing went out (no answer and never sent): ask instead, as
+            // before; its origin's session ended: stale (no ask as the next person); sent with its answer lost: the search
+            // may run — unconfirmed, never a new ask for what may have run (asking as well could ask twice for one title).
+            const written = searchOutcome(err);
+            if (written.outcome === 'accepted') { answer = written.answer || { status: 0, body: null }; accepted = true; sessionChanged = written.sessionChanged; }
+            else if (written.outcome === 'unsent' && err?.name === 'AbortError') throw err;
+            else if (err?.sessionChanged || !JE.core.userWrite.isBound(origin)) return written.sent ? { ...stale, sent: true } : stale;
+            else if (written.sent || JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, state: 'unconfirmed', chip: '', text: tr('arr_write_unconfirmed'), tone: 'attention', sent: true };
+            else return null;
         }
-        if (!JE.core.userWrite.isBound(origin)) return stale;
+        if (!accepted && !JE.core.userWrite.isBound(origin)) return stale;
         const body = answer.body || {};
         let result;
         if (answer.status === 409 && (body.reason === 'press_changed' || body.reason === 'press_unverified')) {
@@ -846,7 +939,9 @@
         } else if (answer.status >= 500) {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_search_failed_family'), tone: 'attention' };
         } else if (answer.status !== 200 || body.outcome === 'skipped') {
-            return null;
+            // Nothing to search for it: the caller asks instead — only for a current owner.
+            if (!accepted) return null;
+            result = { ok: false, state: 'skipped', chip: '', text: '', tone: '' };
         } else if (body.found === true) {
             result = { ok: true, state: 'found', chip: tr('arr_search_found_chip'), text: tr('arr_search_found'), tone: 'downloading' };
         } else if (body.found === false) {
@@ -854,8 +949,35 @@
         } else {
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
-        if (result.ok) emit({ type: 'search', key: k, result });
-        return result;
+        return searched(result, k, accepted, sessionChanged);
+    }
+
+    /** @type {Map<string, {at: number, epoch: string, promise: Promise<Object>}>} season lists the request sheet reuses, by TMDB id (cacheEpoch) */
+    const seasonLists = new Map();
+    /** How long the request sheet reuses a season list it read. */
+    const SEASONS_TTL_MS = 5 * 60 * 1000;
+
+    /**
+     * {@link tmdbSeasons} for the request sheet: a list this session read for the series a moment ago (same epoch and
+     * access, at most five minutes old) is reused, so reopening the sheet does not read TMDB again. An empty answer (TMDB
+     * could not be read) is not kept.
+     * @param {string|number|undefined} tmdbId TMDB id.
+     * @returns {Promise<{seasons: Array<{season: number, episodes: number, have: number}>, latest: number|null, upcoming: number|null}>} Seasons.
+     */
+    function sheetSeasons(tmdbId) {
+        const id = String(tmdbId || '');
+        const now = Date.now();
+        const current = cacheEpoch();
+        const hit = seasonLists.get(id);
+        if (hit && hit.epoch === current && now - hit.at < SEASONS_TTL_MS) return hit.promise;
+        const entry = { at: now, epoch: current, promise: null };
+        entry.promise = tmdbSeasons(tmdbId).then((list) => {
+            if (!list.seasons.length && list.upcoming == null && seasonLists.get(id) === entry) seasonLists.delete(id);
+            return list;
+        });
+        seasonLists.set(id, entry);
+        if (seasonLists.size > 50) seasonLists.delete(seasonLists.keys().next().value);
+        return entry.promise;
     }
 
     /**
@@ -883,16 +1005,56 @@
         return { seasons, latest: aired.length ? aired[aired.length - 1].season_number : null, upcoming: upcoming ? upcoming.season_number : null };
     }
 
+    /**
+     * Whose numbering and facts a season's rows carry (SeasonRows.source, UX-3): `destination` (the request target's Sonarr
+     * holds the series: its own numbers, titles and air days, never TMDB's), `provider` (no requestable Sonarr holds it, or
+     * Seerr takes requests: TMDB's numbers are what a request names), `unknown` (the target couldn't be read now, or the rows
+     * themselves couldn't be read) or `unchecked` (the viewer may not use the target; nothing about it is said).
+     * @param {Object|null|undefined} rows The season rows.
+     * @returns {string} Source.
+     */
+    function episodeSource(rows) {
+        return ['destination', 'provider', 'unknown', 'unchecked'].includes(rows?.source) ? rows.source : 'unknown';
+    }
+
+    /**
+     * True when single episodes of a season may be asked for by number: the rows carry the request target's own numbering
+     * (`destination`), or TMDB's while no arr holds the season (`provider`, and the season's status agrees). Anything else,
+     * a read that failed included, holds them; whole seasons stay askable.
+     * @param {Object|null|undefined} rows The season rows (read for the edition asked about).
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
+     * @returns {boolean} Askable.
+     */
+    function singleEpisodesAskable(rows, context) {
+        const source = rows ? episodeSource(rows) : 'unknown';
+        return source === 'destination' || (source === 'provider' && !context?.arrHolds);
+    }
+
+    /**
+     * Why single episodes are held: `differently` when the rows carry TMDB's details for a season an arr numbers itself (so a
+     * number may name another episode there), else `unchecked` (the numbering couldn't be checked).
+     * @param {Object|null|undefined} rows The season rows.
+     * @param {{arrHolds?: boolean}} [context] The season's status says an arr holds it.
+     * @returns {'differently'|'unchecked'} Reason.
+     */
+    function heldReason(rows, context) {
+        if (!rows || !context?.arrHolds) return 'unchecked';
+        const tmdb = (rows.source === 'provider' || rows.source == null) && (Array.isArray(rows.episodes) ? rows.episodes : []).some(e => e?.title || e?.overview);
+        return tmdb ? 'differently' : 'unchecked';
+    }
+
     JE.session?.onUserChange?.('arr-ask', () => {
         meState = null;
         openIds.clear();
         checks.clear();
+        seasonLists.clear();
     });
     // The person's access moved (the server's access revision, core/access-revision.js): what they may ask for and the
     // title checks were worked out for the old access (a read in flight is dropped too: its state is no longer meState).
     document.addEventListener('je-access-revision', () => {
         meState = null;
         checks.clear();
+        seasonLists.clear();
     });
 
     JE.arrAsk = Object.freeze({
@@ -932,6 +1094,10 @@
         adminSearch,
         familySearch,
         tmdbSeasons,
+        sheetSeasons,
+        episodeSource,
+        singleEpisodesAskable,
+        heldReason,
         call,
         tr
     });

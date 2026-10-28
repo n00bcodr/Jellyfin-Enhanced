@@ -712,7 +712,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public static readonly ResourceSchema MetadataShow = new("metadata show", new[]
         {
             Required("id", FieldType.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
-            Display("overview", FieldType.Text), Fact("status", FieldType.Text), Display("inProduction", FieldType.Bool),
+            Display("overview", FieldType.Text), Fact("status", FieldType.Text), Display("inProduction", FieldType.Bool), Display("numberOfSeasons", FieldType.Count),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb"), Identity("tvdbId", FieldType.Id, "tvdb")),
             Fact("seasons", FieldType.List, nullable: false, rows: new ResourceSchema("metadata season row", new[]
             {

@@ -49,7 +49,18 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // Placeholder metadata (Seerr's names; JE mode reads TMDB's, Snake).
     internal const string MetaMovieBody = "{\"id\":10,\"title\":\"Inception\",\"releaseDate\":\"2010-07-16\",\"posterPath\":\"/i.jpg\",\"overview\":\"Dreams.\",\"imdbId\":\"tt1375666\",\"externalIds\":{\"imdbId\":\"tt1375666\"}}";
     internal const string MetaShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"firstAirDate\":\"2012-10-10\",\"posterPath\":\"/a.jpg\",\"overview\":\"Oliver.\",\"status\":\"Returning Series\",\"inProduction\":true,\"externalIds\":{\"imdbId\":\"tt2193021\",\"tvdbId\":257655},\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3,\"airDate\":\"2012-10-10\"}],\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":3,\"airDate\":\"2012-10-24\"}}";
-    internal const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"}]}";
+    internal const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"},{\"episodeNumber\":3,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Lone Gunmen\",\"airDate\":\"2012-10-24\"}]}";
+
+    // A dated named peer makes a null date in the first detail row a composition failure (I),
+    // rather than treating an absent display date as contradictory on its own. This is also the
+    // evaluator's coherent next-only shape: the show has no last coordinate to conflict with it.
+    internal static string MetaShowWithDatedFirstPeer()
+    {
+        var show = JsonNode.Parse(MetaShowBody)!;
+        show["nextEpisodeToAir"] = new JsonObject { ["seasonNumber"] = 1, ["episodeNumber"] = 1, ["airDate"] = "2012-10-10" };
+        show["lastEpisodeToAir"] = null;
+        return show.ToJsonString();
+    }
 
     // THE ORACLE: each kind's declared contract restated per field as the verdict of (missing, null, wrong type, empty):
     // V valid (definitive: used and kept), P partial (used, never kept, never proof of an absence), M malformed (transient,
@@ -117,8 +128,8 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // A season answer that isn't Valid is used like a failed season read: it never sets the expected episodes.
     private static readonly (string Path, string Verdicts)[] MetaSeasonFields =
     {
-        ("episodes", "MMMV"), ("episodes[0].episodeNumber", "MMMV"), ("episodes[0].seasonNumber", "VVMM"), // r9: season 0 isn't the season asked for; r10: nor is a value that isn't one
-        ("episodes[0].name", "VVPV"), ("episodes[0].airDate", "PVMV"), ("airDate", "PVMV"), ("posterPath", "PVMV"),
+        ("episodes", "MMMI"), ("episodes[0].episodeNumber", "MMMI"), ("episodes[0].seasonNumber", "VVMM"), // r9: season 0 isn't the season asked for; r10: nor is a value that isn't one
+        ("episodes[0].name", "VVPV"), ("episodes[0].airDate", "PIMI"), ("airDate", "PVMV"), ("posterPath", "PVMV"),
     };
 
     private static readonly (string Path, string Verdicts)[] PosterFields = { ("poster_path", "MVMV") };
@@ -188,6 +199,11 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         {
             case 'V':
                 Assert.True(seen.Used && seen.Kept, "valid: used and kept");
+                break;
+            case 'I': // individually valid resource, but the composed season is incomplete (count/coordinates/dates)
+                Assert.False(seen.Used);
+                Assert.True(seen.Kept); // raw resources remain reusable; their composition cannot confirm completion
+                Assert.False(seen.Cleared);
                 break;
             case 'P' when !season:
                 Assert.True(seen.Used, "partial: still used");
@@ -262,7 +278,12 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         w.Answer(SeerrB + path, "{\"message\":\"down\"}", 503);
         if (path != "tv/1412" && entry.MediaType == "tv")
         {
-            w.Answer(SeerrA + "tv/1412", MetaShowBody);
+            w.Answer(SeerrA + "tv/1412", MetaShowWithDatedFirstPeer());
+        }
+
+        if (entry.Kind == PlaceholderKinds.Series)
+        {
+            w.Answer(SeerrA + "tv/1412/season/1", MetaSeasonBody);
         }
 
         var metadata = new ListMetadataService(w.Transport, w.Plugin.Core.Logger);
@@ -277,9 +298,10 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         w.Answer(Tmdb + path, body);
         if (path != "tv/1412" && entry.MediaType == "tv")
         {
-            w.Answer(Tmdb + "tv/1412", Snake(MetaShowBody));
+            w.Answer(Tmdb + "tv/1412", Snake(MetaShowWithDatedFirstPeer()));
         }
 
+        if (entry.Kind == PlaceholderKinds.Series) w.Answer(Tmdb + "tv/1412/season/1", Snake(MetaSeasonBody));
         var source = new TmdbListMetadataSource(w.Cache, w.Plugin.Core.Logger);
         return await MetadataAsync(w, entry, path.Contains("/season/", StringComparison.Ordinal), () => source.FetchAsync(entry, TimeSpan.FromHours(12), Today, None));
     }
@@ -389,7 +411,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     private static (string Path, string Verdicts)[] Camel((string Path, string Verdicts)[] fields) => fields.Select(f => (RenamePath(f.Path, CamelName), f.Verdicts)).ToArray();
 
-    private static string Snake(string body) => Rename(body, SnakeName);
+    internal static string Snake(string body) => Rename(body, SnakeName);
 
     private static (string Path, string Verdicts)[] Snake((string Path, string Verdicts)[] fields) => fields.Select(f => (RenamePath(f.Path, SnakeName), f.Verdicts)).ToArray();
 
@@ -604,6 +626,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         };
         w.Answer(SeerrA + path, a == "{}" ? "{}" : partial);
         w.Answer(SeerrB + path, valid);
+        if (kind == "metadata series") w.Answer(SeerrA + "tv/1412/season/1", MetaSeasonBody);
 
         object? read;
         if (kind.StartsWith("lookup", StringComparison.Ordinal))
@@ -622,9 +645,10 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
             read = kind == "metadata movie" ? metadata?.ReleaseDate : metadata?.Expected?.Count;
         }
 
-        var calls = w.Total;
+        var calls = w.Calls.Count(c => c.At == SeerrA + path || c.At == SeerrB + path);
         output.WriteLine(kind + " A " + a + ": read " + read + ", calls " + calls);
-        Assert.Equal(2, calls); // B was asked
+        Assert.Equal(2, calls); // B was asked for the resource under test
+        Assert.Equal(kind == "metadata series" ? 3 : 2, w.Total); // series also reconciles one valid season
         Assert.Equal(kind switch
         {
             "lookup details" => (object)2,

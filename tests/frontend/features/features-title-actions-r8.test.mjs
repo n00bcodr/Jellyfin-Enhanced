@@ -43,7 +43,7 @@ function card(h, id = 603, type = 'movie') {
 
 /** Opens the window's own More sheet and returns its entries. */
 async function windowSheet(h) {
-  moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
   return [...h.document.querySelectorAll('.je-actions-entry')];
 }
 
@@ -87,9 +87,9 @@ test('R8-2: a held movie POST released after a newer Refresh of the window → t
   const modal = await nativeWindow(h);
   const original = modal.querySelector('.jellyseerr-split-main');
   const held = h.hold('POST', '/jellyseerr/request');
-  original.click(); await settle();
+  h.click(original); await settle();
   h.manager.clearCache();
-  modal.querySelector('.modal-refresh').click(); await delivered();
+  h.click(modal.querySelector('.modal-refresh')); await delivered();
   const newer = modal.querySelector('.jellyseerr-split-main');
   assert.notEqual(newer, original, 'the Refresh redrew the controls');
   assert.equal(newer.disabled, false);
@@ -106,11 +106,11 @@ test('R8-2: advanced on, More → Request in 4K → only the 4K state changes: t
   const modal = await nativeWindow(h);
   const standard = modal.querySelector('.jellyseerr-split-main');
   assert.match(standard.textContent, /jellyseerr_btn_request$/);
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened'); await new Promise(resolve => setTimeout(resolve, 150));
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered(); h.a.scan(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered(); h.a.scan(); await delivered();
   assert.equal(posts(h).length, 1);
   assert.equal(posts(h)[0][3].is4k, true, 'a 4K request');
   const now = moreInfo(h).querySelector('.jellyseerr-split-main');
@@ -126,7 +126,7 @@ test('R8-2: the window\'s Request in 4K → a card of the same title elsewhere: 
   withResults(h);
   const { main, arrow } = card(h);
   await nativeWindow(h);
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.match(main.textContent, /jellyseerr_btn_request$/, 'the card\'s standard Request stays');
   assert.equal(main.disabled, false);
@@ -138,7 +138,7 @@ test('control: the window\'s standard Request → a card of the same title elsew
   withResults(h);
   const { main, arrow } = card(h);
   const modal = await nativeWindow(h);
-  modal.querySelector('.jellyseerr-split-main').click(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.match(main.textContent, /jellyseerr_btn_requested/);
   assert.equal(main.disabled, true);
@@ -150,7 +150,7 @@ test('R8-2: a movie request → a series card with the same TMDB number is left 
   withResults(h);
   const series = card(h, 603, 'tv');
   const modal = await nativeWindow(h);
-  modal.querySelector('.jellyseerr-split-main').click(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.match(series.main.textContent, /jellyseerr_btn_request$/);
   assert.equal(series.main.disabled, false);
@@ -172,7 +172,7 @@ test('R8-2: the window\'s request answers after the window was replaced → the 
   const { main } = card(h);
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-split-main').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await settle();
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   held.resolve(); await delivered();
   assert.equal(posts(h).length, 1);
@@ -184,10 +184,10 @@ test('control: the window\'s Collection request → a card of a part elsewhere s
   withResults(h);
   const part = card(h, 604);
   const modal = await nativeWindow(h);
-  modal.querySelector('.je-collection-card-button').click(); await delivered(); await shown();
+  h.click(modal.querySelector('.je-collection-card-button')); await delivered(); await shown();
   const form = seerrModal(h);
   assert.ok(form?.classList.contains('show'), 'the Collection form opened');
-  form.querySelector('.jellyseerr-modal-button-primary').click(); await delivered();
+  h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.deepEqual(posts(h).map(p => p[3].mediaId), [604]);
   assert.match(part.main.textContent, /jellyseerr_btn_requested/);
   assert.equal(part.main.disabled, true);
@@ -200,7 +200,7 @@ test('R8-6: a quota refusal answering after the window was replaced by another t
   h.respond('POST', '/jellyseerr/request', QUOTA);
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-request-button').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await settle();
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   assert.equal(moreInfo(h).dataset.tmdbId, '1399');
   held.resolve(); await delivered();
@@ -212,7 +212,7 @@ test('R8-6: the window is replaced while the quota dialog reads the quota → no
   h.respond('POST', '/jellyseerr/request', QUOTA);
   const modal = await nativeWindow(h);
   const quota = h.hold('GET', '/jellyseerr/quota');
-  modal.querySelector('.jellyseerr-request-button').click(); await settle(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await settle(); await delivered();
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   quota.resolve(); await delivered();
   assert.equal(h.alerts.length, 0);
@@ -222,7 +222,7 @@ test('control: a quota refusal in a window that stays → one dialog', async t =
   const h = setup(t, { asks: false, seerr4k: false });
   h.respond('POST', '/jellyseerr/request', QUOTA);
   const modal = await nativeWindow(h);
-  modal.querySelector('.jellyseerr-request-button').click(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await delivered();
   assert.equal(h.alerts.length, 1);
 });
 

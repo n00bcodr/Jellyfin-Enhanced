@@ -72,7 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly NotifyStore _store;
         private readonly NotifyStore _publicStore;
         private readonly ArrStatusService _status;
-        private readonly SeerrRequestReadModel _requests;
+        private readonly SeerrFacts _requests;
         private readonly IArrJellyfinView _view;
         private readonly TitleAliases _aliases;
         private readonly ArrChangeFeed _feed;
@@ -88,11 +88,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly RequestLedger? _ledger;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _titleMeta;
         private readonly IRequestPolicy? _policy;
-        private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
         private readonly RecentArrivals _recentlyAdded;
         private long _observedGeneration;
         private readonly SemaphoreSlim _round = new(1, 1);
-        private volatile HashSet<string> _interest = new(StringComparer.Ordinal);
+        private volatile SeerrFacts.Derived<HashSet<string>> _interest = SeerrFacts.Remember(new HashSet<string>(StringComparer.Ordinal));
         // Guards _dirty together with _firstDirty/_lastDirty: titles are marked from other threads
         // (the bridge's refresh, Jellyfin's library events) while a round drains them.
         private readonly object _dirtyGate = new();
@@ -114,7 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private int _bridgeSubscribed;
 
         /// <summary>The service (DI).</summary>
-        public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge, RequestLedger ledger, RequestHubProjection projection)
+        public NotificationService(NotifyStore store, ArrStatusService status, SeerrFacts requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge, RequestLedger ledger, RequestHubProjection projection)
             : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge, ledger, projection.MetaAsync, projection.Service.Policy)
         {
         }
@@ -128,7 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// its requests are interests (<paramref name="titleMeta"/> names titles no arr holds yet); with
         /// <paramref name="policy"/> an ask waiting for an OK reaches only the administrators who can see its title.
         /// </summary>
-        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? titleMeta = null, IRequestPolicy? policy = null)
+        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrFacts requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? titleMeta = null, IRequestPolicy? policy = null)
         {
             _ledger = ledger;
             _titleMeta = titleMeta;
@@ -323,7 +323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>Marks title keys (any feed key; others are ignored) as changed.</summary>
         internal void Observe(IEnumerable<string> keys)
         {
-            var interest = _interest;
+            var interest = _interest.Read(new HashSet<string>(StringComparer.Ordinal));
             var titles = new List<string>();
             foreach (var key in keys)
             {
@@ -341,10 +341,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// seconds), the periodic sweep, batches whose window closed, admin checks and housekeeping.
         /// </summary>
         internal Task TickAsync(CancellationToken cancellationToken, bool force = false)
-            => _store.Ordering.RunAsync(() => TickCoreAsync(cancellationToken, force), cancellationToken);
+            // The admitted background scope (its Seerr facts admission is taken only by an actual fact read), around ordered
+            // observation through commit (EvidenceOrder): waiting for the order takes no admission.
+            => SeerrFacts.BackgroundAsync(token => _store.Ordering.RunAsync(() => TickCoreAsync(token, force), token), cancellationToken);
 
         private async Task TickCoreAsync(CancellationToken cancellationToken, bool force)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (!Enabled)
             {
                 NoteAlertsPausedCore();
@@ -391,7 +394,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     RebuildInterestCore();
                     lock (_dirtyGate)
                     {
-                        foreach (var key in _interest) _dirty[key] = 0;
+                        foreach (var key in _interest.Read(new HashSet<string>(StringComparer.Ordinal))) _dirtyFacts[key] = 0;
                         _firstDirty ??= now;
                         _lastDirty = now - QuietDebounce;
                     }
@@ -426,7 +429,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         internal void RebuildInterest() => _store.Ordering.Run(RebuildInterestCore);
 
-        private void RebuildInterestCore()
+        private void RebuildInterestCore() => _interest = SeerrFacts.Derive(BuildInterest);
+
+        private HashSet<string> BuildInterest()
         {
             var set = new HashSet<string>(StringComparer.Ordinal);
             foreach (var f in _store.AllFollows())
@@ -449,7 +454,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 foreach (var alias in Aliases(TitleKey.Parse(key)!)) set.Add(alias);
             }
-            _interest = set;
+            return set;
         }
 
         // The key a title is looked at under: TMDB for a movie, TVDB for a series, when its own key is
@@ -618,8 +623,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private void ScanLedgerCore()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var first = _ledgerCursor == null;
-            if (!first && _ledgerCursor != _storedLedgerCursor && _dirty.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
+            if (!first && _ledgerCursor != _storedLedgerCursor && _dirtyFacts.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
             var after = first ? StoredLedgerCursor() : _ledgerCursor;
             var (cursor, titles) = _ledger!.ChangedTitles(after);
             _ledgerCursor = cursor;
@@ -792,11 +798,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     case NotifyEffect.Leave:
                         return told;
                     case NotifyEffect.Postpone:
-                    {
-                        var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
-                        _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
-                        continue;
-                    }
+                        {
+                            var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
+                            _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
+                            continue;
+                        }
 
                     case NotifyEffect.Suppress:
                         _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
@@ -1006,7 +1012,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// tells about what became ready since the last look.
         /// </summary>
         internal Task EvaluateAsync(IReadOnlyCollection<string> titleKeys, Guid? onlyUser, CancellationToken cancellationToken)
-            => _store.Ordering.RunAsync(() => EvaluateCoreAsync(titleKeys, onlyUser, cancellationToken), cancellationToken);
+            => SeerrFacts.BackgroundAsync(token => _store.Ordering.RunAsync(() => EvaluateCoreAsync(titleKeys, onlyUser, token), token), cancellationToken);
 
         private async Task EvaluateCoreAsync(IReadOnlyCollection<string> titleKeys, Guid? onlyUser, CancellationToken cancellationToken)
         {
@@ -1804,7 +1810,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// only records (old requests are not announced); requests created while notifications were
         /// off count as new. Titles whose requests changed are looked at (a new request starts a
         /// first look), and a requester whose last request for a title went away starts afresh.
-        /// What was seen belongs to one Seerr server (<see cref="SeerrRequestReadModel.Source"/>):
+        /// What was seen belongs to one Seerr server (<see cref="SeerrFacts.Source"/>):
         /// when Jellyfin Enhanced is pointed at another one (whose request ids are other requests),
         /// the next scan of its list records it afresh like a first scan, telling nobody anything.
         /// </summary>
@@ -2031,13 +2037,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private void MarkDirty(IEnumerable<string> titles)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = _now();
             lock (_dirtyGate)
             {
                 var any = false;
                 foreach (var t in titles)
                 {
-                    _dirty[t] = 0;
+                    _dirtyFacts[t] = 0;
                     any = true;
                 }
                 if (!any) return;
@@ -2054,12 +2061,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         private List<string>? TakeDue(DateTimeOffset now, bool force)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             lock (_dirtyGate)
             {
                 if (!_firstDirty.HasValue || !(force || now - _lastDirty >= QuietDebounce || now - _firstDirty >= MaxDebounce)) return null;
-                var keys = _dirty.Keys.Take(MaxPerRound).ToList();
-                foreach (var k in keys) _dirty.TryRemove(k, out _);
-                if (_dirty.IsEmpty)
+                var keys = _dirtyFacts.Keys.Take(MaxPerRound).ToList();
+                foreach (var k in keys) _dirtyFacts.TryRemove(k, out _);
+                if (_dirtyFacts.IsEmpty)
                 {
                     AfterTake?.Invoke();
                     _firstDirty = null;
@@ -2075,7 +2083,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>True when changed titles wait for a look and their timer runs (tests).</summary>
         internal bool HasDirty(string title)
         {
-            lock (_dirtyGate) return _dirty.ContainsKey(title) && _firstDirty.HasValue;
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            lock (_dirtyGate) return _dirtyFacts.ContainsKey(title) && _firstDirty.HasValue;
         }
 
         // ================================================================== follows (routes)
@@ -2086,7 +2095,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// the user may not follow it or holds too many follows.
         /// </summary>
         public Task<string> SetFollowAsync(StatusViewer viewer, TitleKey key, bool on, CancellationToken cancellationToken)
-            => _store.Ordering.RunAsync(() => SetFollowCoreAsync(viewer, key, on, cancellationToken), cancellationToken);
+            => SeerrFacts.BackgroundAsync(token => _store.Ordering.RunAsync(() => SetFollowCoreAsync(viewer, key, on, token), token), cancellationToken);
 
         private async Task<string> SetFollowCoreAsync(StatusViewer viewer, TitleKey key, bool on, CancellationToken cancellationToken)
         {
@@ -2118,6 +2127,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// for them (when "follow what I request" is on).
         /// </summary>
         public (IReadOnlyList<FollowRow> Follows, IReadOnlyList<string> Requested) FollowsOf(Guid userId)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => FollowsOfFactsCore(userId));
+
+        private (IReadOnlyList<FollowRow> Follows, IReadOnlyList<string> Requested) FollowsOfFactsCore(Guid userId)
         {
             var prefs = _store.Prefs(userId);
             var requested = prefs.AutoFollowRequests
@@ -2147,7 +2159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// can see that really need attention right now; administrators don't remind themselves.
         /// </summary>
         public Task<RemindOutcome> RemindAsync(StatusViewer viewer, TitleKey key, Guid? itemId, CancellationToken cancellationToken)
-            => _store.Ordering.RunAsync(() => RemindCoreAsync(viewer, key, itemId, cancellationToken), cancellationToken);
+            => SeerrFacts.BackgroundAsync(token => _store.Ordering.RunAsync(() => RemindCoreAsync(viewer, key, itemId, token), token), cancellationToken);
 
         private async Task<RemindOutcome> RemindCoreAsync(StatusViewer viewer, TitleKey key, Guid? itemId, CancellationToken cancellationToken)
         {
@@ -2236,7 +2248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// (rows already listed when the alerts were switched on stay on the Overview only).
         /// </summary>
         internal Task AdminChecksAsync(CancellationToken cancellationToken)
-            => _store.Ordering.RunAsync(() => AdminChecksCoreAsync(cancellationToken), cancellationToken);
+            => SeerrFacts.BackgroundAsync(token => _store.Ordering.RunAsync(() => AdminChecksCoreAsync(token), token), cancellationToken);
 
         private async Task AdminChecksCoreAsync(CancellationToken cancellationToken)
         {
@@ -2434,6 +2446,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return p;
         }
 
+        /// <summary>Most downloads a stuck digest lists as fields (<c>entries</c>); its count still says how many there are.</summary>
+        internal const int DigestEntries = 50;
+
         private void StuckDigest(IReadOnlyList<AttentionItem> attention, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now)
         {
             var config = _config();
@@ -2445,10 +2460,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var stuckFor = TimeSpan.FromHours(Math.Clamp(config?.ArrNotifyAdminStuckHours ?? 6, 1, 168));
             // The downloads Needs attention has listed for hours (the arr's own words: import
             // blocked, failed, warnings, stalled, client unreachable).
-            var items = attention
-                .Where(a => DownloadCodes.Contains(a.Code) && a.Since is DateTime since && now.UtcDateTime - since >= stuckFor)
-                .Select(a => $"{a.Title ?? "?"}{(string.IsNullOrEmpty(a.Scope) ? string.Empty : " " + a.Scope)} ({a.Instance}, {a.Code})")
-                .ToList();
+            var stuck = attention.Where(a => DownloadCodes.Contains(a.Code) && a.Since is DateTime since && now.UtcDateTime - since >= stuckFor).ToList();
+            var items = stuck.Select(a => $"{a.Title ?? "?"}{(string.IsNullOrEmpty(a.Scope) ? string.Empty : " " + a.Scope)} ({a.Instance}, {a.Code})").ToList();
             // The day is marked done only once the list was read, in the same transaction as the
             // digests (a failure or a stop before they exist leaves the day's digest to the next round).
             var p = new Dictionary<string, string>
@@ -2456,6 +2469,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 ["count"] = items.Count.ToString(CultureInfo.InvariantCulture),
                 ["hours"] = ((int)stuckFor.TotalHours).ToString(CultureInfo.InvariantCulture),
                 ["items"] = string.Join("; ", items.Take(10)) + (items.Count > 10 ? $"; and {items.Count - 10} more" : string.Empty),
+                // The same downloads as fields, for the bell's expandable list (its reasons in the Overview's words).
+                ["entries"] = JsonSerializer.Serialize(stuck.Take(DigestEntries).Select(a => new Dictionary<string, string>
+                {
+                    ["title"] = a.Title ?? "?",
+                    ["scope"] = a.Scope ?? string.Empty,
+                    ["instance"] = a.Instance ?? string.Empty,
+                    ["code"] = a.Code,
+                })),
             };
             TellAdmins(items.Count > 0 ? admins() : Array.Empty<Guid>(), NotifyKind.StuckDigest, "stuck|" + day, null, p, now, tx =>
             {
@@ -2656,18 +2677,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 1) == 1) return;
             _bridge.Indexed += OnIndexed;
+            _bridge.Hydrated += OnIndexed;
         }
 
         private void UnsubscribeBridge()
         {
             if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 0) == 0) return;
             _bridge.Indexed -= OnIndexed;
+            _bridge.Hydrated -= OnIndexed;
         }
 
         /// <summary>
-        /// The Jellyfin bridge's targeted refresh found an imported file: the title (when someone
-        /// follows or asked for it) is looked at in the next round, without waiting for Jellyfin's
-        /// own item events (a new movie carries its provider ids only after its metadata is read).
+        /// The Jellyfin bridge's targeted refresh found an imported file (<see cref="JellyfinBridge.Indexed"/>), or its
+        /// metadata was read back and it was published Ready (<see cref="JellyfinBridge.Hydrated"/>): the title (when someone
+        /// follows or asked for it) is looked at in the next round, without waiting for Jellyfin's own item events (a new
+        /// movie carries its provider ids only after its metadata is read). Indexed alone never makes it Ready: the round
+        /// reads the status, which holds a just-imported copy as "Almost ready" until the readiness gate lets it count
+        /// (<see cref="BridgeImportReadiness"/>); the Hydrated wake-up is the one that finds it Ready.
         /// </summary>
         internal void OnIndexed(string key)
         {
@@ -2729,7 +2755,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (series.GetProviderId(MetadataProvider.Tmdb) is { Length: > 0 } tmdb) keys.Add("tv:tmdb:" + tmdb);
                     if (series.GetProviderId(MetadataProvider.Imdb) is { Length: > 0 } imdb) keys.Add("tv:imdb:" + imdb);
                 }
-                var interest = _interest;
+                var interest = _interest.Read(new HashSet<string>(StringComparer.Ordinal));
                 var hits = keys.Where(interest.Contains).ToList();
                 if (hits.Count > 0) MarkDirty(hits);
             }
@@ -2800,5 +2826,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return null;
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, byte>> _dirtyFactsOwner = new();
+        private ConcurrentDictionary<string, byte> _dirtyFacts { get => _dirtyFactsOwner.Read(ref _dirty, () => new(StringComparer.Ordinal)); set => _dirtyFactsOwner.Store(ref _dirty, value); }
     }
 }

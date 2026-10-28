@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Phase 4c3a: list pages draw the entries that aren't in the library — playlist rows inline in list order (also with no
 // real items), the collection section, per-entry status and Request (the shared sheet, the list's own route), the
 // Playlists grid's incomplete mark from the summary route, Spoiler Guard before paint, and the lifecycle: repeated
@@ -439,10 +440,10 @@ test('Request uses the list preview and the shared sheet in its fixed mode, and 
   assert.match(sheet.textContent, /Uses 1 request/);
   const preview = h.calls.find(c => c.path.endsWith('/requests/preview'));
   assert.deepEqual(preview.body, { placeholderIds: [P(1)] });
-  sheet.querySelector('.je-sheet-primary').click();
+  clickAsViewer(sheet.querySelector('.je-sheet-primary'));
   await h.settle(60);
   assert.ok(h.document.querySelector('.je-sheet'), 'a lost answer keeps the sheet open');
-  h.document.querySelector('.je-sheet-primary').click();
+  clickAsViewer(h.document.querySelector('.je-sheet-primary'));
   await h.settle(60);
   assert.equal(h.document.querySelector('.je-sheet'), null);
   assert.equal(submits.length, 2);
@@ -472,7 +473,7 @@ test('a season entry asks for exactly that season: the sheet shows its scope, no
   assert.match(sheet.querySelector('.je-sheet-facts').textContent, /^Season 2$/);
   assert.match(sheet.textContent, new RegExp(en.arr_lists_preview_approval.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(h.calls.filter(c => /tmdb|season/i.test(c.path) && !c.path.includes('/acquire/lists/')).length, 0, 'no season list read for a fixed entry');
-  sheet.querySelector('.je-sheet-primary').click();
+  clickAsViewer(sheet.querySelector('.je-sheet-primary'));
   await h.settle(60);
   assert.deepEqual(submits.map(b => b.placeholderIds), [[P(5)]]);
 });
@@ -1350,7 +1351,7 @@ test('r3 B1: revoke closes an active sheet and a late send paints nothing', asyn
   h.trusted(container.querySelector('.je-list-request'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle();
   assert.ok(h.document.querySelector('.je-sheet-primary'));
-  h.document.querySelector('.je-sheet-primary').click();
+  clickAsViewer(h.document.querySelector('.je-sheet-primary'));
   await h.settle();
   h.showNow(page, '#/home');
   await h.settle();
@@ -1549,7 +1550,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     const r = await heldRequestPage(t, collection);
     const { h, lp } = r;
     const a = r.button();
-    a.click();
+    clickAsViewer(a);
     await h.settle();
     assert.equal(r.previews.length, 1, "A's preview is asked for");
     assert.equal(a.disabled, true, "A's press takes the button while it prepares");
@@ -1558,7 +1559,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     await r.back();
     assert.equal(r.button(), a, 'Back shows the page jellyfin-web kept: the same row and button');
     const toasts = h.toasts.length;
-    r.button().click();
+    clickAsViewer(r.button());
     await h.settle();
     assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
     assert.equal(a.disabled, true, "B's press takes the button");
@@ -1575,7 +1576,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     await h.settle(60);
     assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
     assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
-    h.document.querySelector('.je-sheet-secondary').click();
+    clickAsViewer(h.document.querySelector('.je-sheet-secondary'));
     await h.settle();
   });
 }
@@ -1613,8 +1614,8 @@ test('LIST-REQ-INFLIGHT-1 control: on one page show a second press (tap or call)
   const r = await heldRequestPage(t, false);
   const { h, lp } = r;
   const a = r.button();
-  a.click();
-  a.click();
+  clickAsViewer(a);
+  clickAsViewer(a);
   const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
   await h.settle();
   assert.equal(r.previews.length, 1, 'one preview for one page show');
@@ -1623,14 +1624,14 @@ test('LIST-REQ-INFLIGHT-1 control: on one page show a second press (tap or call)
   await h.settle(60);
   assert.equal(h.document.querySelectorAll('.je-sheet').length, 1);
   assert.equal(r.previews.length, 1);
-  h.document.querySelector('.je-sheet-secondary').click();
+  clickAsViewer(h.document.querySelector('.je-sheet-secondary'));
   await h.settle();
 });
 
 test('LIST-REQ-INFLIGHT-1: a person switch frees every press; the next person\'s press on the entry is its own and the old one draws nothing', async t => {
   const r = await heldRequestPage(t, false);
   const { h, lp } = r;
-  r.button().click();
+  clickAsViewer(r.button());
   await h.settle();
   assert.equal(r.previews.length, 1);
   h.state.epoch++;
@@ -1698,7 +1699,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     const { h, lp } = r;
     const a = r.button();
     const ticketA = r.ctrl().ticket;
-    a.click();
+    clickAsViewer(a);
     await h.settle();
     assert.equal(r.previews.length, 1, "A's preview is asked for");
     assert.equal(a.disabled, true, "A's press takes the button while it prepares");
@@ -1713,7 +1714,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     const ticketB = r.ctrl().ticket;
     assert.ok(ticketB && ticketB !== ticketA && ticketB.current(), 'the resumed page has a fresh, current ticket');
     const toasts = h.toasts.length;
-    r.button().click();
+    clickAsViewer(r.button());
     await h.settle();
     assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
     assert.equal(a.disabled, true, "B's press takes the button");
@@ -1730,7 +1731,7 @@ for (const collection of [false, true]) for (const [late, end] of Object.entries
     await h.settle(60);
     assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
     assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
-    h.document.querySelector('.je-sheet-secondary').click();
+    clickAsViewer(h.document.querySelector('.je-sheet-secondary'));
     await h.settle();
   });
 }
@@ -1787,7 +1788,7 @@ test('LIST-REQ-INFLIGHT-2: a Request sheet open when the document leaves into th
   const r = await heldRequestPage(t, false);
   const { h } = r;
   const a = r.button();
-  a.click();
+  clickAsViewer(a);
   await h.settle();
   r.previews[0].resolve(ASKABLE(r.entry.id));
   await h.settle(60);
@@ -1796,13 +1797,13 @@ test('LIST-REQ-INFLIGHT-2: a Request sheet open when the document leaves into th
   assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, 'the sheet ends with the page show it was opened for');
   assert.equal(a.disabled, false);
   await docBack(h);
-  r.button().click();
+  clickAsViewer(r.button());
   await h.settle();
   assert.equal(r.previews.length, 2, "the restored page's press asks again");
   r.previews[1].resolve(ASKABLE(r.entry.id));
   await h.settle(60);
   assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, 'one new sheet');
-  h.document.querySelector('.je-sheet-secondary').click();
+  clickAsViewer(h.document.querySelector('.je-sheet-secondary'));
   await h.settle();
 });
 
@@ -1816,7 +1817,7 @@ test('LIST-REQ-INFLIGHT-2 control: the first load\'s pageshow (not persisted) ne
   assert.equal(r.ctrl().ticket, ticket, 'same ticket');
   assert.equal(ticket.current(), true);
   assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
-  r.button().click();
+  clickAsViewer(r.button());
   await h.settle();
   assert.equal(r.previews.length, 1, 'Request still works on that show');
 });
@@ -1836,4 +1837,27 @@ test('LIST-REQ-INFLIGHT-2 control: a page element\'s own bubbling pageshow / pag
   assert.equal(r.ctrl().ticket, ticket, 'same ticket');
   assert.equal(ticket.current(), true);
   assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
+});
+
+// D95: list placeholder cards show the download progress on their poster (the shared status overlay, behind its switch).
+test('D95: a placeholder card that is downloading shows the progress on its poster; almost ready pulses; off without the switch', async t => {
+  const entries = [
+    ph(P(1), { title: 'Coming', status: { key: 'movie:tmdb:100', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 30 } } }),
+    ph(P(2), { title: 'Importing', titleKey: 'movie:tmdb:200', tmdbId: 200, status: { key: 'movie:tmdb:200', stage: 'almostReady', reason: { code: 'importing' } } }),
+    ph(P(3), { title: 'Asked', titleKey: 'movie:tmdb:300', tmdbId: 300, status: { key: 'movie:tmdb:300', stage: 'asked', reason: { code: 'awaiting_approval' } } })
+  ];
+  const coll = { listId: COLL, listKind: 'collection', rev: 2, canEdit: false, actions: [], statusShown: true, placeholders: entries, order: null };
+  for (const [config, expected] of [[{ ArrStatusArtworkProgressEnabled: true }, ['30%', 'hourglass_bottom', null]], [{}, [null, null, null]]]) {
+    const h = setup(t, { config, views: () => [coll], items: { [COLL]: { Id: COLL, Type: 'BoxSet' } } });
+    const page = h.document.createElement('div');
+    page.className = 'page itemDetailPage';
+    page.innerHTML = '<div class="detailSection"><div class="collectionItems"><div class="verticalSection"></div></div><div class="nextUpSection"></div></div>';
+    h.document.body.appendChild(page);
+    await h.start();
+    await h.show(page, '#/details?id=' + COLL);
+    const cards = [...page.querySelectorAll('.je-list-card')];
+    assert.equal(cards.length, 3);
+    const shown = cards.map(c => c.querySelector('.je-list-card-main > .je-arr-art .je-arr-art-text')?.textContent ?? null);
+    assert.deepEqual(shown, expected, JSON.stringify(config));
+  }
 });

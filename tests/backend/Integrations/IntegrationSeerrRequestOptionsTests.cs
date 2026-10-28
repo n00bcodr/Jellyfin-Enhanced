@@ -713,6 +713,31 @@ public class IntegrationSeerrRequestOptionsTests
         }
     }
 
+    // ---- UX3R2 (review round 2), the reviewer's probe: the request-options route reads nothing while Seerr is off ----
+    [Theory]
+    [InlineData("switched_off")]
+    [InlineData("isolated_je")]
+    [InlineData("isolated_status_only")]
+    [InlineData("on")]
+    public async Task UX3R2DirectOptionsRouteWhileOffAndOn(string scenario)
+    {
+        foreach (var warm in new[] { false, true })
+        {
+            using var rig = new Rig();
+            var caller = TestCallers.Principal(rig.Admin.UserId, true);
+            if (warm) await rig.Controller(caller).RequestOptions("movie", default);
+            rig.Config.ArrBackendIsolationVersion = 1;
+            if (scenario == "switched_off") rig.Config.JellyseerrEnabled = false;
+            else if (scenario == "isolated_je") rig.Config.ArrRequestBackend = "je";
+            else if (scenario == "isolated_status_only") rig.Config.ArrRequestBackend = "status_only";
+            var calls = rig.Fake.Calls.Count;
+            var result = Assert.IsAssignableFrom<ObjectResult>(await rig.Controller(caller).RequestOptions("movie", default));
+            var json = JsonSerializer.SerializeToElement(result.Value);
+            if (scenario == "on") Assert.True(json.GetProperty("canUse").GetBoolean());
+            else Assert.True(rig.Fake.Calls.Count == calls, $"scenario={scenario}, warm={warm}, calls={rig.Fake.Calls.Count - calls}");
+        }
+    }
+
     // ------------------------------------------------------------------ the administrators' route
 
     [Fact]

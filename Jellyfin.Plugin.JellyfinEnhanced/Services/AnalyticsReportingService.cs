@@ -123,7 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = RequestTimeout;
 
                 using var request = new HttpRequestMessage(HttpMethod.Post, $"{SupabaseUrl}/rest/v1/rpc/register_install");
@@ -548,7 +548,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ["p_build_proof"] = BuildAttestation.Prove(payload.InstallId, payload.PluginVersion),
                 };
 
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = RequestTimeout;
 
                 using var request = new HttpRequestMessage(HttpMethod.Post, $"{SupabaseUrl}/rest/v1/rpc/report_stats");
@@ -662,7 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ["p_secret"] = config.GetAnalyticsInstallSecret(),
                 };
 
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = RequestTimeout;
 
                 using var request = new HttpRequestMessage(HttpMethod.Post, $"{SupabaseUrl}/rest/v1/rpc/set_opted_out");

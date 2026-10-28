@@ -1325,7 +1325,7 @@ public class IntegrationNotifyHardeningTests
     public async Task SeerrRequestsNoLongerHeldBelowTheReadWindowAreForgottenAndAreNotNewsWhenSeenAgain()
     {
         // Seerr holds as many requests as are read (nobody's: no interest to look at); all are seen.
-        const int max = SeerrRequestReadModel.MaxRequests;
+        const int max = SeerrFacts.MaxRequests;
         using var rig = await Started(r =>
         {
             for (var i = 1; i <= max; i++) r.Seerr.Requests.Add(FakeSeerr.Request(i, "movie", 100_000 + i, 2, null, new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc).AddMinutes(i)));

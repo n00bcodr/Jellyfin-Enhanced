@@ -325,7 +325,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         var property = typeof(PluginConfiguration).GetProperty(field);
                         if (property == null || (bool)(property.GetValue(live) ?? false) == value) continue;
-                        property.SetValue(live, value);
+                        // Through the one evidence writer: an owned flag is no evidence input (an input would advance it).
+                        EvidenceRevision.AssignConfigurationValue(live, property, value);
                         any = true;
                     }
                     return any;

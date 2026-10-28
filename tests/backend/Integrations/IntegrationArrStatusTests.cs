@@ -575,7 +575,7 @@ public class IntegrationArrStatusTests
             Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(film), new[] { Went(film, at) }).ToArray());
         // Nothing went out for it (yet): no time, whatever the want's own times say.
         Assert.Empty(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(film), Array.Empty<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestDispatch>()));
-        var seerr = SeerrRequestReadModel.FactsOf(new[]
+        var seerr = SeerrFacts.FactsOf(new[]
         {
             new SeerrRequestRecord { Id = 1, IsMovie = false, TvdbId = 279121, Status = SeerrRequestStatus.Approved, Seasons = new[] { 1 }, CreatedAt = Now.AddHours(-3), UpdatedAt = Now.AddHours(-2) },
             new SeerrRequestRecord { Id = 2, IsMovie = false, TvdbId = 279121, Status = SeerrRequestStatus.Pending, Seasons = new[] { 2 }, CreatedAt = Now.AddHours(-1) },
@@ -598,19 +598,19 @@ public class IntegrationArrStatusTests
         SeerrRequestRecord Record(int status, int media) => new() { Id = 1, IsMovie = true, TmdbId = 693134, Status = status, MediaStatus = media, CreatedAt = approved.AddMinutes(-5), UpdatedAt = approved };
         var facts = MovieFacts();
         facts.Checked.Add(Radarr);
-        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Completed, 5) }, Admin.UserId);
+        facts.Request = SeerrFacts.FactsOf(new[] { Record(SeerrRequestStatus.Completed, 5) }, Admin.UserId);
         var ready = StatusComposer.Movie(facts, null, new[] { hd }, ctx, false, qualifying: new[] { hd.ItemId });
         Assert.Equal(StatusStage.Ready, ready.Stage);
         Assert.Null(ready.Admin!.ApprovedNotInArrSince);
         // Available in Seerr while the request still reads "OK'd": done too.
-        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 5) }, Admin.UserId);
+        facts.Request = SeerrFacts.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 5) }, Admin.UserId);
         Assert.Null(StatusComposer.Movie(facts, null, new[] { hd }, ctx, false, qualifying: new[] { hd.ItemId }).Admin!.ApprovedNotInArrSince);
         // Not here and not done (Seerr still processing it): the line is about a real stuck handoff.
-        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 3) }, Admin.UserId);
+        facts.Request = SeerrFacts.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 3) }, Admin.UserId);
         var stuck = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false);
         Assert.Equal((StatusReasonCode.ApprovedNotInArr, approved), (stuck.Reason.Code, stuck.Admin!.ApprovedNotInArrSince!.Value));
         // A series by key and on its page follow the same rule.
-        var show = new TitleFacts(ShowKey) { Request = SeerrRequestReadModel.FactsOf(new[] { new SeerrRequestRecord { Id = 2, TmdbId = 1, TvdbId = 279121, Status = SeerrRequestStatus.Completed, MediaStatus = 5, CreatedAt = approved, UpdatedAt = approved, Seasons = new[] { 1 } } }, Admin.UserId) };
+        var show = new TitleFacts(ShowKey) { Request = SeerrFacts.FactsOf(new[] { new SeerrRequestRecord { Id = 2, TmdbId = 1, TvdbId = 279121, Status = SeerrRequestStatus.Completed, MediaStatus = 5, CreatedAt = approved, UpdatedAt = approved, Seasons = new[] { 1 } } }, Admin.UserId) };
         show.Checked.Add(Sonarr);
         var series = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/tv/Show", DateCreated = Now.AddDays(-1) };
         Assert.Null(StatusComposer.SeriesByKey(show, new[] { series }, ctx).Admin?.ApprovedNotInArrSince);

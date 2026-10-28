@@ -55,7 +55,7 @@ public static class ProviderPresentationSchema
         Add("person-search", Role.Envelope, "page totalPages totalResults");
         Add("named-search", Role.Envelope, "page totalPages totalResults");
         Add("named-lookup", Role.Envelope, "");
-        Add("page", Role.Envelope, "id page totalPages totalResults totalRecordCount startIndex list type more contact lookingHours canApproveRequests outcome reason certainty message");
+        Add("page", Role.Envelope, "id page totalPages totalResults totalRecordCount startIndex list type more contact lookingHours canApproveRequests outcome reason certainty message complete verification retryAfterSeconds");
         Add("hub-seerr", Role.Metadata, "configured loaded unavailable ledger");
         Add("hub-arr", Role.Metadata, "unavailable");
         Add("hub-admin", Role.Metadata, "downloads calendar hub");
@@ -175,7 +175,7 @@ public static class ProviderPresentationSchema
         // Collection identity is not a movie identity; only its member rows own title policy.
         Add("collection", Role.Metadata, "id name title originalLanguage originalName overview posterPath backdropPath");
         Children("collection", "parts", "title", kind:"movie");
-        Add("season-rows", Role.Title, "key series season seriesId displayMissing canRequest seasonRequest");
+        Add("season-rows", Role.Title, "key series season seriesId displayMissing canRequest seasonRequest source");
         Children("season-rows", "episodes", "episode"); Children("season-rows", "blocked", "block");
         schemas["page"].Fields["rows"] = new(Disposition.Project, "season-rows");
         foreach (var field in new[] { "character", "job", "department" })

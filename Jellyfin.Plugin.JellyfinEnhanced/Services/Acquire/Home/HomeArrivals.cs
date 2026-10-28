@@ -40,9 +40,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private readonly ILibraryManager? _library;
         private readonly Logger? _logger;
         private readonly Func<bool> _enabled;
-        private readonly ConcurrentDictionary<string, long> _known = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, long> _known = new(StringComparer.Ordinal);
         private readonly Channel<(Guid Id, DateTime At, long Generation)> _added = Channel.CreateBounded<(Guid Id, DateTime At, long Generation)>(new BoundedChannelOptions(4096) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
         private readonly CancellationTokenSource _stop = new();
+        private long _loadedFactsGeneration;
         private long _loadedGeneration = -1;
         private long _loadedArrivalRevision = -1;
         private long _revision;
@@ -100,8 +101,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <returns>The UTC date, or null.</returns>
         public DateTime? FirstAt(string content)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             Load();
-            return _known.TryGetValue(ContentArrivalHistory.ContentKey(content), out var ms) ? DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime : null;
+            return _knownFacts.TryGetValue(ContentArrivalHistory.ContentKey(content), out var ms) ? DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime : null;
         }
 
         /// <summary>
@@ -182,10 +184,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
 
         private void Record(IReadOnlyCollection<(string Content, DateTime At)> seen, long generation)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (seen.Count == 0 || !_db.Available || generation != _db.Generation) return;
             Load();
             seen = seen.Select(s => (ContentArrivalHistory.ContentKey(s.Content), s.At)).ToList();
-            var changed = seen.Where(s => !_known.TryGetValue(s.Content, out var ms) || Ms(s.At) < ms).ToList();
+            var changed = seen.Where(s => !_knownFacts.TryGetValue(s.Content, out var ms) || Ms(s.At) < ms).ToList();
             if (changed.Count == 0) return;
             try
             {
@@ -205,7 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 return;
             }
             Interlocked.Increment(ref _db.ArrivalRevision);
-            foreach (var (content, at) in changed) _known.AddOrUpdate(content, Ms(at), (_, old) => Math.Min(old, Ms(at)));
+            foreach (var (content, at) in changed) _knownFacts.AddOrUpdate(content, Ms(at), (_, old) => Math.Min(old, Ms(at)));
             Interlocked.Increment(ref _revision);
         }
 
@@ -373,11 +376,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         // The known dates, read once per database generation (a restore replaces them).
         private void Load()
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            var factsGeneration = Helpers.UserCacheRegistry.Begin().Generation;
             var generation = _db.Generation;
-            if ((Interlocked.Read(ref _loadedGeneration) == generation && Interlocked.Read(ref _loadedArrivalRevision) == Interlocked.Read(ref _db.ArrivalRevision)) || !_db.Available) return;
-            lock (_known)
+            if ((Interlocked.Read(ref _loadedFactsGeneration) == factsGeneration && Interlocked.Read(ref _loadedGeneration) == generation && Interlocked.Read(ref _loadedArrivalRevision) == Interlocked.Read(ref _db.ArrivalRevision)) || !_db.Available) return;
+            lock (_knownFacts)
             {
-                if (_loadedGeneration == generation && _loadedArrivalRevision == Interlocked.Read(ref _db.ArrivalRevision)) return;
+                if (_loadedFactsGeneration == factsGeneration && _loadedGeneration == generation && _loadedArrivalRevision == Interlocked.Read(ref _db.ArrivalRevision)) return;
                 try
                 {
                     var revision = Interlocked.Read(ref _db.ArrivalRevision);
@@ -389,10 +394,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                         while (reader.Read()) list.Add((reader.GetString(0), reader.GetInt64(1)));
                         return list;
                     });
-                    _known.Clear();
-                    foreach (var (content, at) in rows) _known.AddOrUpdate(ContentArrivalHistory.ContentKey(content), at, (_, old) => Math.Min(old, at));
+                    _knownFacts.Clear();
+                    foreach (var (content, at) in rows) _knownFacts.AddOrUpdate(ContentArrivalHistory.ContentKey(content), at, (_, old) => Math.Min(old, at));
                     Interlocked.Exchange(ref _loadedArrivalRevision, revision);
                     Interlocked.Exchange(ref _loadedGeneration, generation);
+                    Interlocked.Exchange(ref _loadedFactsGeneration, factsGeneration);
                     Interlocked.Increment(ref _revision);
                 }
                 catch (Exception ex)
@@ -405,5 +411,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private static long Ms(DateTime at) => new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
         private static DateTime Utc(DateTime at) => at.Kind == DateTimeKind.Local ? at.ToUniversalTime() : DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, long>> _knownFactsOwner = new();
+        private ConcurrentDictionary<string, long> _knownFacts { get => _knownFactsOwner.Read(ref _known, () => new(StringComparer.Ordinal)); set => _knownFactsOwner.Store(ref _known, value); }
     }
 }

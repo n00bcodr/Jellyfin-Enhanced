@@ -175,6 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <returns>The outcome.</returns>
         public async Task<ImportResolveOutcome> ResolveAsync(IReadOnlyList<ImportEntryDto> entries, ImportResolveOptions options, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
+            var provider = Provider;
+            var publication = _access.CapturePublication();
             var clock = Stopwatch.StartNew();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(options.Deadline);
@@ -189,7 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 Results = results.ToList(),
                 Complete = results.All(r => r.State != "transient"),
                 UpstreamCalls = options.Context.Calls,
-                MetadataProvider = Provider,
+                MetadataProvider = provider,
             };
 
             var pending = false;
@@ -217,7 +220,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _logger.Info($"[Lists] Resolved {entries.Count} import entries for {options.Context.Owner} in {clock.ElapsedMilliseconds} ms: "
                 + $"{response.Results.Count(r => r.Confidence == ImportScoring.Levels.High)} high, {response.Results.Count(r => r.State == "transient")} transient, {options.Context.Calls} {Provider} calls "
                 + $"(limiter since start: {total} calls, peak {peak} concurrent, at most {perSecond} started in any second).");
-            return new ImportResolveOutcome(response, pending);
+            return epoch.Publish(() =>
+            {
+                if (!publication.Current)
+                {
+                    response.Results.Clear();
+                    response.Complete = false;
+                    return new ImportResolveOutcome(response, true);
+                }
+                return new ImportResolveOutcome(response, pending);
+            }, () =>
+            {
+                response.Results = entries.Select((entry, index) => new ResolvedEntryDto
+                {
+                    Index = entry?.Index ?? index, State = "transient", Reasons = new List<string> { "transient" },
+                }).ToList();
+                response.Complete = false;
+                response.MetadataProvider = string.Empty;
+                return new ImportResolveOutcome(response, pending);
+            });
         }
 
         private async Task<ResolvedEntryDto> RunOneAsync(ImportEntryDto entry, int position, ImportResolveOptions options, CompletedIdentity.Completion completion, CancellationToken deadline, CancellationToken aborted)
@@ -255,6 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task<ResolvedEntryDto> ResolveEntryAsync(Wanted wanted, int index, ImportResolveOptions options, CompletedIdentity.Completion completion, CancellationToken cancellationToken)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var result = new ResolvedEntryDto { Index = index, Kind = wanted.Kind };
             var reasons = new SortedSet<string>(StringComparer.Ordinal);
             List<Scored> ordered;
@@ -344,6 +366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task<(List<Scored> Candidates, bool ExplicitId, Wanted Effective)> CandidatesAsync(Wanted wanted, ImportResolveOptions options, ISet<string> reasons, CancellationToken cancellationToken)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var context = options.Context;
             var list = new List<Scored>();
             var explicitId = false;
@@ -440,6 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task<List<Scored>> TitleCandidatesAsync(Wanted wanted, ImportResolveOptions options, ISet<string> reasons, CancellationToken cancellationToken)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var context = options.Context;
             // The year of a season/episode line is the season's air year: never a search filter (E1).
             var useYear = wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? null : wanted.Year;
@@ -514,6 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task VerifySeasonAsync(Wanted wanted, List<Scored> list, ImportCallContext context, CancellationToken cancellationToken)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var season = wanted.Season!.Value;
             // A season/episode line names a show: movie candidates only stay when no show matched at all.
             list.RemoveAll(c => c.Hit.MediaType != "tv");
@@ -625,6 +650,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task EnrichTvAsync(Scored top, Wanted wanted, ImportCallContext context, CancellationToken cancellationToken)
         {
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             if (top.Details == null)
             {
                 var details = await _lookup.GetDetailsAsync("tv", top.Hit.TmdbId, context, cancellationToken).ConfigureAwait(false);
@@ -644,6 +670,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private static string Confidence(Wanted wanted, List<Scored> ordered, bool explicitId, ISet<string> reasons)
         {
+            using var __factsOperation5 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var top = ordered.FirstOrDefault();
             if (top == null)
             {
@@ -754,17 +781,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         // Whether a candidate has no release date (a season line: the season has none).
-        private static bool IsUndated(Scored candidate, Wanted wanted) =>
-            wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
-                ? candidate.Season.AirDate == null && (candidate.Episodes == null || candidate.Episodes.All(e => e.AirDate == null))
-                : candidate.Hit.ReleaseDate == null;
-
+        private static bool IsUndated(Scored candidate, Wanted wanted)
+        {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
+                            ? candidate.Season.AirDate == null && (candidate.Episodes == null || candidate.Episodes.All(e => e.AirDate == null))
+                            : candidate.Hit.ReleaseDate == null;
+        }
         // The year a candidate came out for this line (a season line: the season's air year).
-        private static int? ReleaseYear(Scored candidate, Wanted wanted) =>
-            wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
-                ? YearOf(candidate.Episodes?.FirstOrDefault()?.AirDate) ?? YearOf(candidate.Season.AirDate)
-                : candidate.Hit.Year;
-
+        private static int? ReleaseYear(Scored candidate, Wanted wanted)
+        {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            return wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
+                            ? YearOf(candidate.Episodes?.FirstOrDefault()?.AirDate) ?? YearOf(candidate.Season.AirDate)
+                            : candidate.Hit.Year;
+        }
         private static int? YearDelta(int? candidateYear, int? wantedYear) =>
             candidateYear.HasValue && wantedYear.HasValue ? Math.Abs(candidateYear.Value - wantedYear.Value) : null;
 
@@ -776,6 +807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // never offered unchecked).
         private static async Task<CompletedIdentity> CompleteAsync(Scored candidate, Wanted wanted, CompletedIdentity.Completion completion, CancellationToken cancellationToken)
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var hit = candidate.Hit;
             var movie = hit.MediaType == "movie";
             var entryTvdb = candidate.Explicit && !movie ? wanted.TvdbId : null;
@@ -786,6 +818,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private ImportCandidateDto ToDto(Scored candidate, Wanted wanted, CompletedIdentity identity, IReadOnlyList<User> libraryUsers)
         {
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var hit = candidate.Hit;
             var dto = new ImportCandidateDto
             {
@@ -1223,8 +1256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private sealed class Scored(TitleHit hit, double score, bool isExplicit)
         {
-            public TitleHit Hit { get; } = hit;
-
+            public TitleHit Hit { get => _hitFactsOwner.Read(ref _hitFactsStorage, () => default!); }
             public double Score { get; set; } = score;
 
             public bool Explicit { get; } = isExplicit;
@@ -1252,6 +1284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             public bool EpisodeMissing { get; set; }
 
             public bool OpenEndedTruncated { get; set; }
+            private TitleHit _hitFactsStorage = hit;
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<TitleHit> _hitFactsOwner = new(prepared: true);
         }
 
         private sealed class TransientLookupException : Exception

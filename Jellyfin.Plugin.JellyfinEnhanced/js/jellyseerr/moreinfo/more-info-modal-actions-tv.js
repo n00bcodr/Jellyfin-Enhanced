@@ -69,7 +69,8 @@ function buildTvActions(data, show4kOption = false) {
             }
         };
         const handleDocClick = (ev) => {
-            if (!open4k) return;
+            // A click outside closes it only when it is the viewer's (D46S2-R12-3): a script's click elsewhere does not.
+            if (!open4k || !JE.isViewerInput(ev)) return;
             if (!open4k.contains(ev.target) && !arrowButton.contains(ev.target)) {
                 close4k();
             }
@@ -205,7 +206,8 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
             }
         };
         const handleDocClick = (ev) => {
-            if (!open4k) return;
+            // A click outside closes it only when it is the viewer's (D46S2-R12-3): a script's click elsewhere does not.
+            if (!open4k || !JE.isViewerInput(ev)) return;
             if (!open4k.contains(ev.target) && !arrowButton.contains(ev.target)) {
                 close4k();
             }

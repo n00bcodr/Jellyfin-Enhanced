@@ -263,20 +263,25 @@
             return { items: ordered, title: JE.t('native_details_filmography') };
         }
 
+        // Jellyfin Enhanced is the request backend (A1): the server's filmography, or no row; Seerr's status
+        // and account are never asked for (D88).
+        const je = JE.discoveryFilter.jeFeeds?.() ?? null;
+        if (je === false) return null;
+
         const personInfoPromise = getPersonInfo(itemId, signal);
-        const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
+        const statusPromise = je ? null : JE.jellyseerrAPI?.checkUserStatus();
 
         const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
 
         if (signal.aborted) return null;
 
-        if (!status?.active || !personInfo?.name) return null;
+        if (!personInfo?.name || !je && !status?.active) return null;
 
-        // No Seerr account (Jellyfin Enhanced request mode): the server's filmography, filtered there
-        // for the viewer. The person's TMDB id comes from the library (searching needs Seerr).
-        if (status.userFound === false) {
+        // No Seerr account (Jellyfin Enhanced request mode), or Jellyfin Enhanced the backend: the server's
+        // filmography, filtered there for the viewer. The person's TMDB id comes from the library (searching needs Seerr).
+        if (je || status.userFound === false) {
             const tmdb = parseInt(personInfo.tmdbId, 10);
-            if (!JE.discoveryFilter.useNativeFeeds?.(status) || !(tmdb > 0)) return null;
+            if (!(je || JE.discoveryFilter.useNativeFeeds?.(status)) || !(tmdb > 0)) return null;
             const results = await fetchFilmography(tmdb, signal);
             if (signal.aborted || !results) return null;
             return {

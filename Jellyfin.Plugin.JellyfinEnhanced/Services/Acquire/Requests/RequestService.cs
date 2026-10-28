@@ -65,6 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </param>
         public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
@@ -79,7 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // receipt before anything about it is worked out again (round 20: replay before revalidation), only when it is this
             // same request; anything else under the key is a conflict, never the first receipt. The caller's own checks (a person
             // who may ask, the feature, the database) were made above and by the route.
-            body = body with { Identity = body.Identity ?? PressChecks.RequestIdentity(body.Operation, body.Expect, body.Input.Normalize()!) };
+            body = body with { Identity = body.Identity ?? PressChecks.RequestIdentity(body.Operation, body.Expect, body.Input.Normalize()!, body.OverrideChoiceVersion) };
             if (RetryOwners.Key(body.ClientRequestId) is not { } retryKey) return RequestOutcome.Refused("invalid_input", 400);
             body = body with { ClientRequestId = retryKey };
             var result = await _ledger.Database.RetryOwners.ExecuteAsync(user, retryKey, body.Operation ?? "ask", body.Identity!,
@@ -104,8 +105,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
-                foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
-                    await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
+                foreach (var pending in _ledger.ForTitle(input.Key).Where(w => !w.Follower && (w.Status == "pending" || input.HasArrRouting && w.Status is "queued" or "sent" or "stale") && w.Input.Variant == input.Variant))
+                {
+                    var shared = pending.Input.WithArrChoices(input);
+                    await _policy.PrepareAsync(pending.UserId, shared, ct).ConfigureAwait(false);
+                    await _policy.PrepareAsync(user, shared, ct).ConfigureAwait(false);
+                }
             }
             string? target = null;
             Func<bool>? bound = null;
@@ -159,6 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="origin">Where the ask would come from.</param>
         public async Task<RequestPreview> PreviewAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var input = Normalize(body?.Input);
             if (body == null || input == null) return new RequestPreview(RequestOutcome.Refused("invalid_input", 400));
             if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
@@ -178,6 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="origin">Where the asks would come from.</param>
         public async Task<IReadOnlyList<RequestPreview>> PreviewBatchAsync(Guid user, IReadOnlyList<CreateRequest?> bodies, CancellationToken ct, RequestOrigin? origin = null)
         {
+            using var effect = SeerrFacts.BeginEffect();
             if (bodies.Count > RequestLedger.MaxBatch) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("batch_too_large", 400))).ToArray();
             if (!Enabled) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("feature_disabled"))).ToArray();
             if (!_ledger.Database.Available) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"))).ToArray();
@@ -209,6 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Approves with fresh requester and approver prerequisites.</summary>
         public async Task<RequestOutcome> ApproveAsync(string id, Guid actor, ApproveRequest? body, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect();
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (_ledger.Find(id) is not { } stored) return RequestOutcome.Refused("not_found", 404);
             // The request's title is learned first (once a series reaches Sonarr its canonical key becomes its TVDB id, and the
@@ -234,6 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Cancel or decline after policy recheck.</summary>
         public RequestOutcome Close(string id, Guid actor, string? reason)
         {
+            using var effect = SeerrFacts.BeginEffect();
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             var outcome = _ledger.Close(id, actor, reason, _policy, _now());
             if (outcome.RequestId != null && _ledger.Find(id) is { } want) _feed.Bump(new[] { want.Input.Key, ArrTitleKey.UserRequests(want.UserId), ArrTitleKey.RequestsState });
@@ -242,6 +251,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Declines after refreshing backend identity and management permissions.</summary>
         public async Task<RequestOutcome> DeclineAsync(string id, Guid actor, string reason, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect();
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             var want = _ledger.Find(id);
             if (want == null) return RequestOutcome.Refused("not_found", 404);
@@ -255,6 +265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public StatusBody List(Guid user, bool pending)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var viewer = Identity(user);
             var visible = _ledger.List(user, pending).Where(w => _policy.Evaluate(user, w.Input, w.TargetKey).Visible);
             var rows = pending ? visible.Select(w => new TitleRequests(w, new[] { w })).ToList() : LedgerRequestFacts.PerTitle(visible);
@@ -291,6 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The caller's own request capabilities (no I/O; identity was prepared by the caller).</summary>
         public RequestCapabilities Me(Guid user)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var config = _policy.Configuration;
             var movie = Identity(user, true);
             var series = Identity(user, false);
@@ -328,6 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         public async Task<RequestTitleCheck?> CheckAsync(Guid user, string? key, string? variant, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var edition = variant == "4k" ? "4k" : "standard";
             if (TitleInput(key, edition) is not { } input) return null;
             await _policy.PrepareDiskAsync(input, ct).ConfigureAwait(false);
@@ -364,6 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         public async Task<IReadOnlyDictionary<string, RequestBlock>> StoragePausesAsync(Guid user, IEnumerable<string> keys, bool wait, CancellationToken ct)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var paused = new Dictionary<string, RequestBlock>(StringComparer.Ordinal);
             var titles = keys.Distinct(StringComparer.Ordinal).Select(k => (Key: k, Input: TitleInput(k, "standard"))).Where(t => t.Input != null).ToList();
             // Every title of a kind goes to the same default instance: its facts are prepared once per kind.
@@ -385,6 +399,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public QuotaProjection Quota(Guid user, bool movie = true)
         {
+            using var effect = SeerrFacts.BeginEffect();
             var facts = Identity(user, movie);
             var now = _now();
             var quota = _ledger.Quota(facts, now);

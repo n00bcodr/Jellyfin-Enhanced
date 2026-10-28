@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 // Phase 4e (D29): each person's acquisition-badge preferences in the JE settings panel. Both are display preferences:
 // unset/null follows the household, "Hide" is false. The box only exists while acquisition badges are on; the native
 // select only while the native stamps are on too; untouched choices are never written; the web choice reaches the
@@ -584,7 +585,7 @@ for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server s
     // Isolate the cache button from unrelated locale enumeration.
     h.document.getElementById('displayLanguageSelect').remove();
     h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
-    h.document.getElementById('clearTranslationCacheButton').click();
+    clickAsViewer(h.document.getElementById('clearTranslationCacheButton'));
     transition(boundary);
     const before = h.errors.length;
     timers.forEach(callback => callback());
@@ -872,7 +873,7 @@ test('subtitle preset preview rolls back through document observers after close'
   await tick();
   const held = [deferred(), deferred()];let n = 0;
   h.window.ApiClient.ajax = () => held[n++].promise;
-  h.document.querySelector('#font-size-presets-container [data-preset-index="1"]').click();await tick();
+  clickAsViewer(h.document.querySelector('#font-size-presets-container [data-preset-index="1"]'));await tick();
   assert.equal(h.document.getElementById('subtitlePositionPreview').style.fontSize, '8px');
   const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
   h.panelCleanups.forEach(fn => fn());h.allowConsoleError('Failed to save settings.json');
@@ -893,7 +894,7 @@ test('quality category DOM order follows a failed reorder',async t=>{
  const h=panel(t,{settings:{qualityTagsEnabled:true}});h.wire();const group=h.document.getElementById('qualityTagsSubToggles');
  const order=()=>[...group.querySelectorAll('.je-quality-cat-row')].map(r=>r.dataset.orderKey),before=order(),held=deferred();
  h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
- group.querySelector('.je-cat-down').click();await tick();assert.notDeepEqual(order(),before);
+ clickAsViewer(group.querySelector('.je-cat-down'));await tick();assert.notDeepEqual(order(),before);
  held.reject(refused('reorder fails'));await tick();assert.deepEqual(order(),before);
 });
 
@@ -968,7 +969,7 @@ for (const trigger of ['language', 'cache', 'both']) {
       if (trigger !== 'cache') {
         await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
       }
-      if (trigger !== 'language') h.document.getElementById('clearTranslationCacheButton').click();
+      if (trigger !== 'language') clickAsViewer(h.document.getElementById('clearTranslationCacheButton'));
       const first = h.writes.length;
       await h.choose('nativeAcquisitionStampsSelect', 'off');
       await h.choose('acquisitionBadgesSelect', 'off');

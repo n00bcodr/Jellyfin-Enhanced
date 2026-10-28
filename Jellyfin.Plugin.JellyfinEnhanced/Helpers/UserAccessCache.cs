@@ -77,6 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             internal Ticket(Guid user, string? authority, UserAuthority.Stamp stamp, long clock, long ticks, long until, Guid[] scopes)
             {
                 User = user;
+                Facts = UserCacheRegistry.Begin();
                 Authority = authority;
                 Stamp = stamp;
                 Clock = clock;
@@ -93,6 +94,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             internal UserAuthority.Stamp Stamp { get; }
 
+            internal UserCacheRegistry.Ticket Facts { get; }
+
             internal long Clock { get; }
 
             // When the inputs were read: the lifetime counts from here, not from when the value is stored.
@@ -106,7 +109,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             internal long Deadline(TimeSpan ttl) => Math.Min(Until, Ticks + ttl.Ticks);
         }
 
-        private sealed record Entry(TValue Value, long ExpiresAt, Ticket Ticket);
+        private sealed record Entry(UserCacheRegistry.Entry<Services.Acquire.SeerrFacts.Derived<TValue>> Facts, long ExpiresAt, Ticket Ticket)
+        {
+            internal TValue Value => Facts.Value.Read(default!);
+        }
 
         /// <summary>Entries held (valid or not yet dropped).</summary>
         public int Count => _entries.Count;
@@ -177,10 +183,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public (TValue Value, UserAuthority.Stamp Stamp) GetHeldStamped(TKey key, Guid userId, Func<(TValue Value, UserAuthority.Stamp Stamp)> read, params Guid[] scopes)
         {
             if (_entries.TryGetValue(key, out var entry) && Serves(entry, null, _ticks())) return (entry.Value, entry.Ticket.Stamp.Within(entry.ExpiresAt));
+            var facts = UserCacheRegistry.Begin();
             var clock = _ledger.Begin();
             var (value, stamp) = read();
             var ticket = Held(userId, stamp, clock, scopes);
-            Set(key, ticket, value);
+            Set(key, ticket, value, facts);
             return (value, stamp.Within(ticket.Deadline(_ttl)));
         }
 
@@ -198,6 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 return true;
             }
 
+            if (entry != null && !UserCacheRegistry.Current(entry.Facts.Ticket)) ((ICollection<KeyValuePair<TKey, Entry>>)_entries).Remove(new(key, entry));
             value = default!;
             return false;
         }
@@ -208,9 +216,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <param name="ticket">The ticket taken before computing.</param>
         /// <param name="value">The value.</param>
         public void Set(TKey key, in Ticket ticket, TValue value)
+            => Set(key, ticket, value, ticket.Facts);
+
+        private void Set(TKey key, in Ticket ticket, TValue value, UserCacheRegistry.Ticket facts)
         {
             var now = _ticks();
-            var entry = new Entry(value, ticket.Deadline(_ttl), ticket);
+            var entry = new Entry(UserCacheRegistry.Store(facts, Services.Acquire.SeerrFacts.Remember(value)), ticket.Deadline(_ttl), ticket);
             if (!Serves(entry, ticket.Authority, now)) return;
             _step?.Invoke("store");
             if (_entries.Count >= _maxEntries)
@@ -258,7 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             var ticket = entry.Ticket;
             // One epoch for every check: its records and floor are from the same moment.
             var epoch = _ledger.Current;
-            if (entry.ExpiresAt <= now || !epoch.Admits(ticket.Clock)) return false;
+            if (!UserCacheRegistry.Current(entry.Facts.Ticket) || !entry.Facts.Value.TryRead(out _) || entry.ExpiresAt <= now || !epoch.Admits(ticket.Clock)) return false;
             if (epoch.Ended((ticket.User, Guid.Empty), ticket.Clock)) return false;
             foreach (var scope in ticket.Scopes)
             {

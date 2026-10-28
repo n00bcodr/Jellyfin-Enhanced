@@ -108,7 +108,7 @@ public class IntegrationRequestParentalTests
     [Theory]
     [InlineData("G", true, false)]
     [InlineData("R", false, false)]
-    [InlineData("", false, false)]
+    [InlineData("", false, true)]
     [InlineData("fail", false, true)]
     public async Task AnAbsentTitlesUnverifiedRatingIsUnknownNotARefusal(string rating, bool visible, bool unknownAfter)
     {
@@ -116,17 +116,16 @@ public class IntegrationRequestParentalTests
         arr.Add("movies.invalid", "Radarr"); arr.Configure(("Movies", ArrKind.Radarr, "http://movies.invalid", "test-key"));
         var config = arr.Plugin.Plugin.Configuration;
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je"; config.ArrRequestDefaultRole = "Kid";
-        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.invalid"; config.JellyseerrApiKey = "test-seerr";
+        config.JellyseerrEnabled = false; config.TMDB_API_KEY = "test-tmdb";
         var jf = new FakeJellyfinView(); var kid = jf.AddUser(false, parental: true); var user = (User)kid.Handle!; user.MaxParentalRatingScore = 10;
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(kid.UserId)).Returns(user);
         var localization = new Mock<ILocalizationManager>();
         localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
         localization.Setup(l => l.GetRatingScore("R", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(18, null));
         var server = new Mock<IServerConfigurationManager>(); server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
-        using var transport = new IntegrationTransport((_, _) => Task.FromResult(rating == "fail"
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(rating == "fail"
             ? IntegrationTransport.Response("{}", 503)
-            : IntegrationTransport.Response(JsonSerializer.Serialize(new
-            { releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = rating } } } } }, keywords = new { keywords = Array.Empty<object>() }, genres = Array.Empty<object>() }))));
+            : IntegrationTransport.Response(IntegrationParentalEvidenceTests.Movie(int.Parse(request.RequestUri!.Segments.Last()), rating))));
         var parental = new SeerrParentalFilter(transport, users.Object, localization.Object, server.Object, arr.Plugin.Core.Logger);
         using var store = arr.Store(); var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         var aliases = new TitleAliases(store, null); var policy = new RequestPolicy(jf, store, libraries, aliases, parental, arr.Factory, new UnavailableRequestBackend());
@@ -191,15 +190,15 @@ public class IntegrationRequestParentalTests
         var movies = arr.Add("movies.invalid", "Radarr"); arr.Configure(("Movies", ArrKind.Radarr, "http://movies.invalid", "test-key"));
         var config = arr.Plugin.Plugin.Configuration;
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je"; config.ArrRequestDefaultRole = "Kid";
-        config.JellyseerrEnabled = true; config.JellyseerrUrls = "http://seerr.invalid"; config.JellyseerrApiKey = "test-seerr";
+        config.JellyseerrEnabled = false; config.TMDB_API_KEY = "test-tmdb";
         var jf = new FakeJellyfinView(); var kid = jf.AddUser(false, parental: true); var user = (User)kid.Handle!; user.MaxParentalRatingScore = 10;
         var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(kid.UserId)).Returns(user);
         var localization = new Mock<ILocalizationManager>();
         localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
         localization.Setup(l => l.GetRatingScore("R", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(18, null));
         var server = new Mock<IServerConfigurationManager>(); server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
-        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new
-        { releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = rating } } } } }, keywords = new { keywords = Array.Empty<object>() }, genres = Array.Empty<object>() }))));
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(IntegrationTransport.Response(
+            IntegrationParentalEvidenceTests.Movie(int.Parse(request.RequestUri!.Segments.Last()), rating))));
         var parental = new SeerrParentalFilter(transport, users.Object, localization.Object, server.Object, arr.Plugin.Core.Logger);
         using var store = arr.Store(); var libraries = new ArrInstanceLibraries(store, new FakeLibraryAccess()) { Parental = parental };
         var aliases = new TitleAliases(store, null); var policy = new RequestPolicy(jf, store, libraries, aliases, parental, arr.Factory, new UnavailableRequestBackend());
@@ -219,7 +218,7 @@ public class IntegrationRequestParentalTests
             user.MaxParentalRatingScore = 10;
             Assert.Single(JsonDocument.Parse(service.List(kid.UserId, false).Json).RootElement.GetProperty("items").EnumerateArray());
         }
-        using var seerrFacts = new SeerrRequestReadModel(transport, new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerrFacts = new SeerrFacts(transport, new ArrChangeFeed(), null, () => config, () => arr.Now);
         var authority = new LedgerRequestFacts(ledger, seerrFacts, aliases);
         Assert.Equal(allowed, authority.Requested(TitleKey.Parse("movie:tmdb:603")!));
         Assert.Equal(allowed, authority.AskedBy(TitleKey.Parse("movie:tmdb:603")!, kid.UserId));
@@ -281,7 +280,7 @@ public class IntegrationRequestParentalTests
         }
         user.SetPreference(PreferenceKind.BlockedTags, new[] { "violence" });
         config.JellyseerrEnabled = false;
-        Assert.False(await parental.MaySeeAbsentAsync("movie", 603, kid.UserId.ToString("N"), default));
+        Assert.Equal(allowed, await parental.MaySeeAbsentAsync("movie", 603, kid.UserId.ToString("N"), default));
     }
 }
 
@@ -305,7 +304,7 @@ public class IntegrationLedgerSentFactsTests
         rig.Now = rig.Now.AddMinutes(3);
         await rig.Runner().TickAsync(CancellationToken.None);
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
         var sentAt = rig.Ledger.ForTitle("tv:tvdb:78874").Single(w => w.UserId == rig.Member).UpdatedAt.UtcDateTime;
         Assert.Equal(new[] { new RequestSentPart(false, 1, 4, sentAt) }, facts.Sent.ToArray());
@@ -329,7 +328,7 @@ public class IntegrationLedgerSentFactsTests
         rig.Now = rig.Now.AddMinutes(3);
         await rig.Runner().TickAsync(CancellationToken.None);
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         var series = TitleKey.Parse("tv:tvdb:78874")!;
         var member = rig.View.Users[rig.Member];
         var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null));
@@ -363,7 +362,7 @@ public class IntegrationLedgerSentFactsTests
         config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je";
         using var rig = new IntegrationRequestLedgerTests.Rig();
         using var store = arr.Store();
-        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        using var seerr = new SeerrFacts(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
         RequestFacts Facts() => new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
         var sentAt = rig.Now;
 

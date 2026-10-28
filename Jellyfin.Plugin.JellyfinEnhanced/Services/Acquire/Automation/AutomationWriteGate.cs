@@ -427,7 +427,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return c.JellyseerrEnabled ? null : Hold(Disabled, "Seerr is switched off.");
             }
             var on = c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && c.ArrRequestBackend is "je" or "seerr";
-            if (!on || c.ArrRequestBackend != w.Backend || (w.Backend == "seerr" && !SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)))
+            if (!on || c.ArrRequestBackend != w.Backend || (w.Backend == "seerr" && !SeerrFacts.IsActive(c, f.SeerrKey == true)))
                 return Park(ConfigurationChanged, "Request handling changed after this automatic request was queued.");
             return null;
         }

@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -60,7 +61,7 @@ test('a complete check with requesting off offers the move; the move switches th
   const move = h.document.getElementById('arrSeerrMigrationMove');
   assert.equal(move.textContent, 'Move 15 request(s) and switch to Jellyfin Enhanced');
   assert.equal(move.disabled, false);
-  move.click(); for (let i = 0; i < 6; i++) await settle();
+  clickAsViewer(move); for (let i = 0; i < 6; i++) await settle();
   const commit = h.requests.find(r => r.url && r.url.endsWith('/commit'));
   assert.deepEqual(JSON.parse(commit.data), { digest: 'd1', confirmRequestsDisabled: false });
   assert.equal(h.backend(), 'je');                                  // a later Save keeps the switch
@@ -70,7 +71,7 @@ test('a complete check with requesting off offers the move; the move switches th
   assert.match(after, /Nothing new to move; request handling is already Jellyfin Enhanced\./);
   assert.equal(h.document.getElementById('arrSeerrMigrationMove'), null);   // no second move
   const back = [...h.out().querySelectorAll('button')].find(b => b.textContent.startsWith('Roll back (until '));
-  back.click(); for (let i = 0; i < 6; i++) await settle();
+  clickAsViewer(back); for (let i = 0; i < 6; i++) await settle();
   assert.deepEqual(JSON.parse(h.requests.find(r => r.url && r.url.endsWith('/rollback')).data), { batchId: 'b1' });
   assert.equal(h.backend(), 'seerr');
   assert.match(h.out().textContent, /^✓ Moved requests removed, except those changed in Jellyfin Enhanced since; request handling is back to Seerr \(14 removed, 1 kept\)\./);
@@ -106,7 +107,7 @@ test('when Seerr\'s permissions can\'t be checked the move needs the confirmatio
   assert.equal(move.disabled, true);
   box.checked = true; box.dispatchEvent(new h.window.Event('change'));
   assert.equal(move.disabled, false);
-  move.click(); await settle(); await settle();
+  clickAsViewer(move); await settle(); await settle();
   assert.equal(JSON.parse(h.requests.find(r => r.url && r.url.endsWith('/commit')).data).confirmRequestsDisabled, true);
   for (let i = 0; i < 4; i++) await settle();
   assert.match(h.out().textContent, /^✓ Requests moved \(15 moved\)\./);
@@ -121,14 +122,14 @@ test('a refused move shows the server\'s reason and nothing changes; declining t
   } });
   await h.je.jeArrMigrationCheck();
   const move = h.document.getElementById('arrSeerrMigrationMove');
-  move.click(); await settle(); await settle();
+  clickAsViewer(move); await settle(); await settle();
   assert.match(h.out().textContent, /✗ Seerr's requests changed since the check; check again\. Nothing was moved\./);
   assert.equal(move.disabled, false);
   assert.equal(h.backend(), 'seerr');
 
   const no = setup(t, { confirm: false, respond: async o => o.url.endsWith('/preview') ? preview() : { batches: [] } });
   await no.je.jeArrMigrationCheck();
-  no.document.getElementById('arrSeerrMigrationMove').click(); await settle();
+  clickAsViewer(no.document.getElementById('arrSeerrMigrationMove')); await settle();
   assert.equal(no.requests.filter(r => r.url && r.url.endsWith('/commit')).length, 0);
 });
 
@@ -150,7 +151,7 @@ test('earlier moves are listed with a rollback button only inside their window; 
   assert.match(rows[1].textContent, /rolled back \(8 removed, 1 kept\)/);
   assert.equal(rows[1].querySelector('button'), null);
   assert.match(h.out().textContent, /✗ Only administrators can move requests/);
-  rows[0].querySelector('button').click(); for (let i = 0; i < 6; i++) await settle();
+  clickAsViewer(rows[0].querySelector('button')); for (let i = 0; i < 6; i++) await settle();
   assert.deepEqual(JSON.parse(h.requests.find(r => r.url && r.url.endsWith('/rollback')).data), { batchId: 'b2' });
   assert.match(h.requests.find(r => r.confirm).confirm, /request handling goes back to Seerr\.$/);
   assert.equal(h.backend(), 'seerr');
@@ -173,7 +174,7 @@ test('rolling back a later move made while JE already handled requests says requ
   assert.equal(h.document.getElementById('arrSeerrMigrationMove').textContent, 'Move 15 request(s)');   // already JE: no switch
   const rows = h.out().querySelectorAll('.je-arr-migration-batch');
   assert.equal(rows[1].querySelector('button'), null);   // the earlier move waits for the later one
-  rows[0].querySelector('button').click(); for (let i = 0; i < 6; i++) await settle();
+  clickAsViewer(rows[0].querySelector('button')); for (let i = 0; i < 6; i++) await settle();
   assert.match(h.requests.find(r => r.confirm).confirm, /removed from Jellyfin Enhanced, and request handling stays Jellyfin Enhanced\.$/);
   assert.deepEqual(JSON.parse(h.requests.find(r => r.url && r.url.endsWith('/rollback')).data), { batchId: 'b3' });
   assert.equal(h.backend(), 'je');

@@ -43,7 +43,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private readonly TmdbResponseCache _tmdb;
         private readonly MetadataCallLimiter _limiter;
         private readonly Logger _logger;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)>> _cacheFactsOwner = new();
+        private ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cacheFacts { get => _cacheFactsOwner.Read(ref _cache, () => new(StringComparer.Ordinal)); }
+
 
         /// <summary>Creates the lookup (singleton).</summary>
         /// <param name="tmdb">JE's TMDB response cache.</param>
@@ -70,6 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <inheritdoc />
         public async Task<LookupResult<IReadOnlyList<TitleHit>>> SearchAsync(string query, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var normalized = string.Join(' ', (query ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             if (normalized.Length == 0)
             {
@@ -78,12 +82,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var lower = normalized.ToLowerInvariant();
             var answer = await CachedAsync("search|" + lower, context, call => SearchUpstreamAsync(normalized, call), cancellationToken).ConfigureAwait(false);
-            return answer.Result<IReadOnlyList<TitleHit>>();
+            return epoch.Publish(() => answer.Result<IReadOnlyList<TitleHit>>(), () => LookupResult<IReadOnlyList<TitleHit>>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<TitleDetails>> GetDetailsAsync(string mediaType, int tmdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (mediaType is not ("movie" or "tv") || tmdbId <= 0)
             {
                 return LookupResult<TitleDetails>.NotFound;
@@ -92,12 +97,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var id = tmdbId.ToString(CultureInfo.InvariantCulture);
             var answer = await CachedAsync("details|" + mediaType + "|" + id, context, call =>
                 call.GetAsync(mediaType + "/" + id, "?append_to_response=external_ids", root => ParseDetails(root, mediaType, tmdbId)), cancellationToken).ConfigureAwait(false);
-            return answer.Result<TitleDetails>();
+            return epoch.Publish(() => answer.Result<TitleDetails>(), () => LookupResult<TitleDetails>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<IReadOnlyList<EpisodeFacts>>> GetSeasonAsync(int tvTmdbId, int season, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (tvTmdbId <= 0 || season < 0)
             {
                 return LookupResult<IReadOnlyList<EpisodeFacts>>.NotFound;
@@ -106,12 +112,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var path = "tv/" + tvTmdbId.ToString(CultureInfo.InvariantCulture) + "/season/" + season.ToString(CultureInfo.InvariantCulture);
             var answer = await CachedAsync("season|" + path, context, call =>
                 call.GetAsync(path, string.Empty, root => ParseSeason(root, tvTmdbId, season)), cancellationToken).ConfigureAwait(false);
-            return answer.Result<IReadOnlyList<EpisodeFacts>>();
+            return epoch.Publish(() => answer.Result<IReadOnlyList<EpisodeFacts>>(), () => LookupResult<IReadOnlyList<EpisodeFacts>>.Transient);
         }
 
         /// <inheritdoc />
         public async Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             if (!IsConfigured || !ImdbRegex.IsMatch(imdbId ?? string.Empty))
             {
                 return LookupResult<ImdbEpisodeFind>.NotFound;
@@ -120,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // Review round 5: through the shared limiter and the cache like every other lookup (it had neither).
             var answer = await CachedAsync("episode|" + imdbId, context, call =>
                 call.GetAsync("find/" + imdbId, "?external_source=imdb_id", ReadEpisodeFind), cancellationToken).ConfigureAwait(false);
-            return answer.Result<ImdbEpisodeFind>();
+            return epoch.Publish(() => answer.Result<ImdbEpisodeFind>(), () => LookupResult<ImdbEpisodeFind>.Transient);
         }
 
         /// <summary>
@@ -323,6 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         private async Task<LookupAnswer> CachedAsync(string cacheKey, ImportCallContext context, Func<TmdbCall, Task<LookupAnswer>> fetch, CancellationToken cancellationToken)
         {
+            var epoch = ListMetadataEpoch.Capture();
             var apiKey = Key; // one key for the whole lookup: its cache identity and every request it sends
             if (apiKey.Length == 0)
             {
@@ -331,41 +339,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             // A definitive answer is reused with its status, and without waiting for the limiter (review round 5, 4c2-R5-4:
             // a budgeted review that met the same stale ids again re-spent its budget on them and never got further).
-            var key = Fingerprint(apiKey) + "|" + cacheKey;
-            if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            var key = Fingerprint(apiKey) + "|" + cacheKey + "|" + epoch.Generation;
+            if (_cacheFacts.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid);
+                return epoch.Publish(() => new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid), () => LookupAnswer.Transient);
             }
 
             var answer = await fetch(new TmdbCall(_tmdb, _limiter, _logger, context, apiKey, cancellationToken)).ConfigureAwait(false);
-            if (answer.Remembered)
+            return epoch.Publish(() =>
             {
-                Remember(key, answer.Status, answer.Value);
-            }
-
-            return answer;
+                if (answer.Remembered) Remember(key, answer.Status, answer.Value);
+                return answer;
+            }, () => LookupAnswer.Transient);
         }
 
         private void Remember(string key, LookupStatus status, object? value)
         {
-            if (_cache.Count >= MaxCacheEntries)
+            if (_cacheFacts.Count >= MaxCacheEntries)
             {
                 var now = DateTime.UtcNow;
-                foreach (var entry in _cache.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
+                foreach (var entry in _cacheFacts.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
                 {
-                    _cache.TryRemove(entry, out _);
+                    _cacheFacts.TryRemove(entry, out _);
                 }
 
-                if (_cache.Count >= MaxCacheEntries)
+                if (_cacheFacts.Count >= MaxCacheEntries)
                 {
-                    foreach (var entry in _cache.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
+                    foreach (var entry in _cacheFacts.OrderBy(e => e.Value.ExpiresUtc).Take(MaxCacheEntries / 5).Select(e => e.Key).ToList())
                     {
-                        _cache.TryRemove(entry, out _);
+                        _cacheFacts.TryRemove(entry, out _);
                     }
                 }
             }
 
-            _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
+            _cacheFacts[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
         // Key identity (a hash, never the key or its length): another key never reuses this one's answers.
@@ -539,7 +546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
     /// <summary>
     /// The import title lookup in use (the metadata adapter for imports): TMDB with Jellyfin Enhanced's key when one is
-    /// saved (works without Seerr), otherwise Seerr when it is set up (the allowed, labelled fallback; responses name the
+    /// saved (works without Seerr), otherwise Seerr only outside JE mode when it is set up (the allowed, labelled fallback; responses name the
     /// provider). Decided per call from the configuration, never switched mid-call.
     /// </summary>
     public sealed class MetadataImportLookup : IImportLookup
@@ -556,10 +563,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _seerr = seerr;
         }
 
-        private IImportLookup Current => _tmdb.IsConfigured ? _tmdb : _seerr;
+        private IImportLookup Current => SeerrAddresses.IsJe(JellyfinEnhanced.Instance?.Configuration) || _tmdb.IsConfigured ? _tmdb : _seerr;
 
         /// <inheritdoc />
-        public bool IsConfigured => _tmdb.IsConfigured || _seerr.IsConfigured;
+        public bool IsConfigured => Current.IsConfigured;
 
         /// <inheritdoc />
         public string Provider => _tmdb.IsConfigured ? "tmdb" : _seerr.IsConfigured ? "seerr" : string.Empty;

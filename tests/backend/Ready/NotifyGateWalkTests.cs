@@ -47,6 +47,15 @@ public class NotifyGateWalkTests
         Assert.True(Sites("SendTestCore") >= 1 && Sites("TrySendTestCore") >= 1 && Sites("NotifyCore") >= 1 && Sites("Add") >= 1, all);
     }
 
+    [Fact]
+    public void ADirectCallAroundTheFactsScopeIsNotPartOfTheGate()
+    {
+        var problems = Planted(Dispatcher,
+            "private NotifyFinal FinalFactsCore(NotifyAlert alert)",
+            "internal NotifyFinal PlantedBypass(NotifyAlert alert) => FinalFactsCore(alert);\n\n        private NotifyFinal FinalFactsCore(NotifyAlert alert)");
+        Assert.Contains(problems, p => p.Contains("a verdict made outside the gate", StringComparison.Ordinal));
+    }
+
     private static List<string> Planted(string file, string find, string replace)
     {
         var walk = NotifyGateWalk.Plugin.With(file, s =>

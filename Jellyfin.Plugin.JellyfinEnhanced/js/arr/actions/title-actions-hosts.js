@@ -3,6 +3,20 @@
     'use strict';
     const A = JE.titleActions;
     let cards = new WeakMap();
+    // The cards drawn so far (D46S2-R13-1): released at the reconciliation that no longer finds them.
+    let drawn = new Set();
+    // The lifetime every card mount of the current pass shares (D46S2-R13-1): minted at most once per pass, and only when
+    // the one before it has ended (another route, session or document; the action bar going off); released once no card
+    // holds it. A card's own mount is a plain record of the card, never a registry entry of its own.
+    let shared = null;
+    // The cards of a long grid are reconciled a slice per frame (D46S2-R13-1), so no pass holds the main thread for long.
+    const CARD_SLICE = 200;
+    let cardPass = null;
+    let cardFrame = 0;
+    // Every identity source read by cardContext, including the real Discover renderer's title identity.
+    // The observer and child-node checks share this list so they cannot omit a supported producer.
+    const IDENTITY = ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'data-key'];
+    const identityNodes = IDENTITY.map(name => `[${name}]`).join(', ');
     const rows = new Map();
     const hosts = new Map();
     const homes = new WeakMap();
@@ -41,13 +55,18 @@
         const key = card.dataset.jeHideTitle || card.dataset.key;
         if (key) { const c = A.fromKey(key); if (c) return A.context({ ...c.data, name: card.dataset.jeHideName || card.querySelector('.je-discover-name bdi')?.textContent || '' }); }
         const meta = card.matches('[data-tmdb-id]') ? card : card.querySelector('[data-tmdb-id][data-media-type]');
-        return meta ? A.context({ mediaType: meta.dataset.mediaType, tmdbId: meta.dataset.tmdbId, name: meta.title || meta.textContent }) : null;
+        // The title link names the card: the overview's Request button comes first in a Seerr card and its tooltip can read "View on Seerr".
+        const link = card.querySelector('a[data-tmdb-id][data-media-type]');
+        return meta ? A.context({ mediaType: meta.dataset.mediaType, tmdbId: meta.dataset.tmdbId, name: (link?.querySelector('bdi') || link)?.textContent.trim() || '' }) : null;
     }
 
     /** Builds a visible keyboard/touch button. */
     function button(id, label, glyph) {
         const node = document.createElement('button'); node.type = 'button'; node.dataset.action = id;
-        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); ours.add(node); return node;
+        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); ours.add(node);
+        // Drawn for this session, route and document (D46S2-R11-1).
+        JE.mountControl?.(node);
+        return node;
     }
 
     /** True when the layout is jellyfin-web's desktop one (phones use layout-mobile, TVs layout-tv). */
@@ -57,43 +76,138 @@
      * Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale.
      * The card's mount is the one it has now: recycled for another title (even back to this one) is another.
      */
-    async function openCard(card, opener) {
+    async function openCard(card, opener, expected = null) {
+        settleMutations();
         const c = cardContext(card); if (!c || !enabled()) return;
-        mountCard(card);
+        // A delayed opening (a long press, D46S2-R13-2) acts only for the incarnation it was made on: never a newer one.
+        if (!expected) mountCard(card);
         const mounted = cards.get(card);
-        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === mounted && cardContext(card)?.key === c.key);
+        if (!mounted || mounted.key !== c.key || (expected && mounted !== expected)) return;
+        // The card's incarnation, captured once (D46S2-R14-3): the same immutable handle through admission, the entry
+        // reads and the sheet's publication; a removal or recycle meanwhile (even back to this title) ended it for good.
+        const mount = mounted.mount;
+        if (!mount.current()) return;
+        // The OPENING (D46S2-R12-8): an offer of the card's stable mount, finished on every terminal path — rejected,
+        // failed, superseded by a newer opening, or the sheet it showed closing. What the viewer submits from the sheet
+        // belongs to the card's mount, not to this opening (it outlives the sheet).
+        const owner = A.generation(() => mount.current());
         const newest = sheetOpening(owner);
+        const live = () => { settleMutations(); return owner.current(); };
+        let shown = false;
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner) });
         try {
-            if (!await A.admit(c, owner)) return;
-            const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (newest()) A.show(c, entries, opener || card.querySelector('.je-card-more'), owner);
+            // The admission and the entry reads run together; nothing about the title is drawn before it is admitted.
+            const admission = A.admit(c, owner);
+            const reading = A.entries(c, { action: owner, surface: 'recommendations', admission });
+            reading.catch(() => {});
+            if (!await admission || !live()) return;
+            A.titled(shell, c.name);
+            const entries = await reading;
+            if (live() && newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount, onClose: () => A.finish(owner), shell });
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) { A.discard(shell); A.finish(owner); } }
     }
 
     /** Reconciles a retained/recycled card without retaining detached nodes. */
-    function mountCard(card) {
+    function mountCard(card, pass = null) {
         const c = enabled() && cardContext(card);
         const prior = cards.get(card);
         if (!c) { removeCard(card); return; }
+        const life = () => pass ? (pass.life || (pass.life = cardLife())) : cardLife();
         if (prior?.key === c.key && prior.button.parentNode === card) {
             card.querySelectorAll(':scope > .je-card-more').forEach(n => { if (n !== prior.button) n.remove(); });
+            const now = life();
+            if (prior.life === now && !prior.mount.ended()) return;
+            // A card the host keeps and shows again (another route, then back; or put back after a removal): a NEW
+            // incarnation (D46S2-R14-3). The old record and its mount stay ended; nothing captured from them revives.
+            prior.mount.end();
+            const record = { key: c.key, button: prior.button, mount: null, life: null };
+            record.mount = cardMount(card, record, now);
+            cards.set(card, record); drawn.add(card);
             return;
         }
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
         A.styles(); card.classList.add('je-actions-card');
         const node = button('more', JE.t('title_actions_more'), 'more_horiz'); node.className = 'je-card-more'; node.dataset.jeActionKey = c.key;
-        node.onclick = e => { e.preventDefault(); e.stopPropagation(); openCard(card, node); };
-        card.append(node); cards.set(card, { key: c.key, button: node });
+        // Only a press someone made opens it (D46S2-R11-1: a script's click names no owner).
+        node.onclick = e => { e.preventDefault(); e.stopPropagation(); if (JE.ownerOf(e)) openCard(card, node); };
+        // The card's stable MOUNT (D46S2-R12-8): one per drawn card (this title, this card, still shown); a recycled
+        // card gets another. Its openings and the operations submitted from them are its children.
+        const record = { key: c.key, button: node, mount: null, life: null };
+        record.mount = cardMount(card, record, life());
+        card.append(node); cards.set(card, record); drawn.add(card);
+    }
+
+    /**
+     * The stable mount of a drawn card (its record, this title, still shown, within the pass's shared lifetime: this
+     * route, session and document). Ended is forever. A plain record: it holds no registry entry (D46S2-R13-1).
+     */
+    function cardMount(card, record, life) {
+        record.life = life;
+        let ended = false;
+        return {
+            current() {
+                if (!ended && !(life.current() && card.isConnected && cards.get(card) === record && cardContext(card)?.key === record.key)) ended = true;
+                return !ended;
+            },
+            /** Seen ended (no check now). */
+            ended: () => ended,
+            /** Ends it for good (the card was removed, recycled or re-titled: noteMutations). */
+            end() { ended = true; },
+        };
+    }
+
+    /** The shared card lifetime: the current one, else a new one (minted at most once per pass, see cardPass). */
+    function cardLife() {
+        if (!shared || !shared.current()) { A.finish(shared); shared = A.generation(() => !disposed && enabled()); }
+        return shared;
+    }
+
+    /**
+     * Reconciles the document's cards (D46S2-R13-1): each found card in order, a slice per frame for a long grid. Once
+     * the last slice is done, every card drawn before and no longer in the document as a card (removed, or no longer
+     * one) is released at once, as is the shared lifetime when no card holds it.
+     */
+    function reconcileCards() {
+        cancelAnimationFrame(cardFrame);
+        cardPass = { list: document.querySelectorAll(CARD), index: 0, life: null };
+        cardSlice();
+    }
+    function cardSlice() {
+        const pass = cardPass;
+        if (!pass || disposed) return;
+        for (const end = Math.min(pass.list.length, pass.index + CARD_SLICE); pass.index < end; pass.index++) {
+            const card = pass.list[pass.index];
+            if (!card.isConnected) continue;
+            mountCard(card, pass);
+        }
+        if (pass.index < pass.list.length) { cardFrame = requestAnimationFrame(cardSlice); return; }
+        cardPass = null;
+        let released = false;
+        for (const card of [...drawn]) {
+            if (card.isConnected && card.matches(CARD)) continue;
+            removeCard(card); released = true;
+        }
+        releaseShared();
+        // A mount that went (a card removed or recycled) ended its operations: their UI closes now.
+        if (released) JE.endScopes?.();
     }
 
     /** Removes a card's adapter button; the card's own nodes stay as they are. */
     function removeCard(card) {
-        card.classList.remove('je-actions-card'); card.querySelectorAll('.je-card-more').forEach(n => n.remove()); cards.delete(card);
+        card.classList.remove('je-actions-card'); card.querySelectorAll('.je-card-more').forEach(n => n.remove()); cards.delete(card); drawn.delete(card);
+    }
+
+    /** Releases the shared card lifetime once no card holds it. */
+    function releaseShared() {
+        if (drawn.size || !shared) return;
+        A.finish(shared); shared = null;
     }
 
     /** Removes every card adapter button, to be rebuilt by the next scan for the current identity. */
     function removeCards() {
-        cards = new WeakMap();
+        cards = new WeakMap(); drawn = new Set(); cardPass = null; cancelAnimationFrame(cardFrame); releaseShared();
         if (!document) return; // the owning document has already gone
         document.querySelectorAll('.je-card-more').forEach(n => n.remove());
         document.querySelectorAll('.je-actions-card').forEach(n => n.classList.remove('je-actions-card'));
@@ -109,6 +223,13 @@
     function classify(node, c) {
         if (node.dataset.jeActionKind) return ['request', 'open'].includes(node.dataset.jeActionKind) ? 'primary' : node.dataset.jeActionKind;
         const match = selector => node.matches(selector);
+        // The request controls of a title that isn't in the library, in Play's place (ask-actions via native details): the
+        // first is the row's primary action on every host (Search, Get missing episodes, Get it…), the sheet opener after
+        // it is the row's one Request, and any other ask goes with the requests.
+        if (match('.je-native-absent-primary .je-ask-action')) {
+            if (node.classList.contains('je-native-absent-lead')) return 'primary';
+            return node.dataset.jeAskKind === 'more' ? 'request' : 'ask';
+        }
         if (c?.absent && match('.btnPlay, .btnResume, .btnReplay, .btnShuffle, .btnInstantMix, [data-action="play"], [data-action="resume"], .btnDownload, .btnDelete, .btnMediaInfo')) return null;
         // Every distinct playback action keeps a place: with progress, Jellyfin shows Resume (.btnPlay)
         // and Play from beginning (.btnReplay, data-action="play") side by side.
@@ -132,10 +253,10 @@
     function nativeEntries(state) {
         return originals(state.row).map(source => {
             const id = classify(source, state.c); if (!id || ['primary', 'favorite', 'follow'].includes(id)) return null;
-            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: WATCH.includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage'].includes(id) ? 'requests' : 'other',
-                label: ['guard', 'follow', 'manage', 'native-more', 'replay'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more', replay: 'title_actions_replay' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
-                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report', 'replay'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
-                icon: { replay: 'replay', shuffle: 'shuffle', 'instant-mix': 'explore', trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
+            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: WATCH.includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage', 'request', 'ask'].includes(id) ? 'requests' : 'other',
+                label: ['guard', 'follow', 'manage', 'native-more', 'replay', 'request'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more', replay: 'title_actions_replay', request: 'jellyseerr_btn_request' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
+                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report', 'replay', 'request'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
+                icon: { replay: 'replay', shuffle: 'shuffle', 'instant-mix': 'explore', trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert', request: 'add' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
         }).filter(Boolean);
     }
 
@@ -157,26 +278,47 @@
     async function openRow(state, opener) {
         const action = state.action;
         if (!action.current()) return;
-        const newest = sheetOpening(action);
+        // The OPENING (as a card's, D46S2-R12-8): an offer of the row's mount, finished on every terminal path — its shell
+        // closed, refused, failed, superseded, or the sheet it showed closing. Its admission, entry reads and feedback all
+        // check it, so a closed opening's late answer (a success or an error) does nothing. What the viewer submits from
+        // the sheet belongs to the row's mount, not to this opening (it outlives the sheet).
+        const opening = A.generation(() => action.current());
+        const newest = sheetOpening(opening);
+        // Feedback in the press's own frame: a title-free loading shell, before any read; closing it ends the opening.
+        const shell = A.pending(opener, opening, { mount: action, onClose: () => A.finish(opening) });
+        let shown = false;
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
-                if (!action.current()) return;
+                if (!opening.current()) return;
             }
+            const title = () => state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
+            // A cancelled admission ends the opening; any other failure leaves the native controls.
+            const admission = state.c ? A.admit(state.c, opening).catch(error => { if (A.cancelled(error)) throw error; return false; }) : null;
+            // The entry reads run alongside the admission; nothing about the title is drawn before it has answered.
+            const reading = state.c ? A.entries(state.c, { action: opening, root: state.root, surface: 'details', admission }) : Promise.resolve([]);
+            reading.catch(() => {});
             if (state.c) {
                 let admitted = false;
-                // A cancelled admission ends the opening; any other failure leaves the native controls.
-                try { admitted = await A.admit(state.c, action); } catch (error) { if (A.cancelled(error)) return; }
-                if (!action.current() || (state.c.absent && !admitted)) return;
+                try { admitted = await admission; } catch (error) { if (A.cancelled(error)) return; }
+                if (!opening.current() || (state.c.absent && !admitted)) return;
+                if (admitted) A.titled(shell, title());
             }
-            const adapted = state.c ? await A.entries(state.c, { action, root: state.root, surface: 'details' }) : [];
-            if (!action.current()) return;
+            const adapted = await reading;
+            if (!opening.current()) return;
             const entries = nativeEntries(state);
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
-            const title = state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
-            if (newest()) A.show({ ...state.c, name: title }, entries, opener, action);
-        } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
+            // The row's own context (its admission record is what an entry's late check reads); the shown name is separate.
+            if (newest()) shown = A.show(state.c || {}, entries, opener, opening, { mount: action, onClose: () => A.finish(opening), shell, name: title() });
+        } catch (_) { if (opening.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) { A.discard(shell); A.finish(opening); } }
+    }
+
+    /** Marks an adapted control working on a press (or done) and mirrors it on the compact row's visible proxy of it. */
+    function busy(state, node, on) {
+        if (on) node.setAttribute('aria-busy', 'true'); else node.removeAttribute('aria-busy');
+        for (const proxy of state.compact?.proxies?.values() || []) if (proxy.jeActionSource === node) syncProxy(proxy, node);
     }
 
     /** Reads a control's label without treating icon-font ligatures as spoken text. */
@@ -200,6 +342,8 @@
         }
         const pressed = source.getAttribute('aria-pressed');
         if (pressed != null && proxy.getAttribute('aria-pressed') !== pressed) proxy.setAttribute('aria-pressed', pressed);
+        // A source working on a press (its admission pending) shows it on the visible control too.
+        if (source.getAttribute('aria-busy') === 'true') proxy.setAttribute('aria-busy', 'true'); else proxy.removeAttribute('aria-busy');
         const count = source.querySelector('.jellyseerr-issue-count-badge');
         const value = parseInt(count?.textContent || '0', 10);
         let badge = proxy.querySelector('.je-actions-badge');
@@ -214,7 +358,8 @@
     function reconcileRequest(state) {
         const request = state.request;
         if (!request) return;
-        const want = request.askable && !originals(state.row).some(n => !n.dataset.jeActionKind && classify(n, state.c) === 'primary');
+        // A native primary or request-sheet control (the page's own Request) leaves one request control per row (UX-19).
+        const want = request.askable && !originals(state.row).some(n => !n.dataset.jeActionKind && ['primary', 'request'].includes(classify(n, state.c)));
         if (want && request.node.parentElement !== state.row) { state.row.append(request.node); state.owned.add(request.node); }
         else if (!want && request.node.parentElement) { request.node.remove(); state.owned.delete(request.node); }
     }
@@ -296,10 +441,12 @@
         if (!owned.row) { owned.row = document.createElement('div'); owned.row.className = 'je-actions-row'; ours.add(owned.row); }
         const compactRow = owned.row;
         if (compactRow.parentElement !== row) row.append(compactRow);
-        const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'replay');
+        // The same primary as the wide row (UX-9): the page's own lead (Search stays Search), else its Request.
+        const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'request') || visible.find(n => classify(n, state.c) === 'replay');
         const favorite = visible.find(n => classify(n, state.c) === (state.c?.absent ? 'follow' : 'favorite'));
         const report = visible.find(n => classify(n, state.c) === 'report' && !n.disabled && n.getAttribute('aria-disabled') !== 'true');
-        const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : state.c?.absent ? 'add' : 'play_arrow';
+        const askIcon = primary?.matches('.je-ask-action') ? primary.querySelector('.je-ask-action-icon')?.textContent : null;
+        const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : askIcon || (state.c?.absent ? 'add' : 'play_arrow');
         const selected = [['primary', primary, primaryIcon], [state.c?.absent ? 'follow' : 'favorite', favorite, state.c?.absent ? 'notifications_none' : 'favorite_border'], ['report', report, 'warning']];
         for (const [id, , ] of [...owned.proxies]) if (!selected.some(([want, source]) => want === id && source)) { owned.proxies.get(id).remove(); owned.proxies.delete(id); }
         for (const [id, source, glyph] of selected) {
@@ -310,19 +457,22 @@
                 // A press is an operation on this row's mount; owners that confirm first carry it.
                 proxy.onclick = e => {
                     e.preventDefault(); e.stopPropagation();
-                    if (rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
+                    // A source still working on a press takes no second one (one submission per press).
+                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true' && source.getAttribute('aria-busy') !== 'true')
                         A.dispatch(source, A.generation(() => rowCurrent(state)));
+                    // The press's feedback (the source's busy state) is shown on this visible control in the same frame.
+                    syncProxy(proxy, source);
                 };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
                 owned.proxies.set(id, proxy);
             }
             syncProxy(proxy, source);
             if (id === 'primary') {
-                const label = proxy.querySelector('.je-actions-primary-label'); const text = controlLabel(source);
+                const label = proxy.querySelector('.je-actions-primary-label'); const text = classify(source, state.c) === 'request' ? JE.t('jellyseerr_btn_request') : controlLabel(source);
                 if (label.textContent !== text) label.textContent = text;
             }
         }
-        if (!owned.more) { owned.more = button('more', JE.t('title_actions_more'), 'more_horiz'); owned.more.className = 'je-actions-more'; owned.more.onclick = () => openRow(state, owned.more); }
+        if (!owned.more) { owned.more = button('more', JE.t('title_actions_more'), 'more_horiz'); owned.more.className = 'je-actions-more'; owned.more.onclick = e => { if (JE.ownerOf(e)) openRow(state, owned.more); }; }
         // Insert only misplaced controls: moving an already focused node makes browsers drop focus.
         const desired = ['primary', state.c?.absent ? 'follow' : 'favorite', 'report'].map(id => owned.proxies.get(id)).filter(Boolean).concat(owned.more);
         [...compactRow.children].forEach(n => { if (!desired.includes(n)) n.remove(); });
@@ -352,7 +502,10 @@
      */
     function mountRow(row, root, c) {
         if (!enabled() || disposed) return;
-        hosts.set(root, { c, action: A.generation() });
+        // An unchanged row (the same title, its generation current) is decided before anything is minted (D46S2-R11-13):
+        // a reconciliation pass that changes nothing mints nothing.
+        const host = hosts.get(root);
+        if (!host || host.c?.key !== c?.key || !host.action.current()) hosts.set(root, { c, action: A.generation() });
         let state = rows.get(row);
         if (state && state.c?.key === c?.key && state.action.current()) { paintRow(state); return; }
         if (state) disposeRow(state);
@@ -370,7 +523,7 @@
             if (home && (row.parentElement === home.parent || row.parentElement === home.parent.parentElement)) state.rowHome = home;
         }
         const more = button('more', JE.t('title_actions_more'), 'more_horiz'); more.className = 'button-flat detailButton emby-button je-actions-wide-more';
-        more.onclick = () => openRow(state, more); state.more = more; row.append(more);
+        more.onclick = e => { if (JE.ownerOf(e)) openRow(state, more); }; state.more = more; row.append(more);
         paintRow(state);
         if (c) setupRow(state);
     }
@@ -406,10 +559,15 @@
                 if (!entry.control) {
                     node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
                     if (entry.reason) node.dataset.jeActionReason = entry.reason;
-                    node.onclick = () => {
-                        if (!action.current()) return;
+                    node.onclick = e => {
+                        // Only a press someone made is the row's operation (D46S2-R11-1); a control still working on a
+                        // press takes no second one (one submission per press).
+                        if (!JE.ownerOf(e) || !action.current() || node.getAttribute('aria-busy') === 'true') return;
                         const operation = A.generation(() => action.current());
-                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
+                        // Feedback in the press's own frame while the action is admitted: the control shows it is working.
+                        busy(state, node, true);
+                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); })
+                            .finally(() => busy(state, node, false));
                     };
                 } else A.bindPress(node, action);
                 ours.add(node);
@@ -476,7 +634,8 @@
         // The action bar going off ends every operation it started, for good.
         if (!enabled()) { if (active) { active = false; A.end(); } A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); JE.endScopes?.(); return; }
         active = true;
-        document.querySelectorAll(CARD).forEach(mountCard);
+        reconcileCards();
+        A.prune?.();
         for (const [root, host] of hosts) {
             if (!host.action.current() || !hostShows(root, host.c)) { hosts.delete(root); continue; }
             const row = root.matches(rowSelector) ? root : root.querySelector(rowSelector + ', [data-mount="je-actions"]');
@@ -510,11 +669,61 @@
     const copied = r => r.type === 'childList' && [...r.addedNodes].some(n => n.nodeType === 1 && !ours.has(n) &&
         (n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more, .je-actions-adapted') || r.target.matches?.('.je-actions-row')));
 
+    /** The classes of a class value that are not ours (je-actions-*), in order. */
+    const hostClasses = value => String(value || '').split(/\s+/).filter(name => name && !name.startsWith('je-actions-')).sort().join(' ');
+    /** A class change that only added or removed our own classes (marking a card ours queues no other pass). */
+    const ownClassChange = r => r.type === 'attributes' && r.attributeName === 'class' && hostClasses(r.oldValue) === hostClasses(r.target.getAttribute?.('class'));
+
     /** Coalesces unrelated changes; mutations inside our own controls never queue another pass. */
+    /** Status decorations do not change native action hosts or their capabilities. */
+    const STATUS_UI = '.je-arr-status, .je-arr-art, .je-arr-chip, .je-arr-chip-row, .je-arr-banner, .je-arr-badge, .je-ask-ring';
+
+    /**
+     * Recognizes status-only mutation batches before scheduling a global action reconciliation.
+     * @param {MutationRecord} record Mutation.
+     * @returns {boolean} Only status-owned UI changed.
+     */
+    function statusOnly(record) {
+        if (record.target.closest?.(STATUS_UI)) return true;
+        if (record.type !== 'childList') return false;
+        const elements = [...record.addedNodes, ...record.removedNodes].filter(node => node.nodeType === 1);
+        return elements.length > 0 && elements.every(node => node.matches(STATUS_UI));
+    }
+
     function schedule(records) {
-        if (records && !records.some(r => copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
-            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more')))))) return;
+        if (records && !records.some(r => !statusOnly(r) && !ownClassChange(r) && (copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
+            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more'))))))) return;
         if (queued || disposed) return; queued = true; frame = requestAnimationFrame(scan);
+    }
+
+    /** The observer's callback: incarnations end first (every record), then a pass is queued for what changed. */
+    function observed(records) { noteMutations(records); schedule(records); }
+
+    /**
+     * Ends the incarnation of every drawn card `records` show removed (itself or an ancestor), or re-identified (an
+     * identity attribute changed, or an element carrying one was added or removed inside it) — D46S2-R14-3. Our own
+     * adapter nodes and every other change (classes, images, text) leave it alone.
+     */
+    function noteMutations(records) {
+        const endCard = card => { if (card) cards.get(card)?.mount.end(); };
+        for (const r of records) {
+            if (r.type === 'attributes') { if (IDENTITY.includes(r.attributeName)) endCard(r.target.closest?.(CARD)); continue; }
+            if (r.type !== 'childList') continue;
+            for (const node of r.removedNodes) {
+                if (node.nodeType !== 1 || ours.has(node)) continue;
+                if (cards.has(node)) endCard(node);
+                else node.querySelectorAll?.(CARD).forEach(endCard);
+            }
+            const holder = r.target.nodeType === 1 ? r.target.closest?.(CARD) : null;
+            if (holder && [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !ours.has(n) && (n.matches(identityNodes) || n.querySelector(identityNodes))))
+                endCard(holder);
+        }
+    }
+
+    /** Takes the observer's pending records into account now (before a long press or an opening acts). */
+    function settleMutations() {
+        const pending = observer?.takeRecords();
+        if (pending?.length) observed(pending);
     }
 
     /** Stops a long press when scrolling, releasing or cancelling the pointer. */
@@ -523,28 +732,50 @@
     /** Starts host hooks after the bundle has initialized its existing feature owners. */
     function initialize() {
         if (started) return; started = true;
-        observer = new MutationObserver(schedule); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
+        observer = new MutationObserver(observed); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: [...IDENTITY, 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
         document.addEventListener('contextmenu', e => {
-            const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card)) return;
+            const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card) || !JE.ownerOf(e)) return;
             e.preventDefault(); e.stopImmediatePropagation(); cancelTouch(); openCard(card);
         }, true);
         document.addEventListener('pointerdown', e => {
+            // A new gesture never belongs to the previous long press, even if the host reuses its pointer id.
+            consumed = null;
             if (e.pointerType === 'mouse' || !enabled()) return;
             const card = e.target.closest?.(CARD); if (!cardContext(card) || (e.target.closest('button') && !e.target.closest('.je-discover-poster-box'))) return;
-            cancelTouch(); touch = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { consumed = card; cancelTouch(); openCard(card); }, 550) };
+            // The long press is the viewer's gesture: its menu opens 550 ms later only while that gesture's owner is
+            // still current (the same page, session and document; D46S2-R11), and only for the card as it was pressed
+            // (D46S2-R13-2): its mount and title, captured now. A card the host recycled meanwhile (another title, even
+            // back to this one; a change still pending included) or removed opens nothing.
+            const owner = JE.ownerOf(e);
+            if (!owner) return;
+            settleMutations();
+            mountCard(card);
+            const record = cards.get(card);
+            if (!record) return;
+            cancelTouch(); touch = { x: e.clientX, y: e.clientY, timer: setTimeout(() => {
+                cancelTouch();
+                if (!JE.effectOwner(owner, 'a long press')) return;
+                // Changes still pending end the incarnation first (a removal, a recycle — even back to this title).
+                settleMutations();
+                if (cards.get(card) !== record || !record.mount.current()) return;
+                consumed = { card, pointerId: e.pointerId }; openCard(card, null, record);
+            }, 550) };
         }, true);
         document.addEventListener('pointermove', e => { if (touch && Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 10) cancelTouch(); }, true);
         ['pointerup', 'pointercancel', 'scroll'].forEach(name => document.addEventListener(name, cancelTouch, true));
         document.addEventListener('click', e => {
-            if (consumed && consumed.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); consumed = null; return; }
+            // Chromium can retarget the release click to the sheet's covering backdrop. It is still the same
+            // touch gesture, consumed once; the next pointerdown clears it before any deliberate new tap.
+            if (consumed && (consumed.card.contains(e.target) ||
+                (e.pointerType === 'touch' && Number.isFinite(e.pointerId) && e.pointerId === consumed.pointerId))) { e.preventDefault(); e.stopImmediatePropagation(); consumed = null; return; }
             consumed = null;
             const nativeMenu = e.target.closest?.('[data-action="menu"], .btnCardMenu, .cardMenuButton');
             const card = nativeMenu?.closest(CARD);
-            if (enabled() && cardContext(card)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card, card.querySelector('.je-card-more')); }
+            if (enabled() && cardContext(card) && JE.ownerOf(e)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card, card.querySelector('.je-card-more')); }
         }, true);
         document.addEventListener('keydown', e => {
             const card = e.target.closest?.(CARD);
-            if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && enabled() && cardContext(card)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card); }
+            if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && enabled() && cardContext(card) && JE.ownerOf(e)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card); }
         }, true);
         document.addEventListener('jellyseerr-more-info-opened', e => {
             if (!enabled()) return; const { modal, data, mediaType, scope } = e.detail || {}; if (!modal) return;

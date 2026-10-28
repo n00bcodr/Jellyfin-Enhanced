@@ -35,19 +35,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     public sealed class ReadyInterestSource : IReadyInterestSource
     {
         private readonly RequestLedger _ledger;
-        private readonly SeerrRequestReadModel _seerr;
+        private readonly SeerrFacts _seerr;
         private readonly NotifyStore _follows;
         private readonly TitleAliases? _aliases;
         private readonly Func<PluginConfiguration?> _config;
 
         /// <summary>Creates the source (DI).</summary>
-        public ReadyInterestSource(RequestLedger ledger, SeerrRequestReadModel seerr, NotifyStore follows, TitleAliases aliases)
+        public ReadyInterestSource(RequestLedger ledger, SeerrFacts seerr, NotifyStore follows, TitleAliases aliases)
             : this(ledger, seerr, follows, aliases, null)
         {
         }
 
         /// <summary>Creates the source with an explicit configuration (tests).</summary>
-        internal ReadyInterestSource(RequestLedger ledger, SeerrRequestReadModel seerr, NotifyStore follows, TitleAliases? aliases, Func<PluginConfiguration?>? config)
+        internal ReadyInterestSource(RequestLedger ledger, SeerrFacts seerr, NotifyStore follows, TitleAliases? aliases, Func<PluginConfiguration?>? config)
         {
             _ledger = ledger;
             _seerr = seerr;
@@ -58,6 +58,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <inheritdoc />
         public IReadOnlyList<ReadyInterest>? For(Guid user)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForFactsCore(user));
+
+        private IReadOnlyList<ReadyInterest>? ForFactsCore(Guid user)
         {
             var config = _config();
             var list = new List<ReadyInterest>();
@@ -106,6 +109,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <inheritdoc />
         public IReadOnlyCollection<Guid> Interested(IReadOnlyList<TitleKey> keys)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => InterestedFactsCore(keys));
+
+        private IReadOnlyCollection<Guid> InterestedFactsCore(IReadOnlyList<TitleKey> keys)
         {
             var titles = new HashSet<string>(StringComparer.Ordinal);
             foreach (var key in keys)

@@ -94,7 +94,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         private readonly string _server;
         private readonly Logger? _logger;
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
-        private readonly ConcurrentDictionary<Guid, (HashSet<Guid> Ids, DateTimeOffset Until)> _refused = new();
+        private ConcurrentDictionary<Guid, (HashSet<Guid> Ids, DateTimeOffset Until)> _refused = new();
         private readonly Channel<Work> _queue = Channel.CreateBounded<Work>(new BoundedChannelOptions(QueueCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
         private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
         private long _epoch;
@@ -352,7 +352,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
         }
 
-        private async Task<string> ReconcileLockedAsync(Guid user, CancellationToken cancellationToken)
+        private Task<string> ReconcileLockedAsync(Guid user, CancellationToken cancellationToken)
+            => SeerrFacts.BackgroundAsync(token => ReconcileLockedAsyncFactsCore(user, token), cancellationToken);
+
+        private async Task<string> ReconcileLockedAsyncFactsCore(Guid user, CancellationToken cancellationToken)
         {
             var generation = _store.Generation;
             var b = _store.Binding(_server, user);
@@ -442,6 +445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         // accessible (nothing was written).
         private async Task<string> ChangeAsync(long generation, Guid user, long epoch, StatusViewer viewer, ReadyBinding b, Guid playlist, DateTimeOffset now)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var interests = _interests.For(user);
             var hides = _privacy.Load(user);
             if (interests == null || hides == null) return "unreadable";
@@ -457,7 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
 
             // Items Jellyfin refused lately aren't asked for again on every pass (they are after a while).
-            if (_refused.TryGetValue(user, out var refusedLately) && refusedLately.Until > now && raw.SequenceEqual(desired.Where(id => !refusedLately.Ids.Contains(id))))
+            if (_refusedFacts.TryGetValue(user, out var refusedLately) && refusedLately.Until > now && raw.SequenceEqual(desired.Where(id => !refusedLately.Ids.Contains(id))))
             {
                 if (b.PendingOperation != null || !b.Confirmed.SequenceEqual(raw)) _store.Confirm(generation, _server, user, epoch, raw, now);
                 return "unchanged";
@@ -477,12 +481,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var refused2 = desired.Where(id => !raw.Contains(id)).ToHashSet();
             if (refused2.Count > 0)
             {
-                _refused[user] = (refused2, now + RefusedFor);
+                _refusedFacts[user] = (refused2, now + RefusedFor);
                 _logger?.Info($"Ready playlist: Jellyfin didn't add {refused2.Count} item(s); they are tried again later.");
             }
             else
             {
-                _refused.TryRemove(user, out _);
+                _refusedFacts.TryRemove(user, out _);
             }
 
             return "updated";
@@ -693,5 +697,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
             loop.Dispose();
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<Guid, (HashSet<Guid> Ids, DateTimeOffset Until)>> _refusedFactsOwner = new();
+        private ConcurrentDictionary<Guid, (HashSet<Guid> Ids, DateTimeOffset Until)> _refusedFacts { get => _refusedFactsOwner.Read(ref _refused, () => new()); set => _refusedFactsOwner.Store(ref _refused, value); }
     }
 }

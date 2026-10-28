@@ -561,7 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // answer isn't one. The caller holds the single-flight refresh and keeps the answer with Hold.
         private async Task<MdblistAccountStatus?> ReadStatusAsync(string apiKey, CancellationToken cancellationToken)
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
             client.Timeout = RequestTimeout;
 
             var url = $"{ApiBase}/user?apikey={Uri.EscapeDataString(apiKey)}";
@@ -629,7 +629,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var mdblistType = mediaType == "tv" ? "show" : "movie";
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 client.Timeout = RequestTimeout;
 
                 var url = $"{ApiBase}/tmdb/{mdblistType}/{tmdbId}?apikey={Uri.EscapeDataString(apiKey)}";
@@ -701,7 +701,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var mdblistType = mediaType == "tv" ? "show" : "movie";
-                var client = _httpClientFactory.CreateClient();
+                var client = Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory);
                 // A whole-library call can carry a large request body and take
                 // longer for MDBList to resolve than a small chunk would, so
                 // it gets more time than the 15s default used elsewhere.

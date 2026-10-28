@@ -78,7 +78,7 @@ test('B2: a cloned row rebuilds its adapter Follow; the compact proxy writes onc
   const clone = cloneRow(h);
   h.a.mountRow(clone, h.page, c); await settle();
   assert.equal(adapted(clone).filter(n => n.dataset.jeActionKind === 'follow').length, 1, 'one adapter Follow, never the dead copy');
-  clone.querySelector('.je-actions-row [data-action="follow"]').click(); await settle();
+  h.click(clone.querySelector('.je-actions-row [data-action="follow"]')); await settle();
   assert.deepEqual(h.writes, [['user-a', 'follow', 'movie:tmdb:603', true]]);
 });
 
@@ -90,7 +90,7 @@ test('B2: a host copy of an adapter control inside the retained row is replaced 
   h.a.scan(); await settle(); h.a.scan();
   const follows = adapted(h.row()).filter(n => n.dataset.jeActionKind === 'follow');
   assert.equal(follows.length, 1);
-  h.row().querySelector('.je-actions-row [data-action="follow"]').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-row [data-action="follow"]')); await settle();
   assert.deepEqual(h.writes, [['user-a', 'follow', 'movie:tmdb:603', true]]);
 });
 
@@ -103,7 +103,7 @@ test('B2: a user switch removes adapter controls holding the old session; a remo
   assert.deepEqual(adapted(h.row()), [], 'no control with a cancelled session closure stays attached');
   assert.equal(h.row().querySelector('.je-actions-row'), null);
   h.a.mountRow(h.row(), h.page, c); await settle();
-  h.row().querySelector('.je-actions-row [data-action="follow"]').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-row [data-action="follow"]')); await settle();
   assert.deepEqual(h.writes, [['user-b', 'follow', 'movie:tmdb:603', true]]);
 });
 
@@ -138,7 +138,7 @@ for (const [name, interrupt] of [
     const h = setup(t); h.a.initialize();
     mountAbsent(h); await settle();
     const gate = h.gate();
-    h.row().querySelector('.je-actions-more').click();
+    h.click(h.row().querySelector('.je-actions-more'));
     interrupt(h);
     gate.resolve({ allowed: true }); await settle();
     assert.equal(h.document.querySelector('.je-actions-backdrop'), null);
@@ -148,7 +148,7 @@ for (const [name, interrupt] of [
     const h = setup(t); h.a.initialize();
     mountAbsent(h); await settle();
     const gate = h.gate();
-    adapted(h.row()).find(n => n.dataset.jeActionKind === 'follow').click();
+    h.click(adapted(h.row()).find(n => n.dataset.jeActionKind === 'follow'));
     interrupt(h);
     gate.resolve({ allowed: true }); await settle();
     assert.deepEqual(h.writes, []);
@@ -161,9 +161,9 @@ for (const [name, interrupt] of [
       h.a.initialize();
       let shared = 0; h.window.navigator.clipboard = { writeText: async () => { shared++; } };
       mountAbsent(h); await settle();
-      h.row().querySelector('.je-actions-more').click(); await settle();
+      h.click(h.row().querySelector('.je-actions-more')); await settle();
       const gate = h.gate();
-      h.document.querySelector(`.je-actions-entry[data-action="${id}"]`).click();
+      h.click(h.document.querySelector(`.je-actions-entry[data-action="${id}"]`));
       interrupt(h);
       gate.resolve({ allowed: true, itemId: '12345678901234567890123456789012' }); await settle();
       assert.deepEqual([h.writes, h.opened, shared], [[], [], 0], id);
@@ -181,7 +181,7 @@ for (const [name, interrupt] of [
     const h = setup(t, { html: '<div class="jellyseerr-card"><a data-tmdb-id="603" data-media-type="movie">Title</a></div>' });
     h.a.initialize(); h.a.scan();
     const gate = h.gate();
-    h.document.querySelector('.je-card-more').click();
+    h.click(h.document.querySelector('.je-card-more'));
     interrupt(h);
     gate.resolve({ allowed: true }); await settle();
     assert.equal(h.document.querySelector('.je-actions-backdrop'), null);
@@ -241,7 +241,7 @@ test('arrival Open in the row stops when the viewer navigates during its admissi
   const open = adapted(h.row()).find(n => n.dataset.jeActionKind === 'open');
   assert.ok(open, 'an accessible actual copy is offered');
   const gate = h.gate();
-  open.click(); h.navigate();
+  h.click(open); h.navigate();
   gate.resolve({ allowed: true, itemId: '12345678901234567890123456789012' }); await settle();
   assert.deepEqual(h.opened, []);
 });
@@ -249,9 +249,9 @@ test('arrival Open in the row stops when the viewer navigates during its admissi
 test('controls: same-session row setup, sheet actions and adapted controls still work', async t => {
   const h = setup(t); h.a.initialize();
   mountAbsent(h); await settle();
-  h.row().querySelector('.je-actions-row [data-action="follow"]').click(); await settle();
-  h.row().querySelector('.je-actions-more').click(); await settle();
-  h.document.querySelector('.je-actions-entry[data-action="request"]').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-row [data-action="follow"]')); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="request"]')); await settle();
   assert.deepEqual(h.writes, [['user-a', 'follow', 'movie:tmdb:603', true]]);
   assert.deepEqual(h.opened, [['user-a', 'ask', 'movie:tmdb:603']]);
 });
@@ -277,13 +277,13 @@ for (const width of [320, 390]) {
     await settle();
     assert.equal(row.classList.contains('je-actions-compact'), true);
     assert.equal(row.querySelector('.je-actions-primary-label').textContent, 'Resume');
-    row.querySelector('.je-actions-primary').click();
-    row.querySelector('.je-actions-more').click(); await settle();
+    h.click(row.querySelector('.je-actions-primary'));
+    h.click(row.querySelector('.je-actions-more')); await settle();
     const replay = h.document.querySelector('.je-actions-entry[data-action="replay"]');
     assert.ok(replay, 'Play from beginning has a place in More');
     assert.equal(replay.previousElementSibling.textContent, 'title_actions_group_watch');
     assert.equal(replay.querySelector('.je-actions-entry-label').textContent, 'title_actions_replay');
-    replay.click(); await settle();
+    h.click(replay); await settle();
     assert.deepEqual(played, ['resume', 'replay']);
   });
 }
@@ -293,7 +293,7 @@ test('B1: an absent title never offers either native playback action', async t =
   const row = h.row(); row.getBoundingClientRect = () => ({ width: 288 });
   h.a.mountRow(row, h.page, h.a.fromKey('movie:tmdb:603')); await settle();
   assert.equal(row.querySelector('.je-actions-row [data-action="primary"]')?.getAttribute('aria-label') === 'Play', false);
-  row.querySelector('.je-actions-more, .je-actions-wide-more').click(); await settle();
+  h.click(row.querySelector('.je-actions-more, .je-actions-wide-more')); await settle();
   assert.equal(h.document.querySelector('.je-actions-entry[data-action="replay"], .je-actions-entry[data-action="primary"]'), null);
 });
 

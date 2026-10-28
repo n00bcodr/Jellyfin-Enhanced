@@ -229,6 +229,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrPhase1Enabled = false;
             ArrStatusPosterBadges = true;
             ArrStatusLookingHours = 24;
+            // D92: series-page summary chips and the admin Sonarr/Radarr line, off by default.
+            ArrStatusSeasonSummaryEnabled = false;
+            ArrStatusAdminLineEnabled = false;
+            // D95: download progress on artwork, on by default (the user asked for it).
+            ArrStatusArtworkProgressEnabled = true;
             ArrHouseholdContactName = "";
             ArrWebhookJellyfinUrl = string.Empty;
             ArrRequestsHubEnabled = true;
@@ -1173,6 +1178,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Hours a monitored title may be "Looking for it" before it reads "Still looking". 1-720, default 24.</summary>
         public int ArrStatusLookingHours { get; set; } = 24;
 
+        // ---- D92: series-page summary chips and the admin status line (opt-in) ----
+
+        /// <summary>
+        /// Show the ready and missing counts on series and season pages ("Seasons 1, 3 ready", "8 of 10 ready",
+        /// "54 missing"). What is on its way (downloading, almost ready, looking, airing) shows either way. Off by default.
+        /// </summary>
+        public bool ArrStatusSeasonSummaryEnabled { get; set; }
+
+        /// <summary>
+        /// Show administrators the Sonarr/Radarr line under the status on details pages (instance, the arr's own words and
+        /// the fix, e.g. "Sonarr · Some episodes missing"). The Manage drawer shows it either way. Off by default.
+        /// </summary>
+        public bool ArrStatusAdminLineEnabled { get; set; }
+
+        // ---- end D92 ----
+
+        // ---- D95: download progress on artwork ----
+
+        /// <summary>
+        /// Show the download progress on the artwork of a title on its way: a ring with the percentage on poster cards,
+        /// the details-page poster and list placeholders while it downloads, a gently pulsing full ring while it is almost
+        /// ready; nothing once it is ready. On by default (D95, an exception to the default-off rule the user asked for).
+        /// </summary>
+        public bool ArrStatusArtworkProgressEnabled { get; set; } = true;
+
+        // ---- end D95 ----
+
         /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
         public string ArrHouseholdContactName { get; set; } = string.Empty;
 
@@ -1227,6 +1259,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Minutes after an import before a file Jellyfin still doesn't have is listed under Needs attention ("In Sonarr, not in Jellyfin"). 1-1440, default 10.</summary>
         public int ArrLibraryPendingMinutes { get; set; } = 10;
+
+        // ---- Bridge fix (new imports are hydrated before they are Ready)
+
+        /// <summary>
+        /// Seconds an imported file must stay unchanged (size and last write, looked at twice) before Jellyfin is asked to
+        /// read it, so a copy still being written is never probed. 0-60, default 3; 0 skips the check.
+        /// </summary>
+        public int ArrBridgeStableSeconds { get; set; } = 3;
+
+        /// <summary>
+        /// Minutes a just-imported title waits for its Jellyfin metadata (title, overview, poster, media info) before it is
+        /// shown Ready anyway, with "metadata pending" in the logs (a provider that is down or has nothing). 1-120, default 10.
+        /// </summary>
+        public int ArrBridgeMetadataWaitMinutes { get; set; } = 10;
+
+        // ---- end bridge fix
 
         /// <summary>A Sonarr/Radarr root folder whose disk has less than this share free (percent) is listed under Needs attention. 1-50, default 10.</summary>
         public int ArrLowDiskPercent { get; set; } = 10;
@@ -1309,6 +1357,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Passphrase for credentials in scheduled backups (a stored credential: placeholder only).</summary>
         public string BackupPassphrase { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Keeps public data JE fetches from TMDB (artwork of titles that aren't in the library, for now) in a
+        /// folder on the server, so opening a title again or after a restart doesn't fetch it again. Off by default.
+        /// </summary>
+        public bool ServerCacheEnabled { get; set; } = false;
+
+        /// <summary>
+        /// Folder of the server-side cache (a full path). Empty: the <c>server-cache</c> folder inside JE's
+        /// data folder. Jellyfin's own folders are refused.
+        /// </summary>
+        public string ServerCachePath { get; set; } = string.Empty;
+
+        /// <summary>Most space the server-side cache uses, in GB (fractions allowed); the least recently used entries go first. 0 = unlimited.</summary>
+        public double ServerCacheMaxSizeGb { get; set; } = 2;
+
+        /// <summary>Days an entry of the server-side cache is kept after it was fetched. 0 = no age limit.</summary>
+        public int ServerCacheMaxAgeDays { get; set; } = 30;
+
+        /// <summary>
+        /// Records how long each server stage of an absent-title read takes (admission, TMDB cache and sends, parental
+        /// evidence, projection, publication): a <c>Server-Timing</c> header for administrators and a Debug line in the
+        /// plugin log, stage names and durations only. Off by default (the <c>JE_STAGE_TIMINGS=1</c> environment flag also
+        /// turns it on).
+        /// </summary>
+        public bool StageTimingsEnabled { get; set; } = false;
 
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
@@ -1882,5 +1956,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 return new List<ArrInstance>();
             }
         }
+        // E1: explicit backend isolation. Missing on upgraded configurations means legacy semantics.
+        public int ArrBackendIsolationVersion { get; set; } = 0;
+        // End E1.
     }
 }

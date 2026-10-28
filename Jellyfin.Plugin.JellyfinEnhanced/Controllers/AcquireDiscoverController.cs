@@ -57,8 +57,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var kind = string.IsNullOrEmpty(type) ? "movie" : type;
             if (list == null || !DiscoverService.Lists.Contains(list) || kind is not ("movie" or "tv") || page < 1 || page > DiscoverService.MaxPage)
                 return Reply(RequestOutcome.Refused("invalid_input", 400));
+            using var metadataViewer = Services.NativeDetails.ViewerMetadataAdmission.ForViewer(viewer!.UserId);
             var answer = await _discover.DiscoverAsync(viewer!, list, kind, list == "because" ? 1 : page, language, ct).ConfigureAwait(false);
-            return Send(viewer!, answer, "discover");
+            return Send(viewer!, answer, "discover", metadataViewer.Refused);
         }
 
         /// <summary>One page of free-text search over movies and series (no people); the query is at most 100 characters.</summary>
@@ -72,15 +73,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var query = (q ?? string.Empty).Trim();
             if (query.Length > DiscoverService.MaxQuery) return Reply(RequestOutcome.Refused("query_too_long", 400));
             if (query.Length == 0 || page < 1 || page > DiscoverService.MaxPage) return Reply(RequestOutcome.Refused("invalid_input", 400));
+            using var metadataViewer = Services.NativeDetails.ViewerMetadataAdmission.ForViewer(viewer!.UserId);
             var answer = await _discover.SearchAsync(viewer!, query, page, language, ct).ConfigureAwait(false);
-            return Send(viewer!, answer, "search");
+            return Send(viewer!, answer, "search", metadataViewer.Refused);
         }
 
         /// <summary>The answer as a private, ETag-checked body; 503 when TMDB couldn't answer.</summary>
-        private IActionResult Send(StatusViewer viewer, DiscoverAnswer? answer, string reason)
+        private IActionResult Send(StatusViewer viewer, DiscoverAnswer? answer, string reason, bool busy)
         {
-            if (answer == null) return Reply(RequestOutcome.Refused("discover_unavailable", 503, "unavailable"));
+            if (answer == null)
+            {
+                Response.Headers["Retry-After"] = "1";
+                return Reply(busy ? RequestOutcome.MetadataBusy() : RequestOutcome.Refused("discover_unavailable", 503, "unavailable"));
+            }
+            if (answer.Publication is { } publication) Services.PrivacyResponseGuard.Publication(HttpContext, publication);
             answer = _discover.Present(viewer, answer);
+            if (!answer.Complete)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                Response.Headers["Retry-After"] = answer.RetryAfterSeconds!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                // As with complete pages, serialize this contract here: the controller's result filter
+                // reserves error ObjectResults for model-binding refusals and would replace this body.
+                return new ContentResult
+                {
+                    StatusCode = 200, ContentType = "application/json; charset=utf-8",
+                    Content = JsonSerializer.Serialize(new { outcome = "partial", reason = "evidence_unavailable", certainty = "Unknown", message = "Some results couldn't be checked. Try again shortly.", answer }),
+                };
+            }
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason, certainty = "Succeeded", message = "Discover", answer });
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(viewer.UserId.ToString("N") + "|").Concat(bytes).ToArray()), 0, 16) + "\"";
             Response.Headers["Cache-Control"] = "private, no-cache";

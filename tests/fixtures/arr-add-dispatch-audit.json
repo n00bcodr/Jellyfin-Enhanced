@@ -1,0 +1,22 @@
+{
+  "id": "arradd-dispatch-fixture",
+  "time": "2026-10-24T12:00:00Z",
+  "userId": null,
+  "userName": null,
+  "action": "request.dispatch",
+  "tier": 2,
+  "instanceId": "17019326-c6f4-4a7d-8afe-170087eeb8fa",
+  "target": "movie:tmdb:961",
+  "outcome": "succeeded",
+  "readBack": null,
+  "error": "looking",
+  "message": "Added to Radarr and searching. Instance: Radarr; Profile: 5 (Ultra-HD); Root: /selected.",
+  "durationMs": 0,
+  "details": {
+    "qualityProfileId": "5",
+    "rootFolder": "/selected",
+    "instanceName": "Radarr",
+    "qualityProfileName": "Ultra-HD",
+    "rootFolderName": "/selected"
+  }
+}

@@ -57,6 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
             _path = path;
             _warn = warn ?? (_ => { });
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            EvidenceRevision.Advance(() => Version.Mutate(() => _values = Load()));
         }
 
         /// <summary>The store's default location for a Jellyfin installation.</summary>
@@ -83,9 +84,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         {
             get
             {
+                RecoverIfNeeded();
                 lock (_lock)
                 {
-                    Values();
                     return _unavailableReason == null;
                 }
             }
@@ -96,9 +97,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         {
             get
             {
+                RecoverIfNeeded();
                 lock (_lock)
                 {
-                    Values();
                     return _unavailableReason;
                 }
             }
@@ -107,6 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         /// <summary>The stored value, or null.</summary>
         public string? Get(string name)
         {
+            RecoverIfNeeded();
             lock (_lock)
             {
                 return Values().TryGetValue(name, out var v) ? v : null;
@@ -116,6 +118,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         /// <summary>Names of every stored credential (never the values).</summary>
         public IReadOnlyList<string> Names()
         {
+            RecoverIfNeeded();
             lock (_lock)
             {
                 return Values().Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
@@ -165,6 +168,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         /// store is unavailable or the file can't be written.
         /// </summary>
         public void Update(Func<Dictionary<string, string>, bool> mutate)
+        {
+            RecoverIfNeeded();
+            EvidenceRevision.Advance(() => UpdateUnderBarrier(mutate));
+        }
+
+        private void UpdateUnderBarrier(Func<Dictionary<string, string>, bool> mutate)
         {
             lock (_lock)
             {
@@ -258,18 +267,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
                 && x.Port == y.Port;
         }
 
-        // Caller holds _lock.
-        private Dictionary<string, string> Values()
+        // Snapshot reads never load or mutate. In particular, commit validation cannot start a draining writer.
+        private Dictionary<string, string> Values() => _values!;
+
+        internal void RecoverIfNeeded()
         {
-            if (_values != null && (_unavailableReason == null || _now() - _loadFailedAt < ReloadInterval)) return _values;
-            // A (re)load changes what the store answers: inside the version's bracket.
-            var values = Version.Mutate(() => _values = Load());
-            if (_unavailableReason == null && _warnedUnavailable)
+            if (EvidenceRevision.ReadingSnapshot) return;
+            lock (_lock)
             {
-                _warnedUnavailable = false;
-                _warn($"Secrets store {FileName} is readable again.");
+                if (_unavailableReason == null || _now() - _loadFailedAt < ReloadInterval) return;
             }
-            return values;
+            EvidenceRevision.Advance(() =>
+            {
+                lock (_lock)
+                {
+                    if (_unavailableReason == null || _now() - _loadFailedAt < ReloadInterval) return;
+                    var values = Version.Mutate(() => _values = Load());
+                    if (_unavailableReason == null && _warnedUnavailable)
+                    {
+                        _warnedUnavailable = false;
+                        _warn($"Secrets store {FileName} is readable again.");
+                    }
+                }
+            });
         }
 
         // Caller holds _lock. Never moves, renames or rewrites an unreadable file: it stays exactly

@@ -112,7 +112,7 @@ public class IntegrationEditionEligibleDependenciesTests
         var privateCopy = Guid.NewGuid();
         p.Rig.View.AddCopy(Firefly, new JfCopy { ItemId = privateCopy, Path = "/media/private/Firefly", LibraryId = closed.Id, LibraryName = closed.Name }, p.Rig.Admin.UserId);
         using var seerr = new FakeSeerr();
-        var readModel = new SeerrRequestReadModel(seerr.Transport, null, null, () => p.Config, () => p.Rig.Arr.Now);
+        var readModel = new SeerrFacts(seerr.Transport, null, null, () => p.Config, () => p.Rig.Arr.Now);
         var requestFacts = new LedgerRequestFacts(p.Ledger, readModel, new TitleAliases(p.Rig.Store, readModel), () => p.Rig.Arr.Now);
         if (previouslyAsked)
         {

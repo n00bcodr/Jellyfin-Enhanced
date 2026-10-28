@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { configPage, fieldBytes } from '../helpers/config-page.mjs';
@@ -161,12 +162,12 @@ test('Q-REBUILD1FIX5-1: when the configuration read fails, saving and "Apply to 
   assert.match(banner.textContent, /could not read its saved settings/);
   assert.equal(await p.save(), null, 'nothing was sent');
   assert.equal(p.alerts.at(-1).title, 'Settings not saved');
-  p.$('#resetAllUserSettingsBtn').click();
+  clickAsViewer(p.$('#resetAllUserSettingsBtn'));
   await p.flush();
   assert.equal(p.saves.length, 0);
   assert.equal(p.posts.filter(x => x.url.includes('reset-all-users-settings')).length, 0);
   // Retry: the read succeeds, the banner goes and saving works again (the stored values intact).
-  p.$('#je-config-read-retry-btn').click();
+  clickAsViewer(p.$('#je-config-read-retry-btn'));
   await p.flush();
   assert.equal(banner.style.display, 'none');
   const saved = await p.save();

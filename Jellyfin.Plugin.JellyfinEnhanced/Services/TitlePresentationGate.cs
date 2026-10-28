@@ -29,8 +29,8 @@ public static class TitlePresentationGate
     public static TitlePresentationPolicy Read(UserConfigurationManager manager, SpoilerPresentation? spoilers, Guid viewer, ILibraryManager? library = null)
     {
         lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
-        lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
-            return new(HiddenContentPolicy.Load(manager, viewer, library: library), spoilers?.Load(viewer));
+            lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
+                return new(HiddenContentPolicy.Load(manager, viewer, library: library), spoilers?.Load(viewer));
     }
 
     /// <summary>
@@ -40,8 +40,8 @@ public static class TitlePresentationGate
     public static string Revision(UserConfigurationManager manager, SpoilerPresentation? spoilers, Guid viewer)
     {
         lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
-        lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
-            return HiddenContentPolicy.Load(manager, viewer).Revision + "|" + spoilers?.StateRevision(viewer);
+            lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
+                return HiddenContentPolicy.Load(manager, viewer).Revision + "|" + spoilers?.StateRevision(viewer);
     }
 }
 
@@ -111,7 +111,7 @@ public static class NativeResponseValue
                 break;
             case IEnumerable<BaseItemDto> list:
                 // The answer keeps its own sequence shape (an array stays an array).
-                result.Value = list is BaseItemDto[] ? Mapped(list) : Mapped(list).ToList();
+                result.Value = list is BaseItemDto[]? Mapped(list) : Mapped(list).ToList();
                 break;
             case AllThemeMediaResult all:
                 foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
@@ -378,7 +378,7 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
 /// </summary>
 public sealed class TitlePresentationResultFilter(UserConfigurationManager manager, SpoilerPresentation spoilers, ILibraryManager library,
     MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null, IUserManager? users = null,
-    MediaBrowser.Model.Globalization.ILocalizationManager? localization = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
+    MediaBrowser.Model.Globalization.ILocalizationManager? localization = null, SeerrParentalFilter? parental = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
 {
     /// <summary>What the host vouches for in one projection (its closed lists, the library's entities).</summary>
     private PrivacyValueHost Values() => new(library, localization);
@@ -388,9 +388,24 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
+    private const string FinalReadsMark = "__JE_PRESENTATION_READS";
+
+    // A new final projection supersedes only this gate's previous projection. Dependencies installed by an action,
+    // an image decision or another writer still belong to the answer and must survive until the transport commit.
+    private static PrivacyResponseGuard InstallFinalReads(HttpContext http, PrivacyReadSet reads)
+    {
+        var previous = http.Items.TryGetValue(FinalReadsMark, out var held) ? held as PrivacyReadSet : null;
+        PrivacyResponseGuard.Replace(http, previous, reads);
+        http.Items[FinalReadsMark] = reads;
+        return PrivacyResponseGuard.Of(http);
+    }
+
     /// <inheritdoc />
     public void OnResourceExecuting(ResourceExecutingContext context)
     {
+        // Admission belongs to the HTTP committer, not to this JSON projection's registry or read verbs.
+        if (PrivacyResponseGuard.Owns(context.ActionDescriptor))
+            PrivacyResponseGuard.AdmitAction(context.HttpContext, context.ActionDescriptor, parental, UserHelper.GetCurrentUserId(context.HttpContext.User));
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -407,9 +422,15 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <inheritdoc />
     public void OnResultExecuting(ResultExecutingContext context)
     {
+        if (!PrivacyResponseGuard.BeforeResult(context)) return;
         var read = PrivacySurfaceRegistry.IsRead(context.HttpContext);
         var viewer = UserHelper.GetCurrentUserId(context.HttpContext.User);
         if (viewer == null || viewer == Guid.Empty) return;
+        if (MediaResponseContract.MasterPlaylist(context.ActionDescriptor))
+        {
+            DeliverMasterPlaylist(context, viewer.Value);
+            return;
+        }
         // Native endpoints (any verb: PlaybackInfo is also POSTed) are classified by the one surface registry.
         var entry = PrivacySurfaceRegistry.Find(context);
         var answer = context.Result as ObjectResult;
@@ -449,6 +470,17 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 Withhold(context);
                 return;
             }
+            // Retryable partial pages still carry titles, so they need the same final privacy projection.
+            // Projection preserves partial/error status and must never attach validators to a no-store answer.
+            if (context.Result is ContentResult incomplete && (incomplete.StatusCode >= 400
+                || context.HttpContext.Response.Headers.CacheControl.ToString().Contains("no-store", StringComparison.OrdinalIgnoreCase)))
+            {
+                context.Result = new ContentResult { Content = projected, ContentType = "application/json; charset=utf-8", StatusCode = incomplete.StatusCode };
+                context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+                context.HttpContext.Response.Headers.Remove("ETag");
+                context.HttpContext.Response.Headers.Remove("Last-Modified");
+                return;
+            }
             // The validator derives from the validated answer (its read-set guards the bytes and the 304 alike).
             var etag = TmdbResponseCache.ComputeETag(viewer.Value.ToString("N") + "|" + final.Revision + "|" + projected);
             var conditional = context.HttpContext.Items.TryGetValue(ConditionalHeader, out var original) ? original?.ToString() : context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -474,9 +506,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         using (var scope = PrivacyReadSet.Begin())
         {
             var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+            InstallFinalReads(context.HttpContext, scope.Reads);
             if (!PolicyApplies(final) && scope.Reads.Valid())
             {
-                PrivacyResponseGuard.Install(context.HttpContext, scope.Reads);
                 return;
             }
         }
@@ -500,18 +532,61 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
             var rows = spec.Resource == "activity" ? ProjectActivity(json, final, viewer) : json;
             var projected = final.Project(rows, spec.Surface, spec.Title, spec.Resource, spec.Kind, spec.Scope, spec.Season, spec.Episode);
+            InstallFinalReads(http, scope.Reads);
             if (!scope.Reads.Valid()) continue;
-            PrivacyResponseGuard.Install(http, scope.Reads);
             return projected;
         }
         final = null;
         return null;
     }
 
+    private void DeliverMasterPlaylist(ResultExecutingContext context, Guid viewer)
+    {
+        // Unlike a transport playlist this generated file carries MediaStream.DisplayTitle and trickplay references.
+        // It uses the same live identity, title-family reveal and final read-set as PlaybackInfo's MediaSources.
+        if (context.Result is StatusCodeResult) return;
+        if (context.Result is not FileContentResult file
+            || !Guid.TryParse(context.RouteData.Values["itemId"]?.ToString(), out var id)) { Withhold(context); return; }
+        try
+        {
+            // Every fact the projection consumes (the item's identity, the viewer's policy) is compared with its live source.
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                if (attempt > 0) PrivacyDelivery.Discard(context.HttpContext, viewer);
+                using var scope = PrivacyReadSet.Begin();
+                var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+                var identity = spoilers.Resolve([id], viewer, final.Spoilers).GetValueOrDefault(id);
+                if (identity == null && PolicyApplies(final)) { Withhold(context); return; }
+                if (identity != null) final.Hidden.Bind(identity);
+                var hidden = identity != null && final.Hidden.IsHidden(identity, "library");
+                var presentation = final.Spoilers;
+                var guarded = presentation is { Enabled: true } && (presentation.Unavailable
+                    || identity != null && strip?.Protects(identity, presentation.State, viewer) == true);
+                var reveal = !hidden && guarded && presentation is { Unavailable: false } && identity != null
+                    && JellyfinEnhanced.Instance?.Configuration is { } config && strip != null
+                    ? strip.RevealFor(identity, presentation.State, config, viewer) : PrivacyReveal.None;
+                var bytes = GeneratedPlaylistPrivacy.Project(file.FileContents, !hidden && (!guarded || reveal.TitleFamily), !hidden && !guarded);
+                if (bytes == null) { Withhold(context); return; }
+                InstallFinalReads(context.HttpContext, scope.Reads);
+                if (!scope.Reads.Valid()) continue;
+                context.Result = new FileContentResult(bytes, file.ContentType);
+                context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+                context.HttpContext.Response.Headers.Remove("ETag");
+                context.HttpContext.Response.Headers.Remove("Last-Modified");
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or ArgumentException or InvalidOperationException)
+        {
+            logger?.Warning($"Presentation gate: generated master withheld ({ex.GetType().Name}).");
+        }
+        Withhold(context);
+    }
+
     private static bool IsJellyfinEnhanced(ActionContext context)
         => context.ActionDescriptor is ControllerActionDescriptor action && action.ControllerTypeInfo.Assembly == typeof(TitlePresentationResultFilter).Assembly;
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedUnclassified = new(StringComparer.Ordinal);
+    private static System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedUnclassified = new(StringComparer.Ordinal);
 
     private void WarnUnclassified(ActionContext context, object value)
     {
@@ -568,15 +643,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         // The host's executor writes the answer later: it writes through the guard, and when an input changed before the
         // first byte it projects the answer again (a new read-set in place of this one) rather than withholding it.
-        if (PrivacyResponseGuard.Install(context.HttpContext, reads) is not { } guard) return;
+        var guard = InstallFinalReads(context.HttpContext, reads);
         ObjectResult? delivered = null;
         delivered = PrivacyResponseGuard.Guarded(result, guard, () =>
         {
             context.Result = delivered!;
             var again = NativeAttempts(context, delivered!, entry, viewer, refresh: true);
             if (again == null || context.Result != delivered) return false;
-            PrivacyResponseGuard.Replace(context.HttpContext, reads, again);
-            reads = again;
+            InstallFinalReads(context.HttpContext, again);
             return true;
         });
         context.Result = delivered;

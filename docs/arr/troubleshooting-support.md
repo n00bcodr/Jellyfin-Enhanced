@@ -233,3 +233,61 @@ Include:
 
 !!! warning "Remove credentials before sharing"
     Remove API keys and authentication tokens from logs or screenshots.
+
+
+### Incomplete JE Discover/search verification
+
+When a restricted person's list loads but some title evidence cannot be checked,
+`/JellyfinEnhanced/acquire/discover` and `/JellyfinEnhanced/acquire/search` return HTTP 200 with
+`outcome: "partial"`, `reason: "evidence_unavailable"` and `certainty: "Unknown"`. The `answer` keeps
+only safe cards, with `complete: false`, `verification: "partial"` and `retryAfterSeconds: 5`.
+The response is `private, no-store`, has `Retry-After: 5`, and never answers 304. An empty partial
+answer does not mean there are no matches. Completed pages retain HTTP 200/ETag behavior and
+`complete: true`, `verification: "complete"`, `retryAfterSeconds: null`.
+
+The UI must retain a retry/unavailable state for partial answers, including a partial answer containing
+safe cards. A failed TMDB list read returns HTTP 503 (`discover_unavailable`). If evidence changes after
+the final page was built but before HTTP headers commit, the response is withheld with a bodyless 503
+and `Retry-After: 1`; retry the same page under current settings. Failed or incomplete
+evidence is retried after the gate's five-minute failure cache expires; in-flight reads may recover
+earlier by completing in the background. Avoid rapid retries. The initial list read has its own
+transport timeout; the two-second budget applies to title evidence preparation, including slot waits
+and repeated preparation after settings change.
+
+### A title disappears while its metadata is loading
+
+A change to the parental evidence provider, connection or metadata country ends earlier decisions,
+including cached feed and list decisions and pending season rows. Reload the page to check the title
+under the current settings. A response withheld at final publication returns 503 with private/no-store
+caching and a short Retry-After; a refused season page returns 404. Discover/search retain their
+safe partial HTTP 200 contract above.
+
+Public title details preserve Jellyfin's current permission to open an owned copy, including an
+unrated series when Block Unrated Series is off. Hidden copies and hidden seasons or episodes do not
+grant this permission. For restricted viewers, genuinely absent titles still require verified parental evidence.
+
+The HTTP guard also protects signed artwork, including anonymous image requests, bounded streamed results,
+HEAD and conditional 304 responses. Before starting a title-bearing answer, it validates the evidence and
+holds a completion token. Evidence-changing settings saves block new tokens and wait up to three seconds
+for outstanding answers to finish. An earlier answer can therefore finish under its original settings;
+the next request uses the new settings. A changed answer that has not acquired a token is withheld with
+503 and its validators removed. Idle change-feed polls hold no token and recheck each returned batch.
+
+A stalled response cannot block settings forever: after three seconds the save proceeds and the server
+logs `Parental evidence revision drain expired` with the outstanding response count. That exceptional
+response may finish after the change. A host configuration update that fails to complete also has bounded
+cleanup and a separate warning. These warnings contain no title or credential. Successful title-free settings,
+preferences, restore and other write acknowledgements retain their own status; a fresh host error retains its
+error status and body.
+
+Import resolution and source preview keep their title-free `504 parental_pending` response with
+`Retry-After: 2`, so the same import chunk can retry. A busy import keeps its typed 429 retry response.
+These transient errors do not mean that metadata configuration is missing.
+
+
+Parental decisions carry a monotonic evidence generation from preparation through the final HTTP checks and cache entries.
+Changing a rating country, evidence source or credential and changing it back still invalidates an earlier decision;
+a held answer is withheld with the existing bodyless `503`, `no-store` and `Retry-After: 1` contract. A fresh request uses
+the restored settings. The source fingerprint is diagnostic only. Unrelated settings PATCHes preserve the evidence inputs
+and do not invalidate a title response. Automatic recovery of an unreadable credential store uses the same bounded writer
+barrier before publishing recovered credentials; final response validation only reads the published snapshot.

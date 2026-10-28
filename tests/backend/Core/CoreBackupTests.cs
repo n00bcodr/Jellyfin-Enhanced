@@ -54,6 +54,8 @@ public class CoreBackupTests
             Write("tag-cache.json", "{\"cache\":true}");
             Write("cdn-cache/a.svg", "<svg/>");
             Write("arr-state/x.library.json", "{}");
+            // The server-side cache (up to the admin's size cap) is never part of a backup.
+            Write("server-cache/artwork/ab/" + new string('a', 64) + ".blob", "JEBC");
             Service = new JeBackupService(Data, ConfigPath, () => Secrets, F.Core.Logger);
         }
 

@@ -106,6 +106,9 @@
                 });
 
                 keyElement.addEventListener('keydown', (e) => {
+                    // Tab and Shift+Tab move on (a keyboard user passing through the list rebinds nothing) and Escape
+                    // belongs to the panel: neither is ever recorded as a shortcut.
+                    if (e.key === 'Tab' || e.key === 'Escape') return;
                     e.preventDefault();
                     e.stopPropagation();
 

@@ -151,12 +151,15 @@ public class IntegrationTmdbTests
     {
         using var env = new IntegrationEnvironment();
         using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{\"id\":1}")));
+        DateTime fetchedAt;
         using (var first = new TmdbResponseCache(transport, env.Paths.Object, env.Logger))
-            await first.GetAsync("movie/1", "", "top-secret-key", default);
+            fetchedAt = (await first.GetAsync("movie/1", "", "top-secret-key", default)).FetchedAtUtc;
         var persisted = File.ReadAllText(Path.Combine(env.Root, "configurations/Jellyfin.Plugin.JellyfinEnhanced/tmdb-cache.json"));
         Assert.DoesNotContain("top-secret-key", persisted);
         using var reloaded = new TmdbResponseCache(transport, env.Paths.Object, env.Logger);
-        Assert.Equal("{\"id\":1}", (await reloaded.GetAsync("movie/1", "", "top-secret-key", default)).Content);
+        var response = await reloaded.GetAsync("movie/1", "", "top-secret-key", default);
+        Assert.Equal("{\"id\":1}", response.Content);
+        Assert.Equal(fetchedAt, response.FetchedAtUtc);
         Assert.Equal(1, transport.Calls);
     }
 

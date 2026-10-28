@@ -16,6 +16,112 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ApiSeerrTests
 {
+    // ---- UX3R-3 (review round 1): Seerr off means no Seerr identity read, whatever a stale client asks for ----
+
+    [Theory]
+    [InlineData("switched_off")]
+    [InlineData("isolated_je")]
+    [InlineData("isolated_status_only")]
+    public async Task UX3ReviewDisabledSeerrQuotaMustNotReadIdentity(string off)
+    {
+        using var f = new SeerrFixture();
+        var c = f.Plugin.Plugin.Configuration;
+        if (off == "switched_off") c.JellyseerrEnabled = false;
+        else
+        {
+            // Adopted Jellyfin Enhanced (or Status only) with Seerr's switch, address and key retained.
+            c.ArrIntegrationEnabled = c.ArrPhase1Enabled = c.ArrPhase3Enabled = true;
+            c.ArrRequestBackend = off == "isolated_je" ? "je" : "status_only";
+            c.ArrBackendIsolationVersion = 1;
+        }
+        var result = await f.Controller.GetJellyseerrQuota();
+        Assert.Empty(f.Calls);
+        Assert.Equal(503, Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task UX3ReviewQuotaControlSeerrOnStillReadsTheAccountsQuota()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("{\"movie\":{\"limit\":5,\"used\":1,\"days\":7},\"tv\":{\"limit\":5,\"used\":0,\"days\":7}}");
+        await f.Controller.GetJellyseerrQuota();
+        Assert.Contains(f.Calls, call => call.Path.StartsWith("/api/v1/user?", StringComparison.Ordinal));
+        Assert.Contains(f.Calls, call => call.Path == "/api/v1/user/27/quota");
+    }
+
+    [Fact]
+    public async Task UX3ReviewImportFromSeerrIsRefusedWhileIsolationExcludesSeerr()
+    {
+        using var f = new SeerrFixture();
+        f.SetUser(f.UserId, admin: true);
+        var c = f.Plugin.Plugin.Configuration;
+        c.ArrIntegrationEnabled = c.ArrPhase1Enabled = c.ArrPhase3Enabled = true;
+        c.ArrRequestBackend = "je";
+        c.ArrBackendIsolationVersion = 1;
+        var result = await f.Controller.GetJellyseerrArrSettings("sonarr");
+        Assert.Empty(f.Calls);
+        Assert.Equal(503, Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    // ---- UX3R2 (review round 2), the reviewer's probes: no operational Seerr route reads Seerr while it is off ----
+    [Theory]
+    [InlineData("switched_off")]
+    [InlineData("isolated_je")]
+    [InlineData("isolated_status_only")]
+    public async Task UX3R2EveryOperationalSeerrRouteMakesNoCallWhileOff(string scenario)
+    {
+        var methods = typeof(JellyfinEnhancedController).GetMethods()
+            .Where(m => m.GetCustomAttributes(typeof(Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute), true)
+                .Cast<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>().Any(a => a.Template?.StartsWith("jellyseerr/") == true)
+                || m.Name is "ProxyAvatar" or "GetRequests" or "GetCalendarEvents" or "ActOnRequest")
+            .Where(m => m.Name is not ("ValidateJellyseerr" or "TriggerJellyseerrRecentlyAddedScan")).ToArray();
+        var leaks = new List<string>();
+        var exceptions = new List<string>();
+        Assert.True(methods.Length >= 50);
+        foreach (var method in methods)
+        {
+            using var f = new SeerrFixture { Permissions = JellyseerrPermission.ADMIN };
+            f.SetUser(f.UserId, true);
+            var c = f.Plugin.Plugin.Configuration;
+            c.DownloadsPageEnabled = true;
+            c.ArrIntegrationEnabled = c.ArrPhase1Enabled = c.ArrPhase3Enabled = true;
+            c.ArrRequestBackend = scenario == "switched_off" ? "seerr" : scenario == "isolated_je" ? "je" : "status_only";
+            c.ArrBackendIsolationVersion = 1;
+            c.JellyseerrEnabled = scenario != "switched_off";
+            object? Arg(System.Reflection.ParameterInfo p) => p.Name switch
+            {
+                "query" => "test", "path" => "/avatar/ux3r2.png", "type" => "sonarr", "ids" => "603",
+                "requestBody" => Body("{\"mediaType\":\"movie\",\"mediaId\":603,\"seasons\":[1]}"),
+                "issueBody" => Body("{\"issueType\":1,\"mediaId\":603,\"message\":\"test\"}"),
+                _ => p.HasDefaultValue ? p.DefaultValue : p.ParameterType == typeof(int) ? 1 : null,
+            };
+            try
+            {
+                var result = method.Invoke(f.Controller, method.GetParameters().Select(Arg).ToArray());
+                if (result is Task task) await task;
+            }
+            catch (Exception e) { exceptions.Add(method.Name + ":" + e.GetBaseException().GetType().Name); }
+            if (!f.Calls.IsEmpty) leaks.Add(method.Name + " => " + string.Join(",", f.Calls.Select(call => call.Method + " " + call.Path)));
+        }
+        Assert.True(leaks.Count == 0, scenario + " upstream reads: " + string.Join("; ", leaks) + "; exceptions: " + string.Join(",", exceptions));
+        Assert.Empty(exceptions);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UX3R2AvatarStillWorksOnlyWhenSeerrOn(bool enabled)
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.JellyseerrEnabled = enabled;
+        var calls = 0;
+        using var transport = new IntegrationTransport((request, ct) => { calls++; return Task.FromResult(IntegrationTransport.Response("png", type: "image/png")); });
+        var controller = ApiAssetTests.Controller(f.Plugin.Core, transport);
+        var result = await controller.ProxyAvatar("/avatar/control-" + enabled + ".png");
+        if (enabled) Assert.IsType<FileContentResult>(result);
+        Assert.Equal(enabled, calls > 0);
+    }
+
     private sealed class SeerrFixture : IDisposable
     {
         public ApiPluginFixture Plugin { get; } = new();

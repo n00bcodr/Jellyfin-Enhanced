@@ -80,7 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const string SpoilerUidCookie = "je-spoiler-uid";
 
         private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
-        private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedAt = new();
 
         // Short-TTL cache of the per-IP session scan. A single page load fires
         // a burst of image requests from one IP; without this each one would
@@ -90,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (e.g. a Seerr instance polling the server). Cache the scan result
         // for a couple of seconds so a burst pays for one scan, not dozens.
         private static readonly TimeSpan IpScanCacheTtl = TimeSpan.FromSeconds(2);
-        private static readonly ConcurrentDictionary<string, IpScanCacheEntry> _ipScanCache = new();
+        private static ConcurrentDictionary<string, IpScanCacheEntry> _ipScanCache = new();
 
         private sealed class IpScanCacheEntry
         {
@@ -106,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // moment earlier is never suppressed for longer than the ordinary
         // scan staleness they'd face anyway.
         private static readonly TimeSpan CookieMissNegativeCacheTtl = TimeSpan.FromSeconds(2);
-        private static readonly ConcurrentDictionary<string, DateTime> _cookieMissCache = new(StringComparer.Ordinal);
+        private static ConcurrentDictionary<string, DateTime> _cookieMissCache = new(StringComparer.Ordinal);
 
         // TTL-cached user count for the single-user shortcut so we don't
         // enumerate users per request (user enumeration is a DB query in JF12).
@@ -200,6 +200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public RequestIdentity Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // Tier 1: authenticated request — authoritative.
             var primary = Helpers.UserHelper.GetCurrentUserId(httpContext.User);
             if (primary != null && primary.Value != Guid.Empty)
@@ -273,20 +274,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var missKey = ipKey != null ? ipKey + "|" + cookieUid.ToString("N") : null;
                     var now = DateTime.UtcNow;
                     var recentMiss = missKey != null
-                        && _cookieMissCache.TryGetValue(missKey, out var missAt)
+                        && _cookieMissCacheFacts.TryGetValue(missKey, out var missAt)
                         && (now - missAt) < CookieMissNegativeCacheTtl;
                     if (!recentMiss)
                     {
                         ipUsers = ScanActiveSessionUsersFresh(httpContext);
                         if (missKey != null && !ipUsers.Contains(cookieUid))
                         {
-                            _cookieMissCache[missKey] = now;
-                            if (_cookieMissCache.Count > 512)
+                            _cookieMissCacheFacts[missKey] = now;
+                            if (_cookieMissCacheFacts.Count > 512)
                             {
-                                foreach (var kvp in _cookieMissCache)
+                                foreach (var kvp in _cookieMissCacheFacts)
                                 {
                                     if ((now - kvp.Value) >= CookieMissNegativeCacheTtl)
-                                        _cookieMissCache.TryRemove(kvp.Key, out _);
+                                        _cookieMissCacheFacts.TryRemove(kvp.Key, out _);
                                 }
                             }
                         }
@@ -360,11 +361,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // requests scans ISessionManager.Sessions once instead of per image.
         private IReadOnlyCollection<Guid> ScanActiveSessionUsersCached(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
             if (remoteIpRaw == null) return Array.Empty<Guid>();
             var ipKey = NormalizeIp(remoteIpRaw).ToString();
 
-            if (_ipScanCache.TryGetValue(ipKey, out var hit) && (DateTime.UtcNow - hit.CachedAt) < IpScanCacheTtl)
+            if (_ipScanCacheFacts.TryGetValue(ipKey, out var hit) && (DateTime.UtcNow - hit.CachedAt) < IpScanCacheTtl)
             {
                 return hit.IpUsers;
             }
@@ -386,17 +388,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private IReadOnlyCollection<Guid> ScanAndCache(string ipKey, Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
             var ipUsers = ScanActiveSessionUsers(httpContext);
-            _ipScanCache[ipKey] = new IpScanCacheEntry { CachedAt = now, IpUsers = ipUsers };
+            _ipScanCacheFacts[ipKey] = new IpScanCacheEntry { CachedAt = now, IpUsers = ipUsers };
 
             // Opportunistic prune so the cache can't grow unbounded across
             // many distinct client IPs over a long uptime.
-            if (_ipScanCache.Count > 512)
+            if (_ipScanCacheFacts.Count > 512)
             {
-                foreach (var kvp in _ipScanCache)
+                foreach (var kvp in _ipScanCacheFacts)
                 {
-                    if ((now - kvp.Value.CachedAt) >= IpScanCacheTtl) _ipScanCache.TryRemove(kvp.Key, out _);
+                    if ((now - kvp.Value.CachedAt) >= IpScanCacheTtl) _ipScanCacheFacts.TryRemove(kvp.Key, out _);
                 }
             }
             return ipUsers;
@@ -525,11 +528,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void WarnRateLimited(string key, string message)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = DateTime.UtcNow;
-            var stored = _warnedAt.AddOrUpdate(key, now,
+            var stored = _warnedAtFacts.AddOrUpdate(key, now,
                 (_, last) => (now - last) >= PerKeyWarnInterval ? now : last);
             if (stored != now) return;
             _logger.Warning(message);
         }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _cookieMissCacheFactsOwner = new();
+        private static ConcurrentDictionary<string, DateTime> _cookieMissCacheFacts { get => _cookieMissCacheFactsOwner.Read(ref _cookieMissCache, () => new(StringComparer.Ordinal)); set => _cookieMissCacheFactsOwner.Store(ref _cookieMissCache, value); }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, IpScanCacheEntry>> _ipScanCacheFactsOwner = new();
+        private static ConcurrentDictionary<string, IpScanCacheEntry> _ipScanCacheFacts { get => _ipScanCacheFactsOwner.Read(ref _ipScanCache, () => new()); set => _ipScanCacheFactsOwner.Store(ref _ipScanCache, value); }
+        private static readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<string, DateTime>> _warnedAtFactsOwner = new();
+        private static ConcurrentDictionary<string, DateTime> _warnedAtFacts { get => _warnedAtFactsOwner.Read(ref _warnedAt, () => new()); set => _warnedAtFactsOwner.Store(ref _warnedAt, value); }
     }
 }

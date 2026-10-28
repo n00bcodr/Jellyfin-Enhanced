@@ -30,6 +30,7 @@ public class ApiArrAdminTests
         public IntegrationTransport Transport { get; }
         public ArrClientFactory Factory { get; }
         public ArrAdminController Controller { get; }
+        public ArrAuditLog Audit { get; private set; } = null!;
         public string RadarrId { get; }
         public string Radarr4kId { get; }
         public string SonarrId { get; }
@@ -58,7 +59,8 @@ public class ApiArrAdminTests
                 return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { appName = app, instanceName = app, version = app == "Sonarr" ? "4.0.20.3014" : "6.0.4.10291" })));
             });
             Factory = new ArrClientFactory(Transport, registry);
-            Controller = new ArrAdminController(Factory, new ArrAuditLog(Path.Combine(Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2), Callers.Users.Object, Plugin.Core.Logger)
+            Audit = new ArrAuditLog(Path.Combine(Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2);
+            Controller = new ArrAdminController(Factory, Audit, Callers.Users.Object, Plugin.Core.Logger)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
@@ -125,6 +127,56 @@ public class ApiArrAdminTests
         Assert.Equal(rig.Radarr4kId, doc.RootElement.GetProperty("defaults").GetProperty("radarr4k").GetString());
     }
 
+    // UX-14: the Audit tab named nobody. Rows keep their stored facts; the answer adds the people and instances they name by id.
+    [Fact]
+    public async Task TheAuditNamesTheAccountsAndInstancesItsRowsReferToAndLeavesTheRowsAsStored()
+    {
+        using var rig = new Rig();
+        var admin = Guid.NewGuid();
+        rig.Callers.Register(admin, admin: true, name: "Jake");
+        var emma = Guid.NewGuid();
+        rig.Callers.Register(emma, admin: false, name: "Emma");
+        var gone = Guid.NewGuid().ToString("N");
+        rig.Controller.HttpContext.User = TestCallers.Principal(admin, admin: true);
+        var at = DateTimeOffset.UtcNow;
+        rig.Audit.Append(new ArrAuditEntry { Time = at, UserId = admin.ToString("N"), Action = "request.dispatch", InstanceId = rig.RadarrId, Target = "movie:tmdb:605", Outcome = "succeeded", Message = "Added. Instance: Movies; Profile: 4; Root: /m." });
+        rig.Audit.Append(new ArrAuditEntry { Time = at.AddSeconds(1), UserId = gone, Action = "request.dispatch", InstanceId = "removed-instance", Target = "movie:tmdb:606", Outcome = "failed" });
+        rig.Audit.Append(new ArrAuditEntry { Time = at.AddSeconds(2), UserId = admin.ToString("N"), Action = "users.policy", Target = emma.ToString("N"), Outcome = "succeeded" });
+        rig.Audit.Append(new ArrAuditEntry { Time = at.AddSeconds(3), UserId = "system", Action = "request.choice.claim.identity_merge", InstanceId = rig.SonarrId, Target = "tv:tvdb:75932", Outcome = "succeeded" });
+
+        // The audit answer writes and commits itself under the privacy response guard (an OkObjectResult subclass).
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsAssignableFrom<OkObjectResult>(await rig.Controller.GetAudit(take: 10)).Value));
+        var entries = doc.RootElement.GetProperty("entries").EnumerateArray().ToList();
+        Assert.Equal(4, entries.Count);
+        // The rows themselves are as stored: ids, not names.
+        Assert.Equal(gone, entries.Single(e => e.GetProperty("target").GetString() == "movie:tmdb:606").GetProperty("userId").GetString());
+        var names = doc.RootElement.GetProperty("names");
+        var users = names.GetProperty("users");
+        Assert.Equal("Jake", users.GetProperty(admin.ToString("N")).GetString());
+        Assert.Equal("Emma", users.GetProperty(emma.ToString("N")).GetString());           // the account a settings change was for
+        Assert.False(users.TryGetProperty(gone, out _));                                      // a removed account is not invented
+        Assert.False(users.TryGetProperty("system", out _));
+        var instances = names.GetProperty("instances");
+        Assert.Equal("Movies", instances.GetProperty(rig.RadarrId).GetString());
+        Assert.Equal("TV", instances.GetProperty(rig.SonarrId).GetString());
+        Assert.False(instances.TryGetProperty("removed-instance", out _));
+        // No title names without the request projection (a server without the request ledger).
+        Assert.Empty(names.GetProperty("titles").EnumerateObject());
+    }
+
+    [Theory]
+    [InlineData("movie:tmdb:605", null, "movie:tmdb:605", "movie:tmdb:605")]
+    [InlineData("key:tv:tvdb:75932:s1:e2", null, "tv:tvdb:75932:s1:e2", "tv:tvdb:75932")]
+    [InlineData("download:SABnzbd_nzo_x", null, null, null)]
+    [InlineData("key:movie:tmdb:7", "Dune", null, null)]
+    public void AnAuditRowsTitleIsLookedUpByTheKeyItStoresAndResolvedForItsTitle(string target, string? storedTitle, string? raw, string? title)
+    {
+        var entry = new ArrAuditEntry { Target = target, Details = storedTitle == null ? null : new Dictionary<string, string> { ["title"] = storedTitle } };
+        var key = ArrAdminController.AuditTitleKey(entry);
+        Assert.Equal(raw, key?.Raw);
+        Assert.Equal(title, key?.Title);
+    }
+
     [Fact]
     public async Task RoutesAreAdminOnlyAndBehindTheMasterSwitch()
     {
@@ -133,7 +185,7 @@ public class ApiArrAdminTests
         Assert.IsType<ForbidResult>(rig.Controller.GetInstances());
         Assert.IsType<ForbidResult>(await rig.Controller.TestInstance(rig.RadarrId, default));
         Assert.IsType<ForbidResult>(await rig.Controller.TestValues(new ArrTestRequest { Kind = "radarr", Url = "http://radarr.lan:7878", ApiKey = "x" }, default));
-        Assert.IsType<ForbidResult>(rig.Controller.GetAudit());
+        Assert.IsType<ForbidResult>(await rig.Controller.GetAudit());
         Assert.IsType<ForbidResult>(rig.Controller.RollbackSecrets(new SecretsRollbackRequest { Confirm = ArrAdminController.RollbackConfirmation }));
         rig.SetUser(admin: true);
         rig.Plugin.Plugin.Configuration.ArrIntegrationEnabled = false;

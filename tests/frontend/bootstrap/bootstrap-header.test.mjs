@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
@@ -50,7 +51,7 @@ test('narrow header preserves foreign plugin buttons and forwards overflow actio
   assert.equal(mirror.querySelector('[id]'), null);
   assert.equal(mirror.querySelector('.je-launcher-label').textContent, '<requests>');
   assert.equal(mirror.querySelector('requests'), null);
-  mirror.click(); assert.equal(clicks, 1); assert.equal(h.document.getElementById('requests'), original);
+  clickAsViewer(mirror); assert.equal(clicks, 1); assert.equal(h.document.getElementById('requests'), original);
   const foreign = h.document.getElementById('foreign');
   assert.equal(foreign.parentElement.className.includes('headerRight'), true);
   assert.equal(foreign.hasAttribute('aria-hidden'), false);
@@ -215,7 +216,7 @@ test('crowded MUI header shares More with native actions while preserving their 
   await until(() => original.classList.contains('je-header-overflowed'));
   const mirror = [...h.document.querySelectorAll('.je-launcher-action')].find(button => button.querySelector('.je-launcher-label').textContent === 'Extra A');
   assert.ok(mirror);
-  mirror.click();
+  clickAsViewer(mirror);
   assert.equal(clicks, 1);
   assert.equal(original.parentElement.id, 'native');
   assert.equal(original.getAttribute('aria-hidden'), 'true');
@@ -270,7 +271,7 @@ test('crowded MUI header keeps the notification bell reachable in More under its
   // At this width the bell goes into More with the other JE buttons, under its own name.
   assert.ok(bell.classList.contains('je-header-overflowed'));
   assert.ok(mirror, 'the overflowed bell is offered in More');
-  mirror.click();
+  clickAsViewer(mirror);
   assert.equal(opened, 1);
   assert.equal(bell.parentElement, h.tray, 'the bell stays in JE\'s tray');
 });

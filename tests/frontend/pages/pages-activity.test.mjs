@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
@@ -21,7 +22,7 @@ test('activity renders separated watch and chronological review/favorite section
   assert.equal(h.document.querySelector('script'),null);assert.equal(h.document.querySelector('.je-activity-user').textContent,'<img src=x>');
   assert.equal(h.document.querySelectorAll('.je-activity-progress-fill').length,1);
   assert.equal(h.document.querySelector('.je-activity-progress-fill').style.width,'42%');
-  h.document.querySelector('.je-activity-item-name').click();assert.equal(h.window.location.hash,'#!/details?id=Partial');
+  clickAsViewer(h.document.querySelector('.je-activity-item-name'));assert.equal(h.window.location.hash,'#!/details?id=Partial');
 });
 test('activity escapes user and item names in every section, active streams included',async t=>{
   const hostile=label=>`<img src=x data-from="${label}"><script>${label}</script>`;
@@ -40,13 +41,13 @@ test('activity escapes user and item names in every section, active streams incl
 test('activity empty and failed responses show explicit state and refresh recovers',async t=>{
   let failing=true;const h=setup(t,{api:async()=>{if(failing)throw Error('offline');return {items:[]};}});
   await h.P.renderForCustomTab(h.host);assert.equal(h.document.querySelectorAll('.je-activity-error').length,2);
-  failing=false;h.document.querySelector('.je-activity-refresh-btn').click();await nextTurn();
+  failing=false;clickAsViewer(h.document.querySelector('.je-activity-refresh-btn'));await nextTurn();
   assert.equal(h.document.querySelectorAll('.je-activity-error').length,0);assert.equal(h.document.querySelectorAll('.je-activity-empty').length,2);
   assert.equal(h.document.querySelector('.je-activity-refresh-btn').disabled,false);
 });
 test('activity refresh coalesces repeated clicks while response is pending',async t=>{
   const pending=deferred();let loads=0;const h=setup(t,{api:async()=>{loads++;return loads===1?{items:[]}:pending.promise;}});
-  await h.P.renderForCustomTab(h.host);const button=h.document.querySelector('.je-activity-refresh-btn');button.click();button.click();
+  await h.P.renderForCustomTab(h.host);const button=h.document.querySelector('.je-activity-refresh-btn');clickAsViewer(button);clickAsViewer(button);
   assert.equal(loads,2);assert.equal(button.disabled,true);pending.resolve({items:[]});await nextTurn();assert.equal(button.disabled,false);
 });
 test('activity active stream polling ignores idle sessions and cleans up when remounted or detached',async t=>{

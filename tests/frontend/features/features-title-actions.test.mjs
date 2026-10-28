@@ -92,26 +92,28 @@ test('absent capability menu never offers file mutations or fake favourite', asy
 });
 
 test('sheet keyboard and TV directions trap focus and Back restores opener', t => {
-  const { actions: a, document: d, window: w } = setup(t);
+  const h = setup(t);
+  const { actions: a, document: d } = h;
   const opener = d.querySelector('#opener'); opener.focus();
   a.show({ name: 'Title' }, [{ id: 'one', group: 'view', label: 'One', run() {} }, { id: 'two', group: 'view', label: 'Two', run() {} }], opener, a.generation());
   const dialog = d.querySelector('[role="dialog"]');
   assert.ok(dialog);
   const one = dialog.querySelector('[data-action="one"]');
-  one.focus(); one.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  // The viewer's keys (a script's key event moves and dismisses nothing: D46S2-R12-3).
+  one.focus(); h.key(one, 'ArrowDown');
   assert.equal(d.activeElement.dataset.action, 'two');
-  d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  h.key(d.activeElement, 'Escape');
   assert.equal(d.querySelector('[role="dialog"]'), null);
   assert.equal(d.activeElement, opener);
 });
 
 test('sheet source proxies use the original handler and reflect disabled/pressed state', t => {
-  const { actions: a, document: d } = setup(t);
+  const { actions: a, click, document: d } = setup(t);
   const source = d.createElement('button'); let writes = 0;
   source.textContent = 'Played'; source.setAttribute('aria-pressed', 'true');
   source.onclick = () => { writes++; }; d.body.append(source);
   a.show({ name: 'Title' }, [{ id: 'played', group: 'watch', source, label: 'Played' }], d.querySelector('#opener'), a.generation());
-  d.querySelector('[data-action="played"]').click();
+  click(d.querySelector('[data-action="played"]'));
   assert.equal(writes, 1);
   source.disabled = true;
   a.show({}, [{ id: 'played', group: 'watch', source, label: 'Played' }], undefined, a.generation());
@@ -179,18 +181,18 @@ test('a successful Report clears the existing owner issue-list cache only for it
 });
 
 test('a sheet opened by A cannot invoke a source control as B', t => {
-  const { actions: a, document: d, switchUser } = setup(t);
+  const { actions: a, click, document: d, switchUser } = setup(t);
   const source = d.createElement('button'); let writes = 0; source.onclick = () => writes++; d.body.append(source);
   a.show({}, [{ id: 'native', group: 'other', source, label: 'Native' }], undefined, a.generation());
-  switchUser(); d.querySelector('[data-action="native"]').click();
+  switchUser(); click(d.querySelector('[data-action="native"]'));
   assert.equal(writes, 0);
 });
 
 test('owned controls execute before sheet teardown removes their source', t => {
-  const { actions: a, document: d } = setup(t);
+  const { actions: a, click, document: d } = setup(t);
   const control = d.createElement('button'); let writes = 0; control.onclick = () => writes++;
   a.show({}, [{ id: 'guard', group: 'view', control, label: 'Guard' }], undefined, a.generation());
-  d.querySelector('[data-action="guard"]').click();
+  click(d.querySelector('[data-action="guard"]'));
   assert.equal(writes, 1);
 });
 
@@ -221,8 +223,24 @@ test('Discover and search menu titles read the title separately from the display
   assert.equal(h.actions.cardContext(card).name, 'Animals');
 });
 
+test('Seerr card menu titles read the title link, never the overview Request button or the link tooltip', t => {
+  const h = setup(t);
+  h.load('arr/actions/title-actions-hosts.js');
+  const card = h.document.createElement('div');
+  card.className = 'card jellyseerr-card';
+  // ui-cards.js order: the overview (with its Request button) is appended inside cardScalable, ahead of the title link.
+  card.innerHTML = '<div class="cardScalable"><div class="jellyseerr-overview"><div class="content">Zion defends itself.</div>'
+    + '<button class="jellyseerr-request-button" data-tmdb-id="55" data-media-type="movie">Request<span class="material-icons">more_horiz</span></button></div></div>'
+    + '<div class="cardText cardText-first"><a class="jellyseerr-more-info-link" data-tmdb-id="55" data-media-type="movie" title="View on Seerr"><bdi>The Matrix Revolutions</bdi></a></div>';
+  h.document.body.append(card);
+  assert.equal(h.actions.cardContext(card).name, 'The Matrix Revolutions');
+  card.querySelector('.cardText-first').remove();
+  assert.equal(h.actions.cardContext(card).name, '');
+  assert.equal(h.actions.cardContext(card).key, 'movie:tmdb:55');
+});
+
 test('compact row proxies originals; a cloned row is remounted; wide rows keep native controls', t => {
-  const { actions: a, document: d, load } = setup(t);
+  const { actions: a, click, document: d, load } = setup(t);
   load('arr/actions/title-actions-hosts.js');
   const row = d.createElement('div'); row.className = 'mainDetailButtons';
   row.innerHTML = '<button class="btnPlay" aria-label="Play">Play</button><button class="btnUserRating" aria-label="Favourite">Heart</button><button class="btnPlayed" title="Played">Played</button><button class="btnMoreCommands" title="More">More</button><button class="extra" title="Plugin">Plugin</button>';
@@ -231,11 +249,11 @@ test('compact row proxies originals; a cloned row is remounted; wide rows keep n
   let plays = 0; row.querySelector('.btnPlay').onclick = () => plays++;
   a.mountRow(row, row, null);
   assert.equal(row.querySelectorAll('.je-actions-row').length, 1);
-  row.querySelector('.je-actions-primary').click(); assert.equal(plays, 1);
+  click(row.querySelector('.je-actions-primary')); assert.equal(plays, 1);
   a.mountRow(row, row, null); assert.equal(row.querySelectorAll('.je-actions-more').length, 1);
   const clone = row.cloneNode(true); row.replaceWith(clone); clone.getBoundingClientRect = () => ({ width: 288 });
   clone.querySelector('.btnPlay').onclick = () => plays++;
-  a.mountRow(clone, clone, null); clone.querySelector('.je-actions-primary').click(); assert.equal(plays, 2);
+  a.mountRow(clone, clone, null); click(clone.querySelector('.je-actions-primary')); assert.equal(plays, 2);
   clone.getBoundingClientRect = () => ({ width: 1600 }); a.mountRow(clone, clone, null);
   assert.equal(clone.classList.contains('je-actions-compact'), false);
   assert.equal(clone.querySelector('.je-actions-row'), null);
@@ -297,7 +315,7 @@ test('report modal rejects delayed submit after a live user switch', async t => 
   h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
-  await options.onSave(modal, h.document.createElement('button'), () => {}, { type: 'click', target: modal });
+  await h.pressIn(modal, e => options.onSave(modal, h.document.createElement('button'), () => {}, e));
   assert.equal(sends, 0);
 });
 
@@ -346,13 +364,13 @@ test('a library detail page already mounted when the bundle finishes receives th
 // D53 r2: the sheet is the offer (closing it before a press cancels); a press is an operation that outlives it.
 test('a sheet closed before the press runs nothing; a press followed by closing the sheet still completes', async t => {
   const gate = deferred(); let opened = 0;
-  const { actions: a, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
+  const { actions: a, click, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
   a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
   const entry = d.querySelector('[data-action="manage"]');
-  a.close(); entry.click(); gate.resolve({ allowed: true });
+  a.close(); click(entry); gate.resolve({ allowed: true });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 0, 'dismissed offer');
   a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
-  d.querySelector('[data-action="manage"]').click(); a.close();
+  click(d.querySelector('[data-action="manage"]')); a.close();
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 1, 'submitted operation');
 });
 
@@ -398,10 +416,10 @@ test('More Info privacy actions retain and proxy the existing secondary owner co
   assert.equal(row.querySelector('[data-je-action-kind="guard"]'), null);
   assert.equal(original.isConnected, true);
   assert.equal(original.classList.contains('je-actions-external-original'), true);
-  row.querySelector('.je-actions-more').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-more')); await new Promise(resolve => setImmediate(resolve));
   const proxy = h.document.querySelector('.je-actions-entry[data-action="guard"]');
   assert.equal(proxy.getAttribute('aria-pressed'), 'true');
-  proxy.click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(proxy); await new Promise(resolve => setImmediate(resolve));
   assert.equal(toggles, 1);
 });
 
@@ -435,10 +453,10 @@ test('existing modal Follow and Manage owners supply the compact row and sheet w
   h.actions.mountRow(row, root, h.actions.fromKey('movie:tmdb:603'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(root.querySelectorAll('.je-actions-external-original').length, 2);
-  row.querySelector('.je-actions-row [data-action="follow"]').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-row [data-action="follow"]')); await new Promise(resolve => setImmediate(resolve));
   assert.equal(follows, 1);
-  row.querySelector('.je-actions-more').click(); await new Promise(resolve => setImmediate(resolve));
-  h.document.querySelector('.je-actions-entry[data-action="manage"]').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-more')); await new Promise(resolve => setImmediate(resolve));
+  h.click(h.document.querySelector('.je-actions-entry[data-action="manage"]')); await new Promise(resolve => setImmediate(resolve));
   assert.equal(manages, 1);
 });
 
@@ -475,4 +493,55 @@ test('request proxies omit icon ligatures from their spoken and visible label', 
   h.document.body.append(row); h.JE.titleActions.mountRow(row, row, h.actions.context({ mediaType: 'movie', id: 603 }));
   assert.equal(row.querySelector('.je-actions-primary-label').textContent, 'Request');
   assert.equal(row.querySelector('.je-actions-primary').getAttribute('aria-label'), 'Request');
+});
+
+/** The request controls native details puts in Play's place on a series that isn't in the library: Search leads, + opens the sheet. */
+const ABSENT_SLOT = '<div class="je-native-absent-primary"><button class="je-ask-action je-native-absent-lead" data-je-ask-kind="search"><span class="material-icons je-ask-action-icon">search</span><span class="je-ask-action-text">Search</span></button>'
+  + '<button class="je-ask-action je-native-absent-icon" data-je-ask-kind="more" aria-label="More ways to get Firefly" title="Request"><span class="material-icons je-ask-action-icon">add</span><span class="je-ask-action-text">Request</span></button></div>';
+
+test('UX-9: a compact absent row keeps the wide row\'s primary action (Search stays Search) and runs the page\'s own control', t => {
+  const { actions: a, click, document: d, load } = setup(t); load('arr/actions/title-actions-hosts.js');
+  const row = d.createElement('div'); row.className = 'mainDetailButtons';
+  row.innerHTML = ABSENT_SLOT + '<button class="je-detail-hide-btn">Hide</button><button class="je-spoiler-pending-detail">Guard</button><button class="je-notify-follow">Follow</button>';
+  d.body.append(row); row.getBoundingClientRect = () => ({ width: 288 });
+  let searches = 0; row.querySelector('.je-native-absent-lead').addEventListener('click', () => searches++);
+  a.mountRow(row, row, a.context({ mediaType: 'tv', id: 1437 }));
+  assert.equal(row.classList.contains('je-actions-compact'), true);
+  const primary = row.querySelector('.je-actions-primary');
+  assert.ok(primary, 'the compact row has a primary action');
+  assert.equal(primary.querySelector('.je-actions-primary-label').textContent, 'Search');
+  assert.equal(primary.querySelector('.material-icons').textContent, 'search', 'the primary keeps the lead\'s own icon');
+  click(primary);
+  assert.equal(searches, 1, 'the proxy runs the page\'s own Search');
+});
+
+test('UX-19: an absent row whose page has its own request-sheet control gets no second adapted Request', async t => {
+  let opened = 0;
+  const h = setup(t, {
+    arrAsk: { enabled: () => true, me: async () => ({}), canAsk: () => true },
+    arrAskSheet: { open: () => { opened++; } },
+    arrStatus: { enabled: () => true, fetchKey: async () => ({ items: [{ key: 'tv:tmdb:1437', kind: 'series', stage: 'looking', reason: { code: 'no_release_yet' } }] }), subscribe: () => () => {} },
+    internals: { arrAskSheet: { askable: () => true } },
+  });
+  h.load('arr/actions/title-actions-hosts.js');
+  const row = h.document.createElement('div'); row.className = 'mainDetailButtons';
+  row.innerHTML = ABSENT_SLOT + '<button class="je-detail-hide-btn">Hide</button>';
+  h.document.body.append(row); row.getBoundingClientRect = () => ({ width: 1600 });
+  row.parentElement.getBoundingClientRect = () => ({ width: 1600 });
+  const c = h.actions.context({ mediaType: 'tv', id: 1437 });
+  h.actions.mountRow(row, row, c);
+  for (let n = 0; n < 20; n++) await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  h.actions.mountRow(row, row, c);
+  assert.equal(row.classList.contains('je-actions-compact'), false);
+  assert.equal(row.querySelectorAll('[data-je-action-kind="request"]').length, 0, 'no adapted Request beside the page\'s own +');
+  assert.equal(row.querySelectorAll('[data-je-ask-kind="more"]').length, 1);
+  // Without the page's own sheet control the adapted Request is still offered.
+  const bare = h.document.createElement('div'); bare.className = 'mainDetailButtons';
+  bare.innerHTML = '<button class="je-detail-hide-btn">Hide</button>';
+  h.document.body.append(bare); bare.getBoundingClientRect = () => ({ width: 1600 });
+  h.actions.mountRow(bare, bare, h.actions.context({ mediaType: 'tv', id: 1438 }));
+  for (let n = 0; n < 20; n++) await new Promise(resolve => h.window.setTimeout(resolve, 0));
+  h.actions.mountRow(bare, bare, h.actions.context({ mediaType: 'tv', id: 1438 }));
+  assert.equal(bare.querySelectorAll('[data-je-action-kind="request"]').length, 1);
+  assert.equal(opened, 0);
 });

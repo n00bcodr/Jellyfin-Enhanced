@@ -73,7 +73,7 @@ public class NativeDetailsIdTests
 
 #if !NET9_0
 [Collection("Plugin singleton")]
-public class ApiNativeDetailsTests
+public partial class ApiNativeDetailsTests
 {
     private const string Server = "0202511b0eac4284ab045b3ba556d72e";
     private static readonly Guid MoviesLib = Guid.NewGuid();
@@ -248,8 +248,15 @@ public class ApiNativeDetailsTests
         public NativeDetailsFeeds Feeds { get; private set; } = null!;
         public Mock<MediaBrowser.Controller.Drawing.IImageProcessor> ImageTags { get; } = new();
         public string Rating { get; set; } = "PG-13";
+        public bool R4JeTransport { get; set; }
+        public bool R4IncludePublicationFilter { get; set; }
+        public void R4Country(string country) => EvidenceRevision.Advance(() => _server.Object.Configuration.MetadataCountryCode = country);
+        public TitlePresentationResultFilter R4PublicationFilter() => new(Plugin.Core.Manager,
+            new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()),
+            Library.Object, _host.Object, _strip, parental: _parental);
         private readonly string? _stateDir;
         private Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
+        public SeerrParentalFilter Parental => _parental;
         private readonly Func<Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter> _newParental;
         private readonly Mock<MediaBrowser.Controller.IServerApplicationHost> _host = new();
         private readonly Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager> _server = new();
@@ -259,6 +266,14 @@ public class ApiNativeDetailsTests
         /// <summary>Library revision handed to the physical-title reader (null: no cache).</summary>
         public Func<long>? LibraryRevision { get; set; }
 
+        /// <summary>Every read that reached Seerr through the rig's transport (the parental filter's and any source's): host and path.</summary>
+        public List<string> SeerrReads { get; } = new();
+
+        /// <summary>The source the policy, facade and feeds read (<see cref="Source"/> unless the rig was made over another).</summary>
+        public INativeDetailsSource Used => _source ?? Source;
+
+        private readonly INativeDetailsSource? _source;
+
         /// <summary>While set, the parental filter's rating lookups wait for it.</summary>
         public TaskCompletionSource? RatingGate { get; set; }
 
@@ -266,7 +281,7 @@ public class ApiNativeDetailsTests
         /// A rig; with <paramref name="stateDir"/> the grant key and session epochs are kept there (restart
         /// tests); <paramref name="parentalBudget"/> is how long a list waits for its rating lookups.
         /// </summary>
-        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null)
+        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null, Func<Rig, INativeDetailsSource>? source = null, ViewerMetadataAdmission? admission = null)
         {
             _stateDir = stateDir;
             var c = Plugin.Plugin.Configuration;
@@ -295,9 +310,16 @@ public class ApiNativeDetailsTests
             });
             Seerr = new IntegrationTransport(async (req, _) =>
             {
+                if (req.RequestUri!.Host != "api.themoviedb.org") lock (SeerrReads) SeerrReads.Add(req.RequestUri.Host + req.RequestUri.AbsolutePath);
                 if (RatingGate is { } gate) await gate.Task;
+                if (R4JeTransport) return IntegrationTransport.Response(IntegrationParentalEvidenceTests.Movie(693134, "G"));
                 return IntegrationTransport.Response(JsonSerializer.Serialize(new
                 {
+                    // The joined JE gate validates TMDB identity/adult evidence as well as the regional rating.
+                    id = int.TryParse(req.RequestUri.Segments.Last().TrimEnd('/'), out var tmdbId) ? tmdbId : 693134,
+                    adult = false,
+                    release_dates = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
+                    content_ratings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
                     releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
                     contentRatings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
                     keywords = Array.Empty<object>(), genres = Array.Empty<object>(),
@@ -309,8 +331,8 @@ public class ApiNativeDetailsTests
             localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
             _server.SetupGet(s => s.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration { MetadataCountryCode = "US" });
             _newParental = () => parentalBudget is { } budget
-                ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget)
-                : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger);
+                ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget, admission)
+                : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, admission);
             _parental = _newParental();
             _host.SetupGet(h => h.SystemId).Returns(Server);
             // Spoiler Guard as registered (its own library lookups are for collections and watched state only).
@@ -318,6 +340,7 @@ public class ApiNativeDetailsTests
             _spoilerUsers = new SpoilerUserResolver(Plugin.Core.Manager, loose.Object, Plugin.Core.Logger, null!);
             _next = new SpoilerNextUnwatchedService(loose.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object, Plugin.Core.Logger);
             _strip = new SpoilerFieldStripFilter(_spoilerUsers, loose.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object, _next);
+            _source = source?.Invoke(this);
             Restart();
         }
 
@@ -329,10 +352,10 @@ public class ApiNativeDetailsTests
         {
             if (forgetRatings) _parental = _newParental();
             Artwork = new NativeDetailsArtwork(Images, _stateDir);
-            Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
-            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
+            Policy = new NativeDetailsPolicy(_parental, Used, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
+            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Used, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
                 new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision), new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object), new ImageBlurService(Plugin.Core.Logger));
-            Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
+            Feeds = new NativeDetailsFeeds(Used, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
         }
 
         /// <summary>The feeds over another source (the policy still admits titles from <see cref="Source"/>).</summary>
@@ -369,6 +392,8 @@ public class ApiNativeDetailsTests
         var descriptor = new ControllerActionDescriptor { ControllerName = controller, ActionName = action };
         var context = new ActionContext(http, new RouteData(), descriptor);
         var filters = new List<IFilterMetadata>();
+        var publication = rig.R4IncludePublicationFilter ? rig.R4PublicationFilter() : null;
+        publication?.OnResourceExecuting(new ResourceExecutingContext(context, filters, new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>()));
         var executing = new ActionExecutingContext(context, filters, args, new object());
         var calls = 0;
         await rig.Filter.OnActionExecutionAsync(executing, () =>
@@ -376,6 +401,12 @@ public class ApiNativeDetailsTests
             calls++;
             return Task.FromResult(new ActionExecutedContext(context, filters, new object()) { Result = new OkResult() });
         });
+        if (publication != null && executing.Result != null)
+        {
+            var final = new ResultExecutingContext(context, filters, executing.Result, new object());
+            publication.OnResultExecuting(final);
+            executing.Result = final.Result;
+        }
         return new Run(executing.Result, calls, args, http);
     }
 
@@ -717,6 +748,79 @@ public class ApiNativeDetailsTests
         var parent = await Call(rig, "Items", "GetItemsByUserIdLegacy", Me(viewer), new() { ["parentId"] = syn });
         Assert.Equal(0, parent.NextCalls);
         Assert.Empty(Value<QueryResult<BaseItemDto>>(parent.Result).Items);
+    }
+
+    [Theory]
+    [InlineData("GET", false)] [InlineData("GET", true)]
+    [InlineData("HEAD", false)] [InlineData("HEAD", true)]
+    public async Task R4AnonymousArtworkMustNotPublishAcrossEvidenceRevision(string method, bool revoke)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        rig.R4JeTransport = true;
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 10;
+        var movie = Id(SyntheticId.Movie(693134));
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Call(rig, "Image", "GetItemImage", null, new()
+        {
+            ["itemId"] = movie, ["imageType"] = ImageType.Primary,
+            ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300,
+        }, method);
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke) rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke)
+        {
+            Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), default));
+            Assert.False(result.Result is FileContentResult, "Anonymous grant request returned original artwork after evidence was revoked during its fetch.");
+        }
+        else Assert.IsType<FileContentResult>(result.Result);
+    }
+
+    [Theory]
+    [InlineData("GET", false)] [InlineData("GET", true)]
+    [InlineData("HEAD", false)] [InlineData("HEAD", true)]
+    public async Task R4ArtworkGrantViewerOverridesUnrestrictedHttpPrincipal(string method, bool revoke)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        rig.R4JeTransport = true;
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 10;
+        var movie = Id(SyntheticId.Movie(693134));
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var principal = rig.Person();
+        principal.SetPermission(PermissionKind.IsAdministrator, true);
+        var pending = Call(rig, "Image", "GetItemImage", Me(principal), new()
+        {
+            ["itemId"] = movie, ["imageType"] = ImageType.Primary,
+            ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300,
+        }, method);
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (revoke) rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        var guard = PrivacyResponseGuard.Find(result.Http);
+        var dependency = guard == null ? null : typeof(PrivacyResponseGuard).GetField("_evidence", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(guard);
+        Assert.NotNull(dependency);
+        Assert.Equal(viewer.Id, dependency.GetType().GetProperty("Viewer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(dependency));
+
+        if (revoke)
+        {
+            Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), default));
+            Assert.False(result.Result is FileContentResult, "Anonymous grant request returned original artwork after evidence was revoked during its fetch.");
+        }
+        else Assert.IsType<FileContentResult>(result.Result);
     }
 
     [Fact]
@@ -1827,6 +1931,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         var unlinked = rig.Person(linked: false);
         LibraryName(rig, unlinked, "genre", "Science Fiction", true, () => true);
         var forUnlinked = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
@@ -2003,6 +2108,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Jellyfin Enhanced mode: the page opens without one, and so does its filmography.
         Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Person(3810)) })).Result));
         Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.FilmographyAsync(unlinked, 3810, CancellationToken.None))));
@@ -2229,6 +2335,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Jellyfin Enhanced mode: the page opens without an account, and so do its extras, read with JE's key.
         var movie = Body(await rig.Feeds.TitleAsync(unlinked, true, 693134, CancellationToken.None));
         Assert.Equal("Dune: Part Two", movie.GetProperty("title").GetString());
@@ -2279,6 +2386,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
     }
 
     private static Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController FeedsFor(Rig rig, System.Security.Claims.ClaimsPrincipal user) => new(rig.Feeds, rig.Callers.Users.Object)
@@ -2347,8 +2455,10 @@ public class ApiNativeDetailsTests
         Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(disabled, true, 693134, ct)).Outcome);
         Assert.Equal(403, Status(await FeedsFor(rig, new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Collection(726871, ct)));
 
-        // Seerr not set up: nothing to read.
+        // A1: Jellyfin Enhanced mode's metadata is TMDB's, not Seerr's: Seerr not set up changes nothing; no TMDB key, nothing to read.
         rig.Plugin.Plugin.Configuration.JellyseerrUrls = string.Empty;
+        Assert.Equal(FeedOutcome.Ok, (await rig.Feeds.TitleAsync(unlinked, true, 693134, ct)).Outcome);
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;
         Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(unlinked, true, 693134, ct)).Outcome);
     }
 
@@ -2540,6 +2650,7 @@ public class ApiNativeDetailsTests
         config.ArrPhase1Enabled = true;
         config.ArrPhase3Enabled = true;
         config.ArrRequestBackend = "je";
+        config.TMDB_API_KEY = "test-tmdb"; // A1: JE mode's metadata source (the fake source stands in for TMDB)
         // Only id and name of real keywords leave the server.
         Assert.Equal("""{"results":[{"id":161919,"name":"adult animation"}]}""", (await rig.Feeds.KeywordsAsync(unlinked, "adult animation", CancellationToken.None)).Json);
         Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.KeywordsAsync(unlinked, " ", CancellationToken.None)).Outcome);
@@ -2794,7 +2905,7 @@ public class NativeDetailsSourceTests
         var artwork = new NativeDetailsArtwork(images);
         using (var cts = new CancellationTokenSource())
         {
-            var waiting = artwork.FetchAsync("/poster.jpg", "w300", cts.Token);
+            var waiting = artwork.FetchAsync("/poster.jpg", "w300", Guid.NewGuid(), cts.Token);
             cts.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
         }

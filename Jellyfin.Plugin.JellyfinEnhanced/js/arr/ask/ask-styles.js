@@ -37,9 +37,18 @@
 /* The JE-mode collection picker's longer state words wrap in their column (phones keep room for the title). */
 .jellyseerr-collection-movie-row .je-arr-collection-paused, .jellyseerr-collection-movie-row .je-arr-collection-known { white-space: normal; max-width: 9em; }
 .jellyseerr-collection-movie-row .je-arr-collection-paused { color: #f5b041; border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); }
+/* The collection to look at (A1: JE the backend, asking off or not the viewer's): each row a button opening its movie. */
+.je-arr-collection-view { display: flex; flex-direction: column; gap: 8px; }
+.je-arr-collection-view .je-arr-collection-view-row { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 16px; width: 100%;
+  padding: 12px 16px; margin: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; }
+.je-arr-collection-view .je-arr-collection-view-row:hover, .je-arr-collection-view .je-arr-collection-view-row:focus-visible {
+  background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.5); }
+.je-arr-collection-view .jellyseerr-collection-movie-poster { width: 46px; height: auto; border-radius: 4px; }
 .je-ask-dim .listItemImage { filter: grayscale(0.85) brightness(0.55); }
 .je-ask-dim .listItemImageButton { display: none; }
 .je-ask-native-label-off .missingIndicator, .je-ask-native-label-off .unairedIndicator { display: none; }
+.je-ask-replaced { display: none !important; }
 .listItemImage .je-ask-ring { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; pointer-events: none; }
 .je-ask-ring .je-arr-ring { width: 52px; height: 52px; }
 .je-ask-ring .je-arr-ring-text { font-size: 13px; }

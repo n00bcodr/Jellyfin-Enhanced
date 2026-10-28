@@ -87,7 +87,7 @@ public class IntegrationNotificationsTests
         public ArrStateStore Store { get; }
         // Like Jellyfin, any copy, episode or season can be resolved (the dispatcher re-checks them).
         public FakeJellyfinView View { get; } = new() { ResolveAnyItem = true };
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Status { get; }
         public ArrChangeFeed Feed { get; } = new();
         public FakeUsers Users { get; } = new();
@@ -140,9 +140,9 @@ public class IntegrationNotificationsTests
             Radarr.Movies.Add(FakeArr.Movie(2, 693134, "Dune Part Two", hasFile: false));
             Sonarr.Series.Add(FakeArr.SeriesRow(5, 371980, "Severance"));
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Config, () => Arr.Now, Feed, new ArrInstanceLibraries(Store, Library, () => Arr.Now));
-            Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20) };
+            Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20), StableQuietOverride = TimeSpan.FromMilliseconds(5), HydrationPoll = TimeSpan.FromMilliseconds(20) };
             Hub = new ArrAdminHubService(Store, Bridge, Requests, null, null, () => Config, () => Arr.Now);
             Admin = View.AddUser(admin: true, policy: "same");
             Emma = View.AddUser(admin: false, policy: "same");
@@ -846,6 +846,35 @@ public class IntegrationNotificationsTests
         await rig.Service.AdminChecksAsync(default);
         var digest = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
         Assert.Equal("Dune Part Two (RadarrZ, import_waiting)", Params(digest.Payload)["items"]);
+    }
+
+    // UX-15: the bell lists a digest's downloads on demand. The digest carries them as fields (title, scope, instance and the
+    // Needs attention code the Overview names), next to its unchanged one-line text for phone and e-mail.
+    [Fact]
+    public async Task TheStuckDigestCarriesItsDownloadsAsFieldsForTheBell()
+    {
+        using var rig = await Started();
+        var blocked = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "importBlocked", status: "warning");
+        var waiting = FakeArr.RadarrQueueRow(3, 1, "Fresh Film", state: "downloading", status: "warning");
+        waiting["status"] = "completed";
+        waiting["sizeleft"] = 0;
+        rig.Radarr.Queue.AddRange(new[] { blocked, waiting });
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Arr.Now = rig.Arr.Now.AddHours(7);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
+        await rig.Service.AdminChecksAsync(default);
+        var p = Params(Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest").Payload);
+        Assert.Equal("2", p["count"]);
+        var entries = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(p["entries"])!;
+        Assert.Equal(
+            new[] { ("Dune Part Two", "RadarrZ", "import_blocked"), ("Fresh Film", "RadarrZ", "import_waiting") },
+            entries.Select(e => (e["title"], e["instance"], e["code"])).OrderBy(e => e.Item1).ToArray());
+        Assert.All(entries, e => Assert.Equal(string.Empty, e["scope"]));
+        // The phone and e-mail text is the same list as before.
+        Assert.Contains("Dune Part Two (RadarrZ, import_blocked)", p["items"]);
+        Assert.Empty(rig.Inbox(rig.Emma));
     }
 
     [Fact]

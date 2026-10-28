@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
@@ -15,7 +16,7 @@ test('watch progress and file-size chips share request and deduplicate repeated 
 });
 test('watch progress cycles percentage/time/remaining and persists preference',async t=>{
  const h=setup(t);h.api.displayWatchProgress('item',h.container);await h.settle();const chip=h.container.firstChild;
- chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'remaining');assert.match(chip.textContent,/-1m/);chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'percentage');assert.equal(h.saved.length,3);
+ clickAsViewer(chip);assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);clickAsViewer(chip);assert.equal(h.JE.currentSettings.watchProgressMode,'remaining');assert.match(chip.textContent,/-1m/);clickAsViewer(chip);assert.equal(h.JE.currentSettings.watchProgressMode,'percentage');assert.equal(h.saved.length,3);
 });
 test('file-size cache distinguishes media source and failure keeps unavailable chip',async t=>{
  let fail=false;const h=setup(t,async()=>{if(fail)throw new Error('offline');return {size:100};});h.api.displayItemSize('item',h.container,'first');await h.settle();h.api.displayItemSize('item',h.container,'second');await h.settle();assert.equal(h.calls.length,2);assert.match(h.calls[1][0],/mediaSourceId=second/);

@@ -53,6 +53,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal bool HasSeerrOptions => SeerrServerId != null || SeerrProfileId != null || SeerrRootFolder != null || SeerrOptions != null;
         /// <summary>True when the input names an arr instance, profile or root folder (Jellyfin Enhanced mode routing).</summary>
         internal bool HasArrRouting => InstanceId != null || ProfileId != null || RootFolder != null;
+        /// <summary>
+        /// Applies an approver's explicit arr choices to this pending scope. The shared request keeps its
+        /// own title, edition and seasons/episodes; omitted choices keep its existing settings or defaults.
+        /// Used for both prerequisite preparation and the ledger's durable approval.
+        /// </summary>
+        internal MutationInput WithArrChoices(MutationInput choices) => this with
+        {
+            InstanceId = choices.InstanceId ?? InstanceId,
+            ProfileId = choices.ProfileId ?? ProfileId,
+            RootFolder = choices.RootFolder ?? RootFolder,
+        };
         /// <summary>Creates a stable canonical input, or null when invalid.</summary>
         public MutationInput? Normalize()
         {
@@ -247,7 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
     /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
     /// </summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null)
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null, long? OverrideChoiceVersion = null)
     {
         /// <summary>
         /// What the caller asks to do with it (server-only): null for a person's ask, <c>add</c> for an administrator's add from
@@ -292,7 +303,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, Guid? ChoiceOwner = null, long ChoiceVersion = 0)
+    {
+        /// <summary>
+        /// Refresh approval authority and preserve the send binding. Choice display snapshots are supplied
+        /// by TitleChoiceRegistry from the independent job reference, never inferred from this authority.
+        /// </summary>
+        public RequestAuthorization CarryForward(RequestAuthorization refreshed)
+            => refreshed with
+            {
+                SeerrUser = SeerrUser ?? refreshed.SeerrUser,
+                SeerrSeasons = SeerrSeasons,
+            };
+    }
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>
@@ -300,7 +323,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed record RequestDispatch(string TargetKey, MutationInput Input, DateTimeOffset At);
     /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
-        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
+        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false)
+    {
+        /// <summary>Durable registry reference; authorization choice fields are non-authoritative display snapshots.</summary>
+        public string? TitleChoiceId { get; init; }
+        /// <summary>The registry revision admitted for this job.</summary>
+        public long TitleChoiceRevision { get; init; }
+        /// <summary>Non-authoritative tag/type snapshot, populated only by the registry.</summary>
+        public Model.Arr.ArrInstanceDefaults? TitleChoiceSettings { get; init; }
+    }
+    /// <summary>The current title-wide add choice, exposed only to an administrator submitting routing.</summary>
+    public sealed record RequestChoice(
+        [property: JsonPropertyName("owner")] Guid Owner,
+        [property: JsonPropertyName("version")] long Version,
+        [property: JsonPropertyName("profileId")] int? ProfileId,
+        [property: JsonPropertyName("rootFolder")] string? RootFolder);
     /// <summary>The request API outcome contract; messages are safe household wording.</summary>
     public sealed record RequestOutcome
     {
@@ -326,8 +363,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// (<c>rule_review</c>): the conditions and their family-safe facts. Null when the rules said nothing.
         /// </summary>
         [JsonPropertyName("rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HouseholdRuleVerdict? Rules { get; init; }
+        /// <summary>Administrator-only current title add settings when a choice conflicts.</summary>
+        [JsonPropertyName("choice"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestChoice? Choice { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
+        /// <summary>Safe retryable local metadata-capacity refusal.</summary>
+        public static RequestOutcome MetadataBusy() => Refused("metadata_busy", 503, "unavailable") with
+        { Message = "This page can't be loaded right now. Try again in a moment." };
+
         /// <summary>Constructs a success result.</summary>
         public static RequestOutcome Accepted(string id, string reason, int status = 201) => new() { RequestId = id, Reason = reason, HttpStatus = status };
         /// <summary>Constructs a refusal, conflict, or retryable failure.</summary>
@@ -335,7 +378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             Outcome = outcome, Reason = reason, HttpStatus = status,
             Certainty = status == 503 ? ArrActionStatus.Failed : ArrActionStatus.Rejected,
-            Message = status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
+            Message = reason == "invalid_choice" ? "The selected quality profile or root folder is no longer usable. Choose current values in Manage → Add to." : status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
         };
     }
     /// <summary>

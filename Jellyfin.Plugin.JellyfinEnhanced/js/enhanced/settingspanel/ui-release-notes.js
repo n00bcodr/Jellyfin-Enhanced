@@ -14,8 +14,11 @@
 
     /**
      * Fetches the latest GitHub release notes and displays them in a notification panel.
+     * @param {Event|Object} [from] The press that asked for them (or its owner), taken before the fetch: opened from
+     *     the settings panel, the notes are a surface over it on the same stack (Escape/Back close them first).
      */
-    async function showReleaseNotesNotification() {
+    async function showReleaseNotesNotification(from) {
+        const owner = (from && JE.ownerOf?.(from)) || null;
         let release;
         try {
             const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
@@ -39,7 +42,9 @@
         let isMouseInside = false;
         const AUTOCLOSE_DELAY = 20000; // 20 seconds
 
+        let releaseSurface = null;
         const closePanel = () => {
+            releaseSurface?.();
             if (document.getElementById(notificationId)) {
                 notification.style.transform = 'translateY(-50%) translateX(100%)';
                 setTimeout(() => notification.remove(), 300);
@@ -170,6 +175,9 @@
         `;
 
         document.body.appendChild(notification);
+        if (owner && typeof JE.openSurface === 'function' && JE.admitSurface?.(owner, 'the release notes')) {
+            releaseSurface = JE.openSurface(notification, () => notification.remove(), owner, { label: 'Latest Release Notes' });
+        }
         setTimeout(() => { notification.style.transform = 'translateY(-50%) translateX(0)'; }, 10);
 
         resetAutoCloseTimer();

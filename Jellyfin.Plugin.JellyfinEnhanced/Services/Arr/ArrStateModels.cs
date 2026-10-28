@@ -178,6 +178,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Episode number.</summary>
         public int EpisodeNumber { get; init; }
 
+        /// <summary>Episode title as Sonarr lists it (what the season-page identity check matches TMDB's to), if any.</summary>
+        public string? Title { get; init; }
+
         /// <summary>Air time (UTC), if known.</summary>
         public DateTime? AirDateUtc { get; init; }
 

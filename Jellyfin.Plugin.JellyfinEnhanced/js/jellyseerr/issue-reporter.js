@@ -217,7 +217,9 @@
                     const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, reporter.owner, origin);
                     if (!JE.core.userWrite.isBound(origin)) return;
 
-                    if (!action.current()) return;
+                    // Feedback is a page effect (D46S2-R11-8): said only while the report's owner is current (a report the
+                    // server took after it ended changes no page).
+                    if (!action.current() || !reporter.current() || result?.jeAccepted) return;
                     if (result) {
                         JE.toast(JE.t('jellyseerr_report_issue_success'), 3000);
                         console.log(`${logPrefix} Issue successfully reported for ${itemName}`);
@@ -230,7 +232,8 @@
                         throw new Error('No response from API');
                     }
                 } catch (error) {
-                    if (!action.current()) return;
+                    // Never sent (its owner ended first) or its owner gone: nothing to say.
+                    if (!action.current() || !reporter.current() || error?.name === 'AbortError') return;
                     console.error(`${logPrefix} Error reporting issue:`, error);
                     if (error?.sessionChanged || !JE.core.userWrite.isBound(origin)) return;
                     if (JE.core.userWrite.outcome(error) === 'uncertain' && !error?.status) {
@@ -617,6 +620,7 @@
         }
 
         const button = document.createElement('button');
+        JE.mountControl?.(button);
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-issue-icon';
         button.type = 'button';
@@ -652,6 +656,7 @@
         if (!container) return null;
 
         const button = document.createElement('button');
+        JE.mountControl?.(button);
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-unavailable-icon';
         button.type = 'button';

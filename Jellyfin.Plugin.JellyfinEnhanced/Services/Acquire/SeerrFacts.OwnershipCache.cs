@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// The titles each user asked for in Seerr (TMDB id and media type), as the legacy Requests
@@ -21,7 +21,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// Seerr costs one read per user per poll interval, not one per request).</description></item>
     /// </list>
     /// </summary>
-    internal sealed class SeerrAskedProofCache
+    public sealed partial class SeerrFacts
+    {
+    private sealed class SeerrAskedProofCache
     {
         /// <summary>How long an answer is reused without a new read.</summary>
         public static readonly TimeSpan Fresh = TimeSpan.FromSeconds(30);
@@ -31,16 +33,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         private const int MaxEntries = 2000;
 
-        private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<Entry> _entries = new();
         private readonly Func<long> _now;
         private readonly TimeSpan _wait;
         private long _generation;
 
         /// <summary>Creates a cache with a clock (ticks) and a wait (tests); <see cref="Shared"/> is the server's, on the
-        /// monotonic clock (<see cref="MonotonicClock"/>): a wall-clock step never lengthens or shortens an entry.</summary>
+        /// monotonic clock (<see cref="Helpers.MonotonicClock"/>): a wall-clock step never lengthens or shortens an entry.</summary>
         internal SeerrAskedProofCache(Func<long>? now = null, TimeSpan? wait = null)
         {
-            _now = now ?? MonotonicClock.Now;
+            _now = now ?? Helpers.MonotonicClock.Now;
             _wait = wait ?? TimeSpan.FromSeconds(2);
         }
 
@@ -134,5 +136,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             public Task<IReadOnlySet<(int TmdbId, string MediaType)>?>? Inflight { get; set; }
         }
+    }
     }
 }

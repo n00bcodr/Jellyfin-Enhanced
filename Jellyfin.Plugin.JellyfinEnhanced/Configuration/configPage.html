@@ -1678,7 +1678,7 @@
                                     <i class="material-icons je-info-icon">auto_awesome</i>
                                     <div>
                                         <strong>Seerr Recommendations Page</strong> adds a dedicated view with Seerr-powered rows: Trending, Popular Movies, Popular TV Shows, Upcoming Movies and Upcoming TV Shows.<br/><br/>
-                                        <strong>Requirements:</strong> Seerr integration must be configured and enabled.
+                                        <strong>Requirements:</strong> Seerr integration must be configured and enabled. While Seerr is off, the page, its link and its tab are hidden and these settings are kept as they are; with Jellyfin Enhanced handling requests, the Requests page's Discover tab offers discovery without Seerr.
                                     </div>
                                 </div>
                             </div>
@@ -2053,10 +2053,7 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrShowAdvanced">
                                 <div class="fieldDescription je-field-desc-xl">Lets users choose the Server, Quality and Path while requesting. Only shown to users with the Advanced Requests (or Manage Requests) permission in Seerr. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
-                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
-                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. Requires "Partial requests" to be enabled in Seerr; otherwise Seerr itself requires all seasons. With Requests &amp; downloads (phase 3) on, Jellyfin Enhanced's own request sheet and series buttons follow it too, also when Jellyfin Enhanced handles requests.</div>
-                            </div>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="jellyseerrSingleSeasonRequestOnly"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Only allow requesting one season at a time</strong> works with Seerr or with Jellyfin Enhanced handling requests, so it is set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#jellyseerrSingleSeasonRequestOnly">Requests &amp; discovery</a>.</div></div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowQuotaInfo" is="emby-checkbox" type="checkbox"/><span>Show request quota info</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowQuotaInfo">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, request modals display a chip showing the user's request usage and when their next slot frees up. Quota errors get a detailed dialog instead of a vanishing toast.</div>
@@ -2071,10 +2068,7 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrUseMoreInfoModal">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, clicking a Seerr result title or poster opens an in-app More Info modal.<br/>When disabled, clicking will open the item in Seerr.</div>
                             </div>
-                            <div class="checkboxContainer"><label><input id="nativeAbsentDetailsEnabled" is="emby-checkbox" type="checkbox"/><span>Open titles that aren't in the library on Jellyfin's own details page (Experimental)</span></label></div>
-                            <div class="je-setting-description" data-desc-for="nativeAbsentDetailsEnabled">
-                                <div class="fieldDescription je-field-desc-xl">Jellyfin 12 web only. A title that isn't in your library (Seerr results and discovery rows, recommendations, the Requests page, notifications, the calendar, Hidden Content) opens on a regular Jellyfin details page, filled in from Seerr and TMDB, with the request controls on it. Nothing is added to your library and other apps never see these titles. If the page can't be loaded the More Info modal opens instead. When off, or on Jellyfin 10.11, titles open as set above.</div>
-                            </div>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="nativeAbsentDetailsEnabled"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Open titles that aren't in the library on Jellyfin's own details page</strong> works with Seerr or with Jellyfin Enhanced handling requests, so it is set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#nativeAbsentDetailsEnabled">Requests &amp; discovery</a>.</div></div>
                             <div class="checkboxContainer"><label><input id="jellyseerrAvailablePosterLinksToJellyfin" is="emby-checkbox" type="checkbox"/><span>Link available items' posters straight to Jellyfin</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrAvailablePosterLinksToJellyfin">
                                 <div class="fieldDescription je-field-desc-xl">For a Seerr result that's already available in your library, clicking the poster goes straight to the Jellyfin item, just like the title link already does. If "Open results in More Info modal" above is enabled, the modal can no longer be opened by clicking the poster of an available item.</div>
@@ -2154,128 +2148,10 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle">Automatic Requests</legend>
                         <div class="configSection">
-                            <details class="je-details-section">
-                                <summary>Auto Season Requests</summary>
-                                <div class="je-details-body">
-                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Automatic Advance Season Requests</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestEnabled">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Automatically request the next season in Seerr when a user about to finish the current season.
-                                            <br/><br/>
-                                        </div>
-                                    </div>
-                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/><span>Require All Prior Episodes Watched</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestRequireAllWatched">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br/> This might cause requests to not be triggered if users skip episodes.
-                                        </div>
-                                    </div>
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
-                                        <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoSeasonRequestThresholdValue">
-                                            <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
-                                            <div class="je-info-banner-inline">
-                                            <i class="material-icons je-info-icon-sm">info</i>
-                                            <div>
-                                                • Requests are triggered when users start or complete watching episodes<br/>
-                                                • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br/>
-                                                • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br/>
-                                                • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br/>
-                                            </div>
-                                            </div>
-                                        </div>
-                                </div>
-                            </details>
-
-                            <details class="je-details-section">
-                                <summary>Auto Movie Requests</summary>
-                                <div class="je-details-body">
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Auto Movie Requests</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestEnabled">
-                                        <div class="fieldDescription je-field-desc-xl">
-                                            Automatically request the next movie in a collection based on configured triggers.
-                                            <br/><br/>
-                                        <strong>Requirements:</strong> TMDB API key must be configured.
-                                        </div>
-                                    </div>
-
-                                    <div style="margin-top:10px;"><strong>Request Triggers:</strong></div>
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/><span>When movie starts</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnStart">
-                                        <div class="fieldDescription je-field-desc-mt-sm">Trigger an auto-request for the next movie in the collection as soon as a user starts a movie.</div>
-                                    </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/><span>After X minutes watched</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnMinutesWatched">
-                                        <div class="fieldDescription je-field-desc-mt-sm">
-                                            Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
-                                        </div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label for="autoMovieRequestMinutesWatched" class="inputLabel">Minutes Watched Threshold:</label>
-                                        <input id="autoMovieRequestMinutesWatched" is="emby-input" type="number" min="1" max="180" value="20" />
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestMinutesWatched">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                                How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
-                                            </div>
-                                        </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/><span>Only request if released</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestCheckReleaseDate">
-                                        <div class="fieldDescription je-field-desc-mt-sm">
-                                            When enabled, future releases will be skipped. Only movies that have already been released will be requested.
-                                        </div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label for="autoMovieRequestQualityMode" class="inputLabel">Quality Profile Mode:</label>
-                                        <select id="autoMovieRequestQualityMode" is="emby-select" class="emby-select">
-                                            <option value="default">Default</option><option value="original">Original</option><option value="custom">Custom</option>
-                                        </select>
-                                    </div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestQualityMode">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                            <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br/>
-                                            <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br/>
-                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.<br/>
-                                            With Requests &amp; downloads "Ask for it" (phase 3) on, the next movie is recorded as a plain request instead and these quality settings aren't used.
-                                            </div>
-                                        </div>
-
-                                    <div class="checkboxContainer"><label><input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox"/><span>Use default instead of 4K fallback</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="autoMovieRequestFallbackOn4k">
-                                        <div class="fieldDescription je-field-desc-lg">
-                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
-                                        </div>
-                                    </div>
-
-                                    <div id="autoMovieRequestCustomSettings" style="display:none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestServer">Radarr Server:</label><select id="autoMovieRequestServer" name="autoMovieRequestServer" is="emby-select" class="emby-select"></select></div>
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestProfile">Quality Profile:</label><select id="autoMovieRequestProfile" name="autoMovieRequestProfile" is="emby-select" class="emby-select"></select></div>
-                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestRootFolder">Root Folder:</label><select id="autoMovieRequestRootFolder" name="autoMovieRequestRootFolder" is="emby-select" class="emby-select"></select></div>
-                                        <div class="je-setting-description" data-desc-for="autoMovieRequestRootFolder">
-                                            <div class="fieldDescription je-field-desc-mt-sm">
-                                                These settings are only used when Quality Profile Mode is set to "Custom".
-                                            </div>
-                                            <div class="je-info-banner-inline">
-                                            <i class="material-icons je-info-icon-sm">info</i>
-                                            <div>
-                                                • Only works for movies that are part of a TMDB collection (e.g., <a class="je-bold-link" href="https://www.themoviedb.org/collection/86311" target="_blank">The Avengers Collection</a>, <a class="je-bold-link" href="https://www.themoviedb.org/collection/10" target="_blank">Star Wars Collection</a>, etc.)<br/>
-                                                • Automatically requests the next movie in the collection based on release order<br/>
-                                                • Movies already available or requested will be skipped<br/>
-                                            </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </details>
+                            <div class="je-info-banner-compact je-moved-setting" data-moved-setting="autoSeasonRequestEnabled"><i class="material-icons je-info-icon-sm" aria-hidden="true">arrow_forward</i><div><strong>Automatic season and movie requests</strong> work with Seerr or with Jellyfin Enhanced handling requests, so they are set on the *arr tab: <a href="#" class="sectionTitle je-jump-link" data-jump-tab="arr" data-jump-target="#autoSeasonRequestEnabled">Requests &amp; discovery</a>.</div></div>
                         </div>
                     </fieldset>
 
@@ -2581,11 +2457,25 @@
                             <!-- Requests & downloads, phase 1: status on pages, kept current by live updates -->
                             <div class="checkboxContainer"><label><input id="arrPhase1Enabled" is="emby-checkbox" type="checkbox"/><span>Show where things have got to (status on pages)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase1Enabled">
-                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators also see the instance, the arr's own message and what would fix it. Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
+                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with its journey (open while the title is on its way; nothing once it is ready), badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators can also see the instance, the arr's own message and what would fix it (below). Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrStatusPosterBadges" is="emby-checkbox" type="checkbox"/><span>Show status badges on posters</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrStatusPosterBadges">
                                 <div class="fieldDescription">A small corner badge on poster cards while something is downloading, almost ready or taking longer than usual, and seasons' "4/10" progress on series pages.</div>
+                            </div>
+                            <!-- D92: series-page summary chips and the admin status line, off by default -->
+                            <div class="checkboxContainer"><label><input id="arrStatusSeasonSummaryEnabled" is="emby-checkbox" type="checkbox"/><span>Show the season summary on series pages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusSeasonSummaryEnabled">
+                                <div class="fieldDescription">Small chips under the title of series and season pages with what is here and what is missing: "Seasons 1, 3, 4 ready", "8 of 10 ready", "54 missing". What is on its way (downloading, almost ready, looking for it, airing next) shows either way, and so do the "Not in the library yet" line and the episode chips.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrStatusAdminLineEnabled" is="emby-checkbox" type="checkbox"/><span>Show the Sonarr/Radarr status line to admins</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusAdminLineEnabled">
+                                <div class="fieldDescription">Administrators see a line under the status on details pages with the instance, the arr's own words and what would fix it, e.g. "Sonarr · Some episodes missing · Fix: search now in Sonarr". The Manage drawer shows the same details either way.</div>
+                            </div>
+                            <!-- D95: download progress on artwork, on by default -->
+                            <div class="checkboxContainer"><label><input id="arrStatusArtworkProgressEnabled" is="emby-checkbox" type="checkbox"/><span>Show download progress on artwork</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusArtworkProgressEnabled">
+                                <div class="fieldDescription">While a title downloads, its poster shows a ring with the percentage (a spinning ring when the percentage isn't known yet), on poster cards, the details page and list placeholders; while it is almost ready the ring is full and pulses gently. It goes away once the title is ready. Works with or without the corner badges above.</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="arrStatusLookingHours">"Missing" with Search after (hours)</label>
@@ -2604,7 +2494,7 @@
                             <!-- Phase 1: Requests page, Manage drawer, Seerr modal status, Seerr request list -->
                             <div class="checkboxContainer"><label><input id="arrRequestsHubEnabled" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrRequestsHubEnabled">
-                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. Requests are read from Seerr (Seerr tab), so this shows nothing until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
+                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. With Jellyfin Enhanced handling requests ("Ask for it" below) they come from its own request list and Seerr isn't needed; otherwise they are read from Seerr (Seerr tab), so the list stays empty until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrManageDrawerEnabled" is="emby-checkbox" type="checkbox"/><span>Manage button for administrators</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrManageDrawerEnabled">
@@ -2805,7 +2695,7 @@
                             <div id="arrAdminToolsSettings" class="je-arr-admin-settings">
                                 <div class="checkboxContainer"><label><input id="arrTargetedRefreshEnabled" is="emby-checkbox" type="checkbox"/><span>Show imports in Jellyfin right away</span></label></div>
                                 <div class="je-setting-description" data-desc-for="arrTargetedRefreshEnabled">
-                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is left to Jellyfin's own library monitor (a whole TV library is never refreshed this way). Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
+                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is added on its own (a whole TV library is never refreshed or scanned this way), and a new title has its title, overview, artwork and media info read before it shows as Ready. Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
                                 </div>
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="arrLibraryPendingMinutes">"In Sonarr/Radarr, not in Jellyfin" after (minutes)</label>
@@ -2814,6 +2704,22 @@
                                 <div class="je-setting-description" data-desc-for="arrLibraryPendingMinutes">
                                     <div class="fieldDescription">How long after an import a file Jellyfin still doesn't have is listed under Needs attention, with a Scan now button. 1-1440, default 10.</div>
                                 </div>
+                                <!-- Bridge fix: new imports are hydrated before they are Ready -->
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrBridgeStableSeconds">Wait for an imported file to stop changing (seconds)</label>
+                                    <input id="arrBridgeStableSeconds" is="emby-input" type="number" min="0" max="60"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrBridgeStableSeconds">
+                                    <div class="fieldDescription">Before Jellyfin is asked to read a file Sonarr/Radarr imported, its size and time must stay the same for this long, so a copy still being written is never read half-done. 0-60, default 3; 0 doesn't wait.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrBridgeMetadataWaitMinutes">Wait for a new title's details before calling it Ready (minutes)</label>
+                                    <input id="arrBridgeMetadataWaitMinutes" is="emby-input" type="number" min="1" max="120"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrBridgeMetadataWaitMinutes">
+                                    <div class="fieldDescription">A new movie or episode shows "Almost ready" while Jellyfin reads its title, overview, artwork and media info, and Ready (with its notification) once they are there. If a metadata provider is down or has nothing for it, it is shown Ready after this long anyway and the server log says what is missing. 1-120, default 10.</div>
+                                </div>
+                                <!-- end bridge fix -->
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="arrLowDiskPercent">Low disk warning below (% free)</label>
                                     <input id="arrLowDiskPercent" is="emby-input" type="number" min="1" max="50"/>
@@ -2954,6 +2860,192 @@
                                 </div>
                             </div>
                             <!-- /Requests & downloads, phase 2: notifications -->
+                        </div>
+                    </fieldset>
+                    <!-- Requests & discovery: settings that work with Seerr or with Jellyfin Enhanced handling requests. One stored
+                         setting each; the Seerr tab links here. Each is gated on what it really needs (CAPABILITY_DEPS), not on Seerr. -->
+                    <fieldset id="requestsDiscoverySection" data-dep-own>
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">travel_explore</i>Requests &amp; discovery</legend>
+                        <div class="configSection">
+                            <div class="je-setting-description" data-desc-for="requestsDiscoverySection">
+                                <div class="fieldDescription">These work with Seerr (Seerr tab) or with Jellyfin Enhanced handling requests (Requests &amp; downloads above, "Ask for it", request handling "Jellyfin Enhanced"). Each one says what it needs and stays off until that is set up.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="nativeAbsentDetailsEnabled" is="emby-checkbox" type="checkbox"/><span>Open titles that aren't in the library on Jellyfin's own details page (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativeAbsentDetailsEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Jellyfin 12 web only. A title that isn't in your library (search results and discovery rows, recommendations, the Requests page, notifications, the calendar, Hidden Content) opens on a regular Jellyfin details page, with the request controls on it. It is filled in from TMDB when Jellyfin Enhanced handles requests (needs a TMDB API key), otherwise from Seerr and TMDB (needs Seerr set up). Nothing is added to your library and other apps never see these titles. If the page can't be loaded the More Info modal opens instead. When off, or on Jellyfin 10.11, titles open as set on the Seerr tab ("Open results in More Info modal").</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
+                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. With Requests &amp; downloads "Ask for it" (phase 3) on, Jellyfin Enhanced's own request sheet and series buttons follow it, whichever handles requests. Seerr's request window follows it too; there it needs "Partial requests" enabled in Seerr, otherwise Seerr itself requires all seasons. Needs Seerr set up or "Ask for it" on.</div>
+                            </div>
+                            <details class="je-details-section">
+                                <summary>Auto Season Requests</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Automatic Advance Season Requests</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestEnabled">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Automatically ask for the next season when a user is about to finish the current one: through Seerr, or, with Requests &amp; downloads "Ask for it" (phase 3) on, as a request of their own (without Seerr this needs a TMDB API key).
+                                            <br/><br/>
+                                        </div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="autoSeasonRequestRequireAllWatched" is="emby-checkbox" type="checkbox"/><span>Require All Prior Episodes Watched</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoSeasonRequestRequireAllWatched">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Require all episodes before the threshold to be watched. For example, if threshold is 2 and there are 10 episodes, when watching episode 8, all episodes 1-7 must be watched or marked as watched. This prevents accidentally triggering requests by jumping to later episodes. <br/> This might cause requests to not be triggered if users skip episodes.
+                                        </div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="autoSeasonRequestThresholdValue">Episodes Remaining Threshold</label>
+                                        <input id="autoSeasonRequestThresholdValue" is="emby-input" name="autoSeasonRequestThresholdValue" type="number" min="1" max="20" value="2"/>
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoSeasonRequestThresholdValue">
+                                            <div class="fieldDescription">Request the next season when the number of unwatched episodes is at or below this number. Default: 2 episodes.</div>
+                                            <div class="je-info-banner-inline">
+                                            <i class="material-icons je-info-icon-sm">info</i>
+                                            <div>
+                                                • Requests are triggered when users start or complete watching episodes<br/>
+                                                • Set threshold to 2-3 episodes to give time for downloading before users finish watching<br/>
+                                                • Example: With threshold set to 2, when user starts episode 8 of 10 of season 1, season 2 will be requested<br/>
+                                                • If a user has already triggered a request for the season, it will not be requested again even if another user reaches the threshold<br/>
+                                            </div>
+                                            </div>
+                                        </div>
+                                </div>
+                            </details>
+
+                            <details class="je-details-section">
+                                <summary>Auto Movie Requests</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Auto Movie Requests</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestEnabled">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            Automatically request the next movie in a collection based on configured triggers.
+                                            <br/><br/>
+                                        <strong>Requirements:</strong> a TMDB API key, plus Seerr set up or Requests &amp; downloads "Ask for it" (phase 3) on.
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-top:10px;"><strong>Request Triggers:</strong></div>
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnStart" is="emby-checkbox" type="checkbox"/><span>When movie starts</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnStart">
+                                        <div class="fieldDescription je-field-desc-mt-sm">Trigger an auto-request for the next movie in the collection as soon as a user starts a movie.</div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestTriggerOnMinutesWatched" is="emby-checkbox" type="checkbox"/><span>After X minutes watched</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestTriggerOnMinutesWatched">
+                                        <div class="fieldDescription je-field-desc-mt-sm">
+                                            Select one or both triggers. If both are selected, the request will be triggered if either condition is met.
+                                        </div>
+                                    </div>
+
+                                    <div class="inputContainer">
+                                        <label for="autoMovieRequestMinutesWatched" class="inputLabel">Minutes Watched Threshold:</label>
+                                        <input id="autoMovieRequestMinutesWatched" is="emby-input" type="number" min="1" max="180" value="20" />
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestMinutesWatched">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                                How many minutes a user should watch before triggering a request? Must be between 1 and 180 minutes.
+                                            </div>
+                                        </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestCheckReleaseDate" is="emby-checkbox" type="checkbox"/><span>Only request if released</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestCheckReleaseDate">
+                                        <div class="fieldDescription je-field-desc-mt-sm">
+                                            When enabled, future releases will be skipped. Only movies that have already been released will be requested.
+                                        </div>
+                                    </div>
+
+                                    <div class="inputContainer">
+                                        <label for="autoMovieRequestQualityMode" class="inputLabel">Quality Profile Mode:</label>
+                                        <select id="autoMovieRequestQualityMode" is="emby-select" class="emby-select">
+                                            <option value="default">Default</option><option value="original">Original</option><option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestQualityMode">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                            <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br/>
+                                            <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br/>
+                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.<br/>
+                                            With Requests &amp; downloads "Ask for it" (phase 3) on, the next movie is recorded as a plain request instead and these quality settings aren't used.
+                                            </div>
+                                        </div>
+
+                                    <div class="checkboxContainer"><label><input id="autoMovieRequestFallbackOn4k" is="emby-checkbox" type="checkbox"/><span>Use default instead of 4K fallback</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="autoMovieRequestFallbackOn4k">
+                                        <div class="fieldDescription je-field-desc-lg">
+                                            Only applies when Quality Profile Mode is set to "Original". If the watched movie was requested with a 4K profile, the auto-request will use Seerr's default profile instead. This prevents requests from failing or requiring manual approval for users who don't have 4K request permissions in Seerr. Disable this if all your users have 4K request access and you want to preserve the original 4K profile.
+                                        </div>
+                                    </div>
+
+                                    <div id="autoMovieRequestCustomSettings" style="display:none; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestServer">Radarr Server:</label><select id="autoMovieRequestServer" name="autoMovieRequestServer" is="emby-select" class="emby-select"></select></div>
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestProfile">Quality Profile:</label><select id="autoMovieRequestProfile" name="autoMovieRequestProfile" is="emby-select" class="emby-select"></select></div>
+                                        <div class="inputContainer"><label class="inputLabel" for="autoMovieRequestRootFolder">Root Folder:</label><select id="autoMovieRequestRootFolder" name="autoMovieRequestRootFolder" is="emby-select" class="emby-select"></select></div>
+                                        <div class="je-setting-description" data-desc-for="autoMovieRequestRootFolder">
+                                            <div class="fieldDescription je-field-desc-mt-sm">
+                                                These settings are only used when Quality Profile Mode is set to "Custom".
+                                            </div>
+                                            <div class="je-info-banner-inline">
+                                            <i class="material-icons je-info-icon-sm">info</i>
+                                            <div>
+                                                • Only works for movies that are part of a TMDB collection (e.g., <a class="je-bold-link" href="https://www.themoviedb.org/collection/86311" target="_blank">The Avengers Collection</a>, <a class="je-bold-link" href="https://www.themoviedb.org/collection/10" target="_blank">Star Wars Collection</a>, etc.)<br/>
+                                                • Automatically requests the next movie in the collection based on release order<br/>
+                                                • Movies already available or requested will be skipped<br/>
+                                            </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    </fieldset>
+
+                    <!-- Server-side cache: public TMDB data kept on disk (absent titles' artwork, TMDB metadata, parental facts, list poster facts) -->
+                    <fieldset id="serverCacheSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">storage</i>Server-side cache</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="serverCacheEnabled" is="emby-checkbox" type="checkbox"/><span>Keep TMDB artwork and metadata on the server</span></label></div>
+                            <div class="je-setting-description" data-desc-for="serverCacheEnabled">
+                                <div class="fieldDescription je-field-desc-xl">The posters, backdrops, logos, cast photos and season and episode images of titles that aren't in the library (their Jellyfin details pages, with Seerr or with Jellyfin Enhanced handling requests) are saved in a folder on the server the first time they are fetched from TMDB, and so is the TMDB metadata Jellyfin Enhanced reads (titles, seasons, people, collections and rows; free-text searches stay in memory only), the ratings and tags TMDB gives a title for the parental limits (facts only, never who may see it), and the posters of list placeholders. Opening a title again, also after a restart, uses them from there without asking TMDB. Only public data is kept; who may see each title and image is still checked on every request. Off by default.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCachePath">Cache folder</label>
+                                <input id="serverCachePath" is="emby-input" type="text" autocomplete="off" placeholder="server-cache in the plugin's data folder"/>
+                                <div class="fieldDescription">A full path on the Jellyfin server. Empty: the <code>server-cache</code> folder inside the plugin's data folder. For a large cache, a new folder inside Jellyfin's cache folder is the recommended place (in Docker, for example <code>/cache/jellyfin-enhanced</code>): it stays out of backups of the configuration. It must be a folder of its own: new or empty (it is created if missing and marked as the cache's), and writable by Jellyfin. Refused: a folder that already holds other files, Jellyfin's cache folder itself and its own folders in it, and Jellyfin's data, metadata, logs, configuration and plugin folders (also through a link). A new folder starts empty, and the old one is left as it is (clear it first if you don't need it any more). Needs Jellyfin on Linux; elsewhere the cache stays off.</div>
+                                <div class="je-backup-actions">
+                                    <button id="serverCacheCheckBtn" is="emby-button" type="button" class="raised emby-button"><span>Check folder</span></button>
+                                </div>
+                                <div id="serverCacheCheckResult" class="fieldDescription" role="status" aria-live="polite"></div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCacheMaxSizeGb">Largest size (GB)</label>
+                                <input id="serverCacheMaxSizeGb" is="emby-input" type="number" min="0" max="10000" step="any"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="serverCacheMaxSizeGb">
+                                <div class="fieldDescription">When the cache grows past this, the entries used least recently are removed first (down to 90% of it). Metadata takes a small share: at most 256 MB of TMDB metadata, 128 MB of parental facts and 16 MB of list poster facts, inside this limit. Fractions such as 0.5 are fine; 0 means no limit. 0-10000, default 2.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="serverCacheMaxAgeDays">Keep cached data for up to (days)</label>
+                                <input id="serverCacheMaxAgeDays" is="emby-input" type="number" min="0" max="3650" step="1"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="serverCacheMaxAgeDays">
+                                <div class="fieldDescription">An image fetched longer ago than this is fetched from TMDB again the next time it is shown, and the daily task <strong>Tidy the server-side cache</strong> removes it. Metadata keeps its own shorter lifetime whatever this says (6 hours for a title, person or season, 30 minutes for rows and discovery, 24 hours for parental facts, 12 hours for list posters). 0 means no age limit. 0-3650, default 30.</div>
+                            </div>
+                            <div id="serverCacheUsage" class="fieldDescription" role="status" aria-live="polite"></div>
+                            <div class="je-backup-actions">
+                                <button id="serverCacheClearBtn" is="emby-button" type="button" class="raised emby-button"><span>Clear server-side cache</span></button>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- Diagnostics: server stage timings of absent-title reads (admins only; off by default) -->
+                    <fieldset id="stageTimingsSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">timer</i>Diagnostics</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="stageTimingsEnabled" is="emby-checkbox" type="checkbox"/><span>Time absent-title server stages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="stageTimingsEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Measures how long the server spends on each stage of opening a title that isn't in the library (waiting for a metadata place, TMDB cache hits, joins and sends, parental checks, building the answer and its final privacy check). An administrator's browser sees the numbers in the <code>Server-Timing</code> header of those responses (developer tools, Network, Timing), and every such request writes one Debug line to the plugin log. Only stage names and durations are recorded: never a title, user, key or link. For troubleshooting; leave it off otherwise. Off by default.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -4662,7 +4754,9 @@
 
             function jeUpdateDirtyIndicator() {
                 _jeDirtyQueued = false;
-                if (saveDock && form.isConnected) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
+                // Another page is shown (Jellyfin may show this one again): its fields can't be read by id, nothing to mark.
+                if (!form.isConnected) return;
+                if (saveDock) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
             }
 
             /** One update per burst of edits (each keystroke and each node of a redrawn list would otherwise recompute). */
@@ -8505,6 +8599,8 @@
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
             var revision = _jeConfigRevision;
+            // The server's Seerr rule is read with the configuration (and again after every save).
+            jeReadSeerrRule();
             ApiClient.getPluginConfiguration(pluginId).then((read) => {
                 // Once the form has been filled, a read that overlapped a save (one began or ended since this read began,
                 // whatever its outcome, or one is still out or waiting), or that began before the page took a value the server
@@ -8772,6 +8868,9 @@
                 document.querySelector('#arrIntegrationEnabled').checked = config.ArrIntegrationEnabled === true;
                 document.querySelector('#arrPhase1Enabled').checked = config.ArrPhase1Enabled === true;
                 document.querySelector('#arrStatusPosterBadges').checked = config.ArrStatusPosterBadges !== false;
+                document.querySelector('#arrStatusSeasonSummaryEnabled').checked = config.ArrStatusSeasonSummaryEnabled === true;
+                document.querySelector('#arrStatusAdminLineEnabled').checked = config.ArrStatusAdminLineEnabled === true;
+                document.querySelector('#arrStatusArtworkProgressEnabled').checked = config.ArrStatusArtworkProgressEnabled !== false;
                 document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
                 document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
                 document.querySelector('#arrWebhookJellyfinUrl').value = config.ArrWebhookJellyfinUrl || '';
@@ -8782,9 +8881,17 @@
                 jeLoadArrNotifySettings(config);
                 document.querySelector('#arrTargetedRefreshEnabled').checked = config.ArrTargetedRefreshEnabled !== false;
                 document.querySelector('#arrLibraryPendingMinutes').value = (config.ArrLibraryPendingMinutes !== undefined && config.ArrLibraryPendingMinutes !== null) ? config.ArrLibraryPendingMinutes : 10;
+                document.querySelector('#arrBridgeStableSeconds').value = (config.ArrBridgeStableSeconds !== undefined && config.ArrBridgeStableSeconds !== null) ? config.ArrBridgeStableSeconds : 3;
+                document.querySelector('#arrBridgeMetadataWaitMinutes').value = (config.ArrBridgeMetadataWaitMinutes !== undefined && config.ArrBridgeMetadataWaitMinutes !== null) ? config.ArrBridgeMetadataWaitMinutes : 10;
                 document.querySelector('#arrLowDiskPercent').value = (config.ArrLowDiskPercent !== undefined && config.ArrLowDiskPercent !== null) ? config.ArrLowDiskPercent : 10;
                 document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
                 document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
+                document.querySelector('#serverCacheEnabled').checked = config.ServerCacheEnabled === true;
+                document.querySelector('#stageTimingsEnabled').checked = config.StageTimingsEnabled === true;
+                document.querySelector('#serverCachePath').value = config.ServerCachePath || '';
+                document.querySelector('#serverCacheMaxSizeGb').value = (config.ServerCacheMaxSizeGb !== undefined && config.ServerCacheMaxSizeGb !== null) ? config.ServerCacheMaxSizeGb : 2;
+                document.querySelector('#serverCacheMaxAgeDays').value = (config.ServerCacheMaxAgeDays !== undefined && config.ServerCacheMaxAgeDays !== null) ? config.ServerCacheMaxAgeDays : 30;
+                jeServerCacheRefreshUsage();
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -9474,6 +9581,9 @@
             config.ArrIntegrationEnabled = document.querySelector('#arrIntegrationEnabled').checked;
             config.ArrPhase1Enabled = document.querySelector('#arrPhase1Enabled').checked;
             config.ArrStatusPosterBadges = document.querySelector('#arrStatusPosterBadges').checked;
+            config.ArrStatusSeasonSummaryEnabled = document.querySelector('#arrStatusSeasonSummaryEnabled').checked;
+            config.ArrStatusAdminLineEnabled = document.querySelector('#arrStatusAdminLineEnabled').checked;
+            config.ArrStatusArtworkProgressEnabled = document.querySelector('#arrStatusArtworkProgressEnabled').checked;
             var __lookingHours = parseInt(document.querySelector('#arrStatusLookingHours').value, 10);
             config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
             config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
@@ -9487,11 +9597,22 @@
             config.ArrTargetedRefreshEnabled = document.querySelector('#arrTargetedRefreshEnabled').checked;
             var __pendingMinutes = parseInt(document.querySelector('#arrLibraryPendingMinutes').value, 10);
             config.ArrLibraryPendingMinutes = isNaN(__pendingMinutes) ? 10 : Math.min(1440, Math.max(1, __pendingMinutes));
+            var __stableSeconds = parseInt(document.querySelector('#arrBridgeStableSeconds').value, 10);
+            config.ArrBridgeStableSeconds = isNaN(__stableSeconds) ? 3 : Math.min(60, Math.max(0, __stableSeconds));
+            var __metadataWait = parseInt(document.querySelector('#arrBridgeMetadataWaitMinutes').value, 10);
+            config.ArrBridgeMetadataWaitMinutes = isNaN(__metadataWait) ? 10 : Math.min(120, Math.max(1, __metadataWait));
             var __lowDisk = parseInt(document.querySelector('#arrLowDiskPercent').value, 10);
             config.ArrLowDiskPercent = isNaN(__lowDisk) ? 10 : Math.min(50, Math.max(1, __lowDisk));
             var __handoffMinutes = parseInt(document.querySelector('#arrSeerrHandoffGraceMinutes').value, 10);
             config.ArrSeerrHandoffGraceMinutes = isNaN(__handoffMinutes) ? 15 : Math.min(1440, Math.max(1, __handoffMinutes));
             config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
+            config.ServerCacheEnabled = document.querySelector('#serverCacheEnabled').checked;
+            config.StageTimingsEnabled = document.querySelector('#stageTimingsEnabled').checked;
+            config.ServerCachePath = (document.querySelector('#serverCachePath').value || '').trim();
+            var __cacheGb = parseFloat(document.querySelector('#serverCacheMaxSizeGb').value);
+            config.ServerCacheMaxSizeGb = isFinite(__cacheGb) ? Math.min(10000, Math.max(0, __cacheGb)) : 2;
+            var __cacheDays = parseInt(document.querySelector('#serverCacheMaxAgeDays').value, 10);
+            config.ServerCacheMaxAgeDays = isNaN(__cacheDays) ? 30 : Math.min(3650, Math.max(0, __cacheDays));
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -10096,6 +10217,8 @@
                 // The administrator changed while the save was out: it is stored (their change), but nothing of it goes on
                 // as, or is shown to, the next administrator.
                 if (!jeOriginCurrent(origin)) { Dashboard.hideLoadingMsg(); return false; }
+                // What the server decides about Seerr may have changed with this save, or with another writer's.
+                jeReadSeerrRule();
 
                 // The configuration's effects (maintenance mode, Custom Tabs), confirmed by the server.
                 let effects = null;
@@ -10177,7 +10300,12 @@
 
         function saveConfig(e) {
             if (e) e.preventDefault();
-            jeSave(jeOrigin());
+            // The save's origin (this click): the server-side cache's line then shows the saved limits (a lower one is
+            // applied on save), read only after that save succeeded and while it is still this administrator's page.
+            var origin = jeOrigin();
+            Promise.resolve(jeSave(origin)).then(function(ok) {
+                if (ok) setTimeout(function() { if (jeOriginCurrent(origin)) jeServerCacheRefreshUsage(); }, 1500);
+            }, function() {});
             return false;
         }
 
@@ -10977,6 +11105,53 @@
                 && document.querySelector('#JellyseerrApiKey').value.trim().length > 0;
         }
 
+        // The server's answer to "may Jellyfin Enhanced talk to Seerr" for each request handling (backend isolation,
+        // EffectiveRequestsBackend.AllowsSeerr), read from /requests-backend/seerr-capability when the page loads and
+        // after every save. Null until the first answer: Seerr counts as off meanwhile (the server refuses Seerr work
+        // the same way). Never worked out from a stored copy, so a change made elsewhere is picked up on the next read.
+        var _jeSeerrRule = null;
+        var _jeSeerrRuleRead = 0;
+
+        /**
+         * Reads the server's Seerr capability rule and re-evaluates every dependency with it. The newest read wins.
+         * @returns {Promise<void>}
+         */
+        async function jeReadSeerrRule() {
+            var mine = ++_jeSeerrRuleRead;
+            try {
+                var rule = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/requests-backend/seerr-capability'), dataType: 'json' });
+                if (mine !== _jeSeerrRuleRead) return;
+                _jeSeerrRule = rule && rule.allowedFor ? rule : null;
+            } catch (e) {
+                if (mine !== _jeSeerrRuleRead) return;
+                console.warn('[JE] Seerr capability read failed; Seerr settings stay off until it answers:', e);
+                _jeSeerrRule = null;
+            }
+            updateAllDependencies();
+        }
+
+        /**
+         * Whether the server lets Jellyfin Enhanced talk to Seerr with the request handling selected on the page now
+         * (backend isolation, from the server's last answer; see jeReadSeerrRule).
+         * @returns {boolean} True when the isolation rule allows Seerr
+         */
+        function seerrTransportAllowed() {
+            var backend = document.getElementById('arrRequestBackend');
+            if (!_jeSeerrRule) return false;
+            var allowed = _jeSeerrRule.allowedFor;
+            return (backend && Object.prototype.hasOwnProperty.call(allowed, backend.value) ? allowed[backend.value] : allowed.other) === true;
+        }
+
+        /**
+         * "Seerr is on": set up here (enabled, an address and a key) and allowed by backend isolation. The same rule as
+         * the server's EffectiveRequestsBackend.SeerrUsable (public config SeerrAvailable); every Seerr gate on this page
+         * uses it. Connection setup itself stays editable either way.
+         * @returns {boolean} True when Seerr is usable
+         */
+        function jeSeerrUsable() {
+            return hasJellyseerrConfigured() && seerrTransportAllowed();
+        }
+
         /**
          * Checks whether at least one ENABLED arr service (Sonarr or Radarr) has a URL and API key.
          * Disabled instances are skipped — they're stored config but the fan-out callers
@@ -11005,10 +11180,10 @@
         var SECTION_DEPS = [
             {
                 tabSelector: '#seerr',
-                checkFn: hasJellyseerrConfigured,
+                checkFn: jeSeerrUsable,
                 bannerIcon: 'link_off',
                 bannerTitle: 'Enable "Seerr integration" to configure',
-                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration.',
+                bannerHint: 'Provide a Seerr URL and API key in the Setup section above, then enable the integration. With request handling moved to Jellyfin Enhanced (or Status only), Seerr isn\'t used.',
                 bannerId: 'dep-banner-jellyseerr'
             },
             {
@@ -11025,7 +11200,6 @@
             { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
@@ -11045,6 +11219,110 @@
             { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
             { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
         ];
+
+        /**
+         * True when Requests &amp; downloads takes requests ("Ask for it", phase 3, with its parents), whichever handles them.
+         * @returns {boolean} Whether the request ledger records requests
+         */
+        function jeRequestsActive() {
+            var on = function(id) { var el = document.getElementById(id); return !!(el && el.checked); };
+            return on('arrIntegrationEnabled') && on('arrPhase1Enabled') && on('arrPhase3Enabled');
+        }
+
+        /**
+         * True when Jellyfin Enhanced is the selected request handling (the server reads TMDB, never Seerr, then).
+         * @returns {boolean} Whether "Request handling" is set to Jellyfin Enhanced
+         */
+        function jeBackendSelected() {
+            var el = document.getElementById('arrRequestBackend');
+            return !!(el && el.value === 'je');
+        }
+
+        /**
+         * The server's readiness rule for native details (NativeDetailsPolicy.MetadataReady): TMDB when Jellyfin
+         * Enhanced is the request handling, Seerr otherwise.
+         * @returns {boolean} Whether native details have a metadata source
+         */
+        function nativeDetailsReady() {
+            return jeBackendSelected() ? hasTmdbKey() : jeSeerrUsable();
+        }
+
+        // What a setting really needs, for settings that work with Seerr or with Jellyfin Enhanced handling requests
+        // (Requests & discovery on the *arr tab), and for Seerr-only navigation and admin operations. Unmet: every
+        // listed control is disabled with one short hint (stored values are kept and saved unchanged). The rules mirror
+        // the server's (NativeDetailsPolicy, AutoSeason/AutoMovieRequestService, EffectiveRequestsBackend.SeerrUsable); "Seerr" is
+        // always jeSeerrUsable(), backend isolation included.
+        var CAPABILITY_DEPS = [
+            { tag: 'cap-native-details', checkFn: nativeDetailsReady, controls: ['nativeAbsentDetailsEnabled'],
+              hint: 'Needs Seerr set up, or Jellyfin Enhanced request handling with a TMDB API key' },
+            { tag: 'cap-single-season', checkFn: function() { return jeSeerrUsable() || jeRequestsActive(); }, controls: ['jellyseerrSingleSeasonRequestOnly'],
+              hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on' },
+            { tag: 'cap-auto-season', checkFn: function() { return jeSeerrUsable() || (jeRequestsActive() && hasTmdbKey()); },
+              controls: ['autoSeasonRequestEnabled', 'autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'],
+              hint: 'Needs Seerr set up, or Requests & downloads "Ask for it" on with a TMDB API key' },
+            { tag: 'cap-auto-movie', checkFn: function() { return hasTmdbKey() && (jeSeerrUsable() || jeRequestsActive()); },
+              controls: ['autoMovieRequestEnabled', 'autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k', 'autoMovieRequestServer', 'autoMovieRequestProfile', 'autoMovieRequestRootFolder'],
+              hint: 'Needs a TMDB API key, plus Seerr set up or Requests & downloads "Ask for it" on' },
+            // Seerr-only: the Seerr Recommendations page (its rows all come from Seerr) and the advanced Seerr operations.
+            // Seerr's connection setup itself always stays available (Seerr tab).
+            { tag: 'cap-seerr-recommendations', checkFn: jeSeerrUsable,
+              controls: ['recommendationsPageEnabled', 'recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'],
+              hint: 'Seerr is off (Seerr tab): this page shows only Seerr\'s rows. The settings are kept for when Seerr is on.' },
+            { tag: 'cap-seerr-ops', checkFn: jeSeerrUsable,
+              controls: ['importSonarrFromSeerr', 'importRadarrFromSeerr', 'arrSeerrMigrationBtn', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes'],
+              hint: 'Seerr is off (Seerr tab): not available. The settings are kept for when Seerr is on.' }
+        ];
+
+        /**
+         * Evaluates one capability rule: disables (or re-enables, once no other dependency holds them) its controls, dims
+         * their rows and shows its hint once per row. Values are left as they are, so a save keeps them.
+         * @param {Object} dep - Entry from CAPABILITY_DEPS
+         */
+        function updateCapabilityDep(dep) {
+            var isMet = !!dep.checkFn();
+            var hintClass = 'cap-hint-' + dep.tag;
+            dep.controls.forEach(function(id) {
+                var control = document.getElementById(id);
+                if (!control) return;
+                var container = control.closest('.checkboxContainer, .inputContainer, .selectContainer');
+                // A button in an action row (Import from Seerr): the hint goes under the row, the row stays usable.
+                var row = container ? null : control.closest('.je-arr-action-row');
+                if (!isMet) {
+                    control.disabled = true;
+                    addDepTag(control, dep.tag);
+                    control.title = dep.hint;
+                    if (container) {
+                        container.style.opacity = '0.5';
+                        container.style.cursor = 'not-allowed';
+                        addDepTag(container, dep.tag);
+                        if (!container.querySelector('.' + hintClass)) {
+                            var hint = document.createElement('div');
+                            hint.className = 'dep-hint-text ' + hintClass;
+                            hint.textContent = dep.hint;
+                            container.appendChild(hint);
+                        }
+                    } else if (row && !(row.nextElementSibling && row.nextElementSibling.classList.contains(hintClass))) {
+                        var rowHint = document.createElement('div');
+                        rowHint.className = 'dep-hint-text ' + hintClass;
+                        rowHint.textContent = dep.hint;
+                        row.after(rowHint);
+                    }
+                    // An open Seerr import list closes with its button.
+                    var picker = /^import(Sonarr|Radarr)FromSeerr$/.test(id) && document.getElementById(id.slice(6, 12).toLowerCase() + 'SeerrImportPicker');
+                    if (picker) { picker.style.display = 'none'; picker.innerHTML = ''; }
+                } else {
+                    if (removeDepTag(control, dep.tag)) control.disabled = false;
+                    if (control.title === dep.hint) control.title = '';
+                    if (container) {
+                        if (removeDepTag(container, dep.tag)) { container.style.opacity = ''; container.style.cursor = ''; }
+                        var shown = container.querySelector('.' + hintClass);
+                        if (shown) shown.remove();
+                    } else if (row && row.nextElementSibling && row.nextElementSibling.classList.contains(hintClass)) {
+                        row.nextElementSibling.remove();
+                    }
+                }
+            });
+        }
 
         // Informational only (unlike INDIVIDUAL_DEPS) — Native Tab is more
         // reliable than Custom Tabs on Jellyfin 12, but Custom Tabs still works.
@@ -11153,7 +11431,8 @@
                 // Setup fieldsets (Sonarr/Radarr/Bazarr config, Seerr connection setup)
                 // are always editable so admins can add a connection without first
                 // having one — they carry `data-dep-setup` directly in the HTML.
-                if (fieldsets[i].hasAttribute('data-dep-setup')) continue;
+                // Fieldsets with `data-dep-own` gate each setting on what it needs (CAPABILITY_DEPS) instead.
+                if (fieldsets[i].hasAttribute('data-dep-setup') || fieldsets[i].hasAttribute('data-dep-own')) continue;
                 targets.push(fieldsets[i]);
             }
 
@@ -11251,6 +11530,7 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'serverCacheEnabled', label: 'Keep TMDB artwork on the server', children: ['serverCachePath', 'serverCacheMaxSizeGb', 'serverCacheMaxAgeDays'] },
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
@@ -11275,7 +11555,7 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusSeasonSummaryEnabled', 'arrStatusAdminLineEnabled', 'arrStatusArtworkProgressEnabled', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrStandardNeedsNonFourK', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4HouseholdRulesEnabled', label: 'Household rules', children: ['arrPhase4GroupQuotasEnabled'] },
@@ -11308,7 +11588,7 @@
             { parent: 'arrPhase4ListMdblistEnabled', label: 'MDBList public lists', children: ['arrPhase4ListMdblistApiEnabled'] },
             { parent: 'arrPhase4ListTraktEnabled', label: 'Trakt lists, watchlists and charts', children: ['arrListTraktApiKey'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
-            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrBridgeStableSeconds', 'arrBridgeMetadataWaitMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
@@ -12282,6 +12562,7 @@
             enforceTabExclusivity();
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
+            CAPABILITY_DEPS.forEach(updateCapabilityDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
             PARENT_DEPS.forEach(updateParentDep);
@@ -12575,6 +12856,8 @@
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
         document.querySelector('#metadataIconsEnabled').addEventListener('change', updateAllDependencies);
+        // Request handling decides what native details read (TMDB or Seerr).
+        document.querySelector('#arrRequestBackend').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
@@ -13221,6 +13504,92 @@
             });
         }
         jeBackupInit();
+
+        /**
+         * Formats a byte count for the server-side cache line ("85.2 MB").
+         * @param {number} bytes - Bytes.
+         * @returns {string}
+         */
+        function jeServerCacheSize(bytes) {
+            var units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+            var value = Number(bytes) || 0;
+            var unit = 0;
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+            return (unit === 0 ? String(value) : value.toFixed(value >= 100 ? 0 : 1)) + ' ' + units[unit];
+        }
+
+        /**
+         * The server-side cache's usage line from admin/server-cache.
+         * @param {Object} usage - Response of admin/server-cache.
+         * @returns {string}
+         */
+        function jeServerCacheUsageText(usage) {
+            if (!usage) return '';
+            if (usage.folderError) return 'The cache folder can\'t be used, so nothing is cached: ' + usage.folderError;
+            var files = Number(usage.files) || 0;
+            var kinds = { artwork: ['image', 'images'], tmdbjson: ['TMDB metadata answer', 'TMDB metadata answers'], tmdbparental: ['parental fact', 'parental facts'], tmdbposter: ['list poster fact', 'list poster facts'] };
+            var parts = (usage.namespaces || []).filter(function(n) { return kinds[n.name] && Number(n.files) > 0; }).map(function(n) {
+                var count = Number(n.files) || 0;
+                return count.toLocaleString() + ' ' + kinds[n.name][count === 1 ? 0 : 1];
+            });
+            var text = 'Holds ' + (parts.length ? parts.join(', ') : '0 entries') + ' (' + jeServerCacheSize(usage.bytes) + ')';
+            text += usage.maxBytes > 0 ? ' of ' + jeServerCacheSize(usage.maxBytes) : '';
+            text += usage.folder ? ' in ' + usage.folder : '';
+            return text + (usage.enabled ? '.' : '. Off: nothing new is saved and nothing is read from it.');
+        }
+
+        /** Reads the server-side cache's usage into its line (admins only; quiet on failure). */
+        async function jeServerCacheRefreshUsage() {
+            var line = document.querySelector('#serverCacheUsage');
+            if (!line) return;
+            try {
+                var usage = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache'), dataType: 'json' });
+                line.textContent = jeServerCacheUsageText(usage);
+            } catch (e) {
+                line.textContent = 'The cache\'s usage can\'t be read right now.';
+            }
+        }
+
+        /** Wires the Server-side cache section's Check folder and Clear buttons. */
+        function jeServerCacheInit() {
+            var checkBtn = document.querySelector('#serverCacheCheckBtn');
+            var clearBtn = document.querySelector('#serverCacheClearBtn');
+            var result = document.querySelector('#serverCacheCheckResult');
+            if (!checkBtn || !clearBtn) return;
+            checkBtn.addEventListener('click', async function() {
+                // This administrator's check (its origin, taken at the click): sent and shown in that session only.
+                var origin = jeOrigin();
+                result.textContent = 'Checking…';
+                try {
+                    var folder = (document.querySelector('#serverCachePath').value || '').trim();
+                    var r = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache/check-folder'), data: JSON.stringify({ folder: folder }), contentType: 'application/json', dataType: 'json' });
+                    if (!jeOriginCurrent(origin)) return;
+                    result.textContent = r && r.ok ? 'OK: the cache will be kept in ' + r.folder + ' (save to use it).' : ((r && r.message) || 'That folder can\'t be used.');
+                } catch (e) {
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    result.textContent = 'Check failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+            clearBtn.addEventListener('click', async function() {
+                var origin = jeOrigin();
+                if (!confirm('Clear the server-side cache?\n\nEvery saved image and metadata entry is deleted from the folder (nothing else in it is touched). What was shown in the last few hours can still come from Jellyfin\'s memory until it restarts; the rest is fetched from TMDB again as titles are opened.')) return;
+                clearBtn.disabled = true;
+                try {
+                    var r = await jeAdminSend(origin, { type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/admin/server-cache/clear'), dataType: 'json' });
+                    if (!jeOriginCurrent(origin)) return;
+                    document.querySelector('#serverCacheUsage').textContent = 'Cleared ' + (r.removed || 0).toLocaleString() + ' entries. ' + jeServerCacheUsageText(r.usage);
+                } catch (e) {
+                    if (e && e.sessionChanged || !jeOriginCurrent(origin)) return;
+                    // A lost answer may still have cleared it: said as such, never as a failure.
+                    document.querySelector('#serverCacheUsage').textContent = jeAdminOutcome(e) === 'uncertain'
+                        ? 'Could not confirm the cache was cleared (the answer was lost). Check its usage again in a moment.'
+                        : 'Clear failed: ' + (e && e.message ? e.message : e);
+                } finally {
+                    clearBtn.disabled = false;
+                }
+            });
+        }
+        jeServerCacheInit();
 
         var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
         if (rebuildTagCacheBtn) {

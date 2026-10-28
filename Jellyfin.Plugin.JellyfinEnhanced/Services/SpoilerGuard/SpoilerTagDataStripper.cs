@@ -19,7 +19,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         internal SpoilerTagStripPolicy(UserSpoilerBlur state, bool stripGenres, bool stripRatings, bool replaceTitle, bool stripOverview)
         {
-            State = state;
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            _stateFactsStorage = state;
             StripGenres = stripGenres;
             StripRatings = stripRatings;
             ReplaceTitle = replaceTitle;
@@ -27,8 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>The user's spoiler state the policy was built from (non-empty).</summary>
-        public UserSpoilerBlur State { get; }
-
+        public UserSpoilerBlur State { get => _stateFactsOwner.Read(ref _stateFactsStorage, () => default!); }
         /// <summary>Strip genres, languages and stream data (SpoilerStripTags).</summary>
         public bool StripGenres { get; }
 
@@ -48,13 +48,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// A one-way fingerprint of the policy (the viewer's state and the effective strip flags): a request re-reads it
         /// before it emits, and answers again when it changed while the request was waiting.
         /// </summary>
-        public string Revision => _revision ??= Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-            Newtonsoft.Json.JsonConvert.SerializeObject(State) + "|" + StripGenres + StripRatings + ReplaceTitle + StripOverview)));
-
+        public string Revision
+        {
+            get
+            {
+                using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+                return _revisionFacts ??= Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+                            Newtonsoft.Json.JsonConvert.SerializeObject(State) + "|" + StripGenres + StripRatings + ReplaceTitle + StripOverview)));
+            }
+        }
         private string? _revision;
 
         /// <summary>The revision of a possibly absent policy ("-": nothing is stripped).</summary>
         public static string RevisionOf(SpoilerTagStripPolicy? policy) => policy?.Revision ?? "-";
+        private UserSpoilerBlur _stateFactsStorage = default!;
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<UserSpoilerBlur> _stateFactsOwner = new(prepared: true);
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<string?> _revisionFactsOwner = new(prepared: true);
+        private string? _revisionFacts { get => _revisionFactsOwner.Read(ref _revision, () => default!); set => _revisionFactsOwner.Store(ref _revision, value); }
     }
 
     /// <summary>Which Spoiler Guard stub POST /tag-data returns for an item.</summary>
@@ -287,6 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public Dictionary<string, PrivacyIdentity> OwnedIdentities(IReadOnlyDictionary<string, TagCacheEntry> items, JUser? viewer)
         {
+            using var __factsOperation3 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var ids = new List<Guid>();
             foreach (var (key, entry) in items)
             {
@@ -304,16 +315,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var chains = new Dictionary<Guid, List<(Guid Id, PrivacyFacts? Facts)>>();
             var resolved = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager, null, chains);
             var owned = resolved.Where(p => p.Value.IsExtra).ToDictionary(p => p.Key.ToString("N"), p => p.Value, StringComparer.Ordinal);
-            lock (_notExtras)
+            lock (_notExtrasFacts)
             {
                 // Under the lock Forget takes: an event logged after this read drops what is written here.
                 var changed = PrivacyInputs.LibraryChangesSince(since);
                 if (changed == null) return owned;
-                if (_notExtras.Count > MaxKnownExtras) _notExtras.Clear();
+                if (_notExtrasFacts.Count > MaxKnownExtras) _notExtrasFacts.Clear();
                 // Only an item the library resolved, as no extra, is remembered as one: an unresolved id is never a negative.
                 foreach (var (id, identity) in resolved)
                     if (!identity.IsExtra && !changed.Contains(id) && chains.TryGetValue(id, out var chain) && chain.Count == 1 && chain[0].Facts is { } facts)
-                        _notExtras[id] = facts;
+                        _notExtrasFacts[id] = facts;
             }
             return owned;
         }
@@ -322,7 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// The library items known not to be extras, with the facts that judgment consumed (an item that names no owner), until
         /// a library ownership event for them (<see cref="Forget"/>) or a check that finds those facts changed.
         /// </summary>
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, PrivacyFacts> _notExtras = new();
+        private System.Collections.Concurrent.ConcurrentDictionary<Guid, PrivacyFacts> _notExtras = new();
 
         /// <summary>
         /// Whether <paramref name="id"/> is remembered as no extra: a hit replays the facts that judgment consumed into the
@@ -330,11 +341,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private bool NotAnExtra(Guid id)
         {
-            if (!_notExtras.TryGetValue(id, out var facts)) return false;
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            if (!_notExtrasFacts.TryGetValue(id, out var facts)) return false;
             if (PrivacyReadSet.Current is { } reads)
             {
                 reads.Item(_libraryManager, id, facts);
-                reads.OnStale(id, () => { lock (_notExtras) _notExtras.TryRemove(id, out _); });
+                reads.OnStale(id, () => { lock (_notExtrasFacts) _notExtrasFacts.TryRemove(id, out _); });
             }
             return true;
         }
@@ -344,8 +356,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Drops the ownership memo of items whose ownership facts changed (or may have: added, removed).</summary>
         private void Forget(IReadOnlyCollection<Guid> ids)
         {
-            lock (_notExtras)
-                foreach (var id in ids) _notExtras.TryRemove(id, out _);
+            using var __factsOperation4 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
+            lock (_notExtrasFacts)
+                foreach (var id in ids) _notExtrasFacts.TryRemove(id, out _);
         }
 
         /// <summary>
@@ -422,6 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public string StripTagCache(SpoilerTagStripPolicy policy, JUser user, Dictionary<string, TagCacheEntry> items, IReadOnlyDictionary<string, PrivacyIdentity>? owned = null, long? since = null,
             IReadOnlyDictionary<string, (Guid Series, string? Key)>? series = null)
         {
+            using var __factsOperation6 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var spState = policy.State;
             // What the host vouches for, memoized for the whole strip (series ratings and genres, tables).
             var host = Host();
@@ -530,6 +544,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public TagCacheEntry StripEntry(SpoilerTagStripPolicy policy, JUser user, BaseItem item, TagCacheEntry entry, out bool stripped)
         {
+            using var __factsOperation7 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             stripped = false;
             // Native tags use the same captured live identity as tag-data.
             // An unread default series tuple is not evidence about a movie key.
@@ -585,6 +600,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public SpoilerTagDataStub GetTagDataStub(SpoilerTagStripPolicy policy, JUser user, BaseItem item)
         {
+            using var __factsOperation8 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             // The item's identity (its owning title, that title's key, the viewer's watched state) and the one scope
             // rule; the kind decides which stub. Collections, folders, people and programmes are not guarded titles.
             var identity = PrivacyIdentities.Of(_libraryManager, item, user, _userDataManager);
@@ -619,6 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public SpoilerCategoryReveal CategoryReveal(SpoilerTagStripPolicy policy, JUser user, BaseItem episode)
         {
+            using var __factsOperation9 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.SpoilerAdvancedMode != true || policy.State.Prefs?.UseAdvancedCategories == false) return default;
             var identity = CaptureCategoryIdentity(episode);
@@ -810,5 +827,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null;
             }
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<System.Collections.Concurrent.ConcurrentDictionary<Guid, PrivacyFacts>> _notExtrasFactsOwner = new();
+        private System.Collections.Concurrent.ConcurrentDictionary<Guid, PrivacyFacts> _notExtrasFacts { get => _notExtrasFactsOwner.Read(ref _notExtras, () => new()); set => _notExtrasFactsOwner.Store(ref _notExtras, value); }
     }
 }

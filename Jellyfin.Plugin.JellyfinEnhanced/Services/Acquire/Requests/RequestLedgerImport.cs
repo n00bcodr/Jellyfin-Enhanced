@@ -92,8 +92,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="targetKey">The JE-mode backend target of a scope (its instance and connection).</param>
         /// <param name="now">Commit time.</param>
         /// <param name="rollbackWindow">How long the batch can be rolled back.</param>
+        /// <param name="staged">
+        /// A move's import before its handover: the batch is <c>staged</c>, so its wants are invisible and inert
+        /// (<see cref="NotStaged"/>) until <see cref="CommitStagedImport"/>, or removed whole by <see cref="DiscardStagedImport"/>.
+        /// </param>
         public ImportResult ImportSeerr(string sourceId, string digest, IReadOnlyList<ImportCandidate> items, IReadOnlyDictionary<string, int> planSkipped,
-            Guid actor, string previousBackend, Func<MutationInput, string> targetKey, DateTimeOffset now, TimeSpan rollbackWindow)
+            Guid actor, string previousBackend, Func<MutationInput, string> targetKey, DateTimeOffset now, TimeSpan rollbackWindow, bool staged = false)
             => _db.Write((c, t) =>
             {
                 var skipped = new Dictionary<string, int>(planSkipped, StringComparer.Ordinal);
@@ -130,6 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         ("$id", id), ("$a", acquisition), ("$u", Id(item.UserId)), ("$client", client), ("$f", input.Fingerprint), ("$key", input.Key), ("$v", input.Variant),
                         ("$input", input.Canonical), ("$owned", input.Canonical), ("$status", item.Pending ? "pending" : "sent"), ("$r", item.Pending ? "awaiting_approval" : "looking"),
                         ("$target", targetKey(input)), ("$kind", RequestOrigin.SeerrImportKind), ("$source", sourceId), ("$request", requestId), ("$batch", batch), ("$created", Ms(asked)), ("$at", Ms(now)));
+                    AcceptActiveAliases(c, t, input.Key);
                     RememberInput(c, t, item.UserId, client, input.Fingerprint, id);
                     // A pending import holds a free reservation, so a later JE approval charges like any approval.
                     if (item.Pending) Reserve(c, t, id, item.UserId, 0, 0, "held", now, "initial");
@@ -141,12 +146,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 if (imported == 0) return new ImportResult(null, 0, skipped);
                 Changed(c, t);
-                Exec(c, t, "INSERT INTO import_batches(id,origin_kind,origin_source_id,digest,actor_id,previous_backend,imported,skipped,state,created_at,rollback_until) VALUES($id,$kind,$source,$digest,$actor,$previous,$n,$skipped,'committed',$at,$until)",
-                    ("$id", batch), ("$kind", RequestOrigin.SeerrImportKind), ("$source", sourceId), ("$digest", digest), ("$actor", Id(actor)), ("$previous", previousBackend),
+                Exec(c, t, "INSERT INTO import_batches(id,origin_kind,origin_source_id,digest,actor_id,previous_backend,imported,skipped,state,created_at,rollback_until) VALUES($id,$kind,$source,$digest,$actor,$previous,$n,$skipped,$state,$at,$until)",
+                    ("$state", staged ? "staged" : "committed"), ("$id", batch), ("$kind", RequestOrigin.SeerrImportKind), ("$source", sourceId), ("$digest", digest), ("$actor", Id(actor)), ("$previous", previousBackend),
                     ("$n", imported), ("$skipped", JsonSerializer.Serialize(skipped)), ("$at", Ms(now)), ("$until", Ms(now + rollbackWindow)));
                 Fault?.Invoke("batch");
                 return new ImportResult(batch, imported, skipped);
             });
+
+        /// <summary>
+        /// The handover of a move happened: its staged batch becomes an ordinary committed batch, and its wants appear as
+        /// if imported now. While staged they were absent to every reader, alias reconciliation included, so a title whose
+        /// other id was learned meanwhile has moved on: each want is brought to its title's current key, and (with
+        /// <paramref name="policy"/>) a request that now covers it leads, as a merge would have arranged. True when the
+        /// batch was staged (false when it was already committed or discarded).
+        /// </summary>
+        /// <param name="batchId">The staged batch.</param>
+        /// <param name="now">When the handover committed.</param>
+        /// <param name="policy">Request policy for the merge's follow step (null: identity only).</param>
+        public bool CommitStagedImport(string batchId, DateTimeOffset now, IRequestPolicy? policy = null) => _db.Write((c, t) =>
+        {
+            if (Exec(c, t, "UPDATE import_batches SET state='committed' WHERE id=$id AND state='staged'", ("$id", batchId)) == 0) return false;
+            var moved = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var want in Wants(c, t, "import_batch_id=$b", ("$b", batchId)))
+            {
+                var canonical = Canonical(c, t, want.Input.Key);
+                var input = want.Input with { Key = canonical };
+                var owned = want.OwnedInput == null ? null : want.OwnedInput with { Key = canonical };
+                // Only a want whose title moved on is rewritten (the row's own key decides).
+                if (Exec(c, t, "UPDATE wants SET title_key=$key,mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id AND title_key<>$key",
+                    ("$key", canonical), ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id)) > 0)
+                    moved.Add(want.AcquisitionId);
+            }
+            if (policy != null) foreach (var acquisition in moved) FollowWithin(c, t, acquisition, policy, now);
+            // The titles changed now (they were invisible until the handover): pages following them read again.
+            foreach (var key in StagedKeys(c, t, batchId)) Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", key), ("$at", Ms(now)));
+            Changed(c, t);
+            return true;
+        });
+
+        /// <summary>
+        /// The handover of a move was refused (or never happened): every want of its staged batch is removed (nothing
+        /// could touch them: no reader, action or dispatch saw them), and the batch is recorded as rolled back.
+        /// True when the batch was staged.
+        /// </summary>
+        /// <param name="batchId">The staged batch.</param>
+        /// <param name="now">When it was discarded.</param>
+        public bool DiscardStagedImport(string batchId, DateTimeOffset now) => _db.Write((c, t) =>
+        {
+            if (Scalar(c, t, "SELECT id FROM import_batches WHERE id=$id AND state='staged'", ("$id", batchId)) == null) return false;
+            Exec(c, t, "DELETE FROM request_audit WHERE action='import' AND want_id IN (SELECT id FROM wants WHERE import_batch_id=$b)", ("$b", batchId));
+            var removed = Exec(c, t, "DELETE FROM wants WHERE import_batch_id=$b", ("$b", batchId));
+            Exec(c, t, "DELETE FROM acquisitions WHERE id NOT IN (SELECT acquisition_id FROM wants)");
+            Exec(c, t, "UPDATE import_batches SET state='rolled_back',rolled_back_at=$at,removed=$removed,kept=0 WHERE id=$id", ("$at", Ms(now)), ("$removed", removed), ("$id", batchId));
+            Changed(c, t);
+            return true;
+        });
+
+        /// <summary>
+        /// Rolls back every staged batch: a move that didn't finish its handover in this process (it crashed, or the
+        /// database was restored from a copy taken mid-move) counts as refused; the administrator runs it again. Its
+        /// wants were never seen or acted on. Returns how many batches were rolled back.
+        /// </summary>
+        /// <param name="now">Now.</param>
+        public int DiscardStagedImports(DateTimeOffset now)
+        {
+            if (!_db.Available) return 0;
+            var rolledBack = 0;
+            foreach (var batch in _db.Read(c => Batches(c, null, "state='staged'")))
+                if (DiscardStagedImport(batch.Id, now)) rolledBack++;
+            return rolledBack;
+        }
+
+        private static List<string> StagedKeys(SqliteConnection c, SqliteTransaction t, string batchId)
+        {
+            using var cmd = Cmd(c, t, "SELECT DISTINCT title_key FROM wants WHERE import_batch_id=$b", ("$b", batchId));
+            using var r = cmd.ExecuteReader();
+            var keys = new List<string>();
+            while (r.Read()) keys.Add(r.GetString(0));
+            return keys;
+        }
 
         // Why a batch can't be rolled back now (null when it can). Batches roll back newest first, so the
         // request handling each one restores is the one in use just before it.
@@ -207,7 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The newest import batches, newest first.</summary>
         /// <param name="max">At most this many.</param>
         public IReadOnlyList<ImportBatch> ImportBatches(int max = 10)
-            => !_db.Available ? Array.Empty<ImportBatch>() : _db.Read(c => Batches(c, null, "1=1 ORDER BY created_at DESC,rowid DESC LIMIT " + Math.Clamp(max, 1, 100).ToString(CultureInfo.InvariantCulture)));
+            => !_db.Available ? Array.Empty<ImportBatch>() : _db.Read(c => Batches(c, null, "state<>'staged' ORDER BY created_at DESC,rowid DESC LIMIT " + Math.Clamp(max, 1, 100).ToString(CultureInfo.InvariantCulture)));
 
         /// <summary>The users whose wants a batch holds (for the change feed).</summary>
         public IReadOnlyList<Guid> ImportUsers(string batchId) => _db.Read(c =>

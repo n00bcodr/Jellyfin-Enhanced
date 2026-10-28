@@ -272,17 +272,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     result = await _bridge.ScanNowAsync(instance, path, ct).ConfigureAwait(false);
                     return result.Outcome == "refused"
-                        ? new ArrError(ArrErrorKind.Validation, result.Reason == "outside_library" ? "No Jellyfin library contains that path (check the path mappings)." : "The library could not be found.")
+                        ? new ArrError(ArrErrorKind.Validation, result.Reason switch
+                        {
+                            "outside_library" => "No Jellyfin library contains that path (check the path mappings).",
+                            "not_resolved" => "Jellyfin could not add that folder; its next library scan will.",
+                            "library_root" or "no_ancestor" => "Jellyfin Enhanced doesn't scan a whole TV library for this path; Jellyfin's next library scan picks it up.",
+                            _ => "The library could not be found.",
+                        })
                         : null;
                 },
                 ReadBack = _ => Task.FromResult(new ArrReadBack
                 {
-                    Confirmed = result?.Outcome == "library" ? null : result?.Found,
+                    Confirmed = result?.Outcome == "added" && !result.Found ? null : result?.Found,
                     Summary = result?.Outcome switch
                     {
                         "present" => "Jellyfin already has it.",
                         "refreshed" => result.Found ? "Jellyfin has it now." : "Refreshed; Jellyfin doesn't list it yet.",
-                        "library" => "Jellyfin is scanning the " + result.Library + " library.",
+                        "added" => result.Found ? "Added the new folder; Jellyfin has it now and is reading its details." : "Added the new folder; Jellyfin is reading it and its details.",
                         _ => string.Empty,
                     },
                 }),

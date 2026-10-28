@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -66,6 +67,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
+            if (!EffectiveRequestsBackend.AllowsSeerr(config))
+            {
+                _logger.Info("[RequestsBackend] Seerr task denied: backend_disabled");
+                progress?.Report(100);
+                return;
+            }
+
             if (config == null || !config.SyncJellyfinWatchlistToSeerr || !config.JellyseerrEnabled)
             {
                 _logger.Info("[Jellyfin→Seerr Watchlist Sync] Sync is disabled in plugin configuration.");
@@ -80,6 +88,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
+            using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.Watchlist, cancellationToken);
+            cancellationToken = operation.Token;
             _logger.Info("[Jellyfin→Seerr Watchlist Sync] Starting sync task...");
             progress?.Report(0);
 

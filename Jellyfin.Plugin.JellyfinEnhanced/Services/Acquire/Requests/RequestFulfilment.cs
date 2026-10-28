@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Where the sweep got to: the last request of its previous page (null: start from the first).
         private RequestWant? _sweepAfter;
         // Every id an open request's title is known by -> the title key the request was stored under.
-        private Dictionary<string, HashSet<string>> _watched = new(StringComparer.Ordinal);
+        private SeerrFacts.Derived<Dictionary<string, HashSet<string>>>? _watched;
 
         /// <summary>The service (DI).</summary>
         public RequestFulfilment(RequestLedger ledger, ArrStatusService status, IArrJellyfinView view, ArrChangeFeed feed, TitleAliases aliases, Logger logger)
@@ -156,6 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The titles with open requests that the feed says changed since the last read (all of them after a reset).</summary>
         internal IReadOnlyCollection<string> ReadFeed()
         {
+            using var publication = SeerrFacts.BeginPublication();
             if (_cursor == null)
             {
                 _epoch = _feed.Epoch;
@@ -177,14 +178,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (ArrTitleKey.TitleOf(change.Key) is not { } title) continue;
                 if (watched.TryGetValue(title, out var keys)) due.UnionWith(keys);
             }
-            return due;
+            return publication.Publish<IReadOnlyCollection<string>>(() => due);
         }
 
         // The open requests' titles under every id they are known by, rebuilt when the ledger changed.
         private Dictionary<string, HashSet<string>> Watched()
         {
             var revision = _ledger.Revision;
-            if (revision == _watchedRevision) return _watched;
+            if (revision == _watchedRevision && _watched != null && _watched.TryRead(out var held)) return held;
+            using var publication = SeerrFacts.BeginPublication();
             var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
             void Add(string id, string key)
             {
@@ -198,9 +200,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Add(_aliases.Canonical(parsed).ToString(), key);
                 foreach (var alias in _aliases.Of(parsed)) Add(alias.Title.ToString(), key);
             }
-            _watched = map;
+            _watched = SeerrFacts.Remember(map);
             _watchedRevision = revision;
-            return map;
+            return publication.Publish(() => map);
         }
 
         /// <summary>
@@ -212,6 +214,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="cancellationToken">Stops the round.</param>
         internal async Task<int> CheckAsync(IEnumerable<string>? titleKeys, CancellationToken cancellationToken)
         {
+            using var effect = SeerrFacts.BeginEffect(cancellationToken);
             if (!Enabled) return 0;
             await _round.WaitAsync(cancellationToken).ConfigureAwait(false);
             try

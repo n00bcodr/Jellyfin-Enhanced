@@ -1,0 +1,39 @@
+{
+ "image": "jellyfin/jellyfin:10.11.11",
+ "sources": {
+  "keyboard-navigation.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 74550,
+   "sha256": "5db98cb1ac9edc7178fadadb6a16ba7da4c872e479d6393867afa4de62f20979"
+  },
+  "input-manager.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 38490,
+   "sha256": "c71b769416cffd67f109440de18353c450d212ef5850e89143cf13092f488144"
+  },
+  "focus-manager.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 9164,
+   "sha256": "2d58fd18f7bf5ce704feb6b6babe6f113e6e0a788c2cb15d82db66c50819fc88"
+  },
+  "server-notifications.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 10736,
+   "sha256": "ad9d4263a5a612f61112979ce61fb95eb821f18e468ef7a3ec7dfff6a4bd4cda"
+  },
+  "events.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 44797,
+   "sha256": "3b6021972da0fe813ddf749ca335874fda4e9199acdf1abd4a19de64be47beaa"
+  },
+  "gamepadtokey.chunk.js": {
+   "file": "84348.6e10fcc21e65c16ed553.chunk.js",
+   "sha256": "f152684a79874791e75cec359e5fa4268bfda117d7e12a5cbcd6a81146b27f6a"
+  }
+ },
+ "licenses": {
+  "main.jellyfin.bundle.js.LICENSE.txt": {
+   "sha256": "be00e9ae0b464141b75106ce36313c47070d2536728441c2cc24495ca08c7c99"
+  }
+ }
+}

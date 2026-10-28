@@ -641,7 +641,7 @@
             });
         }
 
-        listen(document.getElementById('releaseNotesBtn'), 'click', async () => { await showReleaseNotesNotification(); if (scope.isCurrent()) resetAutoCloseTimer(); });
+        listen(document.getElementById('releaseNotesBtn'), 'click', async (e) => { await showReleaseNotesNotification(e); if (scope.isCurrent()) resetAutoCloseTimer(); });
 
         // --- Position Selectors ---
         const positionSelectors = help.querySelectorAll('.position-selector');

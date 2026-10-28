@@ -120,7 +120,7 @@ public class SeerrAccountAuthorityTests
             linked = null;
             using var seerr = new FakeSeerr();
             var wall = DateTimeOffset.UtcNow;
-            using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => wall);
+            using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => wall);
             var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => wall);
             var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
             await backend.PrepareAsync(user, input, default);
@@ -184,7 +184,7 @@ public class SeerrAccountAuthorityTests
         var config = new PluginConfiguration { ArrIntegrationEnabled = true, ArrPhase1Enabled = true, JellyseerrEnabled = true, JellyseerrUrls = FakeSeerr.Url, JellyseerrApiKey = FakeSeerr.Key };
         var epoch = DateTimeOffset.UtcNow;
         DateTimeOffset Now() => epoch.AddTicks(ticks);
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, Now);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, Now);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, Now);
         var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
         await backend.PrepareAsync(user, input, default);
@@ -233,7 +233,7 @@ public class SeerrAccountAuthorityTests
         var config = new PluginConfiguration { ArrIntegrationEnabled = true, ArrPhase1Enabled = true, JellyseerrEnabled = true, JellyseerrUrls = FakeSeerr.Url, JellyseerrApiKey = FakeSeerr.Key };
         var start = DateTimeOffset.UtcNow;
         var wall = start;
-        using var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => wall);
+        using var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => wall);
         var backend = new SeerrBackend(seerr.Transport, model, null, () => config, () => wall);
         var input = new MutationInput { Key = "movie:tmdb:603", Scope = "movie" };
         await backend.PrepareAsync(user, input, default);

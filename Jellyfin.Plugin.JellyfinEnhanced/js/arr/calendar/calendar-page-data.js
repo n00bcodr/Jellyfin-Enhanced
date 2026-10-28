@@ -301,6 +301,7 @@
         method: "POST",
         readOnly: true,
         body: { events: eventsToCheck },
+        readOnly: true,
       });
       if ((JE.session && !JE.session.isCurrent(epoch)) || !current()) return;
 

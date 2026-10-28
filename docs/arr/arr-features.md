@@ -171,6 +171,35 @@ Keep a configuration backup if you may need to restore an earlier setup.
 
     An unreadable instance list does not fall back to legacy fields; see [instance recovery](troubleshooting-support.md#connection-errors-and-instance-recovery).
 
+## Parental controls for titles outside your library
+
+With request handling set to **Jellyfin Enhanced**, parental checks use TMDB directly through JE's configured
+TMDB connection. Seerr can be disabled and its connection removed. The same checks cover discovery, search,
+requests, list placeholders and absent-title status visibility.
+
+Ratings come from the server's metadata country. Allowed Tags match complete TMDB keyword names;
+Blocked Tags match keyword or genre names. Matches ignore letter case, retain punctuation, and a blocked
+match wins over an allowed one. An arbitrary custom Allowed Tag will not match a genre or an arr management
+tag. For an existing physical Jellyfin title, its own tags and custom/official rating are the local authority;
+normal library access checks still apply. Native facts supplement verified TMDB adult evidence, since Jellyfin
+has no separate adult flag. Conflicting local copies remain unverified.
+
+Restricted people see only verified, rated absent titles within their limits. Adult titles are hidden.
+An unavailable or incomplete metadata response stays unverified and hidden until it can be checked;
+a verified rating or tag refusal remains a refusal. An empty ratings container, a certification only for another
+country, or a certification Jellyfin cannot score also stays unverified, even when Block unrated is off.
+A physical title Jellyfin currently lets the person open keeps that native entitlement for title and season
+metadata, including request-sheet season choices and Elsewhere providers. The stricter absent-title evidence
+requirement does not block an openable unrated copy. Hidden copies confer no exception.
+People without parental restrictions need no additional lookup.
+
+Discover/search return HTTP 200 with verified-safe cards when the list read succeeds. If title verification is
+incomplete, `complete=false` and `reason=evidence_unavailable` signal that results are still being checked.
+Unknown titles stay hidden; partial pages are not cached as complete. A failed list read returns HTTP 503. Evidence preparation has one two-second budget including queued checks; already-started shared
+lookups can finish and warm the cache for a retry. This budget does not cover the initial TMDB list read or
+other request work. Changing the metadata country, backend or evidence connection invalidates prepared
+Discover/search decisions and serialized status responses.
+
 ## ARR Tags
 
 Copy Sonarr and Radarr tags into Jellyfin metadata, then display them as clickable links on detail pages. Clicking a tag opens Jellyfin's list of items carrying that full prefixed tag.
@@ -561,14 +590,17 @@ Follow every request through to **Ready to watch**, on the title's own page and 
 | **Tell me, and admin essentials (phase 2)** | Off | [Admin tools](#admin-tools-phase-2) and [notifications](#notifications-phase-2). |
 | **Ask for it (durable requests, phase 3)** | Off | [Request controls](#asking-for-titles) on Jellyfin's own pages, approvals, the household, and requests sent through Seerr or by Jellyfin Enhanced itself. |
 
+When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
+
 ### Where things have got to
 
 Every title speaks one status language, for family members and administrators alike.
 
 *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
 Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
-Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
-own message ("Manual Import required") and what would fix it. A page or poster card of one copy of a series (a 4K
+Family members see these sentences only; administrators can also see which Sonarr/Radarr holds each copy, the app's
+own message ("Manual Import required") and what would fix it, in the Manage panel and, with *Show the Sonarr/Radarr
+status line to admins* on (off by default), under the status on details pages. A page or poster card of one copy of a series (a 4K
 folder, the series in another library, or one folder of a grouped series) reads only the Sonarr that owns that copy's
 folder: by its path mapping or the same path, else the folder names when they pair the copy with one Sonarr only (a
 standard and a 4K copy both under ".../TV/Firefly" with no mapping can't be told apart); one copy with one Sonarr is
@@ -578,12 +610,21 @@ may see when it is sent: if your access, parental limit or role changes while it
 again for you as you are now (if you were removed or keep changing, the Requests page answers as for nobody).
 
 ??? info "Where the status shows"
-    - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
-      series and season pages get a summary ("Season 1 ready · 1 downloading"; episodes Sonarr is still looking for read "Looking for 3", ones missing for a long while "2 missing"); seasons get episode chips and a
+    - **Details pages**: a pill under the title with the journey (asked, OK'd, downloading, … with dates) shown while
+      the title is on its way (tap the pill to close it for that page view); with *Show download progress on artwork*
+      on (the default) the poster shows a ring with the percentage while it downloads, a spinning ring while the
+      percentage isn't known and a gently pulsing full ring while it is almost ready. Once the title is ready, with
+      nothing else on its way, the page shows nothing from Jellyfin Enhanced: no "Ready to watch", no journey, no
+      Sonarr/Radarr line, no ring (the "ready to watch" notifications still go out), and episode rows that are ready
+      get no chip. Poster cards (library, home rows, list placeholders) show the same ring on their artwork;
+      series and season pages get a summary of what is on its way ("1 downloading", "Season 3 airing (ep 6 Fri)";
+      episodes Sonarr is still looking for read "Looking for 3"); with *Show the season summary on series pages* on (off
+      by default) it also counts what is here and what is missing ("Season 1 ready", "8 of 10 ready", "2 missing" for ones
+      missing for a long while). With nothing to say, the page keeps no empty row. Seasons get episode chips and a
       "Missing: E5, E6" line. Episodes whose downloads can't be checked count as "taking longer than usual"
       in the series or season summary. When Sonarr's episode list of a series can't be read, the series and its seasons
       follow Sonarr's season counts, missing episodes get no row or chip until it can, and administrators see
-      "Sonarr … episode list … can't be read".
+      "Sonarr … episode list … can't be read" (in Manage, and on the page with the status line on).
       When the title arrives, the open page becomes the normal playable page by itself, with no manual refresh: Play,
       media info, versions and Jellyfin's own badges appear (the *Missing* badge goes). The same item is reloaded in
       place; a missing episode or season, which Jellyfin replaces with a new item once its file is there, is swapped for
@@ -605,7 +646,9 @@ again for you as you are now (if you were removed or keep changing, the Requests
       "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
     - **Requests page** (`#/requests`, "Requests" in the sidebar): your own requests, grouped into *Waiting for an
       OK*, *On the way*, *Not out yet* and *Said no*; **Coming soon** (dates in the next two months, by day) and
-      **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
+      **Ready** (what arrived in the last two weeks, with Play). It opens the same way from anywhere: the sidebar, a
+      typed or bookmarked address, Back/Forward, or straight from the Dashboard, with Jellyfin's own header kept (on a
+      phone, its menu button). Each request follows what it asked for: a request
       for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
       arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
       any library and in any folder of a grouped series, every requested episode by its own files, and only a version
@@ -678,7 +721,12 @@ Administrators can see why a title is where it is, and fix it, without leaving J
       that app's add page. With phase 3 on and Jellyfin Enhanced handling requests, it becomes an **Add to Radarr 4K**
       button (the link stays next to it): a small sheet with that instance's quality profiles, root folders (with free
       space) and, for a series, the seasons to monitor. Only the instance's saved add defaults are preselected; nothing
-      else is picked for you. **Add** records the add as your request routed to that instance, so it goes through the
+      else is picked for you. You can choose a profile and folder even when the instance has no saved add defaults.
+      **Add** records the add as your request routed to that instance (or approves a matching pending request with
+      your choices). A matching queued or retrying request that has not been sent is reauthorized with those choices,
+      keeping its original requester, scope and charge. If it is already sending or sent, different choices receive a
+      conflict explaining that they could not be applied; check the title in Manage before changing its profile or folder.
+      The add goes through the
       same outgoing queue as every request (one key per sheet, re-check, read-back, audit), and the sheet follows it until
       the instance confirms it ("Added to Radarr 4K…") or says why it is held;
     - a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
@@ -721,7 +769,9 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
       date, its card and the Activity tab say "queue as of 14:05"; when it can't be read at all, "queue can't be
       read; last read 14:05", and the downloads last read are listed without any action (a click on one already
       open is refused and nothing is sent to the app).
-    - **Activity**: every download (a season pack is one download), with the app's own words, progress and
+    - **Activity**: every download (a season pack is one download), its state in the same words as the Overview
+      ("Import blocked", "Waiting to import", "Download stalled"; the app's own spelling, such as `importBlocked`, and
+      the download id are under **Technical details**), with the app's own words, progress and
       **Remove…** (keeps the download client's data; optionally blocklist the release and search for another
       copy), **Search again** and **Retry import** (where the app retries imports itself). Deleting the download's
       data too is offered only inside the Remove dialog ("Delete the download's data too…", where the download
@@ -733,13 +783,20 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
       and if that fails the action says "The queue is changing; try again in a moment." Below, the recent history.
       Sonarr and Radarr have no way to change a download's priority, so neither does this tab.
     - **System**: per app its version, health checks, disks, scheduled tasks, live connection and webhook; Seerr's
-      request list; and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
+      request list while Seerr is in use or handles requests (with Jellyfin Enhanced handling requests, a **Requests**
+      box instead says whether asking is on, how many Sonarr/Radarr instances can take requests and whether a TMDB key
+      is set); and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
       yet, Jellyfin can't see the file there, outside every library), titles with files Jellyfin doesn't list at
       all, and the **path doctor**, which shows each app's root folders as Jellyfin sees them, compares a few titles
       both sides have and suggests the path mapping that would fix a mismatch ("/data/media → /media").
     - **Audit**: every action taken from Jellyfin Enhanced (who, what, where, the outcome and what the app
       answered), including refusals, and attempts by someone who isn't an administrator to use these actions
-      ("denied", at most once a minute per person and action). Each one is also copied into Jellyfin's own
+      ("denied", at most once a minute per person and action). Each row reads in plain words: who acted (their
+      Jellyfin name; "Automatic" for Jellyfin Enhanced itself; "Removed account" when the account no longer
+      exists), what was done ("Request sent", "Add settings replaced"), the title as your own request cards name it
+      and the instance, and the outcome with a short summary. The stored facts (action id, target, account and
+      instance ids, revisions, profile, root folder and the original message) are kept under **Technical
+      details**. On a phone each card names its fields. Each one is also copied into Jellyfin's own
       activity log (Dashboard → Activity) unless that setting is off.
 
     The tabs update when something changes (an app was read again, an action was recorded), with a fallback
@@ -751,11 +808,24 @@ With **Tell me, and admin essentials (phase 2)** on, administrators get **Overvi
     When Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only
     the folder it landed in (the season; the series and then the new season folder for a new season; or the movie
     library's folder for a new movie), looking only at the new files, so the episode or movie appears within seconds
-    and open pages switch to "Ready" without a library scan. A whole TV library is never refreshed this way: a
-    brand-new series folder is handed to Jellyfin's own library monitor when that library has real-time monitoring
-    on, and otherwise waits for Jellyfin's next library scan (it is listed under "In Sonarr/Radarr, not in
-    Jellyfin" with **Scan now** meanwhile). It uses each app's path mappings (see the path doctor) and
-    waits while Jellyfin's own library scan runs. A folder is never refreshed twice at once: imports that arrive while
+    without a library scan. A whole TV library is never refreshed, scanned or handed to Jellyfin's library monitor
+    this way: a brand-new series folder is added on its own (Jellyfin reads only that folder), whatever the
+    library's real-time monitoring, and then the series, its seasons and its episodes have their details read
+    inside it. It uses each app's path mappings (see the path doctor) and waits while Jellyfin's own library scan
+    runs. Before Jellyfin reads an imported file, the file must stop changing for a moment (a copy still being
+    written is never read half-done).
+
+    **Ready means ready.** Jellyfin lists a new file within a second, long before its title, overview and artwork
+    are read; and a first read that found nothing can leave a movie with its raw folder name (for example
+    *Project Almanac (2015) {tmdb-227719}*) that a normal library scan doesn't repair. So a new title shows
+    **Almost ready** until Jellyfin Enhanced has read its details back: once the refresh that added it has ended, a
+    title still missing its name, overview, poster or media info gets one full read of its metadata and artwork
+    (only that title; your locked fields and existing artwork are kept), retried at most twice. Then it turns
+    **Ready**, and only then do the Ready notification, the request's "fulfilled", the Ready playlist and list
+    swap-in happen, once. If a metadata provider is down or has nothing for it, it turns Ready after the wait set
+    under Admin tools anyway, and the server log says what is missing. A file Jellyfin already lists without its
+    details (after a restart, or when you press **Scan now**) is repaired the same way. An upgrade of a title that
+    is already Ready stays Ready while the new file is read. A folder is never refreshed twice at once: imports that arrive while
     it runs are gathered into the next refresh of that folder, and a file whose refresh is still waiting its turn
     is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
     Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting
@@ -863,7 +933,9 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       folder); each once, linked to the Overview or System tab (rows already listed when the alerts are switched on,
       or switched back on, stay on the Overview only, so turning them on doesn't send one alert per old row; a row
       that started while Jellyfin was restarting is still told). A daily list gathers the downloads Needs attention has
-      shown for hours. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
+      shown for hours. In the bell it reads as a count ("12 downloads have needed attention for over 6 h") with
+      **Open Overview** and **Show which**, which lists each download with its instance and its reason in the
+      Overview's words; phone and e-mail alerts keep the one-line list. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
       (at most once a day per title, whichever episode or season page it is sent from); like a request waiting for an OK,
       a reminder reaches only the administrators who can see the title. These alerts stay with
       administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
@@ -1137,9 +1209,11 @@ ask fetch the episodes that are missing, one tap each.
       per "still looking" period, whichever page it was pressed on: a series Search right after a season's searches only
       the episodes left, and pressing it again when none are says "Searched for it a little while ago. We'll keep
       looking." When some of those episodes were never sent, the *Missing* line searches each episode a request sent (at
-      most ten) and asks for the others, and a series page asks for its seasons. For anything no request sent yet,
-      **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to
-      Sonarr/Radarr as a search for what they already monitor.
+      most ten) and asks for the others. For anything no request sent yet, a season's **Search** asks for it like
+      **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to Sonarr/Radarr as a search
+      for what they already monitor. The **Search** of a movie, series or episode page (on a computer and as a phone's
+      main button alike) never asks: when nothing was sent to search again it says so, and the page's **Request** asks;
+      only a button that reads **Ask {contact} to search** asks, as it says.
 
 ??? info "Paused: storage full, never a bare Missing"
     When the drive a download would land on has less free space than
@@ -1156,8 +1230,9 @@ ask fetch the episodes that are missing, one tap each.
     has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be
     imported into: the title's own folder when Sonarr/Radarr already has the title (also when an administrator names
     another root folder: Sonarr/Radarr keeps a title it has in its folder), otherwise the root folder named or the
-    instance's default root folder for adding titles (with no default root set, a new add isn't measured; it waits for
-    the defaults anyway). So a full default root doesn't pause asks for a series whose folder is on a roomy drive, and a
+    instance's default root folder for adding titles. An explicit root takes precedence and an omitted root falls back
+    to the default; the effective settings are validated against the instance. With neither an explicit root nor a default root,
+    a new add isn't measured and waits for a root to be chosen. So a full default root doesn't pause asks for a series whose folder is on a roomy drive, and a
     series whose own folder's drive is full is paused even when the default root has room. In Seerr mode (Seerr picks the
     server and folder) only the root folder named or JE's default root folder is measured, as before. This applies to
     every role. Lists of titles answer title by title the same way: a Discover or search card says *Paused: storage full*
@@ -1196,7 +1271,7 @@ profiles, folders or tags.
 3. In the request sheet, choose what to ask for, then confirm.
 
 !!! note "One season at a time"
-    With Seerr's **Only allow requesting one season at a time** on, the sheet and the series page ask for one season at a time in both request modes (in Seerr mode while Seerr takes partial requests). See [Seerr settings](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time).
+    With **Only allow requesting one season at a time** on (*arr tab, [Requests & discovery](arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced)), the sheet and the series page ask for one season at a time in both request modes (in Seerr mode while Seerr takes partial requests). See [Seerr settings](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time).
 
 ??? info "Movies, series, collections, and the request sheet"
     - **Movies** are asked for with one tap and a toast ("Asked! We'll let you know."). A short sheet appears first only
@@ -1205,11 +1280,14 @@ profiles, folders or tags.
       its own windows and sheets (the request sheet, Seerr's more-info window, the settings panel) and Jellyfin's
       dialogs; Jellyfin's own toasts stay on top of them.
     - **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
-      it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
+      it). It appears at once with a loading line and *Cancel*; its choices and the confirm button appear once your
+      allowance, the title's check and (for a series) its seasons have been read. For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
       seasons…*, *Pick episodes…* and *Just new episodes from now on* (with Seerr handling requests Jellyfin Enhanced
       asks Seerr for each new season as it starts, see [Sending requests](#sending-requests-phase-3); *Pick episodes…*
       isn't offered there, since Seerr takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3);
-      with Seerr's partial requests off only *The whole series* is). Each card shows what it costs ("Uses 2 of your 4
+      with Seerr's partial requests off only *The whole series* is). The seasons and episodes are the ones the series page
+      offers, numbered as Sonarr lists them once it has the series (see
+      [Episode numbers](#titles-that-arent-in-the-library-native-details)). Each card shows what it costs ("Uses 2 of your 4
       this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
       ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
       standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -1245,7 +1323,8 @@ Seerr approval and decline notices, their channel deliveries and the consumed re
 
 ### Titles that aren't in the library (native details)
 
-With Seerr's experimental **Open titles that aren't in the library on Jellyfin's own details page** on (see
+With the experimental **Open titles that aren't in the library on Jellyfin's own details page** on (*arr tab,
+[Requests & discovery](arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced); see
 [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), a
 title you don't have opens on a Jellyfin details page, and the request controls above sit on it exactly as on a
 library page: the status pill and journey (or the season's pill), *Notify me*, *Manage* for administrators, and
@@ -1258,16 +1337,42 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
   a downloading episode gets its ring;
 - **episodes**: **Get it** or *Search*.
 
+Nothing on these pages plays, so Jellyfin's *Ends at* estimate isn't shown on the title or on its missing episodes'
+rows; the runtime and release date stay. An episode that is in the library keeps its own estimate in the list. An episode page has one status: Jellyfin's own red *Missing* (or *Unaired*) label gives
+way to the status pill while the pill shows.
+
 ??? info "How the page asks and updates"
     The first of them sits in Jellyfin's button row where *Play* is on a library title; the others follow it there as icon
-    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page.
+    buttons, and the status pill (with the request's cost under it) heads the details, as on a library page. The row has
+    one **Request** (the **+** that opens the sheet; *More* lists it too) and the same main action on every screen: where
+    the row is too narrow for its buttons (a phone), its main button is still the one the wide row starts with, so a
+    series whose episodes have been missing for a long while shows **Search** on a phone as on a computer, never
+    **Request** in its place.
     These are the page's only request controls, and they ask through Jellyfin Enhanced in both request modes: in JE mode
     the request goes straight to Sonarr or Radarr (asks that need an OK wait for it), in Seerr mode Jellyfin Enhanced
     passes it on to Seerr as the person who asked. In JE mode the cards of the *Not in your library* search row and of the
     Discover tab open these pages too, and the request is followed on the page and in *My requests* through to *Ready*.
 
     The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
-    aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
+    aired episode is simply not here and later ones are *not out yet*.
+
+    **Episode numbers.** A request for an episode names it by number, and the Sonarr it goes to decides which episode that
+    number is. So once that Sonarr has the series, Sonarr's own list is the season: the season page shows Sonarr's
+    episodes, numbers, titles and air dates (a page of a title that isn't in the library swaps its TMDB episode rows for
+    them), and *Pick episodes…* offers exactly the numbers Sonarr lists that have aired (by the same rule as the season page: a date without a time
+    counts from the end of that day everywhere, and an unknown date never counts as aired) and that you may see, whichever way
+    the sheet was opened (a 4K ask is read for the 4K Sonarr's own list). TMDB's titles, synopses and pictures are never put
+    on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
+    you can ask through has the series (or Seerr takes requests), and the sheet says so. Single episodes are held, with the
+    whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
+    read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
+    or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
+    details are all a page has for a season Sonarr numbers itself (the page of a single episode that isn't in the library,
+    for one: ask for it on its season page). Nothing about a Sonarr you can't use (one whose library you can't open) is read
+    or shown. A library season's own Jellyfin rows are unchanged: they show Jellyfin's details for the episode Sonarr's is
+    matched to.
+
+    The page's id is never taken for a copy: once one
     arrives that the person can open, the page turns into that library title's page in its place (the same rule as a
     library page whose title arrives: it waits while they type, play or have a dialog open, and **Open** is offered
     meanwhile).
@@ -1276,7 +1381,87 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
     [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), where a
     title opens the library copy or its own native page again.
 
+??? info "JE mode: the pages read TMDB, never Seerr"
+    With request handling set to **Jellyfin Enhanced**, these pages, their seasons and episodes, artwork, cast and crew
+    (with their people's pages and filmographies), *More like this*, similar and recommended titles and the movie's
+    collection are read from TMDB with Jellyfin Enhanced's own TMDB key, so Seerr can be turned off completely (no Seerr
+    address or key, every Seerr feature off) and the pages still work for everyone their rules let in. The pages need the
+    switch and a TMDB key; whatever Seerr settings remain are never read in this mode (the request backend alone decides,
+    with or without its rollout switches). Seerr's More Info window reads the same public details there, also when the
+    server answers Seerr's own routes with `backend_disabled`. A series TMDB doesn't link to TVDB or
+    IMDb takes the ids Sonarr or Radarr know it by, so the page carries the same identity as its status and requests.
+    What only Seerr has is left out: Seerr's Rotten Tomatoes and IMDb scores (TMDB's own score still shows) and Seerr's
+    request records (the request controls and status come from Jellyfin Enhanced anyway). A title TMDB doesn't know shows
+    the page's *not available* message; while TMDB can't be reached the page says it can't be loaded right now and offers
+    Back (or Home). Seerr's More Info window is never opened in its place. The same privacy rules apply as in Seerr mode:
+    Hidden Content, Spoiler Guard, the library's own hidden copies and the parental limit. A person with Allowed or
+    Blocked Tags is still refused titles that aren't in the library while Seerr is off, because their tags can't be
+    checked yet without Seerr.
+    The discovery rows follow the same rule: the *More from …* row of a genre, studio, network or tag page (the
+    library's own pages and the ones these pages link to), a person's filmography row, and the *Recommended* and
+    *Similar* rows under a library title come from Jellyfin Enhanced's TMDB reads, chosen before anything is asked of
+    Seerr, so they show with Seerr off and never read through a Seerr account someone still has linked. The genre,
+    studio, network, tag and person rows need native pages on (without them those rows are left out in this mode); the
+    *Recommended* and *Similar* rows don't. A library collection page's Seerr row is left out; its missing movies are
+    the *Missing from this collection* block's. A movie's collection **View** lists the collection's movies from TMDB
+    as well: with the request controls on, people who can ask get the request picker; with them off, or for someone
+    who can't ask (a Watcher), it is a list to look at, where each movie opens its own page. While the request controls
+    are off, the cards in these rows offer no **Request** button.
+
+In JE mode, new native metadata and parental-evidence reads (including status/season resolution, artwork revalidation,
+collections, related titles and logos) share a
+limit of eight outstanding reads per viewer and 48 across the server. Cached or already-running reads are shared
+without taking another place. Page reads wait briefly for capacity; if it stays busy, details are unavailable until
+you retry. Unavailable parental evidence also gives the page a retryable unavailable answer; it never
+permits the title. Status reads retain their empty-status contract while a lookup is unavailable.
+Admission refusals are not cached, and abandoning a page does not free its still-running read's place.
+
+In the browser, opening one of these pages reads the title once for all of Jellyfin Enhanced's parts of it (the request
+controls, the details chips, the discovery rows), and that read never holds up Jellyfin's own read of the same title.
+Every view reads it again, so a page you come back to is checked again, and a Hidden Content, Spoiler Guard or access
+change while it loads makes it ask once more. The page's artwork is loaded once: a poster or card isn't fetched a
+second time as it appears, or again when it is scrolled out of view and back. New artwork (another grant, a changed
+setting) is a new address or a new page and loads anew.
+
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
+
+### Server-side cache for artwork
+
+These pages' images (posters, backdrops, logos, cast photos, season posters and episode stills) come from TMDB. They
+are fetched by the server, a few at a time for each person, and kept in memory for a few hours. With **Keep TMDB
+artwork and metadata on the server** on ([Server-side cache](arr-settings.md#server-side-cache)), each image is also saved on disk
+when it is first fetched. After that, opening the title again, opening it for someone else, or opening it after a
+Jellyfin restart shows the images from disk without asking TMDB. An image read from disk doesn't use up the person's
+share of TMDB fetches, so a page full of already-saved artwork never waits behind images still being fetched.
+Images fetched longer ago than the age limit are fetched again. Past the size limit, the least recently used ones go
+first. Every request is still checked as before (the page's signed link, the parental limit, Hidden Content,
+Spoiler Guard, which blurs or hides protected artwork as usual).
+
+### Server-side cache for TMDB metadata
+
+The same setting keeps the TMDB metadata behind these pages on disk too, so a page that was opened before, by anyone,
+opens after a restart without asking TMDB again:
+
+- **TMDB answers**: the title, its seasons, cast and people, collections, the genre, studio and network pages, the
+  Discover and recommendation rows, cards' streaming services, and the metadata lists and home rows read. Each keeps
+  its own lifetime from when TMDB was asked: 6 hours for a title, person or season, 30 minutes for rows and discovery,
+  10 minutes for "no such title". Free-text searches are never written to disk (they stay in memory for 30 minutes).
+  Memory holds 24 MB of these; the disk holds far more, so a title that dropped out of memory is still read from disk.
+- **Parental facts**: the certification, adult flag and keyword and genre names TMDB gives a title, once Jellyfin
+  Enhanced has checked they are complete and usable. They are facts, never a decision: each viewer's parental limit,
+  blocked and allowed tags, the library's own rating and tags (which always win), Hidden Content and Spoiler Guard are
+  applied afresh every time. Kept for 24 hours from when TMDB was asked. An unknown, partial or failed answer is never
+  kept, so a restricted viewer's unknown titles stay hidden and are asked again a few minutes later, as before.
+- **List poster facts**: the poster path (or TMDB saying there is none) of a list placeholder's movie, series or
+  season, kept for 12 hours. A season without a poster still shows the series' poster; a season TMDB failed to answer
+  doesn't.
+
+A saved answer never takes a person's share of TMDB requests, so a page whose metadata is on disk doesn't wait behind
+others still being fetched. Nothing on disk lives longer than it would in memory, and a restart doesn't make it any
+younger. When a details page's own read of a title already holds what the extras (release dates, streaming services,
+a series' content ratings) need, those are taken from it instead of a second request to TMDB; reviews are still read
+on their own. With the setting off, TMDB answers are saved in the plugin's configuration folder as before; switching it
+on moves them into the cache folder.
 
 ### Discover and search (JE mode)
 
@@ -1288,8 +1473,13 @@ discovery and search row stay as they are, and neither of these appears.
   "Because you watched …" (recommendations for up to three titles you watched lately; the row is left out when there
   are none). Rows scroll sideways on wider screens and become a two-column grid on phones; **More** loads the next page.
 - **Not in your library** row on Jellyfin's search page: while you type, the titles you don't have yet are shown after
-  Jellyfin's own Movies and Shows rows. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
-  search results are switched on (Seerr's row isn't drawn then, and there is never a second row).
+  all of Jellyfin's own result rows (Movies, Shows, Episodes, People and the rest), never above one. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
+  search results are switched on (Seerr's row isn't drawn then, and there is never a second row). When nothing in your
+  library matches, Jellyfin's "Sorry! No results found" gives way to a short *Nothing in your library matches "…"* line
+  above the row, so the page never says there are no results above titles you can ask for. If the search for titles
+  you don't have fails (or gets no answer within 15 seconds), the row says so with **Try again**: it searches the same
+  words again, keeps keyboard focus in the row (or back in the search box if nothing is found), and typing meanwhile
+  replaces it.
 
 ??? info "Seerr's request buttons in JE mode"
     Seerr no longer takes requests once Jellyfin Enhanced handles them, so every
@@ -1319,7 +1509,8 @@ discovery and search row stay as they are, and neither of these appears.
     Seerr is turned off for), with or without the experimental native details page. Jellyfin Enhanced reads them with
     its own Seerr key and filters them for that person on the server, as it does for native pages: what the library hides
     from them is left out, their parental limit applies, and a copy they can open is shown as *Available*. What only a
-    Seerr account has (who asked, Seerr's downloads and quota) isn't shown; one line in the window says so. Their own
+    Seerr account has (who asked, Seerr's downloads and quota) isn't shown, and Seerr's quota isn't asked for; while
+    Seerr is set up, one line in the window says so (with Seerr off there is no Seerr account to miss, so it doesn't). Their own
     requests show as usual in Jellyfin Enhanced's status line. In Seerr mode such a person can't use Seerr's window: it
     says once that their Seerr account isn't linked yet instead of opening empty, and the rows aren't asked for. (On
     Jellyfin 10.11 the public details aren't available, so the window says the same in JE mode.)
@@ -1380,6 +1571,8 @@ lists requests made through Jellyfin Enhanced.
       **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
 
 ??? info "My requests and arrival"
+    With nothing asked for yet, My requests offers **Discover** (when you have that tab) and **Search** right in its
+    empty message.
     **My requests** adds your own requests to the list, one row per title and edition, grouped like the existing rows. Cancel withdraws only that edition's unsent requests. Requests not
       sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
       requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
@@ -1417,11 +1610,14 @@ Approved requests go out through the request handling the administrator chose: s
       Radarr for standard requests, the default (else first) *4K* one for 4K requests. A 4K request never goes to a
       standard instance; with no usable 4K instance it can't be asked for. An instance set to Anime or Other is never
       picked for a request (it can still be chosen by an administrator when approving with edits or in Manage › Add to).
-    - **Add defaults.** A title the instance doesn't have yet is added with the instance's saved quality profile, root
-      folder and tags (and Radarr's minimum availability or Sonarr's series type), set per instance on the settings page
-      (*When Jellyfin Enhanced adds a title*). They are checked against the instance's current profile and folder list
-      right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`;
-      administrators see such a held request on the title as "Stuck · needs a look in Requests", not as waiting for an OK);
+    - **Add defaults.** For a title the instance doesn't have yet, the administrator's explicit quality profile and root folder choices take precedence;
+      each omitted field falls back to the instance's saved add defaults (*When Jellyfin Enhanced adds a title* on the settings page).
+      The effective settings are validated against the instance's current profile and folder list right before sending.
+      Tags, Radarr's minimum availability and Sonarr's series type come from saved defaults.
+      If a required profile or folder has neither an explicit choice nor a default, the request waits for an administrator (`invalid_defaults`);
+      an invalid or removed choice is `invalid_choice`, with a message naming the quality profile, root folder or tags to fix
+      (the Manage Add sheet displays that message). Saved values are checked by the same rule. For a held request,
+      administrators see such a held request on the title as "Stuck · needs a look in Requests", not as waiting for an OK;
       if the list can't be read just now it is tried again later. Nothing is guessed (for example "the first profile").
       It also gets the tag `je-requested` (created on the instance the first time it is needed; it never names a person),
       so you can tell in Sonarr/Radarr which titles Jellyfin Enhanced added. If the tag can't be created the title is
@@ -1535,7 +1731,8 @@ Approved requests go out through the request handling the administrator chose: s
 
     | Reason | Meaning | Fix |
     |---|---|---|
-    | `invalid_defaults` | The instance's add defaults are missing or no longer valid | Set them on the settings page, then approve again |
+    | `invalid_defaults` | A required profile/folder has neither an explicit choice nor a saved default | Choose values in Manage › Add to, or set instance defaults and approve again |
+    | `invalid_choice` | An explicit or saved profile/folder, or saved tag, is no longer usable | The message names the field; choose a current value and approve again |
     | `instance_changed` | The instance was disabled, changed role, or its address/key changed | Approve again (with edits) |
     | `not_aired` | Sonarr doesn't list the season or episode yet | Nothing: the series is refreshed and the request checked again every 6 hours (only a request that already wrote part of its change waits for an approval) |
     | `title_not_found` | The instance (or Seerr) doesn't know the title by its id | Check the title; add it in the app |
@@ -1545,6 +1742,13 @@ Approved requests go out through the request handling the administrator chose: s
     | `seerr_conflict` / `seerr_refused` / `seerr_rejected` | Seerr refused in a way a read couldn't confirm | Check the request in Seerr |
 
 Administrators' **Manage › Add to {instance}** adds a title to the chosen instance as their own request routed there, so it shares the outgoing queue, read-back, change feed, and audit. It is offered only in Jellyfin Enhanced mode; adding to a 4K instance needs the phase-3 4K switch for that kind of title. See the [API reference](../advanced/api.md#requests-and-approvals-phase-3).
+
+A queued title has one owner and version for its add profile and root folder. Another administrator's different choices return `409 choice_conflict` with the current owner, version and values; identical choices are idempotent. Sonarr settings apply to the whole series, including disjoint season or episode requests. Season/episode selection and each request's charge remain separate. An explicitly confirmed `overrideChoiceVersion` can replace the observed version while every affected job is known unsent; a stale version is refused. The original administrator also confirms the current revision before replacing an already owned choice. Sending, uncertain and sent work cannot be changed through Add, even with confirmation. The latest choice stamp is retained across cancellations so an older confirmation cannot become valid again. Overrides retain an audit record, and Admin → Audit shows the dispatched profile id/name, root and instance under the row's Technical details.
+
+Unedited approval of held uncertain work refreshes its approval authority while keeping the existing job's choice owner/version, input, identity and charge. This held-work resume path reads the destination back before retrying; a known-unsent result and a database reopen do not give the resuming approver ownership of someone else's settings. Authorization rebuilds carry the original choice stamp forward, and an explicit replacement still requires the current version. Historical selection prefers active work when effective versions tie; a newer cancelled version still prevents stale confirmations.
+
+Dispatch refreshes the selected instance's system facts before each new-title add, even when the sheet's cached options are still fresh. A removed profile or root is held as `invalid_choice`; an unavailable refresh retries without adding. This closes reuse of the sheet's cached profile/root list at dispatch; the arr can still change externally between its response and the write.
+
 
 ### Moving requests from Seerr
 
@@ -1567,7 +1771,12 @@ Seerr already holds. **Move requests from Seerr...** (under *Ask for it* on the 
    moved ask for it sends nothing either. Moving costs nobody's allowance and sends no "new request" notices. Request
    handling switches to Jellyfin Enhanced, and from then on Jellyfin Enhanced never writes a request to Seerr: Seerr
    request and approval calls through Jellyfin Enhanced answer `requests_in_je`. Seerr can stay for discovery and
-   still gets its scans triggered.
+   still gets its scans triggered. The moved requests appear (in lists, Approvals, status and notifications) only once
+   request handling has switched: until then nobody sees or acts on them, and a move refused at that last step (Seerr
+   turned off meanwhile, its address changed, the setting couldn't be saved) leaves nothing behind. A move interrupted
+   before it finished (the server stopped mid-move) counts as refused too: its requests are rolled back when the server
+   starts or at the next check, even if request handling had already switched; run the move again (with Seerr on and
+   request handling set to Seerr if Jellyfin Enhanced has taken over meanwhile).
 
 ??? info "While a move runs, moving again, and rolling back"
     While a move runs, Jellyfin Enhanced's own request writes to Seerr wait: one already on its way finishes first, and
@@ -2006,7 +2215,7 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
   as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
   people are pointed to an MDBList mirror or a CSV export.
-- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+- **Matching.** In JE mode, titles are looked up on TMDB with the server's key; local library identities still identify owned copies. A missing TMDB key leaves unresolved titles unknown. In Seerr mode, Seerr remains the fallback when no TMDB key is saved. Each match
   says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
   already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
   or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
@@ -2062,8 +2271,15 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
   redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
   details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
-- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
-  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
+- **Title details in JE mode.** With *Lists* enabled and the server's TMDB key saved, list entries get release dates,
+  expected episodes and production status directly from TMDB. No separate metadata opt-in or Seerr connection is needed.
+  Partial or unavailable metadata stays unknown and cannot prove completion. Whole-series requests use these same stored
+  season expectations. A source previously linked through Seerr is inactive in JE mode: its existing members are kept
+  until an editor explicitly relinks it through TMDB. JE list metadata, imports and sources never fall back to Seerr.
+  A season stays unknown when its details omit advertised episodes or air dates; those incomplete details cannot finish
+  its placeholder. Cached facts keep their original fetch time, so finishing a season still requires a recent check.
+  Switching the request backend discards in-flight list reads and stops list changes built from the previous backend;
+  retry the operation after the switch. Upcoming TV sources use TMDB's upcoming-premiere discovery filter in JE mode.
 
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 
@@ -2071,7 +2287,8 @@ With *Poster badges: New for you, Upgraded, 4K* on (under phase 4, off by defaul
 badge about what changed for the person looking at it. At most one per card, in this order:
 
 1. The download ring (and the *taking longer* and *almost ready* badges) of the phase-1 poster badges, while something
-   is on its way. Season cards keep their ✓ / ◐ ready count next to it.
+   is on its way (with *Show download progress on artwork* on, the ring and *almost ready* are drawn on the artwork
+   instead, and the corner stays empty meanwhile). Season cards keep their ✓ / ◐ ready count next to it.
 2. **Upgraded**: Sonarr or Radarr replaced the file with a better copy (its history says the old file was deleted for an
    upgrade, and Jellyfin has the new file), or the first 4K version arrived alongside an existing HD copy.
    Alternate versions use their own first observed arrival, even when Jellyfin promotes one to the primary version
@@ -2114,8 +2331,10 @@ With *Home rows* on (under phase 4 and *Ask for it*, off by default), each perso
 built from their own requests and the titles they follow:
 
 - **Your requests**: what they asked for that isn't here yet, each with a progress ring and one word for where it stands
-  ("Downloading", "Waiting for an OK", "Not out yet"). A Manager sees only their own requests here; the ones waiting for
-  their OK stay in the chip bar above the rows ("3 need your OK · 1 stuck").
+  ("Downloading", "Waiting for an OK", "Not out yet"). The word follows the same status as the Requests page, Manage and
+  the title's page: a title nothing was grabbed for after the "still looking" hours reads **Missing** here too, not
+  "Looking". A Manager sees only their own requests here; the ones waiting for their OK stay in the chip bar above the
+  rows ("3 need your OK · 1 stuck").
 - **Coming soon for you**: their requests and follows with a date in the next 30 days (the next episode, a release),
   soonest first. A followed title no Sonarr/Radarr holds yet gets its date from TMDB: a series' next episode, a movie's
   digital (else physical) release; cinema dates aren't shown, as they can't be watched at home.
@@ -2221,9 +2440,10 @@ HD copy fulfils a 4K request and counts as an upgrade; it does not start another
 badge. A 4K series request cannot use an HD episode for its arrival card. Arrival history survives badge expiry,
 restarts, removed files and restores. Both home rows and badges use the same first observed source arrival;
 an earlier Jellyfin creation date cannot make that first source look like an upgrade.
+Hidden Content and Spoiler Guard also apply when a preference changes while a request is loading. Provider episode fields and artwork are projected before delivery, including cached answers. Hidden Content saves reject stale replacements so another tab’s newer rules survive. If Undo fails, its translated error and Undo button remain available for another attempt. Hiding a title from inside its More Info window (its own Hide button, or More → Hide) shows Undo inside that window, so it can be reached and pressed while the window stays open. More Like This uses the recommendations filter preference independently of the library preference.
 
 Spoiler Guard preserves request controls, quota warnings and parental-rating assessments. Calendar entries keep their source, season and episode numbers and availability state, so filtering to **Available** still works while episode names are protected. Precise dates follow your Spoiler Guard date preference.
-The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native absent-title pages and their Seerr metadata source configured and enabled. Successful
+The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native absent-title pages and their metadata source ready (a TMDB key in JE mode; Seerr configured and enabled in Seerr mode). Successful
 registration of all three sections is required. A missing or incompatible registration API, or registration failure,
 uses the native home rows. Jellyfin 10.11 uses native injection because it has no native absent-title pages. Section
 placement and activation remain in HSS's own settings; individual users can still hide each row in JE's panel.
@@ -2249,9 +2469,14 @@ The users list adds role, known quota use and pending-request chips from one bat
 
 ### Title actions and sharing
 
-Request-mode titles have a **More actions** menu on their details page, More Info window and cards. Use the visible ⋯ button, right-click, long press, or Shift+F10. The menu offers enabled Hide, Spoiler Guard, Follow, Request, Report and administrator Manage controls through the same services as their existing buttons. File actions become available on the actual library copy, which **Open** reaches once it has arrived (Open is not offered on that copy's own page); an absent title never offers Play, Played, Download or file management.
+Title-action Undo after Hide remains available only while the originating page, card or More Info window is current. Navigating away, replacing the card or turning off title actions dismisses that feedback; the saved Hide remains in effect. Completing or expiring a focused Undo keeps focus inside its current More Info window unless you moved focus elsewhere.
 
-Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. On a phone it replaces only Jellyfin's button row: the poster, title and details stay exactly where Jellyfin puts them. The primary label is never cut short; on the narrowest screens Report moves into More, then the label wraps onto two lines. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. When a library title has progress, Resume stays in the row and **Play from beginning** is in the sheet's Watch group, as are Shuffle and Instant Mix where Jellyfin offers them. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus. Closing the sheet before choosing does nothing. Once you choose, the action carries on after the sheet closes (Open, Share's link or "copied" message), but moving to another page, switching user or turning the feature off stops it, even while its confirmation (Spoiler Guard, Hide, Report) is still open. The row's added controls are then rebuilt for the page and user now shown.
+Request-mode titles have a **More actions** menu on their details page, More Info window and cards. Use the visible ⋯ button, right-click, long press, or Shift+F10. The menu appears as soon as you press: it shows that it is loading (Close, Escape and Back already work), and the title and its choices fill in once your access to the title has been checked. Closing it while it loads cancels that opening. The request sheet and the More Info window open the same way. Releasing a long press leaves its menu open; a later tap outside dismisses it. A long press opens the menu of the title you pressed: if the card is removed or shows another title before the menu opens (a grid that recycles its cards while you scroll), nothing opens, even if the card shows that title again by then. Long grids stay smooth: the menus' buttons are added a slice at a time. The menu offers enabled Hide, Spoiler Guard, Follow, Request, Report and administrator Manage controls through the same services as their existing buttons. On a title that isn't in the library, Hide reads **Hide this title**: it hides the title itself wherever it appears (search, Discover and the other browsing surfaces), as its confirmation says. File actions become available on the actual library copy, which **Open** reaches once it has arrived (Open is not offered on that copy's own page); an absent title never offers Play, Played, Download or file management.
+
+![The More actions menu on a phone: loading at once, then the title's choices](../images/arr-title-actions-loading.png)
+
+
+Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. On a phone it replaces only Jellyfin's button row: the poster, title and details stay exactly where Jellyfin puts them. The primary label is never cut short; on the narrowest screens Report moves into More, then the label wraps onto two lines. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. When a library title has progress, Resume stays in the row and **Play from beginning** is in the sheet's Watch group, as are Shuffle and Instant Mix where Jellyfin offers them. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus. Every window the action bar opens (the sheet, More Info, a request form, a 4K menu) is announced by its own title and takes the focus when it opens and keeps Tab and the remote's arrows inside it; Escape, a remote's Back and a gamepad's B close only the topmost one, never the page under it, and focus returns to what opened it. A Jellyfin dialog shown over one of them (a request limit, for example) takes those keys and the focus itself, and the window under it stays as it was. Screen readers announce each window as a named dialog, and the page behind it is hidden from them (and from the keyboard) until it closes; if what opened a window has gone meanwhile (a card that scrolled away), focus returns to the page. A gamepad's OK, and **Select** on a Jellyfin app remote-controlling this browser, press the focused control as a click would, and that app's **Back** closes only the topmost window, also on the home screen (with no window open it goes back, or leaves the app, as usual); a control drawn before another account signed in does nothing. Only presses made on (or for) this browser count: another script's click, key or form submission in a window does nothing, and the window stays ready for your own press. Closing the sheet before choosing does nothing. Once you choose, the action carries on after the sheet closes (Open, Share's link or "copied" message), but moving to another page, switching user or turning the feature off stops it, even while its confirmation (Spoiler Guard, Hide, Report) is still open. The row's added controls are then rebuilt for the page and user now shown.
 
 **Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.
 
@@ -2267,3 +2492,106 @@ Changing accounts discards tags produced for the previous sign-in, including del
 If a watched-state lookup fails, native poster tags keep Spoiler Guard protection and preserve the shared source data for other viewers.
 
 A privacy refresh updates the shared settings document as well as visible cards, so a later page reset or settings edit keeps changes made in another tab.
+
+List completion also cross-checks the show’s known last/next episode against its season counts and detailed episode rows. Contradictory or partial evidence keeps completion unknown, including after a refresh of previously known expectations. Dated future episodes retain their dates, and specials remain an explicit season scope.
+
+List completion uses a server verdict (`complete`, `incomplete`, or `unknown`) with a reason. Only reconciled show/season evidence grants positive authority; counts are retained display facts. Old list documents have unknown authority until a coherent refresh, and a metadata outage cannot retire season or series placeholders. Undated named episodes and started later seasons cannot disappear from completion obligations.
+
+Series reconciliation reads detailed rows for every declared regular season and any related season resources already cached for that title. Missing resources or inconsistent rows keep completion unknown. Newly chosen explicit episode scopes receive positive scope authority; older episode selections also require a coherent refresh.
+
+Every show and detail premiere is checked against episode dates, including a detail premiere when the show has no date. Conflicting dates keep completion unknown. An undated named episode remains required even when its detailed row has a future date; `completionReason` identifies the reconciliation rule that withheld authority.
+
+Completion is bound to the requested scope. A selected season needs full detail/coordinate evidence for its own episodes and every required episode filled. Other seasons must be consistent with all supplied counts, dates and coordinates, but do not need detail responses. An explicitly advertised future, empty trailing season therefore does not block an earlier completed season. A missing interior season, or an empty interior season followed by aired episodes in a later season, still keeps completion unknown.
+
+A whole-series verdict needs detail/coordinate coverage for every regular season from 1 through the highest bound supplied by any metadata source; advertised counts alone never supply that coverage. Advertising S1 and S3 cannot prove S2 exists or is complete, even when the declared season count is two. Missing selected episode coordinates or numbering gaps keep completion unknown; removed or renumbered episodes need corrected provider evidence. Series exclude specials; specials can be selected explicitly.
+
+A season's Complete authority cannot retire a series placeholder or provide a whole-series request scope. Changing identity or scope requires its own reconciliation. Complete reasons name the proven scope, for example `season 1 complete; series unknown: season 2 has no detail evidence`. Unknown reasons remain reconciliation rule ids, including `series_season_detail_uncovered` and `selected_season_detail_uncovered`. The series remains unproven until it receives a separate series reconciliation.
+### One TMDB transport and metadata admission
+
+`Services/TmdbTransport.cs` is the only TMDB HTTP sender. Every send requires a live typed
+`MetadataAdmission`; there is no send overload without it and no anonymous viewer allowance.
+Its factory selector names only `TmdbTransport.ClientName` (`JellyfinEnhanced.Tmdb`) and the
+list-source constant, rejects any other name, and applies the same `PluginHttp.CheckedClient`
+runtime egress wrapper to both. Both owned primaries disable automatic redirects and carry
+the outermost egress handler; an admitted redirect remains an unavailable upstream response.
+The raw response cache admits a cold viewer read before registering its task. Native and
+parental reads reuse their live admission; cache hits and joins remain free. One admission
+serializes sends through body disposal and drains retained raw reads before releasing its place. An authenticated
+MVC scope captures the viewer for person enrichment, proxy/company lookup, watch-provider
+batches, Discover/search, hub/home, and rule preparation; native delegated reads retain their
+effective viewer. Captured-policy discovery and list evidence carry that viewer explicitly.
+An unowned JE raw read fails with 503 rather than creating external work.
+
+JE person enrichment (`people/info`, at most 100 IDs per chunk, and `person/{id}`)
+uses one viewer admission per cold chunk, rather than one per cast member. Up to eight
+workers share that live capability; its send turn still serializes through body disposal,
+so all running viewer tasks together send at most eight requests at once. Raw per-person
+flights coalesce overlapping chunks and concurrent viewers. Entirely cached chunks bypass
+admission, including when the viewer is full. Cancelling a browser waiter leaves the owned
+batch to finish and cache every person. A prefetch wait also ends after the existing six-second
+optional-enrichment window: every cast entry returns with its Jellyfin data while the admitted
+batch keeps its place and warms the next read. This fallback is not cached as a negative fact.
+Excess chunks return quiet HTTP 503 with
+`Retry-After: 1`, `pending: true`, `reason: metadata_busy`, and `outcome: unavailable`;
+the existing cast retry path retries the chunk. Refusals are neither cached nor logged as
+upstream warnings, and JE optional person failures use debug logging. Legacy enrichment
+keeps its existing behavior. Public cached facts never contain viewer access decisions.
+
+| Admission owner | Bound and purpose |
+|---|---|
+| `ViewerMetadataAdmission` | 8 outstanding per effective viewer; 8 running + 40 queued server-wide; cancellation ends only the waiter |
+| `AutonomousMetadataAdmission.ListImport` | 4 running server-wide; background list reconciliation plus existing import/source pacing and final configuration gates retained |
+| `ListMetadataService.TmdbPosterAsync` | Existing 4-place list poster semaphore; same source client, bounded body and continuation behavior |
+| `AutonomousMetadataAdmission.Automation` | 2 running server-wide; background playback and rule-fact revalidation metadata |
+| `AutonomousMetadataAdmission.Legacy` | 4 running server-wide; retained non-JE metadata; never a fallback for an unowned JE viewer |
+| `ImageMetadataAdmission` | Separate image pool: 8 outstanding per viewer; 16 running + 32 queued server-wide; queue wait at most 2 seconds, then optional image refusal/placeholder |
+
+Autonomous pool acquisition has a finite 30-second wait. These concurrency bounds are not
+a global TMDB requests-per-second promise. Image CDN bodies also use this transport, under
+the separate image owner; metadata capacity and image capacity cannot consume one another.
+The transport accepts only HTTPS on the fixed API host for metadata and the fixed image host
+for image admissions. The image facade remains the privacy consumer: signed grants, parental
+evidence, Hidden Content and Spoiler Guard are checked before fetching and at delivery.
+Cached public bytes and joins cost no new place; cancellation cannot release a shared fetch
+early. Image admission/queue refusal keeps the existing optional placeholder contract and is
+never cached as image absence. Required native/evidence
+failures stay retryable and distinct from verified parental refusal. Existing optional rails
+and status contracts remain unchanged. Seerr-mode source selection is retained.
+
+`TmdbTransportArchitectureTests` scans all production HTTP send/client/request sites by
+fully qualified Roslyn symbols (containing type and full signature), retaining every body.
+`TmdbEgressHandler` enforces admission at runtime on every plugin HTTP acquisition and
+named pipeline, including the arr live invoker. `PluginHttp.CreateClient` also protects supplied
+factories. Only `TmdbTransport` attaches the private, live, exact-request/URI capability after acquiring
+the send turn; only its single internal forwarding copy can reuse that value. Copied Options
+on another request are refused, and a Host override cannot substitute a TMDB target or image kind; ambient ownership alone does not authorize a generic request. API/image hosts
+(`api.themoviedb.org`, `image.tmdb.org`, historical `images.tmdb.org`) are case/IDN normalized.
+Both upstream URLs are fixed in this version; adding configurable base/image URLs requires
+adding their hosts to this policy before sending. No DNS alias or CDN availability is assumed.
+
+Generic tools keep their non-TMDB targets. The administrator URL probe refuses TMDB targets
+with HTTP 400, `outcome=unavailable`, `reason`/`code=tmdb_admission_required`, and the existing
+message field: “TMDB hosts are checked through the metadata source; use the TMDB test instead”.
+It does not allocate admission, touch the metadata limiter or open a socket. The existing TMDB
+credential test continues through the raw cache and transport under its authenticated viewer.
+A counter records each refusal with a bounded route label. Only en.json adds the English string.
+
+The filter applies to JE-owned names, leaving Jellyfin's own clients independent. Named service
+clients retain their no-redirect policy. Default redirects re-enter the egress guard on
+every hop and strip Authorization/cookie headers; admitted TMDB requests never follow redirects. The source scan
+is a second line: it checks factory acquisition/capability attachment and exact-symbol owners,
+and rejects direct-client plants. Runtime tests enumerate construction/acquisition sites, execute
+the production named pipelines and live invoker, and plant a bare client in a supplied factory.
+The remaining body pins in `tests/fixtures/tmdb-nonmetadata-http.tsv` describe guarded generic
+or fixed non-TMDB readers; they grant no TMDB exemption. The URL probe row is deleted.
+
+Local metadata saturation returns a typed `503` (`outcome: unavailable`, `reason: metadata_busy`,
+`certainty: Failed`) with safe page retry text and `Retry-After: 1` on company proxy and
+acquire/search. Discovery refuses before publishing/caching when parental preparation cannot
+acquire admission; retrying the same query after drain rechecks evidence. A verified parental
+denial remains separate from unavailable evidence.
+The opt-in [server backend isolation contract](backend-isolation.md) keeps JE request interests local
+when Seerr is dormant, including the Downloads and History ownership filter.
+Queued add settings have their own durable title registry. Jobs reference its id and revision; authorization snapshots do not own settings. Profile, root, tags and series type belong to the canonical title at the destination instance, while requester, season/episode scope and charges stay with each job. A differing alias merge records a conflict at a new revision and prevents either old job from dispatching. An explicit current-version override coordinates the known-unsent scopes; stale confirmations remain refused. Sending, uncertain and sent work retain their existing protection. Cancellation retains a revision tombstone so an old sheet cannot regain authority.
+
+On first startup with older jobs, the registry migrates their choices before outbox recovery. Sent or active known-unsent work supplies the winning legacy choice, with the highest historical revision retained as a fence; discarded differing histories are audited against their original job rows. The migration is transactional and idempotent. Its preimage is the one original pre-migration copy of the database taken before any numbered step or additive repair (never a copy of an earlier repair). Normal alias learning after migration never uses that legacy winner rule.

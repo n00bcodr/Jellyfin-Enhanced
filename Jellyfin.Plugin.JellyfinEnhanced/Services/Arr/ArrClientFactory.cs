@@ -101,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         private ArrClient Create(ArrConnection connection, string key, string generation = "")
-            => new(connection, key, () => _httpClientFactory.CreateClient(ArrHttp.ClientName)) { Generation = generation };
+            => new(connection, key, () => Jellyfin.Plugin.JellyfinEnhanced.Services.PluginHttp.CreateClient(_httpClientFactory, ArrHttp.ClientName)) { Generation = generation };
 
         // URL, kind and a hash of the key: a changed key or URL gets a fresh client (and status cache).
         private static string Fingerprint(ArrConnection connection, string key)

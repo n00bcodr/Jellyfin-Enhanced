@@ -37,7 +37,7 @@ public class ApiArrAdminHubTests
         public ArrStateStore Store { get; }
         public FakeJellyfinView View { get; } = new();
         public FakeLibraryAccess Library { get; } = new();
-        public SeerrRequestReadModel Requests { get; }
+        public SeerrFacts Requests { get; }
         public ArrStatusService Status { get; }
         public RequestsHubService Hub { get; }
         public ArrManageService Manage { get; }
@@ -79,7 +79,7 @@ public class ApiArrAdminHubTests
             foreach (var e in new[] { 1, 2, 3 }) Sonarr.Queue.Add(FakeArr.SonarrQueueRow(10 + e, "pack", 2, e, "Peacemaker", 391153));
 
             Store = Arr.Store();
-            Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
+            Requests = new SeerrFacts(Seerr.Transport, Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now, Feed);
             Hub = new RequestsHubService(Status, Requests, () => Arr.Plugin.Plugin.Configuration);
             Audit = new ArrAuditLog(Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2);
@@ -1048,6 +1048,29 @@ public class ApiArrAdminHubTests
         Assert.Equal(expected, Binding(reopened));
     }
 
+
+    // ---- UX-8: System names the request backend and describes Seerr only while it is in use ----
+
+    [Fact]
+    public async Task SystemNamesTheRequestBackendAndWhetherSeerrIsInUse()
+    {
+        using var rig = new Rig();
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        var c = rig.Controller(rig.AdminUser);
+        async Task<JsonElement> Backend() => Json(await Send(() => c.GetSystem(default))).GetProperty("requestsBackend").Clone();
+
+        var seerr = await Backend();
+        Assert.Equal(("seerr", true, false, false, 2), (seerr.GetProperty("mode").GetString(), seerr.GetProperty("seerrInUse").GetBoolean(), seerr.GetProperty("requestsOn").GetBoolean(), seerr.GetProperty("tmdbKey").GetBoolean(), seerr.GetProperty("instances").GetInt32()));
+
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        config.JellyseerrEnabled = false;
+        config.TMDB_API_KEY = "tmdb-key";
+        var je = await Backend();
+        Assert.Equal(("je", false, true, true, 2), (je.GetProperty("mode").GetString(), je.GetProperty("seerrInUse").GetBoolean(), je.GetProperty("requestsOn").GetBoolean(), je.GetProperty("tmdbKey").GetBoolean(), je.GetProperty("instances").GetInt32()));
+        // No Seerr request list to describe (left out of the answer).
+        Assert.False(Json(await Send(() => c.GetSystem(default))).TryGetProperty("seerr", out var list) && list.ValueKind != JsonValueKind.Null);
+    }
 }
 
 /// <summary>Shared helper: adds a path mapping to every instance row of a JSON list.</summary>

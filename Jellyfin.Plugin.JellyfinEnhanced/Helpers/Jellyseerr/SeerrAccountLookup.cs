@@ -20,8 +20,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     {
         private const int Take = 1000;
 
-        private readonly Dictionary<string, (string Id, long ReadAt, SeerrAccountAuthority.Ticket Authority)> _ids = new(StringComparer.Ordinal);
-        private readonly object _lock = new();
+        // Seerr-derived facts: held in the effective backend's generation-owned cache (an adoption retires them).
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Cache<(string Id, long ReadAt, SeerrAccountAuthority.Ticket Authority)> _ids = new();
         private readonly string _prefix;
 
         /// <summary>Creates the lookup.</summary>
@@ -68,12 +68,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             var config = JellyfinEnhanced.Instance?.Configuration;
             var person = Person(jellyfinUserId);
             var authority = SeerrAccountAuthority.Capture(SeerrAccountAuthority.SourceOf(config), person);
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
+            // Seerr excluded by the effective backend (switched off, or isolated): nothing is read from it or served from memory.
+            if (!Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.AllowsSeerr(config)
+                || config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return (null, authority, false);
             }
 
-            lock (_lock)
+            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
             {
                 if (_ids.TryGetValue(person, out var held))
                 {
@@ -113,7 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                         {
                             if (!SeerrAccountAuthority.Admit(ref authority, account)) return (null, authority, true);
                             var id = account.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                            lock (_lock)
+                            using (Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.CacheMutation())
                             {
                                 if (IsCurrent(authority)) _ids[person] = (id, readAt, authority);
                             }

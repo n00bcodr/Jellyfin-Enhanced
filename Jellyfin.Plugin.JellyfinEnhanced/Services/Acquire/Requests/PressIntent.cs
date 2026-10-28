@@ -315,9 +315,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// alone (as before), anything else by its operation, its whole input (instance, profile and root folder included) and
         /// its whole press.
         /// </summary>
-        public static string RequestIdentity(string? operation, PressIntent? intent, MutationInput normalized)
-            => operation == null && intent == null ? normalized.Fingerprint
-                : MutationInput.Hash(string.Join("\n", "request", operation ?? "ask", normalized.Canonical, intent == null ? "-" : Canonical(intent)));
+        public static string RequestIdentity(string? operation, PressIntent? intent, MutationInput normalized, long? overrideChoiceVersion = null)
+            => WithChoiceOverride(operation == null && intent == null ? normalized.Fingerprint
+                : MutationInput.Hash(string.Join("\n", "request", operation ?? "ask", normalized.Canonical, intent == null ? "-" : Canonical(intent))), overrideChoiceVersion);
+
+        /// <summary>
+        /// An identity with the add-settings version the person explicitly chose to replace (a confirmed choice conflict), when
+        /// there is one: the same key with and without that consent is two requests. Without one the identity is unchanged, so
+        /// receipts recorded before choice consent existed still replay.
+        /// </summary>
+        public static string WithChoiceOverride(string identity, long? overrideChoiceVersion)
+            => overrideChoiceVersion is { } version
+                ? MutationInput.Hash(string.Join("\n", "override", identity, version.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                : identity;
 
         /// <summary>Complete incoming Search identity, separate from the checked command's execution fingerprint.</summary>
         public static string IncomingIdentity(string route, TitleKey key, PressIntent? intent, string? instance = null, int[]? episodes = null)

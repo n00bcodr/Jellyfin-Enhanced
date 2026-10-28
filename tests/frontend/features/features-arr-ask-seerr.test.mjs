@@ -24,11 +24,11 @@ const MEMBER = { role: 'member', canRequest: true, canRequestMovies: true, canRe
  * @param {import('node:test').TestContext} t Test.
  * @param {{jeMode?: boolean, me?: Object}} [options] JE mode, capabilities.
  */
-function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
+function setup(t, { jeMode = true, me = MEMBER, check = null, config = {}, realCollectionUi = false } = {}) {
   const posts = [];
   const checks = [];
   const toasts = [];
-  const seerr = { movie: [], seasons: [], collection: [], advanced: 0, details: [], modals: [] };
+  const seerr = { movie: [], seasons: [], collection: [], advanced: 0, details: [], publicReads: [], modals: [] };
   const h = createHarness({
     url: 'http://jellyfin.test/web/index.html#/search.html',
     fetch: async (url, init = {}) => {
@@ -50,7 +50,7 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
       return jsonResponse({ outcome: 'denied', reason: 'not_found' }, 404);
     },
     JE: {
-      pluginConfig: { ArrStatusEnabled: true, ArrRequestsEnabled: true, ArrRequestsJeMode: jeMode, JellyseerrEnabled: true, JellyseerrShowSearchResults: true },
+      pluginConfig: { ArrStatusEnabled: true, ArrRequestsEnabled: true, ArrRequestsJeMode: jeMode, JellyseerrEnabled: true, JellyseerrShowSearchResults: true, ...config },
       t: translate,
       toast: text => toasts.push(text),
       escapeHtml: s => s,
@@ -64,20 +64,24 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
       },
       jellyseerrAPI: {
         shouldShowAdvanced: () => { seerr.advanced++; return false; },
-        fetchCollectionDetails: async (id) => {
-          seerr.details.push(id);
-          return { id, name: 'The Matrix Collection', parts: [
-            { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', posterPath: '/m.jpg', mediaInfo: { status: 5 } },
-            { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' },
-            { id: 605, title: 'The Matrix <Revolutions>', releaseDate: '2003-11-05', posterPath: '/x" onerror="evil()' }
-          ] };
-        }
+        // Seerr's own collection (JE mode must never read it, A1) and Jellyfin Enhanced's public one.
+        fetchCollectionDetails: async (id) => { seerr.details.push(id); return matrix(id); },
+        fetchPublic: async (path) => { seerr.publicReads.push(path); return matrix(Number(/^\/collection\/(\d+)$/.exec(path)?.[1])); }
       },
       // Seerr's request window (recorded; its body is the HTML the window would show).
       jellyseerrModal: { create: (options) => { const m = { options, shown: 0, closed: 0 }; seerr.modals.push(m); return { show: () => { m.shown++; }, close: () => { m.closed++; } }; } }
     }
   });
+  function matrix(id) {
+    return { id, name: 'The Matrix Collection', parts: [
+      { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', posterPath: '/m.jpg', mediaInfo: { status: 5 } },
+      { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' },
+      { id: 605, title: 'The Matrix <Revolutions>', releaseDate: '2003-11-05', posterPath: '/x" onerror="evil()' }
+    ] };
+  }
   t.after(() => h.close());
+  // Seerr's own collection window (the original the wrapper falls back to), over the recorded Seerr API.
+  if (realCollectionUi) for (const m of ['jellyseerr/seerr-status.js', 'jellyseerr/ui/ui-request-modals.js']) h.load(m);
   for (const m of MODULES) h.load(m);
   return { ...h, get NATIVE() { return h.NATIVE; }, posts, toasts, seerr, checks };
 }
@@ -184,7 +188,8 @@ test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced 
   click(h, button);
   await settle();
   assert.equal(seerrRan, 0);
-  assert.deepEqual(h.seerr.details, [10]);
+  assert.deepEqual(h.seerr.publicReads, ['/collection/10']);
+  assert.deepEqual(h.seerr.details, [], 'JE mode never reads Seerr\'s collection');
   const modal = h.seerr.modals.at(-1);
   assert.equal(modal.shown, 1);
   assert.equal(modal.options.subtitle, 'The Matrix Collection');
@@ -197,7 +202,7 @@ test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced 
   const save = h.document.createElement('button');
   let closed = 0;
   h.JE.openSurface(body, () => {}, modal.options.operation); // as the real modal shell registers it
-  await modal.options.onSave(body, save, () => { closed++; }, { type: 'click', target: body });
+  await h.pressIn(body, e => modal.options.onSave(body, save, () => { closed++; }, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:604', 'movie:tmdb:605']);
   assert.equal(closed, 1);
@@ -209,7 +214,7 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
   const h = setup(t);
   // One movie is here; 22 could be asked for.
   const parts = [{ id: 1, title: 'Dr. No', releaseDate: '1962-10-05', mediaInfo: { status: 5 } }, ...Array.from({ length: 22 }, (_, i) => ({ id: 100 + i, title: `Bond ${i + 1}`, releaseDate: `${1963 + i}-01-01` }))];
-  h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 645, name: 'James Bond Collection', parts });
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 645, name: 'James Bond Collection', parts });
   let modalElement = null;
   let options = null;
   h.JE.jellyseerrModal.create = (o) => {
@@ -238,12 +243,12 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
   boxes[20].checked = true;
   let closed = 0;
   h.JE.openSurface(modalElement, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, { type: 'click', target: modalElement });
+  await h.pressIn(modalElement, e => options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, e));
   assert.deepEqual([h.posts.length, closed, h.toasts.at(-1)], [0, 0, translate('arr_seerr_collection_cap', { n: 20 })]);
   boxes[20].checked = false;
   change(boxes[20]);
   h.JE.openSurface(modalElement, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, { type: 'click', target: modalElement });
+  await h.pressIn(modalElement, e => options.onSave(modalElement, h.document.createElement('button'), () => { closed++; }, e));
   await settle(60);
   assert.deepEqual(h.posts.map(p => p.body.input.key), [...boxes.slice(1, 20), boxes[21]].map(b => `movie:tmdb:${b.dataset.tmdbId}`));
   assert.equal(closed, 1);
@@ -252,7 +257,7 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
 test('JE mode: the collection picker leaves out movies that are not out yet (no date or a later one), as a collection page does', async t => {
   const h = setup(t);
   const later = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-  h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 2344, name: 'Avatar Collection', parts: [
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 2344, name: 'Avatar Collection', parts: [
     { id: 19995, title: 'Avatar', releaseDate: '2009-12-15' },
     { id: 76600, title: 'Avatar: The Way of Water', releaseDate: '2022-12-14', mediaInfo: { status: 5 } },
     { id: 83533, title: 'Avatar: Fire and Ash', releaseDate: later },
@@ -269,7 +274,7 @@ test('JE mode: the collection picker leaves out movies that are not out yet (no 
     [['19995', false, true, true], ['76600', true, false, false], ['83533', true, false, false], ['216527', true, false, false]]);
   assert.deepEqual(rows.map(r => r.lastElementChild.textContent), ['', translate('jellyseerr_btn_available'), translate('arr_collection_not_out'), translate('arr_collection_not_out')]);
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:19995'], 'only the movie that is out is asked for');
   const { released } = h.JE.internals.arrAskSeerr;
@@ -297,7 +302,7 @@ test('JE mode: the collection picker says Paused for movies whose drive is full,
   assert.equal(notes[0].querySelector('.je-ask-paused-title').textContent, translate('arr_ask_paused_storage'));
   assert.equal(notes[0].querySelector('.je-ask-paused-text').textContent, translate('arr_ask_paused_storage_text', { contact: 'Dad' }));
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605'], 'the paused movie is not asked for');
 
@@ -339,7 +344,7 @@ test('JE mode: the collection picker shows a movie already asked for (on its way
   assert.equal(rows[1].lastElementChild.textContent, translate('arr_status_looking'));
   assert.deepEqual(reads, ['/acquire/status?keys=movie%3Atmdb%3A604,movie%3Atmdb%3A605'], 'one status read for the movies that could be asked for');
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605']);
 });
@@ -367,7 +372,7 @@ test('JE mode: the collection picker still offers a movie whose status is unknow
   assert.equal(body.querySelector('.je-arr-collection-known'), null, 'no status words for a movie nobody asked for');
   assert.deepEqual(h.checks.map(c => c.key), ['movie:tmdb:604', 'movie:tmdb:605'], 'the title check decides');
   h.JE.openSurface(body, () => {}, options.operation); // as the real modal shell registers it
-  await options.onSave(body, h.document.createElement('button'), () => {}, { type: 'click', target: body });
+  await h.pressIn(body, e => options.onSave(body, h.document.createElement('button'), () => {}, e));
   await settle();
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:604', 'movie:tmdb:605']);
 });
@@ -654,11 +659,11 @@ test('JE mode: a viewer without a Seerr account gets the collection picker from 
   assert.match(body, /data-tmdb-id="604"[^>]*data-je-askable="1" checked/);
   assert.equal(h.toasts.length, 0);
 
-  // With a Seerr account: Seerr's own collection, as before.
+  // With a Seerr account, or Seerr off altogether: still Jellyfin Enhanced's public collection (JE mode never reads Seerr, A1).
   h.JE.jellyseerrAPI.accountRefusal = async () => null;
   await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
   await settle();
-  assert.deepEqual([publicReads.length, h.seerr.details], [1, [2344]]);
+  assert.deepEqual([publicReads, h.seerr.details], [['/collection/2344', '/collection/2344'], []]);
 });
 
 test('JE mode: the more-info window with public details says in one line that Seerr\'s own request details need a Seerr account', async t => {
@@ -698,4 +703,167 @@ test('JE mode: an asked chip whose capability read waited across an account swit
   assert.notEqual(button.textContent, translate('arr_ask_chip_asked'), 'no chip on the next person\'s page');
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, before);
+});
+
+test('UX-12: with Seerr off the JE-mode more-info window shows no Seerr-account line and never asks Seerr for a quota', async t => {
+  const h = setup(t, { config: { JellyseerrEnabled: false, SeerrAvailable: false } });
+  const { internal } = moreInfoWindow(h);
+  const quotaReads = [];
+  h.JE.jellyseerrAPI.fetchUserQuota = async () => { quotaReads.push('quota'); return null; };
+  const note = () => h.document.querySelector('[data-mount="je-requested-by"] .je-more-info-public-note');
+  for (const mediaType of ['movie', 'tv']) {
+    internal.renderActions({ id: 604, title: 'The Matrix Reloaded', name: 'Firefly', jePublicDetails: true, mediaInfo: { status: 1 } }, mediaType);
+    await settle();
+    assert.equal(note(), null, `${mediaType}: no "needs a Seerr account" line`);
+  }
+  assert.deepEqual(quotaReads, [], 'no Seerr quota read for public details');
+});
+
+test('UX-12 control: Seerr on, details read through the viewer\'s own Seerr account still draw Seerr\'s quota chip; public details keep the account line', async t => {
+  const h = setup(t, { jeMode: false, config: { SeerrAvailable: true } });
+  const { internal } = moreInfoWindow(h);
+  const quotaReads = [];
+  h.JE.jellyseerrAPI.fetchUserQuota = async () => { quotaReads.push('quota'); return null; };
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.deepEqual(quotaReads, ['quota']);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: true, mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.equal(h.document.querySelector('[data-mount="je-requested-by"] .je-more-info-public-note')?.textContent, translate('jellyseerr_modal_public_details'));
+  assert.deepEqual(quotaReads, ['quota'], 'public details: no quota read');
+});
+
+test('a request toast shows a translation\'s icon as its emoji, never as escaped markup (A1 live finding)', async t => {
+  const h = setup(t);
+  h.JE.arrAsk.toast('<span class="je-emoji">❌</span> Failed to load collection details');
+  assert.equal(h.toasts.at(-1), '❌ Failed to load collection details');
+  // Anything else stays text.
+  h.JE.arrAsk.toast('<b>bold</b>');
+  assert.equal(h.toasts.at(-1), '<b>bold</b>');
+});
+
+// A1 fix round 1 (A1-SOUND-02): with Jellyfin Enhanced the request backend (public config NativeAbsentDetails.Source
+// "tmdb") a collection's View reads Jellyfin Enhanced's public collection whatever the request switches say; the request
+// controls are gated apart. Seerr's window (Seerr's details) never opens for it.
+const JE_BACKEND_ASKING_OFF = { ArrRequestsEnabled: false, NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } };
+
+test('JE backend, request controls off: the collection View is Jellyfin Enhanced\'s public collection to look at, never Seerr\'s window', async t => {
+  for (const JellyseerrEnabled of [false, true]) {
+    const h = setup(t, { jeMode: false, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled } });
+    const opened = [];
+    h.JE.titleDetails = { show: (id, type, scope, owner) => { opened.push(['show', id, type, !!owner]); return true; }, openItem: (id) => { opened.push(['item', id]); } };
+    h.JE.jellyseerrAPI.fetchPublic = async (path) => { h.seerr.publicReads.push(path); return { id: 2344, name: 'The Matrix Collection', parts: [
+      { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', mediaInfo: { status: 5, jellyfinMediaId: 'a'.repeat(32) } },
+      { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15', posterPath: '/r.jpg' },
+      { id: 605, title: 'The Matrix Later', releaseDate: '2999-01-01' }
+    ] }; };
+    await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+    await settle();
+    assert.deepEqual([h.seerr.collection.length, h.seerr.details.length], [0, 0], `Seerr's window and details stay shut (Seerr ${JellyseerrEnabled ? 'kept' : 'off'})`);
+    assert.deepEqual(h.seerr.publicReads, ['/collection/2344']);
+    const modal = h.seerr.modals.at(-1);
+    assert.equal(modal.shown, 1);
+    assert.equal(modal.options.closeOnly, true, 'nothing to submit');
+    assert.equal(modal.options.subtitle, 'The Matrix Collection');
+    const body = h.document.createElement('div');
+    body.innerHTML = modal.options.bodyHtml;
+    assert.equal(body.querySelector('input, .jellyseerr-collection-checkbox'), null, 'no ask controls');
+    assert.deepEqual([...body.querySelectorAll('.je-arr-collection-view-row')].map(r => r.dataset.tmdbId), ['603', '604', '605']);
+    assert.match(body.innerHTML, new RegExp(translate('jellyseerr_btn_available')));
+    assert.match(body.innerHTML, new RegExp(translate('arr_collection_not_out')));
+    assert.equal(h.posts.length, 0, 'nothing asked for');
+  }
+});
+
+test('JE backend, request controls off: a row of the collection View opens its movie (the library copy, else its own page)', async t => {
+  const h = setup(t, { jeMode: false, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled: false } });
+  const opened = [];
+  h.JE.titleDetails = { show: (id, type, scope, owner) => { opened.push(['show', id, type, !!owner]); return true; }, openItem: (id) => { opened.push(['item', id]); } };
+  h.JE.jellyseerrAPI.fetchPublic = async () => ({ id: 2344, name: 'The Matrix Collection', parts: [
+    { id: 603, title: 'The Matrix', releaseDate: '1999-03-31', mediaInfo: { status: 5, jellyfinMediaId: 'a'.repeat(32) } },
+    { id: 604, title: 'The Matrix Reloaded', releaseDate: '2003-05-15' }
+  ] });
+  // The real window shell around the recorded options, so its rows take the viewer's clicks.
+  h.JE.jellyseerrModal.create = (options) => {
+    const m = { options, shown: 0, closed: 0 };
+    h.seerr.modals.push(m);
+    const modalElement = h.document.createElement('div');
+    modalElement.innerHTML = options.bodyHtml;
+    h.document.body.appendChild(modalElement);
+    return { modalElement, show: () => { m.shown++; }, close: () => { m.closed++; modalElement.remove(); } };
+  };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  click(h, h.document.querySelector('.je-arr-collection-view-row[data-tmdb-id="604"] .title'));
+  assert.deepEqual(opened, [['show', 604, 'movie', true]]);
+  assert.equal(h.seerr.modals.at(-1).closed, 1);
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  click(h, h.document.querySelector('.je-arr-collection-view-row[data-tmdb-id="603"]'));
+  assert.deepEqual(opened.at(-1), ['item', 'a'.repeat(32)]);
+});
+
+test('JE backend, request controls off, through Seerr\'s real collection window module: Seerr\'s collection is never read', async t => {
+  for (const JellyseerrEnabled of [false, true]) {
+    const h = setup(t, { jeMode: false, realCollectionUi: true, config: { ...JE_BACKEND_ASKING_OFF, JellyseerrEnabled } });
+    await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: h.NATIVE });
+    await settle();
+    assert.deepEqual(h.seerr.details, [], `fetchCollectionDetails never runs (Seerr ${JellyseerrEnabled ? 'kept' : 'off'})`);
+    assert.deepEqual(h.seerr.publicReads, ['/collection/10']);
+  }
+  // Seerr mode: Seerr's own window and details, as before.
+  const seerr = setup(t, { jeMode: false, realCollectionUi: true, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'seerr' } } });
+  // (Only its read is looked at: the rest of the window needs Seerr's form pieces, which are not loaded here.)
+  await seerr.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: seerr.NATIVE }).catch(() => {});
+  await settle();
+  assert.deepEqual([seerr.seerr.details, seerr.seerr.publicReads], [[10], []]);
+});
+
+test('JE mode, a viewer who can\'t ask for movies: the collection View shows the collection to look at instead of a refusal', async t => {
+  const WATCHER = { ...MEMBER, role: 'watcher', canRequest: false, canRequestMovies: false, canRequestSeries: false };
+  const h = setup(t, { me: WATCHER, config: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } } });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', null, { operation: h.NATIVE });
+  await settle();
+  assert.deepEqual([h.seerr.collection.length, h.seerr.details.length, h.toasts.length], [0, 0, 0]);
+  assert.equal(h.seerr.modals.at(-1)?.options.closeOnly, true);
+  assert.equal(h.posts.length, 0);
+});
+
+// ---- UX3R2-3 (review round 2): no Seerr account image is asked for while Seerr is off ----
+
+const SEERR_REQUESTS = { status: 2, requests: [{ requestedBy: { displayName: 'Ann', avatar: '/avatar/ann.png' } }] };
+
+for (const off of [{ JellyseerrEnabled: false, SeerrAvailable: false }, { JellyseerrEnabled: true, SeerrAvailable: false }]) test(`UX3R2-3: with Seerr off (${JSON.stringify(off)}) the window names who asked without a Seerr image`, async t => {
+  const h = setup(t, { jeMode: false, config: off });
+  const { internal } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: SEERR_REQUESTS }, 'movie');
+  await settle();
+  const row = h.document.querySelector('[data-mount="je-requested-by"]');
+  assert.match(row.textContent, /Ann/);
+  assert.equal(row.querySelector('img[data-avatar-src]'), null, 'no Seerr image is asked for');
+});
+
+test('UX3R2-3 control: with Seerr on the window asks for the requester\'s Seerr image through the server', async t => {
+  const h = setup(t, { jeMode: false, config: { SeerrAvailable: true } });
+  const { internal } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: SEERR_REQUESTS }, 'movie');
+  await settle();
+  assert.match(h.document.querySelector('[data-mount="je-requested-by"] img[data-avatar-src]').getAttribute('data-avatar-src'), /\/JellyfinEnhanced\/proxy\/avatar/);
+});
+
+test('UX3R2-3: the shared avatar loader fetches nothing while Seerr is off, and fetches once it is on', async t => {
+  const fetched = [];
+  const h = createHarness({ fetch: async url => { fetched.push(String(url)); return new Response('image'); } });
+  t.after(() => h.close());
+  h.window.URL.createObjectURL = () => 'blob:avatar';
+  h.load('enhanced/helpers.js');
+  const path = '/JellyfinEnhanced/proxy/avatar?path=%2Favatar%2Fann.png';
+  h.JE.pluginConfig = { JellyseerrEnabled: false, SeerrAvailable: false };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), '');
+  h.JE.pluginConfig = { JellyseerrEnabled: true, SeerrAvailable: false };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), '');
+  assert.deepEqual(fetched, []);
+  h.JE.pluginConfig = { JellyseerrEnabled: true, SeerrAvailable: true };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), 'blob:avatar');
+  assert.equal(fetched.length, 1);
 });

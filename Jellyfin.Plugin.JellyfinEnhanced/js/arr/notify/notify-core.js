@@ -196,12 +196,15 @@
     async function markRead(ids, origin) {
         origin = JE.core.userWrite.originOf(origin);
         const body = ids ? { ids } : { all: true };
+        // A read acknowledgement is the viewer's own inbox state, no title action's (D46S2-R12-1): it is sent with an
+        // explicit session-only binding (the session the core captured now), so it goes out only as this account.
+        const session = typeof JE.core.api.session === 'function' ? JE.core.api.session() : JE.captureSession?.();
         state.items = state.items.map(i => (!ids || ids.includes(i.id)) ? Object.assign({}, i, { read: true }) : i);
         state.unread = ids ? Math.max(0, state.unread - ids.length) : 0;
         emit('inbox');
         const identity = state.identity;
         try {
-            const res = await api('/acquire/notify/read', { method: 'POST', body, session: origin });
+            const res = await api('/acquire/notify/read', { method: 'POST', body, session: origin, ...(session ? { bound: { session } } : {}) });
             if (identity === state.identity && res && typeof res.unread === 'number') {
                 state.unread = res.unread;
                 emit('inbox');
@@ -296,9 +299,12 @@
             if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
             if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
-            if (outcome.outcome !== 'accepted' || outcome.sessionChanged) {
+            if (outcome.outcome !== 'accepted') {
                 return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
             }
+            // Taken after another account signed in (D46S2-R12-4): it happened for the origin; nothing is reread or
+            // said for the new account.
+            if (outcome.sessionChanged) return { ok: true, accepted: true, sessionChanged: true };
             accepted = true;
         }
         if (!JE.core.userWrite.isBound(origin)) return { ok: false, code: 'user_changed' };
@@ -314,7 +320,8 @@
      * @param {string|null} itemId Jellyfin item shown, if any.
      * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action (the library More
      *     sheet's Remind), the POST is that operation's, checked by the transport right before it goes out.
-     * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
+     * @returns {Promise<{ok: boolean, code?: string, nextAt?: string, accepted?: boolean}>} Outcome (D46S2-R11-9): never
+     *     sent (cancelled); accepted after its owner ended (ok, accepted: the caller shows nothing); answered; or failed.
      */
     async function remind(key, itemId, owner, origin) {
         // The reminder's origin (JE.core.userWrite): the caller's, taken when the person acted, else the session now.
@@ -324,6 +331,9 @@
             const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound(), session: origin });
             return { ok: true, nextAt: res?.nextAt };
         } catch (err) {
+            const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
+            if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
+            if (outcome.outcome === 'accepted') return { ok: true, accepted: true, nextAt: outcome.answer?.nextAt, ...(outcome.sessionChanged ? { sessionChanged: true } : {}) };
             if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
             if (JE.core.userWrite.outcome(err) === 'uncertain') return { ok: false, code: 'unconfirmed' };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };
@@ -417,7 +427,7 @@
         instance_down: 'arr_notify_instance_down',
         instance_up: 'arr_notify_instance_up',
         low_disk: 'arr_notify_low_disk',
-        stuck_digest: 'arr_notify_stuck_digest',
+        stuck_digest: 'arr_notify_stuck_digest_short',
         remind: 'arr_notify_remind',
         attention: 'arr_notify_attention',
         test: 'arr_notify_test',
@@ -435,6 +445,7 @@
         if (item.kind === 'ready' && p.variant === '4k') return 'arr_notify_ready_4k';
         if (item.kind === 'declined' && p.reason) return 'arr_notify_declined_reason';
         if (item.kind === 'approved' && p.shared === '1') return 'arr_notify_approved_shared';
+        // A stuck digest reads as a count; which downloads, and why, is the bell's expandable list (digestEntries).
         if ((item.kind === 'stuck_digest' || item.kind === 'summary') && String(p.count) === '1') return `${KIND_KEYS[item.kind]}_one`;
         if (item.kind === 'attention') {
             if (p.code === 'import_blocked') return 'arr_notify_attention_import_blocked';
@@ -475,6 +486,34 @@
             }
         }
         return frag;
+    }
+
+    // Needs attention reasons a stuck digest lists (the server's DownloadCodes), named as Overview names them.
+    const DIGEST_CODES = new Set(['import_blocked', 'import_waiting', 'download_failed', 'download_warning', 'download_stalled', 'client_unavailable']);
+
+    /**
+     * The downloads a stuck digest lists, one line each: from its fields (entries), else, for a digest
+     * stored before they existed, its one-line list split back into lines. Never more than the digest holds.
+     * @param {Object} item Inbox item.
+     * @returns {Array<{title: string, scope?: string, instance?: string, reason?: string, text?: string}>} Lines.
+     */
+    function digestEntries(item) {
+        const p = item?.params || {};
+        let parsed = null;
+        try {
+            parsed = typeof p.entries === 'string' ? JSON.parse(p.entries) : null;
+        } catch (_) {
+            parsed = null;
+        }
+        if (Array.isArray(parsed)) {
+            return parsed.filter(e => e && typeof e.title === 'string').slice(0, 200).map(e => ({
+                title: e.title,
+                scope: typeof e.scope === 'string' ? e.scope : '',
+                instance: typeof e.instance === 'string' ? e.instance : '',
+                reason: DIGEST_CODES.has(e.code) ? tr(`arr_ops_code_${e.code}`) : ''
+            }));
+        }
+        return typeof p.items === 'string' && p.items ? p.items.split('; ').slice(0, 200).map(text => ({ title: '', text })) : [];
     }
 
     /**
@@ -530,6 +569,9 @@
      * @returns {void}
      */
     function open(item, owner) {
+        // Opening is the press's effect (D46S2-R11-5): every branch (the bell, a library item, a title, the Requests page)
+        // acts only for an owner that is current now; an ended or missing one opens and navigates nothing.
+        if (!JE.effectOwner(owner, 'a notification')) return;
         if (item.kind === 'summary') {
             N.openBell?.();
             return;
@@ -740,6 +782,7 @@
     N.buildText = buildText;
     N.plainText = plainText;
     N.textKey = textKey;
+    N.digestEntries = digestEntries;
     N.showSummary = showSummary;
     N.flushHeld = flushHeld;
     N.afterNavigate = afterNavigate;

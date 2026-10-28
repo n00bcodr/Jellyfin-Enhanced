@@ -57,10 +57,10 @@ for (const [name, interrupt] of INTERRUPTS) {
   test(`Request: ${name} while open() awaits me() → no request sheet`, async t => {
     const h = setup(t); h.a.initialize(); mount(h); await settle();
     const expire = expireCapabilities(h);
-    h.row().querySelector('.je-actions-more').click(); await settle();
+    h.click(h.row().querySelector('.je-actions-more')); await settle();
     expire();
     const me = h.hold('GET', '/acquire/requests/me');
-    h.document.querySelector('.je-actions-entry[data-action="request"]').click(); await settle();
+    h.click(h.document.querySelector('.je-actions-entry[data-action="request"]')); await settle();
     assert.equal(h.sent('GET', '/acquire/requests/me').length >= 2, true, 'open() reads capabilities');
     interrupt(h);
     const quotas = h.sent('GET', '/acquire/requests/quota').length;
@@ -93,7 +93,7 @@ test('controls: Request on the same session, route and mount opens the sheet, an
   const h = setup(t); h.a.initialize(); mount(h); await settle();
   await press(h, 'request');
   assert.ok(sheet(h));
-  sheet(h).querySelector('.je-sheet-primary').click(); await settle();
+  h.click(sheet(h).querySelector('.je-sheet-primary')); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
 
@@ -108,7 +108,7 @@ test('controls: the native request sheet (no operation) opens on its route; afte
   assert.equal(sheet(h), null, 'its page effect ended with its route');
   const reopened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.NATIVE }); await settle();
   assert.ok(sheet(h), 'opened on the route it is on');
-  sheet(h).querySelector('.je-sheet-primary').click(); await settle();
+  h.click(sheet(h).querySelector('.je-sheet-primary')); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
   await reopened;
 });
@@ -128,7 +128,7 @@ for (const [name, interrupt] of INTERRUPTS) {
     const h = setup(t); h.a.initialize();
     const primary = await mountWithAsk(h);
     const quota = h.hold('GET', '/acquire/requests/quota');
-    primary.click(); await settle();
+    h.click(primary); await settle();
     interrupt(h);
     quota.resolve(); await settle();
     assert.equal(h.sent('POST', '/acquire/requests').length, 0);
@@ -138,7 +138,7 @@ for (const [name, interrupt] of INTERRUPTS) {
 
 test('controls: the one-tap ask through the row\'s primary asks once on the same route', async t => {
   const h = setup(t); h.a.initialize();
-  (await mountWithAsk(h)).click(); await settle();
+  h.click(await mountWithAsk(h)); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
 
@@ -146,7 +146,7 @@ test('controls: the page\'s own Request pressed natively (action bar off) still 
   const h = setup(t);
   h.JE.arrAskSheet.mount(h.row(), { key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }); await settle();
   const quota = h.hold('GET', '/acquire/requests/quota');
-  h.row().querySelector('.je-ask-mount-request').click(); await settle();
+  h.click(h.row().querySelector('.je-ask-mount-request')); await settle();
   h.navigate();
   quota.resolve(); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1, 'exactly as before');
@@ -157,10 +157,10 @@ test('controls: the page\'s own Request pressed natively (action bar off) still 
 for (const [name, interrupt] of INTERRUPTS) {
   test(`Manage: ${name} while the drawer awaits feedPosition → no overview read, no drawer`, async t => {
     const h = setup(t); h.a.initialize(); mount(h); await settle();
-    h.row().querySelector('.je-actions-more').click(); await settle();
+    h.click(h.row().querySelector('.je-actions-more')); await settle();
     // The sheet has read the status; the drawer's own feed position is held.
     const feed = h.holdFeed();
-    h.document.querySelector('.je-actions-entry[data-action="manage"]').click(); await settle();
+    h.click(h.document.querySelector('.je-actions-entry[data-action="manage"]')); await settle();
     assert.ok(drawer(h) || h.sent('GET', '/arr/admin/manage?').length === 0, 'the drawer is opening');
     interrupt(h);
     feed.resolve({ epoch: 'e1', cursor: 1 }); await settle();
@@ -276,11 +276,11 @@ test('the shared Seerr modal opened for an operation: navigation, then its prima
   const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: o.op });
   modal.show(); await settle();
   h.navigate();
-  modal.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(modal.modalElement.querySelector('.jellyseerr-modal-button-primary')); await settle();
   assert.equal(saved, 0);
   const native = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: h.NATIVE });
   native.show(); await settle();
-  native.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(native.modalElement.querySelector('.jellyseerr-modal-button-primary')); await settle();
   assert.equal(saved, 1, 'a native modal saves as before');
 });
 
@@ -298,7 +298,7 @@ function seasonSetup(t) {
     async request() {
       const modal = h.document.querySelector('.jellyseerr-season-modal');
       modal.querySelector('.jellyseerr-season-checkbox[data-season-number="1"]').checked = true;
-      modal.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+      h.click(modal.querySelector('.jellyseerr-modal-button-primary')); await settle();
     } };
 }
 

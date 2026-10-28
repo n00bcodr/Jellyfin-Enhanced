@@ -15,7 +15,9 @@
 // The server facade answers the page's requests for the synthetic id (no library rows). This module
 // adapts the page:
 //   - hides the native actions a title without files can't do (Play, Shuffle, Played, Favourite,
-//     More, Download, card play/options buttons) and blocks card context menus;
+//     More, Download, card play/options buttons) and blocks card context menus, and the "Ends at"
+//     estimate of the title and its missing episodes' rows (nothing plays; the runtime stays; a real
+//     episode's row keeps its own);
 //   - holds the Requests & downloads controls: the status pill and journey, Notify me, Manage, Get
 //     Season N / Get it and the missing-episode rows come from the details surface (status-details,
 //     ask-actions, ask-episodes), which read status by this page's id; this module adds Request (the
@@ -23,7 +25,8 @@
 //   - lays them out as Jellyfin lays out a library title of the same type: the request action (or
 //     Open) leads the native action row where Play sits, the other request actions follow it as
 //     icon buttons, Spoiler Guard is an icon button in the row where the library's is, and the
-//     status pill (with the request's cost lines under it) heads the details section;
+//     status pill (with the request's cost lines under it) heads the details section, the page's one
+//     status (Jellyfin's own Missing/Unaired marker is not shown while it is);
 //   - adds what the modal shows that the native layout has no place for: the ratings row (where
 //     JE's MDBList ratings sit on a library title), the information panel (status, dates, money,
 //     language, countries, studios, streaming, links), the trailers and the collection card;
@@ -59,6 +62,17 @@
     const REFUSED_VIEW_CLASS = 'je-native-absent-refused-view';
     /** A restored page whose access is being checked again: nothing of its earlier content shows until it passes. */
     const CHECKING_CLASS = 'je-native-absent-checking';
+    /**
+     * On a title page while the details surface's status shows in its slot: that status is the page's one status, so
+     * Jellyfin's own Missing/Unaired marker in the title area (a synthetic episode is Virtual) is not shown as well.
+     */
+    const STATUS_CLASS = 'je-native-absent-has-status';
+    /**
+     * On what this module knows is not in the library: the title's own information line (the page's item is synthetic)
+     * and every row or card whose item id is a synthetic one. Its "Ends at" estimate is not shown; a real episode
+     * listed among the missing ones (it has a file) keeps its own.
+     */
+    const ABSENT_ATTR = 'data-je-absent';
     const STYLE_ID = 'je-native-absent-style';
     /** The page's request controls in the native action row, in Play's place (first in the row). */
     const PRIMARY_CLASS = 'je-native-absent-primary';
@@ -84,6 +98,10 @@
 
     /** @type {Object|null} the synthetic page shown now */
     let current = null;
+    /** @type {{page: HTMLElement|null, look: number}|null} the check (page and look) holding the page-wide gate (see checking) */
+    let gateOwner = null;
+    /** Looks at a page made so far (each onView call's own number). */
+    let looks = 0;
     let started = false;
     /** The synthetic id the last fallback left (a second look at it must not fall back again). */
     let fellBackFrom = null;
@@ -189,6 +207,15 @@
         return !!cap && cap.Enabled === true && cap.ContractVersion === CONTRACT && !!serverId();
     }
 
+    /**
+     * True when the pages read TMDB (Jellyfin Enhanced request mode, A1): Seerr's More Info window is no
+     * fallback then (it reads Seerr), so a page that can't be loaded says so on the page instead.
+     * @returns {boolean} TMDB source.
+     */
+    function tmdbSource() {
+        return JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+    }
+
     // ------------------------------------------------------------------ navigator
 
     /**
@@ -238,7 +265,8 @@
      * @returns {boolean} Seerr refuses the viewer.
      */
     function seerrRefusesViewer() {
-        return !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
+        // The JE backend's pages read TMDB (A1/BEH-02): no Seerr account is ever asked for.
+        return !tmdbSource() && !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
     }
 
     /**
@@ -349,6 +377,15 @@
             }
         }
         if (options.modal === false || !action.owner) return false;
+        if (available() && tmdbSource()) {
+            // JE mode: no Seerr window. A title whose TMDB id is known opens its page (which says so when its details
+            // can't be had); one without stays with the caller.
+            const tmdb = Number(options.tmdbId || tmdbOfKey(key));
+            const id = tmdb > 0 ? idOf(tmdb, mediaType, options) : null;
+            if (!id || !action.current() || !JE.effectOwner(action.owner, 'openKey')) return false;
+            go(id);
+            return true;
+        }
         return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, action.owner);
     }
 
@@ -387,6 +424,10 @@
             + `.je-native-absent-notes:empty { display: none; }\n`
             + `.je-native-absent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }\n`
             + `.je-native-absent-status:empty { display: none; }\n`
+            // Nothing absent plays: no "Ends at" estimate (the runtime stays) on the title or its missing episodes' rows.
+            + `.${PAGE_CLASS} [${ABSENT_ATTR}] .endsAt { display: none !important; }\n`
+            + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .missingIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .missingIndicator, `
+            + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .unairedIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .unairedIndicator { display: none !important; }\n`
             + `.je-native-absent-btn { display: inline-flex; align-items: center; gap: 0.4em; min-height: 44px; padding: 0 1.1em; border-radius: 6px; margin: 0; }\n`
             + `.je-native-absent-btn .material-icons { font-size: 1.25em; }\n`
             + `.je-native-absent-ratings { margin: 0.4em 0; }\n`
@@ -828,6 +869,91 @@
         adoptActions(state);
     }
 
+    /** The artwork of this server's synthetic items (signed, served `private, no-store`). */
+    const SIGNED_IMAGE = /\/Items\/([0-9a-f]{32})\/Images\//i;
+
+    /** Moves on with the person's access or presentation policy (and session): artwork from an earlier one is not kept. */
+    let artGeneration = 0;
+    /** Elements whose artwork this module joined to jellyfin-web's preloader, with the policy generation it was asked under. */
+    const artwork = new WeakMap();
+
+    /**
+     * The person's access or presentation policy moved (or the session did): the shown page's absent-title artwork
+     * is asked for again under what holds now, whatever its address. A load still running has the element's early
+     * background taken away, so jellyfin-web's own assignment fetches it anew; a shown image is asked for again (the
+     * server checks the grant and policy as for any request: refused, it is no longer drawn). Nothing is kept from
+     * before (see keepImages).
+     * @returns {void}
+     */
+    function artPolicyMoved() {
+        artGeneration++;
+        const state = current;
+        if (!state || state.aborted) return;
+        state.page.querySelectorAll('[style*="/Images/"]').forEach((node) => {
+            if (!(node instanceof HTMLElement) || node.tagName === 'IMG') return;
+            const url = /url\(["']?([^"')]+)["']?\)/.exec(node.style.backgroundImage || '')?.[1];
+            const match = url ? SIGNED_IMAGE.exec(url) : null;
+            if (!match || !isSynthetic(match[1])) return;
+            artwork.delete(node);
+            if (node.hasAttribute('data-src')) {
+                node.style.backgroundImage = '';
+                return;
+            }
+            const base = url.replace(/([?&])_sbcb=\d+&?/g, '$1').replace(/[?&]$/, '');
+            node.style.backgroundImage = "url('" + base + (base.includes('?') ? '&' : '?') + '_sbcb=' + Date.now() + "')";
+        });
+    }
+
+    /**
+     * Keeps a page's artwork to one load per image. jellyfin-web loads a lazy image in two steps: a hidden
+     * preloader (new Image) and, once that has loaded, the element's background with the same URL. An absent
+     * title's artwork may not be stored by the browser, so that second step fetched it again; and a loaded image
+     * scrolled out of view is emptied, then loaded again (both steps) when it comes back.
+     *   - As the preloader starts, the background gets that same URL while the element is still hidden
+     *     (lazy-hidden): the browser then has one load of it, which jellyfin-web's own later assignment of the
+     *     identical value reuses.
+     *   - An image emptied after it was shown is put back as jellyfin-web leaves a loaded one (before anything is
+     *     drawn without it), so coming back into view loads nothing; only one this page loaded under the policy and
+     *     session that hold now (artPolicyMoved: anything from before goes back to jellyfin-web's own reload).
+     * Nothing else changes: the URL and its signature are jellyfin-web's, it still fades a new image in, and a new
+     * grant or policy is a new URL, a new page or a new request (artPolicyMoved), and loads anew.
+     * @param {Object} state Page state.
+     * @returns {MutationObserver|null} Observer, or null when unsupported.
+     */
+    function keepImages(state) {
+        if (typeof MutationObserver !== 'function') return null;
+        const observer = new MutationObserver((records) => {
+            if (state.aborted || current !== state) return;
+            for (const record of records) {
+                const node = /** @type {HTMLElement} */ (record.target);
+                // Only as lazy-hidden is added: jellyfin-web starting its preloader, or emptying a loaded image.
+                if (node.tagName === 'IMG' || /\blazy-hidden\b/.test(record.oldValue || '') || !node.classList.contains('lazy-hidden')) continue;
+                const src = node.getAttribute('data-src');
+                const match = src ? SIGNED_IMAGE.exec(src) : null;
+                if (!match || !isSynthetic(match[1])) continue;
+                const shown = node.style.backgroundImage;
+                if (shown && shown !== 'none') continue;
+                if (shown !== 'none') {
+                    // The exact text jellyfin-web assigns, so its own assignment is no change.
+                    node.style.backgroundImage = "url('" + src + "')";
+                    artwork.set(node, artGeneration);
+                    continue;
+                }
+                // Emptied after it was shown: kept only when this page loaded it under the policy that holds now;
+                // anything older goes back to jellyfin-web, which asks the server again when it comes into view.
+                if (artwork.get(node) !== artGeneration) continue;
+                node.style.backgroundImage = "url('" + src + "')";
+                node.removeAttribute('data-src');
+                node.classList.remove('lazy-hidden');
+                const canvas = node.previousSibling;
+                if (node.classList.contains('blurhashed') && canvas?.nodeName === 'CANVAS') /** @type {Element} */ (canvas).classList.add('lazy-hidden');
+                node.parentNode?.querySelector?.('.cardPadder')?.classList.add('lazy-hidden-children');
+            }
+        });
+        observer.observe(state.page, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, subtree: true });
+        return observer;
+    }
+
     /**
      * Stops what the previous synthetic page started and takes away every control this module drew,
      * copies included.
@@ -840,11 +966,33 @@
             try { state.controls?.destroy?.(); } catch { /* already gone */ }
             state.observer?.disconnect();
             state.rowObserver?.disconnect();
+            state.statusObserver?.disconnect();
+            state.absentObserver?.disconnect();
+            state.page?.classList.remove(STATUS_CLASS);
+            state.page?.querySelectorAll(`[${ABSENT_ATTR}]`).forEach(n => n.removeAttribute(ABSENT_ATTR));
+            state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
+            if (state.relookTimer) clearTimeout(state.relookTimer);
             controlsOf(state).forEach(n => n.remove());
             current = null;
+            endCheck(state);
         }
         sweep(null);
+    }
+
+    /**
+     * A page state that ends (left, another viewer, signed out, no page shown) while its page is still hidden for a
+     * check: the check is over, and it failed closed. The page that owned it keeps none of its earlier content on
+     * show: shown now, it gets the outage state (refusal, Back); not shown, it is refused in place, and showing it
+     * again checks it anew, and nothing shared (the backdrop, the page-wide gate it does not hold, the loading
+     * indicator another page shows) changes. The page-wide gate and indicator it held are let go.
+     * @param {Object} state The page state that ended.
+     * @returns {void}
+     */
+    function endCheck(state) {
+        const page = state.page;
+        if (!page?.classList.contains(CHECKING_CLASS)) return;
+        refuse(page, TITLE_KINDS.has(state.parts.kind) ? 'native_details_failed' : 'native_details_page_failed');
     }
 
     /**
@@ -855,10 +1003,13 @@
      * @returns {void}
      */
     function refuse(page, messageKey = 'native_details_unavailable') {
+        // Only the page shown now speaks for what is shared (the backdrop, the loading indicator, a pending
+        // window): a page refused while it is not shown changes nothing of the page that is.
+        const shown = page === visiblePage();
         // A refusal on another page (where Back or Forward took the viewer) wins over the modal an
         // earlier outage still meant to open; the failed page's own second look keeps it.
-        if (pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
-        window.Dashboard?.hideLoadingMsg?.();
+        if (shown && pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
+        if (shown) window.Dashboard?.hideLoadingMsg?.();
         page.querySelector('.je-native-absent-refusal')?.remove();
         sweep(null);
         const box = el('div', 'je-native-absent-refusal');
@@ -876,19 +1027,28 @@
         page.prepend(box);
         checking(page, false);
         page.classList.add(REFUSED_CLASS);
-        document.documentElement.classList.add(REFUSED_VIEW_CLASS);
+        if (shown) document.documentElement.classList.add(REFUSED_VIEW_CLASS);
     }
 
     /**
      * Shows (or hides) a restored page's earlier content while its access is checked again.
+     * The gate belongs to the check that set it (its page and its look): an earlier look of the same page that ends
+     * later changes nothing while a newer one holds it; another page ending its check leaves the page-wide part
+     * alone. Without a look (a refusal, the page state ending, no details page shown) it is let go for the page.
      * @param {HTMLElement|null} page Page.
      * @param {boolean} on Hide it (true) or show it again.
+     * @param {number} [look] The look (onView call) the check belongs to.
      * @returns {void}
      */
-    function checking(page, on) {
+    function checking(page, on, look = 0) {
+        if (!on && page && look && gateOwner?.page === page && gateOwner.look !== look) return;
+        page?.classList.toggle(CHECKING_CLASS, on);
+        // The page-wide part (the backdrop hidden, Jellyfin's loading indicator) belongs to the check that set it:
+        // another page ending its check leaves it alone; with no page given (no details page shown) it goes.
+        if (!on && page && gateOwner && gateOwner.page !== page) return;
         const was = document.documentElement.classList.contains(CHECKING_CLASS);
         document.documentElement.classList.toggle(CHECKING_CLASS, on);
-        page?.classList.toggle(CHECKING_CLASS, on);
+        gateOwner = on ? { page, look } : null;
         // Jellyfin's own loading indicator while the page is hidden.
         if (on && !was) window.Dashboard?.showLoadingMsg?.();
         else if (!on && was) window.Dashboard?.hideLoadingMsg?.();
@@ -1028,7 +1188,8 @@
             return;
         }
         if (parts.kind !== 'movie' && parts.kind !== 'series') return;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
+        // Seerr's own Request window is no fallback for the JE backend (A1/BEH-02), whatever Seerr settings remain.
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof JE.jellyseerrMoreInfo?.open !== 'function') return;
         const b = pageButton('add', JE.t('jellyseerr_btn_request'), 'button-submit je-native-absent-legacy-request');
         b.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1087,9 +1248,44 @@
             });
         }
         reconcile(state);
+        markStatus(state);
         showOpen(state, status?.openItemId || null);
         // The movie's Request mount follows the same status (asked, on its way, Search…).
         state.controls?.update?.(status || null);
+    }
+
+    /**
+     * Whether the page's one status is the details surface's (its status block, or Seerr's status row, in the slot):
+     * then Jellyfin's own Missing/Unaired marker is not shown as well (see STATUS_CLASS).
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function markStatus(state) {
+        if (state.aborted || current !== state) return;
+        const shown = !!state.container?.querySelector('.je-native-absent-status > .je-arr-status, .je-native-absent-status > .je-native-absent-seerr');
+        state.page.classList.toggle(STATUS_CLASS, shown);
+    }
+
+    /**
+     * Marks what is not in the library (see ABSENT_ATTR): the title's information line, and the rows and cards of
+     * synthetic items. Rows of library items (a real episode among the missing ones) stay unmarked.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function markAbsent(state) {
+        if (state.aborted || current !== state) return;
+        state.page.querySelectorAll(`.itemMiscInfo-primary:not([${ABSENT_ATTR}])`).forEach((n) => {
+            if (!n.closest('[data-id]')) n.setAttribute(ABSENT_ATTR, '');
+        });
+        // Each element's id is looked at once while it stays the same; a row pointed at the library item that arrived
+        // (status-episodes) is a library row from then on.
+        const seen = state.absentSeen || (state.absentSeen = new WeakMap());
+        state.page.querySelectorAll('[data-id]').forEach((n) => {
+            const id = n.getAttribute('data-id');
+            if (seen.get(n) === id) return;
+            seen.set(n, id);
+            n.toggleAttribute(ABSENT_ATTR, isSynthetic(id));
+        });
     }
 
     /**
@@ -1118,7 +1314,7 @@
      */
     async function titleData(state) {
         const internal = JE.internals?.moreInfoModal;
-        if (!JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
+        if (tmdbSource() || !JE.pluginConfig?.JellyseerrEnabled || typeof internal?.fetchMediaDetails !== 'function') return null;
         try {
             return await internal.fetchMediaDetails(state.parts.tmdbId, state.mediaType);
         } catch {
@@ -1137,7 +1333,9 @@
     async function nativeTitleData(state, suffix = '') {
         const path = `/native-details/title/${state.mediaType === 'movie' ? 'movie' : 'tv'}/${state.parts.tmdbId}${suffix}`;
         try {
-            if (JE.core?.api?.plugin) return await JE.core.api.plugin(path, { skipCache: true });
+            // Extras drawn after the page (the decorative lane): the title's menus and windows never wait behind them, and
+            // More Info opened meanwhile joins (and promotes) the same read.
+            if (JE.core?.api?.plugin) return await JE.core.api.plugin(path, { skipCache: true, priority: 'low' });
             return await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`JellyfinEnhanced${path}`), dataType: 'json' });
         } catch {
             return null;
@@ -1306,16 +1504,32 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, statusObserver: null, absentObserver: null, extras: null,
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0, relookTimer: 0,
+            viewer: window.ApiClient?.getCurrentUserId?.() || null, server: serverId(),
             token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
             dispose();
             current = state;
+            state.imageObserver = keepImages(state);
             // Titles get their request controls in the native action row; a person page has none.
             state.primary = isTitle ? primaryOf(state) : null;
             state.container = actionsOf(state);
+            const slot = state.container?.querySelector('.je-native-absent-status');
+            if (slot && typeof MutationObserver === 'function') {
+                // The details surface draws, redraws and takes away its status in the slot (a status that went away
+                // gives the page back Jellyfin's own marker).
+                state.statusObserver = new MutationObserver(() => markStatus(state));
+                state.statusObserver.observe(slot, { childList: true });
+            }
+            markStatus(state);
+            markAbsent(state);
+            if (typeof MutationObserver === 'function') {
+                // Jellyfin draws the information line and the episode rows after the page (and again on a redraw).
+                state.absentObserver = new MutationObserver(() => markAbsent(state));
+                state.absentObserver.observe(page, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-id'] });
+            }
             if (state.primary && typeof MutationObserver === 'function') {
                 // The controls redraw themselves (status changes, asks): each drawing gets the native look,
                 // and smart actions taken away by any path take their cost lines with them.
@@ -1340,20 +1554,49 @@
         // Every look starts from the live controls only (copies and leftovers gone), and ends so too.
         reconcile(state);
         const generation = ++state.generation;
+        const look = ++looks;
         let item = null;
         let status = 0;
+        /** @type {false|'session'|'policy'} */
+        let stale = false;
         // A restored page still shows what it showed before (Back keeps the page's element, though
         // leaving it ended this module's state): hidden until the check below passes.
-        if (same || page.dataset.jeNativeShown) checking(page, true);
+        if (same || page.dataset.jeNativeShown) checking(page, true, look);
         // Where this title opens for the viewer now: a copy that is already here wins, on a restored
         // page too (the title may have arrived since).
         const where = !isTitle ? Promise.resolve(null) : resolve({ id });
         try {
-            item = await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
+            // The visit's one read of the item, shared with the page's other JE readers (helpers.getItemCached): a
+            // look that overlaps another on this route joins it, a page shown again reads it again.
+            item = typeof JE.helpers?.getItemCached === 'function'
+                ? await JE.helpers.getItemCached(id, { userId: ApiClient.getCurrentUserId(), visit: true })
+                : await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
         } catch (err) {
             status = Number(err?.status || err?.response?.status || 0);
+            stale = err?.jeItemStale || false;
         }
         if (state.aborted || current !== state || generation !== state.generation) return;
+        // An answer for a session or policy that has gone is no answer: nothing of it is drawn. The page is looked at
+        // again under what holds now while it is the same viewer on the same server: after a policy change (twice at
+        // most), or after their credentials were refreshed (once). Otherwise (another viewer, signed out, or no look
+        // left) it ends in the outage state: never a page left hidden while it is checked.
+        if (stale) {
+            const sameViewer = (window.ApiClient?.getCurrentUserId?.() || null) === state.viewer && serverId() === state.server;
+            const policy = stale === 'policy';
+            if (sameViewer && (policy ? state.relooks < 2 : state.sessionRelooks < 1)) {
+                if (policy) state.relooks++;
+                else state.sessionRelooks++;
+                state.relookTimer = setTimeout(() => {
+                    state.relookTimer = 0;
+                    if (!state.aborted && current === state && generation === state.generation) onView().catch(() => {});
+                }, 0);
+                return;
+            }
+            checking(page, false, look);
+            dispose();
+            refuse(page, isTitle ? 'native_details_failed' : 'native_details_page_failed');
+            return;
+        }
         if (!item) {
             if (status === 404 || status === 403) {
                 dispose();
@@ -1362,14 +1605,15 @@
             }
             // Outage or an unusable page: back to where the user was, then the modal, once; a
             // second failure soon after says so on the page instead of leaving its spinner.
-            checking(page, false);
+            checking(page, false, look);
             dispose();
             if (!isTitle) {
                 // No modal shows a person: the page says it can't be loaded.
                 refuse(page, 'native_details_page_failed');
                 return;
             }
-            if (fellBackFrom === id) {
+            if (fellBackFrom === id || tmdbSource()) {
+                // A second failure soon after, or JE mode (no Seerr window to fall back to): the page says so.
                 refuse(page, 'native_details_failed');
                 return;
             }
@@ -1392,21 +1636,22 @@
         unrefuse(page);
         state.item = item;
         const destination = await where;
-        if (state.aborted || current !== state) return;
+        // A newer look at this page (or its end) has taken over while the destination was asked for.
+        if (state.aborted || current !== state || generation !== state.generation) return;
         if (destination?.itemId && !isSynthetic(destination.itemId) && /^[0-9a-f-]{32,36}$/i.test(destination.itemId)) {
             // A deep link to a title that is here now: its library page, in this page's place, by the one
             // arrival rule (status-arrival.js). While the viewer types, plays or has a dialog open it waits,
             // and this page is drawn meanwhile (with Open).
             const arrival = JE.internals?.arrStatusArrival;
             if (!arrival?.open || !arrival.busy()) {
-                checking(page, false);
+                checking(page, false, look);
                 dispose();
                 if (!arrival?.open?.(page, id, destination.itemId)) go(destination.itemId, true);
                 return;
             }
             arrival.open(page, id, destination.itemId);
         }
-        checking(page, false);
+        checking(page, false, look);
         page.dataset.jeNativeShown = id;
         reconcile(state);
         // Drawn once per page state: a look that overlapped the first one (viewshow and the first look
@@ -1469,13 +1714,18 @@
         document.addEventListener('contextmenu', guard, true);
         window.addEventListener('je-spoiler-policy-changed', event => {
             const state = current;
+            artGeneration++;
             if (!state || event.detail?.type && (Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail.type !== state.mediaType)) return;
             // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
             state.page.replaceChildren();
             dispose();
-            JE.internals.spoilerGuard?.scheduleFullReload?.();
+            // The reload is this page's own step: it happens only while this page is still the one shown (D46S2-R11-6).
+            JE.internals.spoilerGuard?.scheduleFullReload?.(JE.operation());
         });
-        JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
+        JE.session?.onUserChange?.('native-details', () => { artGeneration++; cancelPendingModal(); dispose(); });
+        // Artwork follows the person's access and presentation (Spoiler Guard reloads the page above).
+        document.addEventListener('je-access-revision', artPolicyMoved);
+        window.addEventListener('je-hidden-content-changed', artPolicyMoved);
     }
 
     JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, openItem: go, syntheticId, parse, isSynthetic });

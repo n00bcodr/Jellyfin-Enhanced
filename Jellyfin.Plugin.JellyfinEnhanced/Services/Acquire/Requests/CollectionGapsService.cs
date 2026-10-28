@@ -146,7 +146,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 () => HomeFlags.CollectionGaps(policy.Configuration),
                 (user, keys) => Refusals(policy, user, keys),
                 () => requests.Enabled,
-                () => MutationInput.Hash(JsonSerializer.Serialize(policy.Configuration)))
+                () => MutationInput.Hash(JsonSerializer.Serialize(policy.Configuration)) + "|" + parental.EvidenceRevision)
         {
         }
 
@@ -223,7 +223,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (_boxSet(viewer, itemId) is not { } set) return (null, "not_found");
             if (set.TmdbCollectionId is not int collectionId || collectionId <= 0) return (null, "collection_unknown");
+            using var metadataViewer = NativeDetails.ViewerMetadataAdmission.ForViewer(viewer.UserId);
             var json = await _tmdbCollection(collectionId, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
+            if (metadataViewer.Refused) return (null, "metadata_unavailable");
             var parts = ParseCollection(json, DateOnly.FromDateTime(_now().UtcDateTime));
             if (parts == null) return gate.Publish(policy, current =>
                 ((T?)null, _boxSet(current, itemId) is { } finalSet && finalSet.TmdbCollectionId == collectionId
@@ -245,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return !Plays(copies, viewer) && Missing(copies);
             }).ToList();
             var allowed = await Task.WhenAll(absent.Select(p => MaySeeAsync(p, viewer.UserId, ct))).ConfigureAwait(false);
+            if (metadataViewer.Refused) return (null, "metadata_unavailable");
             var permitted = absent.Where((_, i) => allowed[i]).Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
             var coverage = covering != null ? await covering.ConfigureAwait(false) : null;
             var wants = _ledger?.Database.Available == true;

@@ -248,8 +248,8 @@ public class ListsImportMetadataTests
         net.Plugin.Plugin.Configuration.ArrPhase4ListJeMetadataEnabled = true;
         var season = await source.FetchAsync(Season(110492, 2), TimeSpan.FromHours(12), today, CancellationToken.None);
         Assert.NotNull(season);
-        Assert.Equal(("2025-08-21", "/s2.jpg", 391153, "tt13146488", true, false), (season!.ReleaseDate, season.PosterPath, season.TvdbId, season.ImdbId, season.InProduction, season.Partial));
-        Assert.Equal(new[] { 1, 2 }, season.Expected!.Select(e => e.E));
+        Assert.Equal(("2025-08-21", "/s2.jpg", 391153, "tt13146488", true, true), (season!.ReleaseDate, season.PosterPath, season.TvdbId, season.ImdbId, season.InProduction, season.Partial));
+        Assert.Null(season.Expected); // the show advertises eight episodes; two detailed rows cannot prove completeness
 
         var movie = await source.FetchAsync(new Placeholder { Id = "m", Kind = PlaceholderKinds.Movie, MediaType = "movie", TmdbId = 49521, Title = "Man of Steel" }, TimeSpan.FromHours(12), today, CancellationToken.None);
         Assert.Equal(("2013-06-12", "/p.jpg", "tt0770828", "Krypton."), (movie!.ReleaseDate, movie.PosterPath, movie.ImdbId, movie.Overview));
@@ -257,7 +257,7 @@ public class ListsImportMetadataTests
         // The list core's own merge applies it as it applies Seerr's answer.
         var entry = Season(110492, 2);
         Assert.True(ListMetadataService.Apply(entry, season));
-        Assert.Equal(("2025-08-21", 2), (entry.ReleaseDate, entry.Expected.Count));
+        Assert.Equal(("2025-08-21", 0), (entry.ReleaseDate, entry.Expected.Count));
 
         // No key: unavailable, nothing invented.
         net.Plugin.Plugin.Configuration.TMDB_API_KEY = string.Empty;

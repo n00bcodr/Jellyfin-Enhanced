@@ -156,6 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The current access, or null.</returns>
         public ListAccess? Current(ListAccess access) => Gate.Current(access);
 
+        /// <summary>Captures the common evidence boundary before asynchronous list preparation.</summary>
+        internal EvidencePublication CapturePublication() => _parentalFilter.CapturePublication();
+
         /// <summary>
         /// The parental limits a visibility was checked with, as text: equal stamps decide the same placeholders
         /// (<see cref="PlaceholderVisibility.Matches"/>). "-" for a user nothing is hidden from.
@@ -178,7 +181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 policy.BlockUnratedMovies ? "m" : string.Empty,
                 policy.BlockUnratedSeries ? "s" : string.Empty,
                 Tags(policy.BlockedTags),
-                Tags(policy.AllowedTags));
+                Tags(policy.AllowedTags),
+                CapturePublication().Revision);
         }
 
         /// <summary>
@@ -328,7 +332,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return true;
             }
 
-            return await ListContinuation.Await(() => CheckTitleAsync(mediaType, tmdbId, policy, cancellationToken)).ConfigureAwait(false);
+            return await ListContinuation.Await(() => CheckTitleAsync(mediaType, tmdbId, policy, Guid.Parse(userIdN), cancellationToken)).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -340,14 +344,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="policy">The person's parental policy.</param>
         /// <param name="cancellationToken">Cancellation (the overall budget).</param>
         /// <returns>The decision.</returns>
-        internal async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, SeerrParentalFilter.Policy policy, CancellationToken cancellationToken)
+        internal async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, SeerrParentalFilter.Policy policy, Guid viewer, CancellationToken cancellationToken)
         {
             if (!policy.IsRestricted)
             {
                 return true;
             }
 
-            if (await ListContinuation.Await(() => _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, policy, cancellationToken)).ConfigureAwait(false))
+            if (await ListContinuation.Await(() => _parentalFilter.CheckAbsentAsync(mediaType, tmdbId, policy, viewer, cancellationToken)).ConfigureAwait(false) == true)
             {
                 return true;
             }
@@ -388,6 +392,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return hidden;
             }
 
+            var publication = CapturePublication();
             var userIdN = user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ParentalBudget);
@@ -413,6 +418,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             await ListContinuation.Await(() => Task.WhenAll(checks)).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!publication.Current)
+            {
+                foreach (var placeholder in placeholders) { hidden.Add(placeholder.Id); unverified?.Add(placeholder.Id); }
+            }
             return hidden;
 
             async Task CheckAsync(Placeholder placeholder)
@@ -422,7 +431,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     using (await ListContinuation.AwaitLock(gate, budget.Token).ConfigureAwait(false))
                     {
-                        var allowed = await ListContinuation.Await(() => CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, policy, budget.Token)).ConfigureAwait(false);
+                        var allowed = await ListContinuation.Await(() => CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, policy, user.Id, budget.Token)).ConfigureAwait(false);
                         blocked = allowed.HasValue ? !allowed.Value : null;
                     }
                 }

@@ -63,6 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         /// <summary>Current household configuration.</summary>
         PluginConfiguration Configuration { get; }
+        /// <summary>The evidence revision used by visibility decisions; evidence-free implementations use a constant.</summary>
+        string EvidenceRevision => "-";
         /// <summary>Loads required rating and backend identity facts, bounded by cancellation.</summary>
         Task PrepareAsync(Guid userId, MutationInput input, CancellationToken ct);
         /// <summary>Refreshes backend identity and quota without looking up title ratings.</summary>
@@ -257,13 +259,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             return facts! with { Refusal = "authorization_changed", CanCreate = false, CanApprove = false, Can4k = false, Visible = false };
         }
+        /// <summary>Current parental evidence source, configuration and region revision.</summary>
+        public string EvidenceRevision => _parental?.EvidenceRevision ?? "-";
+
         /// <inheritdoc />
         public string AuthorizationStamp(Guid user, MutationInput input)
         {
             var viewer = _view.Viewer(user);
             var native = viewer?.Handle is User account ? JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(account)) : string.Empty;
             var generations = string.Join("|", _store.Registry.All().Select(i => _clients.ConnectionGeneration(i.Id)));
-            return MutationInput.Hash(JsonSerializer.Serialize(Configuration) + "|" + viewer?.PolicyRevision + "|" + native + "|" + _view.Revision + "|" + _libraries.Revision + "|" + generations + "|" + _backend.Binding(user, input));
+            return MutationInput.Hash(JsonSerializer.Serialize(Configuration) + "|" + viewer?.PolicyRevision + "|" + native + "|" + _view.Revision + "|" + _libraries.Revision + "|" + generations + "|" + _backend.Binding(user, input) + "|" + EvidenceRevision);
         }
         private bool NativeScopeAllowed(MutationInput input, JfCopy copy, StatusViewer viewer)
         {
@@ -329,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var system = instance == null ? null : _store.PeekSystem(instance.Id);
                 if (system == null || (input.ProfileId.HasValue && !system.QualityProfiles.Any(p => p.Id == input.ProfileId)) ||
-                    (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_defaults";
+                    (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_choice";
             }
             // Seerr options (administrators, Seerr mode): checked against Seerr's servers as last read, never guessed.
             if (refusal == null && input.HasSeerrOptions) refusal = SeerrOptionsRefusal(config, binding);
@@ -443,7 +448,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (config.ArrRequestBackend != "je" || newAdd) folder = input.RootFolder ?? instance.Defaults?.RootFolderPath;
             else if (library == null) return null;
             else folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
-            if (string.IsNullOrWhiteSpace(folder)) return null;
+            return LowDiskAt(config, instance, system, folder);
+        }
+        private static RequestDiskFacts? LowDiskAt(PluginConfiguration config, ArrConnection instance, ArrSystemSnapshot? system, string? folder)
+        {
+            if (config.ArrLowDiskPercent <= 0 || system == null || string.IsNullOrWhiteSpace(folder)) return null;
             var disk = system.DiskSpace.Where(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path)).OrderByDescending(d => d.Path!.Length).FirstOrDefault();
             if (disk?.TotalSpace is not long total || total <= 0 || disk.FreeSpace is not long free) return null;
             return 100.0 * free / total < config.ArrLowDiskPercent
@@ -502,6 +511,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             return null;
         }
+        // The final transport decision may use published arr identities only. Ordinary policy preparation keeps
+        // its full alias composition above, preserving legacy reads before entering the memory-only final check.
+        private string? HeldArrFolder(ArrLibrarySnapshot library, TitleKey title)
+        {
+            foreach (var key in _aliases.ArrOnly(title).Prepend(title))
+                if (key.IsMovie == title.IsMovie && RequestPlaces.HeldIn(library, key) is { Path: { Length: > 0 } path }) return path;
+            return null;
+        }
         /// <inheritdoc />
         public RequestDiskFacts? TitlePause(MutationInput input)
         {
@@ -530,10 +547,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // One read of each published snapshot (a refresh replaces it whole): both answers come from the same ones.
             var system = _store.PeekSystem(instance.Id);
             var library = _store.PeekLibrary(instance.Id);
-            var pause = LowDisk(config, instance, input, key, system, library, newAdd: false);
-            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je") return (pause, true);
+            var direct = config.ArrRequestBackend == "je";
+            var folder = (direct && library != null ? HeldArrFolder(library, key.Title) : null) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            var pause = direct && library == null ? null : LowDiskAt(config, instance, system, folder);
+            if (config.ArrLowDiskPercent <= 0 || !direct) return (pause, true);
             if (system == null || library == null) return (pause, false);
-            var folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
             return (pause, string.IsNullOrWhiteSpace(folder) || system.DiskSpace.Any(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path) && d.TotalSpace is > 0 && d.FreeSpace != null));
         }
         /// <inheritdoc />
@@ -614,7 +632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         internal static int RefusalStatus(string reason) => reason switch
         {
-            "invalid_defaults" or "invalid_instance" or "seerr_options_invalid" => 400,
+            "invalid_defaults" or "invalid_choice" or "invalid_instance" or "seerr_options_invalid" => 400,
             "instance_changed" or "seerr_options_changed" => 409,
             "backend_unavailable" => 503,
             _ => 403,

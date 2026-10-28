@@ -173,7 +173,7 @@ for (const active of [true, false]) {
     assert.equal(icons.length, 1, 'one icon');
     assert.equal(dead.isConnected, false, 'the dead copy is gone');
     assert.deepEqual(h.row(), ['btnPlay', active ? 'jellyseerr-report-issue-icon' : 'jellyseerr-report-unavailable-icon', 'btnMoreCommands']);
-    icons[0].click();
+    h.click(icons[0]);
     if (active) assert.deepEqual(opened.map(a => a[0]), ['603'], 'the icon opens the issue dialog');
     else assert.deepEqual(toasts, [['jellyseerr_report_unavailable_seerr_down', 4000]], 'the icon says why');
     // A later look keeps the icon. The working one is simply found; the unavailable one is checked
@@ -201,7 +201,7 @@ test('an icon the reporter did not draw (a copy kept beside its own) is removed 
   own.before(own.cloneNode(true));
   assert.equal(await h.reporter.tryAddButton(), true);
   assert.deepEqual([...h.document.querySelectorAll(ICONS)], [own]);
-  own.click();
+  h.click(own);
   assert.equal(opened.length, 1);
 });
 
@@ -279,13 +279,13 @@ test('a library row replaced by a copy of itself gets working Hide, Report issue
     row.replaceWith(row.cloneNode(true));
     await h.look();
     assert.deepEqual(h.row(), expected, `round ${round}: one of each, in order`);
-    h.document.querySelector('.je-detail-hide-btn').click();
+    h.click(h.document.querySelector('.je-detail-hide-btn'));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.hidden.length, round, `round ${round}: Hide works`);
-    h.document.querySelector('.jellyseerr-report-issue-icon').click();
+    h.click(h.document.querySelector('.jellyseerr-report-issue-icon'));
     assert.equal(h.opened.length, round, `round ${round}: Report issue works`);
     const spoiler = h.document.querySelector('.je-spoiler-blur-btn');
-    spoiler.click();
+    h.click(spoiler);
     assert.equal(h.guarded.length, round, `round ${round}: Spoiler Guard works`);
     // The toggle in flight keeps it disabled; let the next round click a fresh one.
     spoiler.disabled = false;
@@ -301,7 +301,7 @@ test('a page element reused for the next title gets a Hide button for that title
   await h.look();
   const hides = h.document.querySelectorAll('.je-detail-hide-btn');
   assert.equal(hides.length, 1);
-  hides[0].click();
+  h.click(hides[0]);
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(h.hidden, ['b']);
 });
@@ -338,7 +338,7 @@ test('the unavailable icon explains why when pressed and does nothing else', asy
   assert.equal(click.defaultPrevented, true);
   assert.equal(bubbled, 0, 'the press goes no further');
   assert.equal(opened.length, 0, 'no issue dialog');
-  icon.click();
+  h.click(icon);
   assert.equal(toasts.length, 2, 'every press explains');
 });
 
@@ -369,7 +369,7 @@ test('a page showing the unavailable icon gets the working one at its next look 
   assert.ok(icons[0].classList.contains('jellyseerr-report-issue-icon'), 'the working icon');
   assert.equal(unavailable.isConnected, false, 'the unavailable icon is gone');
   assert.deepEqual(h.row(), ['btnPlay', 'jellyseerr-report-issue-icon', 'btnMoreCommands'], 'in the same place');
-  icons[0].click();
+  h.click(icons[0]);
   assert.deepEqual(opened.map(a => a[0]), ['603']);
   // From then on a look finds it and reads nothing.
   assert.equal(await h.reporter.tryAddButton(), true);

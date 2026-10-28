@@ -45,6 +45,31 @@ internal sealed class ListsHarness : IDisposable
     public ListMetadataService Metadata { get; }
     public ListSwapService Swap { get; }
     public ListService Service { get; }
+    private readonly List<Task> _cleanup = new();
+
+    /// <summary>Track the actual event cleanup through Delete's notification and release of its per-list lock.</summary>
+    public void TrackRemovedListCleanup(Guid id)
+    {
+        var list = id.ToString("N");
+        var deleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Changed(string changed)
+        {
+            if (changed == list) deleted.TrySetResult();
+        }
+        Store.Changed += Changed;
+        _cleanup.Add(Drain());
+        async Task Drain()
+        {
+            try
+            {
+                await deleted.Task.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                // Delete raises Changed inside the lock, BEFORE its final SQLite cleanup. Taking it afterwards
+                // observes the actual cleanup completion, unlike the synchronously written operation state.
+                using (await Store.LockAsync(list).WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false)) { }
+            }
+            finally { Store.Changed -= Changed; }
+        }
+    }
 
     /// <summary>Request capabilities per user for the list views' request actions (null: none).</summary>
     public Dictionary<Guid, RequestCapabilities> Capabilities { get; } = new();
@@ -152,6 +177,62 @@ internal sealed class ListsHarness : IDisposable
 
     public static string P(string id) => "p:" + id;
 
+    // Explicit provider fixtures go through the production resource contracts and the single evaluator.
+    // Callers must supply detailed truth; legacy/display Expected rows never create this authority.
+    internal static PlaceholderMetadata ReconciledTv(Placeholder placeholder, string show, DateTime today, params string[] seasons)
+    {
+        using var tv = JsonDocument.Parse(show);
+        var read = ResponseContract.MetadataShow.Validate(new AnswerRequest(placeholder.TmdbId, "tv"), tv.RootElement);
+        Assert.Equal(ResponseVerdict.Valid, read.Verdict);
+        var parts = new Dictionary<int, ContractRead>();
+        foreach (var body in seasons)
+        {
+            using var part = JsonDocument.Parse(body);
+            var number = part.RootElement.GetProperty("seasonNumber").GetInt32();
+            var detail = ResponseContract.MetadataSeason.Validate(new AnswerRequest(Season: number, Show: placeholder.TmdbId), part.RootElement);
+            Assert.Equal(ResponseVerdict.Valid, detail.Verdict);
+            parts.Add(number, detail);
+        }
+        var metadata = ListMetadataService.FromTv(placeholder, read,
+            placeholder.SeasonNumber is int selected && parts.TryGetValue(selected, out var selectedPart) ? selectedPart : null,
+            DateTime.UtcNow, today, placeholder.Kind == PlaceholderKinds.Series ? parts : null);
+        Assert.True(metadata.Completion?.Authority != null, metadata.Completion?.Reason);
+        Assert.False(metadata.Partial);
+        return metadata;
+    }
+
+    internal static void ReconcileSeries(Placeholder placeholder, params int[] episodeCounts)
+    {
+        var (show, parts) = SeriesResources(placeholder, episodeCounts);
+        ListMetadataService.Apply(placeholder, ReconciledTv(placeholder, show, DateTime.UtcNow, parts));
+        Assert.NotEmpty(CompletionEvaluator.ScopeSeasons(placeholder));
+    }
+
+    internal void AnswerSeries(Placeholder placeholder, params int[] episodeCounts)
+    {
+        var (show, parts) = SeriesResources(placeholder, episodeCounts);
+        TvDetails[placeholder.TmdbId!.Value] = show;
+        for (var i = 0; i < parts.Length; i++) SeasonDetails[(placeholder.TmdbId.Value, i + 1)] = parts[i];
+    }
+
+    private static (string Show, string[] Seasons) SeriesResources(Placeholder placeholder, int[] episodeCounts)
+    {
+        const string date = "2000-01-01";
+        var show = JsonSerializer.Serialize(new
+        {
+            id = placeholder.TmdbId, name = "Show", firstAirDate = date, posterPath = (string?)null,
+            status = "Ended", inProduction = false, externalIds = new { imdbId = (string?)null, tvdbId = (int?)null },
+            seasons = episodeCounts.Select((count, i) => new { seasonNumber = i + 1, episodeCount = count, airDate = date }),
+            lastEpisodeToAir = (object?)null, nextEpisodeToAir = (object?)null,
+        });
+        var parts = episodeCounts.Select((count, i) => JsonSerializer.Serialize(new
+        {
+            seasonNumber = i + 1, airDate = date, posterPath = (string?)null,
+            episodes = Enumerable.Range(1, count).Select(e => new { seasonNumber = i + 1, episodeNumber = e, showId = placeholder.TmdbId, airDate = date }),
+        })).ToArray();
+        return (show, parts);
+    }
+
     public static Placeholder Ph(string json, string addedBy = "00000000000000000000000000000000")
     {
         var dto = JsonSerializer.Deserialize<NewPlaceholderDto>(json)!;
@@ -178,6 +259,7 @@ internal sealed class ListsHarness : IDisposable
 
     public void Dispose()
     {
+        Task.WhenAll(_cleanup).WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
         Swap.Dispose();
         Transport.Dispose();
         Database.Dispose();

@@ -337,7 +337,7 @@ Open a title you don't have on a regular Jellyfin details page instead of the Mo
 
 **How to use:**
 
-1. Under **Seerr** → **Discovery & UI Extras**, turn on **Open titles that aren't in the library on Jellyfin's own details page (Experimental)**.
+1. Under ***arr** → **Requests & discovery**, turn on **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** (the Seerr tab links there). It needs Seerr set up, or Jellyfin Enhanced handling requests with a TMDB API key.
 2. Click **Save Settings** and reload the web client.
 3. Open a title you don't have from search, a discovery row, recommendations, or the Requests page.
 
@@ -519,7 +519,7 @@ Admin settings under **Pages** → **Seerr Recommendations Page** ([full navigat
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Recommendations Page** | Off | Enables the page for linked viewers with configured, enabled Seerr. |
+| **Enable Recommendations Page** | Off | Enables the page for linked viewers with configured, enabled Seerr. While Seerr is off, the page, its link and its tab are hidden and the setting is kept. |
 | **Add Recommendations as a native Home tab** | Off | Adds a Home tab without a companion plugin. |
 | **Use Plugin Pages** | Off | Uses Plugin Pages integration. |
 | **Use Custom Tabs** | Off | Embeds Recommendations with Custom Tabs; incompatible with its native tab. |
@@ -908,7 +908,7 @@ Server automations can request the next season or collection movie based on play
 
 **How to use:**
 
-1. Enable the desired feature under **Seerr** → **Automatic Requests**.
+1. Enable the desired feature under ***arr** → **Requests & discovery** (the Seerr tab's **Automatic Requests** box links there).
 2. Save, then restart Jellyfin or run **Jellyfin Enhanced Startup** once to start monitoring playback.
 
 !!! warning "Review automation access"

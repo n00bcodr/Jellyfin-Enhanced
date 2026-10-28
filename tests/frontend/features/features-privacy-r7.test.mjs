@@ -26,7 +26,7 @@ for(const kind of ['Movie','Series','Collection'])test(`native ${kind} invalidat
  const pending=h.JE.core.api.plugin('/native-details/movie/42',{cacheKey:'title'});
  const result=pending.then(v=>({v}),e=>({e}));
  h.api.addSpoilerBlurButton('aabb',h.document.querySelector('#itemDetailPage'),kind==='Collection'?'BoxSet':kind);
- h.document.querySelector('.je-spoiler-blur-btn').click();await tick();
+ h.click(h.document.querySelector('.je-spoiler-blur-btn'));await tick();
  old.resolve(jsonResponse({overview:'old spoiler',jeSpoiler:{guarded:false}}));
  assert.equal((await result).e?.name,'AbortError');assert.equal(refresh,1);assert.equal(h.reloads(),1,'native page refreshes even with strict refresh off');
  assert.equal(h.JE.core.api.manager.getCached('title'),null);
@@ -35,14 +35,14 @@ for(const [kind,type,field] of [['Movie','movie','Movies'],['Series','tv','Serie
  const h=setup(t);h.setState({ProviderTitles:{[type+':tmdb:42']:{}},[field]:{aabb:{},ccdd:{}}});await h.api.loadState();
  assert.equal(h.api.isTmdbEnabled(type,42),true);
  h.api.addSpoilerBlurButton('aabb',h.document.querySelector('#itemDetailPage'),kind==='Collection'?'BoxSet':kind);
- h.document.querySelector('.je-spoiler-blur-btn').click();await tick();
+ h.click(h.document.querySelector('.je-spoiler-blur-btn'));await tick();
  assert.equal(h.api.isTmdbEnabled(type,42),false);assert.equal(h.api.isEnabledForKind(kind.toLowerCase(),'ccdd'),false);
  const b=h.api.buildSeerrToggle({id:42,title:'Title'},type,{detail:true});
  assert.equal(b.getAttribute('aria-pressed'),'false');assert.match(b.title,/button_off/);
 });
 for(const host of ['provider page','card','jf10 window'])test(`${host} adopts server state and emits once`,async t=>{
  const h=setup(t);await h.api.loadState();let events=0;h.window.addEventListener('je-spoiler-policy-changed',()=>events++);
- const b=h.api.buildSeerrToggle({id:42,title:'Title'},'movie',{detail:host==='provider page'});h.document.body.appendChild(b);b.click();await tick();
+ const b=h.api.buildSeerrToggle({id:42,title:'Title'},'movie',{detail:host==='provider page'});h.document.body.appendChild(b);h.click(b);await tick();
  assert.equal(h.api.isMovieEnabledFor('ccdd'),true,'all server copies adopted');assert.equal(events,1);assert.equal(b.getAttribute('aria-pressed'),'true');
 });
 test('all Spoiler Guard mutations use one authoritative update path',()=>{
@@ -63,7 +63,7 @@ for(const host of ['group card','group item','standard card'])for(const mode of 
  const hostEl=h.document.createElement('div');h.document.body.appendChild(hostEl);
  if(host==='standard card')api.renderPage(hostEl);
  else hostEl.appendChild(api.createGroupCard({seriesId:'s',seriesName:'Title',items:host==='group card'?[{type:'Series',itemId:'x',name:'Title'}]:[{type:'Episode',itemId:'x',name:'One',seasonNumber:1,episodeNumber:1},{type:'Episode',itemId:'y',name:'Two',seasonNumber:1,episodeNumber:2}]}));
- const sel=host==='standard card'?'.je-hidden-item-unhide':host==='group card'?'.je-hidden-group-unhide':'.je-hidden-group-item-unhide';hostEl.querySelector(sel).click();
+ const sel=host==='standard card'?'.je-hidden-item-unhide':host==='group card'?'.je-hidden-group-unhide':'.je-hidden-group-item-unhide';h.click(hostEl.querySelector(sel));
  assert.equal(timers.length,1);if(mode==='switch'){user='b';epoch++;}else if(mode==='identity')user='b';else if(mode==='epoch')epoch++;else if(mode==='server')server='two';else if(mode==='token')token='token-b';else hostEl.remove();
  timers.shift()();assert.equal(writes.length,mode==='close'?1:0);if(writes.length)assert.equal(writes[0].user,'a');
 });
@@ -81,6 +81,6 @@ for(const host of ['native','provider'])test(`${host} silently discards a reject
  const fetch=h.window.fetch;h.window.fetch=(u,o)=>o.method==='POST'?write.promise:fetch(u,o);
  let button;if(host==='native'){h.api.addSpoilerBlurButton('aabb',h.document.querySelector('#itemDetailPage'),'Movie');button=h.document.querySelector('.je-spoiler-blur-btn');}
  else {button=h.api.buildSeerrToggle({id:42,title:'Title'},'movie',{detail:true});h.document.body.append(button);}
- button.click();await tick();h.window.ApiClient.setAuthenticationInfo('token-b','b');write.reject(new h.window.DOMException('Session changed','AbortError'));await tick();
+ h.click(button);await tick();h.window.ApiClient.setAuthenticationInfo('token-b','b');write.reject(new h.window.DOMException('Session changed','AbortError'));await tick();
  assert.deepEqual(toasts,[],'incoming viewer does not get an outgoing action failure toast');
 });

@@ -84,7 +84,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ArrAuditLog _audit;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
-        private readonly SeerrRequestReadModel _requests;
+        private readonly SeerrFacts _requests;
 
         /// <summary>Creates the controller.</summary>
         public ArrLiveController(
@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ArrAuditLog audit,
             IUserManager userManager,
             Logger logger,
-            SeerrRequestReadModel requests)
+            SeerrFacts requests)
         {
             _feed = feed;
             _limits = limits;
@@ -219,6 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var after = request.Cursor.Value;
                 while (true)
                 {
+                    Services.PrivacyResponseGuard.BeginMessage(HttpContext);
                     var read = _feed.Read(request.Epoch, after);
                     if (read.Reset) return Ok(new { epoch = _feed.Epoch, cursor = read.Cursor, keys = Array.Empty<string>(), reset = true });
                     IReadOnlyList<ArrFeedChange> asked = wanted == null ? read.Changes : read.Changes.Where(c => wanted.Contains(c.Key)).ToList();

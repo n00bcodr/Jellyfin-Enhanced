@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,6 +53,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
+            if (!EffectiveRequestsBackend.AllowsSeerr(config))
+            {
+                _logger.Info("[RequestsBackend] Seerr task denied: backend_disabled");
+                progress?.Report(100);
+                return;
+            }
+
             if (config == null || !config.JellyseerrAutoImportUsers || !config.JellyseerrEnabled)
             {
                 _logger.Info("[Jellyseerr User Import] Auto-import is disabled in plugin configuration.");
@@ -66,6 +74,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
+            using var operation = EffectiveRequestsBackend.Shared.AdmitSeerr(SeerrUse.UserImport, cancellationToken);
+            cancellationToken = operation.Token;
             _logger.Info("[Jellyseerr User Import] Starting Jellyseerr user import task...");
             progress?.Report(0);
 
@@ -86,7 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             static List<string>? StillAllowed(List<string> ids)
             {
                 var live = JellyfinEnhanced.Instance?.Configuration;
-                if (live is not { JellyseerrAutoImportUsers: true, JellyseerrEnabled: true }) return null;
+                if (!EffectiveRequestsBackend.AllowsSeerr(live) || live is not { JellyseerrAutoImportUsers: true, JellyseerrEnabled: true }) return null;
                 var blocked = JellyseerrUserImportHelper.GetBlockedUserIds(live.JellyseerrImportBlockedUsers);
                 return ids.Where(id => !blocked.Contains(id)).ToList();
             }

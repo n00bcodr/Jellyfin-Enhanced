@@ -18,10 +18,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     public sealed class TitleAliases
     {
         private readonly ArrStateStore _arr;
-        private readonly SeerrRequestReadModel? _requests;
+        private readonly SeerrFacts? _requests;
 
         /// <summary>A resolver over the arr libraries, and Seerr's requests when given (DI gives both).</summary>
-        public TitleAliases(ArrStateStore arr, SeerrRequestReadModel? requests)
+        public TitleAliases(ArrStateStore arr, SeerrFacts? requests)
         {
             _arr = arr;
             _requests = requests;
@@ -29,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>True when the supplied facts, or the shared request model, say this user asked for the title or an alias.</summary>
         internal bool AskedBy(TitleKey key, Guid user, IArrRequestFacts? facts = null)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => AskedByFactsCore(key, user, facts));
+
+        private bool AskedByFactsCore(TitleKey key, Guid user, IArrRequestFacts? facts = null)
             => (facts ?? _requests) is { } requests && new[] { key.Title }.Concat(Of(key)).Any(k => requests.AskedBy(k, user));
 
         /// <summary>
@@ -37,6 +40,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// every id is known. Season and episode parts are ignored.
         /// </summary>
         public IReadOnlyList<TitleKey> Of(TitleKey key)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => OfFactsCore(key));
+
+        private IReadOnlyList<TitleKey> OfFactsCore(TitleKey key)
         {
             var title = key.Title;
             var result = new List<TitleKey>();
@@ -141,6 +147,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if ((key.IsMovie && key.Provider == "tmdb") || (!key.IsMovie && key.Provider == "tvdb")) return key;
             var provider = key.IsMovie ? "tmdb" : "tvdb";
             return Of(key).FirstOrDefault(a => a.Provider == provider) ?? key;
+        }
+
+        /// <summary>Arr-only aliases for the memory-only final disk decision; never enters the Seerr owner.</summary>
+        internal IReadOnlyList<TitleKey> ArrOnly(TitleKey key)
+        {
+            var result = new List<TitleKey>();
+            var seen = new HashSet<string>(StringComparer.Ordinal) { key.Title.ToString() };
+            var pending = new Queue<TitleKey>();
+            pending.Enqueue(key.Title);
+            while (pending.TryDequeue(out var current))
+            {
+                foreach (var raw in FromArrs(current))
+                {
+                    if (!seen.Add(raw) || TitleKey.Parse(raw) is not { } parsed || parsed.IsMovie != key.IsMovie) continue;
+                    result.Add(parsed);
+                    pending.Enqueue(parsed);
+                }
+            }
+            return result;
         }
 
         /// <summary>

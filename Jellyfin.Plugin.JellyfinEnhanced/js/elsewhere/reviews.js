@@ -92,7 +92,8 @@
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
             const path = `/${apiMediaType}/${tmdbId}/reviews?language=en-US&page=1`;
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
-            return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
+            // A section drawn after the page (the decorative lane): the title's menus and windows never wait behind it.
+            return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}`, priority: 'low' })
                 .then(data => data.results || [])
                 .catch(error => {
                     if (error?.name === 'AbortError') return null;
@@ -119,7 +120,7 @@
          */
         function fetchUserReviews(tmdbId, mediaType) {
             // mediaType is already in API format ('movie' or 'tv') — no conversion needed
-            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
+            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { priority: 'low' })
                 .then(data => data.reviews || [])
                 .catch(err => {
                     if (err?.name === 'AbortError') return [];

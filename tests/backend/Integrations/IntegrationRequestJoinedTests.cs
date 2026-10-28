@@ -104,7 +104,7 @@ public class IntegrationRequestJoinedTests
         foreach (var user in lab.Seerr.Users) user["permissions"] = 0;
         lab.Seerr.MainSettings = new JsonObject { ["defaultPermissions"] = 0 };
         At(now.AddHours(-2));
-        var move = new SeerrMigration(new SeerrMigrationReader(lab.Seerr.Transport), ledger, policy, view, aliases, feed, () => config, () => { }, () => clock);
+        var move = new SeerrMigration(new SeerrFacts(lab.Seerr.Transport), ledger, policy, view, aliases, feed, () => config, () => { }, () => clock);
         var commit = await move.CommitAsync(admin.UserId, (await move.PreviewAsync(default)).Digest, false, default);
         Assert.True(commit.HttpStatus == 200, commit.Reason + ": " + commit.Message);
         Assert.Equal("je", config.ArrRequestBackend);
@@ -162,7 +162,7 @@ public class IntegrationRequestJoinedTests
         using var db = new AcquireDatabase(Path.Combine(lab.Arr.Arr.Plugin.Core.Root, "held.db"));
         var ledger = new RequestLedger(db);
         var events = new RequestOutboxEvents();
-        using var model = new SeerrRequestReadModel(lab.Seerr.Transport, null, null, () => config, () => clock, events);
+        using var model = new SeerrFacts(lab.Seerr.Transport, null, null, () => config, () => clock, events);
         var router = new RequestBackendRouter(lab.Arr.Direct, new SeerrBackend(lab.Seerr.Transport, model, aliases, () => config, () => clock, ledger.BindSeerrSend), () => config);
         var policy = new RequestPolicy(view, lab.Arr.Store, new ArrInstanceLibraries(lab.Arr.Store, new FakeLibraryAccess()), aliases, null!, lab.Arr.Arr.Factory, router);
         var audit = new ArrAuditLog(Path.Combine(lab.Arr.Arr.Plugin.Core.Root, "held-audit.jsonl"), 100000, 1);
@@ -270,7 +270,7 @@ public class IntegrationRequestJoinedTests
         var config = new PluginConfiguration { JellyseerrEnabled = true, JellyseerrUrls = FakeSeerr.Url, JellyseerrApiKey = FakeSeerr.Key };
         var now = new DateTimeOffset(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
         var events = new RequestOutboxEvents();
-        var model = new SeerrRequestReadModel(seerr.Transport, null, null, () => config, () => now, events);
+        var model = new SeerrFacts(seerr.Transport, null, null, () => config, () => now, events);
         var field = typeof(RequestOutboxEvents).GetField(nameof(RequestOutboxEvents.Confirmed), System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         Assert.NotNull(field.GetValue(events));
         using var lab = new IntegrationRequestBackendsTests.Lab();

@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -27,11 +28,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed class SharedRequestFacts
     {
         private readonly RequestLedger _ledger;
-        private readonly SeerrRequestReadModel _seerr;
+        private readonly SeerrFacts _seerr;
         private readonly TitleAliases? _aliases;
 
         /// <summary>Creates the reader (DI; tests may pass no aliases).</summary>
-        public SharedRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases? aliases)
+        public SharedRequestFacts(RequestLedger ledger, SeerrFacts seerr, TitleAliases? aliases)
         {
             _ledger = ledger;
             _seerr = seerr;
@@ -40,10 +41,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>True when the watchlist features read these facts: phase 3 on with JE or Seerr request handling.</summary>
         public static bool Active(PluginConfiguration? config)
-            => config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && config.ArrRequestBackend is "je" or "seerr";
+            => EffectiveRequestsBackend.IsStrictJe(config) || config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && config.ArrRequestBackend is "je" or "seerr";
 
         /// <summary>True when Jellyfin Enhanced handles requests (the ledger is the authority; Seerr isn't needed).</summary>
-        public static bool LedgerAuthority(PluginConfiguration? config) => Active(config) && config!.ArrRequestBackend == "je";
+        public static bool LedgerAuthority(PluginConfiguration? config) => EffectiveRequestsBackend.IsStrictJe(config) || Active(config) && config!.ArrRequestBackend == "je";
 
         private static bool Asked(RequestWant want) => want.Status is not ("cancelled" or "declined");
 
@@ -58,6 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="config">The current configuration.</param>
         /// <param name="key">The title (any provider id; aliases are followed).</param>
         public TitleRequesters For(PluginConfiguration config, TitleKey key)
+            => LedgerAuthority(config) ? ForCore(config, key)
+                : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => ForCore(config, key), new TitleRequesters(false, Array.Empty<Guid>()));
+
+        private TitleRequesters ForCore(PluginConfiguration config, TitleKey key)
         {
             if (LedgerAuthority(config))
             {
@@ -77,6 +82,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="config">The current configuration.</param>
         /// <param name="user">The person.</param>
         public UserRequestedTitles ForUser(PluginConfiguration config, Guid user)
+            => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.Compose(() => ForUserFactsCore(config, user));
+
+        private UserRequestedTitles ForUserFactsCore(PluginConfiguration config, Guid user)
+            => LedgerAuthority(config) ? ForUserCore(config, user)
+                : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrFacts.ReadSeerrCached(() => ForUserCore(config, user), new UserRequestedTitles(false, Array.Empty<(bool, int)>()));
+
+        private UserRequestedTitles ForUserCore(PluginConfiguration config, Guid user)
         {
             if (LedgerAuthority(config))
             {

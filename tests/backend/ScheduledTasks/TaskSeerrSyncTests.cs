@@ -366,4 +366,42 @@ public class TaskSeerrSyncTests
         var recorded = f.Core.Manager.GetProcessedWatchlistItems(user.Id).Items.Select(item => item.TmdbId).OrderBy(id => id);
         Assert.Equal(Enumerable.Range(1, perPass * 2), recorded);
     }
+    [Fact]
+    public async Task AdoptionFencesWatchlistPublicationAfterResponseWasParsed()
+    {
+        using var f = new ApiPluginFixture();
+        var c = f.Plugin.Configuration;
+        c.JellyseerrEnabled = c.SyncJellyseerrWatchlist = true;
+        c.JellyseerrUrls = "http://seerr.test"; c.JellyseerrApiKey = "test";
+        c.AddRequestedMediaToWatchlist = false;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var data = new UserItemData { Key = "movie", Likes = false };
+        var writes = 0;
+        var manager = new Mock<IUserDataManager>();
+        manager.Setup(d => d.GetUserData(user, movie)).Returns(data);
+        manager.Setup(d => d.SaveUserData(user, movie, data, MediaBrowser.Model.Entities.UserDataSaveReason.UpdateUserRating, It.IsAny<CancellationToken>())).Callback(() => writes++);
+        using var release = new ManualResetEventSlim();
+        var parsed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(() =>
+        {
+            parsed.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
+            return new BaseItem[] { movie };
+        });
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/api/v1/user"
+            ? JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N") } } })
+            : "{\"results\":[{\"tmdbId\":123,\"mediaType\":\"movie\"}]}")));
+        var task = new JellyseerrWatchlistSyncTask(library.Object, Users(user).Object, manager.Object, transport, f.Core.Manager, f.Core.Logger);
+        var run = Task.Run(() => task.ExecuteAsync(new ProgressLog(), default));
+        await parsed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var transition = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.Shared.TransitionAsync(() => { c.ArrRequestBackend = "je"; c.ArrBackendIsolationVersion = 1; }, default);
+        release.Set();
+        try { await run.WaitAsync(TimeSpan.FromSeconds(10)); } catch (OperationCanceledException) { }
+        await transition.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, writes);
+        Assert.False(data.Likes);
+    }
+
 }

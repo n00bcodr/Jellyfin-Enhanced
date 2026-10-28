@@ -7,7 +7,9 @@
  * (`blocked`: the drive it would land on, its own folder when Radarr has it, else the default root, is nearly full)
  * is left out of the batch, says "Paused: storage full" in the list, and the block says why (where and how much is
  * free for administrators); with every movie paused that line takes the button's place. One
- * GET .../acquire/requests/collection/{itemId} per collection page view; an answer is shown only
+ * GET .../acquire/requests/collection/{itemId} per collection page view, with three bounded automatic retries
+ * (1 s, 2 s, 5 s; extended by Retry-After) when metadata is unavailable, then manual retry. No partial
+ * collection is shown while loading fails. An answer is shown only
  * while its page, user and request are still the current ones. Each missing movie's title opens its page (its
  * native page when offered, else the more-info window). When the server couldn't check storage yet
  * (`pausesPending`, e.g. right after a restart or while the arr's disk facts can't be read) the button says "Checking
@@ -29,6 +31,10 @@
     /** Delays (ms after the first answer) of the reads again while storage isn't checked yet. */
     const RECHECKS = [2000, 6000];
     let recheckTimer = 0;
+    /** Metadata delays; Retry-After may extend each of the three automatic waits. */
+    const METADATA_RETRIES = [1000, 2000, 5000];
+    let metadataTimer = 0;
+    let readController = null;
     /** @type {{itemId: string, epoch: number}|null} the collection this page has a gaps answer for */
     let answered = null;
     /** @type {{itemId: string, epoch: number, promise: Promise<void>}|null} the gaps read in flight */
@@ -84,6 +90,7 @@
         intent = null;
         answered = null;
         stopRecheck();
+        stopMetadataRetry();
         (root || document).querySelectorAll(`.je-ask-coll[data-je-ask-surface="${SURFACE}"]`).forEach(n => n.remove());
     }
 
@@ -102,7 +109,9 @@
         const token = { itemId, epoch: epoch(), seq: ++seq };
         intent = token;
         stopRecheck();
-        if (answered?.itemId !== itemId) answered = null;
+        stopMetadataRetry();
+        answered = null;
+        page.querySelectorAll(`.je-ask-coll[data-je-ask-surface="${SURFACE}"]`).forEach(n => n.remove());
         let item = null;
         try {
             item = typeof JE.helpers?.getItemCached === 'function' ? await JE.helpers.getItemCached(itemId) : null;
@@ -142,26 +151,135 @@
      * @returns {Promise<void>}
      */
     async function loadOnce(page, token, attempt) {
+        if (!owns(page, token)) return;
         const lang = (navigator.language || 'en').split('-')[0];
-        let gaps = null;
+        const controller = new AbortController();
+        readController = controller;
+        let answer = null;
         try {
-            const answer = await JE.arrAsk.call(`/acquire/requests/collection/${encodeURIComponent(token.itemId)}?language=${encodeURIComponent(lang)}`);
-            gaps = answer.status === 200 && answer.body?.collection ? answer.body.collection : null;
+            answer = await JE.arrAsk.call(`/acquire/requests/collection/${encodeURIComponent(token.itemId)}?language=${encodeURIComponent(lang)}`, { signal: controller.signal });
         } catch {
-            gaps = null;
+            // Without an answer there is no complete collection to publish.
+        } finally {
+            if (readController === controller) readController = null;
         }
-        if (!isCurrent(token)) return;
+        if (!owns(page, token)) return;
+        if (!answer || (answer.status === 503 && answer.body?.outcome === 'unavailable')) {
+            if (phase4()) {
+                answered = { itemId: token.itemId, epoch: token.epoch };
+                removeSeerrRow(page);
+            }
+            showUnavailable(page, token, answer?.retryAfterMs || 0);
+            return;
+        }
+        answered = null;
+        const gaps = answer.status === 200 && answer.body?.collection ? answer.body.collection : null;
         if (gaps && phase4()) {
-            // This block answers the page: the older Seerr row would offer the same movies again.
             answered = { itemId: token.itemId, epoch: token.epoch };
             removeSeerrRow(page);
         }
         const caps = await JE.arrAsk.me();
-        const allowance = JE.arrAsk.canAsk(caps, 'movie') ? await JE.arrAsk.quota('movie') : null;
+        const allowance = gaps && JE.arrAsk.canAsk(caps, 'movie') ? await JE.arrAsk.quota('movie') : null;
         if (!isCurrent(token)) return;
         render(page, token, gaps, caps, allowance, attempt);
         // Only a person who may ask has anything waiting on the storage check.
         if (gaps?.pausesPending === true && attempt < RECHECKS.length && JE.arrAsk.canAsk(caps, 'movie')) scheduleRecheck(page, token, attempt);
+    }
+
+    /**
+     * Whether a read still belongs to this connected, visible page and enabled account.
+     * @param {HTMLElement} page Details page.
+     * @param {Object} owner Read intent.
+     * @returns {boolean} Current.
+     */
+    function owns(page, owner) {
+        return isCurrent(owner) && page.isConnected && !page.classList.contains('hide') && JE.arrAsk?.enabled();
+    }
+
+    /**
+     * Cancel metadata timers and abort the current page read.
+     * @returns {void}
+     */
+    function stopMetadataRetry() {
+        clearTimeout(metadataTimer);
+        metadataTimer = 0;
+        readController?.abort();
+        readController = null;
+    }
+
+    /**
+     * Show a collection-load failure without titles, quotas or request controls.
+     * @param {HTMLElement} page Details page.
+     * @param {Object} owner Read intent, retaining the automatic retry count.
+     * @param {number} retryAfter Server's minimum delay in milliseconds.
+     * @returns {void}
+     */
+    function showUnavailable(page, owner, retryAfter) {
+        stopRecheck();
+        stopMetadataRetry();
+        const S = JE.arrStatus;
+        JE.internals?.arrAskSheetStyles?.ensure?.();
+        const old = page.querySelector(`.je-ask-coll[data-je-ask-surface="${SURFACE}"]`);
+        const block = S.el('section', 'je-ask-coll je-ask-coll-unavailable');
+        block.dataset.jeAskSurface = SURFACE;
+        block.setAttribute('aria-label', tr('arr_collection_label'));
+        if (JE.internals?.arrAskSheetStyles?.isLight?.()) block.classList.add('je-ask-light');
+        const head = S.el('div', 'je-ask-coll-head');
+        const message = S.el('span', 'je-ask-coll-message', tr('arr_collection_load_unavailable'));
+        message.setAttribute('role', 'status');
+        head.appendChild(message);
+        const button = S.el('button', 'je-ask-action je-ask-coll-retry');
+        button.type = 'button';
+        button.appendChild(S.icon('refresh', 'je-ask-action-icon'));
+        const label = S.el('span', 'je-ask-action-text');
+        button.appendChild(label);
+        head.appendChild(button);
+        block.appendChild(head);
+        if (old) old.replaceWith(block);
+        else {
+            const anchor = JE.internals?.arrStatusDetails?.anchorOf?.(page) || page.querySelector('.detailPagePrimaryContent');
+            if (!anchor) return;
+            anchor.insertBefore(block, anchor.firstChild);
+        }
+        const retries = owner.metadataRetries || 0;
+        const automatic = retries < METADATA_RETRIES.length;
+        const wait = Math.max(automatic ? METADATA_RETRIES[retries] : 0, retryAfter);
+        button.disabled = wait > 0;
+        label.textContent = wait > 0
+            ? tr(automatic ? 'arr_collection_load_retrying' : 'arr_collection_load_retry_wait', { seconds: Math.ceil(wait / 1000) })
+            : tr('arr_collection_load_retry');
+        /**
+         * Read once more, retaining this view's finite automatic retry count.
+         * @returns {void}
+         */
+        function retry() {
+            if (!owns(page, owner) || !block.isConnected) return;
+            stopMetadataRetry();
+            button.disabled = true;
+            label.textContent = tr('arr_collection_loading');
+            const next = { itemId: owner.itemId, epoch: owner.epoch, seq: ++seq, metadataRetries: automatic ? retries + 1 : retries };
+            intent = next;
+            load(page, next, 0);
+        }
+        button.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!button.disabled) retry();
+        });
+        if (wait > 0) {
+            metadataTimer = setTimeout(() => {
+                metadataTimer = 0;
+                if (!owns(page, owner) || !block.isConnected) {
+                    if (intent === owner) clear();
+                    return;
+                }
+                if (automatic) retry();
+                else {
+                    button.disabled = false;
+                    label.textContent = tr('arr_collection_load_retry');
+                }
+            }, wait);
+        }
     }
 
     /**
@@ -517,7 +635,10 @@
         await load(page, again);
     }
 
+    JE.core?.navigation?.onNavigate?.(() => clear());
+
     JE.session?.onUserChange?.('arr-ask-collection', () => {
+        clear();
         intent = null;
         running = false;
         answered = null;

@@ -36,7 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Logger? _logger;
         private readonly Func<DateTimeOffset> _now;
         private readonly SeerrBackend? _seerr;
-        private readonly SeerrRequestReadModel? _seerrModel;
+        private readonly SeerrFacts? _seerrModel;
         private readonly RequestOutboxSignal? _signal;
         private readonly object _gate = new();
         private readonly SemaphoreSlim _following = new(1, 1);
@@ -52,14 +52,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>The charger (DI).</summary>
         public FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed feed, TitleAliases aliases, Logger logger,
-            SeerrBackend seerr, SeerrRequestReadModel seerrModel, RequestOutboxSignal signal)
+            SeerrBackend seerr, SeerrFacts seerrModel, RequestOutboxSignal signal)
             : this(store, ledger, policy, clients, feed, aliases, logger, () => DateTimeOffset.UtcNow, seerr, seerrModel, signal)
         {
         }
 
         /// <summary>The charger with an explicit clock (tests).</summary>
         internal FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed? feed, TitleAliases? aliases, Logger? logger, Func<DateTimeOffset> now,
-            SeerrBackend? seerr = null, SeerrRequestReadModel? seerrModel = null, RequestOutboxSignal? signal = null)
+            SeerrBackend? seerr = null, SeerrFacts? seerrModel = null, RequestOutboxSignal? signal = null)
         {
             _store = store;
             _ledger = ledger;
@@ -203,7 +203,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// asked for in Jellyfin Enhanced at the same destination (<see cref="RequestDestination"/>; sent, queued or
         /// waiting, or followed earlier in the same pass) is theirs. Returns how many were queued.
         /// </summary>
-        internal async Task<int> FollowSeerrAsync(CancellationToken ct)
+        internal Task<int> FollowSeerrAsync(CancellationToken ct)
+            => SeerrFacts.BackgroundAsync(token => FollowSeerrAsyncFactsCore(token), ct);
+
+        private async Task<int> FollowSeerrAsyncFactsCore(CancellationToken ct)
         {
             var config = _policy.Configuration;
             if (_seerr == null || _seerrModel == null || config is not { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true, ArrRequestBackend: "seerr" } || !_ledger.Database.Available) return 0;

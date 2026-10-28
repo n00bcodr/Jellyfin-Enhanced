@@ -108,11 +108,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
             var access = await ViewerAsync(_policy.SeeLinkedPageAsync(viewer, SyntheticId.Person(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
-            // The credits first: their read is the one admitted against the viewer's budget, so a
-            // viewer naming person after person can't make the person reads go upstream unbounded.
+            // Both credits and person details retain the effective viewer for metadata admission.
             var credits = await _source.PersonCreditsAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (credits.Data is not { } data) return Failed(credits);
-            var person = await _source.PersonAsync(tmdb, ct).ConfigureAwait(false);
+            var person = await _source.PersonAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (person.Data is not { } details) return Failed(person);
             if (!NativeDetailsPolicy.PersonAllowed(viewer, details)) return new FeedAnswer(FeedOutcome.Refused, null);
             var path = "/api/v1/person/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/combined_credits";
@@ -275,10 +274,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> TitleAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
         {
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
+            using var feed = StageTimings.Time(Stage.Feed);
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = movie ? await _source.MovieAsync(tmdb, viewer.Id, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
+            using var projection = StageTimings.Time(Stage.Project);
             if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
             body.Remove("mediaInfo");
             var media = ProviderMetadata.Obj(data, "mediaInfo");
@@ -291,10 +292,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> SeasonAsync(User viewer, int tmdb, int season, CancellationToken ct)
         {
             if (tmdb <= 0 || season is < 0 or > 65535) return new(FeedOutcome.Invalid, null);
+            using var feed = StageTimings.Time(Stage.Feed);
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, SyntheticId.SeasonOf(tmdb, season), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new(access, null);
             var answer = await _source.SeasonAsync(tmdb, season, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
+            using var projection = StageTimings.Time(Stage.Project);
             var body = JsonNode.Parse(data.GetRawText())!.AsObject();
             body.Remove("mediaInfo");
             return new(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), "tv:tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "season", scopeKind: "season", season: season) ?? body.ToJsonString());
@@ -422,7 +425,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             var access = await ViewerAsync(_policy.ViewerAccessAsync(viewer, ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
-            var answer = await _source.GenresAsync(movie, ct).ConfigureAwait(false);
+            var answer = await _source.GenresAsync(movie, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             var genres = new JsonArray();
             if (data.ValueKind == JsonValueKind.Array)

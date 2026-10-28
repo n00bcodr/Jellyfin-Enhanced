@@ -34,10 +34,10 @@ async function awayAndBack(h) {
 async function pressCard(h, id) {
   const more = h.document.querySelector('.card .je-card-more');
   assert.ok(more, 'the card has its More');
-  more.click(); await settle();
+  h.click(more); await settle();
   const entry = h.document.querySelector(`.je-actions-entry[data-action="${id}"]`);
   assert.ok(entry, 'the card sheet offers ' + id);
-  entry.click(); await settle();
+  h.click(entry); await settle();
 }
 
 const HOSTS = [
@@ -56,7 +56,8 @@ function fire(h, node, type, init = {}) {
   h.document.addEventListener(type, outside);
   const Kind = type === 'submit' ? h.window.Event : h.window.MouseEvent;
   const event = new Kind(type, { bubbles: true, cancelable: true, ...init });
-  node.dispatchEvent(event);
+  // The viewer's own event (trusted): a script's is no one's anywhere in a surface (D46S2-R12-3).
+  h.trusted(node, event);
   h.document.removeEventListener(type, outside);
   return { prevented: event.defaultPrevented, escaped };
 }
@@ -86,7 +87,7 @@ test('ended is forever: a retained card recycled for another title and back does
   let owner = null;
   const show = h.a.show;
   h.a.show = (c, entries, opener, action) => { owner = action; return show(c, entries, opener, action); };
-  card.querySelector('.je-card-more').click(); await settle();
+  h.click(card.querySelector('.je-card-more')); await settle();
   assert.ok(owner?.current(), 'the card sheet opened for a current card');
   // Each recycle is reconciled by the observer's next pass (one animation frame), before the card comes back.
   card.dataset.jeHideTitle = 'movie:tmdb:604'; h.a.scan(); await settle();
@@ -99,7 +100,7 @@ test('ended is forever: a retained card whose feature went off and on again does
   let owner = null;
   const show = h.a.show;
   h.a.show = (c, entries, opener, action) => { owner = action; return show(c, entries, opener, action); };
-  h.document.querySelector('.card .je-card-more').click(); await settle();
+  h.click(h.document.querySelector('.card .je-card-more')); await settle();
   assert.ok(owner?.current());
   h.featureOff(); await settle();
   h.JE.pluginConfig.NativeAbsentDetailsEnabled = true; h.a.scan(); await settle();
@@ -216,7 +217,7 @@ for (const [host, prepare, pressIn] of HOSTS) {
     const search = drawer(h)?.querySelector('[data-je-focus="search-r1"]');
     assert.ok(search, 'the drawer shows Search now');
     await awayAndBack(h);
-    search.click(); await settle();
+    h.click(search); await settle();
     assert.equal(h.requests.filter(r => r[1] === 'POST' && r[2].startsWith('/arr/')).length, 0);
     assert.equal(drawer(h), null);
   });
@@ -225,10 +226,10 @@ for (const [host, prepare, pressIn] of HOSTS) {
 test('row: me() held, away and back, released → no request sheet', async t => {
   const h = setup(t); h.a.initialize(); mount(h); await settle();
   const expire = expireCapabilities(h);
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   expire();
   const me = h.hold('GET', '/acquire/requests/me');
-  h.document.querySelector('.je-actions-entry[data-action="request"]').click(); await settle();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="request"]')); await settle();
   await awayAndBack(h);
   me.resolve(); await settle();
   assert.equal(sheet(h), null);
@@ -239,7 +240,7 @@ test('row: the one-tap ask (the row\'s primary), quota held, away and back, rele
   h.JE.arrAskSheet.mount(h.row(), { key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }); await settle();
   mount(h); await settle();
   const quota = h.hold('GET', '/acquire/requests/quota');
-  h.row().querySelector('.je-actions-row .je-actions-primary').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-row .je-actions-primary')); await settle();
   await awayAndBack(h);
   quota.resolve(); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 0);
@@ -271,7 +272,7 @@ test('the shared Seerr modal opened for an operation: away and back, then its pr
   const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: o.op });
   modal.show(); await settle();
   await awayAndBack(h);
-  modal.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
+  h.click(modal.modalElement.querySelector('.jellyseerr-modal-button-primary')); await settle();
   assert.equal(saved, 0);
 });
 
@@ -450,7 +451,7 @@ function remountEnds(h) {
 test('a retained card\'s sheet whose card was recycled for another title: a press → cancelled, the sheet closes, nothing runs', async t => {
   const h = setup(t, { card: true }); h.a.initialize(); await settle();
   const card = h.document.querySelector('.card');
-  card.querySelector('.je-card-more').click(); await settle();
+  h.click(card.querySelector('.je-card-more')); await settle();
   const entry = h.document.querySelector('.je-actions-entry[data-action="report"]');
   assert.ok(entry, 'the card sheet is open');
   card.dataset.jeHideTitle = 'movie:tmdb:604'; h.a.scan(); await settle();
@@ -458,4 +459,21 @@ test('a retained card\'s sheet whose card was recycled for another title: a pres
   await settle();
   assert.equal(h.document.querySelector('.je-actions-sheet'), null);
   assert.equal(h.document.querySelector('.jellyseerr-season-modal'), null, 'no Report form');
+});
+
+test('arrival bursts: status-owned mutations do not rescan action hosts, while native mutations still do', async t => {
+  const h=setup(t);h.a.initialize();mount(h);await settle();
+  const frame=async()=>{await new Promise(resolve=>h.window.requestAnimationFrame(resolve));await settle();};
+  await frame();await frame();
+  let scans=0;const query=h.document.querySelectorAll.bind(h.document);
+  h.document.querySelectorAll=selector=>{if(selector.includes('.jellyseerr-card'))scans++;return query(selector);};
+  const status=h.document.createElement('div');status.className='je-arr-status';h.document.body.append(status);
+  await frame();assert.equal(scans,0,'a status block is unrelated to action hosts');
+  const art=h.document.createElement('div');art.className='je-arr-art';status.append(art);await frame();
+  art.classList.add('je-arr-art-almost');art.setAttribute('aria-label','Almost ready');await frame();
+  status.remove();await frame();
+  const badge=h.document.createElement('div');badge.className='je-arr-badge';h.document.body.append(badge);await frame();badge.remove();await frame();
+  assert.equal(scans,0,'ring changes and ready cleanup do not enqueue global scans');
+  const native=h.document.createElement('div');native.className='native-host-change';h.document.body.append(native);await frame();
+  assert.ok(scans>0,'native host changes still reconcile');
 });

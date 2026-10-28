@@ -23,14 +23,19 @@
  *   newest opening) and belongs to its scope.
  */
 moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
-    const generation = ++openGeneration;
     const submitted = JE.captureSubmitted(owner);
-    if (!submitted.owner) return;
+    // Admitted before it touches any shared state (D46S2-R11-7): a stale or owner-less call never advances the opening
+    // generation, so it cannot supersede the viewer's pending opening.
+    if (!submitted.owner || !submitted.current()) return;
+    const generation = ++openGeneration;
+    // Feedback in the press's own frame: a title-free loading shell, admitted for the owner, before the details are read.
+    const pending = JE.admitSurface(submitted.owner, 'the More Info window', () => generation === openGeneration) ? showShell(submitted) : null;
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
         if (generation !== openGeneration || !submitted.current()) return;
         if (!data) {
+            dropShell(pending);
             internal.showError('jellyseerr_modal_load_failed');
             return;
         }
@@ -38,7 +43,7 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
         // Render modal immediately: the window opens only as its owner's effect, admitted now, before anything else is
         // touched (D46S2-R9-1, audit S2).
         if (!JE.admitSurface(submitted.owner, 'the More Info window', () => generation === openGeneration)) return;
-        if (!showModal(data, mediaType, scope, submitted)) return;
+        if (!showModal(data, mediaType, scope, submitted, pending)) return;
         const openedModal = state.currentModal;
 
         // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
@@ -68,10 +73,67 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
             });
     } catch (error) {
         if (generation !== openGeneration || !submitted.current()) return;
+        dropShell(pending);
         // Seerr won't answer for this viewer, or the server won't show them the title: said, not an error.
         if (!internal.isExplained?.(error)) console.error('Error opening more info modal:', error);
         internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_load_failed') : 'jellyseerr_modal_load_failed');
+    } finally {
+        // An opening that ended without its window (stale, refused, failed) takes its shell away.
+        dropShell(pending);
     }
+}
+
+/** The pending opening's loading shell ({el, release}), at most one; null once it became the window or went. */
+let shell = null;
+
+/**
+ * Draws the loading shell of an admitted opening: the window's backdrop with a busy line and Close, nothing about the
+ * title, registered on the surface stack for the opening's owner (Escape, Back and Close cancel the opening). The
+ * window is later drawn into the same element (showModal). Null when the stack refused it.
+ */
+function showShell(submitted) {
+    // A shell never keeps a window from opening: before the translations have loaded it names its key.
+    const say = key => (typeof JE.t === 'function' ? JE.t(key) : key);
+    closeCurrentModal();
+    const el = document.createElement('div');
+    el.className = 'je-more-info-shell';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-busy', 'true');
+    el.setAttribute('aria-label', say('title_actions_loading'));
+    const box = document.createElement('div');
+    box.className = 'je-more-info-shell-box';
+    const busy = document.createElement('div');
+    busy.className = 'je-more-info-shell-busy';
+    busy.setAttribute('role', 'status');
+    busy.textContent = say('title_actions_loading');
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'je-more-info-shell-close';
+    dismiss.setAttribute('aria-label', say('title_actions_close'));
+    dismiss.textContent = '×';
+    box.append(busy, dismiss);
+    el.append(box);
+    // Its close is the window's once it has become the window.
+    const release = JE.openSurface(el, () => {
+        if (shell?.el === el) moreInfoModal.close();
+        else if (state.currentModal === el) closeCurrentModal();
+    }, submitted.owner);
+    if (!release) return null;
+    el.addEventListener('click', (e) => { if (e.target === el && shell?.el === el) moreInfoModal.close(); });
+    dismiss.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (shell?.el === el) moreInfoModal.close(); });
+    document.body.appendChild(el);
+    dismiss.focus();
+    return shell = { el, release };
+}
+
+/** Takes the loading shell away (only `pending`, when given and still pending). */
+function dropShell(pending) {
+    if (!shell || (pending !== undefined && shell !== pending)) return;
+    const drawn = shell;
+    shell = null;
+    drawn.release();
+    drawn.el.remove();
 }
 
 /**
@@ -130,7 +192,10 @@ function startRead(modal) {
 /**
  * Show the modal with media information
  */
-function showModal(data, mediaType, scope, submitted) {
+function showModal(data, mediaType, scope, submitted, pending) {
+    // The opening's loading shell (when it is still the pending one) becomes the window in place: the same surface.
+    const adopted = pending && shell === pending ? pending : null;
+    if (adopted) shell = null;
     // Replace the current modal without canceling this open operation.
     closeCurrentModal();
 
@@ -141,9 +206,17 @@ function showModal(data, mediaType, scope, submitted) {
         (scope.episode == null || Number.isInteger(scope.episode) && scope.episode >= 0 && scope.episode <= 65535))
         data.jeActionScope = { season: scope.season, ...(scope.episode != null ? { episode: scope.episode } : {}) };
 
-    const modal = document.createElement('div');
-    modal.className = 'je-more-info-modal';
+    const modal = adopted ? adopted.el : document.createElement('div');
+    // An adopted shell is already shown: the window is drawn over it without fading in again.
+    modal.className = adopted ? 'je-more-info-modal active' : 'je-more-info-modal';
     modal.innerHTML = internal.buildModalContent(data, mediaType);
+    if (adopted) {
+        modal.removeAttribute('aria-busy');
+        modal.removeAttribute('aria-label');
+        // Named by its title, as the surface stack names a window it registers.
+        const heading = modal.querySelector('h1, h2, h3, [role="heading"]');
+        if (heading) { if (!heading.id) heading.id = `je-more-info-title-${openGeneration}`; modal.setAttribute('aria-labelledby', heading.id); }
+    }
     // Tag modal so async updates only apply to the current item
     modal.dataset.tmdbId = String(data.id || '');
     modal.dataset.mediaType = mediaType;
@@ -151,7 +224,9 @@ function showModal(data, mediaType, scope, submitted) {
 
     // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
     // the Collection and request modals); once the operation ends, it takes no more input and closes.
-    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted.owner);
+    // Its owner ending closes this window only (D46S2-R11-7): never the opening generation, so a newer opening the viewer
+    // has pending is not superseded by an older window's lifecycle.
+    modal._releaseScope = adopted ? adopted.release : JE.openSurface(modal, () => { if (state.currentModal === modal) closeCurrentModal(); }, submitted.owner);
     if (!modal._releaseScope) return false;
     // The window's reads (Refresh, a TV request's refresh) and the writes answering into it render only for its newest
     // intent while their owner is current (JE.surfaceIntent, JE.publication).
@@ -199,18 +274,13 @@ function showModal(data, mediaType, scope, submitted) {
         });
     }
 
-    document.body.appendChild(modal);
+    if (!adopted) document.body.appendChild(modal);
     state.currentModal = modal;
+    // The shell's Close had focus and is gone: focus goes into the window, as the surface stack does when it opens one.
+    if (adopted) JE.focusIn?.(modal, modal.querySelector('[autofocus]') || modal.querySelector('button:not([disabled]), [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])'));
 
-    // Add Escape key handler: only while the window is the topmost surface (a form or popup opened over it takes its
-    // own Escape; D46S2 audit S2).
-    const handleEscape = (e) => {
-        if (e.key === 'Escape' && JE.isTopmostSurface(modal)) {
-            moreInfoModal.close();
-        }
-    };
-    document.addEventListener('keydown', handleEscape);
-    modal._cleanupEscapeListener = () => document.removeEventListener('keydown', handleEscape);
+    // Escape and every Back key reach the window through the surface stack only (D46S2-R12-3): the viewer's key, while
+    // it is the topmost surface (a form, popup or host dialog over it takes its own).
 
     // Render action buttons/chips after mount
     internal.renderActions(data, mediaType);
@@ -266,6 +336,7 @@ function showModal(data, mediaType, scope, submitted) {
  * Close the modal
  */
 function closeCurrentModal() {
+    dropShell();
     if (state.currentModal) {
         if (state.currentModal._isClosing) return;
         state.currentModal._isClosing = true;
@@ -274,10 +345,6 @@ function closeCurrentModal() {
         // Clean up TV request listener if exists
         if (state.currentModal._cleanupRequestListener) {
             state.currentModal._cleanupRequestListener();
-        }
-        // Clean up Escape key listener if exists
-        if (state.currentModal._cleanupEscapeListener) {
-            state.currentModal._cleanupEscapeListener();
         }
         state.currentModal.classList.remove('active');
         // The fading modal keeps its DOM for the exit animation but takes no more input.

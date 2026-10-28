@@ -68,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly Func<IReadOnlyList<JfLibraryRoot>> _library;
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
-        private volatile LibraryRead? _libraries;
+        private LibraryRead? _libraries;
         private State? _state;
 
         /// <summary>Creates the resolver (DI).</summary>
@@ -96,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The libraries a title of <paramref name="instance"/> whose folder (as the arr sees it) is <paramref name="arrPath"/> lands in.</summary>
         public ArrLibraryTarget Resolve(ArrConnection instance, string? arrPath)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var state = CurrentState();
             // The instance as the registry read behind this answer has it (mappings and linked
             // libraries), not the caller's copy, which may be older.
@@ -252,14 +253,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         // The cache stays while a fresh read is the same; otherwise this read replaces it.
         private State CurrentState()
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var (libraries, libraryStamp) = CurrentLibraries();
             var registry = _store.Registry.All();
             var systems = registry.Select(i => _store.PeekSystem(i.Id)).ToArray();
             var stamp = new Stamp(libraryStamp, registry, systems);
             lock (_gate)
             {
-                if (_state == null || !_state.Stamp.Same(stamp)) _state = new State(stamp, libraries, registry, systems);
-                return _state;
+                if (_stateFacts == null || !_stateFacts.Stamp.Same(stamp)) _stateFacts = new State(stamp, libraries, registry, systems);
+                return _stateFacts;
             }
         }
 
@@ -295,8 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             public IReadOnlyList<ArrConnection> Registry { get; }
 
-            public ConcurrentDictionary<(string Instance, string Path), ArrLibraryTarget> Cache { get; } = new();
-
+            public ConcurrentDictionary<(string Instance, string Path), ArrLibraryTarget> Cache { get => _cacheFactsOwner.Read(ref _cacheFactsStorage, () => default!); }
             // An instance's root folders as this read has them, or null when not known (no snapshot).
             public IReadOnlyList<ArrDiskEntry>? RootsOf(string instanceId)
             {
@@ -306,6 +307,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 return null;
             }
+            private ConcurrentDictionary<(string Instance, string Path), ArrLibraryTarget> _cacheFactsStorage = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<ConcurrentDictionary<(string Instance, string Path), ArrLibraryTarget>> _cacheFactsOwner = new(prepared: true);
         }
 
         // Jellyfin's library list, its stamp and when it was read (one object, so they stay together).
@@ -313,8 +316,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private (IReadOnlyList<JfLibraryRoot> Libraries, string Stamp) CurrentLibraries()
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var now = _now();
-            if (_libraries is { } known && now - known.At < LibrariesTtl) return (known.Libraries, known.Stamp);
+            if (_librariesFacts is { } known && now - known.At < LibrariesTtl) return (known.Libraries, known.Stamp);
             IReadOnlyList<JfLibraryRoot> libraries;
             try
             {
@@ -325,8 +329,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 libraries = Array.Empty<JfLibraryRoot>();
             }
             var stamp = string.Join(";", libraries.OrderBy(l => l.Id, StringComparer.Ordinal).Select(l => l.Id + "=" + string.Join(",", l.Locations)));
-            _libraries = new LibraryRead(libraries, stamp, now);
+            _librariesFacts = new LibraryRead(libraries, stamp, now);
             return (libraries, stamp);
         }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<LibraryRead?> _librariesFactsOwner = new();
+        private LibraryRead? _librariesFacts { get => _librariesFactsOwner.Read(ref _libraries, () => default!); set => _librariesFactsOwner.Store(ref _libraries, value); }
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<State?> _stateFactsOwner = new();
+        private State? _stateFacts { get => _stateFactsOwner.Read(ref _state, () => default!); set => _stateFactsOwner.Store(ref _state, value); }
     }
 }

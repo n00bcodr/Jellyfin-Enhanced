@@ -367,7 +367,7 @@ function reference(node, parent) {
 
 const WRITE = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 const API_TRANSPORT = { plugin: 1, pluginResponse: 1, fetch: 1, jf: 1, ajax: 0 };
-const API_OTHER = new Set(['session', 'authHeaders', 'isPresentationAbort', 'writeOutcome', 'manager']);
+const API_OTHER = new Set(['session', 'authHeaders', 'isPresentationAbort', 'writeOutcome', 'writeEpoch', 'manager']);
 // subscribe: jellyfin-web's websocket message listener (no request).
 const CLIENT_ACCESSORS = new Set(['subscribe', 'getUrl', 'getCurrentUserId', 'serverId', 'accessToken', 'serverAddress', 'getImageUrl', 'getScaledImageUrl', 'deviceId', 'deviceName', 'appName', 'appVersion', 'serverInfo', 'isLoggedIn', 'getApiClient']);
 
@@ -736,7 +736,8 @@ function nativeReach(modules, natives) {
     references.set(file, refs);
     for (const [node, frame, parent] of visits) {
       if (node.type === 'Identifier' && reference(node, parent)) refs.push([node, frame]);
-      if (MEMBER.has(node.type) && !node.computed && OWNER_MEMBERS.has(node.property?.name) && node.object?.type === 'Identifier') {
+      // The JE namespace itself is no owner (JE.operation() mints one; the namespace parameter holds none).
+      if (MEMBER.has(node.type) && !node.computed && OWNER_MEMBERS.has(node.property?.name) && node.object?.type === 'Identifier' && !NAMESPACE_NAMES.has(node.object.name)) {
         const b = lookup(frame, node.object.name);
         if (b?.param) hold(b.frame, node.object.name, `its parameter ${node.object.name}.${node.property.name}`);
       }

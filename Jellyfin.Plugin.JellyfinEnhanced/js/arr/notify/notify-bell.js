@@ -2,7 +2,8 @@
  * @file Requests & downloads, phase 2: the bell in the header with the unread count, and its inbox
  * panel: newest first, unread dot, poster, text, "5 min ago", Play for what is ready, Mark all read,
  * Load older, and a footer with the user's phone alerts / quiet hours and a link to the "Requests &
- * alerts" settings. A dialog on desktop, a bottom sheet on phones; Escape closes it and focus goes
+ * alerts" settings. An administrators' stuck-download digest reads as a count with Open Overview and a
+ * Details list it expands in place, so one digest never fills a phone screen. A dialog on desktop, a bottom sheet on phones; Escape closes it and focus goes
  * back to the bell.
  */
 (function (JE) {
@@ -14,6 +15,8 @@
     let opener = null;
     let observer = null;
     let started = false;
+    // Digests whose list is open while the panel is (cleared when it closes).
+    const expanded = new Set();
 
     /**
      * Creates an element.
@@ -131,6 +134,7 @@
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('click', onOutside, true);
         window.removeEventListener('resize', position);
+        expanded.clear();
         opener?.setAttribute('aria-expanded', 'false');
         if (opener && opener.isConnected) opener.focus();
         opener = null;
@@ -240,7 +244,8 @@
         body.appendChild(text);
         body.appendChild(el('div', 'je-notify-time', JE.arrNotify.ago(item.createdAt)));
         body.addEventListener('click', (e) => { const owner = JE.ownerOf(e); close(); JE.arrNotify.open(item, owner); });
-        row.appendChild(body);
+        if (item.kind === 'stuck_digest') row.appendChild(digest(item, body));
+        else row.appendChild(body);
         if (item.itemId && (item.kind === 'ready' || item.kind === 'episodes')) {
             const play = el('button', 'je-notify-play');
             play.type = 'button';
@@ -250,6 +255,61 @@
             row.appendChild(play);
         }
         return row;
+    }
+
+    /**
+     * A stuck-download digest's column: its count (the row's button), then Open Overview and a Details
+     * toggle, then the downloads it lists (title, instance and reason in Overview's words), shown on demand.
+     * The toggle only shows or hides the list in place (no redraw), and the list scrolls on its own.
+     * @param {Object} item Inbox item.
+     * @param {HTMLElement} body The row's text button.
+     * @returns {HTMLElement} Column.
+     */
+    function digest(item, body) {
+        const col = el('div', 'je-notify-main');
+        col.appendChild(body);
+        const entries = N.digestEntries(item);
+        const actions = el('div', 'je-notify-digest-actions');
+        const open = el('button', 'je-notify-digest-open');
+        open.type = 'button';
+        open.appendChild(icon('open_in_new'));
+        open.appendChild(document.createTextNode(JE.arrNotify.tr('arr_notify_digest_open')));
+        open.addEventListener('click', (e) => { const owner = JE.ownerOf(e); close(); JE.arrNotify.open(item, owner); });
+        actions.appendChild(open);
+        col.appendChild(actions);
+        if (!entries.length) return col;
+        const list = el('ul', 'je-notify-digest-list');
+        list.id = `je-notify-digest-${String(item.id).replace(/[^A-Za-z0-9_-]/g, '')}`;
+        for (const entry of entries) {
+            const li = el('li');
+            if (entry.text) {
+                li.textContent = entry.text;
+            } else {
+                li.appendChild(el('strong', '', entry.scope ? `${entry.title} ${entry.scope}` : entry.title));
+                const rest = [entry.instance, entry.reason].filter(Boolean).join(' · ');
+                if (rest) li.appendChild(document.createTextNode(` · ${rest}`));
+            }
+            list.appendChild(li);
+        }
+        const more = Number(item.params?.count) - entries.length;
+        if (more > 0 && !entries[0].text) list.appendChild(el('li', 'je-notify-digest-more', JE.arrNotify.tr('arr_notify_digest_more', { n: more })));
+        const toggle = el('button', 'je-notify-digest-toggle');
+        toggle.type = 'button';
+        toggle.setAttribute('aria-controls', list.id);
+        const show = (on) => {
+            list.hidden = !on;
+            toggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+            toggle.textContent = JE.arrNotify.tr(on ? 'arr_notify_digest_hide' : 'arr_notify_digest_show', { n: entries.length });
+        };
+        show(expanded.has(item.id));
+        toggle.addEventListener('click', () => {
+            const on = !expanded.has(item.id);
+            if (on) expanded.add(item.id); else expanded.delete(item.id);
+            show(on);
+        });
+        actions.appendChild(toggle);
+        col.appendChild(list);
+        return col;
     }
 
     /**
@@ -274,7 +334,8 @@
         settings.title = JE.arrNotify.tr('arr_notify_settings');
         settings.setAttribute('aria-label', JE.arrNotify.tr('arr_notify_settings'));
         settings.appendChild(icon('settings'));
-        settings.addEventListener('click', () => { close(); N.openSettings?.(); });
+        // The press's owner opens the panel (taken before the inbox it was made in closes).
+        settings.addEventListener('click', (e) => { const owner = JE.ownerOf?.(e); close(); N.openSettings?.(owner); });
         foot.appendChild(settings);
         return foot;
     }
@@ -287,7 +348,8 @@
         if (!panel) return;
         const active = panel.contains(document.activeElement) ? document.activeElement : null;
         const focusedId = active?.closest?.('.je-notify-item')?.dataset.id;
-        const focusedPlay = active?.classList?.contains('je-notify-play');
+        // A row's own control (Play, a digest's Open Overview or Details) gets focus back after the redraw.
+        const focusedRowControl = ['je-notify-play', 'je-notify-digest-open', 'je-notify-digest-toggle'].find(c => active?.classList?.contains(c)) || null;
         const focusedControl = ['je-notify-markall', 'je-notify-more', 'je-notify-settings'].find(c => active?.classList?.contains(c)) || null;
         const rowsBefore = new Set(Array.from(panel.querySelectorAll('.je-notify-item')).map(r => r.dataset.id));
         panel.textContent = '';
@@ -315,7 +377,7 @@
         panel.appendChild(buildFooter());
         if (focusedId) {
             const row = Array.from(panel.querySelectorAll('.je-notify-item')).find(r => r.dataset.id === focusedId);
-            const target = row && (focusedPlay ? row.querySelector('.je-notify-play') : row.querySelector('.je-notify-body'));
+            const target = row && ((focusedRowControl && row.querySelector('.' + focusedRowControl)) || row.querySelector('.je-notify-body'));
             if (target) target.focus();
             else panel.focus();
         } else if (focusedControl) {

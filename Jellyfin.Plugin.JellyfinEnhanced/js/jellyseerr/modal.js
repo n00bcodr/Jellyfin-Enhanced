@@ -46,12 +46,15 @@
      *   (modalElement, primaryButton, close, press), `press` the click, whose owner (JE.ownerOf) its work takes.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
+     * @param {boolean} [options.closeOnly] - A window to look at only: no primary button (onSave never runs).
+     * @param {string} [options.closeText] - Optional custom text for the secondary button (defaults to localized 'Cancel').
      * @param {object} options.operation - The owner (required, D46S2-R6): the operation a title action submitted,
      *   a viewer's native owner (JE.ownerOf(event)), or a node inside UI it opened. The modal is in its scope, so it
      *   closes when that owner ends (its session, document or route), and onSave runs only while it is current.
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
+    let titles = 0;
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation, closeOnly = false, closeText }) {
         const submitted = JE.captureSubmitted(operation);
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
@@ -73,16 +76,18 @@
         const contentEl = document.createElement('div');
         contentEl.className = 'jellyseerr-season-content';
         contentEl.setAttribute('role', 'document');
-        contentEl.setAttribute('aria-labelledby', 'jellyseerr-modal-title');
 
         const headerEl = document.createElement('div');
         headerEl.className = 'jellyseerr-season-header';
         headerEl.style.cssText = `background-image: ${backdropImage}; background-size: cover; background-position: center;`;
 
         const titleEl = document.createElement('div');
-        titleEl.id = 'jellyseerr-modal-title';
+        // The dialog is named by its own title (D46S2-R13-8), through an id of its own so forms that overlap (one
+        // closing while the next opens) never share it; a heading in the form's body stays body content.
+        titleEl.id = `jellyseerr-modal-title-${++titles}`;
         titleEl.className = 'jellyseerr-season-title';
         titleEl.textContent = title;
+        modalElement.setAttribute('aria-labelledby', titleEl.id);
 
         const subtitleEl = document.createElement('div');
         subtitleEl.className = 'jellyseerr-season-subtitle';
@@ -101,8 +106,8 @@
 
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-secondary';
-        cancelBtn.setAttribute('aria-label', JE.t('jellyseerr_modal_cancel'));
-        cancelBtn.textContent = JE.t('jellyseerr_modal_cancel');
+        cancelBtn.setAttribute('aria-label', closeText || JE.t('jellyseerr_modal_cancel'));
+        cancelBtn.textContent = closeText || JE.t('jellyseerr_modal_cancel');
 
         const primaryBtn = document.createElement('button');
         primaryBtn.className = 'jellyseerr-modal-button jellyseerr-modal-button-primary';
@@ -110,7 +115,8 @@
         primaryBtn.textContent = buttonText || JE.t('jellyseerr_modal_request');
 
         footerEl.appendChild(cancelBtn);
-        footerEl.appendChild(primaryBtn);
+        // A window to look at only (closeOnly): no primary action.
+        if (!closeOnly) footerEl.appendChild(primaryBtn);
 
         contentEl.appendChild(headerEl);
         contentEl.appendChild(bodyEl);
@@ -125,44 +131,8 @@
         let pushed = false;
         let releaseScope = null;
 
-        // Handle keyboard navigation
-        const handleKeydown = (e) => {
-            if (closed || !JE.isTopmostSurface(modalElement)) return;
-            // Close on Escape
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                dismiss();
-                return;
-            }
-
-            // Tab key focus trap
-            if (e.key === 'Tab') {
-                const focusableElements = modalElement.querySelectorAll(
-                    'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-                );
-                const focusableArray = Array.from(focusableElements);
-
-                if (focusableArray.length === 0) return;
-
-                const firstElement = focusableArray[0];
-                const lastElement = focusableArray[focusableArray.length - 1];
-
-                if (e.shiftKey) {
-                    // Shift+Tab: if on first element, wrap to last
-                    if (document.activeElement === firstElement || document.activeElement === modalElement) {
-                        e.preventDefault();
-                        lastElement.focus();
-                    }
-                } else {
-                    // Tab: if on last element, wrap to first
-                    if (document.activeElement === lastElement) {
-                        e.preventDefault();
-                        firstElement.focus();
-                    }
-                }
-            }
-        };
+        // Escape, every Back key and Tab are the surface stack's (D46S2-R12-3, -6): the viewer's key, only while the form
+        // is the topmost surface; it dismisses the form as Cancel does (see `dismiss` below).
 
         // Its own history entry, marked, so a popstate that did not leave it (one queued by a navigation just before the
         // form opened) closes nothing.
@@ -182,18 +152,14 @@
             history.pushState({ jeModal: entryMark }, '', location.href);
             pushed = true;
             window.addEventListener('popstate', onBack);
-            document.addEventListener('keydown', handleKeydown);
             setTimeout(() => {
-                // Closed before it finished opening (its operation ended at once): it stays closed.
-                if (closed || !modalElement.isConnected) return;
+                // Closed before it finished opening (its operation ended at once): it stays closed, and focus stays put.
+                if (closed || !modalElement.isConnected || !submitted.current()) return;
                 modalElement.classList.add('show');
-                // Focus the first interactive element in the modal
+                // Focus the first interactive element in the modal, only while it is the topmost surface (a host dialog
+                // that arrived meanwhile keeps its focus: D46S2-R12-6).
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
-                if (firstFocusable) {
-                    firstFocusable.focus();
-                } else {
-                    modalElement.focus();
-                }
+                JE.focusIn(modalElement, firstFocusable || modalElement);
             }, 10);
             return true;
         };
@@ -215,7 +181,6 @@
             }
 
             window.removeEventListener('popstate', onBack);
-            document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
             setTimeout(() => {
@@ -234,7 +199,8 @@
 
         // Opened for an owner: the modal is in its scope, so once the owner ends (another page, mount, user or the
         // document leaving) it takes no more input and closes. Not admitted (an owner that is not current): terminal.
-        releaseScope = JE.openSurface(modalElement, close, submitted.owner);
+        // Escape and every Back key (the core's surface stack, while it is topmost) dismiss it as Cancel does.
+        releaseScope = JE.openSurface(modalElement, close, submitted.owner, { dismiss: () => dismiss(), ownsHistory: () => pushed });
         if (!releaseScope) closed = true;
 
         // Event listeners for closing the modal

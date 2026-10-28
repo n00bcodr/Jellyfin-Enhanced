@@ -1,3 +1,4 @@
+import { clickAsViewer } from '../helpers/harness.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -41,19 +42,19 @@ test('a saved credential shows its placeholder read-only and posts it back uncha
   const [replace, clear] = input.nextElementSibling.querySelectorAll('button');
   assert.equal(input.nextElementSibling.style.display, '');
   // Replace: an empty field still means "keep"; a typed key replaces it (whitespace dropped).
-  replace.click();
+  clickAsViewer(replace);
   assert.equal(input.readOnly, false);
   assert.equal(input.value, '');
   assert.equal(je.jeSecretRead(input), PREFIX + '3f9a');
   input.value = ' new key ';
   assert.equal(je.jeSecretRead(input), 'newkey');
-  replace.click(); // "Keep saved"
+  clickAsViewer(replace); // "Keep saved"
   assert.equal(je.jeSecretRead(input), PREFIX + '3f9a');
   // Clear posts the explicit clear token; Undo restores.
-  clear.click();
+  clickAsViewer(clear);
   assert.equal(input.value, '');
   assert.equal(je.jeSecretRead(input), je.JE_SECRET_CLEAR);
-  clear.click();
+  clickAsViewer(clear);
   assert.equal(je.jeSecretRead(input), PREFIX + '3f9a');
 });
 
@@ -74,7 +75,7 @@ test('peer inputs for one credential share its state', t => {
   const { je, $ } = setup(t);
   je.jeSecretInit($('a'), PREFIX + 'abcd', [$('b')]);
   assert.equal($('b').value, PREFIX + 'abcd');
-  $('b').nextElementSibling.querySelector('.je-secret-clear').click();
+  clickAsViewer($('b').nextElementSibling.querySelector('.je-secret-clear'));
   assert.equal(je.jeSecretRead($('a')), je.JE_SECRET_CLEAR);
   assert.equal(je.jeSecretRead($('b')), je.JE_SECRET_CLEAR);
 });
@@ -126,12 +127,12 @@ test('Test buttons get an ASCII stand-in for a saved key or import handle, never
   assert.throws(() => new Headers({ 'X-Arr-ApiKey': PREFIX + '3f9a' })); // why the stand-in exists
   je.jeSecretInit($('a'), PREFIX + '3f9a');
   assert.equal(je.jeSecretWireValue($('a')), '__je_saved_secret__');
-  $('a').nextElementSibling.querySelector('.je-secret-replace').click();     // editing, nothing typed: still the saved key
+  clickAsViewer($('a').nextElementSibling.querySelector('.je-secret-replace'));     // editing, nothing typed: still the saved key
   assert.equal(je.jeSecretWireValue($('a')), '__je_saved_secret__');
   $('a').value = 'typed-key';
   assert.equal(je.jeSecretWireValue($('a')), 'typed-key');
-  $('a').nextElementSibling.querySelector('.je-secret-replace').click();     // keep saved
-  $('a').nextElementSibling.querySelector('.je-secret-clear').click();
+  clickAsViewer($('a').nextElementSibling.querySelector('.je-secret-replace'));     // keep saved
+  clickAsViewer($('a').nextElementSibling.querySelector('.je-secret-clear'));
   assert.equal(je.jeSecretWireValue($('a')), '');
   je.jeSecretInit($('b'), PREFIX + 'seerr-0123abcd');
   assert.equal(je.jeSecretWireValue($('b')), '__je_handle__:0123abcd');

@@ -40,13 +40,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     public sealed class SourceListFacts
     {
         /// <summary>Earliest dated entry per show in the list (stands in for the show's first air date).</summary>
-        public Dictionary<int, string> FirstDate { get; } = new();
-
+        public Dictionary<int, string> FirstDate { get => _firstDateFactsOwner.Read(ref _firstDateFactsStorage, () => default!); }
         /// <summary>
         /// TMDB's episode count per (show, season), where known (filled from Seerr by the caller). Only a run that this
         /// count confirms is a whole season: the list alone can't tell a whole season from its first episodes.
         /// </summary>
-        public Dictionary<(int Show, int Season), int> SeasonEpisodes { get; } = new();
+        public Dictionary<(int Show, int Season), int> SeasonEpisodes { get => _seasonEpisodesFactsOwner.Read(ref _seasonEpisodesFactsStorage, () => default!); }
+        private Dictionary<(int Show, int Season), int> _seasonEpisodesFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<(int Show, int Season), int>> _seasonEpisodesFactsOwner = new(prepared: true);
+        private Dictionary<int, string> _firstDateFactsStorage = new();
+        private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<int, string>> _firstDateFactsOwner = new(prepared: true);
     }
 
     /// <summary>
@@ -71,6 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <returns>Facts.</returns>
         public static SourceListFacts Facts(IEnumerable<SourceItem> items)
         {
+            using var __factsOperation0 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var facts = new SourceListFacts();
             foreach (var item in items)
             {
@@ -143,6 +147,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         private static IEnumerable<SourceGroup> SplitRun(List<SourceItem> run, SourceListFacts facts)
         {
+            using var __factsOperation1 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var first = run[0];
             var season = first.Season!.Value;
             // A season placeholder stands for every episode of the season (swap-in fills it with any of them), so the run
@@ -171,6 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <returns>The candidate.</returns>
         public static ImportCandidateDto Candidate(SourceGroup group, SourceListFacts facts, CompletedIdentity identity)
         {
+            using var __factsOperation2 = global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.BeginOperation();
             var first = group.First;
             var details = first.Details;
             if (first.MediaType == "movie")

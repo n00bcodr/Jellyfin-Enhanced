@@ -230,11 +230,12 @@
      * Rejects like the core client (status, responseJSON).
      * @param {string} path '/title/{movie|tv}/{id}', '/title/{movie|tv}/{id}/ratings',
      *   '/title/{movie|tv}/{id}/related/{similar|recommendations}?page=' or '/collection/{id}'.
-     * @param {{signal?: AbortSignal}} [options] Cancellation.
+     * @param {{signal?: AbortSignal, priority?: 'low'}} [options] Cancellation; priority 'low' for decoration a page can
+     *   draw later (the client's decorative lane, which a menu's or window's reads never wait behind).
      * @returns {Promise<any>} The answer.
      */
     api.fetchPublic = function(path, options = {}) {
-        return JE.core.api.plugin(`/native-details${path}`, { skipCache: true, signal: options.signal });
+        return JE.core.api.plugin(`/native-details${path}`, { skipCache: true, signal: options.signal, priority: options.priority === 'low' ? 'low' : undefined });
     };
 
     /**
@@ -494,6 +495,9 @@
             }
             return normalized;
         } catch (error) {
+            // Cancelled (the session that asked ended, e.g. another account signed in): not a failure, and the rules
+            // cached so far may be the previous account's, so none are returned.
+            if (error?.name === 'AbortError') return [];
             console.error(`${logPrefix} Failed to fetch override rules:`, error);
             return cachedOverrideRules || [];
         }
@@ -870,6 +874,11 @@
         if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
             return null;
         }
+        // Seerr is off (the server's one rule, backend isolation included: SeerrAvailable / JellyseerrEnabled), or
+        // Jellyfin Enhanced handles requests (its own allowance applies, never Seerr's): no Seerr quota to read. Every
+        // quota caller (More Info, the request and season windows, the quota dialog) comes through here.
+        const cfg = window.JellyfinEnhanced?.pluginConfig;
+        if (cfg?.JellyseerrEnabled === false || cfg?.SeerrAvailable === false || cfg?.ArrRequestsJeMode === true) return null;
         // No Seerr account to have a quota (known from the user status): nothing to ask Seerr for.
         if (api.knownAccountRefusal()) return null;
         try {
@@ -1008,6 +1017,13 @@
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
+            // Three outcomes (D46S2-R11-9): answered after its owner ended, the report exists (its issue reads are
+            // refreshed; the caller says nothing: `jeAccepted`); never sent, nothing happened (AbortError).
+            const written = JE.core.api.writeOutcome?.(error);
+            if (written?.outcome === 'accepted' && !written.sessionChanged) {
+                JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');
+                return { ...(written.answer && typeof written.answer === 'object' ? written.answer : {}), jeAccepted: true };
+            }
             if (action.current() && error?.name !== 'AbortError') console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
             throw error;
         }
@@ -1025,11 +1041,14 @@
         const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
         const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
-            // A viewer Seerr won't answer for (known from their user status): while Jellyfin Enhanced handles
-            // requests, the rows from its public route (judged for them on the server); otherwise none.
-            if (api.knownAccountRefusal()) {
+            // Jellyfin Enhanced the request backend (A1; public config NativeAbsentDetails.Source "tmdb", request switches
+            // on or off, Seerr settings kept or not): its public route, chosen before any Seerr account (D88). Otherwise a
+            // viewer Seerr won't answer for (known from their user status): while Jellyfin Enhanced handles requests, the
+            // rows from its public route (judged for them on the server); otherwise none.
+            const jeDetails = JE.pluginConfig?.NativeAbsentDetails?.Source === 'tmdb';
+            if (jeDetails || api.knownAccountRefusal()) {
                 const none = { results: [], page: 1, totalPages: 0, totalResults: 0 };
-                if (JE.internals?.arrAskSeerr?.jeMode?.() !== true) return none;
+                if (!jeDetails && JE.internals?.arrAskSeerr?.jeMode?.() !== true) return none;
                 try {
                     return await api.fetchPublic(`/title/${mediaType === 'movie' ? 'movie' : 'tv'}/${tmdbId}/related/${relation}?page=${page}`, options);
                 } catch (error) {

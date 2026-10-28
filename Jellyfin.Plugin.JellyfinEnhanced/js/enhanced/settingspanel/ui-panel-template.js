@@ -116,15 +116,15 @@
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
                 <div style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
-                <button id="closeSettingsPanel" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(JE.t('panel_close'))}" title="${escapeHtml(JE.t('panel_close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
-                    <input id="jePanelSearch" class="je-panel-search" type="text" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
+                    <input id="jePanelSearch" class="je-panel-search" type="text" aria-label="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
-                <button id="jePanelBack" class="je-pane-back" type="button"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
+                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(JE.t('panel_back_to_sections'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
                  ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content je-pane" data-pane="shortcuts" data-pane-label="${escapeHtml(JE.t('panel_shortcuts_tab'))}" style="padding-top: 4px; padding-bottom: 20px;">
                  <h3 class="je-pane-title">${JE.icon(JE.IconName.KEYBOARD)} ${JE.t('panel_shortcuts_tab')}</h3>
