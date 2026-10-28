@@ -193,6 +193,19 @@ public class PrivacyOperationalProjectionTests
     }
 
     [Fact]
+    public void StandaloneStatusAdapterKeepsTheVersionsFingerprint()
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = Guard(f, user, "movie:tmdb:42");
+        const string raw = """{"items":[{"key":"movie:tmdb:42","itemId":"shown","kind":"movie","versions":2,"versionsFingerprint":"0123456789abcdef","stage":"ready","reason":{"code":"ready"}}]}""";
+        var result = Final(f, spoilers, user, "acquire/status", new ContentResult { Content = raw, ContentType = "application/json" });
+        var row = Assert.Single(result["items"]!.AsArray())!;
+        Assert.Equal("0123456789abcdef", row["versionsFingerprint"]?.GetValue<string>());
+        Assert.Equal(2, row["versions"]?.GetValue<int>());
+    }
+
+    [Fact]
     public void StandaloneStatusAdapterKeepsEveryOperationalFieldAndProtectsInjectedTitleFields()
     {
         using var f = new ApiPluginFixture();

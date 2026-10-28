@@ -224,6 +224,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public int Versions { get; init; }
 
+        /// <summary>The size in bytes of a movie's or episode's own file, as Jellyfin last read it; null when unknown.</summary>
+        public long? Size { get; init; }
+
         /// <summary>
         /// The movie or episode Jellyfin now keeps this one's file under as one of its versions (another item: it
         /// makes the highest resolution the item and the other files its versions), or null.
@@ -280,6 +283,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The file (server-side matching only).</summary>
         public string? Path { get; init; }
+
+        /// <summary>The file's size in bytes, as Jellyfin last read it; null when unknown.</summary>
+        public long? Size { get; init; }
 
         /// <summary>A just-imported version whose Jellyfin metadata is still being read (<see cref="JfItemRef.AwaitingMetadata"/>): it qualifies for nothing yet.</summary>
         public bool AwaitingMetadata { get; init; }

@@ -158,7 +158,7 @@ public static class ProviderPresentationSchema
         Children("review-ratings", "ratings", "review-rating-map");
         Children("translations", "translations", "translation"); Children("translation", "data", "translation-data");
         Children("ratings", "rt imdb tmdb metacritic rottenTomatoes ratings", "score", "ratings");
-        Add("status", Role.Metadata, "key liveKey itemId openItemId kind versions stage attention quiet askedSeasons actions", "nextDate nextDay");
+        Add("status", Role.Metadata, "key liveKey itemId openItemId kind versions versionsFingerprint stage attention quiet askedSeasons actions", "nextDate nextDay");
         Add("reason", Role.Metadata, "code"); Add("reason-params", Role.Metadata, "date count hours title contact library variant held sent since pct eta");
         Add("progress", Role.Metadata, "percent etaSeconds");
         Add("journey", Role.Metadata, "stage at state byYou");

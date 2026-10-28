@@ -188,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Placeholder = !Playable(movie),
                         AwaitingMetadata = Awaiting(movie),
                         Versions = Playable(movie) ? movie.MediaSourceCount : 0,
+                        Size = movie.Size,
                         PrimaryId = PrimaryOf(movie),
                     };
                 }
@@ -237,6 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Path = episode.Path,
                         DateCreated = Utc(episode.DateCreated),
                         Versions = Playable(episode) ? episode.MediaSourceCount : 0,
+                        Size = episode.Size,
                         PrimaryId = PrimaryOf(episode),
                     };
                 }
@@ -805,7 +807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// None for a missing (virtual) item or a placeholder.
         /// </summary>
         private List<JfSource> ItsOwnSource(Video video)
-            => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, AwaitingMetadata = Awaiting(video), DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
+            => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, Size = video.Size, AwaitingMetadata = Awaiting(video), DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
 
         /// <summary>A just-imported movie or episode (or version) whose metadata the bridge hasn't confirmed yet (<see cref="BridgeImportReadiness"/>).</summary>
         private bool Awaiting(BaseItem item, string? path = null) => _readiness?.Pending(item.Id, path ?? item.Path) == true;
@@ -855,6 +857,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Width = stream?.Width,
                     Height = stream?.Height,
                     Path = shortcut ? version.Path : source.Path,
+                    Size = source.Size ?? version.Size,
                     AwaitingMetadata = Awaiting(version, shortcut ? version.Path : source.Path),
                     DateCreated = Utc(version.DateCreated),
                 });
