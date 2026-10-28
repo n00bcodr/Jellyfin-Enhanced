@@ -139,6 +139,21 @@ public class ApiTitleActionsWarmPathTests
             return movie;
         }
 
+        /// <summary>Waits (bounded) until request visibility's authorization stamp holds still: no arr read is landing.</summary>
+        public async Task Settle()
+        {
+            var input = new MutationInput { Key = "movie:tmdb:" + TmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture), Scope = "movie" };
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var last = Requests.AuthorizationStamp(Viewer.Id, input);
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+                var now = Requests.AuthorizationStamp(Viewer.Id, input);
+                if (now == last) return;
+                last = now;
+            }
+        }
+
         /// <summary>Jellyfin announcing an item change (its library manager's event).</summary>
         public void Changed(BaseItem item) => Library.Raise(l => l.ItemAdded += null, Library.Object, new ItemChangeEventArgs { Item = item });
 
@@ -184,6 +199,10 @@ public class ApiTitleActionsWarmPathTests
     public async Task AWarmMenuReadReadsThePersonOncePerPhaseWithTheSameAnswer()
     {
         using var rig = new Rig();
+        // Warm: a first read, then the arr side settled (no snapshot landing mid-read, which retries any evaluation).
+        Assert.Equal(200, (await rig.Read()).Status);
+        await rig.Settle();
+        var before = rig.Reads;
         var (status, body) = await rig.Read();
         Assert.Equal(200, status);
         Assert.Equal("{\"allowed\":true,\"itemId\":null}", body);
@@ -191,7 +210,7 @@ public class ApiTitleActionsWarmPathTests
         // three admissions two parental reads plus a request-visibility evaluation reading them three times). Now: the
         // controller's own three (its first read, the live read after the metadata await and the final one), and each
         // admission's fresh final authorization stamp; the parental policy and real-copy checks use the read in hand.
-        Assert.Equal(6, rig.Reads);
+        Assert.Equal(6, rig.Reads - before);
     }
 
     [Theory]
