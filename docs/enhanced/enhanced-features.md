@@ -138,7 +138,7 @@ An already-hidden item shows a crossed-out eye; use it to **Unhide**. After a hi
   <figcaption>Hiding a library movie and restoring it with Undo.</figcaption>
 </figure>
 
-**How to manage:** Open **Hidden Content** through its configured entry, or choose **Manage Hidden Content** in the personal section. The page presents **Movies**, expandable **Series** groups, and **Cast / Actors**.
+**How to manage:** Open **Hidden Content** through its configured entry, or choose **Manage Hidden Content** in the personal section; it opens the list where your server shows it (the Home tab, the Plugin Pages page, the Custom Tabs tab or JE's own page). The page presents **Movies**, expandable **Series** groups, and **Cast / Actors**.
 
 ![Hidden Content page with grouped items and Scoped only filter](../images/enhanced/hidden-page.webp)
 
@@ -283,7 +283,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
   <figcaption>Opening shortcut help over the player and returning to playback.</figcaption>
 </figure>
 
-**How to use:** Press the keys below outside text input fields. To customize them:
+**How to use:** Press the keys below outside text input fields. While a JE window is open (the **More** menu, a request sheet, a dialog), JE's shortcuts, ++question++ included, do nothing, so a key pressed there never acts on the page behind it. To customize them:
 
 1. Open **Shortcuts** in the Enhanced panel.
 2. Click or focus a binding to show **Waiting…**, then press a key combination.

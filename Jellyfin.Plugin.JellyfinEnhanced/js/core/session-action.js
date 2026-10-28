@@ -945,6 +945,11 @@
     /** True while `root` is the topmost open surface: Escape and Back act on it only (D46S2 audit S2). */
     JE.isTopmostSurface = root => topmost()?.root === root;
     /**
+     * True while a modal JE surface is open (on the stack, in the document; a popup or a host dialog alone is not):
+     * JE's global keyboard shortcuts do nothing then, so a key pressed inside it never acts on the page behind it.
+     */
+    JE.hasModalSurface = () => { flushHost(); return stack.some(entry => !entry.host && !entry.closed && entry.modal !== false && entry.root.isConnected); };
+    /**
      * The surface feedback for `owner` belongs in (D46S2-R13-9): the newest open modal surface the core registered for
      * that owner, so an action the feedback offers (Hide's Undo) shares that surface's active or covered state, focus,
      * keys and accessibility, and goes with it. Null when the owner has none open (the page's own feedback).

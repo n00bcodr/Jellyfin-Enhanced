@@ -13,6 +13,8 @@
         if (document.getElementById('jellyfin-enhanced-panel') || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
             return;
         }
+        // A JE window is open (the More sheet, a request sheet, a dialog): the key is that window's.
+        if (JE.hasModalSurface?.()) return;
 
         if (e.key === '?') {
             e.preventDefault();
@@ -68,6 +70,8 @@
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
         // A key recorder (admin shortcut grid) is capturing the next press; don't also run it.
         if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
+        // A JE window is open (the More sheet, a request sheet, a dialog): a shortcut never acts on the page behind it.
+        if (JE.hasModalSurface?.()) return;
 
         const key = e.key;
         const combo = JE.keyCombo(e);

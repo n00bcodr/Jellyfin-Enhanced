@@ -897,7 +897,7 @@
      * @returns {void}
      */
     function manageEntry(entry, owner) {
-        JE.arrManage?.open(entry.itemId ? { itemId: entry.itemId } : { key: entry.key }, { operation: owner });
+        JE.arrManage?.open({ ...(entry.itemId ? { itemId: entry.itemId } : { key: entry.key }), name: entry.title }, { operation: owner });
     }
 
     /**

@@ -1228,6 +1228,7 @@
     "arr_sheet_numbering_unchecked": "Season {season}'s episode numbers couldn't be checked, so single episodes can't be picked yet. Try again, or ask for the whole season.",
     "arr_sheet_numbering_retry": "Try again",
     "arr_sheet_numbering_provider": "No Sonarr has this series yet, so Season {season}'s episodes are numbered as TMDB lists them.",
+    "arr_sheet_numbering_changed": "Sonarr has this series now and numbers Season {season} its own way, so nothing was sent. Pick the episodes again.",
     "arr_sheet_pick_none": "Choose at least one first.",
     "arr_sheet_seasons_unavailable": "Couldn't load this series' seasons. Try again in a moment.",
     "arr_sheet_cost": "Uses {cost} of your {left} this week",
