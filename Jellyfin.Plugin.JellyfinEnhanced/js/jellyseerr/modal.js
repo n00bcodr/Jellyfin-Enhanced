@@ -156,6 +156,9 @@
                 // Closed before it finished opening (its operation ended at once): it stays closed, and focus stays put.
                 if (closed || !modalElement.isConnected || !submitted.current()) return;
                 modalElement.classList.add('show');
+                // Focus already in the form (the surface stack moved it in on opening, and a key the viewer pressed since
+                // took it where they wanted): this late step never takes it back to the first control.
+                if (modalElement.contains(document.activeElement)) return;
                 // Focus the first interactive element in the modal, only while it is the topmost surface (a host dialog
                 // that arrived meanwhile keeps its focus: D46S2-R12-6).
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
