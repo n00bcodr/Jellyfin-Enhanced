@@ -66,12 +66,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends
             var supported = version is 0 or 1;
             var enabled = supported && config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && mode is RequestsBackendMode.Je or RequestsBackendMode.Seerr;
             return new(mode, version, version == 1, 0,
-                version == 0 || (version == 1 && mode == RequestsBackendMode.Seerr),
+                AllowsSeerr(version, config?.ArrRequestBackend),
                 supported && mode == RequestsBackendMode.Je && enabled, enabled,
                 version == 1 && mode == RequestsBackendMode.Je ? "tmdb" : version == 0 || (version == 1 && mode == RequestsBackendMode.Seerr) ? "seerr" : "unavailable");
         }
         /// <summary>Compatibility callers use the same pure boundary evaluator.</summary>
         public static bool AllowsSeerr(PluginConfiguration? config) => EvaluateConfiguration(config).AllowSeerrTransport;
+        /// <summary>
+        /// The isolation part of the rule on its own: whether Jellyfin Enhanced may talk to Seerr with this isolation
+        /// version and request handling (not adopted: always; adopted: only while Seerr handles requests).
+        /// </summary>
+        public static bool AllowsSeerr(int isolationVersion, string? backend)
+            => isolationVersion == 0 || (isolationVersion == 1 && backend == "seerr");
+        /// <summary>
+        /// True when Seerr is set up (turned on, with an address and a key) and the request mode lets Jellyfin Enhanced
+        /// talk to it: the one "Seerr is on" rule for Seerr-only navigation, pages and administration. Stored Seerr
+        /// settings are kept either way.
+        /// </summary>
+        public static bool SeerrUsable(PluginConfiguration? config)
+            => config is { JellyseerrEnabled: true } && !string.IsNullOrWhiteSpace(config.JellyseerrUrls)
+                && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()) && AllowsSeerr(config);
         /// <summary>Whether JE is the isolated read authority regardless of rollout switches.</summary>
         public static bool IsStrictJe(PluginConfiguration? config) => EvaluateConfiguration(config).StrictJe;
         /// <inheritdoc />

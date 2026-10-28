@@ -440,3 +440,53 @@ test('PMR2-1: an operation submitted from a row sheet outlives the sheet closing
   gate.resolve(); await delivered();
   assert.equal(opens, 1, 'Open runs after its sheet closed for it');
 });
+
+// ---- UX3R-3 (review round 1): a whole absent-title session in Jellyfin Enhanced mode sends Seerr nothing ----
+
+const JE_SEERR_OFF = { JellyseerrEnabled: false, SeerrAvailable: false, ArrRequestsJeMode: true, NativeAbsentDetails: { Enabled: true, ContractVersion: 1, Source: 'tmdb' } };
+
+/** Rows, cards, More sheets, More Info (movie and series), the request sheet and every quota caller, one after another. */
+async function absentTitleSession(h) {
+  h.a.initialize(); mount(h); await delivered();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
+  h.key(h.document.activeElement, 'Escape'); await settle();
+  const more = h.document.querySelector('.card .je-card-more');
+  if (more) { h.click(more); await settle(); h.key(h.document.activeElement, 'Escape'); await settle(); }
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await settle();
+  h.JE.jellyseerrMoreInfo.close(); await settle();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await settle();
+  h.JE.jellyseerrMoreInfo.close(); await settle();
+  h.respond('GET', '/tmdb/tv/1399', SEASONS);
+  const series = h.JE.arrAskSheet.open({ key: 'tv:tmdb:1399', kind: 'series', name: 'Game of Thrones' }, { operation: h.NATIVE });
+  await settle(); h.JE.arrAskSheet.close(); await series;
+  const movie = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.NATIVE });
+  await settle(); h.JE.arrAskSheet.close(); await movie;
+  // The request and season windows and the quota dialog all read the quota this way.
+  assert.equal(await h.JE.jellyseerrAPI.fetchUserQuota(), null);
+  assert.equal(await h.JE.jellyseerrAPI.fetchUserQuota({ skipCache: true }), null);
+}
+
+test('UX3R-3: with Seerr off, a full absent-title session in JE mode sends no request to any Seerr route', async t => {
+  const h = setup(t, { card: true, beforeLoad: h => Object.assign(h.JE.pluginConfig, JE_SEERR_OFF) });
+  h.respond('GET', '/native-details/title/movie/603', [200, { id: 603, title: 'The Matrix', mediaInfo: { status: 1 } }]);
+  h.respond('GET', '/native-details/title/tv/1399', [200, { id: 1399, name: 'Game of Thrones', seasons: [{ seasonNumber: 1 }], mediaInfo: { status: 1 } }]);
+  await absentTitleSession(h);
+  assert.ok(h.requests.length > 10, 'the session did its JE reads');
+  assert.ok(h.sent('GET', '/native-details/title/').length >= 2, 'More Info read the public details');
+  assert.deepEqual(h.requests.filter(r => r[2].startsWith('/jellyseerr/')).map(r => r[1] + ' ' + r[2]), []);
+});
+
+test('UX3R-3: with Seerr on but Jellyfin Enhanced handling requests, nothing asks Seerr for a quota', async t => {
+  const h = setup(t, { card: true, beforeLoad: h => Object.assign(h.JE.pluginConfig, { ...JE_SEERR_OFF, JellyseerrEnabled: true, SeerrAvailable: true }) });
+  h.respond('GET', '/native-details/title/movie/603', [200, { id: 603, title: 'The Matrix', mediaInfo: { status: 1 } }]);
+  h.respond('GET', '/native-details/title/tv/1399', [200, { id: 1399, name: 'Game of Thrones', seasons: [{ seasonNumber: 1 }], mediaInfo: { status: 1 } }]);
+  await absentTitleSession(h);
+  assert.equal(h.sent('GET', '/jellyseerr/quota').length, 0);
+});
+
+test('UX3R-3 control: Seerr handling requests still reads the viewer\'s Seerr quota for its request windows', async t => {
+  const h = setup(t);
+  h.respond('GET', '/jellyseerr/quota', [200, { movie: { limit: 5, used: 1 }, tv: { limit: 5, used: 0 } }]);
+  assert.ok(await h.JE.jellyseerrAPI.fetchUserQuota({ skipCache: true }));
+  assert.equal(h.sent('GET', '/jellyseerr/quota').length, 1);
+});

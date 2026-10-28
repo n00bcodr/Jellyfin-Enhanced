@@ -1217,3 +1217,45 @@ test('Activity names a download\'s state as Overview does and keeps the arr\'s s
   const facts = Object.fromEntries([...diag.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
   assert.deepEqual(facts, { 'Arr state': 'importBlocked', 'Client status': 'completed', Health: 'warning', 'Reason code': 'import_blocked', 'Download ID': 'blocked' });
 });
+
+test('UX-8: with Seerr off and Jellyfin Enhanced handling requests, System shows the request backend\'s health and no Seerr warning or threshold', async t => {
+  const je = { mode: 'je', requestsOn: true, seerrInUse: false, tmdbKey: false, instances: 2 };
+  const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { seerr: null, seerrRequests: 0, requestsBackend: je }) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-bridge'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  const text = page.textContent;
+  assert.doesNotMatch(text, /Seerr isn't set up/);
+  assert.equal([...page.querySelectorAll('.je-ops-box-title')].some(n => n.textContent === translate('arr_ops_seerr_title')), false, 'no Seerr box');
+  assert.doesNotMatch(text, /Seerr OK without Sonarr\/Radarr/);
+  assert.match(text, /Thresholds: not in Jellyfin after 10 min · low disk below 10% free/);
+  const box = page.querySelector('.je-ops-requests-backend');
+  assert.ok(box, 'the request backend box');
+  assert.equal(box.querySelector('.je-ops-box-title').textContent, translate('arr_ops_backend_title'));
+  assert.match(box.textContent, /Jellyfin Enhanced handles requests/);
+  assert.match(box.textContent, /Asking for titles is on\./);
+  assert.match(box.textContent, /2 Sonarr\/Radarr instances can take requests\./);
+  assert.match(box.querySelector('.je-ops-warn').textContent, /No TMDB key/);
+  assert.doesNotMatch(box.textContent, /Seerr(?! isn't needed)/, 'no Seerr wording beyond saying it isn\'t needed');
+});
+
+test('UX-8 control: Seerr handling requests (or an older server that doesn\'t say) keeps the Seerr box, its warning and its threshold', async t => {
+  for (const requestsBackend of [{ mode: 'seerr', requestsOn: true, seerrInUse: false, tmdbKey: true, instances: 1 }, undefined]) {
+    const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { seerr: null, seerrRequests: 0, requestsBackend }) : null) });
+    h.JE.initializeArrStatus();
+    await until(() => h.document.querySelector('.je-ops-bridge'));
+    const page = h.document.getElementById('je-requests-hub-page');
+    assert.match(page.textContent, /Seerr isn't set up/);
+    assert.match(page.textContent, /Seerr OK without Sonarr\/Radarr after 15 min/);
+    assert.equal(page.querySelector('.je-ops-requests-backend'), null);
+    h.window.close?.();
+  }
+  // Jellyfin Enhanced handling requests with Seerr still in use: both boxes, Seerr's request list as before.
+  const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { requestsBackend: { mode: 'je', requestsOn: true, seerrInUse: true, tmdbKey: true, instances: 1 } }) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-bridge'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.match(page.textContent, /15 requests held/);
+  assert.ok(page.querySelector('.je-ops-requests-backend'));
+  assert.match(page.textContent, /1 Sonarr\/Radarr instance can take requests\./);
+});

@@ -35,6 +35,15 @@ export const REGIONS = '# code\tname\nUS\tUnited States\nDE\tGermany\nNZ\tNew Ze
 
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
+/** The scripted server's answer to /requests-backend/seerr-capability for a stored configuration. */
+export function seerrCapability(config = {}) {
+  const version = config.ArrBackendIsolationVersion || 0;
+  const allows = backend => version === 0 || (version === 1 && backend === 'seerr');
+  // EvaluateConfiguration: an unknown request handling is "unavailable", allowed only before adoption (version 0).
+  const setUp = config.JellyseerrEnabled === true && !!String(config.JellyseerrUrls || '').trim() && !!String(config.JellyseerrApiKey || '').trim();
+  return { seerrUsable: setUp && allows(config.ArrRequestBackend || 'seerr'), allowedFor: { seerr: allows('seerr'), je: allows('je'), status_only: allows('status_only'), other: allows('') } };
+}
+
 // What a configuration patch never sets (the server's ConfigurationPatcher.NotSettable): server-minted fields and the
 // fields derived from the instance lists.
 const NOT_SETTABLE = new Set(['AnalyticsInstallId', 'AnalyticsInstallSecret', 'AnalyticsLastReportedAt', 'AnalyticsLastPayloadJson',
@@ -123,6 +132,9 @@ export function configPage(t, { config = {}, overrides = {}, before, server: sha
     radarrDetails: [(kind, url) => /\/jellyseerr\/radarr\/\d+$/.test(url), () => clone(RADARR_DETAILS)],
     addOptions: [(kind, url) => url.includes('/arr/admin/manage/add-options'), () => clone(ADD_OPTIONS)],
     regions: [(kind, url) => url.includes('elsewhere-res/regions.txt'), () => ({ ok: true, text: async () => REGIONS })],
+    // The server's "Seerr is on" rule for the page (GetSeerrCapability), worked out from what the server holds now as
+    // EffectiveRequestsBackend.AllowsSeerr/SeerrUsable do (tests/fixtures/seerr-usable-truth-table.json pins both sides).
+    seerrCapability: [(kind, url) => url.includes('/requests-backend/seerr-capability'), () => seerrCapability(server.config)],
     // The page's save: only the administrator's changes, applied to what the server holds now.
     configPatch: [(kind, url, request) => request?.type === 'PATCH' && /\/JellyfinEnhanced\/configuration$/.test(url), async request => {
       const patch = JSON.parse(request.data);

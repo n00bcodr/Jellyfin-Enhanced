@@ -78,7 +78,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Every title key the ledger holds requests under (each once).</summary>
         public IReadOnlyList<string> TitleKeys() => !_db.Available ? Array.Empty<string>() : _db.Read(c =>
         {
-            using var cmd = Cmd(c, null, "SELECT DISTINCT title_key FROM wants ORDER BY title_key");
+            using var cmd = Cmd(c, null, "SELECT DISTINCT title_key FROM wants WHERE " + NotStaged + " ORDER BY title_key");
             using var r = cmd.ExecuteReader();
             var keys = new List<string>();
             while (r.Read()) keys.Add(r.GetString(0));

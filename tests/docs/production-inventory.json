@@ -4120,6 +4120,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/requests-backend/seerr-capability",
+      "method": "GetSeerrCapability",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/settings/{type}",
       "method": "GetJellyseerrArrSettings",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -12034,7 +12043,7 @@
   "counts": {
     "build_targets": 2,
     "files": 777,
-    "routes": 315,
+    "routes": 316,
     "configuration_properties": 672,
     "storage_references": 106,
     "scheduled_tasks": 16,

@@ -1078,6 +1078,31 @@
             panel.appendChild(box);
         }
 
+        // Jellyfin Enhanced handles requests: its own readiness instead of Seerr's.
+        if (data.requestsBackend?.mode === 'je') panel.appendChild(renderRequestsBackend(data.requestsBackend));
+        const seerrShown = seerrDescribed(data);
+        if (seerrShown) panel.appendChild(renderSeerr(data));
+        panel.appendChild(renderBridge(data.bridge || {}, data.settings || {}, ctx, seerrShown));
+    }
+
+    /**
+     * True when the System tab describes Seerr: it holds Seerr's requests, Seerr is in use, or Seerr is the selected
+     * request handling (its absence matters then). A Jellyfin Enhanced or status-only server with Seerr off shows none
+     * of Seerr's warnings or thresholds.
+     * @param {Object} data System.
+     * @returns {boolean} Whether Seerr is described.
+     */
+    function seerrDescribed(data) {
+        const backend = data.requestsBackend;
+        return !!data.seerr || !backend || backend.mode === 'seerr' || backend.seerrInUse === true;
+    }
+
+    /**
+     * The System tab's Seerr box: its request list, or that Seerr isn't set up.
+     * @param {Object} data System.
+     * @returns {HTMLElement} Section.
+     */
+    function renderSeerr(data) {
         const seerr = el('section', 'je-ops-box je-ops-section');
         seerr.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_seerr_title')));
         if (!data.seerr) seerr.appendChild(el('div', 'je-ops-empty', tr('arr_hub_not_configured_admin')));
@@ -1090,8 +1115,24 @@
             // whether or not the last complete read was truncated.
             if (data.seerr.incompleteReason && !data.seerr.lastError) seerr.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_seerr_incomplete', { reason: data.seerr.incompleteReason })));
         }
-        panel.appendChild(seerr);
-        panel.appendChild(renderBridge(data.bridge || {}, data.settings || {}, ctx));
+        return seerr;
+    }
+
+    /**
+     * The System tab's request-handling box when Jellyfin Enhanced handles requests: whether requests can be made, where
+     * they go and whether titles that aren't in the library can be looked up (TMDB). No Seerr wording.
+     * @param {Object} backend The system's requestsBackend ({mode, requestsOn, seerrInUse, tmdbKey, instances}).
+     * @returns {HTMLElement} Section.
+     */
+    function renderRequestsBackend(backend) {
+        const box = el('section', 'je-ops-box je-ops-section je-ops-requests-backend');
+        box.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_backend_title')));
+        box.appendChild(el('div', 'je-ops-line', tr('arr_ops_backend_je')));
+        box.appendChild(el('div', backend.requestsOn ? 'je-ops-ok' : 'je-ops-warn', tr(backend.requestsOn ? 'arr_ops_backend_requests_on' : 'arr_ops_backend_requests_off')));
+        const n = backend.instances || 0;
+        box.appendChild(el('div', n ? 'je-ops-ok' : 'je-ops-warn', n ? tr(n === 1 ? 'arr_ops_backend_instances_one' : 'arr_ops_backend_instances', { n }) : tr('arr_ops_backend_instances_none')));
+        box.appendChild(el('div', backend.tmdbKey ? 'je-ops-ok' : 'je-ops-warn', tr(backend.tmdbKey ? 'arr_ops_backend_tmdb_on' : 'arr_ops_backend_tmdb_off')));
+        return box;
     }
 
     /**
@@ -1099,9 +1140,10 @@
      * @param {Object} bridge Bridge state.
      * @param {Object} settings Thresholds.
      * @param {Object} ctx Callbacks and helpers.
+     * @param {boolean} [seerrShown=true] False leaves Seerr's threshold out (Seerr isn't in use).
      * @returns {HTMLElement} Section.
      */
-    function renderBridge(bridge, settings, ctx) {
+    function renderBridge(bridge, settings, ctx, seerrShown = true) {
         const box = el('section', 'je-ops-box je-ops-section je-ops-bridge');
         box.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_bridge_title')));
         box.appendChild(el('div', 'je-ops-line', bridge.targetedRefresh
@@ -1170,7 +1212,7 @@
                     `${tr(`arr_ops_refresh_${r.outcome}`)}${r.found ? ' ✓' : ''}${r.ms ? ` · ${r.ms} ms` : ''}${r.error ? ` · ${r.error}` : ''}`]), [1, 2, 3]));
             box.appendChild(recent);
         }
-        if (settings.libraryPendingMinutes) box.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_settings_line', { pending: settings.libraryPendingMinutes, disk: settings.lowDiskPercent, grace: settings.seerrHandoffGraceMinutes })));
+        if (settings.libraryPendingMinutes) box.appendChild(el('div', 'je-ops-item-sub', tr(seerrShown ? 'arr_ops_settings_line' : 'arr_ops_settings_line_no_seerr', { pending: settings.libraryPendingMinutes, disk: settings.lowDiskPercent, grace: settings.seerrHandoffGraceMinutes })));
         return box;
     }
 

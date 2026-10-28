@@ -843,8 +843,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
             }
 
-            // Only add recommendations page if it's enabled and using plugin pages
-            if (!recommendationsExists && pluginConfig.RecommendationsPageEnabled && pluginConfig.RecommendationsUsePluginPages)
+            // Only add recommendations page if it's enabled and using plugin pages (and Seerr, its only source, is on)
+            var recommendationsOn = pluginConfig.RecommendationsPageEnabled && Services.Acquire.Backends.EffectiveRequestsBackend.SeerrUsable(pluginConfig);
+            if (!recommendationsExists && recommendationsOn && pluginConfig.RecommendationsUsePluginPages)
             {
                 config.Value<JArray>("pages")!.Add(new JObject
                 {
@@ -856,7 +857,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 });
             }
             // Remove recommendations page if it exists but is now disabled or not using plugin pages
-            else if (recommendationsExists && (!pluginConfig.RecommendationsPageEnabled || !pluginConfig.RecommendationsUsePluginPages))
+            else if (recommendationsExists && (!recommendationsOn || !pluginConfig.RecommendationsUsePluginPages))
             {
                 var recommendationsPage = config.Value<JArray>("pages")!
                     .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");

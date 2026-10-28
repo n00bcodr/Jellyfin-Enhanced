@@ -338,3 +338,31 @@ test('list-page and home-row preferences render and save as tri-state Display ro
   assert.ok(!('homeOpsStrip' in write.body));
  }finally{h.close();}
 });
+test('UX-7: with Seerr off the Seerr group shows no identity, keeps the stored import exclusion read-only, links only to Seerr setup; quota help follows the backend',async()=>{
+ const data=view();data.seerr={enabled:false,state:'unavailable',blocked:true,adminUrl:'http://seerr.test/users',quotaSource:'je'};
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+ try{await tick();
+  const group=h.document.querySelector('[data-group="seerr-import"]');
+  assert.match(group.textContent,/arr_user_seerrOff/);
+  assert.doesNotMatch(group.textContent,/arr_user_state_unavailable|arr_user_linkState|arr_user_account/);
+  const select=group.querySelector('[data-field="blocked"]');
+  assert.equal(select.disabled,true);assert.equal(select.value,'true','the stored exclusion is shown as it is');
+  assert.deepEqual([...group.querySelectorAll('a')].map(a=>[a.textContent,a.getAttribute('href')]),[['arr_user_seerrSetup','#/configurationpage?name=Jellyfin%20Enhanced']]);
+  const policy=h.document.querySelector('[data-group="policy"]').textContent;
+  assert.match(policy,/arr_user_quotaHelpJe/);assert.doesNotMatch(policy,/arr_user_quotaHelp(?!Je)/);
+ }finally{h.close();}
+});
+test('UX-7 control: with Seerr on (or an older server) the Seerr group and the Seerr quota wording are as before',async()=>{
+ for(const enabled of [true,undefined]){
+  const data=view();data.policy.backend='seerr';data.seerr={enabled,state:'linked',account:'Ann',blocked:false,adminUrl:'http://seerr.test/users',quotaSource:'seerr'};
+  const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+  try{await tick();
+   const group=h.document.querySelector('[data-group="seerr-import"]');
+   assert.doesNotMatch(group.textContent,/arr_user_seerrOff/);
+   assert.match(group.textContent,/arr_user_state_linked/);assert.match(group.textContent,/arr_user_importHelp/);
+   assert.equal(group.querySelector('[data-field="blocked"]').disabled,false);
+   assert.equal(group.querySelector('a').getAttribute('href'),'http://seerr.test/users');
+   assert.match(h.document.querySelector('[data-group="policy"]').textContent,/arr_user_quotaHelp(?!Je)/);
+  }finally{h.close();}
+ }
+});

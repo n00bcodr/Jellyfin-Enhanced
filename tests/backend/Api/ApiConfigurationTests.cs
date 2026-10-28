@@ -260,4 +260,98 @@ public class ApiConfigurationTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
         Assert.Equal(expected, document.RootElement.GetProperty("ArrStatusArtworkProgressEnabled").GetBoolean());
     }
+
+    // ---- UX-5: the Seerr Recommendations page follows Seerr; SeerrAvailable is the client's one "Seerr is on" rule ----
+
+    [Fact]
+    public void SeerrRecommendationsAreOffWhileSeerrIsAndTheStoredSwitchIsKept()
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.RecommendationsPageEnabled = true;
+        config.RecommendationsUseNativeTab = true;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        (bool Available, bool Page) Read()
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+            // UX3R-1: every client Seerr gate reads JellyseerrEnabled; it is the same server rule as SeerrAvailable.
+            Assert.Equal(document.RootElement.GetProperty("SeerrAvailable").GetBoolean(), document.RootElement.GetProperty("JellyseerrEnabled").GetBoolean());
+            return (document.RootElement.GetProperty("SeerrAvailable").GetBoolean(), document.RootElement.GetProperty("RecommendationsPageEnabled").GetBoolean());
+        }
+
+        config.JellyseerrEnabled = false;
+        config.JellyseerrUrls = "http://seerr.invalid:5055";
+        config.JellyseerrApiKey = "seerr-key";
+        Assert.Equal((false, false), Read());
+        Assert.True(config.RecommendationsPageEnabled, "the stored switch is kept");
+        config.JellyseerrEnabled = true;
+        Assert.Equal((true, true), Read());
+        config.JellyseerrApiKey = "";
+        Assert.Equal((false, false), Read());
+        config.JellyseerrApiKey = "seerr-key";
+        // An adopted Jellyfin Enhanced backend refuses every Seerr route: Seerr isn't usable even though it is set up.
+        config.ArrIntegrationEnabled = config.ArrPhase1Enabled = config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        config.ArrBackendIsolationVersion = 1;
+        Assert.Equal((false, false), Read());
+        config.RecommendationsPageEnabled = false;
+        config.ArrBackendIsolationVersion = 0;
+        Assert.Equal((true, false), Read());
+    }
+
+    // ---- UX3R-1: the configuration page's "Seerr is on" and the server's are one rule, pinned by one table ----
+
+    [Fact]
+    public void SeerrUsableTruthTableIsTheServersRule()
+    {
+        using var stream = typeof(ApiConfigurationTests).Assembly.GetManifestResourceStream("JE.Tests.SeerrUsableTruthTable")!;
+        using var document = JsonDocument.Parse(stream);
+        var rows = document.RootElement.GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(18, rows.Count);
+        foreach (var row in rows)
+        {
+            var setUp = row.GetProperty("seerrSetUp").GetBoolean();
+            var config = new PluginConfiguration
+            {
+                ArrIntegrationEnabled = true, ArrPhase1Enabled = true, ArrPhase3Enabled = true,
+                ArrRequestBackend = row.GetProperty("backend").GetString()!,
+                ArrBackendIsolationVersion = row.GetProperty("isolationVersion").GetInt32(),
+                JellyseerrEnabled = setUp, JellyseerrUrls = "http://seerr.invalid:5055", JellyseerrApiKey = "seerr-key",
+            };
+            Assert.True(row.GetProperty("seerrUsable").GetBoolean() == Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.SeerrUsable(config), row.ToString());
+        }
+    }
+
+    // ---- UX3R2-1: the configuration page reads the server's rule; the endpoint answers the same table ----
+
+    [Fact]
+    public void SeerrCapabilityEndpointAnswersTheTruthTable()
+    {
+        using var stream = typeof(ApiConfigurationTests).Assembly.GetManifestResourceStream("JE.Tests.SeerrUsableTruthTable")!;
+        using var document = JsonDocument.Parse(stream);
+        using var fixture = new ApiPluginFixture();
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "Administrator")], "test"));
+        var config = fixture.Plugin.Configuration;
+        foreach (var row in document.RootElement.GetProperty("rows").EnumerateArray())
+        {
+            var backend = row.GetProperty("backend").GetString()!;
+            config.ArrIntegrationEnabled = config.ArrPhase1Enabled = config.ArrPhase3Enabled = true;
+            config.ArrRequestBackend = backend;
+            config.ArrBackendIsolationVersion = row.GetProperty("isolationVersion").GetInt32();
+            config.JellyseerrEnabled = row.GetProperty("seerrSetUp").GetBoolean();
+            config.JellyseerrUrls = "http://seerr.invalid:5055";
+            config.JellyseerrApiKey = "seerr-key";
+            using var answer = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(controller.GetSeerrCapability()).Value));
+            var usable = row.GetProperty("seerrUsable").GetBoolean();
+            Assert.True(usable == answer.RootElement.GetProperty("seerrUsable").GetBoolean(), row.ToString());
+            // The page's own part (switch, address, key) and the server's part (isolation for the selected handling).
+            Assert.True(usable == (row.GetProperty("seerrSetUp").GetBoolean() && answer.RootElement.GetProperty("allowedFor").GetProperty(backend).GetBoolean()), row.ToString());
+        }
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        Assert.IsType<ForbidResult>(controller.GetSeerrCapability());
+    }
 }
