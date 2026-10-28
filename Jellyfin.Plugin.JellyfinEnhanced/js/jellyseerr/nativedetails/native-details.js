@@ -16,7 +16,8 @@
 // adapts the page:
 //   - hides the native actions a title without files can't do (Play, Shuffle, Played, Favourite,
 //     More, Download, card play/options buttons) and blocks card context menus, and the "Ends at"
-//     estimate of the title and its episode rows (nothing plays; the runtime stays);
+//     estimate of the title and its missing episodes' rows (nothing plays; the runtime stays; a real
+//     episode's row keeps its own);
 //   - holds the Requests & downloads controls: the status pill and journey, Notify me, Manage, Get
 //     Season N / Get it and the missing-episode rows come from the details surface (status-details,
 //     ask-actions, ask-episodes), which read status by this page's id; this module adds Request (the
@@ -66,6 +67,12 @@
      * Jellyfin's own Missing/Unaired marker in the title area (a synthetic episode is Virtual) is not shown as well.
      */
     const STATUS_CLASS = 'je-native-absent-has-status';
+    /**
+     * On what this module knows is not in the library: the title's own information line (the page's item is synthetic)
+     * and every row or card whose item id is a synthetic one. Its "Ends at" estimate is not shown; a real episode
+     * listed among the missing ones (it has a file) keeps its own.
+     */
+    const ABSENT_ATTR = 'data-je-absent';
     const STYLE_ID = 'je-native-absent-style';
     /** The page's request controls in the native action row, in Play's place (first in the row). */
     const PRIMARY_CLASS = 'je-native-absent-primary';
@@ -417,8 +424,8 @@
             + `.je-native-absent-notes:empty { display: none; }\n`
             + `.je-native-absent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }\n`
             + `.je-native-absent-status:empty { display: none; }\n`
-            // Nothing on these pages plays: no "Ends at" estimate (the runtime stays), on the title and its episode rows.
-            + `.${PAGE_CLASS} .endsAt { display: none !important; }\n`
+            // Nothing absent plays: no "Ends at" estimate (the runtime stays) on the title or its missing episodes' rows.
+            + `.${PAGE_CLASS} [${ABSENT_ATTR}] .endsAt { display: none !important; }\n`
             + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .missingIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .missingIndicator, `
             + `.${PAGE_CLASS}.${STATUS_CLASS} .detailPagePrimaryContainer .unairedIndicator, .${PAGE_CLASS}.${STATUS_CLASS} .itemMiscInfo-primary .unairedIndicator { display: none !important; }\n`
             + `.je-native-absent-btn { display: inline-flex; align-items: center; gap: 0.4em; min-height: 44px; padding: 0 1.1em; border-radius: 6px; margin: 0; }\n`
@@ -960,7 +967,9 @@
             state.observer?.disconnect();
             state.rowObserver?.disconnect();
             state.statusObserver?.disconnect();
+            state.absentObserver?.disconnect();
             state.page?.classList.remove(STATUS_CLASS);
+            state.page?.querySelectorAll(`[${ABSENT_ATTR}]`).forEach(n => n.removeAttribute(ABSENT_ATTR));
             state.imageObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             if (state.relookTimer) clearTimeout(state.relookTimer);
@@ -1258,6 +1267,28 @@
     }
 
     /**
+     * Marks what is not in the library (see ABSENT_ATTR): the title's information line, and the rows and cards of
+     * synthetic items. Rows of library items (a real episode among the missing ones) stay unmarked.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function markAbsent(state) {
+        if (state.aborted || current !== state) return;
+        state.page.querySelectorAll(`.itemMiscInfo-primary:not([${ABSENT_ATTR}])`).forEach((n) => {
+            if (!n.closest('[data-id]')) n.setAttribute(ABSENT_ATTR, '');
+        });
+        // Each element's id is looked at once while it stays the same; a row pointed at the library item that arrived
+        // (status-episodes) is a library row from then on.
+        const seen = state.absentSeen || (state.absentSeen = new WeakMap());
+        state.page.querySelectorAll('[data-id]').forEach((n) => {
+            const id = n.getAttribute('data-id');
+            if (seen.get(n) === id) return;
+            seen.set(n, id);
+            n.toggleAttribute(ABSENT_ATTR, isSynthetic(id));
+        });
+    }
+
+    /**
      * Smart actions a page shows outside the row (drawn before this page's controls existed) move
      * into the row's request controls (or, on a page without a row, into the status slot).
      * @param {Object} state Page state.
@@ -1473,7 +1504,7 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, statusObserver: null, extras: null,
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, imageObserver: null, statusObserver: null, absentObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false, relooks: 0, sessionRelooks: 0, relookTimer: 0,
             viewer: window.ApiClient?.getCurrentUserId?.() || null, server: serverId(),
             token: String(++tokens), route: JE.routeKey()
@@ -1493,6 +1524,12 @@
                 state.statusObserver.observe(slot, { childList: true });
             }
             markStatus(state);
+            markAbsent(state);
+            if (typeof MutationObserver === 'function') {
+                // Jellyfin draws the information line and the episode rows after the page (and again on a redraw).
+                state.absentObserver = new MutationObserver(() => markAbsent(state));
+                state.absentObserver.observe(page, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-id'] });
+            }
             if (state.primary && typeof MutationObserver === 'function') {
                 // The controls redraw themselves (status changes, asks): each drawing gets the native look,
                 // and smart actions taken away by any path take their cost lines with them.

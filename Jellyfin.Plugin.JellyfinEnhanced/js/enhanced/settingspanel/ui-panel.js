@@ -120,6 +120,11 @@
         let offset = { x: 0, y: 0 };
         let autoCloseTimer = null;
         let isMouseInside = false;
+        // Auto-close is for a pointer that left the panel: keyboard (or remote) use inside it, or focus a key moved
+        // there, keeps it open until the pointer moves again; so does a surface it opened (release notes) on top of it.
+        let keyboardInUse = false;
+        let lastPointerDown = 0;
+        let focusSettled = false;
         // Listeners bound outside the panel element (matchMedia and friends) that
         // removing the panel would otherwise leak; drained on every close path.
         const panelMediaCleanups = [];
@@ -130,7 +135,11 @@
         const resetAutoCloseTimer = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside && document.getElementById(panelId)) closePanel();
+                autoCloseTimer = null;
+                if (!document.getElementById(panelId)) return;
+                const covered = !!releaseSurface && JE.isTopmostSurface?.(help) === false;
+                if (!isMouseInside && !keyboardInUse && !covered) closePanel();
+                else resetAutoCloseTimer();
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
 
@@ -160,6 +169,8 @@
                 help.style.top = `${e.clientY - offset.y}px`;
                 help.style.transform = 'none';
             }
+            // The pointer is in use again: auto-close applies once it leaves the panel.
+            keyboardInUse = false;
             resetAutoCloseTimer();
         };
 
@@ -176,9 +187,18 @@
         help.addEventListener('mouseenter', () => { isMouseInside = true; if (autoCloseTimer) clearTimeout(autoCloseTimer); });
         help.addEventListener('mouseleave', () => { isMouseInside = false; resetAutoCloseTimer(); });
         help.addEventListener('click', resetAutoCloseTimer);
-        // Someone working with the keyboard (or a remote) is using the panel as much as a mouse over it is.
-        help.addEventListener('keydown', resetAutoCloseTimer);
-        help.addEventListener('focusin', resetAutoCloseTimer);
+        // Someone working with the keyboard (or a remote) is using the panel: it stays open for them (see keyboardInUse).
+        const noteKeyboard = () => { keyboardInUse = true; resetAutoCloseTimer(); };
+        const notePointer = () => { lastPointerDown = Date.now(); };
+        help.addEventListener('pointerdown', notePointer, true);
+        help.addEventListener('mousedown', notePointer, true);
+        help.addEventListener('keydown', noteKeyboard);
+        // Focus moving inside the panel without a press there is the keyboard's (the opening's own focus excepted).
+        help.addEventListener('focusin', () => {
+            if (focusSettled && Date.now() - lastPointerDown > 1000) noteKeyboard();
+            else resetAutoCloseTimer();
+        });
+        setTimeout(() => { focusSettled = true; }, 0);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
 
         // Shared context handed to the split panel modules

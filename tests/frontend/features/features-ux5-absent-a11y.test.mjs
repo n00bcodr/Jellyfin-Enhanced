@@ -132,10 +132,10 @@ const PAGE = `<div id="itemDetailPage" class="page libraryPage itemDetailPage"><
   <div class="itemMiscInfo itemMiscInfo-primary"><div class="mediaInfoItem">43m</div><div class="mediaInfoItem endsAt">Ends at 9:43 PM</div><div class="missingIndicator">Missing</div></div>
   <div class="mainDetailButtons"><button class="btnPlay detailButton">Play</button></div></div>
   <div class="detailPagePrimaryContent"><div class="detailSection"><div class="overview">Overview</div></div></div>
-  <div class="listItem"><div class="listItemMediaInfo"><div class="mediaInfoItem">46m</div><div class="mediaInfoItem endsAt">Ends at 10:20 PM</div></div></div></div></div>`;
+  <div class="listItem" data-id="ROW"><div class="listItemMediaInfo"><div class="mediaInfoItem">46m</div><div class="mediaInfoItem endsAt">Ends at 10:20 PM</div></div></div></div></div>`;
 
-/** The page adapter on an absent episode's page (Firefly S1E1). */
-async function episodePage(t) {
+/** The page adapter on an absent episode's (or season's) page (Firefly S1E1); its row is S1E2, also absent. */
+async function episodePage(t, kind = 'episode') {
   const h = createHarness({
     html: PAGE, url: 'http://jellyfin.test/web/index.html#/home',
     JE: {
@@ -143,13 +143,14 @@ async function episodePage(t) {
       core: { api: { plugin: async () => null } }, session: { onUserChange() {} },
       arrStatus: { enabled: () => true, subscribe: () => () => {} }, arrAsk: { enabled: () => true },
     },
-    apiClient: { serverId: () => SERVER, getItem: async (_u, id) => ({ Id: id, Type: 'Episode', Name: 'The Train Job', SeriesName: 'Firefly', ParentIndexNumber: 1, IndexNumber: 1, ProviderIds: {} }) },
+    apiClient: { serverId: () => SERVER, getItem: async (_u, id) => ({ Id: id, Type: kind === 'season' ? 'Season' : 'Episode', Name: 'The Train Job', SeriesName: 'Firefly', ParentIndexNumber: 1, IndexNumber: 1, ProviderIds: {} }) },
   });
   h.window.Emby = { Page: { show() {} } };
   t.after(() => h.close());
   h.load('core/ui-kit.js');
   h.load('jellyseerr/nativedetails/native-details.js');
-  const id = h.JE.titleDetails.syntheticId('episode', 1437, 1, 1);
+  const id = kind === 'season' ? h.JE.titleDetails.syntheticId('season', 1437, 1) : h.JE.titleDetails.syntheticId('episode', 1437, 1, 1);
+  h.document.querySelector('.listItem').dataset.id = h.JE.titleDetails.syntheticId('episode', 1437, 1, 2);
   h.window.location.hash = `#/details?id=${id}&serverId=${SERVER}`;
   await h.JE.internals.nativeDetails.onView();
   const page = h.document.getElementById('itemDetailPage');
@@ -223,4 +224,73 @@ for (const nativeTab of [true, false]) test(`the panel's Manage hidden content $
   } else {
     assert.equal(pages, 1);
   }
+});
+
+// ------------------------------------------------------------------ fix round 2 (review UX5R-1, UX5R-2)
+
+/** Captures the panel's 15-second auto-close timer; the returned function runs it at its deadline. */
+function capturePanelTimer(h) {
+  const nativeSet = h.window.setTimeout.bind(h.window);
+  const nativeClear = h.window.clearTimeout.bind(h.window);
+  const timers = new Map();
+  h.window.setTimeout = (callback, ms, ...args) => {
+    const id = nativeSet(callback, ms, ...args);
+    if (ms === 15000) timers.set(id, callback);
+    return id;
+  };
+  h.window.clearTimeout = id => { timers.delete(id); nativeClear(id); };
+  return () => {
+    assert.equal(timers.size, 1, 'one pending 15-second panel timer');
+    const [id, callback] = [...timers][0];
+    nativeClear(id); timers.delete(id); callback();
+  };
+}
+
+test('UX5R-1: keyboard use inside the panel keeps it open past its 15-second auto-close', async t => {
+  const h = panelPage(t), expire = capturePanelTimer(h);
+  const panel = await openPanel(h);
+  h.key(panel.querySelector('#jePanelSearch'), 'Tab'); await settle();
+  expire();
+  assert.ok(h.panel(), 'a keyboard reader is not dismissed');
+  // The pointer in use again (and outside the panel): auto-close applies as before.
+  h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true }));
+  expire(); await settle();
+  assert.equal(h.panel(), null, 'pointer-only auto-close still closes it');
+});
+
+test('UX5R-1: the auto-close deadline does not close the panel under the release notes it opened', async t => {
+  const h = panelPage(t), expire = capturePanelTimer(h);
+  const panel = await openPanel(h);
+  h.window.fetch = async () => ({ ok: true, json: async () => ({ body: 'Notes', tag_name: 'v1', published_at: '2026-01-01', html_url: 'https://example.test/release' }) });
+  h.load('enhanced/settingspanel/ui-release-notes.js');
+  const opener = panel.querySelector('#releaseNotesBtn'); opener.focus();
+  h.pressIn(opener, e => h.JE.internals.enhancedUi.showReleaseNotesNotification(e));
+  await settle();
+  const notes = h.document.getElementById('jellyfin-release-notes-notification');
+  assert.ok(h.JE.isTopmostSurface(notes));
+  assert.ok(panel.hasAttribute('inert'));
+  expire(); await settle();
+  assert.ok(h.panel(), 'the settings panel stays under its child');
+});
+
+test('UX5R-2: a real episode listed on an absent season keeps its "Ends at"; the missing ones do not show one', async t => {
+  const h = await episodePage(t, 'season');
+  const missing = h.page.querySelector('.listItem');
+  const real = missing.cloneNode(true);
+  real.dataset.id = '1234567890abcdef1234567890abcdef'; real.removeAttribute('data-je-absent');
+  missing.after(real); await settle(3);
+  assert.equal(shown(h, missing.querySelector('.endsAt')), false, 'a missing episode has no estimate');
+  assert.equal(shown(h, real.querySelector('.endsAt')), true, 'a real file among absent season rows keeps its estimate');
+  // A missing row Jellyfin turns into the library episode that arrived (status-episodes points it there) gets its own.
+  missing.dataset.id = 'fedcba0987654321fedcba0987654321'; await settle(3);
+  assert.equal(shown(h, missing.querySelector('.endsAt')), true);
+});
+
+test('UX5R-2 control: a library page shown after an absent one keeps the title\'s and rows\' "Ends at"', async t => {
+  const h = await episodePage(t);
+  h.window.location.hash = '#/details?id=1234567890abcdef1234567890abcdef';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(h.page.classList.contains('je-native-absent'), false);
+  assert.equal(h.page.querySelectorAll('[data-je-absent]').length, 0, 'no absent marks left behind');
+  for (const ends of h.page.querySelectorAll('.endsAt')) assert.equal(shown(h, ends), true);
 });
