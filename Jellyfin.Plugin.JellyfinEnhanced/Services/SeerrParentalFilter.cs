@@ -571,6 +571,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return JeEvidence ? JeVerdict(signature, type, policy) : signature.Score != null && IsAllowed(signature, type, policy);
         }
 
+        /// <summary>
+        /// <see cref="MaySeeAbsent(string, int, string, out AbsentSignature?)"/> for a person already read: their policy
+        /// comes from that read (<see cref="TryGetRestrictedPolicy(Jellyfin.Database.Implementations.Entities.User?, out Policy)"/>),
+        /// so they are not read again.
+        /// </summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="user">The person, as read.</param>
+        /// <param name="facts">The verified signature, when there is one.</param>
+        /// <returns>Whether the person may see it.</returns>
+        public bool MaySeeAbsent(string mediaType, int tmdbId, Jellyfin.Database.Implementations.Entities.User user, out AbsentSignature? facts)
+        {
+            facts = null;
+            if (!TryGetRestrictedPolicy(user, out var policy)) return true;
+            return MaySeeAbsent(mediaType, tmdbId, policy, out facts);
+        }
+
+        /// <summary><see cref="AbsentVerdict(string, int, string)"/> for a person already read (not read again).</summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="user">The person, as read.</param>
+        /// <returns>Whether the person may see it, or null when that isn't known yet.</returns>
+        public bool? AbsentVerdict(string mediaType, int tmdbId, Jellyfin.Database.Implementations.Entities.User user)
+        {
+            if (!TryGetRestrictedPolicy(user, out var policy)) return true;
+            return AbsentVerdict(mediaType, tmdbId, policy);
+        }
+
+        /// <summary><see cref="MaySeeAbsentAsync(string, int, string, CancellationToken)"/> for a person already read (not read again).</summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="user">The person, as read; also the viewer metadata admission is charged to.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>Whether the person may see it.</returns>
+        public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Jellyfin.Database.Implementations.Entities.User user, CancellationToken ct)
+        {
+            if (!TryGetRestrictedPolicy(user, out var policy)) return true;
+            try { return await CheckAbsentAsync(mediaType, tmdbId, policy, user.Id, ct).ConfigureAwait(false) == true; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return false; }
+        }
+
         /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
         {
@@ -638,6 +679,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Current native entitlement for a broad consumer; absent-title checks never use this exemption.</summary>
         internal bool MayOpenLocal(string kind, int tmdb, string userId)
             => TryGetRestrictedPolicy(userId, out var policy) && JeEvidence && _evidence.MayOpenLocal(kind, tmdb, policy.NativeUser);
+
+        /// <summary><see cref="MayOpenLocal(string, int, string)"/> for a person already read (not read again).</summary>
+        internal bool MayOpenLocal(string kind, int tmdb, Jellyfin.Database.Implementations.Entities.User user)
+            => TryGetRestrictedPolicy(user, out var policy) && JeEvidence && _evidence.MayOpenLocal(kind, tmdb, policy.NativeUser);
 
         // All JE entry points share this decision. Adult is a verified refusal even without other facets;
         // missing regional ratings, failed scoring and incomplete required tags remain unknown.

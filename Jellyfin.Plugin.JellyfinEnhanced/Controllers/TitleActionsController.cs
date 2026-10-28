@@ -83,11 +83,14 @@ public sealed class TitleActionsController : ControllerBase
         return Ok(new { allowed = true, itemId = itemId?.ToString("N", CultureInfo.InvariantCulture) });
     }
 
-    /// <summary>Delegates real-copy and exact scope classification to the existing copy/source owner.</summary>
+    /// <summary>
+    /// Delegates real-copy and exact scope classification to the existing copy/source owner, as <paramref name="viewer"/>:
+    /// the caller's read of the person, made just before (not read again).
+    /// </summary>
     private Guid? ActualCopy(Jellyfin.Database.Implementations.Entities.User viewer, TitleKey key, int? season, int? episode)
     {
         using var timed = StageTimings.Time(Stage.Copies);
-        if (_status == null || _status.View.Viewer(viewer.Id) is not { } statusViewer) return null;
+        if (_status == null || _status.View.ViewerAsRead(viewer) is not { } statusViewer) return null;
         if (season is int requestedSeason)
         {
             var scope = episode is int requestedEpisode ? key.WithEpisode(requestedSeason, requestedEpisode) : key.WithSeason(requestedSeason);

@@ -402,6 +402,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The viewer for a user id, or null for an unknown user.</summary>
         StatusViewer? Viewer(Guid userId);
 
+        /// <summary>
+        /// The viewer as <paramref name="user"/>, a read of the person the caller has just made, so they are not read
+        /// again (Jellyfin reads users from its database on every lookup); null when they are disabled. A view without
+        /// its own wrapping reads them again (<see cref="Viewer"/>).
+        /// </summary>
+        /// <param name="user">The person, as just read.</param>
+        /// <returns>The viewer, or null.</returns>
+        StatusViewer? ViewerAsRead(Jellyfin.Database.Implementations.Entities.User user) => Viewer(user.Id);
+
         /// <summary>The item if the viewer can see it and it is a movie, series, season or episode; otherwise null.</summary>
         JfItemRef? Resolve(Guid itemId, StatusViewer viewer);
 

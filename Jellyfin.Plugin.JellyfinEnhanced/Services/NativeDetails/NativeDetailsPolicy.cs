@@ -180,19 +180,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             using var timed = StageTimings.Time(Stage.Policy);
             var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
+            // The person as the caller read them decides the parental part too (no second read of them) when request
+            // visibility's fresh final read can confirm that read is the person now; otherwise, or when it doesn't
+            // confirm it, everything is decided from fresh reads of the person, as before.
+            if (HeldReadsConfirmable())
+            {
+                var (held, current) = await TitleAccessAsync(viewer, title, true, ct).ConfigureAwait(false);
+                if (current) return held;
+            }
+
+            return (await TitleAccessAsync(viewer, title, false, ct).ConfigureAwait(false)).Access;
+        }
+
+        /// <summary>
+        /// The title part of <see cref="SeeAsync(User, SyntheticId, bool, CancellationToken)"/>. <paramref name="held"/>: the
+        /// parental policy comes from <paramref name="viewer"/> as read, and the answer's <c>Current</c> says whether request
+        /// visibility's fresh final read confirmed it; otherwise the person is read again for it (<c>Current</c> is true).
+        /// </summary>
+        private async Task<(Access Access, bool Current)> TitleAccessAsync(User viewer, SyntheticId title, bool held, CancellationToken ct)
+        {
             var mediaType = title.IsMovie ? "movie" : "tv";
+            var id = viewer.Id.ToString("N");
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
             // A2 owned-copy exemption: keep the following library and exact season/episode visibility checks.
-            if (!_parental.MayOpenLocal(mediaType, title.TmdbId, viewer.Id.ToString("N"))
-                && !await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false))
+            if (!(held ? _parental.MayOpenLocal(mediaType, title.TmdbId, viewer) : _parental.MayOpenLocal(mediaType, title.TmdbId, id))
+                && !await (held ? _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer, ct) : _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, id, ct)).ConfigureAwait(false))
             {
                 // A known hidden native copy is a refusal even when public parental facts remain unavailable.
-                if (!LibraryVisible(viewer, title) || Physical(viewer, title).Hides(title)) return Access.Refused;
-                return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config)
-                    && _parental.AbsentVerdict(mediaType, title.TmdbId, viewer.Id.ToString("N")) == null ? Access.Unknown : Access.Refused;
+                var visible = LibraryVisible(viewer, title, held, out var confirmed);
+                if (!visible || Physical(viewer, title).Hides(title)) return (Access.Refused, confirmed);
+                var verdict = held ? _parental.AbsentVerdict(mediaType, title.TmdbId, viewer) : _parental.AbsentVerdict(mediaType, title.TmdbId, id);
+                return (JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) && verdict == null ? Access.Unknown : Access.Refused, confirmed);
             }
             using var library = StageTimings.Time(Stage.Library);
-            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
+            var shown = LibraryVisible(viewer, title, held, out var current);
+            return (shown && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused, current);
         }
 
         /// <summary>
@@ -460,7 +482,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public bool MayListAbsent(User viewer, SyntheticId title)
         {
             if (!title.IsTitle) return false;
-            if (!_parental.MaySeeAbsent(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
+            var mediaType = title.IsMovie ? "movie" : "tv";
+            // As in SeeAsync: the person as the caller read them, while request visibility's fresh final read confirms
+            // them (a refusal from that read stands: it fails closed); else fresh reads of the person, as before.
+            if (HeldReadsConfirmable())
+            {
+                if (!_parental.MaySeeAbsent(mediaType, title.TmdbId, viewer, out _)) return false;
+                var visible = LibraryVisible(viewer, title, true, out var current);
+                if (current) return visible && !Physical(viewer, title).Hides(title);
+            }
+
+            if (!_parental.MaySeeAbsent(mediaType, title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
         }
 
@@ -525,9 +557,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static bool RequestsOn(PluginConfiguration config)
             => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr";
 
+        /// <summary>
+        /// True when request visibility decides library visibility (<see cref="LibraryVisible(User, SyntheticId, bool, out bool)"/>):
+        /// its final authorization stamp reads the person fresh, so it can confirm a read the caller made.
+        /// </summary>
+        private bool HeldReadsConfirmable() => _requests != null && JellyfinEnhanced.Instance?.Configuration is { } config && RequestsOn(config);
+
         /// <summary>Whether the viewer can open a library the title would land in (request visibility when requests are on).</summary>
-        private bool LibraryVisible(User viewer, SyntheticId title)
+        private bool LibraryVisible(User viewer, SyntheticId title) => LibraryVisible(viewer, title, false, out _);
+
+        /// <summary>
+        /// <see cref="LibraryVisible(User, SyntheticId)"/>. <paramref name="held"/>: request visibility starts from
+        /// <paramref name="viewer"/> as read, and <paramref name="current"/> is true only when its fresh final read confirmed
+        /// that read (every authorization fact of the person, their parental policy among them, is the person's now).
+        /// Otherwise the person is read again and <paramref name="current"/> is true.
+        /// </summary>
+        private bool LibraryVisible(User viewer, SyntheticId title, bool held, out bool current)
         {
+            current = !held;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null) return false;
             if (RequestsOn(config) && _requests != null)
@@ -539,10 +586,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         Key = (title.IsMovie ? "movie" : "tv") + ":tmdb:" + title.TmdbId.ToString(CultureInfo.InvariantCulture),
                         Scope = title.IsMovie ? "movie" : "seasons",
                     };
-                    return _requests.Evaluate(viewer.Id, input).Visible;
+                    return held ? _requests.Evaluate(viewer, input, out current).Visible : _requests.Evaluate(viewer.Id, input).Visible;
                 }
                 catch (Exception)
                 {
+                    current = !held;
                     return false;
                 }
             }

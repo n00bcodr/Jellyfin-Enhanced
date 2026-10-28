@@ -60,17 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null, BridgeImportReadiness? readiness = null)
         {
             _libraryManager = libraryManager;
-            LibraryTopology = () =>
-            {
-                var topology = new StringBuilder();
-                foreach (var folder in (libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
-                {
-                    topology.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
-                    foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) topology.Append(':').Append(path);
-                }
-
-                return topology.ToString();
-            };
+            LibraryTopology = () => TopologyOf(libraryManager);
             _userManager = userManager;
             _logger = logger;
             _libraryManager.ItemAdded += OnItemChanged;
@@ -83,6 +73,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public long Revision => Interlocked.Read(ref _revision);
+
+        /// <summary>
+        /// The current library topology as text: every virtual folder's id, name, enabled state and locations. Removing a
+        /// location or disabling a library can happen without any item event, so caches of what lives where key by it.
+        /// </summary>
+        /// <param name="libraryManager">The library manager.</param>
+        /// <returns>The topology.</returns>
+        internal static string TopologyOf(ILibraryManager libraryManager)
+        {
+            var topology = new StringBuilder();
+            foreach (var folder in (libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
+            {
+                topology.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
+                foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) topology.Append(':').Append(path);
+            }
+
+            return topology.ToString();
+        }
 
         /// <summary>Observable rows per lookup before the scan bound (<see cref="CopyObservableBound"/>; tests lower it).</summary>
         internal int ObservableBound { get; set; } = CopyObservableBound;
@@ -101,6 +109,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
             return ViewerOf(user);
         }
+
+        /// <inheritdoc />
+        public StatusViewer? ViewerAsRead(User user) => user.HasPermission(PermissionKind.IsDisabled) ? null : ViewerOf(user);
 
         /// <summary>
         /// The viewer as <paramref name="user"/> (one read of them): every fact of the viewer, its policy revision and its
@@ -268,6 +279,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <see cref="TitleCopyIds"/> instead.
         /// </remarks>
         public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+        {
+            // One request asks the same title for the same person several times (the action menu: its real-copy check
+            // before and after the metadata await, and request visibility in each admission). A finished scan is shared
+            // within the request while nothing could have changed what it found: the same person with the same authority
+            // and library scope, the same ids, and no movie or series added, updated or removed since the scan began.
+            var phase = PhaseCopies(titleKey, viewer, aliases);
+            if (phase is { } shared && shared.Held is { } held) return held;
+            var revision = Revision;
+            var lookup = Scan(titleKey, viewer, aliases);
+            if (phase is { } fill && lookup.IsComplete) fill.Keep(revision, lookup);
+            return lookup;
+        }
+
+        /// <summary>The key a request's copy lookups are shared under, and its kept lookup when still current.</summary>
+        private readonly record struct PhaseLookup(Dictionary<string, (long Revision, CopyLookup Lookup)> Lookups, string Key, CopyLookup? Held)
+        {
+            internal void Keep(long revision, CopyLookup lookup)
+            {
+                lock (Lookups)
+                {
+                    if (Lookups.Count < PhaseLookups || Lookups.ContainsKey(Key)) Lookups[Key] = (revision, lookup);
+                }
+            }
+        }
+
+        private static readonly object PhaseCopiesKey = new();
+
+        /// <summary>The most copy lookups one request shares (a long list of cards asks more titles; those scan as before).</summary>
+        private const int PhaseLookups = 256;
+
+        /// <summary>
+        /// The current request's shared copy lookups for this person and title, or null outside a request or for the
+        /// library context. The key holds every input of the scan: the person, their full authority as this viewer was read
+        /// (<see cref="Helpers.UserAuthority.Fingerprint"/>) and policy revision, the library topology as it is now (a
+        /// removed location or a disabled library changes it without any item event), the title and every alias. A kept
+        /// lookup is served only while <see cref="Revision"/> is the one taken before it was scanned.
+        /// </summary>
+        private PhaseLookup? PhaseCopies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases)
+        {
+            if (viewer.IsLibraryContext || viewer.Handle is not User user) return null;
+            var http = new Microsoft.AspNetCore.Http.HttpContextAccessor().HttpContext;
+            if (http == null) return null;
+            Dictionary<string, (long Revision, CopyLookup Lookup)> lookups;
+            lock (http.Items)
+            {
+                if (http.Items.TryGetValue(PhaseCopiesKey, out var existing) && existing is Dictionary<string, (long Revision, CopyLookup Lookup)> found) lookups = found;
+                else http.Items[PhaseCopiesKey] = lookups = new Dictionary<string, (long Revision, CopyLookup Lookup)>(StringComparer.Ordinal);
+            }
+
+            var key = new StringBuilder()
+                .Append(user.Id.ToString("N", CultureInfo.InvariantCulture)).Append('\n')
+                .Append(Helpers.UserAuthority.Fingerprint(user)).Append('\n')
+                .Append(viewer.PolicyRevision).Append('\n')
+                .Append(TopologyOf(_libraryManager)).Append('\n')
+                .Append(titleKey);
+            foreach (var alias in (aliases ?? Array.Empty<TitleKey>()).Select(a => a.ToString()).OrderBy(a => a, StringComparer.Ordinal)) key.Append('\n').Append(alias);
+            var text = key.ToString();
+            lock (lookups)
+            {
+                return new PhaseLookup(lookups, text, lookups.TryGetValue(text, out var held) && held.Revision == Revision ? held.Lookup : null);
+            }
+        }
+
+        /// <summary>One copy scan (<see cref="Copies"/>).</summary>
+        private CopyLookup Scan(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases)
         {
             var user = viewer.Handle as User;
             // Nothing read: no proof of absence (and, like every incomplete read, never cached).
