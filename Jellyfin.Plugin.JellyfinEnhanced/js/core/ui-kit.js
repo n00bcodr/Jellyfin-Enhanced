@@ -94,6 +94,8 @@
 
         const t = document.createElement('div');
         t.className = 'jellyfin-enhanced-toast';
+        // Announced (a polite live region), and never made inert by a modal surface open behind it.
+        t.setAttribute('role', 'status');
         Object.assign(t.style, {
             position: 'fixed',
             bottom: '20px',
