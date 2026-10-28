@@ -193,6 +193,22 @@ public class PrivacyOperationalProjectionTests
     }
 
     [Fact]
+    public void StandaloneStatusAdapterKeepsTheCopyAndEditionFieldsOfAGuardedTitle()
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = Guard(f, user, "movie:tmdb:42");
+        const string raw = """{"items":[{"key":"movie:tmdb:42","itemId":"shown","kind":"season","fourK":true,"stage":"ready","reason":{"code":"ready"},"copy":{"role":"4k","variant":"4k","ask":true,"search":false,"instanceId":"r2","dest":"sonarr"},"summary":{"aired":1,"missingInCopy":2},"episodes":[{"key":"k","season":1,"episode":1,"stage":"ready","copyGap":"4k"}]}]}""";
+        var result = Final(f, spoilers, user, "acquire/status", new ContentResult { Content = raw, ContentType = "application/json" });
+        var row = Assert.Single(result["items"]!.AsArray())!;
+        var original = JsonNode.Parse(raw)!["items"]![0]!;
+        Assert.True(row["fourK"]?.GetValue<bool>());
+        Assert.True(JsonNode.DeepEquals(original["copy"], row["copy"]), "copy");
+        Assert.Equal(2, row["summary"]?["missingInCopy"]?.GetValue<int>());
+        Assert.Equal("4k", row["episodes"]?[0]?["copyGap"]?.GetValue<string>());
+    }
+
+    [Fact]
     public void StandaloneStatusAdapterKeepsTheVersionsFingerprint()
     {
         using var f = new ApiPluginFixture();
