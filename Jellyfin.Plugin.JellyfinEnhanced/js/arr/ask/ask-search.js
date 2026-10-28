@@ -11,8 +11,9 @@
  * newer keystroke aborts the older read and only the current one may draw (or clear) the row.
  * While the row is up and Jellyfin found nothing itself, Jellyfin's "no results" message is hidden and the
  * row says the library has no matches instead (the page never claims there are no results above titles).
- * A failed search shows Try again: it searches the same query again (bounded by SEARCH_TIMEOUT_MS), keeps
- * focus in the row and draws one row.
+ * A failed search shows Try again: it searches the same query again, keeps focus in the row and draws one
+ * row. Every search (capabilities read included) has one SEARCH_TIMEOUT_MS deadline. Jellyfin's message is
+ * synchronised before paint (a priority body-observer subscriber), so it never shows above the row.
  * Starts itself on the first navigation once the request controls are on; JE.initializeArrAskSearch
  * starts it directly (idempotent).
  */
@@ -25,10 +26,13 @@
     const NATIVE_HIDDEN_CLASS = 'je-ask-search-native-hidden';
     const LOCAL_NONE_CLASS = 'je-ask-search-local-none';
     const RETRY_CLASS = 'je-ask-search-retry';
-    // A search (first or Try again) that gets no answer in this time fails: Try again never spins forever.
+    // A search (first or Try again) that gets no answer in this time, its capabilities read included, fails:
+    // Try again never spins forever.
     const SEARCH_TIMEOUT_MS = 15000;
+    // Hidden without touching display, so its owner's own hiding (display: none) can still be read.
     const CSS = `
-.${NATIVE_HIDDEN_CLASS} { display: none !important; }
+.${NATIVE_HIDDEN_CLASS} { visibility: hidden !important; position: absolute !important; width: 1px !important; height: 1px !important;
+  margin: 0 !important; padding: 0 !important; overflow: hidden !important; clip-path: inset(50%) !important; pointer-events: none !important; }
 .${LOCAL_NONE_CLASS} { margin: 1em 0 0.4em; opacity: 0.8; }
 .je-ask-search-error { display: flex; align-items: center; gap: 0.8em; flex-wrap: wrap; }
 .je-ask-search-error .je-discover-note { flex: 1 1 16em; }
@@ -176,20 +180,24 @@
     }
 
     /**
-     * Jellyfin's own "no results" message on the search page, when it is shown (other scripts may keep a
-     * hidden one there; one this row hid still counts).
+     * Jellyfin's own "no results" message on the search page, while its owner shows it: never when the page
+     * has local results, nor when its owner (Jellyfin or another script) hides it. This row's own hiding keeps
+     * display alone, so the owner's state is read through it.
      * @param {HTMLElement} page Search page.
      * @returns {HTMLElement|null} Message.
      */
     function nativeEmptyMessage(page) {
-        return [...page.querySelectorAll('.noItemsMessage')].find(n => !n.closest(`.${SECTION_CLASS}`) && n.style.display !== 'none'
-            && (n.classList.contains(NATIVE_HIDDEN_CLASS) || getComputedStyle(n).display !== 'none')) || null;
+        const local = [...page.querySelectorAll(`.verticalSection:not(.${SECTION_CLASS}):not(.jellyseerr-section)`)].some(s => s.querySelector('.card'));
+        if (local) return null;
+        return [...page.querySelectorAll('.noItemsMessage')].find(n => !n.closest(`.${SECTION_CLASS}`) && !n.hidden && n.style.display !== 'none'
+            && getComputedStyle(n).display !== 'none') || null;
     }
 
     /**
      * While the row is on the search page and Jellyfin found nothing: hides Jellyfin's "no results" message
-     * (a class, never its text: the node is React's) and shows the row's own "nothing in your library" line;
-     * otherwise puts both back. Writes only on change (the page's observers call this).
+     * (a class, never its text: the node is React's) and shows the row's own "nothing in your library" line,
+     * only while the box still holds the row's query (a new query hides it until its row is drawn);
+     * otherwise puts both back. Writes only on change (the page's observers call this, before paint).
      * @returns {void}
      */
     function syncNative() {
@@ -201,7 +209,22 @@
         state.hiddenNative = message;
         if (message && !message.classList.contains(NATIVE_HIDDEN_CLASS)) message.classList.add(NATIVE_HIDDEN_CLASS);
         const line = section?.querySelector(`.${LOCAL_NONE_CLASS}`);
-        if (line && line.hidden !== !message) line.hidden = !message;
+        const hide = !message || queryOf(searchInput()) !== state.query;
+        if (line && line.hidden !== hide) line.hidden = hide;
+    }
+
+    /**
+     * Waits for a promise until a deadline (ms since the epoch); rejects with a TimeoutError after it.
+     * The promise itself is left to finish (a shared read other callers may use).
+     * @param {Promise<*>} promise Promise.
+     * @param {number} deadline Deadline.
+     * @returns {Promise<*>} Its value.
+     */
+    function beforeDeadline(promise, deadline) {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' })), Math.max(0, deadline - Date.now()));
+            Promise.resolve(promise).then(value => { clearTimeout(timer); resolve(value); }, err => { clearTimeout(timer); reject(err); });
+        });
     }
 
     /**
@@ -250,6 +273,7 @@
         state.controller = null;
         state.token = null;
         settleRetry();
+        syncNative();
         if (!query) {
             clear();
             return;
@@ -268,7 +292,19 @@
     async function search(query) {
         const token = intent(query, 1);
         state.token = token;
-        const caps = await JE.arrAsk.me();
+        // One deadline for the whole search: the capabilities read and then the search itself.
+        const deadline = Date.now() + SEARCH_TIMEOUT_MS;
+        let caps;
+        try {
+            caps = await beforeDeadline(JE.arrAsk.me(), deadline);
+        } catch (err) {
+            if (!current(token)) return;
+            console.warn(`${logPrefix} capabilities not read in time (${err?.message || err})`);
+            state.token = null;
+            // A row on the page (a Try again) says the search failed again; with none, nothing is drawn.
+            if (state.section) draw(query, null, null);
+            return;
+        }
         if (!current(token)) return;
         if (!allowed(caps)) {
             clear();
@@ -279,7 +315,7 @@
         const lang = (navigator.language || 'en').split('-')[0].toLowerCase();
         let answer = null;
         try {
-            answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller?.signal, timeoutMs: SEARCH_TIMEOUT_MS });
+            answer = await JE.arrAsk.call(`/acquire/search?q=${encodeURIComponent(query)}&page=1&language=${encodeURIComponent(lang)}`, { signal: controller?.signal, timeoutMs: Math.max(1, deadline - Date.now()) });
         } catch (err) {
             if (!current(token)) return;
             console.warn(`${logPrefix} search failed (${err?.message || err})`);
@@ -411,6 +447,9 @@
         if (state.started || !JE.arrAsk?.enabled?.()) return;
         state.started = true;
         JE.helpers?.onBodyMutation?.('je-ask-search', check);
+        // Jellyfin's late "no results" message is hidden before it is painted (priority: run in the observer's
+        // own microtask); the row's line follows. A no-op while no row is up.
+        JE.helpers?.onBodyMutation?.('je-ask-search-native', () => syncNative(), { priority: 1 });
         JE.core?.navigation?.onNavigate?.(afterNavigate);
         check();
     }

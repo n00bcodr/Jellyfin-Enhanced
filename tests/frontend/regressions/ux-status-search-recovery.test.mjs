@@ -34,7 +34,7 @@ const page = results => ({ outcome: 'accepted', reason: 'search', certainty: 'Su
  * The hub, Discover, the ask core and the search row (as features-arr-discover), with the search calls' options
  * recorded. routes(entry) answers fetches (an object: JSON 200; {status, body}; a promise of either).
  */
-function setup(t, { hash = '#/home', me = MEMBER, routes = () => undefined, html = '', config = {} } = {}) {
+function setup(t, { hash = '#/home', me = MEMBER, routes = () => undefined, html = '', config = {}, realObserver = false, realTransport = false } = {}) {
   const fetches = [];
   const calls = [];
   const mutations = [];
@@ -73,6 +73,12 @@ function setup(t, { hash = '#/home', me = MEMBER, routes = () => undefined, html
     }
   });
   t.after(() => h.close());
+  // The production body observer (priority subscribers before paint, the rest after it) and transport.
+  if (realObserver) {
+    h.load('core/dom-observer.js');
+    h.JE.helpers.onBodyMutation = h.JE.core.dom.onBodyMutation;
+  }
+  if (realTransport) h.load('core/api-client.js');
   // Records what each plugin read was asked with (the harness's transport stub ignores timeoutMs).
   const transport = h.JE.core.api.pluginResponse;
   h.JE.core.api.pluginResponse = (path, options) => {
@@ -98,7 +104,11 @@ function typeInto(h, value) {
   input.dispatchEvent(new h.window.Event('input'));
 }
 
-const shown = (h, node) => node.isConnected && !node.hidden && h.window.getComputedStyle(node).display !== 'none';
+const shown = (h, node) => {
+  if (!node.isConnected || node.hidden) return false;
+  const style = h.window.getComputedStyle(node);
+  return style.display !== 'none' && style.visibility !== 'hidden';
+};
 
 // ------------------------------------------------------------------ UX-10
 
@@ -217,7 +227,8 @@ test('UX-16: a failed search offers Try again: same query, bounded, focus kept, 
   assert.equal(retry.getAttribute('aria-busy'), 'true');
   assert.equal(retry.textContent, 'Trying again…');
   assert.equal(h.document.activeElement, retry, 'focus stays on the button while it works');
-  assert.equal(searchCalls()[1].options.timeoutMs, bound);
+  // The retry's own deadline: what is left of 15 s after its capabilities read.
+  assert.ok(searchCalls()[1].options.timeoutMs > 0 && searchCalls()[1].options.timeoutMs <= bound);
 
   // It fails again: a fresh Try again, focused.
   answers[1].d.resolve({ status: 503, body: {} });
@@ -373,4 +384,140 @@ test('UX-21: at phone width the tab strip scrolls the selected tab into view (Di
     const rows = [...hubPage(h).querySelectorAll('.je-discover-row')];
     return rows.length > 0 && rows.every(r => r.hidden);
   });
+});
+
+// ------------------------------------------------------------------ fix round 2 (review UX4R-1..3)
+
+test('UX4R-1: Try again with a stalled capabilities read ends in the error within the same 15 s deadline', async t => {
+  let now = 0;
+  let meReads = 0;
+  const pendingMe = deferred();
+  const h = setup(t, { realTransport: true, html: EMPTY_SEARCH, routes: f => {
+    if (f.path === '/acquire/requests/me') { meReads++; return meReads === 1 ? { me: MEMBER } : pendingMe.promise; }
+    if (f.path === '/acquire/search') return { status: 503, body: {} };
+    return undefined;
+  } });
+  h.window.Date.now = () => now;
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'found');
+  await until(() => h.document.querySelector('.je-ask-search-retry'));
+  const retry = h.document.querySelector('.je-ask-search-retry');
+  now = 61000;                                            // the capabilities cache (60 s) has expired
+  retry.focus();
+  // The deadline's own timer (the only one of ~15 s) is run at once; everything else keeps its delay.
+  const timers = [];
+  const originalTimer = h.window.setTimeout.bind(h.window);
+  h.window.setTimeout = (fn, delay, ...args) => { timers.push(delay); return originalTimer(fn, delay >= 14000 && delay <= 15000 ? 25 : delay, ...args); };
+  retry.click();
+  await until(() => meReads === 2);
+  assert.equal(retry.getAttribute('aria-busy'), 'true');
+  assert.ok(timers.some(d => d >= 14000 && d <= 15000), 'the retry has a deadline while its capabilities are read');
+  await until(() => h.document.querySelector('.je-ask-search-retry') !== retry && h.document.querySelector('.je-ask-search-retry'));
+  const again = h.document.querySelector('.je-ask-search-retry');
+  assert.equal(again.getAttribute('aria-busy'), null, 'the busy state ended');
+  assert.equal(h.document.activeElement, again, 'focus stays on Try again');
+  assert.equal(h.searches().length, 1, 'no search was sent without capabilities');
+  // A late capabilities answer draws nothing more; a new Try again works.
+  pendingMe.resolve({ status: 200, body: { me: MEMBER } });
+  await wait(30);
+  assert.equal(h.document.querySelector('.je-ask-search-retry'), again);
+});
+
+test('UX4R-2: a native "no results" Jellyfin draws late is hidden before paint (production observer)', async t => {
+  const h = setup(t, { realObserver: true, html: EMPTY_SEARCH, routes: f => (f.path === '/acquire/search' ? page([card('movie:tmdb:1', 'Found')]) : undefined) });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'found');
+  await until(() => h.document.querySelector('.je-discover-card'));
+  const native = h.document.getElementById('native-empty');
+  assert.equal(shown(h, native), false, 'hidden in the same task the row was drawn');
+  native.remove();
+  await wait(80);
+  // The next frame is held: anything left for after paint has not run.
+
+  h.window.requestAnimationFrame = () => 100;
+  h.document.querySelector('.searchResults').prepend(native);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(shown(h, native), false, 'hidden in the observer microtask, before the frame');
+  assert.equal(shown(h, h.document.querySelector('.je-ask-search-local-none')), true);
+});
+
+test('UX4R-2: a re-search never shows the native message between the keystroke and the new row', async t => {
+  const answers = [];
+  const h = setup(t, { realObserver: true, html: EMPTY_SEARCH, routes: f => {
+    if (f.path !== '/acquire/search') return undefined;
+    const d = deferred();
+    answers.push(d);
+    return d.promise;
+  } });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'dune');
+  await until(() => answers.length === 1);
+  answers[0].resolve(page([card('movie:tmdb:1', 'Dune')]));
+  await until(() => h.document.querySelector('.je-discover-card'));
+  const visible = [];
+  const watch = new h.window.MutationObserver(() => {
+    const n = h.document.querySelector('.noItemsMessage');
+    if (n) visible.push(shown(h, n));
+  });
+  watch.observe(h.document.body, { childList: true, subtree: true, attributes: true });
+  typeInto(h, 'dune part two');
+  // Jellyfin re-renders its message for the new query (a new node), then JE's answer arrives.
+  const old = h.document.getElementById('native-empty');
+  const fresh = old.cloneNode(true);
+  fresh.className = 'noItemsMessage centerMessage';
+  old.replaceWith(fresh);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(shown(h, fresh), false, 'the re-rendered message is hidden before paint');
+  await until(() => answers.length === 2);
+  answers[1].resolve(page([card('movie:tmdb:2', 'Dune: Part Two')]));
+  await until(() => h.document.querySelector('.je-discover-card[data-key="movie:tmdb:2"]'));
+  await wait(20);
+  watch.disconnect();
+  assert.equal(shown(h, fresh), false);
+  assert.equal(visible.includes(true), false, 'the native message was never shown while a row was up');
+});
+
+test('UX4R-3: the "nothing in your library" line follows the query and goes when Jellyfin\'s own results arrive (retained node)', async t => {
+  const answers = [];
+  const h = setup(t, { realObserver: true, html: EMPTY_SEARCH, routes: f => {
+    if (f.path !== '/acquire/search') return undefined;
+    const d = deferred();
+    answers.push(d);
+    return d.promise;
+  } });
+  h.JE.initializeArrAskSearch();
+  typeInto(h, 'found');
+  await until(() => answers.length === 1);
+  answers[0].resolve(page([card('movie:tmdb:1', 'Found')]));
+  await until(() => h.document.querySelector('.je-discover-card'));
+  const line = () => h.document.querySelector('.je-ask-search-local-none');
+  assert.equal(shown(h, line()), true);
+  assert.equal(line().textContent, 'Nothing in your library matches "found".');
+
+  // The query changes: the old sentence goes at once (no stale text), until the new row is drawn.
+  typeInto(h, 'found it');
+  assert.equal(shown(h, line()), false, 'no sentence about the old query');
+  await until(() => answers.length === 2);
+  answers[1].resolve(page([card('movie:tmdb:2', 'Found it')]));
+  await until(() => h.document.querySelector('.je-discover-card[data-key="movie:tmdb:2"]'));
+  assert.equal(shown(h, line()), true);
+  assert.equal(line().textContent, 'Nothing in your library matches "found it".');
+
+  // Jellyfin's adapter keeps its message node and hides it with its own class as local results arrive.
+  const native = h.document.getElementById('native-empty');
+  const style = h.document.createElement('style');
+  style.textContent = '.native-has-results { display:none !important; }';
+  h.document.head.appendChild(style);
+  native.classList.add('native-has-results');
+  h.document.querySelector('.searchResults').insertAdjacentHTML('afterbegin', '<div class="verticalSection" id="movies"><div class="card" data-type="Movie"></div></div>');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(shown(h, line()), false, 'no false "nothing matches" above local results');
+  assert.equal(native.classList.contains('je-ask-search-native-hidden'), false, 'the owner hides its own node now');
+  // Even a retained node the owner leaves shown counts as stale once local results are on the page.
+  native.classList.remove('native-has-results');
+  h.JE.internals.arrAskSearch.check();
+  assert.equal(shown(h, line()), false);
 });
