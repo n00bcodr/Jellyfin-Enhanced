@@ -183,10 +183,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var choices = _ledger?.Database.Available == true ? _ledger.Choices.Audit(count) : Array.Empty<ArrAuditEntry>();
             var entries = _audit.ReadRecent(count).Concat(choices).OrderByDescending(x => x.Time).Take(count).ToArray();
             // The key each row names its title by, and that title's canonical key (what the names are resolved for).
-            var keys = entries.Select(AuditTitleKey).Where(k => k.HasValue).Select(k => k!.Value).Distinct().ToArray();
+            var rows = entries.Select(e => (Key: AuditTitleKey(e), Entry: e)).Where(r => r.Key.HasValue).ToArray();
+            var keys = rows.Select(r => r.Key!.Value).Distinct().ToArray();
+            // Named only as the caller's own request cards would name them (RequestHubProjection.AuditTitlesAsync).
             var meta = _projection == null || keys.Length == 0 || ArrCaller.PersonId(User) is not { } caller
                 ? new Dictionary<string, Services.Acquire.Requests.HubTitleMeta>(StringComparer.Ordinal)
-                : await _projection.AuditTitlesAsync(keys.Select(k => k.Title).Distinct(StringComparer.Ordinal), caller, cancellationToken).ConfigureAwait(false);
+                : await _projection.AuditTitlesAsync(rows.Select(r => (r.Key!.Value.Title, r.Entry)), caller, cancellationToken).ConfigureAwait(false);
             var titles = new Dictionary<string, object>(StringComparer.Ordinal);
             foreach (var (raw, title) in keys)
             {

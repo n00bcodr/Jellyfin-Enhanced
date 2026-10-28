@@ -8,6 +8,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+
 namespace JE.Tests;
 
 /// <summary>
@@ -201,13 +203,31 @@ public class IntegrationRequestHouseholdTests
         h.Tmdb[605] = new HubTitleMeta { Title = "Inside Out 3", Year = 2027, Poster = "/io3.jpg" };
         h.Found["tv:tvdb:77623"] = 141;
         h.Tmdb[141] = new HubTitleMeta { Title = "Cheers", Year = 1982 };
-        var names = await h.Projection.AuditTitlesAsync(new[] { "movie:tmdb:605", "tv:tvdb:77623", "movie:tmdb:999" }, r.Admin, default);
+        var names = await h.Projection.AuditTitlesAsync(new[] { Row("movie:tmdb:605"), Row("tv:tvdb:77623"), Row("movie:tmdb:999") }, r.Admin, default);
         Assert.Equal(("Inside Out 3", 2027), (names["movie:tmdb:605"].Title, names["movie:tmdb:605"].Year));
         Assert.Equal("Cheers", names["tv:tvdb:77623"].Title);
         // TMDB doesn't know it: no name is made up.
         Assert.True(!names.TryGetValue("movie:tmdb:999", out var unknown) || unknown.Title == null);
         // A caller Jellyfin doesn't know reads nothing.
-        Assert.Empty(await h.Projection.AuditTitlesAsync(new[] { "movie:tmdb:605" }, Guid.NewGuid(), default));
+        Assert.Empty(await h.Projection.AuditTitlesAsync(new[] { Row("movie:tmdb:605") }, Guid.NewGuid(), default));
+    }
+
+    private static (string, ArrAuditEntry) Row(string key, string? instance = null) => (key, new ArrAuditEntry { Target = key, Action = "request.choice.claim", InstanceId = instance ?? string.Empty });
+
+    // UX6R-1: the Audit tab names a title only when the request policy shows it to the calling administrator, the check their
+    // request cards use (libraries, the destination, parental limits); one who may not see it gets no name, and the other
+    // administrator still does.
+    [Fact]
+    public async Task TheAuditNamesNoTitleTheCallersRequestPolicyHidesFromThem()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        h.Tmdb[605] = new HubTitleMeta { Title = "Inside Out 3", Year = 2027 };
+        var restricted = r.Add("Admin");
+        r.Policy.People[restricted] = r.Policy.People[restricted] with { Visible = false, Refusal = "not_visible_to_user" };
+        Assert.Empty(await h.Projection.AuditTitlesAsync(new[] { Row("movie:tmdb:605", "r1") }, restricted, default));
+        Assert.Equal("Inside Out 3", (await h.Projection.AuditTitlesAsync(new[] { Row("movie:tmdb:605", "r1") }, r.Admin, default))["movie:tmdb:605"].Title);
+        Assert.DoesNotContain(h.TmdbCalls, c => c.Id != 605);
     }
 
     [Fact]
