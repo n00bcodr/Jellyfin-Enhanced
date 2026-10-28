@@ -10,6 +10,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
@@ -200,7 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     if (meta.TryGetValue(title, out var m) && !string.IsNullOrEmpty(m.Title)) titles[raw] = new { title = m.Title, year = m.Year };
                 }
-                return Ok(new
+                return new GuardedJsonResult(new
                 {
                     entries,
                     names = new
@@ -213,6 +214,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             }, HttpContext).ConfigureAwait(false);
             return answer ?? StatusCode(503);
+        }
+
+        /// <summary>
+        /// A protected JSON answer that writes and commits itself under the response guard the delivery gate installed
+        /// (the shape of the tag cache's segmented result): its read-set is checked again at the commit, an answer whose
+        /// inputs changed since the gate is withheld (an empty, uncached 503), and the global commit filter finds it
+        /// committed. Serialized with MVC's own JSON options, so its bytes are what <c>Ok(value)</c> would write.
+        /// </summary>
+        private sealed class GuardedJsonResult(object value) : OkObjectResult(value)
+        {
+            /// <inheritdoc />
+            public override async Task ExecuteResultAsync(ActionContext context)
+            {
+                var http = context.HttpContext;
+                var options = http.RequestServices?.GetService(typeof(Microsoft.Extensions.Options.IOptions<JsonOptions>)) is Microsoft.Extensions.Options.IOptions<JsonOptions> mvc
+                    ? mvc.Value.JsonSerializerOptions
+                    : new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+                var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(Value, Value!.GetType(), options);
+                var guard = Services.PrivacyResponseGuard.Find(http);
+                guard?.Bind(http, owned: true);
+                var response = http.Response;
+                response.StatusCode = StatusCodes.Status200OK;
+                response.ContentType = "application/json; charset=utf-8";
+                response.ContentLength = bytes.Length;
+                await response.Body.WriteAsync(bytes, http.RequestAborted).ConfigureAwait(false);
+                if (guard == null || await guard.TryCommitAsync().ConfigureAwait(false) || guard.Stopped) return;
+                guard.Stop();
+            }
         }
 
         // The title an audit row acts on: the key as the row names it (a search's details "key", a "key:" target, else a
