@@ -158,13 +158,14 @@ public static class ProviderPresentationSchema
         Children("review-ratings", "ratings", "review-rating-map");
         Children("translations", "translations", "translation"); Children("translation", "data", "translation-data");
         Children("ratings", "rt imdb tmdb metacritic rottenTomatoes ratings", "score", "ratings");
-        Add("status", Role.Metadata, "key liveKey itemId openItemId kind versions versionsFingerprint stage attention quiet askedSeasons actions", "nextDate nextDay");
+        Add("status", Role.Metadata, "key liveKey itemId openItemId kind versions versionsFingerprint fourK stage attention quiet askedSeasons actions", "nextDate nextDay");
+        Add("status-copy", Role.Metadata, "role variant ask search instanceId dest");
         Add("reason", Role.Metadata, "code"); Add("reason-params", Role.Metadata, "date count hours title contact library variant held sent since pct eta");
         Add("progress", Role.Metadata, "percent etaSeconds");
         Add("journey", Role.Metadata, "stage at state byYou");
-        Add("status-summary", Role.Metadata, "aired ready downloading almostReady missing attention longMissing longMissingSince longMissingSent nextAirIsDay unknown nextSeason nextEpisode readySeasons", "nextAir");
+        Add("status-summary", Role.Metadata, "aired ready downloading almostReady missing attention longMissing longMissingSince longMissingSent nextAirIsDay unknown nextSeason nextEpisode missingInCopy readySeasons", "nextAir");
         Add("season-status", Role.Metadata, "season itemId stage");
-        Add("episode-status", Role.Metadata, "key season episode itemId row stage attention", "airDate");
+        Add("episode-status", Role.Metadata, "key season episode itemId row stage attention copyGap", "airDate");
         Add("admin-status", Role.Metadata, "unreadable approvedNotInArrSince approvedNotIn4k");
         Add("admin-variant", Role.Metadata, "instance instanceId kind role stage attention monitored hasFile minimumAvailability library itemId visibleToViewer messages arrState client quality customFormatScore path since fix scope lastSearch");
         Add("requester", Role.Person, "name role"); Add("quota", Role.Metadata, "used limit available");
@@ -189,6 +190,7 @@ public static class ProviderPresentationSchema
         Children("status", "reason", "reason"); Children("status", "progress", "progress");
         Children("status", "journey", "journey"); Children("status", "summary", "status-summary");
         Children("status", "seasons", "season-status"); Children("status", "episodes", "episode-status"); Children("status", "admin", "admin-status");
+        Children("status", "copy", "status-copy");
         Children("season-status", "summary", "status-summary"); Children("episode-status", "reason", "reason"); Children("episode-status", "progress", "progress");
         Children("admin-status", "variants", "admin-variant"); Children("admin-variant", "reason", "reason"); Children("admin-variant", "progress", "progress");
         Children("reason", "params", "reason-params");

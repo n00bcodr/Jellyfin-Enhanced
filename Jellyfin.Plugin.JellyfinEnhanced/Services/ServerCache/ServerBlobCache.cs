@@ -619,25 +619,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var access = Access(create: false);
             var id = ns + "\n" + key;
             var ended = false;
-            void End()
-            {
-                _generation++;
-                if (_forgotten.Count >= MaxForgottenEntries) EndAllLocked();
-                else _forgotten[id] = _generation;
-                _reads.Remove(id);
-                ended = true;
-            }
-
             var removed = access != null && access.Owned(false, folder =>
             {
                 lock (_lock)
                 {
-                    End();
+                    EndEntryLocked(id);
+                    ended = true;
                     return RemoveLocked(folder, ns, key);
                 }
             });
-            if (!ended) lock (_lock) End();
+            if (!ended)
+            {
+                lock (_lock) EndEntryLocked(id);
+            }
+
             return Task.FromResult(removed);
+        }
+
+        // Caller holds _lock. Ends every write of one entry under way (bounded: past it, every write) and its shared read.
+        private void EndEntryLocked(string id)
+        {
+            _generation++;
+            if (_forgotten.Count >= MaxForgottenEntries) EndAllLocked();
+            else _forgotten[id] = _generation;
+            _reads.Remove(id);
         }
 
         // Caller holds _lock. Removes an entry's file (in the same step as a commit could replace it) and accounts for it.
