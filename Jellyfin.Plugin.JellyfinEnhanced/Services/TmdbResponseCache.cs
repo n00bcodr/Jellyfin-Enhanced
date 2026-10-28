@@ -1249,6 +1249,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Dispose()
         {
             _disposed = true;
+            // A background check or save still running finishes first (bounded), so none outlives the cache.
+            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0, TimeSpan.FromSeconds(5));
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
             if (_dirty) SaveToDisk();
@@ -1299,6 +1301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _promoting;
         private long _promoteAgainAt;
         private long _nextDiskCheck;
+        private int _checking;
         private static readonly TimeSpan DiskCheckEvery = TimeSpan.FromSeconds(30);
         // The valid, migratable records of the legacy snapshot, until it is retired (or migration gives up).
         private List<Entry>? _legacy;
@@ -1487,7 +1490,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Looks at the server-side cache on the first request and then at most every <see cref="DiskCheckEvery"/> (memory
         /// hits too), so switching it on, the snapshot loaded at startup, or a save due again are all noticed while every
-        /// answer still comes from memory.
+        /// answer still comes from memory. The request reads only the settings; preparing the folder and saving run in
+        /// one background check at a time, so a memory hit never waits on the disk.
         /// </summary>
         private void CheckDiskNow()
         {
@@ -1495,7 +1499,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var now = _timeProvider.GetUtcNow().UtcTicks;
             var next = Interlocked.Read(ref _nextDiskCheck);
             if (now < next || Interlocked.CompareExchange(ref _nextDiskCheck, now + DiskCheckEvery.Ticks, next) != next) return;
-            DiskReady();
+            if (!_disk.SwitchedOn)
+            {
+                Volatile.Write(ref _diskOn, 0);
+                return;
+            }
+
+            if (Interlocked.Exchange(ref _checking, 1) == 1) return;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    DiskReady();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    _logger?.Warning($"[TMDB cache] Checking the server-side cache failed: {ex.GetType().Name}");
+                }
+                finally
+                {
+                    Volatile.Write(ref _checking, 0);
+                }
+            });
         }
 
         private bool PromotionDue()

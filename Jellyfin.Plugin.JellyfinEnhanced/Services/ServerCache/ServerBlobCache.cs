@@ -201,8 +201,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>Whether the folder is used through the anchored (Linux) access (tests).</summary>
         internal bool Anchored => Access(create: false) is LinuxFolderAccess;
 
-        /// <summary>True when the cache is on and its folder can be used.</summary>
+        /// <summary>True when the cache is on and its folder can be used (may prepare the folder: not for a request's hot path).</summary>
         public bool Enabled => Current() is { Enabled: true } && Access() != null;
+
+        /// <summary>True when the cache is switched on in the settings; reads only the settings (never the folder), so it never waits on disk.</summary>
+        public bool SwitchedOn => Current().Enabled;
 
         /// <summary>Most entries forgotten one by one (<see cref="ForgetEntryAsync"/>) that are fenced individually.</summary>
         internal const int MaxForgottenEntries = 4096;
