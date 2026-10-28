@@ -154,3 +154,49 @@ test('UX3R-1: the page\'s "Seerr is on" matches the server rule for every isolat
     page.close();
   }
 });
+
+// ---- UX3R2-1 (review round 2): the page reads the server's rule when it loads and after every save ----
+
+const OPEN_PAGE = { ...SONARR, ...SEERR_ON, ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true, RecommendationsPageEnabled: true };
+for (const [from, to, backend, disabled] of [[0, 1, 'je', true], [1, 2, 'seerr', true], [1, 0, 'je', false]]) {
+  for (const refresh of ['pageshow', 'save']) test(`UX3R2-1: isolation ${from}->${to} (backend ${backend}) changed elsewhere while the page is open, then ${refresh}`, async t => {
+    const page = await open(t, { ...OPEN_PAGE, ArrBackendIsolationVersion: from, ArrRequestBackend: backend });
+    const wasDisabled = from !== 0 && (from !== 1 || backend !== 'seerr');
+    assert.equal(page.$('#recommendationsPageEnabled').disabled, wasDisabled);
+    page.server.config.ArrBackendIsolationVersion = to; // another administrator (or the server) changed it
+    if (refresh === 'pageshow') await page.pageshow();
+    else {
+      page.choose('#devMode', true);
+      await page.save();
+      assert.ok(page.requests.filter(r => r.kind === 'getPluginConfiguration').length >= 2, 'save completed a fresh read');
+    }
+    await page.flush(30);
+    assert.equal(page.server.config.ArrBackendIsolationVersion, to);
+    assert.deepEqual(Object.fromEntries(SEERR_GATED.map(id => [id, page.$('#' + id).disabled])), Object.fromEntries(SEERR_GATED.map(id => [id, disabled])));
+    assert.ok(page.requests.filter(r => r.url.includes('/requests-backend/seerr-capability')).length >= 2, 'the rule was read again from the server');
+  });
+}
+
+test('UX3R2-1 control: stable Seerr on (isolation 1, Seerr handling) survives reopening and saving', async t => {
+  const page = await open(t, { ...OPEN_PAGE, ArrRequestBackend: 'seerr', ArrBackendIsolationVersion: 1 });
+  await page.pageshow();
+  page.choose('#arrSeerrRefreshMinutes', 8);
+  await page.save();
+  await page.flush(30);
+  for (const id of SEERR_GATED) assert.equal(page.$('#' + id).disabled, false, id);
+});
+
+test('UX3R2-1: until the server answers (or when it can\'t), Seerr counts as off; the answer turns it on', async t => {
+  const page = configPage(t, { config: { ...OPEN_PAGE, ArrRequestBackend: 'seerr' } });
+  const rule = page.hold('seerrCapability');
+  await page.pageshow();
+  assert.equal(page.$('#recommendationsPageEnabled').disabled, true, 'no server answer yet');
+  await rule.resolve();
+  assert.equal(page.$('#recommendationsPageEnabled').disabled, false);
+  const failed = page.hold('seerrCapability');
+  page.choose('#devMode', true);
+  const saving = page.save();
+  await failed.reached; await failed.reject();
+  await saving;
+  assert.equal(page.$('#recommendationsPageEnabled').disabled, true, 'a failed read is not taken as "on"');
+});

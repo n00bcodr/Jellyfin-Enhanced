@@ -294,6 +294,8 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType, data) {
 function resolveRequesterAvatarSrc(avatar) {
     if (!avatar) return null;
     if (avatar.startsWith('/')) {
+        // Seerr off (the server's rule, isolation included): no Seerr account image through the server.
+        if (JE.pluginConfig?.JellyseerrEnabled === false || JE.pluginConfig?.SeerrAvailable === false) return null;
         return ApiClient.getUrl('/JellyfinEnhanced/proxy/avatar', { path: avatar });
     }
     return avatar;

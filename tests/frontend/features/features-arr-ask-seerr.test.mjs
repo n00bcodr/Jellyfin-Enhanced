@@ -801,3 +801,42 @@ test('JE mode, a viewer who can\'t ask for movies: the collection View shows the
   assert.equal(h.seerr.modals.at(-1)?.options.closeOnly, true);
   assert.equal(h.posts.length, 0);
 });
+
+// ---- UX3R2-3 (review round 2): no Seerr account image is asked for while Seerr is off ----
+
+const SEERR_REQUESTS = { status: 2, requests: [{ requestedBy: { displayName: 'Ann', avatar: '/avatar/ann.png' } }] };
+
+for (const off of [{ JellyseerrEnabled: false, SeerrAvailable: false }, { JellyseerrEnabled: true, SeerrAvailable: false }]) test(`UX3R2-3: with Seerr off (${JSON.stringify(off)}) the window names who asked without a Seerr image`, async t => {
+  const h = setup(t, { jeMode: false, config: off });
+  const { internal } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: SEERR_REQUESTS }, 'movie');
+  await settle();
+  const row = h.document.querySelector('[data-mount="je-requested-by"]');
+  assert.match(row.textContent, /Ann/);
+  assert.equal(row.querySelector('img[data-avatar-src]'), null, 'no Seerr image is asked for');
+});
+
+test('UX3R2-3 control: with Seerr on the window asks for the requester\'s Seerr image through the server', async t => {
+  const h = setup(t, { jeMode: false, config: { SeerrAvailable: true } });
+  const { internal } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: SEERR_REQUESTS }, 'movie');
+  await settle();
+  assert.match(h.document.querySelector('[data-mount="je-requested-by"] img[data-avatar-src]').getAttribute('data-avatar-src'), /\/JellyfinEnhanced\/proxy\/avatar/);
+});
+
+test('UX3R2-3: the shared avatar loader fetches nothing while Seerr is off, and fetches once it is on', async t => {
+  const fetched = [];
+  const h = createHarness({ fetch: async url => { fetched.push(String(url)); return new Response('image'); } });
+  t.after(() => h.close());
+  h.window.URL.createObjectURL = () => 'blob:avatar';
+  h.load('enhanced/helpers.js');
+  const path = '/JellyfinEnhanced/proxy/avatar?path=%2Favatar%2Fann.png';
+  h.JE.pluginConfig = { JellyseerrEnabled: false, SeerrAvailable: false };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), '');
+  h.JE.pluginConfig = { JellyseerrEnabled: true, SeerrAvailable: false };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), '');
+  assert.deepEqual(fetched, []);
+  h.JE.pluginConfig = { JellyseerrEnabled: true, SeerrAvailable: true };
+  assert.equal(await h.JE.helpers.resolveProtectedAvatarUrl(path), 'blob:avatar');
+  assert.equal(fetched.length, 1);
+});

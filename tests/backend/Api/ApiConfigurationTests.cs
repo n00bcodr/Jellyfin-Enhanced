@@ -323,4 +323,35 @@ public class ApiConfigurationTests
             Assert.True(row.GetProperty("seerrUsable").GetBoolean() == Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.EffectiveRequestsBackend.SeerrUsable(config), row.ToString());
         }
     }
+
+    // ---- UX3R2-1: the configuration page reads the server's rule; the endpoint answers the same table ----
+
+    [Fact]
+    public void SeerrCapabilityEndpointAnswersTheTruthTable()
+    {
+        using var stream = typeof(ApiConfigurationTests).Assembly.GetManifestResourceStream("JE.Tests.SeerrUsableTruthTable")!;
+        using var document = JsonDocument.Parse(stream);
+        using var fixture = new ApiPluginFixture();
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "Administrator")], "test"));
+        var config = fixture.Plugin.Configuration;
+        foreach (var row in document.RootElement.GetProperty("rows").EnumerateArray())
+        {
+            var backend = row.GetProperty("backend").GetString()!;
+            config.ArrIntegrationEnabled = config.ArrPhase1Enabled = config.ArrPhase3Enabled = true;
+            config.ArrRequestBackend = backend;
+            config.ArrBackendIsolationVersion = row.GetProperty("isolationVersion").GetInt32();
+            config.JellyseerrEnabled = row.GetProperty("seerrSetUp").GetBoolean();
+            config.JellyseerrUrls = "http://seerr.invalid:5055";
+            config.JellyseerrApiKey = "seerr-key";
+            using var answer = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(controller.GetSeerrCapability()).Value));
+            var usable = row.GetProperty("seerrUsable").GetBoolean();
+            Assert.True(usable == answer.RootElement.GetProperty("seerrUsable").GetBoolean(), row.ToString());
+            // The page's own part (switch, address, key) and the server's part (isolation for the selected handling).
+            Assert.True(usable == (row.GetProperty("seerrSetUp").GetBoolean() && answer.RootElement.GetProperty("allowedFor").GetProperty(backend).GetBoolean()), row.ToString());
+        }
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        Assert.IsType<ForbidResult>(controller.GetSeerrCapability());
+    }
 }

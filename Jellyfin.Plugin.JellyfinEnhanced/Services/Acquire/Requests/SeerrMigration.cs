@@ -129,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// False (with the value put back) when it couldn't be saved, and (with nothing changed) when
         /// <paramref name="addresses"/> is given and the live Seerr address set no longer matches it.
         /// </summary>
-        private bool Switch(string backend, string? addresses = null)
+        private bool Switch(string backend, string? addresses = null, bool requireSeerr = false)
         {
             var switched = false;
             // Commit/rollback are backend writers too. The import's own retained effect is released
@@ -140,6 +140,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var live = _config();
                     if (addresses != null && SeerrFacts.AddressFingerprint(live) != addresses) return;
+                    // A move hands over only while Seerr is still on, decided under the same lock as the write.
+                    if (requireSeerr && !Backends.EffectiveRequestsBackend.SeerrUsable(live)) return;
                     var before = live.ArrRequestBackend;
                     if (before == backend) { switched = true; return; }
                     live.ArrRequestBackend = backend;
@@ -306,27 +308,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     }
                     return target;
                 }
-                // The live configuration (a config-page save during the read replaced the object read above).
-                var live = _config();
-                if (Gate(live) is { } changed) return changed;
-                // The requests just read belong to the Seerr address they were read from; a save that pointed JE
-                // at another Seerr meanwhile would hand authority over without that Seerr's requests.
-                if (SeerrFacts.AddressFingerprint(live) != read.AddressFingerprint) return AddressChanged(live.ArrRequestBackend);
-                // A move while JE already handles requests (a second pass) records "je": rolling it back
-                // removes its wants and leaves request handling as it is.
-                var previous = live.ArrRequestBackend;
                 var now = _now();
-                // Each title's other ids first (Seerr's requests carry them), so an import meets the title's requests in JE
-                // whichever id either was asked by (one identity: RequestTitleIdentity).
-                foreach (var key in plan.Items.Select(i => i.Input.Key).Distinct(StringComparer.Ordinal)) RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, now);
-                var result = _ledger.ImportSeerr(sourceId, read.Digest, plan.Items, plan.Skipped, actor, previous, Target, now, RollbackWindow);
+                string previous;
+                ImportResult result;
+                // The last capability check and the first durable write hold the lock every configuration write takes
+                // (a config-page save, a PATCH, the switch below): a save that turns Seerr off lands either before the
+                // check (refused, nothing written) or after the import (the switch then refuses and undoes it).
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                {
+                    // The live configuration (a config-page save during the read replaced the object read above).
+                    var live = _config();
+                    if (Gate(live) is { } changed) return changed;
+                    // The requests just read belong to the Seerr address they were read from; a save that pointed JE
+                    // at another Seerr meanwhile would hand authority over without that Seerr's requests.
+                    if (SeerrFacts.AddressFingerprint(live) != read.AddressFingerprint) return AddressChanged(live.ArrRequestBackend);
+                    // A move while JE already handles requests (a second pass) records "je": rolling it back
+                    // removes its wants and leaves request handling as it is.
+                    previous = live.ArrRequestBackend;
+                    // Each title's other ids first (Seerr's requests carry them), so an import meets the title's requests in JE
+                    // whichever id either was asked by (one identity: RequestTitleIdentity).
+                    foreach (var key in plan.Items.Select(i => i.Input.Key).Distinct(StringComparer.Ordinal)) RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, now);
+                    result = _ledger.ImportSeerr(sourceId, read.Digest, plan.Items, plan.Skipped, actor, previous, Target, now, RollbackWindow);
+                }
                 // Imported history is durable now. Release our fact admission before our own adoption drains.
                 effect.Dispose();
                 var switched = false;
                 try
                 {
                     BeforeSwitch?.Invoke();
-                    switched = Switch("je", read.AddressFingerprint);
+                    switched = Switch("je", read.AddressFingerprint, requireSeerr: true);
                 }
                 catch (Exception)
                 {
@@ -334,8 +344,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 if (!switched)
                 {
-                    // The switch failed: undo this batch so Seerr stays the authority with nothing half moved.
+                    // The switch failed (or Seerr was turned off meanwhile): undo this batch so Seerr stays the authority
+                    // with nothing half moved.
                     if (result.BatchId != null) _ledger.RollbackImport(result.BatchId, now);
+                    if (!Backends.EffectiveRequestsBackend.SeerrUsable(_config())) return SeerrMigrationReply.Refused("seerr_off", 409, "Seerr was turned off during the move; nothing was moved.", _config().ArrRequestBackend);
                     if (SeerrFacts.AddressFingerprint(_config()) != read.AddressFingerprint) return AddressChanged(_config().ArrRequestBackend);
                     return SeerrMigrationReply.Refused("switch_failed", 503, "Request handling could not be switched; nothing was moved.", _config().ArrRequestBackend);
                 }

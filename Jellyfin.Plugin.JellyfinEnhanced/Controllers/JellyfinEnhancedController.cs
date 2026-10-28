@@ -2075,6 +2075,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // /service/{sonarr,radarr} discovery endpoints above. Seerr's
         // /settings subrouter requires a Seerr Administrator key, and the
         // response includes each instance's real API key, so this stays
+        /// <summary>
+        /// The server's "Seerr is on" rule for the configuration page (administrators only): whether Seerr is usable
+        /// now (EffectiveRequestsBackend.SeerrUsable) and, for each request handling the page may select, whether backend
+        /// isolation lets Jellyfin Enhanced talk to Seerr. The page reads it when it loads and after every save, and
+        /// combines it with its own unsaved Seerr switch, address and key, so it never keeps an older isolation answer.
+        /// Not a Seerr route: it answers while isolation excludes Seerr, and never contacts Seerr.
+        /// </summary>
+        [HttpGet("requests-backend/seerr-capability")]
+        [Authorize]
+        public IActionResult GetSeerrCapability()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var version = config?.ArrBackendIsolationVersion ?? 0;
+            bool Allows(string backend) => EffectiveRequestsBackend.AllowsSeerr(new PluginConfiguration { ArrRequestBackend = backend, ArrBackendIsolationVersion = version });
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Ok(new
+            {
+                seerrUsable = EffectiveRequestsBackend.SeerrUsable(config),
+                // "other": a request handling the server doesn't know (an empty or unrecognised stored value).
+                allowedFor = new Dictionary<string, bool> { ["seerr"] = Allows("seerr"), ["je"] = Allows("je"), ["status_only"] = Allows("status_only"), ["other"] = Allows(string.Empty) },
+            });
+        }
+
         // behind IsAdminUser() regardless of [Authorize] alone. Backs the
         // "Import from Seerr" button on the *arr config tab.
         [HttpGet("jellyseerr/settings/{type}")]
@@ -12649,6 +12673,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var epoch = EffectiveRequestsBackend.Shared.Current.Epoch;
             if (!EffectiveRequestsBackend.Shared.CheckSeerr(SeerrUse.Identity).Allowed) return StatusCode(409, new { code = "backend_disabled" });
             var config = JellyfinEnhanced.Instance?.Configuration;
+            // Seerr off (switched off, not set up, or excluded by isolation): no Seerr image, cached or read.
+            if (!EffectiveRequestsBackend.SeerrUsable(config)) return StatusCode(409, new { code = "seerr_off" });
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(path))
             {
                 return NotFound();

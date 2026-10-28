@@ -68,6 +68,66 @@ public class IntegrationSeerrMigrationTests
         Assert.Equal("seerr", m.R.Policy.Configuration.ArrRequestBackend);
     }
 
+    // ---- UX3R2-2 (review round 2), the reviewer's probes: Seerr turned off during a move (also by a real PATCH) moves nothing ----
+    [Theory]
+    [InlineData("before_write")]
+    [InlineData("before_switch")]
+    [InlineData("unchanged_on")]
+    public async Task UX3R2MigrationSwitchOffRace(string stage)
+    {
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        var c = m.R.Policy.Configuration;
+        bool armed = false;
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => c, () => {}, () => { if (armed && stage == "before_write") c.JellyseerrEnabled = false; return m.R.Now; });
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        armed = true;
+        if (stage == "before_switch") service.BeforeSwitch = () => c.JellyseerrEnabled = false;
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        if (stage == "unchanged_on")
+        {
+            Assert.Equal((200, 1, "je"), (reply.HttpStatus, reply.Imported, c.ArrRequestBackend));
+            return;
+        }
+        Assert.True(reply.HttpStatus == 409 && m.Count("SELECT COUNT(*) FROM wants") == 0 && c.ArrRequestBackend == "seerr",
+            $"stage={stage}, HTTP={reply.HttpStatus}, reason={reply.Reason}, wants={m.Count("SELECT COUNT(*) FROM wants")}, backend={c.ArrRequestBackend}, enabled={c.JellyseerrEnabled}");
+    }
+
+
+
+    [Theory]
+    [InlineData(0, "before_write")]
+    [InlineData(1, "before_write")]
+    [InlineData(0, "before_switch")]
+    [InlineData(1, "before_switch")]
+    public async Task UX3R2MigrationRealConfigurationPatchBeforeSwitchMustRefuse(int isolationVersion, string stage)
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        m.R.Policy.Configuration.ArrBackendIsolationVersion = isolationVersion;
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        void Off() => plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+        {
+            Set = new() { ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(false) }
+        });
+        bool armed = false;
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () =>
+            {
+                if (armed && stage == "before_write") { armed = false; Off(); }
+                return m.R.Now;
+            });
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        Assert.Equal(200, preview.HttpStatus);
+        armed = true;
+        if (stage == "before_switch") service.BeforeSwitch = Off;
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.True(reply.HttpStatus == 409 && m.Count("SELECT COUNT(*) FROM wants") == 0 && plugin.Plugin.Configuration.ArrRequestBackend == "seerr",
+            $"stage={stage}, HTTP={reply.HttpStatus}, reason={reply.Reason}, wants={m.Count("SELECT COUNT(*) FROM wants")}, backend={plugin.Plugin.Configuration.ArrRequestBackend}, enabled={plugin.Plugin.Configuration.JellyseerrEnabled}");
+    }
+
     private sealed class Mig : IDisposable
     {
         public IntegrationRequestLedgerTests.Rig R { get; } = new();

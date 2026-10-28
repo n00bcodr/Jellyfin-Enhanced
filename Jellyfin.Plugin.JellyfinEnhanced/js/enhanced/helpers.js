@@ -109,9 +109,21 @@
         return false;
     }
 
+    /**
+     * True while Seerr is on (the server's one rule: public config JellyseerrEnabled / SeerrAvailable, backend
+     * isolation included). Seerr's account images are read through the server only then.
+     * @returns {boolean}
+     */
+    function seerrImagesAllowed() {
+        const cfg = JE.pluginConfig;
+        return cfg?.JellyseerrEnabled !== false && cfg?.SeerrAvailable !== false;
+    }
+
     async function resolveProtectedAvatarUrl(avatarUrl) {
         if (!isSafeAvatarUrl(avatarUrl)) return '';
         if (!avatarUrl.startsWith('/JellyfinEnhanced/proxy/avatar')) return avatarUrl;
+        // Seerr off: no Seerr account image is asked for (the server would refuse it too).
+        if (!seerrImagesAllowed()) return '';
         if (avatarObjectUrlCache.has(avatarUrl)) return avatarObjectUrlCache.get(avatarUrl);
         if (avatarFetchPromises.has(avatarUrl)) return avatarFetchPromises.get(avatarUrl);
 

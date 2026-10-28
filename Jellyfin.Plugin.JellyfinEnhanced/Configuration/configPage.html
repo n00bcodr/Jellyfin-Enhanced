@@ -8610,6 +8610,8 @@
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
             var revision = _jeConfigRevision;
+            // The server's Seerr rule is read with the configuration (and again after every save).
+            jeReadSeerrRule();
             ApiClient.getPluginConfiguration(pluginId).then((read) => {
                 // Once the form has been filled, a read that overlapped a save (one began or ended since this read began,
                 // whatever its outcome, or one is still out or waiting), or that began before the page took a value the server
@@ -10210,6 +10212,8 @@
                 resets.forEach(function(type) { _jeArrResetConfirmed[type] = false; });
                 const stored = (result && (result.configuration || result.Configuration)) || now;
                 const skipped = (result && (result.skipped || result.Skipped)) || [];
+                // What the server decides about Seerr may have changed with this save, or with another writer's.
+                jeReadSeerrRule();
                 // After JE config is persisted, sync any managed Custom Tabs entries.
                 // We surface non-OK results to the admin via Dashboard.alert so a
                 // partial failure doesn't hide behind the green "saved" toast.
@@ -11079,18 +11083,41 @@
                 && document.querySelector('#JellyseerrApiKey').value.trim().length > 0;
         }
 
+        // The server's answer to "may Jellyfin Enhanced talk to Seerr" for each request handling (backend isolation,
+        // EffectiveRequestsBackend.AllowsSeerr), read from /requests-backend/seerr-capability when the page loads and
+        // after every save. Null until the first answer: Seerr counts as off meanwhile (the server refuses Seerr work
+        // the same way). Never worked out from a stored copy, so a change made elsewhere is picked up on the next read.
+        var _jeSeerrRule = null;
+        var _jeSeerrRuleRead = 0;
+
         /**
-         * Whether the server lets Jellyfin Enhanced talk to Seerr at all: the backend isolation rule of
-         * EffectiveRequestsBackend.EvaluateConfiguration (AllowSeerrTransport). Version 0 (not adopted) allows it;
-         * version 1 only while "Request handling" is Seerr; any other version never. The version is server-owned
-         * (never edited here), so it is read from the configuration the server last handed this page.
+         * Reads the server's Seerr capability rule and re-evaluates every dependency with it. The newest read wins.
+         * @returns {Promise<void>}
+         */
+        async function jeReadSeerrRule() {
+            var mine = ++_jeSeerrRuleRead;
+            try {
+                var rule = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/requests-backend/seerr-capability'), dataType: 'json' });
+                if (mine !== _jeSeerrRuleRead) return;
+                _jeSeerrRule = rule && rule.allowedFor ? rule : null;
+            } catch (e) {
+                if (mine !== _jeSeerrRuleRead) return;
+                console.warn('[JE] Seerr capability read failed; Seerr settings stay off until it answers:', e);
+                _jeSeerrRule = null;
+            }
+            updateAllDependencies();
+        }
+
+        /**
+         * Whether the server lets Jellyfin Enhanced talk to Seerr with the request handling selected on the page now
+         * (backend isolation, from the server's last answer; see jeReadSeerrRule).
          * @returns {boolean} True when the isolation rule allows Seerr
          */
         function seerrTransportAllowed() {
-            var version = (typeof _jeBase !== 'undefined' && _jeBase && _jeBase.ArrBackendIsolationVersion) || 0;
-            if (version === 0) return true;
             var backend = document.getElementById('arrRequestBackend');
-            return version === 1 && !!backend && backend.value === 'seerr';
+            if (!_jeSeerrRule) return false;
+            var allowed = _jeSeerrRule.allowedFor;
+            return (backend && Object.prototype.hasOwnProperty.call(allowed, backend.value) ? allowed[backend.value] : allowed.other) === true;
         }
 
         /**
