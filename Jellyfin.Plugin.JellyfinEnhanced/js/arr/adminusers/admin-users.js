@@ -196,7 +196,8 @@
                 select(policy, state, 'policy', 'role', 'role', stored.role, [[null, t('defaultRole')], ...(d.policy.roles || []).map(r => [r, t('role_' + r.toLowerCase())])], d.jellyfinAdmin);
                 number(policy, state, 'policy', 'quotaLimit', 'count', stored.quotaLimit, d.policy.backend !== 'je', -1);
                 number(policy, state, 'policy', 'quotaGb', 'gb', stored.quotaGb, d.policy.backend !== 'je', 0);
-                help(policy, 'quotaHelp');
+                // Seerr owns its own permissions and quotas only when it handles requests.
+                help(policy, d.policy.backend === 'seerr' ? 'quotaHelp' : 'quotaHelpJe');
                 line(policy, 'effectiveLimit', d.policy.backend === 'je' && d.policy.limit === null ? t('unlimited') : d.policy.limit); line(policy, 'effectiveGb', d.policy.gbLimit);
                 line(policy, 'source', d.policy.sources ? [d.policy.sources.count, d.policy.sources.gb].map(s=>t('source_' + s)).join(' / ') : null);
                 line(policy, 'movieRights', effective.canRequestMovies); line(policy, 'seriesRights', effective.canRequestSeries); line(policy, 'approvalRights', effective.canApprove);
@@ -278,12 +279,19 @@
                 line(details, 'serverGate', d.display.gates?.[field]); line(details, 'effectiveDisplay', d.display.effective?.[field]);
             } else el('p', t('unavailable'), display);
             const seerr = group(groups, 'seerr', 'seerr-import', state);
-            line(seerr, 'linkState', t('state_' + d.seerr.state)); line(seerr, 'account', d.seerr.account);
-            line(seerr, 'quotaSource', d.seerr.quotaSource == null ? null : t('backend_' + d.seerr.quotaSource));
-            const block = select(seerr, state, 'seerr-import', 'blocked', 'blocked', d.seerr.blocked ? 'true' : 'false', [['false', t('no')], ['true', t('yes')]], false);
+            // Seerr off: no identity to show and nothing to import; the stored exclusion is kept (read-only) for when
+            // it is turned on again, and only the plugin's Seerr connection settings are offered.
+            const seerrOff = d.seerr.enabled === false;
+            if (seerrOff) help(seerr, 'seerrOff');
+            else {
+                line(seerr, 'linkState', t('state_' + d.seerr.state)); line(seerr, 'account', d.seerr.account);
+                line(seerr, 'quotaSource', d.seerr.quotaSource == null ? null : t('backend_' + d.seerr.quotaSource));
+            }
+            const block = select(seerr, state, 'seerr-import', 'blocked', 'blocked', d.seerr.blocked ? 'true' : 'false', [['false', t('no')], ['true', t('yes')]], seerrOff);
             block.addEventListener('change', () => changed(state, 'seerr-import', 'blocked', block.value === 'true', seerr));
-            help(seerr, 'importHelp');
-            if (d.seerr.adminUrl) { const adminLink = link(seerr, 'seerrAdmin', d.seerr.adminUrl); adminLink.target = '_blank'; adminLink.rel = 'noopener noreferrer'; }
+            if (!seerrOff) help(seerr, 'importHelp');
+            if (seerrOff) link(seerr, 'seerrSetup', '#/configurationpage?name=Jellyfin%20Enhanced');
+            else if (d.seerr.adminUrl) { const adminLink = link(seerr, 'seerrAdmin', d.seerr.adminUrl); adminLink.target = '_blank'; adminLink.rel = 'noopener noreferrer'; }
             else link(seerr, 'seerrAdmin', '#/configurationpage?name=Jellyfin%20Enhanced');
             for (const details of section.querySelectorAll('details')) if (detailsOpen.has(details.closest('[data-group]').dataset.group)) details.open = true;
             const actions = el('div', undefined, section);

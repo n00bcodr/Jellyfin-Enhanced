@@ -30,9 +30,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             using var cmd = Cmd(c, t, sql, args);
             return cmd.ExecuteScalar()?.ToString();
         }
+        /// <summary>
+        /// Wants a move from Seerr imported but hasn't handed over yet (their batch is <c>staged</c>): no reader, list,
+        /// action or dispatch sees them until the handover commits the batch; a refused handover discards it whole.
+        /// </summary>
+        internal const string NotStaged = "(import_batch_id IS NULL OR import_batch_id NOT IN (SELECT id FROM import_batches WHERE state='staged'))";
+
         private static List<RequestWant> Wants(SqliteConnection c, SqliteTransaction? t, string where = "1=1", params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE " + where + " ORDER BY created_at,id", args);
+            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE (" + where + ") AND " + NotStaged + " ORDER BY created_at,id", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestWant>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), Guid.Parse(r.GetString(2)), r.GetString(3), r.GetString(4),
@@ -1262,7 +1268,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Jobs of a want, for administrative diagnostics and tests.</summary>
         public IReadOnlyList<RequestJob> ForWant(string id) => _db.Read(c => Jobs(c, null, "want_id=$id", ("$id", id)));
         /// <summary>Recovers uncertain writes after a process restart, never blindly re-sending them.</summary>
-        public void Recover(DateTimeOffset now) => _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
+        public void Recover(DateTimeOffset now)
+        {
+            _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
+            // A move's staged batch left by the process that ran it (or by a restored copy) never completes: rolled back.
+            DiscardStagedImports(now);
+        }
         /// <summary>Claims a due row under a database generation fence (after the send-time redundancy check: see <see cref="ClaimForDispatch"/>).</summary>
         public bool Claim(RequestJob job, long generation, DateTimeOffset now) => ClaimForDispatch(job, generation, now) == DispatchClaim.Claimed;
         /// <summary>What claiming a due job for its send did.</summary>

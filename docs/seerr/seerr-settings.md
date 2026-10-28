@@ -209,7 +209,7 @@ Choose how result posters and Seerr detail links open.
 | **Link available items' posters straight to Jellyfin** | Off | Makes available posters open their Jellyfin item directly. Available title links already lead to Jellyfin. |
 | **Show Seerr link on item detail pages** | On | Adds a Seerr link to the **External Links** row for TMDB-identified movies/series, independently of *arr links. |
 | **Show as text instead of icon** | Off | Uses a text Seerr detail link. Depends on **Show Seerr link on item detail pages**. |
-| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** | Off | Opens titles you don't have on a Jellyfin details page instead of the modal (Jellyfin 12 web). See [Titles that aren't in the library](seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental). |
+| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** | Off | Opens titles you don't have on a Jellyfin details page instead of the modal (Jellyfin 12 web). Set on the *arr tab under [Requests & discovery](../arr/arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced) (it works with Seerr or with Jellyfin Enhanced handling requests); this tab links there. See [Titles that aren't in the library](seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental). |
 
 ??? note "Details"
 
@@ -327,6 +327,7 @@ Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily
 **How to use:** Enable **Sync Jellyfin Watchlist → Seerr**, then adjust or run **Sync Watchlist from Jellyfin to Seerr** under **Dashboard** → **Scheduled Tasks**.
 
 ### Only Allow Requesting One Season at a Time
+- Set on the *arr tab under [Requests & discovery](../arr/arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced); the Seerr tab links there. Available with Seerr set up or with Requests & downloads *Ask for it* on
 - Removes **Select All** from the season modal and lets users tick only one season per request
 - Applies everywhere the season modal opens (search, more info, item details)
 - Needs **Partial requests** enabled in Seerr; otherwise Seerr requires all seasons and this setting has no effect
@@ -344,7 +345,7 @@ Request the next season or collection movie based on playback. These server auto
 
 **How to use:**
 
-1. Enable Seerr and the relevant automation below.
+1. Enable Seerr (or Requests & downloads *Ask for it*, see [Automatic requests with "Ask for it"](../arr/arr-features.md#automatic-requests-with-ask-for-it)) and the relevant automation below. Both are set on the *arr tab under [Requests & discovery](../arr/arr-settings.md#requests-discovery-seerr-or-jellyfin-enhanced); the Seerr tab's **Automatic Requests** box links there.
 2. Save, then restart Jellyfin or run **Jellyfin Enhanced Startup** once.
 
 See [Auto-Request Settings](seerr-features.md#auto-request-settings) for triggers and policy limits.
@@ -353,7 +354,7 @@ See [Auto-Request Settings](seerr-features.md#auto-request-settings) for trigger
 
 Request the next numeric season near the end of the current one.
 
-**How to use:** Open **Seerr** → **Automatic Requests** → **Auto Season Requests**. Enable the feature and choose the threshold below.
+**How to use:** Open ***arr** → **Requests & discovery** → **Auto Season Requests**. Enable the feature and choose the threshold below.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -369,7 +370,7 @@ Request the next numeric season near the end of the current one.
 
 Request the next collection movie based on playback.
 
-**How to use:** Open **Seerr** → **Automatic Requests** → **Auto Movie Requests**. Enable the feature, choose playback triggers, and select a quality profile mode.
+**How to use:** Open ***arr** → **Requests & discovery** → **Auto Movie Requests**. Enable the feature, choose playback triggers, and select a quality profile mode.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -502,6 +503,9 @@ Give users a dedicated page for discovering movies and series.
 3. Save your settings.
 
 See [Recommendations browsing](seerr-features.md#recommendations-page) for using the page.
+
+While Seerr is off, these settings are greyed out with a note and kept as they are, and the page, its link and its tab
+are hidden; see [With Seerr off](../arr/arr-settings.md#with-seerr-off).
 
 | Setting | Default | What it does |
 | --- | --- | --- |

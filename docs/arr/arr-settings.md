@@ -639,8 +639,9 @@ Radarr; in `seerr` mode they go to Seerr as the person who asked. How each is se
 [Sending requests](arr-features.md#sending-requests-phase-3). With phase 3 on and a request backend selected, the
 request controls appear for people who may ask (see [Requests & downloads](arr-features.md#missing-episodes-get-it-and-search-phase-3):
 Get it on season pages, the request sheet, series and collection actions, Approvals, Household and, in JE mode,
-Discover). With Seerr's experimental *Open titles that aren't in the library on Jellyfin's own details page* on, the
-same controls appear on those pages (see [Titles that aren't in the library](arr-features.md#titles-that-arent-in-the-library-native-details)).
+Discover). With the experimental *Open titles that aren't in the library on Jellyfin's own details page* on (see
+[Requests & discovery](#requests-discovery-seerr-or-jellyfin-enhanced)), the same controls appear on those pages (see
+[Titles that aren't in the library](arr-features.md#titles-that-arent-in-the-library-native-details)).
 
 ??? info "Add defaults per instance"
     With the master switch on, each Sonarr/Radarr card has *When Jellyfin Enhanced adds a
@@ -703,6 +704,53 @@ a setting.
     episode file (each from at least three files of 100 MB or more), and a season as its episodes as that Sonarr lists them
     for the series (10 when it doesn't hold the series); otherwise the fixed estimates: a movie 8 GB (4K 40), a season
     10 GB (4K 40), an episode 1 GB (4K 4). The estimate is fixed when the request is recorded or approved.
+
+#### Requests & discovery (Seerr or Jellyfin Enhanced)
+
+Settings that work with Seerr or with Jellyfin Enhanced handling requests live once, on the *arr tab under
+**Requests & discovery**. The Seerr tab keeps a link to each of them in its old place. Each setting is gated on what it
+really needs, not on "Enable Seerr integration"; until that is set up it is greyed out with a short note saying what is
+missing, and its stored value is kept.
+
+![Requests & discovery on the *arr tab, with Seerr off and Jellyfin Enhanced handling requests](../images/arr-requests-discovery-settings.png)
+
+| Setting | Default | Needs |
+|---|---|---|
+| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** (`NativeAbsentDetailsEnabled`) | Off | Request handling set to Jellyfin Enhanced and a TMDB API key (the pages read TMDB), or Seerr set up in the other modes |
+| **Only allow requesting one season at a time** (`JellyseerrSingleSeasonRequestOnly`) | Off | Seerr set up, or *Ask for it* on (Jellyfin Enhanced's request sheet and series buttons follow it in both request modes) |
+| **Automatic Advance Season Requests** (`AutoSeasonRequestEnabled`) and its options | Off | Seerr set up, or *Ask for it* on with a TMDB API key |
+| **Auto Movie Requests** (`AutoMovieRequestEnabled`) and its options | Off | A TMDB API key, plus Seerr set up or *Ask for it* on |
+
+What each one does is described with the Seerr settings ([details pages](../seerr/seerr-settings.md#more-info-and-detail-links),
+[one season at a time](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time),
+[automatic requests](../seerr/seerr-settings.md#automatic-requests)) and, for Jellyfin Enhanced handling, in
+[Automatic requests with "Ask for it"](arr-features.md#automatic-requests-with-ask-for-it).
+
+#### With Seerr off
+
+"Seerr is on" means one thing everywhere: Seerr is set up (turned on, with an address and a key) **and** backend
+isolation allows it (not yet adopted, or adopted with request handling set to Seerr). An install that adopted Jellyfin
+Enhanced or Status only counts as Seerr off even with Seerr's switch, address and key still stored. When Seerr is off,
+the configuration page keeps Seerr's own connection setup available and greys out what only Seerr can do, each with one
+short note; nothing stored is changed, and saving keeps the values for when Seerr is turned on again:
+
+- the **Seerr Recommendations Page** settings (Pages tab); the page, its sidebar link, its native Home tab and its Plugin
+  Pages entry are hidden while Seerr is off;
+- **Import from Seerr** (Sonarr and Radarr), **Move requests from Seerr...**, **Show the status in Seerr's more-info
+  window** and **Read Seerr's requests every (minutes)**.
+
+The configuration page asks the server for this rule when it opens and after every save, so a change made elsewhere
+(another administrator, or adopting Jellyfin Enhanced) shows on the next save or reload; until the server answers, the
+Seerr-only settings stay greyed out. The server enforces the same rule, so nothing reaches Seerr while it is off,
+whatever a browser still showing an older page asks for: **Move requests from Seerr** answers `409 seerr_off` (checked
+before the read, again together with its first write, and once more as request handling is handed over; turning Seerr
+off during a move undoes it), **Import from Seerr** and the request quota answer `503`, no Seerr account is looked up,
+and no Seerr account picture is shown or fetched.
+
+The Requests page's **System** tab then describes the request handling actually in use instead of Seerr: with
+Jellyfin Enhanced handling requests, whether asking is on, how many Sonarr/Radarr instances can take requests and
+whether a TMDB key is set (needed for titles that aren't in the library). Seerr's box and its "Seerr OK without
+Sonarr/Radarr" threshold appear only while Seerr is in use or is the selected request handling.
 
 #### Discover and search (JE mode)
 
@@ -1039,7 +1087,7 @@ Open **Jellyfin Enhanced** between **Access** and **Parental control** on the us
 - **Notifications:** the existing administrator ntfy assignment sets or clears a topic. Email verification, quiet hours and privacy are displayed without granting a new administrator consent action.
 - **Automation & lists:** stored personal choices, recipe modes, eligibility provenance and list attribution are read-only. An administrator's settings edit or global reset preserves personal consents.
 - **Display:** missing list entries, list request status, the missing entries on playlist and on collection pages, web acquisition badges, native acquisition stamps, native poster tags, and the three home rows (Your requests, Coming soon for you, Just arrived for you). Null follows the server, false hides and true shows only when server gates allow. Native acquisition stamps also require native poster tags. The administrators' server strip on home stays the administrator's own choice. These preferences never exempt the person from request policy.
-- **Seerr:** import exclusion is editable. Linked, unlinked, blocked and unavailable are different states. Opening a user page never imports or remaps an account.
+- **Seerr:** import exclusion is editable. Linked, unlinked, blocked and unavailable are different states. Opening a user page never imports or remaps an account. With Seerr off the group says so instead of showing an account, shows the stored import exclusion read-only (it applies again when Seerr is turned on) and links only to the plugin's Seerr connection settings. The quota help mentions Seerr only when Seerr handles requests.
 
 Save captures every changed section when pressed. Edits made while it runs, including a return to inheritance, stay unsaved until the next Save. A failed section keeps the value shown so it can be retried. A conflicting save keeps the draft and reports that another editor changed the source. Reloading the page discards unsaved changes. Other sections can still save when one fails. Unavailable or corrupt components are labelled separately, and their stored settings are preserved. Administrative configuration remains accessible while request/display features are switched off; effective behavior still follows those switches.
 

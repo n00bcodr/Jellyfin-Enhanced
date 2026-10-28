@@ -229,6 +229,8 @@
     const avatar = issue?.createdBy?.avatar;
     if (!avatar) return "";
     if (avatar.startsWith("/")) {
+      // Seerr off (the server's rule, isolation included): no Seerr account image through the server.
+      if (JE.pluginConfig?.JellyseerrEnabled === false || JE.pluginConfig?.SeerrAvailable === false) return "";
       return ApiClient.getUrl("/JellyfinEnhanced/proxy/avatar", { path: avatar });
     }
     return avatar;

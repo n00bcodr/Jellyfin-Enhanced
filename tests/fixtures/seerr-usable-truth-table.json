@@ -1,0 +1,113 @@
+{
+ "_about": "\"Seerr is on\" (EffectiveRequestsBackend.SeerrUsable): Seerr set up (enabled, an address and a key) and allowed by backend isolation. The backend test checks every row against the server rule; the configuration page test checks the page's Seerr gates against the same rows.",
+ "rows": [
+  {
+   "isolationVersion": 0,
+   "backend": "seerr",
+   "seerrSetUp": true,
+   "seerrUsable": true
+  },
+  {
+   "isolationVersion": 0,
+   "backend": "seerr",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 0,
+   "backend": "je",
+   "seerrSetUp": true,
+   "seerrUsable": true
+  },
+  {
+   "isolationVersion": 0,
+   "backend": "je",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 0,
+   "backend": "status_only",
+   "seerrSetUp": true,
+   "seerrUsable": true
+  },
+  {
+   "isolationVersion": 0,
+   "backend": "status_only",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "seerr",
+   "seerrSetUp": true,
+   "seerrUsable": true
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "seerr",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "je",
+   "seerrSetUp": true,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "je",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "status_only",
+   "seerrSetUp": true,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 1,
+   "backend": "status_only",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "seerr",
+   "seerrSetUp": true,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "seerr",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "je",
+   "seerrSetUp": true,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "je",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "status_only",
+   "seerrSetUp": true,
+   "seerrUsable": false
+  },
+  {
+   "isolationVersion": 2,
+   "backend": "status_only",
+   "seerrSetUp": false,
+   "seerrUsable": false
+  }
+ ]
+}
