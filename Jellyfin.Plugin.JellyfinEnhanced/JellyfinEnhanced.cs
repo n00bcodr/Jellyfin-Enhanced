@@ -597,6 +597,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// Guards every read-modify-write of the Analytics install credentials
         /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
         /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
+        /// Lock order: this is the outer lock and EffectiveRequestsBackend's monitor the inner one. Code holding this lock
+        /// may read the backend; code holding the backend monitor never takes this lock (ListMetadataEpoch.Publish takes
+        /// it first).
         /// </summary>
         internal static readonly object AnalyticsCredentialLock = new object();
 

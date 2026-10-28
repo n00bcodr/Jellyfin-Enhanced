@@ -27,6 +27,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // The comparison and effect are indivisible relative to configuration replacement and saved generations.
         // Lifecycle precedes this lock when both are needed; configuration commits never acquire Lifecycle.
+        // Lock order: the configuration lock is outer and the backend monitor inner (configuration writers and
+        // SeerrMigration.SettleHandover read the backend while holding it), so take it before CommitEffective's monitor.
         internal T Publish<T>(Func<T> effect, Func<T> refused)
         {
             // Same neutral dependency owner used by Publication.EnlistEffective; retain this
@@ -34,11 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             EffectiveReadScope.Enlist(EffectiveRequestsBackend.Shared, Backend.Epoch);
             try
             {
-                return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () =>
-                {
-                    lock (JellyfinEnhanced.AnalyticsCredentialLock)
-                        return IsCurrent ? effect() : refused();
-                });
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                    return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () => IsCurrent ? effect() : refused());
             }
             catch (BackendDisabledException) { return refused(); }
         }
