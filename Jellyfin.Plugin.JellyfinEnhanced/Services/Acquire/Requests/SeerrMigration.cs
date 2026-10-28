@@ -123,20 +123,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Test hook: runs between the import and the switch (a crash there leaves the batch, not the switch).</summary>
         internal Action? BeforeSwitch { get; set; }
 
-        // The staged batch of the move being handed over (set only by CommitAsync, which runs one at a time): the
-        // handover commits or discards it under the same lock as its decision.
-        private string? _handoverBatch;
+        /// <summary>
+        /// Settles the staged batch of a move once its handover has run, under the configuration lock (no request
+        /// handling change can land in between): committed when request handling is Jellyfin Enhanced now, else discarded
+        /// whole. Until then nothing saw or acted on it. (The database refuses writes while the handover's own
+        /// configuration transition is fenced, so this runs right after it, not inside it.)
+        /// </summary>
+        /// <returns>True when the batch was committed (the move handed over).</returns>
+        private bool SettleHandover(string batchId, bool switched, DateTimeOffset now)
+        {
+            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            {
+                var handedOver = switched && _config().ArrRequestBackend == "je";
+                // The backend notices a changed request handling (and advances its facts generation) on its next read;
+                // read it now, so the write below begins in the new generation instead of having it move underneath.
+                _ = Backends.EffectiveRequestsBackend.Shared.Current;
+                Detached(() => handedOver ? _ledger.CommitStagedImport(batchId, now) : _ledger.DiscardStagedImport(batchId, now));
+                return handedOver;
+            }
+        }
 
         /// <summary>
-        /// The staged batch of the running move, under the configuration lock: committed when the handover is made,
-        /// discarded whole when it is refused.
+        /// Runs a ledger write outside the request's Seerr-facts publication. The move's request read Seerr under the
+        /// request handling it started with; once its own handover has changed that, any write joining the request's
+        /// publication is refused (configuration_changed). Settling the batch only marks rows the move wrote before the
+        /// handover, so it runs detached (as JellyfinBridge and ArrAdminOpsFeed run their work) and is waited for.
         /// </summary>
-        private void SettleHandover(bool handedOver)
+        private static T Detached<T>(Func<T> write)
         {
-            if (_handoverBatch is not { } batch) return;
-            if (handedOver) _ledger.CommitStagedImport(batch, _now());
-            else _ledger.DiscardStagedImport(batch, _now());
+            // Right after a handover the facts generation keeps moving for a moment (the backend and the configuration's
+            // listeners notice the new request handling on their next reads), refusing a write that began just before.
+            // The settle writes only act while the batch is still staged, so they are tried again, for a bounded time.
+            var deadline = Environment.TickCount64 + SettleRetryMs;
+            while (true)
+            {
+                Task<T> task;
+                using (ExecutionContext.SuppressFlow()) task = Task.Run(write);
+                try { return task.GetAwaiter().GetResult(); }
+                catch (Backends.BackendDisabledException ex) when (ex.Reason == "configuration_changed" && Environment.TickCount64 < deadline)
+                {
+                    Thread.Sleep(SettleRetryDelayMs);
+                }
+            }
         }
+
+        private const int SettleRetryMs = 10_000;
+        private const int SettleRetryDelayMs = 50;
 
         /// <summary>A staged batch a crash left behind: committed when request handling moved to JE since, else discarded.</summary>
         private void ResolveLeftovers()
@@ -165,15 +197,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var live = _config();
                     // A move's handover (it carries the Seerr address set its requests were read from) happens only while
-                    // that Seerr is still the one set up and still on; its staged batch is committed or discarded here,
-                    // under the same lock as this decision, so nothing of a refused move is ever seen or acted on.
-                    if (addresses != null && (SeerrFacts.AddressFingerprint(live) != addresses || !Backends.EffectiveRequestsBackend.SeerrUsable(live)))
-                    {
-                        SettleHandover(false);
-                        return;
-                    }
+                    // that Seerr is still the one set up and still on, decided under the same lock as the write.
+                    if (addresses != null && (SeerrFacts.AddressFingerprint(live) != addresses || !Backends.EffectiveRequestsBackend.SeerrUsable(live))) return;
                     var before = live.ArrRequestBackend;
-                    if (before == backend) { SettleHandover(true); switched = true; return; }
+                    if (before == backend) { switched = true; return; }
                     live.ArrRequestBackend = backend;
                     try
                     {
@@ -182,23 +209,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     catch (Exception)
                     {
                         live.ArrRequestBackend = before;
-                        SettleHandover(false);
                         return;
                     }
                     switched = _config().ArrRequestBackend == backend;
-                    if (!switched) { SettleHandover(false); return; }
-                    try
-                    {
-                        SettleHandover(true);
-                    }
-                    catch (Exception)
-                    {
-                        // The batch couldn't be committed: request handling goes back, and the batch is discarded.
-                        live.ArrRequestBackend = before;
-                        try { _save(); } catch (Exception) { /* the saved value is read back below */ }
-                        SettleHandover(false);
-                        switched = _config().ArrRequestBackend == backend;
-                    }
                 }
             }), CancellationToken.None, () =>
             {
@@ -382,7 +395,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Imported history is durable now. Release our fact admission before our own adoption drains.
                 effect.Dispose();
                 var switched = false;
-                _handoverBatch = result.BatchId;
                 try
                 {
                     BeforeSwitch?.Invoke();
@@ -392,16 +404,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     switched = false;
                 }
-                finally
+                if (result.BatchId != null)
                 {
-                    _handoverBatch = null;
+                    try
+                    {
+                        switched = SettleHandover(result.BatchId, switched, now);
+                    }
+                    catch (Exception)
+                    {
+                        // The handed-over batch couldn't be committed: request handling goes back (nothing of the batch was
+                        // ever visible), and the batch is discarded.
+                        if (switched) Switch(previous);
+                        try { Detached(() => _ledger.DiscardStagedImport(result.BatchId, now)); } catch (Exception) { /* settled before the next move */ }
+                        switched = false;
+                    }
                 }
                 if (!switched)
                 {
-                    // The switch failed (or Seerr was turned off meanwhile): the staged batch goes whole (the handover
-                    // discarded it already when it ran; this covers a handover that never ran), so Seerr stays the
-                    // authority with nothing half moved and nothing anyone could have seen or acted on.
-                    if (result.BatchId != null) _ledger.DiscardStagedImport(result.BatchId, now);
+                    // The switch failed (or Seerr was turned off meanwhile): the staged batch went whole (SettleHandover),
+                    // so Seerr stays the authority with nothing half moved and nothing anyone could have seen or acted on.
                     if (!Backends.EffectiveRequestsBackend.SeerrUsable(_config())) return SeerrMigrationReply.Refused("seerr_off", 409, "Seerr was turned off during the move; nothing was moved.", _config().ArrRequestBackend);
                     if (SeerrFacts.AddressFingerprint(_config()) != read.AddressFingerprint) return AddressChanged(_config().ArrRequestBackend);
                     return SeerrMigrationReply.Refused("switch_failed", 503, "Request handling could not be switched; nothing was moved.", _config().ArrRequestBackend);

@@ -215,6 +215,27 @@ public class IntegrationSeerrMigrationTests
         Assert.Equal(1, m.Count("SELECT COUNT(*) FROM import_batches WHERE state='committed'"));
     }
 
+    [Fact]
+    public async Task UX3R3AMoveRunAsTheRouteRunsItCommitsItsBatchAfterTheHandover()
+    {
+        // The HTTP route runs a move inside a request publication whose facts belong to the request handling it started
+        // with; after the handover that generation is gone, so settling the staged batch must not join it (found live:
+        // the batch stayed staged and the move was refused).
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var preview = await service.PreviewAsync(CancellationToken.None);
+        SeerrMigrationReply reply;
+        using (SeerrFacts.BeginPublication())
+            reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.Equal((200, "migrated", "je"), (reply.HttpStatus, reply.Reason, plugin.Plugin.Configuration.ArrRequestBackend));
+        Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM import_batches WHERE state='staged'"));
+    }
+
     [Theory]
     [InlineData("seerr", false)]
     [InlineData("je", true)]
