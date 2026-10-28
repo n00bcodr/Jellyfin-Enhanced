@@ -774,10 +774,19 @@
         const view = visibleData(state.data);
         const notes = H.buildNotes(view);
         if (notes) panel.appendChild(notes);
-        const actions = { open: openEntry, play: playEntry, manage: manageEntry };
+        // Empty My requests offers Discover (when this person has that tab) and Jellyfin's search.
+        const actions = { open: openEntry, play: playEntry, manage: manageEntry, discover: available.includes('discover') ? () => selectTab('discover') : null, search: openSearch };
         if (state.tab === 'soon') H.renderSoon(panel, view, actions);
         else if (state.tab === 'ready') H.renderReady(panel, view, actions);
         else H.renderMine(panel, mineView(view), actions);
+    }
+
+    /**
+     * Opens Jellyfin's search page (from the empty My requests).
+     * @returns {void}
+     */
+    function openSearch() {
+        window.location.hash = '#/search';
     }
 
     /**
@@ -832,6 +841,22 @@
             button.addEventListener('click', () => selectTab(id));
             strip.appendChild(button);
         }
+        revealSelectedTab(strip);
+    }
+
+    /**
+     * Scrolls a sideways-scrolling tab strip (phone width) so the selected tab is fully in view: a tab chosen
+     * from elsewhere (empty My requests' Discover, a deep link) is otherwise cut off at the strip's edge.
+     * @param {HTMLElement} strip Tab strip.
+     * @returns {void}
+     */
+    function revealSelectedTab(strip) {
+        const selected = strip.querySelector('.je-hub-tab[aria-selected="true"]');
+        if (!selected || strip.scrollWidth <= strip.clientWidth) return;
+        const box = strip.getBoundingClientRect();
+        const tab = selected.getBoundingClientRect();
+        if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 8;
+        else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 8;
     }
 
     /**
@@ -1007,12 +1032,18 @@
 
     /**
      * Redraws just the tab strip (an admin tab's answer changed the Overview count), keeping focus
-     * on the same tab when it was there.
+     * on the same tab when it was there. An empty My requests drawn before the Discover tab was known
+     * (or gone) is drawn again instead, so its Discover button follows the tab.
      * @returns {void}
      */
     function refreshTabs() {
         const root = pageNode?.querySelector('.je-hub');
         if (!root || !state.visible) return;
+        if (state.tab === 'mine' && root.querySelector('.je-hub-empty-mine')
+            && !!root.querySelector('.je-hub-empty-discover') !== tabs().includes('discover')) {
+            render();
+            return;
+        }
         const strip = root.querySelector('.je-hub-tabs');
         const focus = strip && strip.contains(document.activeElement) ? focusedId(root) : null;
         renderTabs(root, tabs());
