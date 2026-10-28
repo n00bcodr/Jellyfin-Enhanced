@@ -26,6 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     internal abstract class CacheFolderAccess
     {
         private volatile bool _lost;
+        private volatile bool _unavailable;
 
         protected CacheFolderAccess(string root)
         {
@@ -37,6 +38,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
         /// <summary>True once an operation found the folder gone or no longer the cache's (no marker): it is prepared again before the next use.</summary>
         internal bool Lost => _lost;
+
+        /// <summary>
+        /// True once a call the confinement needs (<c>statx</c>) was refused as unavailable (not implemented, or not permitted
+        /// by a sandbox): what the folder holds can't be measured, so the cache can't be used here (also <see cref="Lost"/>).
+        /// </summary>
+        internal bool Unavailable => _unavailable;
+
+        /// <summary>Marks the folder to be prepared again before its next use.</summary>
+        internal void MarkLost() => _lost = true;
+
+        /// <summary>Records that a needed call is unavailable here (see <see cref="Unavailable"/>).</summary>
+        protected void MarkUnavailable()
+        {
+            _unavailable = true;
+            _lost = true;
+        }
 
         /// <summary>True when this platform offers the confined calls.</summary>
         internal static bool Supported => LinuxFolderAccess.Supported;
@@ -171,8 +188,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>Removes an empty shard folder (or, with no shard, an empty namespace folder).</summary>
         internal abstract void RemoveEmpty(string ns, string? shard);
 
-        /// <summary>A regular file's length and last write time, read without opening it or following a link; null when there is none.</summary>
-        internal abstract (long Length, DateTime Modified)? Stat(string ns, string shard, string name);
+        /// <summary>
+        /// A regular file's length and last write time, read without opening it or following a link: true with
+        /// <paramref name="found"/> null when there is none (missing, a link or another type), false when it couldn't be
+        /// established (the call failed): never mistake that for "not there".
+        /// </summary>
+        internal abstract bool TryStat(string ns, string shard, string name, out (long Length, DateTime Modified)? found);
+
+        /// <summary>True when the folder's own files can be measured (the marker, through this handle).</summary>
+        internal abstract bool CanMeasure();
 
         /// <summary>
         /// Adds every file of the store's shape (names the filters accept, regular files only, links never followed)
@@ -263,8 +287,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// <summary>Anchored operations through libc on Linux (x64, x86, Arm, Arm64).</summary>
     internal sealed class LinuxFolderAccess : CacheFolderAccess
     {
+        private const int EPERM = 1;
         private const int ENOENT = 2;
         private const int EEXIST = 17;
+        private const int ENOSYS = 38;
         private const int ENOTDIR = 20;
         private const int ELOOP = 40;
         private const int AtRemoveDir = 0x200;
@@ -406,7 +432,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (root < 0) return failed;
             try
             {
-                return use(new LinuxFolder(root));
+                return use(new LinuxFolder(this, root));
             }
             finally
             {
@@ -439,14 +465,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             return fd < 0 ? null : new SafeFileHandle((IntPtr)fd, ownsHandle: true);
         }
 
-        /// <summary>A file's type, length and last write time under <paramref name="dir"/>, never following a link: 1 a regular file, 0 none (missing, a link or another type), -1 unreadable.</summary>
-        private static int StatAt(int dir, string name, out long length, out DateTime modified)
+        /// <summary>
+        /// A file's type, length and last write time under <paramref name="dir"/>, never following a link: 1 a regular file,
+        /// 0 none (missing, a link or another type), -1 unreadable. A call refused as unavailable (not implemented, or not
+        /// permitted by a sandbox) also marks the access <see cref="CacheFolderAccess.Unavailable"/>.
+        /// </summary>
+        private int StatAt(int dir, string name, out long length, out DateTime modified)
         {
             length = 0;
             modified = default;
             var buffer = new byte[StatxBytes];
             if (Lib!.Statx(dir, name, AtSymlinkNoFollow, StatxWanted, buffer) != 0)
-                return Marshal.GetLastPInvokeError() is ENOENT or ENOTDIR ? 0 : -1;
+            {
+                var error = Marshal.GetLastPInvokeError();
+                if (error is ENOENT or ENOTDIR) return 0;
+                if (error is ENOSYS or EPERM) MarkUnavailable();
+                return -1;
+            }
+
             if ((BinaryPrimitives.ReadUInt16LittleEndian(buffer.AsSpan(28)) & SIfMt) != SIfReg) return 0;
             length = BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(40));
             var seconds = BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(112));
@@ -488,10 +524,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>The folder held open by one operation; every call is relative to its handle.</summary>
         private sealed class LinuxFolder : CacheFolder
         {
+            private readonly LinuxFolderAccess _access;
             private readonly int _root;
 
-            internal LinuxFolder(int root)
+            internal LinuxFolder(LinuxFolderAccess access, int root)
             {
+                _access = access;
                 _root = root;
             }
 
@@ -532,8 +570,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 else InDir(ns, null, false, false, dir => Lib!.UnlinkAt(dir, shard, AtRemoveDir) == 0);
             }
 
-            internal override (long Length, DateTime Modified)? Stat(string ns, string shard, string name)
-                => InDir<(long, DateTime)?>(ns, shard, false, null, dir => StatAt(dir, name, out var length, out var modified) == 1 ? (length, modified) : null);
+            internal override bool TryStat(string ns, string shard, string name, out (long Length, DateTime Modified)? found)
+            {
+                found = null;
+                // A namespace or shard folder that is gone (or a link) holds no such file; one that can't be opened is unknown.
+                static bool Gone() => Marshal.GetLastPInvokeError() is ENOENT or ENOTDIR or ELOOP;
+                var nsFd = Lib!.OpenAt(_root, ns, ORdOnly | ODirectory | ONoFollow | OCloExec, 0);
+                if (nsFd < 0) return Gone();
+                try
+                {
+                    var shardFd = Lib.OpenAt(nsFd, shard, ORdOnly | ODirectory | ONoFollow | OCloExec, 0);
+                    if (shardFd < 0) return Gone();
+                    try
+                    {
+                        switch (_access.StatAt(shardFd, name, out var length, out var modified))
+                        {
+                            case 1:
+                                found = (length, modified);
+                                return true;
+                            case 0:
+                                return true;
+                            default:
+                                return false;
+                        }
+                    }
+                    finally
+                    {
+                        Lib.Close(shardFd);
+                    }
+                }
+                finally
+                {
+                    Lib.Close(nsFd);
+                }
+            }
+
+            internal override bool CanMeasure() => _access.StatAt(_root, ServerCacheLocation.MarkerName, out _, out _) >= 0;
 
             internal override bool List(Func<string, bool> isNamespace, Func<string, bool> isShard, Func<string, bool> isFile, List<CacheFile> into)
             {
@@ -552,7 +624,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                             {
                                 foreach (var name in Names(shardFd, isFile, ref complete))
                                 {
-                                    switch (StatAt(shardFd, name, out var length, out var modified))
+                                    switch (_access.StatAt(shardFd, name, out var length, out var modified))
                                     {
                                         case 1:
                                             into.Add(new CacheFile(ns, shard, name, length, modified));

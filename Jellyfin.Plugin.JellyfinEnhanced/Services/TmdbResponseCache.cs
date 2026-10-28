@@ -1151,14 +1151,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static TimeSpan SnapshotTtl(string key, int status) => status == 404 ? NotFoundTtl : GetTtl(UrlOf(key)[UpstreamPrefix.Length..]);
 
-        /// <summary>Writes the snapshot file, unless the server-side cache is on and usable.</summary>
-        private void SaveToDisk() => SaveSnapshot(CancellationToken.None);
-
         /// <summary>
-        /// Dispose's final save: a wait for the server-side cache's folder preparation is given up and nothing is written
-        /// (the cache is switched on then, so the snapshot is not the disk copy to keep).
+        /// Writes the snapshot file, unless the server-side cache is on and usable (the debounce timer and Dispose's final
+        /// save). Once disposed, a wait for the server-side cache's folder preparation is given up and nothing is written:
+        /// the cache is switched on then, so the snapshot is not the disk copy to keep.
         /// </summary>
-        private void SaveOnDispose()
+        private void SaveToDisk()
         {
             try
             {
@@ -1275,14 +1273,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Dispose()
         {
             _disposed = true;
-            // A background check or save is cancelled: a wait for the server-side cache's folder ends at once, and nothing
-            // is saved or migrated after it. Only one stuck inside a file-system call is waited for, briefly; when that call
-            // returns it finds the cache disposed and starts nothing.
+            // Every background check, promotion, migration, disk write and timer save observes this cancellation: a wait for
+            // the server-side cache's folder or disk ends at once, a write not yet committed never commits, and nothing new
+            // starts. What is still running is waited for, briefly (only a call stuck inside the file system could outlast it,
+            // and when it returns it finds the cache disposed).
             _disposing.Cancel();
-            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0, TimeSpan.FromSeconds(1));
+            SpinWait.SpinUntil(() => Volatile.Read(ref _checking) == 0 && Volatile.Read(ref _promoting) == 0 && Volatile.Read(ref _writing) == 0, TimeSpan.FromSeconds(1));
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
-            if (_dirty) SaveOnDispose();
+            if (_dirty) SaveToDisk();
         }
 
         // ---- server-side cache (disk tier) ------------------------------------
@@ -1331,6 +1330,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _promoteAgainAt;
         private long _nextDiskCheck;
         private int _checking;
+        // Disk writes of this cache under way (Dispose waits for them).
+        private int _writing;
         private static readonly TimeSpan DiskCheckEvery = TimeSpan.FromSeconds(30);
         // The valid, migratable records of the legacy snapshot, until it is retired (or migration gives up).
         private List<Entry>? _legacy;
@@ -1625,6 +1626,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<bool?> SaveOnceAsync(Entry entry)
         {
+            // Disposed: nothing is saved (the entry stays unsaved).
+            if (_disposing.IsCancellationRequested) return false;
             if (Interlocked.CompareExchange(ref entry.Saved, SavedPending, SavedNone) != SavedNone)
             {
                 if (Volatile.Read(ref entry.Saved) == SavedOnDisk) return true;
@@ -1645,6 +1648,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var complete = true;
             foreach (var record in legacy)
             {
+                // Disposed: the snapshot stays for the next start.
+                if (_disposing.IsCancellationRequested) return false;
                 if (record.ExpiresAt <= now) continue;
                 Entry? current;
                 lock (_lock) current = _entries.TryGetValue(record.Key, out var node) && node.Value.ExpiresAt > now ? node.Value : null;
@@ -1661,7 +1666,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (complete)
+            if (complete && !_disposing.IsCancellationRequested)
             {
                 RetireLegacyFile();
                 _legacy = null;
@@ -1701,7 +1706,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Starts the disk writes of entries just stored (each under the generation sampled before its fetch).</summary>
         private void SaveEntries(List<Entry> entries)
         {
-            if (entries.Count == 0 || !DiskReady()) return;
+            if (_disposed || entries.Count == 0 || !DiskReady()) return;
             foreach (var entry in entries)
             {
                 if (entry.Response.FetchedAtUtc > DateTime.MinValue && Durable(UrlOf(entry.Key))) _ = SaveOnceAsync(entry);
@@ -1717,13 +1722,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<bool> WriteAsync(Entry entry)
         {
+            Interlocked.Increment(ref _writing);
             try
             {
                 var bar = entry.Key.IndexOf('|', StringComparison.Ordinal);
                 var keyHash = entry.Key[..bar];
                 var url = entry.Key[(bar + 1)..];
                 var bytes = Encode(entry, DiskDigest(keyHash, url), url);
-                var stored = await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, CancellationToken.None,
+                // Cancelled by Dispose: a write waiting for the disk, or not yet committed, never lands.
+                var stored = await _disk!.PutAsync(DiskNamespace, DiskKey(keyHash, url), bytes, ServerBlobCache.JsonContentType, _disposing.Token,
                     entry.DiskGeneration, entry.ExpiresAt.UtcDateTime, entry.Response.FetchedAtUtc).ConfigureAwait(false);
                 if (stored) Volatile.Write(ref entry.Saved, SavedOnDisk);
                 return stored;
@@ -1731,6 +1738,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 return false;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _writing);
             }
         }
 

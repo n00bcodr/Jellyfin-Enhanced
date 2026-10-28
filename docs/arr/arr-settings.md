@@ -260,7 +260,7 @@ Back up Jellyfin Enhanced's own data: Jellyfin's backups don't include plugin da
 Keeps the TMDB artwork of titles that aren't in the library on the Jellyfin server, and the TMDB metadata Jellyfin
 Enhanced reads (titles, seasons, people, collections, rows, the facts behind the parental limits and the posters of
 list placeholders), so opening such a title again, or after a restart, doesn't fetch it from TMDB again. It needs Jellyfin running on Linux (x64, x86, Arm or
-Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It sits on the plugin's **\*arr** tab, under
+Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It also stays off, saying why, where the system refuses the call it measures files with (`statx`: a C library older than glibc 2.28, or a sandbox that blocks it), since it couldn't keep the folder to its size there. It sits on the plugin's **\*arr** tab, under
 **Requests & downloads (new)**, and is off by default.
 
 ![Server-side cache settings](../images/server-cache-settings.png)

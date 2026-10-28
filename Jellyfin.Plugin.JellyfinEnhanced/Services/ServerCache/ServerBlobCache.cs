@@ -103,7 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
     /// about who may see an entry: consumers keep their own admission and checks and store only public data (no
     /// credential, signed URL or user identity).
     /// </summary>
-    public sealed class ServerBlobCache
+    public sealed class ServerBlobCache : IDisposable
     {
         /// <summary>The default folder's name inside the plugin's data folder.</summary>
         public const string DefaultFolderName = "server-cache";
@@ -141,6 +141,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private readonly Func<DateTime> _now;
         private readonly bool _anchored;
         private readonly SemaphoreSlim _sweepLock = new(1, 1);
+        // Cancelled by Dispose (server shutdown): sweeps stop and nothing new is read or written.
+        private readonly CancellationTokenSource _closing = new();
         private readonly SemaphoreSlim _io = new(MaxConcurrentIo, MaxConcurrentIo);
         private readonly object _lock = new();
         private readonly object _prepareLock = new();
@@ -334,7 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 var (shard, name) = Names(ns, key);
                 Read read;
                 Hook?.Invoke("read");
-                await _io.WaitAsync().ConfigureAwait(false);
+                await _io.WaitAsync(_closing.Token).ConfigureAwait(false);
                 try
                 {
                     read = ReadEntry(access, ns, shard, name, key, options);
@@ -475,9 +477,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var committed = false;
             var created = false;
             long total = 0, inNamespace = 0;
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct, _closing.Token);
             try
             {
-                await _io.WaitAsync(ct).ConfigureAwait(false);
+                await _io.WaitAsync(stop.Token).ConfigureAwait(false);
                 try
                 {
                     using (var handle = access.CreateNew(ns, shard, temp))
@@ -497,9 +500,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                         {
                             // The commit and the generation's end (Clear, Forget, settings) are ordered by this lock: a write
                             // that started before them never lands after them.
-                            if (EndedLocked(id, started)) return false;
+                            if (EndedLocked(id, started) || ct.IsCancellationRequested || _closing.IsCancellationRequested) return false;
                             Hook?.Invoke("commit");
-                            var previous = folder.Stat(ns, shard, name);
+                            // A file it would replace that can't be measured can't be accounted for: the write is refused.
+                            if (!folder.TryStat(ns, shard, name, out var previous)) return false;
                             if (!folder.Rename(ns, shard, temp, name)) return false;
                             committed = true;
                             Account(ns + "/" + shard + "/" + name, ns, previous is { } old ? Blocks(old.Length) : 0, size);
@@ -515,8 +519,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     _io.Release();
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                // A failed write, or one the store's shutdown stopped, is simply not stored; the caller's own cancellation is thrown.
                 return false;
             }
             finally
@@ -649,9 +654,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private bool RemoveLocked(CacheFolder folder, string ns, string key)
         {
             var (shard, name) = Names(ns, key);
-            var stat = folder.Stat(ns, shard, name);
-            if (stat == null || !folder.Delete(ns, shard, name)) return false;
-            Account(ns + "/" + shard + "/" + name, ns, Blocks(stat.Value.Length), 0);
+            var known = folder.TryStat(ns, shard, name, out var stat);
+            if ((known && stat == null) || !folder.Delete(ns, shard, name)) return false;
+            if (stat is { } removed) Account(ns + "/" + shard + "/" + name, ns, Blocks(removed.Length), 0);
+            // A file removed without knowing its size: the totals are counted again.
+            else ScheduleSweep(force: true);
             return true;
         }
 
@@ -745,8 +752,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     var read = ReadHead(folder, found, options);
                     if (read.Seen is not { } seen)
                     {
-                        // Can't be opened (permissions): it can't be removed either, but it is counted while it is there.
-                        if (folder.Stat(found.Ns, found.Shard, found.Name) != null) entries.Add(found);
+                        // Can't be opened (permissions): it can't be removed either, but it is counted while it is there; when
+                        // even that can't be told, the count is incomplete (the totals stay as they were).
+                        if (!folder.TryStat(found.Ns, found.Shard, found.Name, out var present))
+                        {
+                            complete = false;
+                            entries.Add(found);
+                        }
+                        else if (present != null)
+                        {
+                            entries.Add(found);
+                        }
+
                         continue;
                     }
 
@@ -833,7 +850,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     if (found.Temp && _activeTemps.Contains(found.Id)) continue;
                 }
 
-                if (folder.Stat(found.Ns, found.Shard, found.Name) != null) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
+                if (!folder.TryStat(found.Ns, found.Shard, found.Name, out var present)) complete = false;
+                else if (present != null) snapshot[found.Id] = (found.Ns, Blocks(found.Length));
             }
 
             foreach (var (space, shard) in namespaces) folder.RemoveEmpty(space, shard);
@@ -851,6 +869,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             // A folder found no longer the cache's is prepared again (its reason shown) before a second look.
             for (var attempt = 0; attempt < 2; attempt++)
             {
+                spaces.Clear();
                 access = settings.Enabled ? Access() : Access(create: false);
                 var counted = access != null && access.Owned(false, folder =>
                 {
@@ -862,7 +881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
                     return true;
                 });
-                if (counted || access == null || !access.Lost) break;
+                if (access == null || !access.Lost) break;
             }
 
             string? error;
@@ -980,7 +999,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         {
             lock (_lock)
             {
-                return _activeTemps.Contains(found.Id) || folder.Delete(found.Ns, found.Shard, found.Name) || folder.Stat(found.Ns, found.Shard, found.Name) == null;
+                return _activeTemps.Contains(found.Id) || folder.Delete(found.Ns, found.Shard, found.Name)
+                    || (folder.TryStat(found.Ns, found.Shard, found.Name, out var left) && left == null);
             }
         }
 
@@ -1068,18 +1088,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private CacheFolderAccess? PrepareAccess(bool create)
         {
             string configured;
-            string? validated;
+            CacheFolderAccess? stale;
             lock (_lock)
             {
                 if (_access is { Lost: false }) return _access;
                 if (_folderError != null && _now() - _folderErrorAt < FolderRetry) return null;
                 configured = _seen?.Folder ?? string.Empty;
-                // A folder lost under this setting is prepared again where it was validated: a link put in its place
-                // (or above it) is never followed to wherever it now leads.
-                validated = _access?.Root;
+                stale = _access;
             }
 
-            string? error = null;
+            // A folder lost under this setting is prepared again where it was validated: a link put in its place (or above
+            // it) is never followed to wherever it now leads. One where a needed call turned out unavailable is refused.
+            var validated = stale?.Root;
+            string? error = stale is { Unavailable: true } ? ServerCacheLocation.Unsupported : null;
             var full = validated ?? string.Empty;
             if (validated == null) error = _location.Resolve(configured, out full);
             var found = error == null ? CacheFolderAccess.For(full, _anchored) : null;
@@ -1089,6 +1110,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             lock (_lock)
             {
                 if ((_seen?.Folder ?? string.Empty) != configured) return null;
+                if (stale is { Unavailable: true } && ReferenceEquals(_access, stale))
+                {
+                    // Tried again (in the same place, with a fresh check) once the retry delay has passed.
+                    _access = CacheFolderAccess.For(stale.Root, _anchored);
+                    _access?.MarkLost();
+                }
+
                 if (error != null)
                 {
                     if (_folderError != error) _logger?.Warning($"[Server cache] The cache folder can't be used, so nothing is cached on disk: {error}");
@@ -1103,11 +1131,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             }
         }
 
+        /// <summary>
+        /// Stops the store (server shutdown): a sweep under way stops at its next step and is waited for briefly, a read or
+        /// write waiting for the disk gives up, a write not yet committed never commits, and no new sweep starts.
+        /// </summary>
+        public void Dispose()
+        {
+            _closing.Cancel();
+            Task sweep;
+            lock (_lock) sweep = _pendingSweep;
+            try
+            {
+                sweep.Wait(TimeSpan.FromSeconds(1));
+            }
+            catch (AggregateException)
+            {
+                // A sweep's failure was already logged.
+            }
+        }
+
         /// <summary>Starts a sweep (after the debounce unless forced); one asked for while one runs runs after it.</summary>
         private void ScheduleSweep(bool force = false, bool full = false)
         {
             lock (_lock)
             {
+                if (_closing.IsCancellationRequested) return;
                 if (!_pendingSweep.IsCompleted)
                 {
                     _sweepAgain = true;
@@ -1120,11 +1168,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 {
                     try
                     {
-                        if (wait > TimeSpan.Zero) await Task.Delay(wait).ConfigureAwait(false);
+                        if (wait > TimeSpan.Zero) await Task.Delay(wait, _closing.Token).ConfigureAwait(false);
                         var thisFull = full;
                         while (true)
                         {
-                            await SweepAsync(thisFull, CancellationToken.None).ConfigureAwait(false);
+                            await SweepAsync(thisFull, _closing.Token).ConfigureAwait(false);
                             lock (_lock)
                             {
                                 if (!_sweepAgain) break;
@@ -1133,6 +1181,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                                 _sweepAgainFull = false;
                             }
                         }
+                    }
+                    catch (OperationCanceledException) when (_closing.IsCancellationRequested)
+                    {
+                        // Shutting down.
                     }
                     catch (Exception ex)
                     {
