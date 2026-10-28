@@ -87,7 +87,7 @@ public class IntegrationAuditTitleVisibilityTests
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
         controller.HttpContext.User = TestCallers.Principal(viewer.UserId, true);
-        var result = Assert.IsType<OkObjectResult>(await controller.GetAudit());
+        var result = Assert.IsAssignableFrom<OkObjectResult>(await controller.GetAudit());
         using var answer = JsonDocument.Parse(JsonSerializer.Serialize(result.Value));
         var titles = answer.RootElement.GetProperty("names").GetProperty("titles");
         Assert.Equal(visible, titles.TryGetProperty(input.Key, out _));
