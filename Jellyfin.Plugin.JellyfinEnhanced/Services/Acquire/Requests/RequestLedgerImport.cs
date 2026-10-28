@@ -154,14 +154,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
 
         /// <summary>
-        /// The handover of a move happened: its staged batch becomes an ordinary committed batch, and its wants appear.
-        /// True when the batch was staged (false when it was already committed or discarded).
+        /// The handover of a move happened: its staged batch becomes an ordinary committed batch, and its wants appear as
+        /// if imported now. While staged they were absent to every reader, alias reconciliation included, so a title whose
+        /// other id was learned meanwhile has moved on: each want is brought to its title's current key, and (with
+        /// <paramref name="policy"/>) a request that now covers it leads, as a merge would have arranged. True when the
+        /// batch was staged (false when it was already committed or discarded).
         /// </summary>
         /// <param name="batchId">The staged batch.</param>
         /// <param name="now">When the handover committed.</param>
-        public bool CommitStagedImport(string batchId, DateTimeOffset now) => _db.Write((c, t) =>
+        /// <param name="policy">Request policy for the merge's follow step (null: identity only).</param>
+        public bool CommitStagedImport(string batchId, DateTimeOffset now, IRequestPolicy? policy = null) => _db.Write((c, t) =>
         {
             if (Exec(c, t, "UPDATE import_batches SET state='committed' WHERE id=$id AND state='staged'", ("$id", batchId)) == 0) return false;
+            var moved = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var want in Wants(c, t, "import_batch_id=$b", ("$b", batchId)))
+            {
+                var canonical = Canonical(c, t, want.Input.Key);
+                if (canonical == want.Input.Key) continue;
+                var input = want.Input with { Key = canonical };
+                var owned = want.OwnedInput == null ? null : want.OwnedInput with { Key = canonical };
+                Exec(c, t, "UPDATE wants SET title_key=$key,mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
+                    ("$key", canonical), ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id));
+                moved.Add(want.AcquisitionId);
+            }
+            if (policy != null) foreach (var acquisition in moved) FollowWithin(c, t, acquisition, policy, now);
             // The titles changed now (they were invisible until the handover): pages following them read again.
             foreach (var key in StagedKeys(c, t, batchId)) Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", key), ("$at", Ms(now)));
             Changed(c, t);
@@ -187,19 +203,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         });
 
         /// <summary>
-        /// Staged batches a crash left between import and handover: committed when the handover happened (<paramref name="handedOver"/>
-        /// of the batch's previous request handling), discarded otherwise. Never call it while a move is running.
+        /// Rolls back every staged batch: a move that didn't finish its handover in this process (it crashed, or the
+        /// database was restored from a copy taken mid-move) counts as refused; the administrator runs it again. Its
+        /// wants were never seen or acted on. Returns how many batches were rolled back.
         /// </summary>
-        /// <param name="handedOver">Whether request handling moved on from the batch's previous handling.</param>
         /// <param name="now">Now.</param>
-        public void ResolveStagedImports(Func<string, bool> handedOver, DateTimeOffset now)
+        public int DiscardStagedImports(DateTimeOffset now)
         {
-            if (!_db.Available) return;
+            if (!_db.Available) return 0;
+            var rolledBack = 0;
             foreach (var batch in _db.Read(c => Batches(c, null, "state='staged'")))
-            {
-                if (handedOver(batch.PreviousBackend)) CommitStagedImport(batch.Id, now);
-                else DiscardStagedImport(batch.Id, now);
-            }
+                if (DiscardStagedImport(batch.Id, now)) rolledBack++;
+            return rolledBack;
         }
 
         private static List<string> StagedKeys(SqliteConnection c, SqliteTransaction t, string batchId)

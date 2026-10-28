@@ -154,13 +154,15 @@ public class IntegrationSeerrMigrationTests
             visible = body.RootElement.GetProperty("items").GetArrayLength();
             if (cancel)
             {
-                var want = m.R.Ledger.List(m.R.Member, false).Single();
-                closeStatus = m.R.Service.Close(want.Id, m.R.Member, null).HttpStatus;
+                // UX3R4-3: the id from storage (the filtered list is empty), so the cancel really runs.
+                var id = m.R.Db.Read(c => { using var q = c.CreateCommand(); q.CommandText = "SELECT id FROM wants LIMIT 1"; return (string)q.ExecuteScalar()!; });
+                closeStatus = m.R.Service.Close(id, m.R.Member, null).HttpStatus;
             }
         };
         var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
         var retained = m.Count("SELECT COUNT(*) FROM wants");
         var kept = m.Count("SELECT COALESCE(SUM(kept),0) FROM import_batches");
+        if (cancel) Assert.Equal(404, closeStatus);
         Assert.True(reply.HttpStatus == 409 && reply.Reason == "seerr_off" && visible == 0 && retained == 0,
             $"isolation={isolation}, cancel={cancel}, HTTP={reply.HttpStatus}, reason={reply.Reason}, mid_list_items={visible}, close_HTTP={closeStatus}, retained={retained}, batch_kept={kept}, backend={plugin.Plugin.Configuration.ArrRequestBackend}");
     }
@@ -181,10 +183,13 @@ public class IntegrationSeerrMigrationTests
         {
             plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
             { Set = new() { ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(false) } });
-            var want = m.R.Ledger.List(m.R.Admin, true).Single();
-            approval = m.R.Service.ApproveAsync(want.Id, m.R.Admin, null, CancellationToken.None).GetAwaiter().GetResult().HttpStatus;
+            // UX3R4-3: the id from storage (the filtered list is empty), so the approval really runs.
+            var id = m.R.Db.Read(c => { using var q = c.CreateCommand(); q.CommandText = "SELECT id FROM wants LIMIT 1"; return (string)q.ExecuteScalar()!; });
+            approval = m.R.Service.ApproveAsync(id, m.R.Admin, null, CancellationToken.None).GetAwaiter().GetResult().HttpStatus;
         };
         var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, CancellationToken.None);
+        Assert.Equal(404, approval);
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM approvals"));
         Assert.True(reply.HttpStatus == 409 && m.Count("SELECT COUNT(*) FROM wants") == 0 && m.Count("SELECT COUNT(*) FROM jobs") == 0,
             $"HTTP={reply.HttpStatus}, reason={reply.Reason}, approval_HTTP={approval}, wants={m.Count("SELECT COUNT(*) FROM wants")}, jobs={m.Count("SELECT COUNT(*) FROM jobs")}, backend={plugin.Plugin.Configuration.ArrRequestBackend}");
     }
@@ -237,9 +242,9 @@ public class IntegrationSeerrMigrationTests
     }
 
     [Theory]
-    [InlineData("seerr", false)]
-    [InlineData("je", true)]
-    public async Task UX3R3AStagedBatchACrashLeftIsSettledBeforeTheNextCheck(string backendNow, bool committed)
+    [InlineData("seerr")]
+    [InlineData("je")]
+    public async Task UX3R3AStagedBatchACrashLeftIsSettledBeforeTheNextCheck(string backendNow)
     {
         using var m = new Mig();
         m.Add(1, "movie", m.R.Member);
@@ -252,8 +257,338 @@ public class IntegrationSeerrMigrationTests
         Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
         m.R.Policy.Configuration.ArrRequestBackend = backendNow;
         await m.Service.PreviewAsync(CancellationToken.None);
-        Assert.Equal(committed ? 1 : 0, m.R.Ledger.List(m.R.Admin, true).Count);
-        Assert.Equal(committed ? "committed" : "rolled_back", m.R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT state FROM import_batches"; return (string)cmd.ExecuteScalar()!; }));
+        // Round 5: a move that didn't finish its handover in-process is refused, whatever request handling is now.
+        Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
+        Assert.Equal("rolled_back", m.R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT state FROM import_batches"; return (string)cmd.ExecuteScalar()!; }));
+    }
+
+
+    // ---- UX3R4 (review round 4), the reviewer's probes. Ids come from storage, never from the filtered reader. ----
+    private static string RawWant(Mig m) => m.R.Db.Read(c => { using var q = c.CreateCommand(); q.CommandText = "SELECT id FROM wants LIMIT 1"; return (string)q.ExecuteScalar()!; });
+    private static async Task<ImportResult> StageR4(Mig m, string previous = "seerr")
+    {
+        m.Add(1, "movie", m.R.Member);
+        var read = await new SeerrFacts(m.Seerr.Transport).ReadAsync(m.R.Policy.Configuration, CancellationToken.None);
+        var plan = SeerrMigration.Plan(read, _ => true, k => k, new HashSet<int>());
+        return m.R.Ledger.ImportSeerr(m.R.Ledger.OriginSource(SeerrFacts.AddressFingerprint(m.R.Policy.Configuration)), read.Digest!, plan.Items, plan.Skipped,
+            m.R.Admin, previous, _ => "[\"je\",\"r1\",\"g1\",null]", m.R.Now, SeerrMigration.RollbackWindow, staged: true);
+    }
+
+    [Theory]
+    [InlineData(0, "approve", "seerr")]
+    [InlineData(0, "approve", "je")]
+    [InlineData(1, "approve", "seerr")]
+    [InlineData(0, "cancel", "seerr")]
+    [InlineData(0, "cancel", "je")]
+    [InlineData(1, "cancel", "seerr")]
+    public async Task UX3R4StagedActionsByIdAreRefused(int isolation, string action, string backend)
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        m.R.Policy.Configuration.ArrRequestBackend = backend;
+        m.R.Policy.Configuration.ArrBackendIsolationVersion = isolation;
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        m.Add(1, "movie", m.R.Member);
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var preview = await service.PreviewAsync(default);
+        int ran = 0, status = -1;
+        service.BeforeSwitch = () => {
+            var id = RawWant(m);
+            status = action == "approve" ? m.R.Service.ApproveAsync(id, m.R.Admin, null, default).GetAwaiter().GetResult().HttpStatus
+                : m.R.Service.Close(id, m.R.Member, null).HttpStatus;
+            ran++;
+            plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+                { Set = new() { ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(false) } });
+        };
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, default);
+        Assert.Equal(1, ran);
+        Assert.Equal(404, status);
+        Assert.Equal((409, "seerr_off"), (reply.HttpStatus, reply.Reason));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM wants"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM jobs"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM approvals"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM request_notices"));
+    }
+
+    [Fact]
+    public async Task UX3R4StagedDispatchNotificationAndQuotaAreInert()
+    {
+        using var m = new Mig();
+        var batch = await StageR4(m);
+        var id = RawWant(m);
+        Assert.False(m.R.Ledger.Fulfil(id, m.R.Now));
+        Assert.Empty(m.R.Ledger.Unfulfilled(100));
+        Assert.Empty(m.R.Ledger.RequestedTitles());
+        Assert.Empty(m.R.Ledger.TitleKeys());
+        Assert.Empty(m.R.Ledger.Notices(100));
+        Assert.Empty(m.R.Ledger.Due(m.R.Now));
+        Assert.Empty(m.R.Ledger.ForWant(id));
+        Assert.Empty(m.R.Ledger.Dispatches("movie:tmdb:1001"));
+        await m.R.Runner().TickAsync(default);
+        Assert.Equal(0, m.R.Backend.Sends);
+        Assert.Equal(0, m.R.Backend.Reads);
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM reservations WHERE state='charged'"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM request_notices"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM notifications"));
+        Assert.True(m.R.Ledger.DiscardStagedImport(batch.BatchId!, m.R.Now));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM reservations"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM request_inputs"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM acquisitions"));
+    }
+
+    [Fact]
+    public async Task UX3R4OverlappingMovesAndPreviewCannotSettleEachOther()
+    {
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        var preview = await m.Service.PreviewAsync(default);
+        SeerrMigrationReply? other = null, check = null;
+        int ran = 0;
+        m.Service.BeforeSwitch = () => {
+            other = m.Service.CommitAsync(m.R.Admin, preview.Digest, false, default).GetAwaiter().GetResult();
+            check = m.Service.PreviewAsync(default).GetAwaiter().GetResult();
+            Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
+            ran++;
+        };
+        var reply = await m.Service.CommitAsync(m.R.Admin, preview.Digest, false, default);
+        Assert.Equal(1, ran);
+        Assert.Equal("migration_busy", other!.Reason);
+        Assert.Equal("migration_busy", check!.Reason);
+        Assert.Equal("migrated", reply.Reason);
+        Assert.Equal(1, m.Count("SELECT COUNT(*) FROM import_batches"));
+        Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+    }
+
+    [Fact]
+    public async Task UX3R4CrashBeforeHandoverThenIndependentJeSelectionMustNotPublishBatch()
+    {
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        var staged = await StageR4(m);
+        // Durable state of a process lost before Switch. Reopen the database and rebuild migration.
+        m.R.Reopen(); m.Rebuild();
+        Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
+        // Later an administrator selects JE independently, without resuming/confirming this move.
+        plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+            { Set = new() { ["ArrRequestBackend"] = JsonSerializer.SerializeToElement("je") } });
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        var check = await service.PreviewAsync(default);
+        Assert.Equal("preview", check.Reason);
+        Assert.True(m.R.Ledger.List(m.R.Admin, true).Count == 0,
+            $"A preview published {m.R.Ledger.List(m.R.Admin, true).Count} old provisional wants after an unrelated JE selection; committed_batches={m.Count("SELECT COUNT(*) FROM import_batches WHERE state='committed'")}, pending={check.Pending}");
+    }
+
+    [Fact]
+    public async Task UX3R4MoveFinishesSettlementAfterHostedStopAndRequestCancellation()
+    {
+        using var m = new Mig();
+        m.Add(1, "movie", m.R.Member);
+        using var facts = new SeerrFacts(m.Seerr.Transport);
+        using var request = new CancellationTokenSource();
+        var service = new SeerrMigration(facts, m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => m.R.Policy.Configuration, () => { }, () => m.R.Now);
+        var preview = await service.PreviewAsync(default);
+        int stopped = 0;
+        service.BeforeSwitch = () => {
+            request.Cancel();
+            facts.StopAsync(default).GetAwaiter().GetResult();
+            m.R.Db.Dispose();
+            stopped++;
+        };
+        var reply = await service.CommitAsync(m.R.Admin, preview.Digest, false, request.Token);
+        Assert.Equal(1, stopped);
+        Assert.True(request.IsCancellationRequested);
+        Assert.Equal("migrated", reply.Reason);
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM import_batches WHERE state='staged'"));
+        Assert.Single(m.R.Ledger.List(m.R.Admin, true));
+    }
+
+    [Theory]
+    [InlineData("status_only", true, false)]
+    [InlineData("seerr", false, false)]
+    [InlineData("je", false, true)]
+    public async Task UX3R4LaterSwitchOffBeforeSettleDoesNotCommit(string backend, bool seerrEnabled, bool expectedCommit)
+    {
+        using var m = new Mig();
+        var staged = await StageR4(m);
+        m.R.Policy.Configuration.ArrRequestBackend = backend;
+        m.R.Policy.Configuration.JellyseerrEnabled = seerrEnabled;
+        var settle = typeof(SeerrMigration).GetMethod("SettleHandover", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var committed = (bool)settle.Invoke(m.Service, new object[] { staged.BatchId!, true, m.R.Now })!;
+        Assert.Equal(expectedCommit, committed);
+        Assert.Equal(expectedCommit ? 1 : 0, m.R.Ledger.List(m.R.Admin, true).Count);
+    }
+
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    public async Task UX3R4CrashAfterSavedHandoverIsRolledBackEvenWhenSeerrIsNowOff(int isolation, bool enabled)
+    {
+        // Round 5 rule (coordinator): a move that didn't finish its handover in-process is refused, even when its
+        // request-handling save landed; the leftover is rolled back locally (no Seerr call) and shows as rolled back.
+        using var plugin = new ApiPluginFixture();
+        using var m = new Mig();
+        plugin.Plugin.UpdateConfiguration(m.R.Policy.Configuration);
+        await StageR4(m);
+        plugin.Plugin.PatchConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.ConfigurationPatch
+            { Set = new() {
+                ["ArrRequestBackend"] = JsonSerializer.SerializeToElement("je"),
+                ["ArrBackendIsolationVersion"] = JsonSerializer.SerializeToElement(isolation),
+                ["JellyseerrEnabled"] = JsonSerializer.SerializeToElement(enabled)
+            } });
+        m.R.Reopen();
+        var service = new SeerrMigration(new SeerrFacts(m.Seerr.Transport), m.R.Ledger, m.R.Policy, m.R.View, null, m.R.Feed,
+            () => plugin.Plugin.Configuration, () => plugin.Plugin.SaveConfiguration(), () => m.R.Now);
+        m.Seerr.Calls.Clear();
+        var check = await service.PreviewAsync(default);
+        Assert.Empty(m.Seerr.Calls);
+        Assert.Empty(m.R.Ledger.List(m.R.Admin, true));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM import_batches WHERE state='staged'"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM wants"));
+        Assert.Equal("rolled_back", Assert.Single(m.R.Ledger.ImportBatches()).State);   // what Status lists
+        Assert.Equal("seerr_off", check.Reason);
+    }
+
+    [Fact]
+    public async Task UX3R4RetryKeepsConfigurationLockAndWaitsForDetachedWork()
+    {
+        using var m = new Mig();
+        var staged = await StageR4(m);
+        m.R.Policy.Configuration.ArrRequestBackend = "je";
+        using var attempt = new ManualResetEventSlim();
+        using var resume = new ManualResetEventSlim();
+        using var changing = new ManualResetEventSlim();
+        int tries = 0, sequence = 0, commitOrder = 0, switchOrder = 0;
+        var detached = typeof(SeerrMigration).GetMethod("Detached", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.MakeGenericMethod(typeof(bool));
+        var caller = Task.Run(() => {
+            lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+                return (bool)detached.Invoke(null, new object[] { (Func<bool>)(() => {
+                    if (Interlocked.Increment(ref tries) == 1) {
+                        attempt.Set();
+                        if (!resume.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+                        throw new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends.BackendDisabledException("configuration_changed");
+                    }
+                    var committed = m.R.Ledger.CommitStagedImport(staged.BatchId!, m.R.Now);
+                    commitOrder = Interlocked.Increment(ref sequence);
+                    return committed;
+                }) })!;
+        });
+        Assert.True(attempt.Wait(TimeSpan.FromSeconds(5)));
+        var switcher = Task.Run(() => {
+            changing.Set();
+            lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock) {
+                m.R.Policy.Configuration.ArrRequestBackend = "status_only";
+                switchOrder = Interlocked.Increment(ref sequence);
+            }
+        });
+        try {
+            Assert.True(changing.Wait(TimeSpan.FromSeconds(5)));
+            Assert.False(caller.IsCompleted);
+            Assert.False(switcher.IsCompleted);
+        } finally { resume.Set(); }
+        Assert.True(await caller.WaitAsync(TimeSpan.FromSeconds(5)));
+        await switcher.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, tries);
+        Assert.True(commitOrder < switchOrder);
+        Assert.Equal("status_only", m.R.Policy.Configuration.ArrRequestBackend);
+    }
+
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    public void UX3R4AliasReconciliationPreservesStagedTitleIdentity(bool existingCanonical, bool staged)
+    {
+        using var m = new Mig();
+        m.R.Policy.Configuration.ArrRequestBackend = "je";
+        var target = "[\"je\",\"r1\",\"g1\",null]";
+        ImportResult Import(string source, string inputKey, int request, bool staged) => m.R.Ledger.ImportSeerr(source, "digest",
+            new[] { new ImportCandidate(m.R.Member, request, new MutationInput { Key = inputKey, Scope = "seasons", Seasons = new[] { 1 } }, false, m.R.Now) },
+            new Dictionary<string, int>(), m.R.Admin, "seerr", _ => target, m.R.Now, SeerrMigration.RollbackWindow, staged: staged);
+        if (existingCanonical) Import("visible-source", "tv:tvdb:5001", 2, false);
+        var stage = Import("staged-source", "tv:tmdb:1001", 1, staged);
+        var id = m.R.Db.Read(c => { using var q = c.CreateCommand(); q.CommandText = "SELECT id FROM wants WHERE origin_source_id='staged-source'"; return (string)q.ExecuteScalar()!; });
+        // Independent JE/arr evidence learns the TVDB id while the move is staged.
+        m.R.Ledger.UnifyJeAliases(new[] { "tv:tmdb:1001", "tv:tvdb:5001" }, m.R.Policy, m.R.Now);
+        if (staged) Assert.Null(m.R.Ledger.Find(id)); else Assert.NotNull(m.R.Ledger.Find(id));
+        Assert.Empty(m.R.Ledger.ForWant(id));
+        if (staged) Assert.True(m.R.Ledger.CommitStagedImport(stage.BatchId!, m.R.Now));
+        var want = m.R.Ledger.Find(id)!;
+        var titleRows = m.R.Ledger.ForTitle("tv:tvdb:5001");
+        var ask = m.R.Ledger.Create(m.R.Member, new CreateRequest("after-alias", new MutationInput { Key = "tv:tvdb:5001", Scope = "seasons", Seasons = new[] { 1 } }), m.R.Policy, m.R.Now);
+        Assert.True(want.Input.Key == "tv:tvdb:5001" && titleRows.Any(w => w.Id == id),
+            $"staged={staged}, existingCanonical={existingCanonical}, committed_input={want.Input.Key}, canonical_lookup_count={titleRows.Count(w => w.Id == id)}, resolved_old_alias={m.R.Ledger.CanonicalKey("tv:tmdb:1001")}, later_ask_HTTP={ask.HttpStatus}, outgoing_jobs={m.Count("SELECT COUNT(*) FROM jobs")}");
+    }
+
+    // ---- Round 5 (UX3R4-3 guard, coordinator): a move left mid-handover by a crash, then a restart (the outbox's startup
+    // recovery and the next check), then the real approve, cancel, dispatch and notice paths against its want's id from
+    // storage: each is refused exactly, and nothing is approved, sent, charged or noticed. ----
+
+    private static async Task<(Mig M, string Id, RequestOutbox Runner)> RestartAfterSavedHandover()
+    {
+        var m = new Mig();
+        await StageR4(m);
+        var id = RawWant(m);
+        m.R.Policy.Configuration.ArrRequestBackend = "je";   // the handover's save landed; the process died before settling
+        m.R.Reopen(); m.Rebuild();
+        m.R.Ledger.Recover(m.R.Now);                          // what RequestOutbox runs at startup
+        await m.Service.PreviewAsync(default);                // the next check
+        return (m, id, m.R.Runner());
+    }
+
+    [Fact]
+    public async Task UX3R5RestartRefusesApprovingAStagedLeftover()
+    {
+        var (m, id, _) = await RestartAfterSavedHandover();
+        using var _m = m;
+        var outcome = await m.R.Service.ApproveAsync(id, m.R.Admin, null, default);
+        Assert.Equal((404, "not_found"), (outcome.HttpStatus, outcome.Reason));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM approvals"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM jobs"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM wants"));
+    }
+
+    [Fact]
+    public async Task UX3R5RestartRefusesCancellingAStagedLeftover()
+    {
+        var (m, id, _) = await RestartAfterSavedHandover();
+        using var _m = m;
+        var outcome = m.R.Service.Close(id, m.R.Member, null);
+        Assert.Equal((404, "not_found"), (outcome.HttpStatus, outcome.Reason));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM wants"));
+    }
+
+    [Fact]
+    public async Task UX3R5RestartDispatchesNothingForAStagedLeftover()
+    {
+        var (m, id, runner) = await RestartAfterSavedHandover();
+        using var _m = m;
+        // Even an administrator's approval attempt (refused) and an outbox pass send nothing for it.
+        await m.R.Service.ApproveAsync(id, m.R.Admin, null, default);
+        await runner.TickAsync(default);
+        Assert.Equal((0, 0), (m.R.Backend.Sends, m.R.Backend.Reads));
+        Assert.Empty(m.R.Ledger.ForWant(id));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM jobs"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM reservations WHERE state='charged'"));
+    }
+
+    [Fact]
+    public async Task UX3R5RestartWritesNoNoticeForAStagedLeftover()
+    {
+        var (m, id, runner) = await RestartAfterSavedHandover();
+        using var _m = m;
+        await m.R.Service.ApproveAsync(id, m.R.Admin, null, default);
+        m.R.Service.Close(id, m.R.Member, null);
+        await runner.TickAsync(default);
+        Assert.Empty(m.R.Ledger.Notices(100));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM request_notices"));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM notifications"));
     }
 
     private sealed class Mig : IDisposable

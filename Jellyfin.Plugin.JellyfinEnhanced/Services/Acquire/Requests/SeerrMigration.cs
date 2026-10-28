@@ -138,7 +138,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // The backend notices a changed request handling (and advances its facts generation) on its next read;
                 // read it now, so the write below begins in the new generation instead of having it move underneath.
                 _ = Backends.EffectiveRequestsBackend.Shared.Current;
-                Detached(() => handedOver ? _ledger.CommitStagedImport(batchId, now) : _ledger.DiscardStagedImport(batchId, now));
+                var settled = Detached(() => handedOver ? _ledger.CommitStagedImport(batchId, now, _policy) : _ledger.DiscardStagedImport(batchId, now));
+                // A batch that was no longer staged (rolled back meanwhile by the startup recovery) never hands over.
+                if (handedOver && !settled) throw new InvalidOperationException("The move's batch was rolled back before its handover settled.");
                 return handedOver;
             }
         }
@@ -170,14 +172,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private const int SettleRetryMs = 10_000;
         private const int SettleRetryDelayMs = 50;
 
-        /// <summary>A staged batch a crash left behind: committed when request handling moved to JE since, else discarded.</summary>
-        private void ResolveLeftovers()
+        /// <summary>
+        /// Rolls back a staged batch left by a move that didn't finish its handover in this process (a crash, or a restored
+        /// copy taken mid-move): it counts as refused and is run again. Done before any other check, whatever request
+        /// handling or Seerr's state is now (local history only, no Seerr call); skipped while a move runs (it holds the gate).
+        /// </summary>
+        private async Task RollBackLeftoversAsync(CancellationToken ct)
         {
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
-            {
-                var backend = _config().ArrRequestBackend;
-                _ledger.ResolveStagedImports(previous => backend == "je" && previous != "je", _now());
-            }
+            if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return;
+            try { _ledger.DiscardStagedImports(_now()); }
+            finally { _gate.Release(); }
         }
 
         /// <summary>
@@ -301,13 +305,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The dry run: reads Seerr completely and says what a commit would do. Writes nothing.</summary>
         public async Task<SeerrMigrationReply> PreviewAsync(CancellationToken ct)
         {
+            await RollBackLeftoversAsync(ct).ConfigureAwait(false);
             var config = _config();
             if (Gate(config) is { } refused) return refused;
             if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return SeerrMigrationReply.Refused("migration_busy", 409, "A move is already running.", config.ArrRequestBackend);
             try
             {
-                // A staged batch a crash left (never while a move runs: this holds the move's gate).
-                ResolveLeftovers();
                 var read = await _reader.ReadAsync(config, ct).ConfigureAwait(false);
                 if (!read.Complete) return Describe(read, null, config.ArrRequestBackend, "seerr_read_incomplete", "Seerr's request list could not be read completely; nothing can be moved yet.");
                 var plan = PlanFor(read);
@@ -333,14 +336,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         public async Task<SeerrMigrationReply> CommitAsync(Guid actor, string? digest, bool confirmRequestsDisabled, CancellationToken ct)
         {
+            await RollBackLeftoversAsync(ct).ConfigureAwait(false);
             var config = _config();
             if (Gate(config) is { } refused) return refused;
             if (string.IsNullOrWhiteSpace(digest) || digest.Length > 128) return SeerrMigrationReply.Refused("invalid_input", 400, "Run the check first.", config.ArrRequestBackend);
             if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return SeerrMigrationReply.Refused("migration_busy", 409, "A move is already running.", config.ArrRequestBackend);
             try
             {
-                // A staged batch a crash left (never while a move runs: this holds the move's gate).
-                ResolveLeftovers();
                 // JE's own Seerr request writes wait until the move is done (the ones in flight finish first).
                 using var move = await _fence.BeginMoveAsync(DrainWait, ct).ConfigureAwait(false);
                 if (move == null) return SeerrMigrationReply.Refused("seerr_writes_in_flight", 409, "Requests are being sent to Seerr right now; try again in a moment.", config.ArrRequestBackend);
