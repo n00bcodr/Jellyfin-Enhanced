@@ -58,3 +58,28 @@ test('quality toggle initializes on enable and removes overlays on disable while
   assert.equal(h.writes.length, 2);
   assert.equal(JSON.parse(h.writes[1].data).qualityTagsEnabled, false);
 });
+
+// Manage hidden content: in native-tab mode the list lives in a Home tab and the standalone page refuses to open,
+// so the button has to go to the tab. The other modes keep the page and the manager overlay.
+for (const [mode, config, expected] of [
+  ['native Home tab', { HiddenContentEnabled: true, HiddenContentUseNativeTab: true }, 'tab'],
+  ['standalone page', { HiddenContentEnabled: true }, 'page'],
+  ['manager overlay when the page is off', { HiddenContentEnabled: false }, 'overlay'],
+]) test(`Manage hidden content opens the ${mode}`, t => {
+  const h = createHarness({ html: '<button id="manageHiddenContentBtn">Manage</button>',
+    JE: { pluginConfig: config, t: key => key, nativeTabs: { register() {} } } });
+  t.after(() => h.close());
+  const opened = [];
+  h.JE.hiddenContent = { updateSettings() {}, getSettings: () => ({}), showManagementPanel() { opened.push('overlay'); } };
+  h.JE.hiddenContentPage = { showPage() { opened.push('page'); } };
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  h.JE.internals.enhancedUi.wireHiddenContentListeners({ resetAutoCloseTimer() {} });
+  h.document.getElementById('manageHiddenContentBtn').click();
+  if (expected === 'tab') {
+    assert.equal(h.window.location.hash, '#/home?tab=0&jeTab=hidden-content');
+    assert.deepEqual(opened, []);
+  } else {
+    assert.equal(h.window.location.hash, '#!/home');
+    assert.deepEqual(opened, [expected]);
+  }
+});

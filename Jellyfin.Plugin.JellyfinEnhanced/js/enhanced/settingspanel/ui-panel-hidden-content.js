@@ -110,7 +110,11 @@
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
                 manageBtn.addEventListener('click', () => {
-                    if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
+                    if (JE.pluginConfig?.HiddenContentEnabled && JE.pluginConfig?.HiddenContentUseNativeTab && JE.nativeTabs) {
+                        // The list is a Home tab then (hidden-content-custom-tab.js) and the standalone page refuses
+                        // to open, so go to the tab by its id (native-tabs.js resolves the tab index).
+                        window.location.hash = '#/home?tab=0&jeTab=hidden-content';
+                    } else if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
                         JE.hiddenContentPage.showPage();
                     } else {
                         JE.hiddenContent.showManagementPanel();

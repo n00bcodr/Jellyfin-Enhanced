@@ -265,7 +265,7 @@ Choose where your saved hidden items disappear and where hide buttons appear. Th
 
 1. Open **Hidden Content** and choose the filters and buttons you want.
 2. Click an item's open-eye **Hide** button to hide it.
-3. Use **Manage Hidden Content** to review or restore entries and see your hidden-item count.
+3. Use **Manage Hidden Content** to review or restore entries and see your hidden-item count. When Hidden Content is a native Home tab, the button opens that tab.
 
 All controls below are per-user preferences. The matching admin defaults are under **Pages** → **Hidden Content**.
 
