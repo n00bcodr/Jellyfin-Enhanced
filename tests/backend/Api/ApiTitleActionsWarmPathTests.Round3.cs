@@ -191,5 +191,39 @@ public partial class ApiTitleActionsWarmPathTests
         Assert.Equal(withFreshRead, withHeldRead);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task APersonWhoKeepsChangingIsRefusedAfterThreeConfirmedReads(bool churn)
+    {
+        using var rig = new Rig();
+        rig.Viewer.SetPermission(PermissionKind.IsAdministrator, true);
+        User live = rig.Viewer;
+        rig.Lookup = id => id == live.Id ? live : null;
+        var view = new Mock<IArrJellyfinView>();
+        view.SetupGet(v => v.Revision).Returns(1);
+        view.Setup(v => v.Viewer(It.IsAny<Guid>())).Returns(() => ArrJellyfinView.ViewerOf(live));
+        view.Setup(v => v.ViewerAsRead(It.IsAny<User>())).Returns((User u) => ArrJellyfinView.ViewerOf(u));
+        // Every evaluation's copy scan lands a new read of the person whose policy revision never repeats (another blocked
+        // folder that holds nothing here), so no stamp ever confirms an earlier read.
+        view.Setup(v => v.Copies(It.IsAny<TitleKey>(), It.IsAny<StatusViewer>(), It.IsAny<IReadOnlyCollection<TitleKey>>())).Returns(() =>
+        {
+            if (churn)
+            {
+                var next = Rig.Person(rig.Viewer.Id);
+                next.SetPermission(PermissionKind.IsAdministrator, true);
+                next.SetPreference(PreferenceKind.BlockedMediaFolders, new[] { Guid.NewGuid() });
+                live = next;
+            }
 
+            return CopyLookup.Absent;
+        });
+        var roots = new FakeLibraryAccess();
+        var requests = new RequestPolicy(view.Object, rig.Store, new ArrInstanceLibraries(rig.Store, roots), new TitleAliases(rig.Store, null), rig.Gate, rig.Arr.Factory, new UnavailableRequestBackend());
+        var policy = new NativeDetailsPolicy(rig.Gate, Mock.Of<INativeDetailsSource>(), roots, requests);
+        var expected = churn ? NativeDetailsPolicy.Access.Refused : NativeDetailsPolicy.Access.Allowed;
+        Assert.Equal(expected, await policy.SeeDetailsAsync(rig.Viewer, Title, CancellationToken.None));
+        Assert.Equal(!churn, policy.MayListAbsent(rig.Viewer, Title));
+        Assert.Equal(churn ? NativeDetailsPolicy.ListedTitle.Left : NativeDetailsPolicy.ListedTitle.Absent, policy.Listed(rig.Viewer, true, TmdbId));
+    }
 }
