@@ -1002,8 +1002,8 @@
         for (const [node] of state.retained) if (!state.page.contains(node)) state.retained.delete(node);
         // Each kept image is looked at once per pass: one back in view (scrolled back to, already loaded, so jellyfin-web
         // sent no signal) is in use, never emptied; it counts as the newest.
-        let looks = state.retained.size;
-        while (state.retained.size > RETAINED_MAX && looks-- > 0) {
+        for (const _ of [...state.retained.keys()]) {
+            if (state.retained.size <= RETAINED_MAX) break;
             const [node, src] = state.retained.entries().next().value;
             state.retained.delete(node);
             if (inView(node)) { state.retained.set(node, src); continue; }
