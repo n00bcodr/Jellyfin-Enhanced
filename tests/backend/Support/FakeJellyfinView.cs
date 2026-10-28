@@ -350,7 +350,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
 
     private IReadOnlyList<JfSource> Gate(IReadOnlyList<JfSource> sources)
         => Readiness == null ? sources : sources.Select(s => Readiness.Pending(s.BackingItemId, s.Path ?? PathOf(s.BackingItemId)) || Readiness.Pending(s.ItemId, s.Path ?? PathOf(s.ItemId))
-            ? new JfSource { SourceId = s.SourceId, ItemId = s.ItemId, BackingItemId = s.BackingItemId, Width = s.Width, Height = s.Height, Path = s.Path, DateCreated = s.DateCreated, AwaitingMetadata = true }
+            ? new JfSource { SourceId = s.SourceId, ItemId = s.ItemId, BackingItemId = s.BackingItemId, Width = s.Width, Height = s.Height, Path = s.Path, Size = s.Size, DateCreated = s.DateCreated, AwaitingMetadata = true }
             : s).ToList();
 
     // The file of an item or copy, as the production view's sources carry it.

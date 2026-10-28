@@ -278,6 +278,10 @@ public class IntegrationBridgeReadinessTests
         var gate = new BridgeImportReadiness(null, null);
         var monitor = new ListSwapMonitor(Mock.Of<ILibraryManager>(), h.Swap, h.Plugin.Core.Logger, gate);
         await monitor.StartAsync(CancellationToken.None);
+        // The monitor also starts the swap worker, which maps a woken item the moment it is signalled: racing it, this
+        // test's own drain could find the item already taken and its pass not yet queued (CCR2-5). Only the monitor's
+        // wake-up is under test here, so its worker is stopped and the drain below is the one pass.
+        await h.Swap.StopAsync(CancellationToken.None);
         try
         {
             gate.Begin("/media/movies/Arrived/Arrived.mkv", "radarr:1", "movie:tmdb:49521");

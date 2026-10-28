@@ -476,8 +476,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static readonly TimeSpan DayLasts = TimeSpan.FromHours(36);
 
-        /// <summary>A date-only day that is still today or later somewhere (see <see cref="DayLasts"/>).</summary>
-        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date > now - DayLasts;
+        /// <summary>
+        /// A date-only day that is still today or later somewhere (see <see cref="DayLasts"/>). Compared as a tick difference,
+        /// which fits whatever the two dates are, so no clock near either end of the calendar is shifted out of range.
+        /// </summary>
+        internal static bool DayStillAhead(DateTime day, DateTime now) => day.Date.Ticks - now.Ticks > -DayLasts.Ticks;
 
         /// <summary>
         /// A date still to come: an instant after now, or a date-only day still ahead somewhere. The one airing rule of status and
