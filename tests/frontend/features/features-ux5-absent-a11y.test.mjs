@@ -228,7 +228,10 @@ for (const nativeTab of [true, false]) test(`the panel's Manage hidden content $
 
 // ------------------------------------------------------------------ fix round 2 (review UX5R-1, UX5R-2)
 
-/** Captures the panel's 15-second auto-close timer; the returned function runs it at its deadline. */
+/**
+ * Captures the panel's 15-second auto-close timers. `expire()` runs every pending one at its deadline (none when the
+ * panel has turned auto-close off) and returns how many ran; `pending()` counts them.
+ */
 function capturePanelTimer(h) {
   const nativeSet = h.window.setTimeout.bind(h.window);
   const nativeClear = h.window.clearTimeout.bind(h.window);
@@ -239,23 +242,35 @@ function capturePanelTimer(h) {
     return id;
   };
   h.window.clearTimeout = id => { timers.delete(id); nativeClear(id); };
-  return () => {
-    assert.equal(timers.size, 1, 'one pending 15-second panel timer');
-    const [id, callback] = [...timers][0];
-    nativeClear(id); timers.delete(id); callback();
+  const expire = () => {
+    const due = [...timers];
+    for (const [id, callback] of due) { nativeClear(id); timers.delete(id); callback(); }
+    return due.length;
   };
+  expire.pending = () => timers.size;
+  return expire;
 }
+const later = (h, ms = 5) => new Promise(r => h.window.setTimeout(r, ms));
 
-test('UX5R-1: keyboard use inside the panel keeps it open past its 15-second auto-close', async t => {
+test('UX5R-1 control: a panel opened with the pointer that never takes the focus still closes at its deadline', async t => {
   const h = panelPage(t), expire = capturePanelTimer(h);
-  const panel = await openPanel(h);
-  h.key(panel.querySelector('#jePanelSearch'), 'Tab'); await settle();
-  expire();
+  await openPanel(h); await later(h);
+  assert.equal(expire(), 1, 'its auto-close was pending');
+  await settle();
+  assert.equal(h.panel(), null);
+});
+
+test('UX5R-1: keyboard use inside the panel turns auto-close off for that open; moving the pointer does not turn it back on', async t => {
+  const h = panelPage(t), expire = capturePanelTimer(h);
+  const panel = await openPanel(h); await later(h);
+  h.key(panel.querySelector('#jePanelSearch'), 'ArrowDown'); await settle();
+  for (let i = 0; i < 10; i++) expire();
   assert.ok(h.panel(), 'a keyboard reader is not dismissed');
-  // The pointer in use again (and outside the panel): auto-close applies as before.
   h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true }));
-  expire(); await settle();
-  assert.equal(h.panel(), null, 'pointer-only auto-close still closes it');
+  panel.dispatchEvent(new h.window.MouseEvent('mouseleave'));
+  for (let i = 0; i < 3; i++) expire();
+  assert.equal(expire.pending(), 0, 'no deadline is armed again');
+  assert.ok(h.panel(), 'still open after the pointer moved and left');
 });
 
 test('UX5R-1: the auto-close deadline does not close the panel under the release notes it opened', async t => {
@@ -269,8 +284,41 @@ test('UX5R-1: the auto-close deadline does not close the panel under the release
   const notes = h.document.getElementById('jellyfin-release-notes-notification');
   assert.ok(h.JE.isTopmostSurface(notes));
   assert.ok(panel.hasAttribute('inert'));
-  expire(); await settle();
+  h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true }));
+  for (let i = 0; i < 5; i++) expire();
+  await settle();
   assert.ok(h.panel(), 'the settings panel stays under its child');
+  assert.ok(h.JE.isTopmostSurface(notes));
+});
+
+test('UX5R2-1: a panel opened from the keyboard stays open for a reader that sends no further event (screen reader)', async t => {
+  const h = panelPage(t), expire = capturePanelTimer(h);
+  h.opener.focus();
+  h.opener.addEventListener('keydown', e => h.JE.showEnhancedPanel(e), { once: true });
+  h.key(h.opener, '?', { shiftKey: true });
+  await settle();
+  const panel = h.panel();
+  assert.ok(panel, 'the keyboard opened it');
+  await later(h);
+  assert.ok(panel.contains(h.document.activeElement));
+  // A screen reader's browse cursor reads the accessibility tree: no keydown or focus reaches the page.
+  for (let i = 0; i < 3; i++) expire();
+  assert.ok(h.panel(), 'the dialog stays while its reader reads');
+});
+
+test('UX5R2-1: a boundary Shift+Tab the surface stack takes, right after dragging the panel, turns auto-close off', async t => {
+  const h = panelPage(t), expire = capturePanelTimer(h);
+  const panel = await openPanel(h); await later(h);
+  const close = panel.querySelector('#closeSettingsPanel');
+  h.trusted(panel.querySelector('.panel-header'), new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mousemove', { bubbles: true, clientX: 100, clientY: 100 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mouseup', { bubbles: true }));
+  panel.dispatchEvent(new h.window.MouseEvent('mouseleave'));
+  close.focus();
+  h.key(close, 'Tab', { shiftKey: true });
+  assert.notEqual(h.document.activeElement, close, 'the stack moved focus inside the dialog');
+  for (let i = 0; i < 3; i++) expire();
+  assert.ok(h.panel(), 'keyboard navigation right after a drag keeps it open');
 });
 
 test('UX5R-2: a real episode listed on an absent season keeps its "Ends at"; the missing ones do not show one', async t => {

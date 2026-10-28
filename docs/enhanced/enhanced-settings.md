@@ -37,7 +37,7 @@ The panel is a dialog: it takes the focus when it opens, ++tab++ and ++shift+tab
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
-    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds. Using the keyboard inside the panel keeps it open until you move the pointer again, and it never closes while its release notes are open over it.
+    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds. This applies only when you opened it with the pointer and haven't used the keyboard or focused anything in it since: opened from the keyboard (or a screen reader), or once a key is pressed or a control inside it takes the focus, it stays open until you close it. It never closes while its release notes are open over it.
 
     Modern layout has a mobile drawer rather than a desktop sidebar. Legacy layout has the sidebar. Jellyfin's user preferences menu uses `#/mypreferencesmenu`.
 
