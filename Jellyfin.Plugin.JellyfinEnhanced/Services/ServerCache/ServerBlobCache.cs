@@ -152,7 +152,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         private long _bytes;
         private long _reserved;
         private int _pendingIo;
+        // Every end of what a write may land on advances it: a global one (Clear, ForgetAsync, a folder change, switching
+        // off) also moves _globalEnd; forgetting one entry records it in _forgotten (bounded: past it, an end is global).
         private long _generation;
+        private long _globalEnd;
+        private readonly Dictionary<string, long> _forgotten = new(StringComparer.Ordinal);
         private Dictionary<string, (string Ns, long Bytes)?>? _tracker;
         private DateTime _lastSweep = DateTime.MinValue;
         private Task _pendingSweep = Task.CompletedTask;
@@ -197,12 +201,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         /// <summary>Whether the folder is used through the anchored (Linux) access (tests).</summary>
         internal bool Anchored => Access(create: false) is LinuxFolderAccess;
 
-        /// <summary>True when the cache is on and its folder can be used.</summary>
+        /// <summary>True when the cache is on and its folder can be used (may prepare the folder: not for a request's hot path).</summary>
         public bool Enabled => Current() is { Enabled: true } && Access() != null;
+
+        /// <summary>True when the cache is switched on in the settings; reads only the settings (never the folder), so it never waits on disk.</summary>
+        public bool SwitchedOn => Current().Enabled;
+
+        /// <summary>Most entries forgotten one by one (<see cref="ForgetEntryAsync"/>) that are fenced individually.</summary>
+        internal const int MaxForgottenEntries = 4096;
 
         /// <summary>
         /// The current generation. Capture it before reading what an entry is made from and pass it to
-        /// <see cref="PutAsync"/>: Clear, Forget, a change of folder or switching the cache off since then refuses the write.
+        /// <see cref="PutAsync"/>: Clear, Forget, a change of folder or switching the cache off since then refuses the write,
+        /// and so does <see cref="ForgetEntryAsync"/> of that entry.
         /// </summary>
         public long Generation
         {
@@ -211,6 +222,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 Current();
                 lock (_lock) return _generation;
             }
+        }
+
+        /// <summary>True when nothing has ended since <paramref name="generation"/> was captured (Clear, ForgetAsync, a folder change, switching off); forgetting single entries doesn't count.</summary>
+        /// <param name="generation">A captured <see cref="Generation"/>.</param>
+        /// <returns>Still current.</returns>
+        public bool IsCurrent(long generation)
+        {
+            Current();
+            lock (_lock) return generation >= _globalEnd;
         }
 
         /// <summary>Reads the settings now (a saved configuration): a tightened limit is swept at once, not at the next read or write.</summary>
@@ -257,12 +277,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             Task<ServerCacheEntry?> shared;
             lock (_lock)
             {
+                // A read under way from before a Forget, Clear or settings change was taken out of _reads by it: a caller
+                // arriving afterwards starts its own read and never adopts what the older one read.
                 if (!_reads.TryGetValue(id, out shared!))
                 {
                     if (_pendingIo >= MaxPendingIo) return null;
                     _pendingIo++;
-                    shared = Task.Run(() => ReadAsync(id, access, ns, key, options));
+                    var flight = new TaskCompletionSource<ServerCacheEntry?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    shared = flight.Task;
                     _reads[id] = shared;
+                    var own = shared;
+                    _ = Task.Run(() => ReadAsync(id, own, flight, access, ns, key, options));
                 }
             }
 
@@ -272,7 +297,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
         }
 
         /// <summary>The one read of an entry that every waiting caller shares.</summary>
-        private async Task<ServerCacheEntry?> ReadAsync(string id, CacheFolderAccess access, string ns, string key, ServerCacheNamespace options)
+        private async Task ReadAsync(string id, Task<ServerCacheEntry?> own, TaskCompletionSource<ServerCacheEntry?> flight, CacheFolderAccess access, string ns, string key, ServerCacheNamespace options)
+        {
+            ServerCacheEntry? result = null;
+            try
+            {
+                result = await ReadOnceAsync(access, ns, key, options).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    if (_reads.TryGetValue(id, out var current) && ReferenceEquals(current, own)) _reads.Remove(id);
+                    _pendingIo--;
+                }
+
+                flight.TrySetResult(result);
+            }
+        }
+
+        private async Task<ServerCacheEntry?> ReadOnceAsync(CacheFolderAccess access, string ns, string key, ServerCacheNamespace options)
         {
             try
             {
@@ -303,14 +347,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             catch (Exception)
             {
                 return null;
-            }
-            finally
-            {
-                lock (_lock)
-                {
-                    _reads.Remove(id);
-                    _pendingIo--;
-                }
             }
         }
 
@@ -406,9 +442,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var (shard, name) = Names(ns, key);
             var temp = name.Substring(0, 64) + "." + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8)) + ".tmp";
             var tempId = ns + "/" + shard + "/" + temp;
+            var id = ns + "\n" + key;
             lock (_lock)
             {
-                if (_pendingIo >= MaxPendingIo || _generation != started) return false;
+                if (_pendingIo >= MaxPendingIo || EndedLocked(id, started)) return false;
                 _pendingIo++;
                 // The write's space counts from now (a temporary file is disk used too).
                 _activeTemps.Add(tempId);
@@ -437,7 +474,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                     {
                         // The commit and the generation's end (Clear, Forget, settings) are ordered by this lock: a write
                         // that started before them never lands after them.
-                        if (_generation != started) return false;
+                        if (EndedLocked(id, started)) return false;
                         Hook?.Invoke("commit");
                         var previous = access.Stat(ns, shard, name);
                         if (!access.Rename(ns, shard, temp, name)) return false;
@@ -530,7 +567,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             var (shard, name) = Names(ns, key);
             lock (_lock)
             {
-                _generation++;
+                EndAllLocked();
                 if (access == null) return Task.FromResult(false);
                 var stat = access.Stat(ns, shard, name);
                 if (stat == null || !access.Delete(ns, shard, name)) return Task.FromResult(false);
@@ -538,6 +575,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
                 return Task.FromResult(true);
             }
         }
+
+        /// <summary>
+        /// Removes one entry and refuses every write of it that started before (whether or not a file is there yet), in the
+        /// same step as a commit could; writes of other entries go on. A read of it under way is no longer joined.
+        /// </summary>
+        /// <param name="ns">A registered namespace.</param>
+        /// <param name="key">The consumer's canonical key.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True when an entry was removed.</returns>
+        public Task<bool> ForgetEntryAsync(string ns, string key, CancellationToken ct)
+        {
+            Current();
+            if (Options(ns) == null || Encoding.UTF8.GetByteCount(key) > MaxKeyBytes) return Task.FromResult(false);
+            var access = Access(create: false);
+            var (shard, name) = Names(ns, key);
+            var id = ns + "\n" + key;
+            lock (_lock)
+            {
+                _generation++;
+                if (_forgotten.Count >= MaxForgottenEntries) EndAllLocked();
+                else _forgotten[id] = _generation;
+                _reads.Remove(id);
+                if (access == null) return Task.FromResult(false);
+                var stat = access.Stat(ns, shard, name);
+                if (stat == null || !access.Delete(ns, shard, name)) return Task.FromResult(false);
+                Account(ns + "/" + shard + "/" + name, ns, Blocks(stat.Value.Length), 0);
+                return Task.FromResult(true);
+            }
+        }
+
+        // Caller holds _lock. Ends every write under way and every shared read (Clear, ForgetAsync, settings).
+        private void EndAllLocked()
+        {
+            _globalEnd = ++_generation;
+            _forgotten.Clear();
+            _reads.Clear();
+        }
+
+        // Caller holds _lock. A write of entry <paramref name="id"/> that captured <paramref name="started"/> may no longer land.
+        private bool EndedLocked(string id, long started)
+            => started < _globalEnd || (_forgotten.TryGetValue(id, out var at) && started < at);
 
         /// <summary>
         /// Removes entries past their validity and, when the folder or a namespace is over its cap, the least
@@ -633,7 +711,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
             if (ns != null && !IsNamespace(ns)) return 0;
             Current();
             // Writes under way from before this point are refused at their commit.
-            lock (_lock) _generation++;
+            lock (_lock) EndAllLocked();
             if (Access(create: false) is not { } access || !access.Intact()) return 0;
             await _sweepLock.WaitAsync(ct).ConfigureAwait(false);
             var snapshot = new Dictionary<string, (string Ns, long Bytes)>(StringComparer.Ordinal);
@@ -732,7 +810,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ServerCache
 
                 // Moving the folder or switching the cache off ends the generation. Switching it on doesn't: no write can be
                 // under way while it is off, and images fetched meanwhile may still be saved (their generation holds).
-                if (_seen != null && (_seen.Folder != settings.Folder || (_seen.Enabled && !settings.Enabled))) _generation++;
+                if (_seen != null && (_seen.Folder != settings.Folder || (_seen.Enabled && !settings.Enabled))) EndAllLocked();
                 _seen = settings;
             }
 

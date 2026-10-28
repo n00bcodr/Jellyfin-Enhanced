@@ -891,6 +891,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListPosterFactCache.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListResolver.cs",
       "category": "Services"
     },
@@ -1968,6 +1972,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbEgressHandler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbParentalFactCache.cs",
       "category": "Services"
     },
     {
@@ -12009,7 +12017,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 773,
+    "files": 775,
     "routes": 315,
     "configuration_properties": 671,
     "storage_references": 106,

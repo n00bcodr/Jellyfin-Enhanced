@@ -354,10 +354,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
         {
-            return _admission.Read("native:" + path, viewer,
+            if (TryCached(path, out var hit)) return Task.FromResult(hit);
+            return KnownThenAdmittedAsync(path, viewer, fetch, ct);
+        }
+
+        /// <summary>
+        /// Raw TMDB answers already in memory or saved on disk (the server-side cache) are mapped without a place in the
+        /// queue or a budget token; only a read that needs TMDB takes them (<see cref="ViewerMetadataAdmission"/>).
+        /// </summary>
+        private async Task<SourceAnswer> KnownThenAdmittedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
+        {
+            var known = await TmdbResponseCache.CachedOnlyAsync(fetch).ConfigureAwait(false);
+            if (known.Hit && !known.Value.Busy) return Store(path, known.Value);
+            return await _admission.Read("native:" + path, viewer,
                 () => (TryCached(path, out var hit), hit),
                 async () => Store(path, await fetch().ConfigureAwait(false)),
-                SourceAnswer.Throttled, ct, _feedBudget);
+                SourceAnswer.Throttled, ct, _feedBudget).ConfigureAwait(false);
         }
 
         private SourceAnswer Store(string path, SourceAnswer value)

@@ -330,6 +330,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.IListSourceFetcher, Services.Acquire.Lists.Sources.ListSourceFetcher>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.ListSourcePreview>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.ListMetadataService>();
+            // Validated list poster facts, kept in the server-side cache across restarts.
+            serviceCollection.AddSingleton(sp => new Services.Acquire.Lists.ListPosterFactCache(sp.GetService<Services.ServerCache.ServerBlobCache>()));
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbListMetadataSource>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.IListMetadataSource, Services.Acquire.Lists.Import.ListMetadataSources>();
             // ---- end Phase 4c2 ----
@@ -419,6 +421,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 sp.GetService<TitleParentalEvidenceProvider>()));
             // A2 — backend-neutral parental evidence; policy and caching stay in the shared gate.
             serviceCollection.AddSingleton<TitleParentalEvidenceProvider>();
+            // Its verified remote facts, kept in the server-side cache across restarts (facts only, never a decision).
+            serviceCollection.AddSingleton(sp => new TmdbParentalFactCache(sp.GetService<Services.ServerCache.ServerBlobCache>()));
             // End A2.
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
