@@ -208,7 +208,7 @@
         }
         const ready = status.stage === 'ready';
         const versions = ready && Number.isFinite(status.versions) ? status.versions : null;
-        const set = versions != null && typeof status.versionFingerprint === 'string' && status.versionFingerprint ? status.versionFingerprint : null;
+        const set = versions != null && typeof status.versionsFingerprint === 'string' && status.versionsFingerprint ? status.versionsFingerprint : null;
         return { ready, count: null, versions, set };
     }
 

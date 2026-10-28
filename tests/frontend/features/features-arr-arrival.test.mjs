@@ -1470,14 +1470,14 @@ test('an identity change without a page notification still drops a late answer',
   assert.doesNotMatch(h.view.textContent, /2 of 6/);
 });
 
-// Phase 2 F41: the status names its set of versions (`versionFingerprint`: the server's stable hash of the version
+// Phase 2 F41: the status names its set of versions (`versionsFingerprint`: the server's stable hash of the version
 // ids and file sizes), so a removal and an arrival that keep the count are a change of their own, and a redraw for one
 // counts as drawn only once Jellyfin's picker lists other versions than it did (its option values: media source ids).
 const fingerprint = ids => `fp:${ids.join('+')}`;
 const setPage = (t, kind, initial = ['a', 'b']) => {
   const handlers = [];
   let ids = [...initial];
-  const answer = () => (kind === 'movie' ? movie(ids.length, { versionFingerprint: fingerprint(ids) }) : episode('ready', { versions: ids.length, versionFingerprint: fingerprint(ids) }));
+  const answer = () => (kind === 'movie' ? movie(ids.length, { versionsFingerprint: fingerprint(ids) }) : episode('ready', { versions: ids.length, versionsFingerprint: fingerprint(ids) }));
   const h = setup(t, {
     apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
     ...(kind === 'movie' ? { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: answer } : { answers: answer })
