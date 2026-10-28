@@ -23,6 +23,11 @@ namespace JE.Tests;
 /// ledger flags, Hidden Content, parental limits), "because you watched", caching, and that bodies
 /// carry nothing about instances or paths.
 /// </summary>
+// Serial (F38, and the M7 load failure of SearchIsCappedAndKeepsOnlyMoviesAndSeries): these tests count TMDB reads across
+// cached answers, and the Discover cache and its publication gate follow the process-wide facts generation
+// (UserCacheRegistry), which any test elsewhere advances by switching the shared requests backend. Run beside such a test, a
+// cached answer is dropped or a page is prepared twice and the counts change; run alone, they cannot.
+[Collection("Plugin singleton")]
 public class IntegrationRequestDiscoverTests
 {
     /// <summary>A Discover service that never reaches TMDB (the route matrix).</summary>

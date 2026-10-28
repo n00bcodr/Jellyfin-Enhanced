@@ -33,6 +33,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Maximum disposal wait if shutdown has not already been requested.</summary>
         internal TimeSpan DisposeWait { get; set; } = TimeSpan.FromSeconds(5);
 
+        /// <summary>The clock <see cref="DisposeWait"/> is measured on; tests use a manual one.</summary>
+        internal TimeProvider DisposeClock { get; set; } = TimeProvider.System;
+
         /// <inheritdoc />
         public Task StartAsync(CancellationToken cancellationToken)
         {
@@ -71,7 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (alreadyStopping) return;
             try
             {
-                drain.WaitAsync(DisposeWait).GetAwaiter().GetResult();
+                drain.WaitAsync(DisposeWait, DisposeClock).GetAwaiter().GetResult();
             }
             catch (TimeoutException)
             {

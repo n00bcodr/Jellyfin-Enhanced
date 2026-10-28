@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, deferred } from '../helpers/harness.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 
 // A visit to an absent title's native details page with the real transport (core/api-client.js), item owner
 // (enhanced/helpers.js) and page adapter (native-details.js): the page's JE readers share one read of the item, a
@@ -25,11 +26,13 @@ const art = id => `http://jellyfin.test/Items/${id}/Images/Primary?fillHeight=29
  * @param {object} t Test context.
  * @returns {object} Harness and probes.
  */
-function setup(t, realSession = false, realNavigation = false) {
+function setup(t, realSession = false, realNavigation = false, clock = null) {
   const reads = [], getItem = [], userChanges = [];
   let epoch = 1;
   const h = createHarness({
     html: PAGE, url: `http://jellyfin.test/web/index.html${DETAILS}`,
+    // A manual clock for the page's timers when the test passes one (helpers/fake-clock.mjs).
+    globals: clock ? clock.globals : {},
     // Item reads are held until the test answers them; the page's other JE reads answer at once.
     fetch: async (url, init) => {
       const path = new URL(String(url)).pathname;
@@ -364,9 +367,14 @@ test('a same-user credential refresh on a restored page recovers it: read again 
   assert.equal(h.nd.current()?.item?.Name, 'after-refresh');
 });
 
+// F66: the page's timers run on a manual clock and each tick runs only what is due now (the re-look the page schedules at
+// 0 ms). On real timers the module's own cold-start look (350 ms after it loads) could fire mid-test on a busy machine and
+// check the refused page again, hiding it for that new check.
 test('a fenced look that cannot be read again ends in the outage state, never a page left hidden', async t => {
   for (const kind of ['another viewer', 'refreshed twice']) {
-    const h = setup(t);
+    const clock = fakeClock();
+    const tick = () => clock.advance(0);
+    const h = setup(t, false, false, clock);
     const first = h.nd.onView();
     await tick();
     h.answer(0);

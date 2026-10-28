@@ -48,7 +48,7 @@ async function timedPass(page) {
   return { firstSliceMs, longest: Math.max(0, ...slow.tasks.map(t => t.duration)), longTasks: slow.tasks };
 }
 
-test('a long grid: every reconciliation pass stays under the 50 ms long-task budget, and removal releases its records at once', async ({ page }, info) => {
+test('a long grid: every reconciliation pass stays under the 50 ms long-task budget, and removal releases its records at once', { tag: '@timing' }, async ({ page }, info) => {
   const host = await boot(page);
   await observeTasks(page);
   const evidence = { browser: info.project.name, budgetMs: BUDGET_MS, passes: [] };
