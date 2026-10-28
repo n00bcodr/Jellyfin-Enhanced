@@ -877,10 +877,11 @@
     /** Elements whose artwork this module joined to jellyfin-web's preloader, with the policy generation it was asked under. */
     const artwork = new WeakMap();
     /**
-     * At most this many images of one page are kept loaded out of view (the ones that left it last): older ones go back
-     * to jellyfin-web's own unloaded state, so a very long page never holds every image it ever showed (F30).
+     * At most this many images of one page are kept loaded out of view (the ones that left it last, about four rows of
+     * cards on a computer): older ones go back to jellyfin-web's own unloaded state, so a very long page never holds every
+     * image it ever showed (F30).
      */
-    const RETAINED_MAX = 48;
+    const RETAINED_MAX = 32;
 
     /**
      * The person's access or presentation policy moved (or the session did): the shown page's absent-title artwork

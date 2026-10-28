@@ -862,7 +862,7 @@ test('the startup look overlapping a restored page\'s look cannot release its ga
   assert.deepEqual(observed, { checking: true, documentChecking: true, loading: true });
 });
 
-// Phase 2 F30 (PDR-5): a long page keeps at most the last 48 images that left view loaded; older ones go back to
+// Phase 2 F30 (PDR-5): a long page keeps at most the last 32 images that left view loaded; older ones go back to
 // jellyfin-web's own unloaded state (it loads them again when they come back), and are kept again once it has.
 /** jellyfin-web's lazy loader on `node`: the preloader starts, then the image fades in. */
 async function hostLoads(h, node, url) {
@@ -887,7 +887,7 @@ async function hostUnloads(h, node) {
 const kept = n => !n.hasAttribute('data-src') && !n.classList.contains('lazy-hidden') && n.style.backgroundImage.startsWith('url(');
 const handedBack = n => n.hasAttribute('data-src') && n.classList.contains('lazy-hidden') && n.style.backgroundImage === 'none';
 
-test('F30: a page keeps only the last 48 images that left view; older ones are jellyfin-web\'s to load again', async t => {
+test('F30: a page keeps only the last 32 images that left view; older ones are jellyfin-web\'s to load again', async t => {
   const h = setup(t);
   const look = h.nd.onView();
   await tick();
@@ -903,10 +903,10 @@ test('F30: a page keeps only the last 48 images that left view; older ones are j
   }
   for (const n of nodes) await hostUnloads(h, n);
   await tick();
-  assert.equal(nodes.filter(kept).length, 48, 'the last 48 stay loaded');
-  assert.ok(nodes.slice(12).every(kept), 'the ones that left view last');
-  assert.ok(nodes.slice(0, 12).every(handedBack), 'the older ones are as jellyfin-web left them');
-  assert.ok(nodes.slice(0, 12).every((n, i) => n.getAttribute('data-src').includes(`quality=${i}`)), 'each with its own address back');
+  assert.equal(nodes.filter(kept).length, 32, 'the last 32 stay loaded');
+  assert.ok(nodes.slice(28).every(kept), 'the ones that left view last');
+  assert.ok(nodes.slice(0, 28).every(handedBack), 'the older ones are as jellyfin-web left them');
+  assert.ok(nodes.slice(0, 28).every((n, i) => n.getAttribute('data-src').includes(`quality=${i}`)), 'each with its own address back');
 });
 
 test('F30: an image handed back is kept again once jellyfin-web has loaded it again; a policy change still ends all keeping', async t => {
@@ -916,7 +916,7 @@ test('F30: an image handed back is kept again once jellyfin-web has loaded it ag
   h.answer(0);
   await look;
   const nodes = [];
-  for (let i = 0; i < 49; i++) {
+  for (let i = 0; i < 33; i++) {
     const n = h.document.createElement('div');
     h.page.append(n);
     await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`));
