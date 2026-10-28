@@ -177,6 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private async Task<Access> SeeAsync(User viewer, SyntheticId title, bool details, CancellationToken ct)
         {
             if (!title.IsTitle) return Access.Refused;
+            using var timed = StageTimings.Time(Stage.Policy);
             var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
@@ -190,6 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config)
                     && _parental.AbsentVerdict(mediaType, title.TmdbId, viewer.Id.ToString("N")) == null ? Access.Unknown : Access.Refused;
             }
+            using var library = StageTimings.Time(Stage.Library);
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
 
@@ -479,6 +481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             if (MayListAbsent(viewer, title)) return Access.Allowed;
             if (!title.IsTitle) return Access.Refused;
+            using var timed = StageTimings.Time(Stage.Policy);
             var evidence = await _parental.CheckAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
             if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
             if (!evidence.Value) return Access.Refused;

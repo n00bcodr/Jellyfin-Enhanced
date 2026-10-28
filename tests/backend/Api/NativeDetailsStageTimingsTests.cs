@@ -1,0 +1,166 @@
+using System.Runtime.CompilerServices;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace JE.Tests;
+
+public partial class ApiNativeDetailsTests
+{
+    private static async Task Until(Func<bool> condition)
+    {
+        for (var i = 0; i < 1500 && !condition(); i++) await Task.Delay(10);
+        Assert.True(condition());
+    }
+
+    [Fact]
+    public async Task StageTimingsChargeTheSendToItsOwnerAndOnlyTheWaitToAJoiner()
+    {
+        await using var rig = new AdmissionRig();
+        var viewer = rig.Rig.Person(linked: false);
+        // An async method's recorder stays in its own flow; everything up to the shared read's join runs synchronously.
+        async Task<(StageTimings Recorder, SourceAnswer Answer)> Timed()
+        {
+            var recorder = StageTimings.Begin();
+            return (recorder, await rig.Source.MovieAsync(720001, viewer.Id, CancellationToken.None));
+        }
+
+        var owner = Timed();
+        await Until(() => rig.Sends == 1);
+        var joiner = Timed();
+        Assert.Null(StageTimings.Current);
+        Assert.False(joiner.IsCompleted);
+        Assert.Equal(1, rig.Admission.Count("native:"));
+        rig.Release();
+        var (first, firstAnswer) = await owner.WaitAsync(TimeSpan.FromSeconds(15));
+        var (second, secondAnswer) = await joiner.WaitAsync(TimeSpan.FromSeconds(15));
+        var (third, thirdAnswer) = await Timed().WaitAsync(TimeSpan.FromSeconds(15));
+
+        // One upstream send for all three, charged to the request that started it.
+        Assert.Equal(1, rig.Sends);
+        Assert.Equal(1, first.Of(Stage.MetaAdmit).Count);
+        Assert.Equal(1, first.Of(Stage.TmdbSend).Count);
+        Assert.Equal(1, first.Of(Stage.TmdbSlot).Count);
+        Assert.True(first.Of(Stage.SourceMap).Count >= 1);
+        Assert.Equal(1, second.Of(Stage.MetaJoin).Count);
+        Assert.Equal(0, second.Of(Stage.TmdbSend).Count);
+        Assert.Equal(0, second.Of(Stage.MetaAdmit).Count);
+        Assert.Equal(1, third.Of(Stage.SourceHit).Count);
+        Assert.Equal(0, third.Of(Stage.TmdbSend).Count + third.Of(Stage.MetaAdmit).Count + third.Of(Stage.MetaJoin).Count);
+        Assert.Equal(firstAnswer.Data!.Value.GetRawText(), secondAnswer.Data!.Value.GetRawText());
+        Assert.Equal(firstAnswer.Data!.Value.GetRawText(), thirdAnswer.Data!.Value.GetRawText());
+    }
+
+    [Fact]
+    public async Task StageTimingsKeepEightPerViewerAndCountTheRefusal()
+    {
+        var admission = new ViewerMetadataAdmission();
+        var viewer = Guid.NewGuid();
+        var release = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (recorder, owners, ninth) = await Task.Run(async () =>
+        {
+            var r = StageTimings.Begin();
+            using var scope = ViewerMetadataAdmission.ForViewer(viewer);
+            var held = Enumerable.Range(0, 8).Select(i => admission.Read("held:" + i, viewer, () => (false, 0), () => release.Task, -1, default)).ToArray();
+            var refused = await admission.Read("ninth", viewer, () => (false, 0), () => release.Task, -1, default);
+            return (r, held, refused);
+        });
+        try
+        {
+            Assert.Equal(-1, ninth);
+            Assert.Equal(8, admission.Count());
+            Assert.Equal(1, recorder.Of(Stage.MetaBusy).Count);
+        }
+        finally
+        {
+            release.TrySetResult(1);
+            await Task.WhenAll(owners).WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        Assert.Equal(8, recorder.Of(Stage.MetaFetch).Count);
+        Assert.Equal(8, recorder.Of(Stage.MetaAdmit).Count);
+    }
+
+    [Fact]
+    public void StageTimingsStayBoundedAndStopOnceClosed()
+    {
+        var recorder = new Func<StageTimings>(() => Task.Run(StageTimings.Begin).Result)();
+        for (var i = 0; i < 10_000; i++) recorder.Add(Stage.TmdbHit, 0);
+        recorder.Close();
+        recorder.Add(Stage.TmdbHit, 0);
+        recorder.Add(Stage.Publish, 1000);
+        Assert.Equal(10_000, recorder.Of(Stage.TmdbHit).Count);
+        Assert.Equal(0, recorder.Of(Stage.Publish).Count);
+        Assert.Equal(StageTimings.StageCount, Enum.GetValues<Stage>().Length);
+        // Every stage is named after itself (kebab case), so a header entry can't be charged to another stage.
+        foreach (var stage in Enum.GetValues<Stage>())
+        {
+            var one = Task.Run(StageTimings.Begin).Result;
+            one.Add(stage, 0);
+            var expected = System.Text.RegularExpressions.Regex.Replace(stage.ToString(), "(?<!^)([A-Z])", "-$1").ToLowerInvariant();
+            Assert.Equal(expected, one.Header().Split(", ")[1].Split(';')[0]);
+        }
+        var names = recorder.Header().Split(", ").Select(p => p.Split(';')[0]).ToArray();
+        Assert.Equal(new[] { "total", "tmdb-hit" }, names);
+        Assert.True(StageTimings.Flag("1") && StageTimings.Flag(" TRUE ") && !StageTimings.Flag("0") && !StageTimings.Flag(null) && !StageTimings.Flag("yes"));
+    }
+
+    private sealed class StageTimingsHostControllers : IControllerActivator
+    {
+        public object Create(ControllerContext context) => RuntimeHelpers.GetUninitializedObject(context.ActionDescriptor.ControllerTypeInfo.AsType());
+        public void Release(ControllerContext context, object controller) { }
+    }
+
+    /// <summary>
+    /// The native details DTO through the real Jellyfin 12 MVC item action, the facade, publication filter and privacy commit
+    /// owner (STR2-1): the host states no cache policy for it, so an administrator's timed answer must still carry its
+    /// timings, marked private; a viewer's answer is left exactly as the host sends it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task StageTimingsKeepTheNativeDtoHeaderForAnAdministratorThroughRealMvc(bool admin)
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.StageTimingsEnabled = true;
+        var viewer = rig.Person(admin: admin);
+        using var runtime = new PrivacyGeneratedPlaylistTests.HostRuntime();
+        using var server = new TestServer(new WebHostBuilder().ConfigureServices(s =>
+        {
+            s.AddLogging();
+            s.AddRouting();
+            s.AddAuthorization();
+            s.AddControllers(o =>
+            {
+                o.Filters.Add(new StageTimingsFilter());
+                o.Filters.Add(new PrivacyCommitFilter());
+                o.Filters.Add(rig.Filter);
+                o.Filters.Add(rig.R4PublicationFilter());
+            }).AddApplicationPart(runtime.Api);
+            s.AddSingleton<IControllerActivator>(new StageTimingsHostControllers());
+        }).Configure(app =>
+        {
+            app.Use(async (http, next) => { http.User = Me(viewer); await next(); });
+            app.UseRouting();
+            app.UseAuthorization();
+            app.UseEndpoints(e => e.MapControllers().AllowAnonymous());
+        }));
+        using var client = server.CreateClient();
+        using var response = await client.GetAsync("/Items/" + Id(SyntheticId.Movie(693134)) + "?userId=" + viewer.Id);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(200, (int)response.StatusCode);
+        Assert.Contains("693134", body, StringComparison.Ordinal);
+        Assert.Equal(admin, response.Headers.Contains("Server-Timing"));
+        if (admin)
+        {
+            Assert.Contains("policy;dur=", Assert.Single(response.Headers.GetValues("Server-Timing")), StringComparison.Ordinal);
+            Assert.True(response.Headers.CacheControl!.Private);
+            Assert.False(response.Headers.CacheControl.Public);
+        }
+        else Assert.Null(response.Headers.CacheControl);
+    }
+}

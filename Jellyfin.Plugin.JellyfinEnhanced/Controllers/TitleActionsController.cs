@@ -6,6 +6,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
@@ -62,6 +63,7 @@ public sealed class TitleActionsController : ControllerBase
             return StatusCode(answer.Outcome == FeedOutcome.Refused || answer.Outcome == FeedOutcome.NotFound ? 404 : 503, new { code = "unavailable" });
         if (episode is int requested)
         {
+            using var parse = StageTimings.Time(Stage.Parse);
             using var document = JsonDocument.Parse(answer.Json ?? "{}");
             var found = false;
             if (document.RootElement.TryGetProperty("episodes", out var episodes) && episodes.ValueKind == JsonValueKind.Array)
@@ -84,6 +86,7 @@ public sealed class TitleActionsController : ControllerBase
     /// <summary>Delegates real-copy and exact scope classification to the existing copy/source owner.</summary>
     private Guid? ActualCopy(Jellyfin.Database.Implementations.Entities.User viewer, TitleKey key, int? season, int? episode)
     {
+        using var timed = StageTimings.Time(Stage.Copies);
         if (_status == null || _status.View.Viewer(viewer.Id) is not { } statusViewer) return null;
         if (season is int requestedSeason)
         {

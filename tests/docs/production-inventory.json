@@ -1931,6 +1931,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StageTimings.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StageTimingsFilter.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
       "category": "Services"
     },
@@ -8512,6 +8520,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "StageTimingsEnabled",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShokoUrl",
       "type": "string",
       "initializer": null,
@@ -12026,9 +12042,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 775,
+    "files": 777,
     "routes": 316,
-    "configuration_properties": 671,
+    "configuration_properties": 672,
     "storage_references": 106,
     "scheduled_tasks": 16,
     "locales": 33

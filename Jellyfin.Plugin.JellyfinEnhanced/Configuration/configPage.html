@@ -3038,6 +3038,17 @@
                         </div>
                     </fieldset>
 
+                    <!-- Diagnostics: server stage timings of absent-title reads (admins only; off by default) -->
+                    <fieldset id="stageTimingsSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">timer</i>Diagnostics</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="stageTimingsEnabled" is="emby-checkbox" type="checkbox"/><span>Time absent-title server stages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="stageTimingsEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Measures how long the server spends on each stage of opening a title that isn't in the library (waiting for a metadata place, TMDB cache hits, joins and sends, parental checks, building the answer and its final privacy check). An administrator's browser sees the numbers in the <code>Server-Timing</code> header of those responses (developer tools, Network, Timing), and every such request writes one Debug line to the plugin log. Only stage names and durations are recorded: never a title, user, key or link. For troubleshooting; leave it off otherwise. Off by default.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">link</i>*arr UI Links</legend>
                         <div class="configSection">
@@ -8901,6 +8912,7 @@
                 document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
                 document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
                 document.querySelector('#serverCacheEnabled').checked = config.ServerCacheEnabled === true;
+                document.querySelector('#stageTimingsEnabled').checked = config.StageTimingsEnabled === true;
                 document.querySelector('#serverCachePath').value = config.ServerCachePath || '';
                 document.querySelector('#serverCacheMaxSizeGb').value = (config.ServerCacheMaxSizeGb !== undefined && config.ServerCacheMaxSizeGb !== null) ? config.ServerCacheMaxSizeGb : 2;
                 document.querySelector('#serverCacheMaxAgeDays').value = (config.ServerCacheMaxAgeDays !== undefined && config.ServerCacheMaxAgeDays !== null) ? config.ServerCacheMaxAgeDays : 30;
@@ -9596,6 +9608,7 @@
             config.ArrSeerrHandoffGraceMinutes = isNaN(__handoffMinutes) ? 15 : Math.min(1440, Math.max(1, __handoffMinutes));
             config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
             config.ServerCacheEnabled = document.querySelector('#serverCacheEnabled').checked;
+            config.StageTimingsEnabled = document.querySelector('#stageTimingsEnabled').checked;
             config.ServerCachePath = (document.querySelector('#serverCachePath').value || '').trim();
             var __cacheGb = parseFloat(document.querySelector('#serverCacheMaxSizeGb').value);
             config.ServerCacheMaxSizeGb = isFinite(__cacheGb) ? Math.min(10000, Math.max(0, __cacheGb)) : 2;

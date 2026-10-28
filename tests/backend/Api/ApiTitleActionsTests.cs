@@ -15,7 +15,7 @@ using Xunit;
 namespace JE.Tests;
 
 [Collection("Plugin singleton")]
-public class ApiTitleActionsTests
+public partial class ApiTitleActionsTests
 {
     private sealed class Rig : IDisposable
     {

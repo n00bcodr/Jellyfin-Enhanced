@@ -295,6 +295,23 @@ of a [backup](#backup-restore).
     of the folder, so other files in a shared folder stay. A file that doesn't read back (cut short by a crash, edited)
     is deleted and the image fetched again; a half-written file left by a crash is removed at the next start.
 
+## Diagnostics: stage timings
+
+**Time absent-title server stages** (plugin's **\*arr** tab, **Diagnostics**, off by default) measures where the
+server spends its time when a [title that isn't in the library](arr-features.md) is opened: its details, the
+title-action menu's check, the request sheet's reads and More Info. Each such response carries a `Server-Timing` header
+for administrators (the browser's developer tools show it under Network → Timing), with `total` and one entry per
+stage: `policy`, `library` (the policy's library and physical-copy checks), `evidence` (a restricted viewer's parental check), `discover-evidence`, `copies`, `feed`,
+`source-hit`, `source-map`, `source-busy`, `meta-hit`, `meta-join`, `meta-busy`, `meta-admit` (waiting for a metadata
+place), `meta-fetch`, `tmdb-hit`, `tmdb-join`, `tmdb-disk`, `tmdb-slot`, `tmdb-send`, `image-admit`, `links` (the viewer's link destinations of a details answer), `project`, `parse`
+and `publish` (the final privacy check), each with its total milliseconds and `n=` count. Stages nest and parallel
+reads add up, so a stage can exceed `total`. The header goes only on answers no shared cache may keep: one that is `private` or `no-store`
+already, or one that states no cache policy at all (a title's details), which is then marked `private`; a cacheable
+answer, such as a font or script, never carries it. Every such request, an administrator's or not, also writes one Debug line
+to the plugin log with the method, the route pattern, the status and the same numbers. Only stage names and durations
+are recorded, never a title, user, key or link, and nothing about what a viewer may see changes. Setting the
+environment variable `JE_STAGE_TIMINGS=1` on the server turns it on too.
+
 ## Bazarr
 
 Bazarr adds links to its movie and series overviews so you can manage subtitles. You can configure one Bazarr connection.
