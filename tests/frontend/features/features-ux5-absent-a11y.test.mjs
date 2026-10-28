@@ -392,12 +392,12 @@ test('F54: in Custom Tabs mode Manage hidden content opens the Home tab whose en
   const reads = [];
   const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: {
     getUrl: path => `http://jellyfin.test/${path}`,
-    fetch: async (request) => { reads.push(request.url); return [{ Title: 'Bookmarks', ContentHtml: '<div class="sections bookmarks"></div>' }, { Title: 'Hidden', ContentHtml: '<div class="jellyfinenhanced hidden-content"></div>' }]; },
+    fetch: async (request) => { reads.push(request.url); return [{ Id: 'b00k', Title: 'Bookmarks', ContentHtml: '<div class="sections bookmarks"></div>' }, { Id: 'h1dd3n', Title: 'Hidden', ContentHtml: '<div class="jellyfinenhanced hidden-content"></div>' }]; },
   } });
   h.click(h.button);
   await settle();
   assert.deepEqual(reads, ['http://jellyfin.test/CustomTabs/Config']);
-  assert.equal(h.window.location.hash, '#/home?tab=3', 'Custom Tabs puts its entries at tab 2 onwards, in order');
+  assert.equal(h.window.location.hash, '#/home?tab=3&ctTab=h1dd3n', 'Custom Tabs puts its entries at tab 2 onwards, in order, as its own links name them');
   assert.deepEqual(h.calls, { pages: 0, manager: 0 });
 });
 

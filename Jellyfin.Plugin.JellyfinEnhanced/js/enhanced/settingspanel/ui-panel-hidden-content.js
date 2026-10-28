@@ -39,11 +39,12 @@
     }
 
     /**
-     * The Home tab index of the Custom Tabs entry that holds the Hidden Content marker
-     * (`<div class="jellyfinenhanced hidden-content">`): Custom Tabs puts its entries at `?tab=2` onwards, in order.
-     * @returns {Promise<number|null>} The index, or null when no entry holds it or the list can't be read.
+     * The Home route of the Custom Tabs entry that holds the Hidden Content marker
+     * (`<div class="jellyfinenhanced hidden-content">`), as Custom Tabs' own links name it: its entries are at `?tab=2`
+     * onwards, in order, with `ctTab=<entry id>`.
+     * @returns {Promise<string|null>} The route, or null when no entry holds it or the list can't be read.
      */
-    async function customTabIndex() {
+    async function customTabRoute() {
         let configs;
         try {
             configs = await ApiClient.fetch({ url: ApiClient.getUrl('CustomTabs/Config'), type: 'GET', dataType: 'json', headers: { accept: 'application/json' } });
@@ -57,7 +58,9 @@
             // Parsed inert (a template runs nothing and loads nothing).
             const template = document.createElement('template');
             template.innerHTML = html;
-            if (template.content.querySelector('.jellyfinenhanced.hidden-content')) return i + 2;
+            if (!template.content.querySelector('.jellyfinenhanced.hidden-content')) continue;
+            const id = configs[i]?.Id ?? configs[i]?.id;
+            return `#/home?tab=${i + 2}` + (typeof id === 'string' && id ? `&ctTab=${encodeURIComponent(id)}` : '');
         }
         return null;
     }
@@ -81,10 +84,10 @@
         } else if (config.HiddenContentEnabled && config.HiddenContentUseCustomTabs) {
             const from = window.location.hash;
             const button = e?.currentTarget || e?.target;
-            const index = await customTabIndex();
+            const route = await customTabRoute();
             // The viewer moved on, or closed the panel, while the list was read: nothing happens.
             if (window.location.hash !== from || (button && !button.isConnected)) return;
-            if (index != null) window.location.hash = `#/home?tab=${index}`;
+            if (route) window.location.hash = route;
             else JE.hiddenContent.showManagementPanel(e);
         } else if (config.HiddenContentEnabled && JE.hiddenContentPage) {
             JE.hiddenContentPage.showPage();
