@@ -12,6 +12,8 @@ const card = id => `<div class="card" data-id="${id}"><div class="cardScalable">
 function setup(t, answers) {
   const renderers = new Map();
   const calls = [];
+  /** What peekServerEntry answers: entries by id; a missing id answers undefined (no cache in memory). */
+  const serverEntries = new Map();
   const h = createHarness({
     html: card('a') + card('b'),
     JE: {
@@ -20,7 +22,7 @@ function setup(t, answers) {
       t: key => key,
       session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() {}, scheduleScan() {} }
+      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() {}, scheduleScan() {}, peekServerEntry: id => serverEntries.get(id) }
     },
     apiClient: {
       ajax: async ({ url }) => {
@@ -41,7 +43,7 @@ function setup(t, answers) {
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];
   const old = now - 400 * 24 * 60 * MINUTE;
   return Object.assign(h, {
-    calls, hosts,
+    calls, hosts, serverEntries,
     advance: ms => { now += ms; },
     render: (el, tmdb) => renderers.get('status').render(el, { Id: `m${tmdb}`, Type: 'Movie', ProviderIds: { Tmdb: String(tmdb) }, DateCreated: old, PremiereDate: old }),
     badge: el => el.querySelector('.status-tag')?.textContent ?? null,
@@ -87,6 +89,63 @@ test('a trending answer that lands after the cache was dropped does not redraw t
   delete h.hosts[0].closest('.card').dataset.jeStatusTagged;
   h.render(h.hosts[0], 1);
   assert.equal(h.badge(h.hosts[0]), '#3 Today');
+});
+
+test('a replacement cache re-syncs the cards on the page without a re-render', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: { 1: 3, 2: 5 }, series: {} },
+    { source: 'tmdb-day', movies: {}, series: {} }
+  ]);
+  await h.settle();
+  h.render(h.hosts[0], 1); h.render(h.hosts[1], 2);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today');
+  assert.equal(h.badge(h.hosts[1]), '#5 Today');
+  // The replacement download: m1 was added yesterday now, m2 is gone from it.
+  const now = h.window.Date.now();
+  h.serverEntries.set('', null);
+  h.serverEntries.set('m1', { Type: 'Movie', TmdbId: '1', DateCreated: now - 24 * 60 * MINUTE });
+  h.serverEntries.set('m2', null);
+  h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(null);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'trending still wins for m1');
+  assert.equal(h.badge(h.hosts[1]), null, 'an entry that vanished loses its badge');
+  assert.equal(h.hosts[1].querySelector('.status-overlay-container'), null);
+  // Trending updates keep reaching the re-synced card, and use the new dates.
+  h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.badge(h.hosts[0]), 'Just Added', 'dropped off the list: badged from the refreshed dates');
+});
+
+test('a dropped cache (nothing in memory) marks every record stale and leaves the overlays to the pipeline', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: { 1: 3 }, series: {} },
+    { source: 'tmdb-day', movies: {}, series: {} }
+  ]);
+  await h.settle();
+  h.render(h.hosts[0], 1);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today');
+  h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(null);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'the pipeline removes overlays itself on this path');
+  h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'stale record: not redrawn by the refresh');
+});
+
+test('a card detached during a delta is still stale when it comes back', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: { 1: 3 }, series: {} },
+    { source: 'tmdb-day', movies: {}, series: {} }
+  ]);
+  await h.settle();
+  h.render(h.hosts[0], 1); h.render(h.hosts[1], 2);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today');
+  const cardA = h.hosts[0].closest('.card');
+  const parent = cardA.parentNode;
+  parent.removeChild(cardA);
+  h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(['m1']);
+  parent.appendChild(cardA);
+  h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'left alone until the pipeline renders it again');
 });
 
 test('a delta that replaced an item stops the trending pass re-badging it from old dates', async t => {

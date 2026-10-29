@@ -123,9 +123,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             lock (CacheLock)
             {
-                _lastAnswerWasEmpty = snapshot.Source == null;
                 if (generation == _generation)
                 {
+                    _lastAnswerWasEmpty = snapshot.Source == null;
                     _cached = snapshot;
                     _cachedUntilUtc = DateTime.UtcNow + (snapshot.Source == null ? EmptyCacheTtl : CacheTtl);
                     _inFlight = null;

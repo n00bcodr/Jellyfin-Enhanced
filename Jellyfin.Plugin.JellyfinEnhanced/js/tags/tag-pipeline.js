@@ -1629,6 +1629,19 @@
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
         /**
+         * The server cache entry held in memory for an item, without waiting
+         * for a load or asking the stored copy. For a renderer that wants to
+         * re-check what it drew after onServerCacheRefresh(null).
+         * @param {string} itemId - 32-char lowercase hex item id.
+         * @returns {object|null|undefined} The entry; null when memory holds the
+         *   cache but no entry for the item; undefined when no server cache is
+         *   in memory at all (dropped, loading, or the batch fallback is in use).
+         */
+        peekServerEntry(itemId) {
+            if (!serverCache) return undefined;
+            return serverCache.get(itemId) ?? null;
+        },
+        /**
          * Review rating averages that came with the server cache, once the
          * load or refresh in flight has settled: Map<"mediaType:tmdbKey",
          * average>, or null when the server cache (or the poster chips) is

@@ -71,14 +71,24 @@
 
     /**
      * Every drawn Movie/Series card with a TMDB id (the only cards a trending
-     * list can change), with its item id and data and the badge it shows. The
-     * cards are found again through TRENDABLE_ATTR, so detached ones need no
-     * pruning. Replaced wholesale (see forgetTrackedCards) whenever the data
-     * the records were drawn from stops being trusted: a card whose record is
-     * gone is left alone by the trending pass until it is rendered again.
-     * @type {WeakMap<HTMLElement, {id: string|null, data: Object, shown: string}>}
+     * list can change), with its item id and data, the badge it shows and the
+     * revision it was recorded under. The cards are found again through
+     * TRENDABLE_ATTR, so detached ones need no pruning. A record is only
+     * trusted while it is current (see isCurrentRecord): the trending pass
+     * leaves a stale card alone until the pipeline renders it again.
+     * @type {WeakMap<HTMLElement, {id: string|null, data: Object, shown: string, rev: number}>}
      */
-    let trendableCards = new WeakMap();
+    const trendableCards = new WeakMap();
+    /** @type {number} bumped whenever recorded data stops being trusted */
+    let trackRev = 0;
+    /** @type {number} records older than this are stale, whatever their item */
+    let staleBelowRev = 0;
+    /**
+     * Item id → revision a delta replaced it at; a record older than that is
+     * stale. Cleared whenever everything is marked stale at once.
+     * @type {Map<string, number>}
+     */
+    const replacedAt = new Map();
     const TRENDABLE_ATTR = 'jeStatusTrendable';
     const TRENDABLE_SELECTOR = '[data-je-status-trendable]';
 
@@ -354,35 +364,80 @@
         ensureTrending(ctx);
         const badge = pickBadge(data);
         if (data.tmdb && (data.type === 'Movie' || data.type === 'Series')) {
-            trendableCards.set(el, { id: itemId ? String(itemId) : null, data, shown: badgeKey(badge) });
+            trendableCards.set(el, { id: itemId ? String(itemId) : null, data, shown: badgeKey(badge), rev: trackRev });
             el.dataset[TRENDABLE_ATTR] = '1';
         }
         applyStatusTag(ctx, el, badge);
     }
 
     /**
-     * Stop the trending pass from redrawing cards from data that is no longer
-     * trusted. With no id list (the server cache was dropped: a Spoiler Guard
-     * or access change, a user switch, a full reload) every record goes; the
-     * pipeline removes the overlays itself and re-renders the cards, which
-     * records them again from the replacement entries. With a delta's id list
-     * only the records of those items go: the card keeps the badge it shows,
-     * like every other tag group does until the card is rendered again, but a
-     * trending refresh no longer re-badges it from the outdated dates.
+     * Whether a card's record was made after everything that replaced the
+     * data it holds. Checked at use, so a card that was detached while its
+     * item was replaced, then put back, is caught as well.
+     * @param {{id: string|null, rev: number}} card
+     * @returns {boolean}
+     */
+    function isCurrentRecord(card) {
+        if (card.rev < staleBelowRev) return false;
+        if (card.id === null) return true;
+        const replaced = replacedAt.get(card.id);
+        return replaced === undefined || replaced <= card.rev;
+    }
+
+    /**
+     * React to the pipeline replacing or dropping its server cache, so the
+     * trending pass never redraws a card from data that is no longer trusted.
+     *
+     * A delta (id list) marks the records of those items stale: the card keeps
+     * the badge it shows, like every other tag group does until the card is
+     * rendered again, but a trending refresh no longer re-badges it from the
+     * outdated dates.
+     *
+     * No id list means the whole cache went. When the pipeline is about to
+     * re-render everything (a Spoiler Guard or access change, a user switch:
+     * the cache is dropped first, so nothing can be read from it) every record
+     * is marked stale and the pipeline's re-render records the cards again.
+     * When the pipeline swapped in a replacement download without
+     * re-rendering (a version change or rollback) the cards on the page are
+     * instead re-synced from the entries now in memory: their dates are
+     * refreshed, a badge that changed is redrawn, and a card whose entry is
+     * gone loses its badge.
+     * @param {Object} ctx - Factory context.
      * @param {string[]|null} updatedIds - Item ids a delta replaced, or null for everything.
      * @returns {void}
      */
-    function forgetTrackedCards(updatedIds) {
-        if (!Array.isArray(updatedIds)) {
-            trendableCards = new WeakMap();
+    function onCacheReplaced(ctx, updatedIds) {
+        trackRev++;
+        if (Array.isArray(updatedIds)) {
+            for (const id of updatedIds) replacedAt.set(String(id), trackRev);
             return;
         }
-        if (updatedIds.length === 0) return;
-        const updated = new Set(updatedIds.map(String));
+        staleBelowRev = trackRev;
+        replacedAt.clear();
+        const peek = JE.tagPipeline?.peekServerEntry;
+        if (typeof peek !== 'function' || peek('') === undefined) return;
+        const hosts = [];
         document.querySelectorAll(TRENDABLE_SELECTOR).forEach((el) => {
             const card = trendableCards.get(/** @type {HTMLElement} */ (el));
-            if (card?.id && updated.has(card.id)) trendableCards.delete(/** @type {HTMLElement} */ (el));
+            if (!card || card.rev >= trackRev || !card.id) return;
+            const entry = peek(card.id);
+            if (!entry) {
+                // Not in the replacement cache (removed, or no longer accessible).
+                trendableCards.delete(/** @type {HTMLElement} */ (el));
+                ctx.removeExistingOverlay(el);
+                hosts.push(el);
+                return;
+            }
+            const data = fromServerEntry(entry);
+            const badge = pickBadge(data);
+            const key = badgeKey(badge);
+            trendableCards.set(el, { id: card.id, data, shown: key, rev: trackRev });
+            if (key === card.shown) return;
+            if (badge) applyStatusTag(ctx, el, badge);
+            else ctx.removeExistingOverlay(el);
+            hosts.push(el);
         });
+        if (hosts.length > 0) JE.core.tagRenderer.applyCornerStacking(hosts);
     }
 
     /**
@@ -399,6 +454,10 @@
         document.querySelectorAll(TRENDABLE_SELECTOR).forEach((el) => {
             const card = trendableCards.get(/** @type {HTMLElement} */ (el));
             if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
+            if (!isCurrentRecord(card)) {
+                trendableCards.delete(/** @type {HTMLElement} */ (el));
+                return;
+            }
             const badge = pickBadge(card.data);
             const key = badgeKey(badge);
             if (key === card.shown) return;
@@ -570,7 +629,7 @@
                 renderData(ctx, el, fromServerEntry(entry), itemId);
             },
             onServerCacheRefresh(ctx, updatedIds) {
-                forgetTrackedCards(updatedIds);
+                onCacheReplaced(ctx, updatedIds);
             },
         },
     };
@@ -593,7 +652,7 @@
             // The outgoing user's cards and dates must not be redrawn by a
             // trending answer that lands during the switch; the pipeline
             // re-renders everything for the incoming user.
-            JE.session?.onUserChange?.('status-tags', () => forgetTrackedCards(null));
+            JE.session?.onUserChange?.('status-tags', () => { trackRev++; staleBelowRev = trackRev; replacedAt.clear(); });
         }
         statusCtx = JE.core.tagRenderer.register('status', spec);
         statusCtx.injectCss();
