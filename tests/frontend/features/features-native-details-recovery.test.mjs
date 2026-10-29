@@ -10,6 +10,8 @@ const MOVIE = '4a45ad11000a938e00000000f9c67720';
 const SEASON = '4a45ad13000001c8000100008fbea52d';
 const SERIES = '4a45ad12000001c800000000528c1e65';
 const art = (id, tag = 'na1.aa.bb', type = 'Primary') => `http://jellyfin.test/Items/${id}/Images/${type}?fillHeight=480&quality=96&tag=${tag}`;
+/** Moves the page's hash and waits for its hashchange (jsdom delivers it as its own task). */
+const hashTo = (h, hash) => new Promise(resolve => { h.window.addEventListener('hashchange', () => resolve(flush()), { once: true }); h.window.location.hash = hash; });
 const flush = async () => { for (let i = 0; i < 30; i++) await new Promise(r => setImmediate(r)); };
 
 /** A controllable clock for native-recovery's env (no jitter). */
@@ -502,10 +504,8 @@ test('review r2: a list read from an earlier visit of the same page is never dra
   let settled = false;
   h.window.ApiClient.getEpisodes(series, { seasonId: h.JE.titleDetails.syntheticId('season', 83867, 1) }).then(() => { settled = true; }, () => { settled = true; });
   const here = h.window.location.hash;
-  h.window.location.hash = '#/home';
-  await flush();
-  h.window.location.hash = here;
-  await flush();
+  await hashTo(h, '#/home');
+  await hashTo(h, here);
   first.resolve({ Items: [{ Id: 'old' }] });
   await flush();
   assert.equal(settled, false);
@@ -520,8 +520,7 @@ for (const navigation of [false, true]) {
     await h.clock.advance(2000);
     assert.equal(h.calls.length, 1, 'the backdrop ask is in flight');
     // Another absent title (the old page state stays current until its own look).
-    h.window.location.hash = `#/details?id=${h.JE.titleDetails.syntheticId('movie', 438631)}&serverId=${SERVER}`;
-    await flush();
+    await hashTo(h, `#/details?id=${h.JE.titleDetails.syntheticId('movie', 438631)}&serverId=${SERVER}`);
     gate.resolve();
     await h.clock.advance(120_000);
     assert.equal(h.document.querySelector('.backdropImage.displayingBackdropImage'), null, 'nothing drawn after the visit ended');
@@ -533,10 +532,8 @@ test('review r3: coming back to the page starts that visit\'s own recovery', asy
   const h = pageSetup(t, { respond: () => answer(200), navigation: true });
   await h.JE.internals.nativeDetails.onView();
   const here = h.window.location.hash;
-  h.window.location.hash = '#/home';
-  await flush();
-  h.window.location.hash = here;
-  await flush();
+  await hashTo(h, '#/home');
+  await hashTo(h, here);
   await h.JE.internals.nativeDetails.onView();
   h.emit(art(MOVIE), 503);
   await h.clock.advance(2000);
@@ -615,10 +612,8 @@ test('review r4: where statuses are not reported, a backdrop requested on an ear
   // The earlier visit asked for the backdrop.
   entries.push({ name: own, startTime: h.window.performance.now() });
   const here = h.window.location.hash;
-  h.window.location.hash = '#/home';
-  await flush();
-  h.window.location.hash = here;
-  await flush();
+  await hashTo(h, '#/home');
+  await hashTo(h, here);
   await h.JE.internals.nativeDetails.onView();
   // (The page's poster, already loading, is adopted and recovered on its own: only backdrop asks count here.)
   const backdropAsks = () => h.calls.filter(u => /\/Images\/Backdrop/.test(u)).length;
