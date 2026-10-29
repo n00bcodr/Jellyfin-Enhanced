@@ -1887,6 +1887,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/CommitGate.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ServerCache/ServerBlobCache.cs",
       "category": "Services"
     },
@@ -12079,7 +12083,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 783,
+    "files": 784,
     "routes": 317,
     "configuration_properties": 672,
     "storage_references": 107,

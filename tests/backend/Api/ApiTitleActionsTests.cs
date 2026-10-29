@@ -123,8 +123,11 @@ public partial class ApiTitleActionsTests
     {
         using var rig = new Rig();
         var viewer = rig.Person();
+        int Reads() => rig.Callers.Users.Invocations.Count(i => i.Method.Name == nameof(MediaBrowser.Controller.Library.IUserManager.GetUserById));
+        var readsAtAwait = -1;
         rig.OnPageRead = () =>
         {
+            readsAtAwait = Reads();
             if (revoke == "feature") rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
             if (revoke == "disabled") viewer.SetPermission(PermissionKind.IsDisabled, true);
             if (revoke == "blocked") rig.Plugin.Plugin.Configuration.JellyseerrImportBlockedUsers = viewer.Id.ToString("N");
@@ -132,6 +135,8 @@ public partial class ApiTitleActionsTests
         var route = new TitleActionsController(rig.Feeds, rig.Policy, rig.Callers.Users.Object)
         { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Me(viewer) } } };
         Assert.NotEqual(200, Status(await route.Read("movie", 693134)));
+        // The person was read again after the source await (the live read), never decided by the read before it.
+        Assert.True(readsAtAwait >= 1 && Reads() > readsAtAwait, $"reads at the await {readsAtAwait}, at the end {Reads()}");
     }
 
     [Theory]

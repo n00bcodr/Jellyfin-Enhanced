@@ -293,6 +293,8 @@ public partial class ApiNativeDetailsTests
             Libraries.Libs.Add(new() { Id = ShowsLib.ToString(), Name = "Shows", CollectionType = "tvshows" });
             Library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((MediaBrowser.Controller.Entities.BaseItem?)null);
             Library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns(new List<MediaBrowser.Controller.Entities.BaseItem>());
+            // The library topology (what the viewer finds behind a name is kept under it).
+            Library.Setup(l => l.GetVirtualFolders()).Returns(new List<MediaBrowser.Model.Entities.VirtualFolderInfo>());
             // People, genres and studios by name (read only: never created); none unless a test adds them.
             Library.Setup(l => l.GetPerson(It.IsAny<string>())).Returns((MediaBrowser.Controller.Entities.Person?)null);
             Library.Setup(l => l.GetGenreId(It.IsAny<string>())).Returns((string n) => NameId("genre", n));
@@ -1727,9 +1729,10 @@ public partial class ApiNativeDetailsTests
         }
 
         var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Some title" };
-        rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == viewer
+        // Existence is asked as the viewer's own id query (no item read).
+        rig.Library.Setup(l => l.GetItemIds(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == viewer
                 && (kind == "genre" ? q.GenreIds.Contains(id) : kind == "studio" ? q.StudioIds.Contains(id) : q.Tags.Contains(name)))))
-            .Returns(() => finds() ? new List<MediaBrowser.Controller.Entities.BaseItem> { movie } : new List<MediaBrowser.Controller.Entities.BaseItem>());
+            .Returns(() => finds() ? new List<Guid> { movie.Id } : new List<Guid>());
     }
 
     [Fact]

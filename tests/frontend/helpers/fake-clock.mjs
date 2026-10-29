@@ -6,11 +6,19 @@ const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(resol
 /**
  * A manual clock for a harness window (pass `clock.globals` to createHarness): the page's setTimeout/setInterval callbacks
  * run only when the test moves time on, in time order, so a test never races the host's real timers or CPU load. Time is
- * logical; Date.now() is untouched.
+ * logical; Date.now() is untouched unless `date` is set: then the page's Date (Date.now() and `new Date()`) reads the
+ * same logical time, from the real time at creation, for a page that measures waits with Date.now() between its timers.
+ * @param {{date?: boolean}} [options]
  * @returns {{globals: object, now: () => number, advance: (ms: number) => Promise<void>, until: (check: () => any, ms?: number) => Promise<void>}}
  */
-export function fakeClock() {
+export function fakeClock({ date = false } = {}) {
   let now = 0, sequence = 0;
+  const epoch = Date.now();
+  /** The page's Date on the logical clock (every other use of Date is the real one). */
+  class LogicalDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(epoch + now); }
+    static now() { return epoch + now; }
+  }
   const timers = new Map();
   const add = (callback, ms, args, every) => {
     const id = ++sequence;
@@ -35,7 +43,8 @@ export function fakeClock() {
       setTimeout: (callback, ms, ...args) => add(callback, ms, args),
       clearTimeout: clear,
       setInterval: (callback, ms, ...args) => add(callback, ms, args, Number(ms) || 0),
-      clearInterval: clear
+      clearInterval: clear,
+      ...(date ? { Date: LogicalDate } : {})
     },
     now: () => now,
     /** Moves time on by `ms`, running every timer that falls due, with the page's promise chains settled after each. */

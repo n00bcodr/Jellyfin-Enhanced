@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, deferred } from '../helpers/harness.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 
 // A visit to an absent title's native details page with the real transport (core/api-client.js), item owner
 // (enhanced/helpers.js) and page adapter (native-details.js): the page's JE readers share one read of the item, a
@@ -25,11 +26,13 @@ const art = id => `http://jellyfin.test/Items/${id}/Images/Primary?fillHeight=29
  * @param {object} t Test context.
  * @returns {object} Harness and probes.
  */
-function setup(t, realSession = false, realNavigation = false) {
+function setup(t, realSession = false, realNavigation = false, clock = null) {
   const reads = [], getItem = [], userChanges = [];
   let epoch = 1;
   const h = createHarness({
     html: PAGE, url: `http://jellyfin.test/web/index.html${DETAILS}`,
+    // A manual clock for the page's timers when the test passes one (helpers/fake-clock.mjs).
+    globals: clock ? clock.globals : {},
     // Item reads are held until the test answers them; the page's other JE reads answer at once.
     fetch: async (url, init) => {
       const path = new URL(String(url)).pathname;
@@ -364,9 +367,14 @@ test('a same-user credential refresh on a restored page recovers it: read again 
   assert.equal(h.nd.current()?.item?.Name, 'after-refresh');
 });
 
+// F66: the page's timers run on a manual clock and each tick runs only what is due now (the re-look the page schedules at
+// 0 ms). On real timers the module's own cold-start look (350 ms after it loads) could fire mid-test on a busy machine and
+// check the refused page again, hiding it for that new check.
 test('a fenced look that cannot be read again ends in the outage state, never a page left hidden', async t => {
   for (const kind of ['another viewer', 'refreshed twice']) {
-    const h = setup(t);
+    const clock = fakeClock();
+    const tick = () => clock.advance(0);
+    const h = setup(t, false, false, clock);
     const first = h.nd.onView();
     await tick();
     h.answer(0);
@@ -860,4 +868,118 @@ test('the startup look overlapping a restored page\'s look cannot release its ga
   await until(() => h.page.classList.contains('je-native-absent-refused'));
   await tick();
   assert.deepEqual(observed, { checking: true, documentChecking: true, loading: true });
+});
+
+// Phase 2 F30 (PDR-5): a long page keeps at most the last 32 images that left view loaded; older ones go back to
+// jellyfin-web's own unloaded state (it loads them again when they come back), and are kept again once it has.
+/** jellyfin-web's lazy loader on `node`: the preloader starts, then the image fades in. */
+async function hostLoads(h, node, url) {
+  node.setAttribute('data-src', url);
+  node.classList.add('lazy-hidden');
+  await tick();
+  node.style.backgroundImage = "url('" + url + "')";
+  node.removeAttribute('data-src');
+  node.classList.add('lazy-image-fadein');
+  node.classList.remove('lazy-hidden');
+  await tick();
+}
+/** jellyfin-web emptying a loaded `node` as it leaves the viewport. */
+async function hostUnloads(h, node) {
+  const shown = node.style.backgroundImage.slice(4, -1).replace(/"/g, '');
+  node.style.backgroundImage = 'none';
+  node.setAttribute('data-src', shown);
+  node.classList.remove('lazy-image-fadein-fast', 'lazy-image-fadein');
+  node.classList.add('lazy-hidden');
+  await tick();
+}
+const kept = n => !n.hasAttribute('data-src') && !n.classList.contains('lazy-hidden') && n.style.backgroundImage.startsWith('url(');
+const handedBack = n => n.hasAttribute('data-src') && n.classList.contains('lazy-hidden') && n.style.backgroundImage === 'none';
+
+test('F30: a page keeps only the last 32 images that left view; older ones are jellyfin-web\'s to load again', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const nodes = [];
+  for (let i = 0; i < 60; i++) {
+    const n = h.document.createElement('div');
+    n.className = 'cardImageContainer lazy';
+    h.page.append(n);
+    await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`));
+    nodes.push(n);
+  }
+  for (const n of nodes) await hostUnloads(h, n);
+  await tick();
+  assert.equal(nodes.filter(kept).length, 32, 'the last 32 stay loaded');
+  assert.ok(nodes.slice(28).every(kept), 'the ones that left view last');
+  assert.ok(nodes.slice(0, 28).every(handedBack), 'the older ones are as jellyfin-web left them');
+  assert.ok(nodes.slice(0, 28).every((n, i) => n.getAttribute('data-src').includes(`quality=${i}`)), 'each with its own address back');
+});
+
+test('F30: an image handed back is kept again once jellyfin-web has loaded it again; a policy change still ends all keeping', async t => {
+  const h = setup(t);
+  const look = h.nd.onView();
+  await tick();
+  h.answer(0);
+  await look;
+  const nodes = [];
+  for (let i = 0; i < 33; i++) {
+    const n = h.document.createElement('div');
+    h.page.append(n);
+    await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`));
+    nodes.push(n);
+  }
+  for (const n of nodes) await hostUnloads(h, n);
+  await tick();
+  const first = nodes[0];
+  assert.ok(handedBack(first));
+  // Back in view: jellyfin-web loads it (its preloader, the class already there), then it leaves view again.
+  const url = first.getAttribute('data-src');
+  first.style.backgroundImage = "url('" + url + "')";
+  first.removeAttribute('data-src');
+  first.classList.add('lazy-image-fadein');
+  first.classList.remove('lazy-hidden');
+  await tick();
+  await hostUnloads(h, first);
+  await tick();
+  assert.ok(kept(first), 'kept again');
+  assert.ok(handedBack(nodes[1]), 'the next oldest made room for it');
+  // The person's access moved: nothing kept from before is kept when it leaves view next.
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  const last = nodes.at(-1);
+  last.style.backgroundImage = "url('" + art(MOVIE) + "')";
+  await hostUnloads(h, last);
+  await tick();
+  assert.ok(handedBack(last), 'not kept across a policy change');
+});
+
+// Fix round 2 (review ULR-2), the reviewer's probes: an image scrolled back into view (already loaded, so jellyfin-web
+// sends no signal) is never the one emptied for the bound; and long churn stays bounded with no self-made loop.
+test('ULR-2: a kept image back in view is never emptied for the bound; the oldest out of view is', async t => {
+  const h = setup(t); const look = h.nd.onView(); await tick(); h.answer(0); await look;
+  const nodes = [];
+  for (let i = 0; i < 33; i++) { const n = h.document.createElement('div'); n.getBoundingClientRect = () => ({ top: -500, bottom: -400, left: 0, right: 100, width: 100, height: 100 }); h.page.append(n); await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`)); nodes.push(n); }
+  for (const n of nodes.slice(0, 32)) await hostUnloads(h, n);
+  nodes[0].getBoundingClientRect = () => ({ top: 100, bottom: 200, left: 0, right: 100, width: 100, height: 100 });
+  await hostUnloads(h, nodes[32]);
+  await tick();
+  assert.ok(kept(nodes[0]), 'still visible, but evicted as the oldest retained entry');
+  assert.ok(handedBack(nodes[1]), 'the oldest out of view made room instead');
+});
+
+test('ULR-2 control: four passes of bulk unload and reload over 80 images stay bounded and the observer settles', async t => {
+  const h = setup(t); const look = h.nd.onView(); await tick(); h.answer(0); await look;
+  const nodes = [];
+  for (let i = 0; i < 80; i++) { const n = h.document.createElement('div'); h.page.append(n); await hostLoads(h, n, art(MOVIE).replace('quality=96', `quality=${i}`)); nodes.push(n); }
+  for (let turn = 0; turn < 4; turn++) {
+    const order = turn % 2 ? [...nodes].reverse() : nodes;
+    for (const n of order) {
+      if (n.hasAttribute('data-src')) { const url = n.getAttribute('data-src'); n.style.backgroundImage = `url('${url}')`; n.removeAttribute('data-src'); n.classList.remove('lazy-hidden'); await tick(); }
+      await hostUnloads(h, n);
+      assert.ok(h.nd.current().retained.size <= 32);
+    }
+    await tick(); assert.equal(nodes.filter(kept).length, 32); assert.equal(nodes.filter(handedBack).length, 48);
+    const snapshot = nodes.map(n => n.outerHTML); await tick(); assert.deepEqual(nodes.map(n => n.outerHTML), snapshot, 'observer settles');
+  }
 });

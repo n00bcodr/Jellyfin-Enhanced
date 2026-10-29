@@ -116,6 +116,8 @@ export const SITES = {
   'enhanced/itemdetails/features-release-dates.js': 3, 'enhanced/native-tabs.js': 1,
   'enhanced/player/auto-skip.js': 2, 'enhanced/player/osd-rating.js': 2, 'enhanced/player/pausescreen.js': 3,
   'enhanced/player/playback-rating-badge.js': 2, 'enhanced/player/playback.js': 4,
+  // F54: the Custom Tabs entries read to find the Hidden Content tab (a read).
+  'enhanced/settingspanel/ui-panel-hidden-content.js': 1,
   'enhanced/settingspanel/ui-panel-language.js': 3, 'enhanced/settingspanel/ui-panel-settings.js': 4,
   'enhanced/settingspanel/ui-release-notes.js': 1,
   'enhanced/spoilerguard/state.js': 5, 'enhanced/spoilerguard/watched-refresh.js': 6, 'enhanced/translations.js': 8,
@@ -223,7 +225,7 @@ export const HOST_DIALOG_MODULES = {
 
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
-  'arr/actions/title-actions-hosts.js': 4, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 11,
+  'arr/actions/title-actions-hosts.js': 4, 'arr/actions/title-actions-sheet.js': 2, 'arr/ask/ask-episodes.js': 8,
   'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 6,
   'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 16, 'arr/ask/ask-sheet.js': 11, 'arr/hub/hub-discover.js': 5, 'arr/hub/hub-page.js': 4,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,

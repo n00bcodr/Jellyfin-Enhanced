@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 import { createHarness, jsRoot, jsonResponse, deferred } from '../helpers/harness.mjs';
 import { installDomWriteSpy } from '../helpers/dom-write-spy.mjs';
 
@@ -56,7 +57,7 @@ function view(placeholders, order, extra = {}) {
  * A harness with the list pages loaded against fake routes.
  * @returns {Object} Harness pieces.
  */
-function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER, route = null, realBody = false, plant = {} } = {}) {
+function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER, route = null, realBody = false, plant = {}, clock = null } = {}) {
   const calls = [];
   const toasts = [];
   const viewHooks = [];
@@ -66,6 +67,8 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
   const h = createHarness({
     html,
     url: 'http://jellyfin.test/web/index.html#/details?id=' + LIST,
+    // A manual clock for the page's timers when the test passes one (helpers/fake-clock.mjs).
+    globals: clock ? clock.globals : {},
     apiClient: { getItems: getItems || (async () => ({ Items: [] })) },
     fetch: async (url, init = {}) => {
       const u = new URL(url);
@@ -1362,24 +1365,29 @@ test('r3 B1: revoke closes an active sheet and a late send paints nothing', asyn
   assert.equal(h.toasts.length, before);
 });
 
+// F47: the page's timers run on a manual clock, so the first batch is sent (and, not in flight, answered) before the
+// invalidation however busy the machine is; on real timers a slow first batch could still be unsent at 200 ms.
 for (const midflight of [false, true]) test(`r3 B2: visible grid invalidation refreshes (in flight: ${midflight})`, async t => {
   const held = deferred();
+  const clock = fakeClock();
   let count = 0;
-  const h = setup(t, { summaries: async () => {
+  const h = setup(t, { clock, summaries: async () => {
     count++;
     if (midflight && count === 1) await held.promise;
     return [{ lists: [{ listId: LIST, missing: count === 1 ? 3 : 1 }], pending: [] }];
   }});
   h.document.body.innerHTML = `<div class="card" data-id="${LIST}" data-type="Playlist"><div class="cardImageContainer"></div></div>`;
-  await h.start();
-  await sleep(200);
+  h.JE.arrListPages.settingsChanged();
+  await clock.advance(200);
+  assert.equal(count, 1, 'the first batch was sent');
+  if (!midflight) assert.equal(h.document.querySelector('.je-list-grid-count')?.textContent, '3', 'and answered');
   const grid = h.JE.internals.arrListPages.grid;
   grid.invalidate(LIST);
   if (midflight) held.resolve();
-  await sleep(400);
+  await clock.advance(400);
   assert.equal(count, 2, 'one new batch after invalidation');
   assert.equal(h.document.querySelector('.je-list-grid-count')?.textContent, '1');
-  await sleep(200);
+  await clock.advance(200);
   assert.equal(count, 2, 'no observer retry storm');
 });
 

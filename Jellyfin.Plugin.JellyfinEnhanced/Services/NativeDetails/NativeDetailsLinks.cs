@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Linq;
+using System.Threading;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Controller.Drawing;
@@ -57,33 +59,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
     /// <summary>
     /// Resolves <see cref="ITitleLinks"/> from the library (read only: never creates a person, genre or
-    /// studio). Library existence is cached per library revision; what a viewer may open (a person's
-    /// page, the titles behind a genre, studio or tag) per viewer policy revision and library revision,
-    /// each for a short while.
+    /// studio). Every answer is kept under the library's state as it was before it was read: the library revision,
+    /// every library item added, updated or removed (any kind: titles, people, genres, studios, folders), and, for what a
+    /// viewer may open (a person's page, the titles behind a genre, studio or tag), the library topology and the viewer's
+    /// policy revision (their full authority as just read). Any of those moving answers it again, positive or negative,
+    /// at once; <see cref="Ttl"/> bounds only what none of them sees (a write straight into Jellyfin's database).
     /// </summary>
-    public sealed class NativeDetailsLinks
+    public sealed class NativeDetailsLinks : IDisposable
     {
         private const int MaxEntries = 4000;
-        private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
+
+        /// <summary>The longest an answer is kept when nothing it depends on is seen to change.</summary>
+        internal static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);
         private static readonly BaseItemKind[] Titles = { BaseItemKind.Movie, BaseItemKind.Series };
 
         private readonly ILibraryManager _library;
         private readonly IImageProcessor? _images;
         private readonly Func<long>? _revision;
-        private readonly ConcurrentDictionary<string, (long Revision, DateTime At, Guid? Id, string? Tag)> _people = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, (long Revision, DateTime At, bool Found)> _visible = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, (long Revision, DateTime At, Guid? Id)> _names = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (State State, Guid? Id, string? Tag)> _people = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (State State, string Topology, bool Found)> _visible = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (State State, Guid? Id)> _names = new(StringComparer.Ordinal);
+        private long _changes;
 
-        /// <summary>Creates the resolver.</summary>
+        /// <summary>Creates the resolver and starts following library item changes.</summary>
         /// <param name="library">Library manager.</param>
         /// <param name="images">Image processor (library people's image tags), or null for none.</param>
-        /// <param name="revision">Library revision (changes on every add/update/remove); without it nothing is cached.</param>
+        /// <param name="revision">Library revision (the arr view's); without it nothing is cached.</param>
         public NativeDetailsLinks(ILibraryManager library, IImageProcessor? images = null, Func<long>? revision = null)
         {
             _library = library;
             _images = images;
             _revision = revision;
+            _library.ItemAdded += OnItemChanged;
+            _library.ItemUpdated += OnItemChanged;
+            _library.ItemRemoved += OnItemChanged;
         }
+
+        /// <summary>The clock answers are aged by (tests move it).</summary>
+        internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
+
+        /// <summary>Viewer answers held (valid or not yet dropped).</summary>
+        internal int VisibleCount => _visible.Count;
 
         /// <summary>The links of one viewer.</summary>
         /// <param name="viewer">The effective viewer.</param>
@@ -94,124 +110,212 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public ITitleLinks For(User viewer, string viewerRevision, string serverId, LinkDiscovery discovery)
             => new ViewerLinks(this, viewer, viewerRevision, serverId, discovery);
 
-        /// <summary>The library person with this TMDB id (any viewer), with its image tag; cached per library revision.</summary>
+        /// <summary>Stops following library changes.</summary>
+        public void Dispose()
+        {
+            _library.ItemAdded -= OnItemChanged;
+            _library.ItemUpdated -= OnItemChanged;
+            _library.ItemRemoved -= OnItemChanged;
+        }
+
+        private void OnItemChanged(object? sender, ItemChangeEventArgs e) => Interlocked.Increment(ref _changes);
+
+        /// <summary>
+        /// The library's state now, taken BEFORE reading what is kept under it: an answer read across a change carries the
+        /// state from before it, so it is never served once the change is seen. Null when nothing may be cached.
+        /// </summary>
+        private State? Now() => _revision?.Invoke() is long revision ? new State(revision, Interlocked.Read(ref _changes), Clock()) : null;
+
+        private bool Fresh(State held, State? now) => now is { } n && held.Revision == n.Revision && held.Changes == n.Changes && n.At - held.At < Ttl;
+
+        /// <summary>The library's change marks (its revision, when there is one, and every item event seen).</summary>
+        private (long? Revision, long Changes) Marks() => (_revision?.Invoke(), Interlocked.Read(ref _changes));
+
+        /// <summary>
+        /// Reads <paramref name="read"/> and lets its answer out only when nothing it depends on moved while it ran: the
+        /// library's change marks and, for a viewer's answer (<paramref name="page"/>), the live library topology, both taken
+        /// before the read and again after it. The topology is read again first and the change marks are compared last, so the
+        /// validation itself lies inside the checked interval: a change landing while it runs is seen. A read that crossed a
+        /// change is read again (at most <see cref="Attempts"/> times); one that never settles is withheld (false), so the
+        /// caller links nowhere it can't vouch for. <paramref name="state"/> is the state the published read began under
+        /// (null: nothing may be kept).
+        /// </summary>
+        private bool Settled<T>(Func<T> read, ViewerLinks? page, out T value, out State? state, out string topology)
+        {
+            for (var attempt = 0; attempt < Attempts; attempt++)
+            {
+                var marks = Marks();
+                var at = Clock();
+                string? before = null;
+                if (page != null && (before = page.TopologyNow()) == null) break;
+                var answer = read();
+                var after = page?.TopologyNow();
+                if ((page == null || (after != null && string.Equals(after, before, StringComparison.Ordinal))) && Marks() == marks)
+                {
+                    value = answer;
+                    state = marks.Revision is long revision ? new State(revision, marks.Changes, at) : null;
+                    topology = before ?? string.Empty;
+                    return true;
+                }
+            }
+
+            value = default!;
+            state = null;
+            topology = string.Empty;
+            return false;
+        }
+
+        /// <summary>How many times a read that crossed a library change is read again before it is withheld.</summary>
+        private const int Attempts = 3;
+
+        /// <summary>The library person with this TMDB id (any viewer), with its image tag; kept per library state.</summary>
         private (Guid? Id, string? Tag) LibraryPerson(string name, int tmdb)
         {
             var key = tmdb.ToString(CultureInfo.InvariantCulture) + "|" + name;
-            var revision = _revision?.Invoke();
-            if (revision is long r && _people.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl * 10) return (hit.Id, hit.Tag);
-            Guid? id = null;
-            string? tag = null;
+            if (_people.TryGetValue(key, out var hit) && Fresh(hit.State, Now())) return (hit.Id, hit.Tag);
+            if (!Settled(() => ReadPerson(name, tmdb), null, out var person, out var state, out _)) return (null, null);
+            if (state is { } kept)
+            {
+                if (_people.Count >= MaxEntries) _people.Clear();
+                _people[key] = (kept, person.Id, person.Tag);
+            }
+
+            return person;
+        }
+
+        private (Guid? Id, string? Tag) ReadPerson(string name, int tmdb)
+        {
             try
             {
                 // Jellyfin keys people by name; the TMDB id tells a namesake apart (no id: not the same person).
                 if (_library.GetPerson(name) is { } person
                     && string.Equals(person.GetProviderId(MetadataProvider.Tmdb), tmdb.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal))
                 {
-                    id = person.Id;
-                    if (_images != null && person.GetImageInfo(ImageType.Primary, 0) is { } image) tag = _images.GetImageCacheTag(person, image);
+                    var tag = _images != null && person.GetImageInfo(ImageType.Primary, 0) is { } image ? _images.GetImageCacheTag(person, image) : null;
+                    return (person.Id, tag);
                 }
             }
             catch (Exception)
             {
                 // Not resolvable now: the person's own page.
-                id = null;
-                tag = null;
             }
 
-            if (revision is long now)
-            {
-                if (_people.Count >= MaxEntries) _people.Clear();
-                _people[key] = (now, DateTime.UtcNow, id, tag);
-            }
-
-            return (id, tag);
+            return (null, null);
         }
 
         /// <summary>True when the viewer finds at least one movie or series behind a library genre, studio or tag.</summary>
-        private bool Finds(User viewer, string viewerRevision, string kind, string name, Func<InternalItemsQuery, InternalItemsQuery> filter)
+        private bool Finds(User viewer, string viewerRevision, ViewerLinks page, string kind, string name, Func<InternalItemsQuery, InternalItemsQuery> filter)
         {
             var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, kind, name);
-            var revision = _revision?.Invoke();
-            if (revision is long r && _visible.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Found;
-            bool found;
-            try
+            if (Hit(key, page) is { } kept) return kept;
+            bool Read()
             {
-                // The viewer's own query: their libraries and parental rules, as the list page would apply them.
-                var items = _library.GetItemList(filter(new InternalItemsQuery(viewer)
+                try
                 {
-                    IncludeItemTypes = Titles,
-                    Recursive = true,
-                    Limit = 1,
-                    DtoOptions = new DtoOptions(false),
-                }));
-                found = items != null && items.Count > 0;
-            }
-            catch (Exception)
-            {
-                found = false;
+                    // The viewer's own query: their libraries and parental rules, as the list page would apply them. Only
+                    // existence is asked: ids, with Jellyfin's own user filtering, no item read.
+                    var ids = _library.GetItemIds(filter(new InternalItemsQuery(viewer)
+                    {
+                        IncludeItemTypes = Titles,
+                        Recursive = true,
+                        Limit = 1,
+                        DtoOptions = new DtoOptions(false),
+                    }));
+                    return ids != null && ids.Count > 0;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
             }
 
-            if (revision is long now)
-            {
-                if (_visible.Count >= MaxEntries) _visible.Clear();
-                _visible[key] = (now, DateTime.UtcNow, found);
-            }
-
+            if (!Settled(Read, page, out var found, out var state, out var read)) return false;
+            Keep(key, state, read, found);
             return found;
         }
 
-        /// <summary>True when Jellyfin lets the viewer open this library item (cached like <see cref="Finds"/>).</summary>
-        private bool Opens(User viewer, string viewerRevision, Guid id)
+        /// <summary>True when Jellyfin lets the viewer open this library item (kept like <see cref="Finds"/>).</summary>
+        private bool Opens(User viewer, string viewerRevision, ViewerLinks page, Guid id)
         {
             var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, "open", id.ToString("N", CultureInfo.InvariantCulture));
-            var revision = _revision?.Invoke();
-            if (revision is long r && _visible.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Found;
-            bool opens;
-            try
+            if (Hit(key, page) is { } kept) return kept;
+            bool Read()
             {
-                opens = _library.GetItemById<BaseItem>(id, viewer) != null;
-            }
-            catch (Exception)
-            {
-                opens = false;
-            }
-
-            if (revision is long now)
-            {
-                if (_visible.Count >= MaxEntries) _visible.Clear();
-                _visible[key] = (now, DateTime.UtcNow, opens);
+                try
+                {
+                    return _library.GetItemById<BaseItem>(id, viewer) != null;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
             }
 
+            if (!Settled(Read, page, out var opens, out var state, out var read)) return false;
+            Keep(key, state, read, opens);
             return opens;
         }
 
-        /// <summary>The library's genre or studio of this name (never created), or null; cached per library revision.</summary>
+        /// <summary>
+        /// A kept visibility answer, only while the live library topology (read now, for this very answer) is the one it was
+        /// read under and the library's state hasn't moved since (taken after that topology read). Null: read it.
+        /// </summary>
+        private bool? Hit(string key, ViewerLinks page)
+        {
+            if (!_visible.TryGetValue(key, out var hit)) return null;
+            var topology = page.TopologyNow();
+            return topology != null && string.Equals(hit.Topology, topology, StringComparison.Ordinal) && Fresh(hit.State, Now()) ? hit.Found : null;
+        }
+
+        private void Keep(string key, State? state, string topology, bool found)
+        {
+            if (state is not { } kept) return;
+            if (_visible.Count >= MaxEntries)
+            {
+                var now = Now();
+                foreach (var held in _visible.ToArray())
+                {
+                    if (!Fresh(held.Value.State, now)) _visible.TryRemove(held.Key, out _);
+                }
+
+                // Still full of live answers: start over (each refills at one read per name).
+                if (_visible.Count >= MaxEntries) _visible.Clear();
+            }
+
+            _visible[key] = (kept, topology, found);
+        }
+
+        /// <summary>The library's genre or studio of this name (never created), or null; kept per library state.</summary>
         private Guid? LibraryName(string name, bool genre)
         {
             var key = (genre ? "g|" : "s|") + name;
-            var revision = _revision?.Invoke();
-            if (revision is long r && _names.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl * 10) return hit.Id;
-            Guid? found;
-            try
+            if (_names.TryGetValue(key, out var hit) && Fresh(hit.State, Now())) return hit.Id;
+            Guid? Read()
             {
-                var id = genre ? _library.GetGenreId(name) : _library.GetStudioId(name);
-                var item = _library.GetItemById(id);
-                found = genre ? (item is Genre ? id : null) : (item is Studio ? id : null);
-            }
-            catch (Exception)
-            {
-                found = null;
+                try
+                {
+                    var id = genre ? _library.GetGenreId(name) : _library.GetStudioId(name);
+                    var item = _library.GetItemById(id);
+                    return genre ? (item is Genre ? id : null) : (item is Studio ? id : null);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
             }
 
-            if (revision is long now)
+            if (!Settled(Read, null, out var found, out var state, out _)) return null;
+            if (state is { } kept)
             {
                 if (_names.Count >= MaxEntries) _names.Clear();
-                _names[key] = (now, DateTime.UtcNow, found);
+                _names[key] = (kept, found);
             }
 
             return found;
         }
+
+        /// <summary>The library state an answer was read under: the library revision, the item changes seen, and when.</summary>
+        private readonly record struct State(long Revision, long Changes, DateTime At);
 
         private sealed class ViewerLinks : ITitleLinks
         {
@@ -230,20 +334,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 _discovery = discovery;
             }
 
+            /// <summary>
+            /// The library topology read now, for every visibility answer of this page (a kept one or a read): removing a
+            /// location or disabling a library changes what the viewer finds without any item event, also between two names
+            /// of one page. Null when it can't be read: then no library link is vouched for.
+            /// </summary>
+            internal string? TopologyNow()
+            {
+                try
+                {
+                    return Acquire.ArrJellyfinView.TopologyOf(_owner._library);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
             public (Guid Id, string? ImageTag)? Person(string name, int tmdb)
             {
                 if (string.IsNullOrWhiteSpace(name) || tmdb <= 0) return null;
                 var (id, tag) = _owner.LibraryPerson(name, tmdb);
                 if (id is not { } found) return null;
                 // Jellyfin's own check for the viewer (the person page native would open).
-                return _owner.Opens(_viewer, _revision, found) ? (found, tag) : null;
+                return _owner.Opens(_viewer, _revision, this, found) ? (found, tag) : null;
             }
 
             public Guid? Genre(string name, int tmdb)
             {
                 if (string.IsNullOrWhiteSpace(name)) return null;
                 if (_owner.LibraryName(name, genre: true) is { } id
-                    && _owner.Finds(_viewer, _revision, "genre", name, q => { q.GenreIds = new[] { id }; return q; }))
+                    && _owner.Finds(_viewer, _revision, this, "genre", name, q => { q.GenreIds = new[] { id }; return q; }))
                 {
                     return id;
                 }
@@ -255,7 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 if (string.IsNullOrWhiteSpace(name)) return null;
                 if (_owner.LibraryName(name, genre: false) is { } id
-                    && _owner.Finds(_viewer, _revision, "studio", name, q => { q.StudioIds = new[] { id }; return q; }))
+                    && _owner.Finds(_viewer, _revision, this, "studio", name, q => { q.StudioIds = new[] { id }; return q; }))
                 {
                     return id;
                 }
@@ -268,7 +389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 if (string.IsNullOrWhiteSpace(name)) return false;
                 // The tag page shows the viewer's tagged items and, with tag discovery, the tag's row.
-                return _discovery.Tags || _owner.Finds(_viewer, _revision, "tag", name, q => { q.Tags = new[] { name }; return q; });
+                return _discovery.Tags || _owner.Finds(_viewer, _revision, this, "tag", name, q => { q.Tags = new[] { name }; return q; });
             }
         }
     }

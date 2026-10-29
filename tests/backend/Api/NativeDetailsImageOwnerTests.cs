@@ -1,3 +1,5 @@
+#if JF12
+// The image metadata owner is part of the native-details pages, which the plugin compiles for Jellyfin 12 only (JF12).
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 
 namespace JE.Tests;
@@ -71,3 +73,4 @@ public class NativeDetailsImageOwnerTests
         Assert.Equal(0, owner.Count);
     }
 }
+#endif

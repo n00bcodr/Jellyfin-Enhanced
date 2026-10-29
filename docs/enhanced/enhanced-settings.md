@@ -13,7 +13,7 @@ The Enhanced panel lets you choose how Jellyfin Enhanced works for your account.
 - In Jellyfin 12's Modern layout, open your avatar menu and choose **Jellyfin Enhanced**.
 - If you have a sidebar, choose **Enhanced Panel** under **Jellyfin Enhanced**.
 - In Jellyfin's user preferences menu, choose **Jellyfin Enhanced - User Settings**.
-- Press ++question++ outside an input or textarea. This works even when the administrator disables ordinary keyboard shortcuts.
+- Press ++question++ outside an input or textarea (and while no JE window, such as the **More** menu, is open). This works even when the administrator disables ordinary keyboard shortcuts.
 
 **How to open it on a phone:**
 

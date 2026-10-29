@@ -273,13 +273,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A movie or episode status with how many versions Jellyfin plays its item from for the viewer (none for a
         /// missing one): only versions whose own item they can open count (a version in a library they can't open, or
         /// above their parental limit, isn't theirs, and its arrival tells them nothing). Sources are read only when
-        /// Jellyfin has more than one.
+        /// Jellyfin has more than one. The same versions give <see cref="TitleStatus.VersionsFingerprint"/>.
         /// </summary>
         private TitleStatus WithVersions(TitleStatus status, JfItemRef item, StatusViewer viewer)
         {
-            if (item.Kind is "movie" or "episode" && EditionAvailability.Plays(item) && item.Versions > 0)
-                status.Versions = item.Versions > 1 ? Math.Max(1, Editions.Item(viewer, item.ItemId, Edition.Any).Select(h => h.PlayableItemId).Distinct().Count()) : item.Versions;
+            if (item.Kind is not ("movie" or "episode") || !EditionAvailability.Plays(item) || item.Versions <= 0) return status;
+            var versions = item.Versions > 1
+                ? Editions.Item(viewer, item.ItemId, Edition.Any).GroupBy(h => h.PlayableItemId).Select(g => (Id: g.Key, g.First().Source.Size)).ToList()
+                : new();
+            // Counted at least once: the item's own file (as when Jellyfin keeps just one).
+            if (versions.Count == 0) versions.Add((item.ItemId, item.Size));
+            status.Versions = item.Versions > 1 ? versions.Count : item.Versions;
+            status.VersionsFingerprint = VersionsFingerprint(versions);
             return status;
+        }
+
+        /// <summary>A short stable hash of a set of versions: each one's item id and file size, in id order.</summary>
+        internal static string VersionsFingerprint(IEnumerable<(Guid Id, long? Size)> versions)
+        {
+            var text = string.Join(";", versions.Select(v => v.Id.ToString("N", CultureInfo.InvariantCulture) + ":" + (v.Size?.ToString(CultureInfo.InvariantCulture) ?? "-"))
+                .OrderBy(v => v, StringComparer.Ordinal));
+            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)), 0, 8);
         }
 
         /// <summary>The details-page status of one resolved item from gathered facts (no caching).</summary>

@@ -1045,8 +1045,12 @@ public class IntegrationArrStateTests
         using var arr = Rig(out var radarr, out _);
         radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
         var store = arr.Store(Path.Combine(arr.Plugin.Core.Root, "arr-state"));
+        // F25: the disposal budget runs on a manual clock and each disposal on a thread of its own, so the budget ends
+        // when the test moves the clock, never when a busy host's thread pool gets round to a timer or a Task.Run.
+        var clock = new ListsImportScoringTests.ManualClock();
         store.DisposeWait = TimeSpan.FromMilliseconds(25);
-        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger) { DisposeWait = TimeSpan.FromMilliseconds(25) };
+        store.DisposeClock = clock;
+        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger) { DisposeWait = TimeSpan.FromMilliseconds(25), DisposeClock = clock };
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var release = new ManualResetEventSlim();
         store.LibraryCacheWritingHook = () =>
@@ -1058,13 +1062,29 @@ public class IntegrationArrStateTests
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.Run(() =>
+            var disposal = OwnThread(() =>
             {
                 if (throughReconciler) reconciler.Dispose();
                 else store.Dispose();
-            }).WaitAsync(TimeSpan.FromSeconds(1));
+            });
+            // The disposal waits on its one budget while the writer is held; only the budget's end lets it return.
+            SpinWait.SpinUntil(() => clock.Pending > 0 || disposal.IsCompleted, TimeSpan.FromSeconds(5));
+            Assert.False(disposal.IsCompleted, "disposal waits on its budget");
+            Assert.Equal(1, clock.Pending);
+            clock.AdvanceTo(clock.GetUtcNow() + TimeSpan.FromMilliseconds(25));
+            await disposal.WaitAsync(TimeSpan.FromSeconds(1));
             Assert.False(store.StopAsync().IsCompleted);
-            await Task.Run(() => { reconciler.Dispose(); store.Dispose(); }).WaitAsync(TimeSpan.FromSeconds(1));
+            var again = OwnThread(() => { reconciler.Dispose(); store.Dispose(); });
+            if (!throughReconciler)
+            {
+                // The reconciler's own first disposal spends its budget once; the store's spent budget is not started again.
+                SpinWait.SpinUntil(() => clock.Pending > 0 || again.IsCompleted, TimeSpan.FromSeconds(5));
+                Assert.Equal(1, clock.Pending);
+                clock.AdvanceTo(clock.GetUtcNow() + TimeSpan.FromMilliseconds(25));
+            }
+            // Through the reconciler, neither budget is started again (a new one would never end on this clock).
+            await again.WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.Equal(0, clock.Pending);
         }
         finally
         {
@@ -1073,6 +1093,10 @@ public class IntegrationArrStateTests
             await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
         }
     }
+
+    /// <summary>Runs <paramref name="action"/> on a dedicated thread (no thread-pool queueing before it starts).</summary>
+    private static Task OwnThread(Action action)
+        => Task.Factory.StartNew(action, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     [Theory]
     [InlineData("never-started")]

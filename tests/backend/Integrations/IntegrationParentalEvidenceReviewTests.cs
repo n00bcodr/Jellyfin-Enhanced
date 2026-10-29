@@ -734,7 +734,11 @@ public class IntegrationParentalEvidenceReviewTests
     [Theory]
     [InlineData("ProxyTmdbRequest")] [InlineData("Title")] [InlineData("Season")] [InlineData("Ratings")]
     [InlineData("Related")] [InlineData("Filmography")] [InlineData("Discover")] [InlineData("Collection")]
-    [InlineData("native-item")] [InlineData("native-episodes")] [InlineData("native-image")] [InlineData("stable")]
+    [InlineData("native-item")] [InlineData("native-episodes")] [InlineData("stable")]
+#if JF12
+    // The native facade's synthetic artwork (Image/GetItemImage for an absent title) is Jellyfin 12 only.
+    [InlineData("native-image")]
+#endif
     public void FinalHttpPublicationRejectsEvidenceChangedAfterAdmission(string action)
     {
         using var r = new Rig();
@@ -971,9 +975,12 @@ public class IntegrationParentalEvidenceReviewTests
 
     // Adopted reviewer schedules. The original 503 oracle is retained in reviewer-original-before.trx (3 red/3 controls).
     // With the writer barrier, the earlier response must finish under US before the external writer may select AU.
+#if JF12
+    // Runs Jellyfin 12.2's own ResponseTimeMiddleware (the pinned release's Jellyfin.Api, .NET 10): not loadable on 10.11.
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public Task R5RealJellyfinTimingCallbackMustNotOutliveTheOwner(bool revokeAtCommit) => R5WriterWitness("jellyfin", revokeAtCommit);
+#endif
 
     [Theory]
     [InlineData(false)] [InlineData(true)]
@@ -1694,6 +1701,8 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.NotEmpty(await response.Content.ReadAsByteArrayAsync());
     }
 
+#if JF12
+    // Runs Jellyfin 12.2's own ExceptionMiddleware (the pinned release's Jellyfin.Api, .NET 10): not loadable on 10.11.
     [Theory]
     [InlineData(false, false)] [InlineData(true, false)]
     [InlineData(false, true)] [InlineData(true, true)]
@@ -1730,6 +1739,7 @@ public class IntegrationParentalEvidenceReviewTests
         Assert.True((int)response.StatusCode == 500, $"Jellyfin 12.2 ExceptionMiddleware: owner={ownerEnabled}, delivered {(int)response.StatusCode}");
         Assert.Equal("Error processing request.", await response.Content.ReadAsStringAsync());
     }
+#endif
 
 }
 

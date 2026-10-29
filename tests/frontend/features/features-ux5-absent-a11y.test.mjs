@@ -342,3 +342,193 @@ test('UX5R-2 control: a library page shown after an absent one keeps the title\'
   assert.equal(h.page.querySelectorAll('[data-je-absent]').length, 0, 'no absent marks left behind');
   for (const ends of h.page.querySelectorAll('.endsAt')) assert.equal(shown(h, ends), true);
 });
+
+// ------------------------------------------------------------------ Phase 2 batch 3 UI leftovers (F54, F56, F58)
+
+/** The panel's Hidden Content wiring alone, with a Manage button, in the delivery mode `config` names. */
+function manageButton(t, config, { html = '', apiClient } = {}) {
+  const h = createHarness({
+    html: `${html}<button id="manageHiddenContentBtn">Manage</button>`,
+    JE: { pluginConfig: { HiddenContentEnabled: true, ...config }, t: key => key, nativeTabs: { register() {} } },
+    ...(apiClient ? { apiClient } : {}),
+  });
+  t.after(() => h.close());
+  const calls = { pages: 0, manager: 0 };
+  h.JE.hiddenContent = { updateSettings() {}, getSettings: () => ({}), showManagementPanel() { calls.manager++; } };
+  h.JE.hiddenContentPage = { showPage() { calls.pages++; } };
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  h.JE.internals.enhancedUi.wireHiddenContentListeners({ resetAutoCloseTimer() {} });
+  return { ...h, calls, button: h.document.getElementById('manageHiddenContentBtn') };
+}
+
+test('F54: in Plugin Pages mode Manage hidden content opens the companion\'s Hidden Content page', async t => {
+  const href = '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage';
+  const h = manageButton(t, { HiddenContentUsePluginPages: true },
+    { html: `<div class="mainDrawer"><a is="emby-linkbutton" data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage" href="${href}" data-plugin-pages="true">Hidden Content</a></div>` });
+  h.click(h.button);
+  await settle();
+  assert.equal(h.window.location.hash, href);
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+test('F54: in Plugin Pages mode on Jellyfin 12\'s Modern layout (the companion\'s entry is a user-menu item) Manage opens that page', async t => {
+  const href = '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage';
+  const h = manageButton(t, { HiddenContentUsePluginPages: true },
+    { html: `<div role="menu" hidden><a class="MuiMenuItem-root" role="menuitem" href="#/userpluginsettings.html?pageUrl=/Other/page" data-plugin-pages="true">Other</a><a class="MuiMenuItem-root" role="menuitem" href="${href}" data-plugin-pages="true">Hidden Content</a></div>` });
+  h.click(h.button);
+  await settle();
+  assert.equal(h.window.location.hash, href);
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+test('F54 control: in Plugin Pages mode with no companion entry drawn, Manage opens JE\'s own page (which then shows)', async t => {
+  const h = manageButton(t, { HiddenContentUsePluginPages: true });
+  h.click(h.button);
+  await settle();
+  assert.deepEqual(h.calls, { pages: 1, manager: 0 });
+});
+
+test('F54: in Custom Tabs mode Manage hidden content opens the Home tab whose entry holds the Hidden Content marker', async t => {
+  const reads = [];
+  const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: {
+    getUrl: path => `http://jellyfin.test/${path}`,
+    fetch: async (request) => { reads.push(request.url); return [{ Id: 'b00k', Title: 'Bookmarks', ContentHtml: '<div class="sections bookmarks"></div>' }, { Id: 'h1dd3n', Title: 'Hidden', ContentHtml: '<div class="jellyfinenhanced hidden-content"></div>' }]; },
+  } });
+  h.click(h.button);
+  await settle();
+  assert.deepEqual(reads, ['http://jellyfin.test/CustomTabs/Config']);
+  assert.equal(h.window.location.hash, '#/home?tab=3&ctTab=h1dd3n', 'Custom Tabs puts its entries at tab 2 onwards, in order, as its own links name them');
+  assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+});
+
+for (const [name, fetch] of [['no entry holds the marker', async () => [{ ContentHtml: '<div class="sections bookmarks"></div>' }]], ['the entries can\'t be read', async () => { throw new Error('403'); }]]) {
+  test(`F54: in Custom Tabs mode, when ${name}, Manage hidden content opens the manager window`, async t => {
+    const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: { getUrl: path => path, fetch } });
+    const before = h.window.location.hash;
+    h.click(h.button);
+    await settle();
+    assert.equal(h.window.location.hash, before);
+    assert.deepEqual(h.calls, { pages: 0, manager: 1 });
+  });
+}
+
+test('F56 (UX5R-3 probe): the fallback Hidden Content manager is on top of the settings panel both on the stack and as painted', async t => {
+  const h = panelPage(t);
+  h.JE.pluginConfig.HiddenContentEnabled = true;
+  h.JE.hiddenContent = { getSettings: () => ({}), getHiddenCount: () => 0 };
+  h.JE.internals.hiddenContent = { getHiddenData: () => ({ items: {} }) };
+  h.JE.helpers = { addCSS: (id, css) => { const style = h.document.createElement('style'); style.textContent = css; h.document.head.append(style); } };
+  h.load('enhanced/hiddencontent/hidden-content-styles.js');
+  h.JE.internals.hiddenContent.injectCSS();
+  h.load('enhanced/hiddencontent/hidden-content-panel.js');
+  const panel = await openPanel(h);
+  const opener = panel.querySelector('#manageHiddenContentBtn'); opener.focus();
+  h.pressIn(opener, e => h.JE.internals.hiddenContent.showManagementPanel(e)); await settle();
+  const overlay = h.document.querySelector('.je-hidden-management-overlay');
+  assert.ok(h.JE.isTopmostSurface(overlay));
+  assert.ok(panel.hasAttribute('inert'));
+  const overlayZ = Number(h.window.getComputedStyle(overlay).zIndex), panelZ = Number(h.window.getComputedStyle(panel).zIndex);
+  assert.ok(overlayZ > panelZ, `manager z-index ${overlayZ} must exceed settings ${panelZ}`);
+});
+
+// F58 (UX5R2-2 probes, ported): a mark lasts only while its reason does.
+test('F58: a row that loses its id loses its absent mark', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  assert.ok(row.hasAttribute('data-je-absent'));
+  row.removeAttribute('data-id'); await settle(3);
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'unidentified row retained absent classification');
+  // The same synthetic id back: marked again.
+  row.dataset.id = h.JE.titleDetails.syntheticId('episode', 1437, 1, 2); await settle(3);
+  assert.ok(row.hasAttribute('data-je-absent'));
+});
+
+test('F58: a marked row moved under a library card can\'t hide that card\'s estimate', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  const card = h.document.createElement('div'); card.className = 'card'; card.dataset.id = '1234567890abcdef1234567890abcdef';
+  h.page.append(card); row.removeAttribute('data-id'); card.append(row); await settle(3);
+  assert.equal(shown(h, row.querySelector('.endsAt')), true, 'stale absent descendant hides physical-card estimate');
+});
+
+test('F58: a marked row taken off the page keeps no mark, during the page and after it is disposed', async t => {
+  const h = await episodePage(t, 'season');
+  const row = h.page.querySelector('.listItem');
+  const line = h.page.querySelector('.itemMiscInfo-primary');
+  assert.ok(line.hasAttribute('data-je-absent'));
+  row.remove(); await settle(3);
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'detached while the page is shown');
+  const detachedLine = line; detachedLine.remove();
+  h.window.location.hash = '#/details?id=1234567890abcdef1234567890abcdef';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(row.hasAttribute('data-je-absent'), false, 'detached row retained a mark across page disposal');
+  assert.equal(detachedLine.hasAttribute('data-je-absent'), false, 'detached information line keeps no mark');
+});
+
+// ------------------------------------------------------------------ fix round 2 (review ULR-1, ULR-4, ULR-5), the reviewer's probes
+
+test('ULR-4: a link with JE\'s Plugin Pages entry id that names another pageUrl goes to JE\'s own page, never that one', async t => {
+  const h = manageButton(t, { HiddenContentUsePluginPages: true }, { html: '<a data-itemid="Jellyfin.Plugin.JellyfinEnhanced.HiddenContentPage" href="#/userpluginsettings.html?pageUrl=/OtherPlugin/page">Hidden Content</a>' });
+  h.click(h.button); await settle();
+  assert.equal(h.window.location.hash, '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage');
+});
+
+for (const href of ['#/userpluginsettings.html?pageUrl=/OtherPlugin/page&return=/JellyfinEnhanced/hiddenContentPage',
+  '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPage&pageUrl=/OtherPlugin/page',
+  '#/userpluginsettings.html?pageUrl=/JellyfinEnhanced/hiddenContentPageX', '#/userpluginsettings.htmlx?pageUrl=/JellyfinEnhanced/hiddenContentPage',
+  '#/userpluginsettings.html?pageUrl=/OtherPlugin/JellyfinEnhanced/hiddenContentPage']) {
+  test(`ULR-4: a Modern-layout menu link must name JE's page exactly (${href.slice(26, 80)})`, async t => {
+    const h = manageButton(t, { HiddenContentUsePluginPages: true }, { html: `<a href="${href}">Other page</a>` });
+    const before = h.window.location.hash;
+    h.click(h.button); await settle();
+    assert.ok(!h.window.location.hash.includes('/OtherPlugin/') && h.window.location.hash !== href, `went to ${h.window.location.hash}`);
+    assert.equal(h.window.location.hash, before, 'no companion entry for JE\'s page: JE\'s own page');
+    assert.deepEqual(h.calls, { pages: 1, manager: 0 });
+  });
+}
+
+test('ULR-4 control: JE\'s page under the server\'s base path (older Plugin Pages) is accepted, rebuilt by JE', async t => {
+  const h = manageButton(t, { HiddenContentUsePluginPages: true }, { html: '<a href="#/userpluginsettings.html?pageUrl=/jf/JellyfinEnhanced/hiddenContentPage">Hidden Content</a>',
+    apiClient: { serverAddress: () => 'http://jellyfin.test/jf' } });
+  h.click(h.button); await settle();
+  assert.equal(h.window.location.hash, '#/userpluginsettings.html?pageUrl=/jf/JellyfinEnhanced/hiddenContentPage');
+});
+
+test('ULR-4 control: the Custom Tabs entry id is encoded, its markup inert, and closing the panel while it is read leaves no late navigation', async t => {
+  let resolve; const answer = new Promise(r => { resolve = r; });
+  const h = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: { getUrl: p => p, fetch: () => answer } });
+  const before = h.window.location.hash; h.click(h.button); h.button.remove();
+  resolve([{ Id: 'x&ctTab=other#/outside', ContentHtml: '<div class="jellyfinenhanced hidden-content"></div><script>throw Error("ran")</script>' }]);
+  await settle(); assert.equal(h.window.location.hash, before); assert.deepEqual(h.calls, { pages: 0, manager: 0 });
+  const id = 'x&ctTab=other#/outside';
+  const h2 = manageButton(t, { HiddenContentUseCustomTabs: true }, { apiClient: { getUrl: p => p, fetch: async () => [{ Id: id, ContentHtml: '<div class="jellyfinenhanced hidden-content"></div><script>window.executed=true;</script><img src="http://never.test/image">' }] } });
+  h2.click(h2.button); await settle();
+  assert.equal(h2.window.location.hash, '#/home?tab=2&ctTab=' + encodeURIComponent(id)); assert.equal(h2.window.executed, undefined);
+});
+
+for (const mode of ['no marker', 'read failure']) test(`ULR-1: the real manager window opened after a Custom Tabs ${mode} is an admitted surface above the settings panel, taking input`, async t => {
+  const h = panelPage(t);
+  Object.assign(h.JE.pluginConfig, { HiddenContentEnabled: true, HiddenContentUseCustomTabs: true });
+  h.JE.hiddenContent = { updateSettings() {}, getSettings: () => ({}), getHiddenCount: () => 0 };
+  h.JE.internals.hiddenContent = { getHiddenData: () => ({ items: {} }) };
+  h.load('enhanced/hiddencontent/hidden-content-panel.js');
+  h.JE.hiddenContent.showManagementPanel = h.JE.internals.hiddenContent.showManagementPanel;
+  h.window.ApiClient.getUrl = p => p;
+  h.window.ApiClient.fetch = async () => { if (mode === 'read failure') throw Error('unavailable'); return []; };
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  const panel = await openPanel(h);
+  const opener = panel.querySelector('#manageHiddenContentBtn'); opener.focus();
+  h.click(opener); await settle();
+  const overlay = h.document.querySelector('.je-hidden-management-overlay');
+  assert.ok(overlay, 'fallback exists');
+  assert.ok(h.JE.isTopmostSurface(overlay), 'fallback must be admitted above the settings panel; ' + JSON.stringify({ overlayInert: !!overlay.closest('[inert]'), panelOnTop: h.JE.isTopmostSurface(panel), owner: !!h.JE.scopeOf(overlay) }));
+  assert.equal(overlay.closest('[inert]'), null, 'fallback must take input');
+});
+
+test('ULR-5: a detached synthetic row is marked again when it is put back unchanged', async t => {
+  const h = await episodePage(t, 'season'); const row = h.page.querySelector('.listItem'); const parent = row.parentNode;
+  assert.ok(row.hasAttribute('data-je-absent')); row.remove(); await settle(3); assert.equal(row.hasAttribute('data-je-absent'), false);
+  parent.append(row); await settle(3);
+  assert.ok(row.hasAttribute('data-je-absent'), 'the same still-synthetic row must be classified again; endsAtShown=' + shown(h, row.querySelector('.endsAt')));
+  assert.equal(shown(h, row.querySelector('.endsAt')), false);
+});

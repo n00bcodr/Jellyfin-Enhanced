@@ -1,3 +1,6 @@
+#if JF12
+// Partial of ApiNativeDetailsTests, whose rig and the native-details pages it drives are Jellyfin 12 only (the plugin
+// compiles them under JF12), like the rest of that class.
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
@@ -157,3 +160,4 @@ public partial class ApiNativeDetailsTests
         finally { rig.Release(); await Task.WhenAll(held).WaitAsync(TimeSpan.FromSeconds(20)); }
     }
 }
+#endif

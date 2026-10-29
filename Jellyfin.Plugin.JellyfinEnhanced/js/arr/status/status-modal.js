@@ -108,7 +108,7 @@
                 manage.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    JE.arrManage.open({ key: status.key }, { operation: JE.ownerOf(e) });
+                    JE.arrManage.open({ key: status.key, name: state.name }, { operation: JE.ownerOf(e) });
                 });
                 mount.appendChild(manage);
             }
@@ -131,7 +131,7 @@
         const { modal, data, mediaType } = e.detail || {};
         const key = keyOf(data, mediaType);
         if (!modal || !key) return;
-        current = { modal, key, controller: new AbortController(), unsubscribe: null, reads: JE.latestIntent() };
+        current = { modal, key, name: data?.title || data?.name || '', controller: new AbortController(), unsubscribe: null, reads: JE.latestIntent() };
         update(current);
     }
 

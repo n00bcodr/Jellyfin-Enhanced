@@ -584,6 +584,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// live configuration inside it (<see cref="MutateConfiguration(Func{PluginConfiguration, bool})"/>, or the request
         /// services' own locked blocks), so no copy taken before a write can put back what that write changed, and no write
         /// lands on a configuration that is about to be replaced.
+        /// Lock order: this is the outer lock and EffectiveRequestsBackend's monitor the inner one. Code holding this lock
+        /// may read the backend; code holding the backend monitor never takes this lock (ListMetadataEpoch.Publish takes
+        /// it first).
         /// </summary>
         internal static readonly object ConfigurationLock = new object();
 

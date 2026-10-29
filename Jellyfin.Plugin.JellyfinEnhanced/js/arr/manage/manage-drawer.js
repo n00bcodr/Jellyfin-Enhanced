@@ -174,7 +174,8 @@
 
     /**
      * Opens the drawer for a Jellyfin item or a title key.
-     * @param {{itemId?: string, key?: string}} target What to manage.
+     * @param {{itemId?: string, key?: string, name?: string}} target What to manage (`name`: the title's name as the
+     *     opener shows it, for the heading while no arr names the title).
      * @param {{operation: Object|Node|Event}} options The owner (required, D46S2-R6): the operation a title action
      *     submitted, a viewer's native owner, or the node or press it comes from. The drawer reads, shows and writes only while it is
      *     current, and closes once it isn't.
@@ -329,8 +330,12 @@
         const focused = hadFocus ? document.activeElement.dataset?.jeFocus : null;
         root.textContent = '';
         const head = el('div', 'je-manage-head');
-        const titleText = data ? [data.title || data.key, scopeText(data)].filter(Boolean).join(' · ') : '';
-        head.appendChild(el('h2', 'je-manage-title', data ? tr('arr_manage_title', { title: titleText }) : tr('arr_manage_button')));
+        // The arr's name for the title, else the opener's; never the title key (a title no arr has yet has no name in
+        // the overview): without a name the heading is the plain "Manage".
+        const target = current?.root === root ? current.target : null;
+        const name = data?.title || (typeof target?.name === 'string' ? target.name.trim() : '');
+        const titleText = data ? [name, scopeText(data)].filter(Boolean).join(' · ') : '';
+        head.appendChild(el('h2', 'je-manage-title', titleText ? tr('arr_manage_title', { title: titleText }) : tr('arr_manage_button')));
         const closeBtn = el('button', 'je-manage-close');
         closeBtn.type = 'button';
         closeBtn.dataset.jeFocus = 'close';
@@ -1183,8 +1188,10 @@
         button.appendChild(content);
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            // The press's owner: the operation a title action pressed it for, else the page (native).
-            open(absent ? { key } : { itemId }, { operation: JE.ownerOf(e) });
+            // The press's owner: the operation a title action pressed it for, else the page (native). The page's title is the
+            // heading's name while no arr names the title.
+            const name = page.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent?.trim() || '';
+            open({ ...(absent ? { key } : { itemId }), name }, { operation: JE.ownerOf(e) });
         });
         host.appendChild(button);
     }

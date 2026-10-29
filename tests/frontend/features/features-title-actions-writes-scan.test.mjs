@@ -104,7 +104,7 @@ const PLANTED = {
   'a loading shell opened without its owner': ['arr/actions/title-actions-hosts.js',
     s => s.replace('const shell = A.pending(opener, opening, { mount: action, onClose: () => A.finish(opening) });', 'const shell = A.pending(opener);'), /title-actions-hosts\.js:\d+ pending\(…\) without an owner/],
   'a Manage drawer opened without its operation': ['arr/actions/title-actions.js',
-    s => s.replace('JE.arrManage.open({ key: c.key }, { operation: submitted })', 'JE.arrManage.open({ key: c.key })'), /title-actions\.js:\d+ open\(…\) without an owner/],
+    s => s.replace('JE.arrManage.open({ key: c.key, name: displayName() }, { operation: submitted })', 'JE.arrManage.open({ key: c.key, name: displayName() })'), /title-actions\.js:\d+ open\(…\) without an owner/],
   'a native caller dropping its owner (Remove dialog from the hub)': ['arr/admin/admin-tabs.js',
     s => s.replace("        if (action === 'remove') removeDialog(target, busyId, opener, false, undefined, owner);", "        if (action === 'remove') removeDialog(target, busyId, opener, false);"), /admin-tabs\.js:\d+ removeDialog\(…\) without an owner/],
   'a forwarded owner dropped by its caller (Hide confirmation via a parameter)': ['enhanced/hiddencontent/hidden-content-buttons.js',

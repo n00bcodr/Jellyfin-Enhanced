@@ -472,6 +472,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public int? Versions { get; set; }
 
         /// <summary>
+        /// With <see cref="Versions"/>: a fingerprint of the versions counted (each one's own item and file size), so an open
+        /// page can tell a different set of versions with the same count (one removed and another added). Absent otherwise.
+        /// </summary>
+        public string? VersionsFingerprint { get; set; }
+
+        /// <summary>
         /// On a movie details status: true when a copy the viewer can open (this one or another library's) already
         /// has a playable 4K source, so the page doesn't offer "Get 4K". Absent otherwise.
         /// </summary>

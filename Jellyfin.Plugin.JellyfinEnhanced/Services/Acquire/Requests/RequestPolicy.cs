@@ -80,6 +80,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Evaluates visibility at a stored request's persisted target, retaining current capability checks.</summary>
         RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey) => Evaluate(userId, RequestDestination.Of(input, targetKey));
         /// <summary>
+        /// <see cref="Evaluate(Guid, MutationInput)"/> for a person the caller has just read: that read is the evaluation's
+        /// first one (they are not read again for it), and the final stamp still reads them fresh. <paramref name="current"/>
+        /// is true when that final read confirmed it: every authorization fact of the person as the caller read them is the
+        /// person's now. False means the facts came from fresh reads alone, or a policy that can't tell.
+        /// </summary>
+        /// <param name="viewer">The person, as the caller read them.</param>
+        /// <param name="input">The request.</param>
+        /// <param name="current">Whether the caller's read was confirmed current.</param>
+        /// <returns>The facts.</returns>
+        RequestPolicyFacts Evaluate(User viewer, MutationInput input, out bool current)
+        {
+            current = false;
+            return Evaluate(viewer.Id, input);
+        }
+        /// <summary>
         /// The Sonarr/Radarr instance and connection a Jellyfin Enhanced-mode request like <paramref name="input"/>
         /// goes to, whatever handles requests right now (a move from Seerr records its links on that target before
         /// it switches; Seerr-mode facts carry no instance).
@@ -244,18 +259,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct)
             => _backend.PrepareAsync(userId, movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } }, ct);
         /// <inheritdoc />
-        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input) => EvaluateCore(userId, input, null);
+        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input) => EvaluateCore(userId, input, null, null, out _);
         /// <inheritdoc />
         public RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey)
-            => EvaluateCore(userId, RequestDestination.Of(input, targetKey), targetKey);
-        private RequestPolicyFacts EvaluateCore(Guid userId, MutationInput input, string? targetKey)
+            => EvaluateCore(userId, RequestDestination.Of(input, targetKey), targetKey, null, out _);
+        /// <inheritdoc />
+        public RequestPolicyFacts Evaluate(User viewer, MutationInput input, out bool current)
+        {
+            current = false;
+            // A disabled person (or a view that can't wrap a read) is decided from fresh reads alone.
+            return _view.ViewerAsRead(viewer) is { } held ? EvaluateCore(viewer.Id, input, null, held, out current) : EvaluateCore(viewer.Id, input, null, null, out _);
+        }
+        private RequestPolicyFacts EvaluateCore(Guid userId, MutationInput input, string? targetKey, StatusViewer? held, out bool current)
         {
             RequestPolicyFacts? facts = null;
+            current = false;
             for (var attempt = 0; attempt < 3; attempt++)
             {
-                var before = AuthorizationStamp(userId, input);
-                facts = EvaluateOnce(userId, input, targetKey);
-                if (before == AuthorizationStamp(userId, input)) return facts;
+                // One read of the person serves the first stamp and the evaluation (on the first attempt, the caller's own
+                // read when it has one); the final stamp always reads them again, and only a match keeps the facts.
+                var viewer = attempt == 0 && held != null ? held : _view.Viewer(userId);
+                var before = AuthorizationStamp(userId, input, viewer);
+                facts = EvaluateOnce(userId, input, targetKey, viewer);
+                if (before == AuthorizationStamp(userId, input))
+                {
+                    current = attempt == 0 && held != null;
+                    return facts;
+                }
             }
             return facts! with { Refusal = "authorization_changed", CanCreate = false, CanApprove = false, Can4k = false, Visible = false };
         }
@@ -263,9 +293,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public string EvidenceRevision => _parental?.EvidenceRevision ?? "-";
 
         /// <inheritdoc />
-        public string AuthorizationStamp(Guid user, MutationInput input)
+        public string AuthorizationStamp(Guid user, MutationInput input) => AuthorizationStamp(user, input, _view.Viewer(user));
+        /// <summary>The stamp of <paramref name="viewer"/>, one read of <paramref name="user"/> (null: no such enabled person).</summary>
+        private string AuthorizationStamp(Guid user, MutationInput input, StatusViewer? viewer)
         {
-            var viewer = _view.Viewer(user);
             var native = viewer?.Handle is User account ? JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(account)) : string.Empty;
             var generations = string.Join("|", _store.Registry.All().Select(i => _clients.ConnectionGeneration(i.Id)));
             return MutationInput.Hash(JsonSerializer.Serialize(Configuration) + "|" + viewer?.PolicyRevision + "|" + native + "|" + _view.Revision + "|" + _libraries.Revision + "|" + generations + "|" + _backend.Binding(user, input) + "|" + EvidenceRevision);
@@ -280,10 +311,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? !episodes.Any(e => input.Episodes.Any(ask => ask.Season == e.Season && ask.Episode >= e.Episode && ask.Episode <= Math.Max(e.Episode, e.EpisodeEnd ?? e.Episode)))
                 : !episodes.Any(e => seasons.Contains(e.Season));
         }
-        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input, string? targetKey)
+        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input, string? targetKey, StatusViewer? viewer)
         {
             var config = Configuration;
-            var viewer = _view.Viewer(userId);
             var settings = Settings(config, userId);
             var role = viewer?.IsAdmin == true ? "Admin" : NormalizeRole(settings.Role ?? config.ArrRequestDefaultRole, HouseholdFlags.Rules(config));
             var defaults = RoleSettings(config, role);

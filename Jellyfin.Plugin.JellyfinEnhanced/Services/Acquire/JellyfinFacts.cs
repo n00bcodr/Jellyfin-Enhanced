@@ -224,6 +224,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public int Versions { get; init; }
 
+        /// <summary>The size in bytes of a movie's or episode's own file, as Jellyfin last read it; null when unknown.</summary>
+        public long? Size { get; init; }
+
         /// <summary>
         /// The movie or episode Jellyfin now keeps this one's file under as one of its versions (another item: it
         /// makes the highest resolution the item and the other files its versions), or null.
@@ -280,6 +283,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The file (server-side matching only).</summary>
         public string? Path { get; init; }
+
+        /// <summary>The file's size in bytes, as Jellyfin last read it; null when unknown.</summary>
+        public long? Size { get; init; }
 
         /// <summary>A just-imported version whose Jellyfin metadata is still being read (<see cref="JfItemRef.AwaitingMetadata"/>): it qualifies for nothing yet.</summary>
         public bool AwaitingMetadata { get; init; }
@@ -396,11 +402,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// </summary>
     public interface IArrJellyfinView
     {
-        /// <summary>Changes whenever a movie, series, season or episode is added, updated or removed.</summary>
+        /// <summary>Changes whenever a movie, series, season, episode or a folder above them (any folder but a playlist) is added, updated or removed.</summary>
         long Revision { get; }
 
         /// <summary>The viewer for a user id, or null for an unknown user.</summary>
         StatusViewer? Viewer(Guid userId);
+
+        /// <summary>
+        /// The viewer as <paramref name="user"/>, a read of the person the caller has just made, so they are not read
+        /// again (Jellyfin reads users from its database on every lookup); null when they are disabled. A view without
+        /// its own wrapping reads them again (<see cref="Viewer"/>).
+        /// </summary>
+        /// <param name="user">The person, as just read.</param>
+        /// <returns>The viewer, or null.</returns>
+        StatusViewer? ViewerAsRead(Jellyfin.Database.Implementations.Entities.User user) => Viewer(user.Id);
 
         /// <summary>The item if the viewer can see it and it is a movie, series, season or episode; otherwise null.</summary>
         JfItemRef? Resolve(Guid itemId, StatusViewer viewer);

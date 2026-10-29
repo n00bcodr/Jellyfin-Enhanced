@@ -260,7 +260,7 @@ Back up Jellyfin Enhanced's own data: Jellyfin's backups don't include plugin da
 Keeps the TMDB artwork of titles that aren't in the library on the Jellyfin server, and the TMDB metadata Jellyfin
 Enhanced reads (titles, seasons, people, collections, rows, the facts behind the parental limits and the posters of
 list placeholders), so opening such a title again, or after a restart, doesn't fetch it from TMDB again. It needs Jellyfin running on Linux (x64, x86, Arm or
-Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It sits on the plugin's **\*arr** tab, under
+Arm64, which covers the Docker images and a Raspberry Pi); elsewhere it stays off and the settings say why. It also stays off, saying why, where the system refuses the call it measures files with (`statx`: a C library older than glibc 2.28, or a sandbox that blocks it), since it couldn't keep the folder to its size there. It sits on the plugin's **\*arr** tab, under
 **Requests & downloads (new)**, and is off by default.
 
 ![Server-side cache settings](../images/server-cache-settings.png)
@@ -289,7 +289,13 @@ of a [backup](#backup-restore).
     the request and a hash of the TMDB key (never the key itself), holding when TMDB was asked and when the entry
     expires. No user, search text, permission or decision is stored in any of them. In Jellyfin's cache folder, Jellyfin's own **Clean Cache Directory** task removes files there that
     haven't been used for 30 days; that only means those images are fetched again. Every file operation stays inside
-    the folder, through handles that never follow a link (also when it lists or marks the folder). Only public TMDB images are kept: who may see an image (the
+    the folder, through handles that never follow a link (also when it lists or marks the folder, down to each
+    namespace and shard folder). Every write, removal, Clear and tidy run first checks, through the very handle it then
+    uses, that the folder still holds the `.je-server-cache` marker: a folder moved or swapped in under the configured
+    path, or one whose marker went, is never written to or cleaned, and the cache gets the folder ready again (or says
+    why it can't) before its next use, at the place it was checked, never where a link put there now leads. A tidy run
+    that can't read part of the folder (its permissions changed) keeps the size it last counted rather than showing
+    less, and a leftover temporary file it can't remove still counts towards the size limits. Only public TMDB images are kept: who may see an image (the
     signed link of the page it is on, the parental limit, Hidden Content, Spoiler Guard) is checked on every request
     exactly as without the cache. Clear and the tidy task only delete files the cache wrote, and never follow a link out
     of the folder, so other files in a shared folder stay. A file that doesn't read back (cut short by a crash, edited)
