@@ -377,24 +377,48 @@
             watchdogs.set(key, env.setTimeout(check, WATCHDOG_MS));
         }
 
+        /**
+         * jellyfin-web started loading `url` into `node`. Where statuses aren't reported, an image still hidden after
+         * WATCHDOG_MS is treated as a failed load (one check, no polling).
+         * @param {HTMLElement} node Element.
+         * @param {string} url Image URL.
+         * @returns {void}
+         */
+        const started = (node, url) => {
+            if (statusesReported() || ended || watchdogs.has(node)) return;
+            watchdogs.set(node, env.setTimeout(() => {
+                watchdogs.delete(node);
+                if (waiting(node, url) && node.classList.contains('lazy-hidden')) failed(url, 0);
+            }, WATCHDOG_MS));
+        };
+
+        /** The page's own event listeners (an in-flight image's error), removed when the page's recovery ends. */
+        const listeners = new AbortController();
+
         return {
             failed,
+            started,
             /**
-             * jellyfin-web started loading `url` into `node`. Where statuses aren't reported, an image still hidden
-             * after WATCHDOG_MS is treated as a failed load.
+             * An image of the page already loading when its recovery began (where statuses aren't reported, nothing else
+             * would ever say how that load ended): an image element loading its own source fails over to recovery on its
+             * own error event; one jellyfin-web loads through its off-DOM preloader (whose events no one else can hear)
+             * gets the same one check after WATCHDOG_MS as a load that starts later. Bounded by the recovery's deadline.
              * @param {HTMLElement} node Element.
              * @param {string} url Image URL.
              */
-            started(node, url) {
-                if (statusesReported() || ended || watchdogs.has(node)) return;
-                watchdogs.set(node, env.setTimeout(() => {
-                    watchdogs.delete(node);
-                    if (waiting(node, url) && node.classList.contains('lazy-hidden')) failed(url, 0);
-                }, WATCHDOG_MS));
+            adopt(node, url) {
+                if (statusesReported() || ended || !waiting(node, url)) return;
+                const img = /** @type {HTMLImageElement} */ (node);
+                if (node.tagName === 'IMG' && img.getAttribute('src') && !img.complete) {
+                    node.addEventListener('error', () => { if (waiting(node, url)) failed(url, 0); }, { once: true, signal: listeners.signal });
+                    return;
+                }
+                started(node, url);
             },
             /** Ends every ask and timer of the page; nothing found afterwards is drawn. */
             dispose() {
                 ended = true;
+                listeners.abort();
                 for (const entry of entries.values()) if (entry.timer) env.clearTimeout(entry.timer);
                 for (const timer of watchdogs.values()) env.clearTimeout(timer);
                 watchdogs.clear();

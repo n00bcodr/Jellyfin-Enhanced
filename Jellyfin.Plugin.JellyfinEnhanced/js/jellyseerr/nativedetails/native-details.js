@@ -928,6 +928,13 @@
         const now = Date.now();
         for (const [url, failure] of earlyFailures) if (now - failure.at < EARLY_FAILURE_MS) recovery.failed(url, failure.status);
         earlyFailures.clear();
+        // Artwork already loading when this recovery begins (a cold or late start, a page shown again): no class change
+        // will announce it, so it is adopted now (where statuses aren't reported; see native-recovery adopt).
+        for (const node of state.page.querySelectorAll('[data-src]')) {
+            const src = node.getAttribute('data-src');
+            const match = src ? SIGNED_IMAGE.exec(src) : null;
+            if (match && isSynthetic(match[1]) && node.classList.contains('lazy-hidden')) recovery.adopt(/** @type {HTMLElement} */ (node), src);
+        }
         return recovery;
     }
 

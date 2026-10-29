@@ -630,13 +630,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// (<c>stale-grant</c>: 404, the page's current answer mints a new one). A refusal or a missing file is a plain
         /// 404 with no reason.
         /// </summary>
-        internal const string ArtReasonHeader = "X-JE-Art";
+        internal const string ArtReasonHeader = PrivacyResponseGuard.ArtReasonHeader;
 
         private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
             headers["X-Content-Type-Options"] = "nosniff";
+            // An answer the final privacy gate withholds (the policy moved while it was built) is this route's plain 404,
+            // the same as a missing image: no reason, no retry hint.
+            PrivacyResponseGuard.WithholdAsAbsent(context.HttpContext);
             IActionResult Refused()
             {
                 _artwork.Note(ArtworkRead.Not(ArtworkOutcome.Refused));
@@ -746,7 +749,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
                 return ProjectArtwork(final?.Spoilers, owner, grant, size, pageKey, bytes);
-            }, context.HttpContext) ?? new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+            }, context.HttpContext) ?? Withheld(headers);
+        }
+
+        /// <summary>
+        /// Artwork the one delivery gate after the fetch didn't let leave (the viewer's revisions moved while it was
+        /// projected): the plain 404 of a missing image, with no reason or retry hint of what it replaced.
+        /// </summary>
+        private static IActionResult Withheld(IHeaderDictionary headers)
+        {
+            PrivacyResponseGuard.AbsentHeaders(headers);
+            return new NotFoundResult();
         }
 
         /// <summary>One projection of an absent title's artwork under the viewer's Spoiler Guard presentation.</summary>

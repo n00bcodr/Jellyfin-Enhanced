@@ -41,6 +41,9 @@ public sealed class PrivacyResponseGuard : IDisposable
     private string? _backendFailure;
     private int _backendFailureSent;
     private bool _titleFreeTransient;
+    // An answer withheld here is shaped as the route's own "no such thing" 404 (WithholdAsAbsent): absent-title artwork,
+    // whose withheld answer must not differ from a permanently missing image.
+    private bool _withholdAsAbsent;
     private bool _evidenceIndependent;
     private bool _detached;
     private IDisposable? _commitToken;
@@ -253,7 +256,9 @@ public sealed class PrivacyResponseGuard : IDisposable
         // Parental evidence belongs to the action's answer and cannot be refreshed by a privacy-only projection.
         lock (guard._lock) if (!guard.Stopped && guard._evidence is not { Current: false }) return true;
         guard.Stop();
-        context.Result = new StatusCodeResult(503);
+        bool absent;
+        lock (guard._lock) absent = guard._withholdAsAbsent;
+        context.Result = absent && guard._backendFailure == null ? new NotFoundResult() : new StatusCodeResult(503);
         return false;
     }
 
@@ -360,6 +365,31 @@ public sealed class PrivacyResponseGuard : IDisposable
 
     /// <summary>The response's guard, when it has one.</summary>
     internal static PrivacyResponseGuard? Find(HttpContext http) => http.Items[GuardKey] as PrivacyResponseGuard;
+
+    /// <summary>
+    /// The response's answer, when withheld here (its evidence or policy moved before it could leave), is exactly the
+    /// route's plain 404 for something that doesn't exist: the same status and headers, no body, and no retry hint or
+    /// diagnostic reason. For absent-title artwork, whose refusal must not be told apart from a missing image.
+    /// </summary>
+    /// <param name="http">The request.</param>
+    internal static void WithholdAsAbsent(HttpContext http)
+    {
+        var guard = Of(http);
+        lock (guard._lock) guard._withholdAsAbsent = true;
+    }
+
+    /// <summary>The plain 404 headers of an answer withheld as absent (see <see cref="WithholdAsAbsent"/>).</summary>
+    /// <param name="headers">The response headers.</param>
+    internal static void AbsentHeaders(IHeaderDictionary headers)
+    {
+        headers.Remove(ArtReasonHeader);
+        headers.Remove("Retry-After");
+        headers.CacheControl = "private, no-store";
+        headers["X-Content-Type-Options"] = "nosniff";
+    }
+
+    /// <summary>The diagnostic reason header of a refused native answer; never part of a withheld answer.</summary>
+    internal const string ArtReasonHeader = "X-JE-Art";
 
     /// <summary>
     /// Whether every read-set installed on the response still holds (the commit check; <paramref name="live"/>: the items
@@ -509,6 +539,25 @@ public sealed class PrivacyResponseGuard : IDisposable
     private void WithheldHeaders()
     {
         var response = _http.Response;
+        // A withheld answer carries no diagnostic reason of the answer it replaces.
+        response.Headers.Remove(ArtReasonHeader);
+        bool absent;
+        lock (_lock) absent = _withholdAsAbsent;
+        if (absent && _backendFailure == null)
+        {
+            // Exactly the route's plain 404: status, headers and an empty body (nothing of the held answer leaves).
+            response.StatusCode = StatusCodes.Status404NotFound;
+            response.Headers.Remove("Content-Length");
+            response.Headers.Remove("ETag");
+            response.Headers.Remove("Last-Modified");
+            response.Headers.Remove("Content-Type");
+            response.Headers.Remove("Content-Disposition");
+            response.Headers.Remove("Content-Range");
+            response.Headers.Remove("Accept-Ranges");
+            AbsentHeaders(response.Headers);
+            return;
+        }
+
         response.StatusCode = _backendFailure == null ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status409Conflict;
         response.ContentLength = _backendFailure == null ? 0 : BackendFailureBody().Length;
         response.Headers.CacheControl = "private, no-store";

@@ -35,8 +35,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <c>VisibilityUnknown</c> (4f round 7): <c>Visible</c> is false only because a title nobody has yet hasn't had its rating
     /// verified for the person's parental limits (not read yet, or the lookup failed lately), while its libraries are open to
     /// them: evidence still to prepare, not a refusal. <c>CopiesUnproven</c>: <c>Visible</c> is false because the library copy
-    /// lookup stopped before it had read everything and saw no copy (neither a copy nor the title's absence is proven): a
-    /// reader that tells temporary from final (native details) answers it as temporary; it is never visible.
+    /// lookup stopped before it had read everything and saw no copy (neither a copy nor the title's absence is proven) while
+    /// the libraries it would land in are open to the person: a reader that tells temporary from final (native details)
+    /// answers it as temporary; it is never visible. A destination the person can't open stays a refusal.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
@@ -358,7 +359,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 else
                 {
                     // The lookup stopped before it read everything and saw nothing: neither a copy nor an absence is proven.
-                    unproven = true;
+                    // That is unknown only while nothing else decides: a destination the person can't open is a confirmed
+                    // refusal whatever the copies are.
+                    unproven = destinationVisible;
                 }
             }
             var enabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr";

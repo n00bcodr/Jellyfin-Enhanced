@@ -3,6 +3,7 @@
 // absent title's artwork and season/episode lists are answered as temporary (503/429 + Retry-After), never as the
 // permanent-looking 404 or the completed empty list a page has no way to recover from; true refusals stay 404.
 using System.Net;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -125,6 +126,79 @@ public partial class ApiNativeDetailsTests
         viewer.MaxParentalRatingScore = null;
         rig.Policy.Revoke(viewer.Id);
         Assert.Equal("stale-grant", (await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag))).Http.Response.Headers["X-JE-Art"].ToString());
+    }
+
+    /// <summary>A rig in JE mode whose title (rated G in the US) the viewer's limit allows until the region moves to AU.</summary>
+    private static async Task<(Rig Rig, User Viewer, Guid Movie, string Tag)> WithheldRig()
+    {
+        var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
+        rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        rig.R4JeTransport = true;
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 10;
+        var movie = Id(SyntheticId.Movie(693134));
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        return (rig, viewer, movie, dto.ImageTags[ImageType.Primary]);
+    }
+
+    /// <summary>
+    /// The response as it leaves: the result's status (and the response's own, when the guard set it), every header and
+    /// the body's length.
+    /// </summary>
+    private static (int Status, string Headers, long Body) Leaves(Run run)
+    {
+        var status = Status(run.Result);
+        Assert.True(run.Http.Response.StatusCode is 200 || run.Http.Response.StatusCode == status, "the response's own status is the result's");
+        var headers = string.Join("\n", run.Http.Response.Headers.OrderBy(h => h.Key, StringComparer.OrdinalIgnoreCase).Select(h => h.Key.ToLowerInvariant() + ": " + h.Value));
+        var body = run.Result switch { FileContentResult f => f.FileContents.Length, ObjectResult o when o.Value != null => -1, _ => 0 };
+        return (status, headers, body);
+    }
+
+    [Fact]
+    public async Task ArtworkWithheldAtTheFinalPrivacyGateIsExactlyTheMissingImage404()
+    {
+        // D121 ACR-1: an image refused for now (TMDB 503: a reason header) whose title becomes denied before the answer
+        // leaves is withheld as the plain 404 of a missing image: same status, same headers, no body, no reason or hint.
+        var (rig, viewer, movie, tag) = await WithheldRig();
+        using var owner = rig;
+        rig.ImageAnswer = req => new HttpResponseMessage(req.RequestUri!.AbsolutePath.Contains("missing", StringComparison.Ordinal) ? HttpStatusCode.NotFound : HttpStatusCode.ServiceUnavailable);
+        var missingTag = rig.Artwork.Mint(movie, ImageType.Primary, 0, "/missing.jpg", viewer.Id, rig.Policy.Revision(viewer))!;
+        var missing = Leaves(await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, missingTag)));
+        Assert.Equal(404, missing.Status);
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var withheld = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None), "the title is denied now");
+        Assert.Equal(missing, Leaves(withheld));
+        Assert.DoesNotContain("x-je-art", missing.Headers, StringComparison.Ordinal);
+        Assert.DoesNotContain("retry-after", missing.Headers, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AStaleGrantHintNeverSurvivesTheFinalDenial()
+    {
+        // D121 ACR-1: a stale grant whose title becomes denied during its last checks: the hint never leaves; the answer is
+        // header-for-header the missing image's 404.
+        var (rig, viewer, movie, tag) = await WithheldRig();
+        using var owner = rig;
+        rig.ImageAnswer = _ => new HttpResponseMessage(HttpStatusCode.NotFound);
+        var missingTag = rig.Artwork.Mint(movie, ImageType.Primary, 0, "/missing.jpg", viewer.Id, rig.Policy.Revision(viewer))!;
+        var missing = Leaves(await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, missingTag)));
+        rig.Policy.Revoke(viewer.Id);
+        rig.Library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns(() =>
+        {
+            rig.R4Country("AU");
+            return new List<MediaBrowser.Controller.Entities.BaseItem>();
+        });
+        var denied = await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
+        Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None), "the title is denied now");
+        Assert.Equal(missing, Leaves(denied));
     }
 
     [Fact]

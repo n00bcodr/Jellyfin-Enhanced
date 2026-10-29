@@ -113,4 +113,26 @@ public partial class ApiTitleActionsWarmPathTests
         Assert.Equal(NativeDetailsPolicy.Access.Refused, await rig.Policy.SeeAsync(rig.Viewer, Title, CancellationToken.None));
         Assert.Equal(NativeDetailsPolicy.Access.Refused, await rig.Policy.ListAbsentAccessAsync(rig.Viewer, Title, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task AnIncompleteCopyScanNeverTurnsAConfirmedDestinationDenialIntoUnknown()
+    {
+        // D121 ACR-2: a viewer who can open none of the libraries the title lands in is refused, proven absence or not.
+        using var rig = new Rig();
+        rig.Viewer.SetPermission(PermissionKind.EnableAllFolders, false);
+        var lookup = CopyLookup.Absent;
+        var view = ViewOf(() => rig.Viewer, () => lookup);
+        var roots = new FakeLibraryAccess();
+        roots.Libs.Add(new JfLibraryRoot { Id = rig.Movies.Id.ToString(), Name = "Movies", CollectionType = "movies", Locations = new[] { "/movies" } });
+        var requests = new RequestPolicy(view.Object, rig.Store, new ArrInstanceLibraries(rig.Store, roots), new TitleAliases(rig.Store, null), rig.Gate, rig.Arr.Factory, new UnavailableRequestBackend());
+        var policy = new NativeDetailsPolicy(rig.Gate, Mock.Of<INativeDetailsSource>(), roots, requests);
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, await policy.SeeAsync(rig.Viewer, Title, CancellationToken.None));
+        // Only the scan changes (incomplete, nothing seen): the confirmed refusal stands; never a retryable Unknown.
+        lookup = CopyLookup.Incomplete(Array.Empty<JfCopy>());
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, await policy.SeeAsync(rig.Viewer, Title, CancellationToken.None));
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, await policy.ListAbsentAccessAsync(rig.Viewer, Title, CancellationToken.None));
+        // The same incomplete scan for a viewer whose destination is open: Unknown (the scan alone decides nothing).
+        rig.Viewer.SetPermission(PermissionKind.EnableAllFolders, true);
+        Assert.Equal(NativeDetailsPolicy.Access.Unknown, await policy.SeeAsync(rig.Viewer, Title, CancellationToken.None));
+    }
 }

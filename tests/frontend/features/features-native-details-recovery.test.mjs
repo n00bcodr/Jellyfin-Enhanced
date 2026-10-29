@@ -620,12 +620,65 @@ test('review r4: where statuses are not reported, a backdrop requested on an ear
   h.window.location.hash = here;
   await flush();
   await h.JE.internals.nativeDetails.onView();
+  // (The page's poster, already loading, is adopted and recovered on its own: only backdrop asks count here.)
+  const backdropAsks = () => h.calls.filter(u => /\/Images\/Backdrop/.test(u)).length;
   await h.clock.advance(h.JE.internals.nativeRecovery.limits.WATCHDOG_MS * 2);
-  assert.equal(h.calls.length, 0, 'this visit asked for no backdrop (backdrops off): nothing drawn');
+  assert.equal(backdropAsks(), 0, 'this visit asked for no backdrop (backdrops off): nothing drawn');
   assert.equal(h.document.querySelector('.backdropImage.displayingBackdropImage'), null);
   // This visit asks for it and it never shows: recovered.
   entries.push({ name: own, startTime: h.window.performance.now() + 1 });
   await h.clock.advance(h.JE.internals.nativeRecovery.limits.WATCHDOG_MS + 2000);
-  assert.equal(h.calls.length, 1);
+  assert.equal(backdropAsks(), 1);
   assert.ok(h.document.querySelector('.backdropImage.displayingBackdropImage'));
+});
+
+test('D121 ACR-3: where statuses are not reported, artwork already loading when recovery begins is recovered too', async t => {
+  const h = pageSetup(t, { respond: () => answer(200), statuses: false });
+  // The poster was already lazy-hidden with its data-src (its load started before the page state): no class change
+  // will ever announce it.
+  await h.JE.internals.nativeDetails.onView();
+  await h.clock.advance(h.JE.internals.nativeRecovery.limits.WATCHDOG_MS - 1);
+  assert.equal(h.calls.length, 0, 'one check, after the watchdog time; nothing before');
+  await h.clock.advance(1 + 2000);
+  assert.equal(h.calls.length, 1, 'adopted: one recovery ask');
+  assert.equal(h.node().hasAttribute('data-src'), false);
+  assert.equal(h.node().classList.contains('lazy-hidden'), false);
+  // Bounded: nothing keeps checking once it is shown.
+  await h.clock.advance(120_000);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.clock.pending(), 0);
+});
+
+test('D121 ACR-3: an image element already loading its own source recovers on its error event, and the page end removes the listener', async t => {
+  const url = art(MOVIE);
+  const h = createHarness({ html: `<div id="page"><img class="lazy-hidden" data-src="${url}" src="${url}"></div>`, fetch: () => answer(200), globals: { Image: fakeImages().FakeImage } });
+  t.after(() => h.close());
+  h.load('jellyseerr/nativedetails/native-recovery.js');
+  const R = h.JE.internals.nativeRecovery;
+  const clock = fakeClock();
+  Object.assign(R.env, clock);
+  const page = h.document.getElementById('page');
+  const img = page.querySelector('img');
+  Object.defineProperty(img, 'complete', { value: false });
+  const calls = [];
+  h.window.fetch = (u) => { calls.push(u); return answer(200); };
+  const recovery = R.images({ page: () => page, live: () => true });
+  recovery.adopt(img, url);
+  await clock.advance(R.limits.WATCHDOG_MS * 2);
+  assert.equal(calls.length, 0, 'no timer for an element with its own events');
+  img.dispatchEvent(new h.window.Event('error'));
+  await clock.advance(2000);
+  assert.equal(calls.length, 1);
+  assert.equal(img.hasAttribute('data-src'), false);
+  // A second element adopted, then the page ends: its error event asks nothing.
+  const other = h.document.createElement('img');
+  const otherUrl = art(MOVIE, 'na1.o.x');
+  other.className = 'lazy-hidden'; other.setAttribute('data-src', otherUrl); other.setAttribute('src', otherUrl);
+  Object.defineProperty(other, 'complete', { value: false });
+  page.append(other);
+  recovery.adopt(other, otherUrl);
+  recovery.dispose();
+  other.dispatchEvent(new h.window.Event('error'));
+  await clock.advance(120_000);
+  assert.equal(calls.length, 1);
 });
