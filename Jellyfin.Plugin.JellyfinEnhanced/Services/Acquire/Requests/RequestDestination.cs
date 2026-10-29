@@ -168,6 +168,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static string[] SplitTitleGroups(IEnumerable<string> aliases, IEnumerable<string> observed, string canonical)
             => aliases.Except(observed, StringComparer.Ordinal).Append(canonical).Distinct(StringComparer.Ordinal).ToArray();
 
+        /// <summary>
+        /// A TMDB-numbered ask in the target's own numbers (F83, <see cref="EpisodeIdentity"/>), or a switched one pointed at
+        /// Sonarr's numbers again: every TMDB episode it names (its own, or those it was switched from) by <paramref name="map"/>
+        /// (TMDB episode to the Sonarr episode with its TVDB id, as last read). Null when it names none or the map doesn't name
+        /// every one of them (never partly). The one place an episode of one numbering is taken for one of another.
+        /// </summary>
+        /// <param name="input">An input.</param>
+        /// <param name="map">TMDB episode to Sonarr episode.</param>
+        internal static MutationInput? Renumbered(MutationInput input, IReadOnlyList<EpisodeRenumbering> map)
+        {
+            if (input.Scope != "episodes") return null;
+            var source = input.Numbering == EpisodeIdentity.Tmdb ? input.Episodes : input.From;
+            if (source is not { Length: > 0 }) return null;
+            var to = new Dictionary<RequestEpisode, RequestEpisode>();
+            foreach (var m in map) to.TryAdd(m.From, m.To);
+            if (!source.All(to.ContainsKey)) return null;
+            return input with
+            {
+                Numbering = null,
+                From = source,
+                Episodes = source.Select(e => to[e]).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// F83: an input that carried matches Sonarr no longer backs (<paramref name="lost"/>: TMDB episode to the Sonarr
+        /// episode it was matched to), keeping its record but none of their coverage (EI-R4-2): each such Sonarr episode becomes
+        /// a place nothing is ever at (<see cref="EpisodeIdentity.Unplaced"/>) and its TMDB episode leaves <c>From</c>. Null
+        /// when it carried none of them.
+        /// </summary>
+        internal static MutationInput? WithoutMatches(MutationInput input, IReadOnlyDictionary<RequestEpisode, RequestEpisode> lost)
+        {
+            if (input.From is not { } from || !from.Any(lost.ContainsKey)) return null;
+            var episodes = input.Episodes.ToList();
+            foreach (var source in from.Where(lost.ContainsKey))
+            {
+                var at = episodes.IndexOf(lost[source]);
+                if (at >= 0) episodes[at] = EpisodeIdentity.Unplaced(source);
+            }
+            var kept = from.Where(e => !lost.ContainsKey(e)).ToArray();
+            return input with { Episodes = episodes.ToArray(), From = kept.Length > 0 ? kept : null };
+        }
+
+        /// <summary>F83: <paramref name="input"/> asking only for those of its episodes in <paramref name="episodes"/> (null: none).</summary>
+        internal static MutationInput? Only(MutationInput input, IReadOnlySet<RequestEpisode> episodes)
+            => input.Episodes.Where(episodes.Contains).ToArray() is { Length: > 0 } some ? input with { Episodes = some } : null;
+
+        /// <summary>F83: the TMDB episodes <paramref name="input"/> names (its own, or those it was switched from) include one of <paramref name="episodes"/>.</summary>
+        internal static bool NamesAny(MutationInput input, IReadOnlySet<RequestEpisode> episodes) => input.TmdbEpisodes.Any(episodes.Contains);
+
+        /// <summary>
+        /// True when <paramref name="renumbered"/> names other Sonarr episodes than <paramref name="input"/> (a switch, or a
+        /// switched request whose episodes Sonarr numbers differently now).
+        /// </summary>
+        internal static bool Moves(MutationInput input, MutationInput renumbered)
+            => input.Numbering != renumbered.Numbering || !input.Episodes.SequenceEqual(renumbered.Episodes);
+
         /// <summary>What groups requests by title and edition (the key and the edition).</summary>
         /// <param name="input">An input.</param>
         internal static (string Key, string Variant) Edition(MutationInput input) => (input.Key, input.Variant);

@@ -1079,6 +1079,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/EpisodeIdentity.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/FutureSeasonCharges.cs",
       "category": "Services"
     },

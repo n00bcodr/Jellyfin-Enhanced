@@ -304,6 +304,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var other in edition.Where(a => a.Id != survivor.Id))
                 {
                     Exec(c, t, "UPDATE wants SET acquisition_id=$s WHERE acquisition_id=$o", ("$s", survivor.Id), ("$o", other.Id));
+                    // F83: the kept id matches move with the requests; one both kept with different TVDB ids is dropped (the
+                    // next read of the target settles it), so a merge never trusts either.
+                    const string Same = "x.target_key=episode_identities.target_key AND x.season=episode_identities.season AND x.episode=episode_identities.episode";
+                    Exec(c, t, "UPDATE episode_identities SET tvdb_id=-1 WHERE acquisition_id=$o AND EXISTS (SELECT 1 FROM episode_identities x WHERE x.acquisition_id=$s AND " + Same + " AND x.tvdb_id<>episode_identities.tvdb_id)", ("$s", survivor.Id), ("$o", other.Id));
+                    Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id=$s AND EXISTS (SELECT 1 FROM episode_identities x WHERE x.acquisition_id=$o AND " + Same + " AND x.tvdb_id=-1)", ("$s", survivor.Id), ("$o", other.Id));
+                    Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id=$o AND (tvdb_id=-1 OR EXISTS (SELECT 1 FROM episode_identities x WHERE x.acquisition_id=$s AND " + Same + "))", ("$s", survivor.Id), ("$o", other.Id));
+                    Exec(c, t, "UPDATE episode_identities SET acquisition_id=$s WHERE acquisition_id=$o", ("$s", survivor.Id), ("$o", other.Id));
                     Exec(c, t, "DELETE FROM acquisitions WHERE id=$o", ("$o", other.Id));
                     removed++;
                 }

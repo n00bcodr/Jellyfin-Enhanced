@@ -27,8 +27,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Creates request orchestration that wakes the outbox when work is queued (DI).</summary>
         public RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, TitleAliases aliases, RequestOutboxSignal signal)
             : this(ledger, policy, view, feed, () => DateTimeOffset.UtcNow, aliases) { Signal = signal; }
+        /// <summary>Creates request orchestration that wakes the outbox and notes whose numbering single episodes are asked by (DI).</summary>
+        public RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, TitleAliases aliases, RequestOutboxSignal signal, Arr.ArrStateStore arrs)
+            : this(ledger, policy, view, feed, () => DateTimeOffset.UtcNow, aliases)
+        {
+            Signal = signal;
+            Numbering = (user, input, ct) => SeasonRowsService.NumberingAsync(arrs, policy, aliases, user, input, ct);
+        }
         /// <summary>Wakes the outbox when an outcome queues work (absent in tests that drive the outbox themselves).</summary>
         internal RequestOutboxSignal? Signal { get; set; }
+        /// <summary>
+        /// Whose numbering an ask's single episodes are in (F83, <see cref="SeasonRowsService.NumberingAsync"/>): read right
+        /// before the ask is recorded and noted on it (<see cref="MutationInput.Numbering"/>). Absent in tests that don't
+        /// exercise it: episodes are then the target's own numbers, as before.
+        /// </summary>
+        internal Func<Guid, MutationInput, CancellationToken, Task<(bool Read, bool Tmdb)>>? Numbering { get; set; }
         internal RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, Func<DateTimeOffset> now, TitleAliases? aliases = null)
         { _ledger = ledger; _policy = policy; View = view; _feed = feed; _now = now; _aliases = aliases; }
         /// <summary>Human caller resolver.</summary>
@@ -45,6 +58,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // ledger holds it under, before anything is prepared or decided. learn: false for a read-only check.
         private MutationInput? Normalize(MutationInput? input, bool learn = true)
             => RequestTitleIdentity.Entry(_ledger, _policy, _aliases, _feed, input, _now(), learn && Enabled);
+        // A body's input as asked: whose numbering its episodes are in, and what they were switched from, are the server's to
+        // note, never the caller's (F83, EI-R3-5).
+        private static MutationInput? Asked(MutationInput? input) => input is { Numbering: not null } or { From: not null } ? input with { Numbering = null, From = null } : input;
         /// <summary>An input as the ledger keys it (normalized, the title under the key the ledger holds it by); null when invalid.</summary>
         internal MutationInput? NormalizeInput(MutationInput? input) => Normalize(input);
         /// <summary>A title under the key the ledger holds it by (whichever id the caller used).</summary>
@@ -65,6 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
             using var effect = SeerrFacts.BeginEffect();
+            body = body?.Input is { } given ? body with { Input = Asked(given)! } : body;
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
@@ -88,6 +105,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     await _policy.PrepareAsync(user, shared, ct).ConfigureAwait(false);
                 }
             }
+            // Whose numbering single episodes are asked by (F83): TMDB's while the target's Sonarr doesn't hold the series (as
+            // the season's rows showed them), noted on the ask so they are matched to Sonarr's by id before anything is sent.
+            // Read before the press check (the last await); a library that can't be read now records nothing.
+            string? numbering = null;
+            if (input.Scope == "episodes" && Numbering != null)
+            {
+                var noted = await Numbering(user, input, ct).ConfigureAwait(false);
+                if (!noted.Read)
+                    return RequestOutcome.Refused("numbering_unchecked", 503, "unavailable") with { Message = "How this season's episodes are numbered couldn't be checked right now. Try again, or ask for the whole season." };
+                numbering = noted.Tmdb ? EpisodeIdentity.Tmdb : null;
+            }
             string? target = null;
             if (press != null)
             {
@@ -107,6 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 input = command!;
                 target = proof.Command!.Instance;
             }
+            if (numbering != null && input.Scope == "episodes") input = input with { Numbering = numbering };
             // Automatic work under the engine: a kill switch on now (against the target the request would go to) records
             // nothing, so killed work never piles up to go out when the switch is released. Evaluated first: it can read
             // and call out, and the caller's own recheck below is then the last thing before the ledger write (a recipe
@@ -133,6 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestPreview> PreviewAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
         {
             using var effect = SeerrFacts.BeginEffect();
+            body = body?.Input is { } given ? body with { Input = Asked(given)! } : body;
             var input = Normalize(body?.Input);
             if (body == null || input == null) return new RequestPreview(RequestOutcome.Refused("invalid_input", 400));
             if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
@@ -160,7 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var normalized = new List<CreateRequest?>(bodies.Count);
             foreach (var body in bodies)
             {
-                var input = Normalize(body?.Input);
+                var input = Normalize(Asked(body?.Input));
                 // Routing (instance, profile, folder) is an administrator's choice, as on a single ask.
                 normalized.Add(body == null || input == null || (!admin && RequestLedger.HasRouting(input)) ? null : body with { Input = input });
             }
@@ -192,7 +222,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // by any of its ids and is resolved to that key too, before anything is prepared.
             RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, stored.Input.Key, _now());
             if (_ledger.Find(id) is not { } want) return RequestOutcome.Refused("not_found", 404);
-            var input = body?.Input == null ? want.Input : Normalize(body.Input);
+            // An edit of a TMDB-numbered ask's episodes names them by the numbering the request holds (the server's note).
+            // The edit is validated first (a malformed one is refused as such, EI-R4-4); then it keeps the request's provenance
+            // (what a switched request's episodes were switched from) only while it names exactly those episodes.
+            var input = body?.Input == null ? want.Input : Normalize(body.Input with { Numbering = body.Input.Scope == "episodes" ? want.Input.Numbering : null, From = null });
+            if (body?.Input != null && input is { Scope: "episodes", Numbering: null } edited && want.Input.From != null && edited.Episodes.SequenceEqual(want.Input.Episodes))
+                input = edited with { From = want.Input.From };
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);

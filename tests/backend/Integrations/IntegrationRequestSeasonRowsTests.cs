@@ -233,6 +233,27 @@ public class IntegrationRequestSeasonRowsTests
     }
 
     [Fact]
+    public async Task F83_AnAskStillInTmdbsNumberingNeverMarksARowOfTheTargetsOwnNumbering()
+    {
+        using var s = new Setup();
+        var r = s.R;
+        // Asked while no Sonarr held the series: TMDB's E2 (noted by the server), and a Sonarr-numbered E3 asked since.
+        r.Service.Numbering = (_, _, _) => Task.FromResult((true, true));
+        Assert.Equal(201, (await r.Create(r.Member, Episodes(2))).HttpStatus);
+        r.Service.Numbering = (_, _, _) => Task.FromResult((true, false));
+        Assert.Equal(201, (await r.Create(r.Member, Episodes(3))).HttpStatus);
+        // TMDB's numbering on the rows: its E2 is the ask.
+        var tmdbRows = await s.Rows.ForSeasonAsync(s.Viewer(r.Member), s.SeasonId, null, CancellationToken.None);
+        Assert.Equal(("provider", "asked"), (tmdbRows!.Source, tmdbRows.Episodes.Single(e => e.Episode == 2).Request));
+        // Sonarr holds the series now: its E2 may be another episode, so the TMDB-numbered ask shows on no row; E3 still does.
+        s.Destination = (_, _, _) => Sonarr((1, "One", "2014-06-01"), (2, "Two", "2014-06-08"), (3, "Three", "2014-06-15"));
+        var rows = await s.Rows.ForSeasonAsync(s.Viewer(r.Member), s.SeasonId, null, CancellationToken.None);
+        Assert.Equal("destination", rows!.Source);
+        Assert.Null(rows.Episodes.Single(e => e.Episode == 2).Request);
+        Assert.Equal("asked", rows.Episodes.Single(e => e.Episode == 3).Request);
+    }
+
+    [Fact]
     public async Task A4kAskLeavesTheStandardControlsAlone()
     {
         using var s = new Setup();

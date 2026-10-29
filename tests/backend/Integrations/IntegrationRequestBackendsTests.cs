@@ -28,6 +28,8 @@ public class IntegrationRequestBackendsTests
         public FakeArr.Host Sonarr { get; }
         public ArrStateStore Store { get; }
         public DirectArrBackend Direct { get; }
+        /// <summary>TMDB's external ids of an episode for <see cref="Direct"/> (F83); none listed when unset.</summary>
+        public Func<int, int, int, CancellationToken, Task<EpisodeExternalId>>? ExternalIds { get; set; }
         public PluginConfiguration Config => Arr.Plugin.Plugin.Configuration;
 
         public Lab(bool defaults = true)
@@ -55,7 +57,8 @@ public class IntegrationRequestBackendsTests
                 Edit("Sonarr", row => row["Defaults"] = Defaults(4, "/data/tv"));
             }
             Store = Arr.Store();
-            Direct = new DirectArrBackend(Arr.Factory, Store, null, (_, _) => Task.CompletedTask);
+            Direct = new DirectArrBackend(Arr.Factory, Store, null, (_, _) => Task.CompletedTask,
+                (series, season, episode, ct) => ExternalIds?.Invoke(series, season, episode, ct) ?? Task.FromResult(EpisodeExternalId.None));
         }
 
         public static JsonObject Defaults(int profile, string root, params int[] tags)

@@ -35,6 +35,7 @@ public class IntegrationAutomationWriteGateTests
     {
         "direct_tag_create", "direct_movie_add", "direct_movie_monitor", "direct_movie_search",
         "direct_series_add", "direct_series_editor", "direct_seasonpass", "direct_episode_monitor", "direct_episode_search", "direct_season_search", "direct_refresh_series", "direct_refresh_episodes",
+        "direct_refresh_identity",
         "seerr_post",
         "legacy_movie_post", "legacy_movie_next_url", "legacy_season_post", "legacy_season_next_url",
     };
@@ -95,7 +96,7 @@ public class IntegrationAutomationWriteGateTests
         {
             (_, "seerr_off") when site != "seerr_post" => "Sonarr/Radarr handling doesn't use Seerr",
             ("seerr_post", "disk_guard_on") => "Seerr handling: Seerr picks the server and folder, so there is no destination whose facts could be unknown (the low-disk guard still measures the default drive)",
-            ("direct_tag_create" or "direct_refresh_series" or "direct_refresh_episodes", "budget_zero") => "not budgeted: creating the attribution tag or refreshing a series' metadata adds, monitors and searches nothing",
+            ("direct_tag_create" or "direct_refresh_series" or "direct_refresh_episodes" or "direct_refresh_identity", "budget_zero") => "not budgeted: creating the attribution tag or refreshing a series' metadata adds, monitors and searches nothing",
             _ => null,
         };
     }
@@ -238,6 +239,12 @@ public class IntegrationAutomationWriteGateTests
                 // An episode Sonarr doesn't list yet (its season is listed): the series is refreshed.
                 ExistingSeries(lab);
                 return (Series("episodes", null, new RequestEpisode(4, 9)), lab.Sonarr, "/api/v3/episode", Is("POST", "/api/v3/command", "RefreshSeries"));
+            case "direct_refresh_identity":
+                // F83: a TMDB-numbered episode whose TVDB id Sonarr doesn't list yet: the series is refreshed before the wait.
+                ExistingSeries(lab);
+                lab.Sonarr.Series[0]["tmdbId"] = 1731;
+                lab.ExternalIds = (_, _, _, _) => Task.FromResult(new EpisodeExternalId(true, 999001));
+                return (Series("episodes", null, new RequestEpisode(1, 1)), lab.Sonarr, "/api/v3/episode", Is("POST", "/api/v3/command", "RefreshSeries"));
             default:
                 throw new ArgumentOutOfRangeException(nameof(site), site, null);
         }
@@ -325,6 +332,8 @@ public class IntegrationAutomationWriteGateTests
             c.SonarrInstances = lab.Config.SonarrInstances;
             var fixture = Fixture(lab, site);
             input = fixture.Input;
+            // F83: the identity site's ask is noted as TMDB-numbered when it is recorded (no Sonarr numbers it yet).
+            if (site == "direct_refresh_identity") e.R.Service.Numbering = (_, _, _) => Task.FromResult((true, true));
             var instance = lab.Instance(movie ? "Radarr" : "Sonarr").Id;
             var generation = lab.Arr.Factory.ConnectionGeneration(instance)!;
             target = instance;
@@ -660,6 +669,7 @@ public class IntegrationAutomationWriteGateTests
         ("DirectArrBackend", "\"SeasonSearch\"", "direct_season_search"),
         ("DirectArrBackend", "[\"seriesId\"] = listedId", "direct_refresh_series"),
         ("DirectArrBackend", "[\"seriesId\"] = seriesId", "direct_refresh_episodes"),
+        ("DirectArrBackend", "[\"seriesId\"] = unmatchedSeries", "direct_refresh_identity"),
         ("SeerrBackend", "\"/api/v1/request\"", "seerr_post"),
         ("AutoMovieRequestService", "requestUri", "legacy_movie_post"),
         ("AutoSeasonRequestService", "requestUri", "legacy_season_post"),

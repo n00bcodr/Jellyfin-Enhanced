@@ -1320,7 +1320,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var work in Jobs(c, t, "want_id=$w AND id<>$j", ("$w", other.Id), ("$j", job.Id)).Where(j => RequestDestination.Serves(job.Input, target, j.Input, TargetKey(j.Authorization))))
                 {
-                    if (work.State == "succeeded") sent.Add(work.Input);
+                    // A send still in TMDB's numbering never switched to an id match Sonarr backs (F83): it covers nothing here, so
+                    // the request matched again (EI-R3-4) goes out.
+                    if (work.State == "succeeded") { if (work.Input.Numbering != EpisodeIdentity.Tmdb) sent.Add(work.Input); }
                     else if (work.State is "sending" or "maybe_sent" || work.Uncertain && work.State != "cancelled") going.Add(work.Input);
                 }
                 if (LinkedScope(c, t, other) is { } linked && RequestDestination.Serves(job.Input, target, linked, other.TargetKey)) sent.Add(linked);
@@ -1411,7 +1413,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
                 // The same wait again changes nothing anyone sees: no new audit row, notice or event.
-                if (!deletedNotSent && RepeatsWait(job, result)) return true;
+                if (!deletedNotSent && RepeatsWait(job, result))
+                {
+                    // The same wait again tells nobody anything new, but what this attempt read of Sonarr still counts (F83).
+                    Renumber(c, t, storedWant.AcquisitionId, TargetKey(job.Authorization), null, result.Identity, now);
+                    return true;
+                }
                 // A wait only a person can end (no Seerr account linked yet) shows as held for them, while its job is still
                 // checked again now and then and goes out by itself once it can.
                 var held = state is "parked" or "failed" || (state == "retry" && HeldWaits.Contains(result.Outcome.Reason));
@@ -1449,9 +1456,180 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         ("$s", remains ? "pending" : "cancelled"), ("$w", job.WantId));
                     WithdrawFollowers(c, t, storedWant.AcquisitionId, now);
                 }
+                // F83: a confirmed send's id matches are kept, every kept match is checked against the episode list this attempt
+                // read, and each TMDB-numbered ask there with no open job whose every episode is matched takes Sonarr's numbers
+                // (on its own; a switched one follows Sonarr's numbers when they move). An unconfirmed outcome teaches nothing.
+                Renumber(c, t, storedWant.AcquisitionId, TargetKey(job.Authorization), result.Confirmed ? result.Renumbered : null, result.Identity, now);
                 Record(c, t, job.WantId, job.Id, job.Authorization.Approver ?? job.Authorization.Requester, "dispatch", result.Outcome.Outcome, result.Outcome.Reason, job.Input.Key, now);
                 return true;
             }, false).Result;
+        }
+        /// <summary>
+        /// F83: the id matches of TMDB-numbered episode requests for an acquisition at a target (<c>episode_identities</c>: each
+        /// TMDB episode, its TVDB episode id, and the Sonarr episode with that id as last read).
+        /// <list type="number">
+        /// <item><description>A confirmed send's matches are kept (<paramref name="learned"/>).</description></item>
+        /// <item><description>Every kept match is checked against the episode list an attempt just read (<paramref name="identity"/>,
+        /// TVDB id to Sonarr's numbers now): moved when Sonarr numbers it differently, dropped when Sonarr no longer lists its
+        /// id. A stored match is never used past what the target last said.</description></item>
+        /// <item><description>Each request there switches on its own: a TMDB-numbered one with no open job (an open job matches by
+        /// id itself when it goes out) whose every episode is matched takes Sonarr's numbers (its owned scope and jobs too); a
+        /// switched one is pointed at Sonarr's numbers again when they moved. No request waits for another.</description></item>
+        /// </list>
+        /// A change bumps the ledger revision and records a request event for the title. Returns whose requests changed.
+        /// </summary>
+        private static List<Guid> Renumber(SqliteConnection c, SqliteTransaction t, string acquisition, string target, IReadOnlyList<EpisodeRenumbering>? learned, IReadOnlyDictionary<int, RequestEpisode>? identity, DateTimeOffset now)
+        {
+            foreach (var m in learned ?? Array.Empty<EpisodeRenumbering>())
+                Exec(c, t, "INSERT INTO episode_identities(acquisition_id,target_key,season,episode,to_season,to_episode,tvdb_id,learned_at) VALUES($a,$t,$s,$e,$ts,$te,$id,$at) ON CONFLICT(acquisition_id,target_key,season,episode) DO UPDATE SET to_season=$ts,to_episode=$te,tvdb_id=$id,learned_at=$at",
+                    ("$a", acquisition), ("$t", target), ("$s", m.From.Season), ("$e", m.From.Episode), ("$ts", m.To.Season), ("$te", m.To.Episode), ("$id", m.TvdbId), ("$at", Ms(now)));
+            var rows = new List<(string Target, EpisodeRenumbering Match)>();
+            using (var cmd = Cmd(c, t, "SELECT target_key,season,episode,to_season,to_episode,tvdb_id FROM episode_identities WHERE acquisition_id=$a", ("$a", acquisition)))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                    if (RequestDestination.SameTarget(r.GetString(0), target))
+                        rows.Add((r.GetString(0), new(new RequestEpisode(r.GetInt32(1), r.GetInt32(2)), new RequestEpisode(r.GetInt32(3), r.GetInt32(4)), r.GetInt32(5))));
+            var map = new List<EpisodeRenumbering>();
+            var dropped = new Dictionary<RequestEpisode, RequestEpisode>();
+            foreach (var (rowTarget, match) in rows)
+            {
+                if (identity == null) { map.Add(match); continue; }
+                if (identity.TryGetValue(match.TvdbId, out var current))
+                {
+                    if (current != match.To)
+                        Exec(c, t, "UPDATE episode_identities SET to_season=$ts,to_episode=$te,learned_at=$at WHERE acquisition_id=$a AND target_key=$t AND season=$s AND episode=$e",
+                            ("$ts", current.Season), ("$te", current.Episode), ("$at", Ms(now)), ("$a", acquisition), ("$t", rowTarget), ("$s", match.From.Season), ("$e", match.From.Episode));
+                    map.Add(match with { To = current });
+                }
+                else
+                {
+                    Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id=$a AND target_key=$t AND season=$s AND episode=$e",
+                        ("$a", acquisition), ("$t", rowTarget), ("$s", match.From.Season), ("$e", match.From.Episode));
+                    dropped[match.From] = match.To;
+                }
+            }
+            var changed = new List<Guid>();
+            if (map.Count == 0 && dropped.Count == 0) return changed;
+            string? key = null;
+            // A lost match takes all coverage derived from it (EI-R4-2): every send there that carried it keeps its record but
+            // no longer stands for the TMDB episode, nor for the Sonarr number it was matched to (another episode now).
+            if (dropped.Count > 0)
+                foreach (var job in Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a) AND json_extract(mutation_input,'$.From') IS NOT NULL", ("$a", acquisition)))
+                    if (RequestDestination.SameTarget(TargetKey(job.Authorization), target) && RequestDestination.WithoutMatches(job.Input, dropped) is { } kept)
+                        Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                            ("$input", kept.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? kept.Fingerprint : job.Fingerprint), ("$id", job.Id));
+            foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", acquisition)))
+            {
+                if (want.Status is "cancelled" or "declined" or "fulfilled" || (want.Input.Numbering != EpisodeIdentity.Tmdb && want.Input.From == null)
+                    || !RequestDestination.SameTarget(want.TargetKey, target)) continue;
+                var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
+                // A switched request whose match Sonarr no longer backs is matched again, for the lost episodes only (EI-R3-2,
+                // EI-R4-3).
+                if (want.Input.From is { } source && source.Any(dropped.ContainsKey))
+                {
+                    Reresolve(c, t, want, Jobs(c, t, "want_id=$w", ("$w", want.Id)), source.Where(dropped.ContainsKey).ToHashSet(), now);
+                    changed.Add(want.UserId);
+                    key = want.Input.Key;
+                    continue;
+                }
+                // A job that may still go out matches by id itself. A request already sent through what others sent (it may keep
+                // a known-unsent job, held or queued, that is no longer needed) switches with them (EI-R3-1).
+                if (jobs.Any(j => j.State is "sending" or "maybe_sent" || (j.State is "queued" or "retry" or "parked" && (want.Status != "sent" || j.Uncertain)))) continue;
+                if (RequestDestination.Renumbered(want.Input, map) is not { } input || !RequestDestination.Moves(want.Input, input)) continue;
+                // Its leftover never-sent jobs are no longer needed: cancelled, their charge given back, never sent later (EI-R4-1).
+                foreach (var leftover in jobs.Where(j => j.State is "queued" or "retry" or "parked" && !j.Uncertain)) Supersede(c, t, leftover.Id, "shared_dispatch");
+                jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
+                var owned = want.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
+                Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
+                    ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id));
+                foreach (var job in jobs)
+                {
+                    if (RequestDestination.Renumbered(job.Input, map) is not { } renumbered || !RequestDestination.Moves(job.Input, renumbered)) continue;
+                    Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                        ("$input", renumbered.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? renumbered.Fingerprint : job.Fingerprint), ("$id", job.Id));
+                }
+                changed.Add(want.UserId);
+                key = want.Input.Key;
+            }
+            if (key != null)
+            {
+                Changed(c, t);
+                Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", key), ("$at", Ms(now)));
+            }
+            return changed;
+        }
+        /// <summary>
+        /// F83: a request whose match can no longer be trusted (Sonarr stopped listing the TVDB id of one of its episodes, or a
+        /// match an earlier build kept without one) is matched again, for those episodes only (<paramref name="lost"/>, TMDB
+        /// numbers). It goes back to its TMDB episodes; its jobs never sent (held, queued) are cancelled and their charge given
+        /// back; then, with no job left that may still go out, exactly one fresh job (no new charge) asks for the lost episodes,
+        /// matched by id when it goes out. Its sends of episodes whose match is intact keep standing for them (EI-R4-3). A
+        /// request with no job of its own to take the authority from is held for a person instead (visible, approvable).
+        /// </summary>
+        private static void Reresolve(SqliteConnection c, SqliteTransaction t, RequestWant want, IReadOnlyList<RequestJob> jobs, IReadOnlySet<RequestEpisode> lost, DateTimeOffset now)
+        {
+            static MutationInput Back(MutationInput i) => i.From is { } source ? i with { Numbering = EpisodeIdentity.Tmdb, Episodes = source, From = null } : i;
+            var input = Back(want.Input);
+            var owned = want.OwnedInput is { } o ? Back(o) : null;
+            var auth = jobs.Count > 0 ? jobs[^1].Authorization : null;
+            foreach (var job in jobs.Where(j => j.State is "queued" or "retry" or "parked" && !j.Uncertain)) Supersede(c, t, job.Id, "identity_lost");
+            // Work whose send is uncertain can't be cancelled: it goes on in TMDB's numbering, so a resend matches by id.
+            foreach (var job in Jobs(c, t, "want_id=$w AND state NOT IN ('succeeded','failed','cancelled')", ("$w", want.Id)))
+                if (job.Input.From != null) Exec(c, t, "UPDATE jobs SET mutation_input=$input WHERE id=$id", ("$input", Back(job.Input).Canonical), ("$id", job.Id));
+            var open = Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND state NOT IN ('succeeded','failed','cancelled') LIMIT 1", ("$w", want.Id)) != null;
+            var (status, reason) = open ? (want.Status, want.Reason) : auth != null ? ("queued", "queued_outage") : ("pending", EpisodeIdentity.Unresolved);
+            Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END,status=$s,reason=$r,updated_at=$at WHERE id=$id",
+                ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$s", status), ("$r", reason), ("$at", Ms(now)), ("$id", want.Id));
+            if (!open && auth != null && RequestDestination.Only(input, lost) is { } fresh) AddJob(c, t, want.Id, fresh, auth, now, linkReservation: false);
+        }
+        /// <summary>
+        /// F83: the id matches already kept for a TMDB-numbered (or switched) request's acquisition applied again, for a request
+        /// that had no send of its own to apply them (one joining another's sent episode, or one whose job ended since). Run
+        /// by the arrival sweep. Returns whose requests changed (the ledger revision and a request event are recorded then).
+        /// </summary>
+        /// <param name="want">The request.</param>
+        /// <param name="now">Now.</param>
+        public IReadOnlyList<Guid> SettleIdentity(RequestWant want, DateTimeOffset now)
+        {
+            if (!_db.Available || (want.Input.Numbering != EpisodeIdentity.Tmdb && want.Input.From == null)) return Array.Empty<Guid>();
+            return _db.Write((c, t) => (IReadOnlyList<Guid>)Renumber(c, t, want.AcquisitionId, want.TargetKey, null, null, now));
+        }
+        /// <summary>
+        /// The table of kept id matches (F83), ensured at every start like the title-choice tables. A match kept before its TVDB
+        /// id was (an earlier build) can't be checked against Sonarr, so it is dropped.
+        /// </summary>
+        internal static void EnsureEpisodeIdentities(SqliteConnection c)
+        {
+            using var t = c.BeginTransaction(deferred: false);
+            Exec(c, t, "CREATE TABLE IF NOT EXISTS episode_identities(acquisition_id TEXT NOT NULL REFERENCES acquisitions(id) ON DELETE CASCADE,target_key TEXT NOT NULL,season INTEGER NOT NULL,episode INTEGER NOT NULL,to_season INTEGER NOT NULL,to_episode INTEGER NOT NULL,tvdb_id INTEGER NOT NULL DEFAULT 0,learned_at INTEGER NOT NULL,PRIMARY KEY(acquisition_id,target_key,season,episode))");
+            using (var columns = Cmd(c, t, "SELECT COUNT(*) FROM pragma_table_info('episode_identities') WHERE name='tvdb_id'"))
+                if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    Exec(c, t, "ALTER TABLE episode_identities ADD COLUMN tvdb_id INTEGER NOT NULL DEFAULT 0");
+            // Matches an earlier build kept without a TVDB id can't be checked against Sonarr: dropped, and every request on those
+            // acquisitions that relied on them (switched, or sent and still in TMDB numbering with nothing left to send) is
+            // matched again by a fresh job (EI-R3-4).
+            // Per acquisition, target and TMDB episode (EI-R4-5): a request elsewhere, or one whose episodes kept their match, is untouched.
+            var stale = new List<(string Acquisition, string Target, RequestEpisode Episode)>();
+            using (var cmd = Cmd(c, t, "SELECT acquisition_id,target_key,season,episode FROM episode_identities WHERE tvdb_id<=0"))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) stale.Add((r.GetString(0), r.GetString(1), new RequestEpisode(r.GetInt32(2), r.GetInt32(3))));
+            Exec(c, t, "DELETE FROM episode_identities WHERE tvdb_id<=0");
+            var now = DateTimeOffset.UtcNow;
+            foreach (var place in stale.GroupBy(x => (x.Acquisition, x.Target)))
+            {
+                var lost = place.Select(x => x.Episode).ToHashSet();
+                foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", place.Key.Acquisition)))
+                {
+                    if (want.Status is "cancelled" or "declined" or "fulfilled" || !RequestDestination.SameTarget(want.TargetKey, place.Key.Target)) continue;
+                    var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
+                    var stranded = want.Input.Numbering == EpisodeIdentity.Tmdb && want.Status == "sent" && jobs.All(j => j.State is "succeeded" or "failed" or "cancelled");
+                    if (!(stranded || want.Input.From != null) || !RequestDestination.NamesAny(want.Input, lost)) continue;
+                    Reresolve(c, t, want, jobs, lost, now);
+                    Changed(c, t);
+                    Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", want.Input.Key), ("$at", Ms(now)));
+                }
+            }
+            t.Commit();
         }
         /// <summary>
         /// Waits a person has to end (the asker has no Seerr account linked): the want shows as held (pending, with the
@@ -1531,6 +1709,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Budget rows only count inside their 24-hour window; two days keeps the reset times readable.
             Exec(c, t, "DELETE FROM automation_budget WHERE reserved_at<$at", ("$at", Ms(now.AddDays(-2))));
             Exec(c, t, "DELETE FROM wants WHERE status IN ('fulfilled','cancelled','declined') AND updated_at<$at", ("$at", Ms(now.AddYears(-1))));
+            // F83: an acquisition's kept id matches go with its last request.
+            Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id NOT IN (SELECT acquisition_id FROM wants)");
             // A 4K request nothing can take (no_4k_instance) says so; it never turns stale meanwhile.
             return Exec(c, t, "UPDATE wants SET status='stale',reason='stale' WHERE status='sent' AND reason<>'" + No4k + "' AND created_at<$at", ("$at", Ms(now.AddDays(-Math.Clamp(staleDays, 1, 365)))));
         });
