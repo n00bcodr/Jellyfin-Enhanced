@@ -349,6 +349,8 @@ Poster age badges use classification colors independently of **Colored Ratings B
 
 Status Tags mark what is new or popular with a small translucent badge, such as `Just Added`, `New Movie`, or `#3 Today`. The badge sits over the card, so your poster image, including custom poster sets, stays as it is.
 
+![Just Added, New Episode, New Movie and daily trending badges on library cards](../images/tags/status-tags.webp)
+
 **How to use:** Turn on **Show Status Tags** in **UI Settings** and choose a corner. Open **Choose which badges to show** to turn single badges off.
 
 | Setting | Default | What it does |
