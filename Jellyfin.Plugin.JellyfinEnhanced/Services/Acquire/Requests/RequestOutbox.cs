@@ -34,6 +34,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// episode and the Sonarr episode it is. The ledger renumbers the request to Sonarr's numbers with the outcome.
         /// </summary>
         public IReadOnlyList<EpisodeRenumbering>? Renumbered { get; init; }
+        /// <summary>
+        /// Where the target's Sonarr numbers each TVDB episode of the series, as this attempt read its episode list (null: not
+        /// read): the learned matches are checked against it (<see cref="EpisodeIdentity"/>).
+        /// </summary>
+        public IReadOnlyDictionary<int, RequestEpisode>? Identity { get; init; }
         /// <summary>A refusal at the final send; the job is parked for human review.</summary>
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);
         /// <summary>An uncertain send; the reservation remains until a scoped fresh read resolves it.</summary>

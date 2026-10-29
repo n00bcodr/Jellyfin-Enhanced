@@ -32,6 +32,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Numbering { get; init; }
+        /// <summary>
+        /// The TMDB-numbered episodes a request asked for before its id match switched it to Sonarr's numbers (F83), in the
+        /// same order as <see cref="Episodes"/>' sources: the switched request still covers those TMDB episodes for a request
+        /// sharing them, and is pointed at Sonarr's current numbers again when they move. Set only by the server.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RequestEpisode[]? From { get; init; }
         /// <summary>Optional administrator-selected target.</summary>
         public string? InstanceId { get; init; }
         /// <summary>Optional administrator-selected quality profile.</summary>
@@ -82,7 +89,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Seasons == null || Episodes == null || Seasons.Length > 200 || Episodes.Length > 1000 ||
                 Seasons.Any(s => s < 0 || s > 10000) || Episodes.Any(e => e == null || e.Season < 0 || e.Season > 10000 || e.Episode < 1 || e.Episode > 100000) ||
                 InstanceId?.Length > 80 || RootFolder?.Length > 1024 || ProfileId is <= 0 || !SeerrOptionsValid() ||
-                (Numbering != null && (Numbering != EpisodeIdentity.Tmdb || Scope != "episodes"))) return null;
+                (Numbering != null && (Numbering != EpisodeIdentity.Tmdb || Scope != "episodes")) ||
+                (From != null && (Numbering != null || Scope != "episodes" || From.Length is 0 or > 1000 || From.Any(e => e == null || e.Season < 0 || e.Episode < 1)))) return null;
             if (key.IsMovie != (Scope == "movie") || (Scope == "movie" && (Seasons.Length != 0 || Episodes.Length != 0)) ||
                 (Scope == "episodes" && (Episodes.Length == 0 || Seasons.Length != 0)) ||
                 (Scope is "seasons" or "future" or "next_season" && (Seasons.Length == 0 || Episodes.Length != 0)) ||
@@ -109,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// Fingerprint of the confirmed input. Whose numbering it is in (<see cref="Numbering"/>) is the server's note, not part
         /// of what was asked: a retry of the same ask matches its recorded fingerprint whatever the server noted.
         /// </summary>
-        [JsonIgnore] public string Fingerprint => Hash(Numbering == null ? Canonical : (this with { Numbering = null }).Canonical);
+        [JsonIgnore] public string Fingerprint => Hash(Numbering == null && From == null ? Canonical : (this with { Numbering = null, From = null }).Canonical);
         internal static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
         internal IEnumerable<int> SeasonNumbers => Scope == "episodes" ? Episodes.Select(e => e.Season).Distinct() : Seasons;
         internal bool Covers(RequestEpisode episode) => Covers(episode, null);
@@ -120,7 +128,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// TMDB-numbered ask covers no Sonarr or library episode), until its id match renumbers it.
         /// </summary>
         internal bool Covers(RequestEpisode episode, string? numbering)
-            => Numbering == numbering && (Seasons.Contains(episode.Season) || Episodes.Contains(episode));
+            => numbering == EpisodeIdentity.Tmdb
+                ? (Numbering == EpisodeIdentity.Tmdb && Episodes.Contains(episode)) || (From?.Contains(episode) ?? false)
+                : Numbering == numbering && (Seasons.Contains(episode.Season) || Episodes.Contains(episode));
+        /// <summary>The TMDB-numbered episodes this input names: its own while TMDB-numbered, else those it was switched from.</summary>
+        internal IEnumerable<RequestEpisode> TmdbEpisodes => Numbering == EpisodeIdentity.Tmdb ? Episodes : From ?? Array.Empty<RequestEpisode>();
         /// <summary>
         /// True when two inputs ask for some of the same part of a title in the same edition: the movie; a season both
         /// name (whole seasons, next season, "keep getting"); an episode one names in a season the other names whole;
@@ -130,7 +142,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (Key != other.Key || Variant != other.Variant) return false;
             if (Scope == "movie" || other.Scope == "movie") return Scope == other.Scope;
-            if (Scope == "episodes" && other.Scope == "episodes") return Numbering == other.Numbering && Episodes.Intersect(other.Episodes).Any();
+            if (Scope == "episodes" && other.Scope == "episodes")
+                return (Numbering == other.Numbering && Episodes.Intersect(other.Episodes).Any()) || TmdbEpisodes.Intersect(other.TmdbEpisodes).Any();
             if (Scope == "episodes") return Numbering == other.Numbering && Episodes.Any(e => other.Seasons.Contains(e.Season));
             if (other.Scope == "episodes") return Numbering == other.Numbering && other.Episodes.Any(e => Seasons.Contains(e.Season));
             return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");

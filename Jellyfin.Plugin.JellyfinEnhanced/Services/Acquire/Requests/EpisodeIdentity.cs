@@ -11,7 +11,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>One asked episode, in TMDB's numbering, and the Sonarr episode it is (same TVDB episode id).</summary>
     /// <param name="From">The episode as asked (TMDB's season and number).</param>
     /// <param name="To">The same episode as the request target's Sonarr numbers it.</param>
-    public sealed record EpisodeRenumbering(RequestEpisode From, RequestEpisode To);
+    /// <param name="TvdbId">The TVDB episode id they share (what a later read checks the Sonarr numbers against).</param>
+    public sealed record EpisodeRenumbering(RequestEpisode From, RequestEpisode To, int TvdbId);
 
     /// <summary>What TMDB lists as an episode's TVDB id.</summary>
     /// <param name="Read">TMDB answered (false: it couldn't be asked now; nothing is concluded).</param>
@@ -62,7 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// wasn't that wait already, and it is within <see cref="MaxAttempts"/>.
         /// </summary>
         /// <param name="job">The job being sent.</param>
-        internal static bool MayWait(RequestJob job) => job.Reason != Pending && job.Attempts < MaxAttempts;
+        /// <remarks>The job a backend is handed is as it was before its claim, which counted this attempt: this one is the next.</remarks>
+        internal static bool MayWait(RequestJob job) => job.Reason != Pending && job.Attempts + 1 < MaxAttempts;
 
         /// <summary>
         /// Where a TMDB-numbered episode stands in a request's scope (<c>LedgerRequestFacts.ScopeOf</c>): a negative season no
@@ -158,7 +160,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="matched">Matched asks (<see cref="Match"/>).</param>
         /// <returns>The renumbering.</returns>
         internal static IReadOnlyList<EpisodeRenumbering> Renumbering(IEnumerable<(RequestEpisode Ask, JsonElement Row)> matched)
-            => matched.Select(m => new EpisodeRenumbering(m.Ask, new RequestEpisode(DirectArrBackend.Int(m.Row, "seasonNumber")!.Value, DirectArrBackend.Int(m.Row, "episodeNumber")!.Value))).ToList();
+            => matched.Select(m => new EpisodeRenumbering(m.Ask, new RequestEpisode(DirectArrBackend.Int(m.Row, "seasonNumber")!.Value, DirectArrBackend.Int(m.Row, "episodeNumber")!.Value), DirectArrBackend.Int(m.Row, "tvdbId")!.Value)).ToList();
+
+        /// <summary>
+        /// Where Sonarr numbers each TVDB episode now, from an episode list just read (exactly one row per id; an id on two
+        /// rows is left out): what the learned matches are checked and moved against (<c>RequestLedger.Learn</c>).
+        /// </summary>
+        /// <param name="rows">Sonarr's episode rows of the series.</param>
+        /// <returns>TVDB episode id to Sonarr's season and number.</returns>
+        internal static IReadOnlyDictionary<int, RequestEpisode> Snapshot(IEnumerable<JsonElement> rows)
+            => rows.Select(r => (Id: DirectArrBackend.Int(r, "tvdbId") ?? 0, Season: DirectArrBackend.Int(r, "seasonNumber"), Episode: DirectArrBackend.Int(r, "episodeNumber")))
+                .Where(r => r.Id > 0 && r.Season is >= 0 && r.Episode is >= 1)
+                .GroupBy(r => r.Id).Where(g => g.Count() == 1)
+                .ToDictionary(g => g.Key, g => new RequestEpisode(g.First().Season!.Value, g.First().Episode!.Value));
 
         /// <summary>
         /// A TMDB-numbered input in Sonarr's numbers by <paramref name="map"/>, or null when it isn't TMDB-numbered episodes or

@@ -275,10 +275,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // goes out): it is never fulfilled by an episode that merely has the same number.
             if (want.Input.Numbering == EpisodeIdentity.Tmdb)
             {
-                // A request sharing its episodes may have been closed or held since its group last went out: the id matches
-                // already known are applied again, so the rest of the group isn't left in TMDB's numbering for good.
-                _ledger.SettleIdentity(want, _now());
-                return false;
+                // A request with no send of its own to switch it (one joining another's sent episode, or one whose job ended
+                // since) takes the id matches already kept: its change is published, and it is judged as it is now.
+                var changed = _ledger.SettleIdentity(want, _now());
+                if (changed.Count == 0) return false;
+                _feed.Bump(changed.Select(ArrTitleKey.UserRequests).Append(want.Input.Key).Append(ArrTitleKey.RequestsState).ToArray());
+                if (_ledger.Find(want.Id) is not { } switched || switched.Input.Numbering == EpisodeIdentity.Tmdb) return false;
+                want = switched;
             }
             var title = key.ToString();
             var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _ledger.Dispatches(title));

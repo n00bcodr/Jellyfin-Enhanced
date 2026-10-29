@@ -603,7 +603,7 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.WithdrawFollowers"] = (new[] { "Extra", "Extra" }, "a cancel's followers withdrawn"),
         ["RequestLedger.FollowFutureSeason"] = (new[] { "SameTarget" }, "a new season followed on the request's own Seerr"),
         ["RequestLedger.Complete"] = (new[] { "Extra", "Extra", "Extra", "Extra", "SameTarget" }, "shared dispatch: who a send serves"),
-        ["RequestLedger.Renumber"] = (new[] { "SameTarget", "SameTarget", "MatchedGroups", "Renumbered", "Renumbered", "Renumbered" }, "F83: groups of TMDB-numbered asks sharing episodes take Sonarr's numbers together once every episode is matched by id"),
+        ["RequestLedger.Renumber"] = (new[] { "SameTarget", "SameTarget", "Renumbered", "Moves", "Renumbered", "Renumbered", "Moves" }, "F83: each TMDB-numbered (or switched) ask takes Sonarr's numbers on its own once every episode is matched by id, checked against the target's last read"),
         ["RequestLedger.LeadsRetryCycle"] = (new[] { "Extra", "Extra", "Serves", "Serves" }, "retry wait cycles include only work at the same title, edition and destination"),
         ["RequestLedger.Redundancy"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Serves", "Serves" }, "the send-time check: what went out (or is going out) for the title is never sent again"),
         ["RequestLedger.PurgeUser"] = (new[] { "Extra", "SameTarget" }, "a deleted person's requests kept while others follow them"),

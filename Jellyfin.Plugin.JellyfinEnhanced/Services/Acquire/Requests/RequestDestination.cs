@@ -169,46 +169,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => aliases.Except(observed, StringComparer.Ordinal).Append(canonical).Distinct(StringComparer.Ordinal).ToArray();
 
         /// <summary>
-        /// A TMDB-numbered ask in the target's own numbers (F83, <see cref="EpisodeIdentity"/>): every one of its episodes by
-        /// <paramref name="map"/> (asked episode to the Sonarr episode with its TVDB id), or null when it isn't TMDB-numbered
-        /// episodes or the map doesn't name every one of its episodes (it is never partly renumbered). The one place an
-        /// episode of one numbering is taken for one of another.
+        /// A TMDB-numbered ask in the target's own numbers (F83, <see cref="EpisodeIdentity"/>), or a switched one pointed at
+        /// Sonarr's numbers again: every TMDB episode it names (its own, or those it was switched from) by <paramref name="map"/>
+        /// (TMDB episode to the Sonarr episode with its TVDB id, as last read). Null when it names none or the map doesn't name
+        /// every one of them (never partly). The one place an episode of one numbering is taken for one of another.
         /// </summary>
         /// <param name="input">An input.</param>
-        /// <param name="map">Asked episode to Sonarr episode.</param>
+        /// <param name="map">TMDB episode to Sonarr episode.</param>
         internal static MutationInput? Renumbered(MutationInput input, IReadOnlyList<EpisodeRenumbering> map)
         {
-            if (input.Scope != "episodes" || input.Numbering != EpisodeIdentity.Tmdb) return null;
+            if (input.Scope != "episodes") return null;
+            var source = input.Numbering == EpisodeIdentity.Tmdb ? input.Episodes : input.From;
+            if (source is not { Length: > 0 }) return null;
             var to = new Dictionary<RequestEpisode, RequestEpisode>();
             foreach (var m in map) to.TryAdd(m.From, m.To);
-            if (input.Episodes.Length == 0 || !input.Episodes.All(to.ContainsKey)) return null;
+            if (!source.All(to.ContainsKey)) return null;
             return input with
             {
                 Numbering = null,
-                Episodes = input.Episodes.Select(e => to[e]).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray(),
+                From = source,
+                Episodes = source.Select(e => to[e]).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray(),
             };
         }
 
         /// <summary>
-        /// F83: TMDB-numbered asks of one acquisition and target grouped by the episodes they share (an ask is linked to every
-        /// other naming one of its episodes, transitively), keeping only groups whose every episode <paramref name="map"/>
-        /// names: those are switched to Sonarr's numbers together (<c>RequestLedger.Renumber</c>), the others not at all.
+        /// True when <paramref name="renumbered"/> names other Sonarr episodes than <paramref name="input"/> (a switch, or a
+        /// switched request whose episodes Sonarr numbers differently now).
         /// </summary>
-        /// <param name="asks">The asks (id and input).</param>
-        /// <param name="map">Learned id matches: TMDB episode to Sonarr episode.</param>
-        internal static IReadOnlyList<HashSet<string>> MatchedGroups(IReadOnlyList<(string Id, MutationInput Input)> asks, IReadOnlyList<EpisodeRenumbering> map)
-        {
-            var known = map.Select(m => m.From).ToHashSet();
-            var group = asks.ToDictionary(a => a.Id, a => a.Id, StringComparer.Ordinal);
-            string Root(string id) { while (group[id] != id) id = group[id] = group[group[id]]; return id; }
-            for (var i = 0; i < asks.Count; i++)
-                for (var j = i + 1; j < asks.Count; j++)
-                    if (asks[i].Input.Episodes.Intersect(asks[j].Input.Episodes).Any()) group[Root(asks[i].Id)] = Root(asks[j].Id);
-            return asks.GroupBy(a => Root(a.Id), StringComparer.Ordinal)
-                .Where(g => g.All(a => a.Input.Episodes.Length > 0 && a.Input.Episodes.All(known.Contains)))
-                .Select(g => g.Select(a => a.Id).ToHashSet(StringComparer.Ordinal))
-                .ToList();
-        }
+        internal static bool Moves(MutationInput input, MutationInput renumbered)
+            => input.Numbering != renumbered.Numbering || !input.Episodes.SequenceEqual(renumbered.Episodes);
 
         /// <summary>What groups requests by title and edition (the key and the edition).</summary>
         /// <param name="input">An input.</param>
