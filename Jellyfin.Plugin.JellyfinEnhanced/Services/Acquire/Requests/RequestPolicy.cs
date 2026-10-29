@@ -34,14 +34,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// (null: they don't apply). <c>Pool</c> (group quotas on): the shared pool the person's requests draw on now.
     /// <c>VisibilityUnknown</c> (4f round 7): <c>Visible</c> is false only because a title nobody has yet hasn't had its rating
     /// verified for the person's parental limits (not read yet, or the lookup failed lately), while its libraries are open to
-    /// them: evidence still to prepare, not a refusal.
+    /// them: evidence still to prepare, not a refusal. <c>CopiesUnproven</c>: <c>Visible</c> is false because the library copy
+    /// lookup stopped before it had read everything and saw no copy (neither a copy nor the title's absence is proven) while
+    /// the libraries it would land in are open to the person: a reader that tells temporary from final (native details)
+    /// answers it as temporary; it is never visible. A destination the person can't open stays a refusal.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
         string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
         RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false, RequestSizeHint? Size = null,
-        HouseholdRuleVerdict? Rules = null, GroupPoolBinding? Pool = null, bool VisibilityUnknown = false);
+        HouseholdRuleVerdict? Rules = null, GroupPoolBinding? Pool = null, bool VisibilityUnknown = false, bool CopiesUnproven = false);
     /// <summary>
     /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
     /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
@@ -324,6 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var binding = _backend.Binding(userId, input);
             var visible = false;
             var unknown = false;
+            var unproven = false;
             SeerrParentalFilter.AbsentSignature? signature = null;
             if (viewer != null)
             {
@@ -351,6 +355,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         visible &= _parental.MaySeeAbsent(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), out signature);
                         unknown = open && !visible && _parental.AbsentVerdict(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N")) == null;
                     }
+                }
+                else
+                {
+                    // The lookup stopped before it read everything and saw nothing: neither a copy nor an absence is proven.
+                    // That is unknown only while nothing else decides: a destination the person can't open is a confirmed
+                    // refusal whatever the copies are.
+                    unproven = destinationVisible;
                 }
             }
             var enabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr";
@@ -388,7 +399,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked,
                 size, Rules(config, role, key, input, size),
                 HouseholdFlags.Pools(config) ? GroupQuotaPolicy.For(GroupQuotaPolicy.Parse(config.ArrGroupQuotaPools), userId, role, windowDays) : null,
-                unknown);
+                unknown, unproven);
         }
         /// <summary>
         /// The Jellyfin libraries a request like <paramref name="input"/> lands in, which decide who may see it (review

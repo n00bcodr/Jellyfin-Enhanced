@@ -40,7 +40,9 @@ public partial class ApiNativeDetailsTests
             Assert.Equal(8, rig.Rig.Artwork.InFlightCount);
             Assert.Equal(8, sends);
             Assert.Equal(0, rig.Admission.Count());
-            Assert.Equal(72, reads.Count(r => r.IsCompletedSuccessfully && Status(r.Result.Result) == 404));
+            // Refused for admission pressure: temporary (503 + Retry-After, the viewer's own bound named), never 404.
+            Assert.Equal(72, reads.Count(r => r.IsCompletedSuccessfully && Status(r.Result.Result) == 503
+                && r.Result.Http.Response.Headers["Retry-After"] == "2" && r.Result.Http.Response.Headers["X-JE-Art"] == "viewer-busy"));
         }
         finally { rig.Rig.ImageGate.TrySetResult(); await Task.WhenAll(reads).WaitAsync(TimeSpan.FromSeconds(20)); }
         Assert.Equal(8, reads.Count(r => Status(r.Result.Result) == 200));

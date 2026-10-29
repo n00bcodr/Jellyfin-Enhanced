@@ -240,6 +240,8 @@ public partial class ApiNativeDetailsTests
         public List<string> Hosts { get; } = new();
         public TaskCompletionSource? ImageGate { get; set; }
         public TaskCompletionSource? ImageStarted { get; set; }
+        /// <summary>When set, TMDB's image answer for a request (null: the default image bytes).</summary>
+        public Func<HttpRequestMessage, HttpResponseMessage?>? ImageAnswer { get; set; }
         public IntegrationTransport Images { get; }
         public IntegrationTransport Seerr { get; }
         public NativeDetailsArtwork Artwork { get; private set; } = null!;
@@ -306,6 +308,7 @@ public partial class ApiNativeDetailsTests
                 lock (Hosts) Hosts.Add(req.RequestUri!.Host);
                 ImageStarted?.TrySetResult();
                 if (ImageGate != null) await ImageGate.Task;
+                if (ImageAnswer?.Invoke(req) is { } custom) return custom;
                 var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 0xff, 0xd8, 0xff, 1, 2, 3 }) };
                 r.Content.Headers.ContentType = new("image/jpeg");
                 return r;
@@ -938,13 +941,13 @@ public partial class ApiNativeDetailsTests
         Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.Movie(1)) })).Result));
         Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.Series(2)) })).Result));
         Assert.Equal(404, Status((await Call(rig, "TvShows", "GetSeasons", me, new() { ["seriesId"] = Id(SyntheticId.Series(2)) })).Result));
-        // Episode lists: a season the series doesn't have is 404; a season whose episodes can't be had
-        // (unknown to the source or an outage) is an empty list, since jellyfin-web's list has no error handler.
+        // Episode lists: a season the series doesn't have is 404; a season the source has no data for is an empty list;
+        // one whose data can't be had right now (an outage) is retryable (JE's child-list reader asks again), never empty.
         Assert.Equal(404, Status((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["season"] = 9 })).Result));
         Assert.Empty(Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 2)) })).Result).Items);
         Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result));
         rig.Source.SeasonsDown = true;
-        Assert.Empty(Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result).Items);
+        Assert.Equal(503, Status((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result));
         Assert.Equal(503, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.EpisodeOf(83867, 1, 1)) })).Result));
         // A season page whose own episode data can't be had fails up front (retryable: the modal once),
         // never a season shown with no episodes.
