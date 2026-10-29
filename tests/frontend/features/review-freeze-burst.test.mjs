@@ -804,3 +804,143 @@ for (const visit of ['answer', 'refusal']) test(`regression SRD-R2-4: leaving th
   assert.equal(list.firstElementChild.dataset.id, id(501));
   assert.equal(list.firstElementChild.querySelector('.listItemBodyText bdi').textContent, '1. New visit name');
 });
+
+// F102 round 3 (SRD-R3-1): until the viewer's season list identifies a missing row (on its way, or failed), the row
+// is bound by the episode number Jellyfin drew on it: an arrival updates it in place, never adds a row beside it.
+function seasonReads(h, list) {
+  let listReads = 0;
+  h.window.ApiClient.getJSON = async () => { listReads++; return list(listReads); };
+  h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: itemId, SeriesId: 'series' } : physicalOne(itemId));
+  return () => listReads;
+}
+const failedList = () => { throw Object.assign(new Error('HTTP 500'), { status: 500 }); };
+
+test('regression SRD-R3-1: access change, a failing season list and an arrival leave exactly one row per episode', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const move = withRevision(h);
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), { access: 'rev-a' });
+  const listReads = seasonReads(h, failedList);
+  h.JE.core.api.plugin = async () => ({ items: [seasonStatus(h, 1, { 0: id(501) })] });
+  move('rev-b'); await turn(); await h.advance(200);
+  assert.equal(listReads(), 1);
+  assert.equal(page.querySelectorAll('.listItem').length, 6, 'one row per episode');
+  const row = list.firstElementChild;
+  assert.equal(row.dataset.id, id(501), 'E1\'s drawn row is the one updated, in place');
+  assert.equal(row.querySelector('.listItemBodyText bdi').textContent, '1. Playable one');
+  // A later status read and ten seconds: still one row per episode, nothing left to identify.
+  await D.update(true); await turn(); await h.advance(10000);
+  assert.equal(listReads(), 1);
+  assert.equal(page.querySelectorAll('.listItem').length, 6);
+  assert.equal(list.firstElementChild, row);
+});
+
+test('regression SRD-R3-1: a failed season list is asked again with the next status read while a missing row is unidentified', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails, E = h.JE.internals.arrStatusEpisodes;
+  const list = page.querySelector('.itemsContainer');
+  // A missing row no status names (numbered 7: not this status's episodes).
+  list.innerHTML = seasonRows(1, { physical: true }) + nativeRow(id(900), 7, { missing: true, overview: 'Seventh' });
+  const listReads = seasonReads(h, n => (n === 1 ? failedList() : listed([501, 1], [2, 2, 'Virtual'], [3, 3], [4, 4], [5, 5], [6, 6], [900, 7, 'Virtual'])));
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.equal(listReads(), 1);
+  E.apply(); list.appendChild(list.lastElementChild.cloneNode(true)); list.lastElementChild.remove(); await turn(); await h.advance(100);
+  assert.equal(listReads(), 1, 'not on every pass (host mutations): once per status read');
+  h.JE.core.api.plugin = async () => ({ items: [seasonStatus(h, 1, { 0: id(501) })] });
+  await D.update(true); await turn(); await h.advance(100);
+  assert.equal(listReads(), 2, 'asked again with the next status read');
+  assert.equal(E.removed([id(900)]), true, 'identified by the list now');
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6), id(900)]);
+});
+
+test('regression SRD-R3-1: while the season list is on its way an arrival adds no row beside the drawn missing row', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const move = withRevision(h);
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), { access: 'rev-a' });
+  const answer = deferred();
+  seasonReads(h, () => answer.promise);
+  h.JE.core.api.plugin = async () => ({ items: [seasonStatus(h, 1, { 0: id(501) })] });
+  move('rev-b'); await turn(); await h.advance(200);
+  assert.equal(page.querySelectorAll('.listItem').length, 6, 'no seventh row while identification is pending');
+  answer.resolve(listed([1, 1, 'Virtual'], [2, 2, 'Virtual'], [3, 3], [4, 4], [5, 5], [6, 6])); await turn(); await h.advance(100);
+  assert.equal(page.querySelectorAll('.listItem').length, 6);
+  assert.equal(list.firstElementChild.dataset.id, id(501));
+});
+
+test('regression SRD-R3-1: a drawn list with both E1 rows and a failing season list keeps the native playable row only', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1, { physical: true });
+  const heart = list.querySelector(`[data-id="${id(501)}"] button`);
+  const listReads = seasonReads(h, failedList);
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.equal(listReads(), 1);
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)], 'the missing E1 Jellyfin drew goes by its number once the list failed');
+  assert.equal(list.firstElementChild.querySelector('button'), heart);
+});
+
+test('regression SRD-R3 (F105a): after the person\'s access moves, a playable episode drawn by JE alone is drawn again', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const move = withRevision(h);
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1); list.firstElementChild.remove();
+  seasonReads(h, () => listed([2, 2, 'Virtual'], [3, 3], [4, 4], [5, 5], [6, 6]));
+  const absent = seasonStatus(h, 1); absent.episodes[0].row = false; absent.episodes[0].itemId = null;
+  D.render(page, absent, { access: 'rev-a' });
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), { access: 'rev-a' }); await turn();
+  assert.equal(list.querySelectorAll(`[data-id="${id(501)}"]`).length, 1);
+  const held = deferred();
+  h.JE.core.api.plugin = () => held.promise;
+  move('rev-b');
+  assert.equal(list.querySelectorAll(`[data-id="${id(501)}"]`).length, 0, 'gone with the access it was read under');
+  held.resolve({ items: [seasonStatus(h, 1, { 0: id(501) })] }); await turn(); await h.advance(200);
+  assert.equal(list.querySelectorAll(`[data-id="${id(501)}"]`).length, 1, 'drawn again under the access as it is now');
+});
+
+test('regression SRD-R3 (F105a): a rowless arrival whose read failed (500) is tried again with the next status read', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1); list.firstElementChild.remove();
+  let reads = 0;
+  D.render(page, seasonStatus(h, 1), {});
+  h.JE.helpers.getItemCached = async itemId => { reads++; if (reads === 1) throw Object.assign(new Error('HTTP 500'), { status: 500 }); return physicalOne(itemId); };
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  assert.equal(list.querySelectorAll(`[data-id="${id(501)}"]`).length, 0);
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(200);
+  assert.equal(reads, 2);
+  assert.equal(list.querySelectorAll(`[data-id="${id(501)}"]`).length, 1);
+});
+
+test('regression SRD-R3 (F105b): the season\'s route moving within it while the item is read still points the row', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails, E = h.JE.internals.arrStatusEpisodes;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  const held = deferred(); let reads = 0;
+  h.JE.helpers.getItemCached = async () => { reads++; return reads === 1 ? held.promise : physicalOne(id(501)); };
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  const owner = E.current().season;
+  h.window.history.replaceState(null, '', `#/details?id=${id(100)}&context=return`);
+  list.innerHTML = seasonRows(1); await turn(); await h.advance(200);
+  held.resolve(physicalOne(id(501))); await turn(); await h.advance(200);
+  assert.equal(E.current().season, owner);
+  assert.equal(reads, 2, 'asked again as the view is now');
+  assert.equal(list.firstElementChild.dataset.id, id(501));
+});
+
+test('regression SRD-R3-1: two unidentified missing rows drawn with the arriving number and a failing list: no row is added beside them', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const move = withRevision(h);
+  const list = page.querySelector('.itemsContainer');
+  // Jellyfin interleaves a missing special also drawn as "1." into the season.
+  list.innerHTML = seasonRows(1) + nativeRow(id(900), 1, { missing: true, name: 'A special', overview: 'Special overview' });
+  D.render(page, seasonStatus(h, 1), { access: 'rev-a' });
+  seasonReads(h, failedList);
+  h.JE.core.api.plugin = async () => ({ items: [seasonStatus(h, 1, { 0: id(501) })] });
+  move('rev-b'); await turn(); await h.advance(200);
+  await D.update(true); await turn(); await h.advance(1000);
+  assert.equal(page.querySelectorAll('.listItem').length, 7, 'no row added while the number is ambiguous');
+  assert.deepEqual(rowIds(page), [id(1), id(2), id(3), id(4), id(5), id(6), id(900)], 'nothing guessed: both stay as drawn');
+});

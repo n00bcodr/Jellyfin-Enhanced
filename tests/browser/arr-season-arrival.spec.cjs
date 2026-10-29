@@ -309,3 +309,24 @@ test('SRD-R2-4: leaving the season drops what the visit learnt; coming back read
   await expectOneEpisodeOne(page, { nativeControls: false });
   expect(arr.items.hits).toBe(2);
 });
+
+test('SRD-R3-1: the person\'s access moves as E1 arrives and the viewer\'s season list fails: exactly one E1 row, updated in place', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await withAccess(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.evaluate(() => {
+    window.__listReads = 0;
+    window.ApiClient.getJSON = async () => { window.__listReads++; throw Object.assign(new Error('HTTP 500'), { status: 500 }); };
+  });
+  // Their access moves; the status read again under it names E1 playable.
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus(PLAYABLE_ONE)] };
+  await moveAccess(page, 'rev-b');
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(await page.evaluate(() => window.__listReads)).toBe(1);
+  // Another status read: still one row per episode.
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem')).toHaveCount(3);
+  await expectOneEpisodeOne(page, { nativeControls: false });
+});

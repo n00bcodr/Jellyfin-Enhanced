@@ -492,6 +492,8 @@ export const SITES = {
     'clear state state': [1, 'module', 'ui'],
     'extend state extension': [1, 'module', 'ui'],
     // A row the viewer was on that goes (its episode's other row stays): focus moves to that episode's row, announced.
+    // F105b: an item read whose answer was dropped while its season owner, route and viewer stay asks again.
+    'read state closure again': [2, 'module', 'ui'],
     'reconcile feedback announce': [1, 'module', 'effect'],
     'reconcile focus focus': [2, 'module', 'effect'],
     'render state observer': [1, 'module', 'ui'],
