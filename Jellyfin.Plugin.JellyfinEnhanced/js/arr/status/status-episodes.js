@@ -28,8 +28,20 @@
     let orphans = new Set();
     /** Unknown missing rows the season list was read for (each once). */
     let seeded = new Set();
+    /** The playable items' own answers read as the viewer, for every row JE points at them (normalised id → item). */
+    let hydrated = new Map();
+    /** Playable items Jellyfin refused the viewer: no row is pointed at them. */
+    let denied = new Set();
+    /** Bumped whenever what the page learnt is dropped: an answer read before it is not used. */
+    let generation = 0;
+    /** The status the page had when the person's access moved: nothing is pointed or removed on its word again. */
+    let distrusted = null;
+    /** What a row JE pointed at a playable item showed before (its id, marks, title, overview, still), to undo it. */
+    const before = new WeakMap();
     /** Read each newly playable item once while its native row is being prepared. */
     const pendingRows = new Map();
+    /** The polite live region that says which episode a moved focus landed on. */
+    let liveRegion = null;
     /** A native missing episode's mark (Jellyfin's "Missing" / "Unaired"). */
     const MISSING = '.missingIndicator, .unairedIndicator, .virtualEpisodeIndicator';
     /** Phase-3 extension: { chip?(ep), drawn?(status), decorate?(page, status, ctx, parts), clear?(page) }. */
@@ -217,11 +229,13 @@
      */
     function reconcile(rows, status) {
         const covers = new Map();
+        const target = new Map();
         for (const ep of status.episodes || []) {
-            if (!ep.row || !ep.itemId || !isReady(ep)) continue;
+            if (!ep.row || !ep.itemId || !isReady(ep) || denied.has(norm(ep.itemId))) continue;
             const id = norm(ep.itemId);
             if (!covers.has(id)) covers.set(id, new Set());
             covers.get(id).add(ep.episode);
+            if (!target.has(ep.episode)) target.set(ep.episode, id);
         }
         const gone = [];
         const groups = new Map();
@@ -240,10 +254,9 @@
                 continue;
             }
             if (!covers.size || !missingRow(row, id)) continue;
-            const episodes = placeholders.get(id);
-            for (const [target, covered] of covers) {
-                if ([...episodes].some(n => covered.has(n))) {
-                    join(target, row);
+            for (const n of placeholders.get(id)) {
+                if (target.has(n)) {
+                    join(target.get(n), row);
                     break;
                 }
             }
@@ -267,10 +280,11 @@
                     if (focused?.isConnected) focused.focus({ preventScroll: true });
                 }
             }
-            if (extra.some(row => row.contains(document.activeElement))) {
-                const target = keeper.matches('[tabindex], a[href], button') ? keeper : keeper.querySelector('.itemAction, a[href], button, [tabindex]');
-                extra.forEach(row => row.remove());
-                target?.focus?.({ preventScroll: true });
+            const focused = extra.find(row => row.contains(document.activeElement)) ? document.activeElement : null;
+            if (focused) {
+                // The viewer was on the row that goes: their focus moves to the episode's row that stays first.
+                focusable(keeper, focused).focus({ preventScroll: true });
+                announce(JE.arrStatus.tr('arr_episode_row_ready', { episode: Math.min(...covers.get(id)) }));
             }
         }
         if (!removed.size) return rows;
@@ -279,19 +293,62 @@
     }
 
     /**
+     * The control of a row that stays to move the viewer's focus to: the same kind of control as the one they were on,
+     * else the row's first control, else the row itself (made focusable from script only).
+     * @param {Element} row Row that stays.
+     * @param {Element} from Focused element in the row that goes.
+     * @returns {HTMLElement} Focus target.
+     */
+    function focusable(row, from) {
+        const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        if (row.matches(FOCUSABLE)) return row;
+        const controls = [...row.querySelectorAll(FOCUSABLE)];
+        const kind = el => [el.tagName, el.className, el.getAttribute('data-action'), el.getAttribute('is')].join('|');
+        const same = controls.find(el => kind(el) === kind(from));
+        if (same || controls[0]) return same || controls[0];
+        row.setAttribute('tabindex', '-1');
+        return row;
+    }
+
+    /**
+     * Reads a line out to screen readers through one visually hidden polite live region (the request sheet's
+     * pattern): cleared, then set a moment later, so the same words twice are read twice.
+     * @param {string} text Plain text.
+     * @returns {void}
+     */
+    function announce(text) {
+        if (!text || !document.body) return;
+        if (!liveRegion || !liveRegion.isConnected) {
+            liveRegion = document.createElement('div');
+            liveRegion.className = 'je-arr-episodes-live';
+            liveRegion.setAttribute('role', 'status');
+            liveRegion.setAttribute('aria-live', 'polite');
+            liveRegion.setAttribute('aria-atomic', 'true');
+            Object.assign(liveRegion.style, {
+                position: 'absolute', width: '1px', height: '1px', margin: '-1px', padding: '0', border: '0',
+                overflow: 'hidden', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', whiteSpace: 'nowrap'
+            });
+            document.body.appendChild(liveRegion);
+        }
+        const region = liveRegion;
+        region.textContent = '';
+        setTimeout(() => { region.textContent = String(text); }, 50);
+    }
+
+    /**
      * True when an element the host added holds a row of a missing item whose episode plays under another item now
      * (Jellyfin's list drawn while it still listed both), or of a missing item it no longer lists.
      * @param {Element} node Added element.
+     * @param {Map<number, string>} ready Each ready episode's item (normalised).
      * @returns {boolean} A replaced row.
      */
-    function replaced(node) {
+    function replaced(node, ready) {
         const rows = node.matches('.listItem[data-id]') ? [node] : node.querySelectorAll('.listItem[data-id]');
-        const episodes = state.status.episodes || [];
         for (const row of rows) {
             const id = norm(row.getAttribute('data-id'));
             if (orphans.has(id)) return true;
             const slot = !playable.has(id) && placeholders.get(id);
-            if (slot && episodes.some(ep => slot.has(ep.episode) && isReady(ep) && ep.itemId && norm(ep.itemId) !== id)) return true;
+            if (slot && [...slot].some(n => ready.has(n) && ready.get(n) !== id)) return true;
         }
         return false;
     }
@@ -310,7 +367,7 @@
         const client = window.ApiClient;
         const season = norm(status.itemId);
         unknown = unknown.filter(id => !seeded.has(id));
-        if (!unknown.length || !/^[0-9a-f]{32}$/.test(season) || typeof client?.getJSON !== 'function' || typeof client.getUrl !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
+        if (!unknown.length || !state?.trusted || !/^[0-9a-f]{32}$/.test(season) || typeof client?.getJSON !== 'function' || typeof client.getUrl !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
         unknown.forEach(id => seeded.add(id));
         const still = snapshot(page);
         Promise.resolve().then(() => JE.helpers.getItemCached(status.itemId)).then((item) => {
@@ -353,7 +410,9 @@
             if (ep.row && ep.itemId) byId.set(norm(ep.itemId), ep);
         }
         const byEpisode = new Map((status.episodes || []).map(ep => [ep.episode, ep]));
-        const rows = reconcile([...page.querySelectorAll('.listItem[data-id]')], status);
+        // A status from before the person's access moved neither points nor removes rows: it is being read again.
+        const all = [...page.querySelectorAll('.listItem[data-id]')];
+        const rows = state.trusted ? reconcile(all, status) : all;
         const byRow = new Map([...rowsByEpisode].filter(([n]) => byEpisode.has(n)).map(([n, row]) => [row, byEpisode.get(n)]));
         const index = { byId, byEpisode, byRow, live: new Set(rows.map(row => norm(row.getAttribute('data-id')))) };
         rowsByEpisode = new Map();
@@ -369,7 +428,7 @@
             if (!firstRow && row.getAttribute('data-type') === 'Episode') firstRow = row;
             const existing = row.querySelector('.je-arr-chip');
             const ready = ep?.stage === 'ready' && ep.reason?.code === 'ready';
-            if (ready) writes.push(() => patchReady(row, ep));
+            if (ready && state.trusted) writes.push(() => patchReady(row, ep));
             if (!ep || ready) {
                 if (existing) writes.push(() => remove(existing));
                 return;
@@ -405,7 +464,7 @@
             });
         });
         for (const write of writes) write();
-        if (unknown.length && (status.episodes || []).some(ep => ep.row && isReady(ep))) seed(page, status, unknown);
+        if (unknown.length && state.trusted && (status.episodes || []).some(ep => ep.row && isReady(ep))) seed(page, status, unknown);
         // A season without any episode row of Jellyfin's own still has its (empty) list once
         // jellyfin-web has rendered the season's children.
         const list = firstRow ? firstRow.closest('.itemsContainer') : page.querySelector('#listChildrenCollapsible:not(.hide) .itemsContainer');
@@ -437,19 +496,79 @@
      * @returns {void}
      */
     function patchReady(row, ep) {
+        if (denied.has(norm(ep.itemId))) return;
         const prior = row.getAttribute('data-id');
+        const marks = [...row.querySelectorAll('.missingIndicator, .virtualEpisodeIndicator')];
         if (ep.itemId && prior !== ep.itemId) {
+            // What it showed is kept to undo it (the person's access moves, Jellyfin refuses them the item).
+            if (!before.has(row)) before.set(row, { id: prior, marks: marks.map(node => ({ node, parent: node.parentNode, next: node.nextSibling })), content: content(row) });
             row.setAttribute('data-id', ep.itemId);
-            // Still the missing item's title, still and overview: the playable item's are read for it.
             row.dataset.jeArrWas = prior;
-            hydrate(row, ep);
-            row.querySelectorAll('[data-id], a[href]').forEach(node => {
-                if (node.getAttribute('data-id') === prior) node.setAttribute('data-id', ep.itemId);
-                const href = node.getAttribute('href');
-                if (href && prior && href.includes(prior)) node.setAttribute('href', href.replace(prior, ep.itemId));
-            });
+            retarget(row, prior, ep.itemId);
+            // Still the missing item's title, still and overview: the playable item's are drawn on it (read once).
+            hydrate(ep);
         }
-        row.querySelectorAll('.missingIndicator, .virtualEpisodeIndicator').forEach(node => node.remove());
+        marks.forEach(node => node.remove());
+    }
+
+    /**
+     * Points a row's own ids and links from one item to another.
+     * @param {Element} row Row.
+     * @param {string} from Item id now.
+     * @param {string} to Item id to point at.
+     * @returns {void}
+     */
+    function retarget(row, from, to) {
+        row.querySelectorAll('[data-id], a[href]').forEach(node => {
+            if (node.getAttribute('data-id') === from) node.setAttribute('data-id', to);
+            const href = node.getAttribute('href');
+            if (href && from && href.includes(from)) node.setAttribute('href', href.replace(from, to));
+        });
+    }
+
+    /**
+     * The parts of a row the playable item's answer redraws: title, overviews and still.
+     * @param {Element} row Row.
+     * @returns {{name: Element|null, text: string|null, overviews: Array, image: Element|null, still: string, src: string|null}} Parts.
+     */
+    function content(row) {
+        const title = row.querySelector('.listItemBody .listItemBodyText:not(.secondary):not(.listItem-overview)');
+        const name = title && (title.querySelector('bdi') || title);
+        const image = row.querySelector('.listItemImage');
+        return {
+            name: name && !name.children.length ? name : null, text: name ? name.textContent : null,
+            overviews: [...row.querySelectorAll('.listItem-overview, .listItem-bottomoverview')].map(node => {
+                const text = node.querySelector('bdi') || node;
+                return { node, parent: node.parentNode, next: node.nextSibling, text: text.children.length ? null : text, value: text.textContent };
+            }),
+            image, still: image ? image.style.backgroundImage : '', src: image ? image.getAttribute('data-src') : null,
+        };
+    }
+
+    /**
+     * Undoes JE's pointing of a row at a playable item: its missing item's id, links, marks, title, overview and still.
+     * @param {Element} row Row JE pointed.
+     * @returns {void}
+     */
+    function unpoint(row) {
+        const was = before.get(row);
+        const now = row.getAttribute('data-id');
+        if (!was) return;
+        before.delete(row);
+        delete row.dataset.jeArrWas;
+        row.setAttribute('data-id', was.id);
+        retarget(row, now, was.id);
+        const { name, text, overviews, image, still, src } = was.content;
+        if (name && text != null) name.textContent = text;
+        for (const o of overviews) {
+            if (!o.node.isConnected && o.parent.isConnected) o.parent.insertBefore(o.node, o.next?.parentNode === o.parent ? o.next : null);
+            if (o.text) o.text.textContent = o.value;
+        }
+        if (image) {
+            image.style.backgroundImage = still;
+            if (src != null) image.setAttribute('data-src', src);
+        }
+        for (const m of was.marks) if (!m.node.isConnected && m.parent.isConnected) m.parent.insertBefore(m.node, m.next?.parentNode === m.parent ? m.next : null);
     }
 
     /**
@@ -463,8 +582,23 @@
         const user = window.ApiClient?.getCurrentUserId?.();
         const server = window.ApiClient?.serverId?.();
         const route = window.location.hash;
+        const learnt = generation;
+        const access = accessNow();
         return () => state?.page === page && page.isConnected && !page.classList.contains('hide') && window.location.hash === route
-            && epoch === JE.session?.getEpoch?.() && user === window.ApiClient?.getCurrentUserId?.() && server === window.ApiClient?.serverId?.();
+            && epoch === JE.session?.getEpoch?.() && user === window.ApiClient?.getCurrentUserId?.() && server === window.ApiClient?.serverId?.()
+            && learnt === generation && access === accessNow() && !!state.trusted;
+    }
+
+    /**
+     * The signed-in person's access revision as JE last saw it (core/access-revision.js), or null.
+     * @returns {string|null} Revision.
+     */
+    function accessNow() {
+        try {
+            return JE.core?.revision?.access?.() ?? null;
+        } catch {
+            return null;
+        }
     }
 
     /**
@@ -478,41 +612,65 @@
     }
 
     /**
-     * A missing item's row JE retargeted to the playable item gets that item's title, overview and still, read as the
-     * viewer (Spoiler Guard's series keep what the page drew until Jellyfin's next view). The row, its links and
-     * controls stay where they are.
-     * @param {Element} row Retargeted row.
+     * Rows JE pointed at a playable item get that item's title, overview and still, read as the viewer once per page
+     * (Spoiler Guard's series keep what the page drew until Jellyfin's next view). Every row pointed at it gets them:
+     * the one waiting when the answer comes, and any Jellyfin draws again later (drawn from the answer at once). An
+     * item Jellyfin refuses them is never pointed at: rows pointed at it go back to their missing item.
      * @param {Object} ep Accepted availability.
      * @returns {void}
      */
-    function hydrate(row, ep) {
+    function hydrate(ep) {
         const page = state?.page;
-        if (!page || pendingRows.has(ep.itemId) || typeof JE.helpers?.getItemCached !== 'function') return;
+        const id = norm(ep.itemId);
+        if (!page) return;
+        if (hydrated.has(id)) {
+            paint(page, ep, hydrated.get(id));
+            return;
+        }
+        if (pendingRows.has(ep.itemId) || typeof JE.helpers?.getItemCached !== 'function') return;
         const still = snapshot(page);
         const read = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
         pendingRows.set(ep.itemId, read);
         read.then(item => {
-            if (!item || norm(item.Id) !== norm(ep.itemId) || !still() || !stillReady(ep) || !row.isConnected || norm(row.getAttribute('data-id')) !== norm(ep.itemId)) return;
-            if (JE.spoilerBlur?.isEnabledFor?.(item.SeriesId)) return;
-            const title = row.querySelector('.listItemBody .listItemBodyText:not(.secondary):not(.listItem-overview)');
-            const name = title && (title.querySelector('bdi') || title);
-            if (name && item.Name && !name.children.length) {
+            if (!item || norm(item.Id) !== id || !still() || !stillReady(ep)) return;
+            hydrated.set(id, item);
+            paint(page, ep, item);
+        }, err => {
+            if (!still() || ![401, 403, 404].includes(err?.status)) return;
+            denied.add(id);
+            page.querySelectorAll('.listItem[data-je-arr-was]').forEach(row => { if (norm(row.getAttribute('data-id')) === id) unpoint(row); });
+        }).finally(() => {
+            if (pendingRows.get(ep.itemId) === read) pendingRows.delete(ep.itemId);
+        });
+    }
+
+    /**
+     * Draws a playable item's answer on every row of the page JE pointed at it.
+     * @param {HTMLElement} page Season page.
+     * @param {Object} ep Accepted availability.
+     * @param {Object} item The item's answer, read as the viewer.
+     * @returns {void}
+     */
+    function paint(page, ep, item) {
+        if (JE.spoilerBlur?.isEnabledFor?.(item.SeriesId)) return;
+        const id = norm(ep.itemId);
+        page.querySelectorAll('.listItem[data-je-arr-was]').forEach(row => {
+            if (norm(row.getAttribute('data-id')) !== id) return;
+            const { name, overviews, image } = content(row);
+            if (name && item.Name) {
                 const number = /^\s*\d+(?:\s*-\s*\d+)?\.\s*/.exec(name.textContent);
-                name.textContent = (number ? number[0] : '') + item.Name;
+                const text = (number ? number[0] : '') + item.Name;
+                if (name.textContent !== text) name.textContent = text;
             }
-            row.querySelectorAll('.listItem-overview, .listItem-bottomoverview').forEach(node => {
-                const text = node.querySelector('bdi') || node;
-                if (text.children.length) return;
-                if (item.Overview) text.textContent = item.Overview;
-                else node.remove();
-            });
-            const image = row.querySelector('.listItemImage');
+            for (const o of overviews) {
+                if (!o.text) continue;
+                if (!item.Overview) o.node.remove();
+                else if (o.text.textContent !== item.Overview) o.text.textContent = item.Overview;
+            }
             if (image && item.ImageTags?.Primary && window.ApiClient?.getImageUrl) {
                 image.removeAttribute('data-src');
                 image.style.backgroundImage = `url("${window.ApiClient.getImageUrl(ep.itemId, { type: 'Primary', tag: item.ImageTags.Primary, maxWidth: 400 })}")`;
             }
-        }).catch(() => { /* the host's next view draws the playable item */ }).finally(() => {
-            if (pendingRows.get(ep.itemId) === read) pendingRows.delete(ep.itemId);
         });
     }
 
@@ -595,24 +753,35 @@
      * @returns {void}
      */
     function render(page, status, ctx) {
-        const previous = state?.page === page ? new Map((state.status.episodes || []).map(ep => [ep.episode, ep])) : null;
-        if (state?.page !== page) forget();
-        state = { page, status, ctx };
-        learn(status);
+        // The same concrete season shown on the same page: another season (or page) starts from nothing.
+        const same = state?.page === page && norm(state.status.itemId) === norm(status.itemId);
+        const previous = same ? new Map((state.status.episodes || []).map(ep => [ep.episode, ep])) : null;
+        const regained = same && !state.trusted;
+        if (!same) forget();
+        state = { page, status, ctx, trusted: !(same && status === distrusted) };
+        if (state.trusted) {
+            distrusted = null;
+            learn(status);
+        }
         apply();
-        if (previous) addArrivals(page, (status.episodes || []).filter(ep => ep.row && ep.stage === 'ready'
-            && previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)));
+        if (previous && state.trusted) addArrivals(page, (status.episodes || []).filter(ep => ep.row && ep.stage === 'ready'
+            && (regained || (previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)))));
         if (!observer && JE.helpers?.onBodyMutation) {
             const schedule = JE.helpers.debounce ? JE.helpers.debounce(apply, 80) : apply;
             // Heard before the frame is painted: a redraw that brings back a row an arrival replaced is put right in it.
             observer = JE.helpers.onBodyMutation('arr-status-episodes', (mutations) => {
                 if (!state || state.page.classList.contains('hide')) return;
                 let added = false;
+                let ready = null;
                 for (const m of mutations) {
                     if (!state.page.contains(m.target)) continue;
                     for (const node of m.addedNodes || []) {
                         if (node.nodeType !== 1 || node.hasAttribute('data-je-arr-arrival') || !(node.matches('.listItem[data-id]') || node.querySelector('.listItem[data-id]'))) continue;
-                        if (replaced(node)) {
+                        if (!ready) {
+                            ready = new Map();
+                            for (const ep of state.status.episodes || []) if (ep.itemId && isReady(ep) && !ready.has(ep.episode)) ready.set(ep.episode, norm(ep.itemId));
+                        }
+                        if (state.trusted && replaced(node, ready)) {
                             apply();
                             return;
                         }
@@ -629,12 +798,32 @@
      * @returns {void}
      */
     function forget() {
+        generation++;
         rowsByEpisode = new Map();
         placeholders = new Map();
         playable = new Set();
         missingItems = new Set();
         orphans = new Set();
         seeded = new Set();
+        hydrated = new Map();
+        denied = new Set();
+    }
+
+    /**
+     * The person's access moved (a library or parental limit changed): what the page learnt from their earlier reads
+     * goes, rows JE pointed at playable items go back to their missing items and JE's own arrival rows go, and the
+     * status is read again. Until that answer nothing is pointed or removed on the old one.
+     * @returns {void}
+     */
+    function onAccessRevision() {
+        forget();
+        if (!state) return;
+        distrusted = state.status;
+        state.trusted = false;
+        const page = state.page;
+        page.querySelectorAll('.listItem[data-je-arr-was]').forEach(unpoint);
+        page.querySelectorAll('.listItem[data-je-arr-arrival]').forEach(row => row.remove());
+        JE.internals?.arrStatusDetails?.update?.(true);
     }
 
     /**
@@ -663,6 +852,7 @@
             if (extension?.clear) extension.clear(state.page);
         }
         state = null;
+        distrusted = null;
         forget();
         pendingRows.clear();
     }
@@ -687,7 +877,7 @@
     JE.session?.onUserChange?.('arr-status-episodes', clear);
     // What the page learnt from the person's status and season reads is theirs under their access: their next reads
     // teach it again once their access revision moves.
-    document.addEventListener('je-access-revision', forget);
+    document.addEventListener('je-access-revision', onAccessRevision);
 
     JE.internals = JE.internals || {};
     JE.internals.arrStatusEpisodes = { render, clear, apply, bannerEntries, extend, current, removed };

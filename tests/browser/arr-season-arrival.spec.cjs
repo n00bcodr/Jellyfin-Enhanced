@@ -14,8 +14,12 @@ const test = base.extend({
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
     const arr = await installArrRoutes(page, { origin: baseURL });
     // Jellyfin's item reads as the viewer: the season (its series) and the playable episode.
-    await page.route(/\/Users\/[0-9a-f]{32}\/Items\/[0-9a-f]{32}$/, route => {
+    const held = { gate: null, status: 200 };
+    arr.items = held;
+    await page.route(/\/Users\/[0-9a-f]{32}\/Items\/[0-9a-f]{32}$/, async route => {
       const itemId = new URL(route.request().url()).pathname.split('/').at(-1);
+      if (itemId === PLAYABLE_ONE && held.gate) await held.gate;
+      if (itemId === PLAYABLE_ONE && held.status !== 200) return route.fulfill({ status: held.status, json: {} });
       if (itemId === PLAYABLE_ONE) return route.fulfill({ json: { Id: PLAYABLE_ONE, Type: 'Episode', Name: 'The Real One', Overview: 'Overview of the playable episode', SeriesId: id(800), IndexNumber: 1 } });
       return route.fulfill({ json: { Id: itemId, Type: 'Season', Name: 'Season 1', SeriesId: id(800) } });
     });
@@ -42,7 +46,8 @@ async function drawList(page, { physical = false } = {}) {
       + `<div class="listItem-content"><div class="listItemImage listItemImage-large itemAction" data-action="link"></div><div class="listItemBody itemAction">`
       + `<div class="listItemBodyText"><bdi>${n}. ${name}</bdi></div><div class="secondary listItemMediaInfo listItemBodyText">`
       + (missing ? '<div class="mediaInfoItem starRatingContainer">7.9</div><div class="missingIndicator">Missing</div>' : '<div class="mediaInfoItem">45m</div>')
-      + `</div></div>${heart ? `<button is="emby-ratingbutton" class="listItemButton paper-icon-button-light itemAction" data-id="${itemId}" title="Favorite">♥</button>` : ''}</div>`
+      + `</div></div>${heart ? `<button is="emby-ratingbutton" class="listItemButton paper-icon-button-light itemAction" data-id="${itemId}" title="Favorite">♥</button>` : ''}`
+      + `<button is="paper-icon-button-light" class="listItemButton paper-icon-button-light itemAction" data-action="menu" title="More">⋮</button></div>`
       + `<div class="listItem-bottomoverview secondary"><bdi>${overview}</bdi></div></div>`;
     document.querySelector('#childrenContent .itemsContainer').innerHTML = [
       row(ids.virtualOne, 1, { missing: true }),
@@ -75,7 +80,7 @@ async function expectOneEpisodeOne(page, { nativeControls }) {
   await expect(first.locator('.listItemBodyText bdi').first()).toHaveText('1. The Real One');
   await expect(first.locator('.listItem-bottomoverview')).toHaveText('Overview of the playable episode');
   await expect(page.locator('#childrenContent')).not.toContainText('TMDB overview 1');
-  if (nativeControls) await expect(first.locator('button.listItemButton')).toBeVisible();
+  if (nativeControls) await expect(first.locator('button[is="emby-ratingbutton"]')).toBeVisible();
   await expect(rows.nth(1).locator('.missingIndicator')).toHaveCount(1);
   const scroll = await page.evaluate(() => [document.scrollingElement.scrollWidth, document.scrollingElement.clientWidth]);
   expect(scroll[0], 'no horizontal overflow on a phone').toBeLessThanOrEqual(scroll[1]);
@@ -87,7 +92,8 @@ test('F102: the host redraws its list, then E1 arrives under a new id: one E1 ro
   await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
   // The host replaces its list (a native redraw): JE's earlier row references are gone.
   await drawList(page);
-  await page.waitForTimeout(150);
+  // The redrawn missing row is bound again (its chip is back) before the arrival is read.
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
   await answer(page, arr, seasonStatus(PLAYABLE_ONE));
   await expectOneEpisodeOne(page, { nativeControls: false });
 });
@@ -100,7 +106,7 @@ test('F102: the host draws E1\'s missing row beside its playable one, before and
   // Jellyfin's one redraw lists both items for E1 (its cleanup of the missing one not done yet).
   await drawList(page, { physical: true });
   await expectOneEpisodeOne(page, { nativeControls: true });
-  const heart = page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button.listItemButton');
+  const heart = page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button[is="emby-ratingbutton"]');
   await heart.focus();
   await answer(page, arr, seasonStatus(PLAYABLE_ONE));
   await expect(heart).toBeFocused();
@@ -128,6 +134,54 @@ test('F102: a season Jellyfin first drew with both E1 items converges once its m
   await expect(page.locator('body')).toHaveAttribute('data-arr-ready', 'true');
   await drawList(page, { physical: true });
   await expect.poll(() => page.locator('#childrenContent .itemsContainer > .listItem').evaluateAll(list => list.map(row => row.dataset.id))).toEqual([PLAYABLE_ONE, MISSING_TWO, LATER]);
-  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button.listItemButton')).toBeVisible();
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button[is="emby-ratingbutton"]')).toBeVisible();
   expect(await page.evaluate(() => window.__episodes)).toEqual([[id(800), ITEM]]);
+});
+
+test('SRD-1: Jellyfin redraws its list while the playable item is read: the row still gets the playable item\'s title and overview', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  let release;
+  arr.items.gate = new Promise(resolve => { release = resolve; });
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect(page.locator(`#childrenContent .itemsContainer > .listItem[data-id="${PLAYABLE_ONE}"]`)).toHaveCount(1);
+  await drawList(page);
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first()).toHaveAttribute('data-id', PLAYABLE_ONE);
+  release();
+  await expectOneEpisodeOne(page, { nativeControls: false });
+});
+
+test('SRD-2: the viewer losing access mid-arrival sees E1 stay missing, never the playable item', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first().locator('.listItemBodyText bdi')).toHaveText('1. The Real One');
+  // Their library access goes: Jellyfin refuses the item and their status names E1's missing item again.
+  arr.items.status = 403;
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus()] };
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent('je-access-revision')));
+  const first = page.locator('#childrenContent .itemsContainer > .listItem').first();
+  await expect(first).toHaveAttribute('data-id', VIRTUAL_ONE);
+  await expect(first.locator('.missingIndicator')).toHaveCount(1);
+  await expect(first.locator('.listItemBodyText bdi')).toHaveText('1. Episode 1');
+  // Jellyfin redraws its list before the status is read again: the old Ready answer points nothing.
+  await drawList(page);
+  await expect(first).toHaveAttribute('data-id', VIRTUAL_ONE);
+  await expect(first.locator('.missingIndicator')).toHaveCount(1);
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(0);
+  await expect(page.locator('#childrenContent')).not.toContainText('The Real One');
+});
+
+test('SRD-3: keyboard focus on the missing row that goes lands on the same control of the row that stays, announced', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  // Jellyfin drew both items for E1 while E1 was still downloading.
+  await drawList(page, { physical: true });
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.locator(`[data-id="${VIRTUAL_ONE}"] button[data-action="menu"]`).focus();
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: true });
+  await expect(page.locator(`[data-id="${PLAYABLE_ONE}"] button[data-action="menu"]`)).toBeFocused();
+  await expect(page.locator('.je-arr-episodes-live')).toHaveText('Episode 1 is ready to play');
 });

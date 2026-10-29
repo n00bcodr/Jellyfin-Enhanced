@@ -516,8 +516,144 @@ test('regression F102: after the person\'s access revision moves, what the page 
   };
   h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: id(100), SeriesId: 'series' } : null);
   D.render(page, seasonStatus(h, 1), {});
+  const statusReads = [];
+  h.JE.core.api.plugin = async path => { statusReads.push(path); return { items: [seasonStatus(h, 1, { 0: id(501) })] }; };
   h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
-  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  await turn(); await h.advance(100);
+  assert.equal(statusReads.length, 1, 'the status is read again as they are now');
   assert.equal(reads.length, 1, 'the missing E1 row is looked up in the viewer\'s list, not taken from before');
   assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)]);
+});
+
+// F102 round 1 (SRD-1..3): a redraw while the playable item is read, the person's access moving, keyboard focus.
+const listed = (...rows) => ({ Items: rows.map(([k, n, type = 'FileSystem']) => ({ Id: id(k), IndexNumber: n, SeasonId: id(100), LocationType: type })) });
+
+test('regression SRD-1: Jellyfin redrawing the list while the playable item is read still gets its title, overview and still', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  h.window.ApiClient.getImageUrl = (itemId, o) => `img/${itemId}/${o.tag}`;
+  D.render(page, seasonStatus(h, 1), {});
+  const metadata = deferred(); let reads = 0;
+  h.JE.helpers.getItemCached = () => { reads++; return metadata.promise; };
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  const first = list.firstElementChild;
+  list.innerHTML = seasonRows(1); await turn(); await h.advance(100);
+  assert.notEqual(list.firstElementChild, first, 'the host replaced the row');
+  assert.equal(list.firstElementChild.dataset.id, id(501));
+  metadata.resolve(physicalOne(id(501))); await turn(); await h.advance(100);
+  const row = list.firstElementChild;
+  assert.equal(row.querySelector('.listItemBodyText bdi').textContent, '1. Playable one');
+  assert.equal(row.querySelector('.listItem-overview').textContent, 'Physical overview');
+  assert.ok(row.querySelector('.listItemImage').style.backgroundImage.includes(`img/${id(501)}/still`));
+  // A later redraw is drawn from the same answer at once (no second read, no frame with the missing item's text).
+  list.innerHTML = seasonRows(1); await turn();
+  assert.equal(list.firstElementChild.querySelector('.listItemBodyText bdi').textContent, '1. Playable one');
+  assert.equal(reads, 1);
+  assert.equal(page.querySelectorAll('.listItem').length, 6);
+});
+
+test('regression SRD-2: a season-list answer read before the person\'s access moved is not used', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails, E = h.JE.internals.arrStatusEpisodes;
+  page.querySelector('.itemsContainer').innerHTML = seasonRows(1, { physical: true });
+  const answer = deferred(); let reads = 0;
+  h.JE.helpers.getItemCached = async itemId => ({ Id: itemId, SeriesId: 'series' });
+  h.window.ApiClient.getJSON = () => { reads++; return answer.promise; };
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  assert.equal(reads, 1);
+  // Their status read again under the new access no longer names a row for E1.
+  const fresh = seasonStatus(h, 1); fresh.episodes[0].row = false; fresh.episodes[0].itemId = null;
+  h.JE.core.api.plugin = async () => ({ items: [fresh] });
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  answer.resolve(listed([1, 1, 'Virtual'], [501, 1], [2, 2, 'Virtual'], [3, 3], [4, 4], [5, 5], [6, 6]));
+  await turn(); await h.advance(100);
+  assert.equal(E.removed([id(1)]), false, 'the old answer did not teach the page its missing E1 again');
+  assert.ok(rowIds(page).includes(id(1)), 'nothing removed on the old answer');
+});
+
+test('regression SRD-2: losing access mid-arrival puts the row back to its missing item and never points it at the item again', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  h.JE.helpers.getItemCached = async itemId => physicalOne(itemId);
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  const row = list.firstElementChild;
+  assert.equal(row.dataset.id, id(501));
+  assert.equal(row.querySelector('.listItemBodyText bdi').textContent, '1. Playable one');
+  // Their library access goes: the status read again names E1's missing item, not the playable one.
+  const reads = [];
+  h.JE.core.api.plugin = async path => { reads.push(path); return { items: [seasonStatus(h, 1)] }; };
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  assert.equal(row.dataset.id, id(1), 'back at once, before any answer');
+  assert.ok(row.querySelector('.missingIndicator'));
+  assert.equal(row.querySelector('.listItemBodyText bdi').textContent, '1. Episode 1');
+  assert.equal(row.querySelector('.listItem-overview').textContent, 'Virtual overview 1');
+  assert.ok(row.querySelector('a[href]').getAttribute('href').includes(id(1)));
+  // Jellyfin redraws its list meanwhile: the old Ready status points nothing.
+  list.innerHTML = seasonRows(1); await turn(); await h.advance(100);
+  assert.equal(list.firstElementChild.dataset.id, id(1));
+  assert.ok(list.firstElementChild.querySelector('.missingIndicator'));
+  assert.equal(reads.length, 1, 'the status is read again as they are now');
+  assert.ok(!page.textContent.includes('Playable one'));
+});
+
+test('regression SRD-2: an item Jellyfin refuses the viewer is never left as the row\'s target', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  let reads = 0;
+  h.JE.helpers.getItemCached = async () => { reads++; throw Object.assign(new Error('HTTP 403'), { status: 403 }); };
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  const row = list.firstElementChild;
+  assert.equal(row.dataset.id, id(1));
+  assert.ok(row.querySelector('.missingIndicator'));
+  assert.ok(row.querySelector('a[href]').getAttribute('href').includes(id(1)));
+  list.innerHTML = seasonRows(1); await turn(); await h.advance(100);
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.equal(list.firstElementChild.dataset.id, id(1), 'not pointed at it again');
+  assert.equal(reads, 1);
+});
+
+test('regression SRD-3: focus on the missing row that goes moves to the same control of the row that stays, and is announced', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  const old = list.firstElementChild.querySelector('a[href]');
+  old.focus(); assert.equal(h.document.activeElement, old);
+  list.insertAdjacentHTML('beforeend', nativeRow(id(501), 1, { name: 'Playable one', heart: true }));
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {});
+  const kept = list.querySelector(`[data-id="${id(501)}"]`);
+  assert.equal(h.document.activeElement, kept.querySelector('a[href]'), 'the same kind of control, on the episode that stays');
+  assert.ok(!old.isConnected);
+  await h.advance(100);
+  const live = h.document.querySelector('.je-arr-episodes-live');
+  assert.equal(live.getAttribute('aria-live'), 'polite');
+  assert.equal(live.textContent, 'arr_episode_row_ready{"episode":1}');
+});
+
+test('regression SRD-3: focus on a missing row whose surviving row has only a button lands on that button', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  list.firstElementChild.querySelector('a[href]').focus();
+  // The native playable row as jellyfin-web 12.2 draws it: image/body .itemAction divs (not focusable) and its buttons.
+  list.insertAdjacentHTML('afterbegin', nativeRow(id(501), 1, { heart: true }).replace(/<a class="itemAction"[^>]*>Open<\/a>/, ''));
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {});
+  assert.equal(h.document.activeElement, list.querySelector(`[data-id="${id(501)}"] button`));
+});
+
+test('regression F102 (R4): the same page shown for another season starts from nothing', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails, E = h.JE.internals.arrStatusEpisodes;
+  const list = page.querySelector('.itemsContainer'); list.innerHTML = seasonRows(1); D.render(page, seasonStatus(h, 1), {});
+  assert.equal(E.removed([id(1)]), true);
+  h.window.history.replaceState(null, '', `#/details?id=${id(101)}`);
+  const next = seasonStatus(h, 1); next.itemId = id(101); next.key = `${base}:s2`;
+  next.episodes.forEach((ep, n) => { ep.itemId = id(1001 + n); });
+  list.innerHTML = next.episodes.map((ep, n) => nativeRow(ep.itemId, n + 1, { missing: true })).join('');
+  D.render(page, next, {});
+  assert.equal(E.removed([id(1)]), false);
 });

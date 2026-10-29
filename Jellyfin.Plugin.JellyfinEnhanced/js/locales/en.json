@@ -880,6 +880,7 @@
     "arr_chip_looking": "Looking for it",
     "arr_banner_missing": "Missing: {list}",
     "arr_banner_not_yet": "Not in the library yet:",
+    "arr_episode_row_ready": "Episode {episode} is ready to play",
     "arr_copy_name_standard": "standard",
     "arr_copy_name_4k": "4K",
     "arr_copy_name_anime": "anime",
