@@ -184,8 +184,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// details-page sub-resources fetches the whole set in one upstream call
         /// (see the class remarks); callers that only ever want one resource
         /// for many titles (the watch-providers batch) leave it off.
+        /// With <paramref name="bypassCache"/>, a body already cached for the
+        /// URL is not used (an in-flight fetch is still joined, and the fresh
+        /// answer is stored as usual): for a caller that knows the cached
+        /// answer was empty and wants to see whether upstream has recovered.
         /// </summary>
-        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false)
+        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool bypassCache = false)
         {
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (target.HasValue)
@@ -205,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var keyPrefix = GetKeyHash(apiKey) + "|";
                 key = keyPrefix + upstreamUrl;
-                if (TryGetFreshLocked(key, out var cached))
+                if (!bypassCache && TryGetFreshLocked(key, out var cached))
                 {
                     return Task.FromResult(cached);
                 }

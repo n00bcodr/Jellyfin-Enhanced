@@ -46,6 +46,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static DateTime _cachedUntilUtc;
         private static Task<TrendingSnapshot>? _inFlight;
         private static long _generation;
+        // The last list stored was empty: the next fetch asks TMDB again instead
+        // of reading the (possibly empty) pages TmdbResponseCache kept for it,
+        // which outlive EmptyCacheTtl. Survives Invalidate() on purpose.
+        private static bool _lastAnswerWasEmpty;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly TmdbResponseCache _tmdbResponseCache;
@@ -93,7 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_inFlight == null)
                 {
                     var generation = _generation;
-                    _inFlight = FetchAndStoreAsync(config, generation);
+                    _inFlight = FetchAndStoreAsync(config, generation, bypassResponseCache: _lastAnswerWasEmpty);
                 }
 
                 shared = _inFlight;
@@ -102,14 +106,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return shared.WaitAsync(cancellationToken);
         }
 
-        private async Task<TrendingSnapshot> FetchAndStoreAsync(PluginConfiguration config, long generation)
+        private async Task<TrendingSnapshot> FetchAndStoreAsync(PluginConfiguration config, long generation, bool bypassResponseCache)
         {
             // Off the caller's thread: the lock above must not be held across I/O.
             await Task.Yield();
             TrendingSnapshot snapshot;
             try
             {
-                snapshot = await FetchAsync(config).ConfigureAwait(false);
+                snapshot = await FetchAsync(config, bypassResponseCache).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -119,6 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             lock (CacheLock)
             {
+                _lastAnswerWasEmpty = snapshot.Source == null;
                 if (generation == _generation)
                 {
                     _cached = snapshot;
@@ -130,11 +135,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return snapshot;
         }
 
-        private async Task<TrendingSnapshot> FetchAsync(PluginConfiguration config)
+        private async Task<TrendingSnapshot> FetchAsync(PluginConfiguration config, bool bypassResponseCache)
         {
             if (!string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
-                var fromTmdb = await FetchTmdbAsync(config.TMDB_API_KEY).ConfigureAwait(false);
+                var fromTmdb = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache).ConfigureAwait(false);
                 if (fromTmdb != null) return fromTmdb;
             }
 
@@ -147,8 +152,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Empty;
         }
 
-        /// <summary>TMDB daily trending, pages 1-3; null when no ranks could be read.</summary>
-        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey)
+        /// <summary>
+        /// TMDB daily trending, pages 1-3; null when no ranks could be read.
+        /// After an empty answer the pages are asked for again upstream rather
+        /// than read from <see cref="TmdbResponseCache"/>, whose copy of an
+        /// empty page would otherwise outlive <see cref="EmptyCacheTtl"/> and
+        /// keep every retry empty until it expired.
+        /// </summary>
+        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey, bool bypassResponseCache)
         {
             var ranks = new RankBuilder();
             for (var page = 1; page <= Pages && !ranks.Full; page++)
@@ -158,7 +169,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     using var timeout = new CancellationTokenSource(TmdbTimeout);
                     response = await _tmdbResponseCache
-                        .GetAsync("trending/all/day", "?page=" + page.ToString(CultureInfo.InvariantCulture), apiKey, timeout.Token)
+                        .GetAsync("trending/all/day", "?page=" + page.ToString(CultureInfo.InvariantCulture), apiKey, timeout.Token, bypassCache: bypassResponseCache)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)

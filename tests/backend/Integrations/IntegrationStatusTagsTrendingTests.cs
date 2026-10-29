@@ -73,4 +73,51 @@ public class IntegrationStatusTagsTrendingTests
         Assert.Empty(snapshot.Movies);
         Assert.Empty(snapshot.Series);
     }
+
+    [Fact]
+    public async Task RetryAfterAnEmptyAnswerAsksTmdbAgainPastTheResponseCache()
+    {
+        // TmdbResponseCache keeps a successful page (even an empty one) for 30
+        // minutes, longer than the empty list is kept, so a retry that read the
+        // cached page would stay empty after TMDB recovered.
+        using var env = new IntegrationEnvironment();
+        var recovered = false;
+        var upstreamCalls = 0;
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            upstreamCalls++;
+            return Task.FromResult(IntegrationTransport.Response(recovered
+                ? "{\"results\":[{\"id\":5,\"media_type\":\"movie\"}]}"
+                : "{\"results\":[]}"));
+        });
+        using var tmdbCache = new TmdbResponseCache(transport, TimeProvider.System);
+        var config = new PluginConfiguration { TMDB_API_KEY = "key" };
+        var service = new StatusTagsTrendingService(transport, tmdbCache, env.Logger);
+        StatusTagsTrendingService.Invalidate();
+        try
+        {
+            var empty = await service.GetAsync(config, CancellationToken.None);
+            Assert.Null(empty.Source);
+            var callsAfterEmpty = upstreamCalls;
+
+            recovered = true;
+            // Stands in for the empty list's short lifetime running out.
+            StatusTagsTrendingService.Invalidate();
+            var retried = await service.GetAsync(config, CancellationToken.None);
+            Assert.Equal("tmdb-day", retried.Source);
+            Assert.Equal(1, retried.Movies["5"]);
+            Assert.True(upstreamCalls > callsAfterEmpty, "the retry must go upstream, not read the cached empty page");
+
+            // A good list is read from the response cache again on the next fetch.
+            StatusTagsTrendingService.Invalidate();
+            var callsAfterGood = upstreamCalls;
+            var cached = await service.GetAsync(config, CancellationToken.None);
+            Assert.Equal("tmdb-day", cached.Source);
+            Assert.Equal(callsAfterGood, upstreamCalls);
+        }
+        finally
+        {
+            StatusTagsTrendingService.Invalidate();
+        }
+    }
 }
