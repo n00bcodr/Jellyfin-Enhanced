@@ -41,7 +41,9 @@
      * @property {Function} render - (ctx, el, item, extras) => void.
      * @property {Function} [renderFromCache] - (ctx, el, itemId) => boolean.
      * @property {Function} [renderFromServerCache] - (ctx, el, entry, itemId) => void.
-     * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null) => void.
+     * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null, info?) => void;
+     *   info.replaced is true when the pipeline swapped in a replacement cache
+     *   under cards it will not re-render itself.
      * @property {boolean} [needsFirstEpisode]
      * @property {boolean} [needsParentSeries]
      * @property {boolean} [needsLatestEpisode]
@@ -581,7 +583,7 @@
                     ? (el, entry, itemId) => p.renderFromServerCache(ctx, el, entry, itemId)
                     : undefined,
                 onServerCacheRefresh: p.onServerCacheRefresh
-                    ? (updatedIds) => p.onServerCacheRefresh(ctx, updatedIds)
+                    ? (updatedIds, info) => p.onServerCacheRefresh(ctx, updatedIds, info)
                     : undefined,
                 isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
                 needsFirstEpisode: !!p.needsFirstEpisode,

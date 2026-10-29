@@ -785,10 +785,13 @@
                 } else {
                     console.log(`${logPrefix} ${why}, reloading full cache`);
                     await downloadFullCache({ fresh: true });
-                    // Clear all derived caches on full rebuild
+                    // Clear all derived caches on full rebuild. The cards on the
+                    // page keep what they show (nothing is re-rendered here), so
+                    // a renderer that must not go stale is told the cache under
+                    // them was replaced and can redraw itself.
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
-                            try { renderer.onServerCacheRefresh(null); } catch {}
+                            try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
                 }
@@ -1628,19 +1631,6 @@
         getParentSeries,
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
-        /**
-         * The server cache entry held in memory for an item, without waiting
-         * for a load or asking the stored copy. For a renderer that wants to
-         * re-check what it drew after onServerCacheRefresh(null).
-         * @param {string} itemId - 32-char lowercase hex item id.
-         * @returns {object|null|undefined} The entry; null when memory holds the
-         *   cache but no entry for the item; undefined when no server cache is
-         *   in memory at all (dropped, loading, or the batch fallback is in use).
-         */
-        peekServerEntry(itemId) {
-            if (!serverCache) return undefined;
-            return serverCache.get(itemId) ?? null;
-        },
         /**
          * Review rating averages that came with the server cache, once the
          * load or refresh in flight has settled: Map<"mediaType:tmdbKey",

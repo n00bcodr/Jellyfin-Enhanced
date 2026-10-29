@@ -85,10 +85,12 @@
     let staleBelowRev = 0;
     /**
      * Item id → revision a delta replaced it at; a record older than that is
-     * stale. Cleared whenever everything is marked stale at once.
+     * stale. Cleared whenever everything is marked stale at once, and when it
+     * reaches REPLACED_AT_CAP (then everything is simply marked stale instead).
      * @type {Map<string, number>}
      */
     const replacedAt = new Map();
+    const REPLACED_AT_CAP = 2000;
     const TRENDABLE_ATTR = 'jeStatusTrendable';
     const TRENDABLE_SELECTOR = '[data-je-status-trendable]';
 
@@ -393,51 +395,33 @@
      * rendered again, but a trending refresh no longer re-badges it from the
      * outdated dates.
      *
-     * No id list means the whole cache went. When the pipeline is about to
-     * re-render everything (a Spoiler Guard or access change, a user switch:
-     * the cache is dropped first, so nothing can be read from it) every record
-     * is marked stale and the pipeline's re-render records the cards again.
-     * When the pipeline swapped in a replacement download without
-     * re-rendering (a version change or rollback) the cards on the page are
-     * instead re-synced from the entries now in memory: their dates are
-     * refreshed, a badge that changed is redrawn, and a card whose entry is
-     * gone loses its badge.
+     * No id list means the whole cache went, and every record is marked stale.
+     * Usually the pipeline dropped it ahead of re-rendering everything (a
+     * Spoiler Guard or access change, a user switch), which records the cards
+     * again. When it instead swapped a replacement download in under the
+     * cards (info.replaced: a version change or rollback, possibly to an
+     * empty cache) nothing would redraw them, so the status badges are
+     * reinitialized: every one is removed and the pipeline is asked to render
+     * the cards again from whatever it now has, for every card type.
      * @param {Object} ctx - Factory context.
      * @param {string[]|null} updatedIds - Item ids a delta replaced, or null for everything.
+     * @param {{replaced?: boolean}} [info] - What the pipeline did with the cache.
      * @returns {void}
      */
-    function onCacheReplaced(ctx, updatedIds) {
+    function onCacheReplaced(ctx, updatedIds, info) {
         trackRev++;
         if (Array.isArray(updatedIds)) {
+            if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
+                staleBelowRev = trackRev;
+                replacedAt.clear();
+                return;
+            }
             for (const id of updatedIds) replacedAt.set(String(id), trackRev);
             return;
         }
         staleBelowRev = trackRev;
         replacedAt.clear();
-        const peek = JE.tagPipeline?.peekServerEntry;
-        if (typeof peek !== 'function' || peek('') === undefined) return;
-        const hosts = [];
-        document.querySelectorAll(TRENDABLE_SELECTOR).forEach((el) => {
-            const card = trendableCards.get(/** @type {HTMLElement} */ (el));
-            if (!card || card.rev >= trackRev || !card.id) return;
-            const entry = peek(card.id);
-            if (!entry) {
-                // Not in the replacement cache (removed, or no longer accessible).
-                trendableCards.delete(/** @type {HTMLElement} */ (el));
-                ctx.removeExistingOverlay(el);
-                hosts.push(el);
-                return;
-            }
-            const data = fromServerEntry(entry);
-            const badge = pickBadge(data);
-            const key = badgeKey(badge);
-            trendableCards.set(el, { id: card.id, data, shown: key, rev: trackRev });
-            if (key === card.shown) return;
-            if (badge) applyStatusTag(ctx, el, badge);
-            else ctx.removeExistingOverlay(el);
-            hosts.push(el);
-        });
-        if (hosts.length > 0) JE.core.tagRenderer.applyCornerStacking(hosts);
+        if (info?.replaced && JE.currentSettings?.statusTagsEnabled) JE.reinitializeStatusTags();
     }
 
     /**
@@ -628,8 +612,8 @@
                 if (el.closest('.je-hidden')) return;
                 renderData(ctx, el, fromServerEntry(entry), itemId);
             },
-            onServerCacheRefresh(ctx, updatedIds) {
-                onCacheReplaced(ctx, updatedIds);
+            onServerCacheRefresh(ctx, updatedIds, info) {
+                onCacheReplaced(ctx, updatedIds, info);
             },
         },
     };

@@ -12,8 +12,8 @@ const card = id => `<div class="card" data-id="${id}"><div class="cardScalable">
 function setup(t, answers) {
   const renderers = new Map();
   const calls = [];
-  /** What peekServerEntry answers: entries by id; a missing id answers undefined (no cache in memory). */
-  const serverEntries = new Map();
+  /** clearProcessed / scheduleScan calls: a reinitialize asks the pipeline to render every card again. */
+  const rescans = [];
   const h = createHarness({
     html: card('a') + card('b'),
     JE: {
@@ -22,7 +22,7 @@ function setup(t, answers) {
       t: key => key,
       session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() {}, scheduleScan() {}, peekServerEntry: id => serverEntries.get(id) }
+      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() { rescans.push('clear'); }, scheduleScan() { rescans.push('scan'); } }
     },
     apiClient: {
       ajax: async ({ url }) => {
@@ -43,7 +43,7 @@ function setup(t, answers) {
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];
   const old = now - 400 * 24 * 60 * MINUTE;
   return Object.assign(h, {
-    calls, hosts, serverEntries,
+    calls, hosts, rescans,
     advance: ms => { now += ms; },
     render: (el, tmdb) => renderers.get('status').render(el, { Id: `m${tmdb}`, Type: 'Movie', ProviderIds: { Tmdb: String(tmdb) }, DateCreated: old, PremiereDate: old }),
     badge: el => el.querySelector('.status-tag')?.textContent ?? null,
@@ -91,31 +91,39 @@ test('a trending answer that lands after the cache was dropped does not redraw t
   assert.equal(h.badge(h.hosts[0]), '#3 Today');
 });
 
-test('a replacement cache re-syncs the cards on the page without a re-render', async t => {
+test('a replacement cache swapped in under the cards reinitializes the status badges', async t => {
   const h = setup(t, [
-    { source: 'tmdb-day', movies: { 1: 3, 2: 5 }, series: {} },
-    { source: 'tmdb-day', movies: {}, series: {} }
+    { source: 'tmdb-day', movies: { 1: 3 }, series: {} }
   ]);
   await h.settle();
-  h.render(h.hosts[0], 1); h.render(h.hosts[1], 2);
+  const renderer = h.JE.tagPipeline.getRenderer('status');
+  h.render(h.hosts[0], 1);
+  // A season card: not a trending candidate, but just as stale after a replacement.
+  renderer.render(h.hosts[1], { Id: 's1', Type: 'Season', DateCreated: h.window.Date.now() - 400 * 24 * 60 * MINUTE, LatestEpisodeAdded: h.window.Date.now() - 60 * MINUTE });
   assert.equal(h.badge(h.hosts[0]), '#3 Today');
-  assert.equal(h.badge(h.hosts[1]), '#5 Today');
-  // The replacement download: m1 was added yesterday now, m2 is gone from it.
-  const now = h.window.Date.now();
-  h.serverEntries.set('', null);
-  h.serverEntries.set('m1', { Type: 'Movie', TmdbId: '1', DateCreated: now - 24 * 60 * MINUTE });
-  h.serverEntries.set('m2', null);
-  h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(null);
-  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'trending still wins for m1');
-  assert.equal(h.badge(h.hosts[1]), null, 'an entry that vanished loses its badge');
-  assert.equal(h.hosts[1].querySelector('.status-overlay-container'), null);
-  // Trending updates keep reaching the re-synced card, and use the new dates.
-  h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
-  assert.equal(h.calls.length, 2);
-  assert.equal(h.badge(h.hosts[0]), 'Just Added', 'dropped off the list: badged from the refreshed dates');
+  assert.equal(h.badge(h.hosts[1]), 'New Episode');
+  renderer.onServerCacheRefresh(null, { replaced: true });
+  assert.equal(h.badge(h.hosts[0]), null, 'every status overlay is removed');
+  assert.equal(h.badge(h.hosts[1]), null);
+  assert.deepEqual(h.rescans, ['clear', 'scan'], 'the pipeline is asked to render the cards again');
+  // The pipeline renders them again from the replacement entries.
+  renderer.render(h.hosts[1], { Id: 's1', Type: 'Season', DateCreated: h.window.Date.now() - 400 * 24 * 60 * MINUTE, LatestEpisodeAdded: h.window.Date.now() - 300 * 24 * 60 * MINUTE });
+  assert.equal(h.badge(h.hosts[1]), null, 'drawn from the new dates: no longer a new episode');
 });
 
-test('a dropped cache (nothing in memory) marks every record stale and leaves the overlays to the pipeline', async t => {
+test('a replacement cache does not draw anything while Status Tags is off', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: { 1: 3 }, series: {} }
+  ]);
+  await h.settle();
+  const renderer = h.JE.tagPipeline.getRenderer('status');
+  h.render(h.hosts[0], 1);
+  h.JE.currentSettings.statusTagsEnabled = false;
+  renderer.onServerCacheRefresh(null, { replaced: true });
+  assert.deepEqual(h.rescans, [], 'no re-render is requested for a disabled group');
+});
+
+test('a dropped cache (the pipeline re-renders) marks every record stale and leaves the overlays to the pipeline', async t => {
   const h = setup(t, [
     { source: 'tmdb-day', movies: { 1: 3 }, series: {} },
     { source: 'tmdb-day', movies: {}, series: {} }
@@ -125,9 +133,24 @@ test('a dropped cache (nothing in memory) marks every record stale and leaves th
   assert.equal(h.badge(h.hosts[0]), '#3 Today');
   h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(null);
   assert.equal(h.badge(h.hosts[0]), '#3 Today', 'the pipeline removes overlays itself on this path');
+  assert.deepEqual(h.rescans, []);
   h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
   assert.equal(h.calls.length, 2);
   assert.equal(h.badge(h.hosts[0]), '#3 Today', 'stale record: not redrawn by the refresh');
+});
+
+test('delta bookkeeping stays bounded: past the cap everything is marked stale instead', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: { 1: 3 }, series: {} },
+    { source: 'tmdb-day', movies: {}, series: {} }
+  ]);
+  await h.settle();
+  h.render(h.hosts[0], 1);
+  assert.equal(h.badge(h.hosts[0]), '#3 Today');
+  const ids = Array.from({ length: 2001 }, (_, i) => `x${i}`);
+  h.JE.tagPipeline.getRenderer('status').onServerCacheRefresh(ids);
+  h.advance(31 * MINUTE); h.render(h.hosts[1], 2); await h.settle();
+  assert.equal(h.badge(h.hosts[0]), '#3 Today', 'marked stale wholesale rather than remembering 2001 ids');
 });
 
 test('a card detached during a delta is still stale when it comes back', async t => {
