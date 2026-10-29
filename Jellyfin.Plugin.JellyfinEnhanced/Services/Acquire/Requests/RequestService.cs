@@ -223,12 +223,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, stored.Input.Key, _now());
             if (_ledger.Find(id) is not { } want) return RequestOutcome.Refused("not_found", 404);
             // An edit of a TMDB-numbered ask's episodes names them by the numbering the request holds (the server's note).
-            // Its provenance (what a switched request's episodes were switched from) only while the edit keeps those episodes.
-            var input = body?.Input == null ? want.Input : Normalize(body.Input with
-            {
-                Numbering = body.Input.Scope == "episodes" ? want.Input.Numbering : null,
-                From = body.Input.Scope == "episodes" && want.Input.From != null && body.Input.Episodes.OrderBy(e => e.Season).ThenBy(e => e.Episode).SequenceEqual(want.Input.Episodes) ? want.Input.From : null,
-            });
+            // The edit is validated first (a malformed one is refused as such, EI-R4-4); then it keeps the request's provenance
+            // (what a switched request's episodes were switched from) only while it names exactly those episodes.
+            var input = body?.Input == null ? want.Input : Normalize(body.Input with { Numbering = body.Input.Scope == "episodes" ? want.Input.Numbering : null, From = null });
+            if (body?.Input != null && input is { Scope: "episodes", Numbering: null } edited && want.Input.From != null && edited.Episodes.SequenceEqual(want.Input.Episodes))
+                input = edited with { From = want.Input.From };
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);

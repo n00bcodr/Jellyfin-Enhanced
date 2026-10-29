@@ -193,6 +193,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>
+        /// F83: an input that carried matches Sonarr no longer backs (<paramref name="lost"/>: TMDB episode to the Sonarr
+        /// episode it was matched to), keeping its record but none of their coverage (EI-R4-2): each such Sonarr episode becomes
+        /// a place nothing is ever at (<see cref="EpisodeIdentity.Unplaced"/>) and its TMDB episode leaves <c>From</c>. Null
+        /// when it carried none of them.
+        /// </summary>
+        internal static MutationInput? WithoutMatches(MutationInput input, IReadOnlyDictionary<RequestEpisode, RequestEpisode> lost)
+        {
+            if (input.From is not { } from || !from.Any(lost.ContainsKey)) return null;
+            var episodes = input.Episodes.ToList();
+            foreach (var source in from.Where(lost.ContainsKey))
+            {
+                var at = episodes.IndexOf(lost[source]);
+                if (at >= 0) episodes[at] = EpisodeIdentity.Unplaced(source);
+            }
+            var kept = from.Where(e => !lost.ContainsKey(e)).ToArray();
+            return input with { Episodes = episodes.ToArray(), From = kept.Length > 0 ? kept : null };
+        }
+
+        /// <summary>F83: <paramref name="input"/> asking only for those of its episodes in <paramref name="episodes"/> (null: none).</summary>
+        internal static MutationInput? Only(MutationInput input, IReadOnlySet<RequestEpisode> episodes)
+            => input.Episodes.Where(episodes.Contains).ToArray() is { Length: > 0 } some ? input with { Episodes = some } : null;
+
+        /// <summary>F83: the TMDB episodes <paramref name="input"/> names (its own, or those it was switched from) include one of <paramref name="episodes"/>.</summary>
+        internal static bool NamesAny(MutationInput input, IReadOnlySet<RequestEpisode> episodes) => input.TmdbEpisodes.Any(episodes.Contains);
+
+        /// <summary>
         /// True when <paramref name="renumbered"/> names other Sonarr episodes than <paramref name="input"/> (a switch, or a
         /// switched request whose episodes Sonarr numbers differently now).
         /// </summary>

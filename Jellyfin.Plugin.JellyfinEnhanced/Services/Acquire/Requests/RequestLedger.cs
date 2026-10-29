@@ -1490,7 +1490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (RequestDestination.SameTarget(r.GetString(0), target))
                         rows.Add((r.GetString(0), new(new RequestEpisode(r.GetInt32(1), r.GetInt32(2)), new RequestEpisode(r.GetInt32(3), r.GetInt32(4)), r.GetInt32(5))));
             var map = new List<EpisodeRenumbering>();
-            var dropped = new HashSet<RequestEpisode>();
+            var dropped = new Dictionary<RequestEpisode, RequestEpisode>();
             foreach (var (rowTarget, match) in rows)
             {
                 if (identity == null) { map.Add(match); continue; }
@@ -1505,21 +1505,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id=$a AND target_key=$t AND season=$s AND episode=$e",
                         ("$a", acquisition), ("$t", rowTarget), ("$s", match.From.Season), ("$e", match.From.Episode));
-                    dropped.Add(match.From);
+                    dropped[match.From] = match.To;
                 }
             }
             var changed = new List<Guid>();
             if (map.Count == 0 && dropped.Count == 0) return changed;
             string? key = null;
+            // A lost match takes all coverage derived from it (EI-R4-2): every send there that carried it keeps its record but
+            // no longer stands for the TMDB episode, nor for the Sonarr number it was matched to (another episode now).
+            if (dropped.Count > 0)
+                foreach (var job in Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a) AND json_extract(mutation_input,'$.From') IS NOT NULL", ("$a", acquisition)))
+                    if (RequestDestination.SameTarget(TargetKey(job.Authorization), target) && RequestDestination.WithoutMatches(job.Input, dropped) is { } kept)
+                        Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                            ("$input", kept.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? kept.Fingerprint : job.Fingerprint), ("$id", job.Id));
             foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", acquisition)))
             {
                 if (want.Status is "cancelled" or "declined" or "fulfilled" || (want.Input.Numbering != EpisodeIdentity.Tmdb && want.Input.From == null)
                     || !RequestDestination.SameTarget(want.TargetKey, target)) continue;
                 var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
-                // A switched request whose match Sonarr no longer backs loses that coverage and is matched again (EI-R3-2).
-                if (want.Input.From is { } source && source.Any(dropped.Contains))
+                // A switched request whose match Sonarr no longer backs is matched again, for the lost episodes only (EI-R3-2,
+                // EI-R4-3).
+                if (want.Input.From is { } source && source.Any(dropped.ContainsKey))
                 {
-                    Reresolve(c, t, want, jobs, now);
+                    Reresolve(c, t, want, Jobs(c, t, "want_id=$w", ("$w", want.Id)), source.Where(dropped.ContainsKey).ToHashSet(), now);
                     changed.Add(want.UserId);
                     key = want.Input.Key;
                     continue;
@@ -1528,6 +1536,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // a known-unsent job, held or queued, that is no longer needed) switches with them (EI-R3-1).
                 if (jobs.Any(j => j.State is "sending" or "maybe_sent" || (j.State is "queued" or "retry" or "parked" && (want.Status != "sent" || j.Uncertain)))) continue;
                 if (RequestDestination.Renumbered(want.Input, map) is not { } input || !RequestDestination.Moves(want.Input, input)) continue;
+                // Its leftover never-sent jobs are no longer needed: cancelled, their charge given back, never sent later (EI-R4-1).
+                foreach (var leftover in jobs.Where(j => j.State is "queued" or "retry" or "parked" && !j.Uncertain)) Supersede(c, t, leftover.Id, "shared_dispatch");
+                jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
                 var owned = want.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
                 Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
                     ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id));
@@ -1548,24 +1559,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return changed;
         }
         /// <summary>
-        /// F83: a switched request whose match can no longer be trusted (Sonarr stopped listing its TVDB id, or a match from an
-        /// earlier build without one) is matched again: it goes back to the TMDB episodes it was switched from, its sent jobs
-        /// stop covering them (their Sonarr numbers may be another episode now), and it is queued with a fresh job (no new
-        /// charge) that matches by id when it goes out. A request in TMDB numbering whose send went out but never switched is
-        /// queued the same way. One with no job of its own (it joined another's) only goes back; it follows that one's job.
+        /// F83: a request whose match can no longer be trusted (Sonarr stopped listing the TVDB id of one of its episodes, or a
+        /// match an earlier build kept without one) is matched again, for those episodes only (<paramref name="lost"/>, TMDB
+        /// numbers). It goes back to its TMDB episodes; its jobs never sent (held, queued) are cancelled and their charge given
+        /// back; then, with no job left that may still go out, exactly one fresh job (no new charge) asks for the lost episodes,
+        /// matched by id when it goes out. Its sends of episodes whose match is intact keep standing for them (EI-R4-3). A
+        /// request with no job of its own to take the authority from is held for a person instead (visible, approvable).
         /// </summary>
-        private static void Reresolve(SqliteConnection c, SqliteTransaction t, RequestWant want, IReadOnlyList<RequestJob> jobs, DateTimeOffset now)
+        private static void Reresolve(SqliteConnection c, SqliteTransaction t, RequestWant want, IReadOnlyList<RequestJob> jobs, IReadOnlySet<RequestEpisode> lost, DateTimeOffset now)
         {
             static MutationInput Back(MutationInput i) => i.From is { } source ? i with { Numbering = EpisodeIdentity.Tmdb, Episodes = source, From = null } : i;
             var input = Back(want.Input);
             var owned = want.OwnedInput is { } o ? Back(o) : null;
             var auth = jobs.Count > 0 ? jobs[^1].Authorization : null;
-            var queue = auth != null && !jobs.Any(j => j.State is not ("succeeded" or "failed" or "cancelled"));
-            Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END,status=CASE WHEN $q THEN 'queued' ELSE status END,reason=CASE WHEN $q THEN 'queued_outage' ELSE reason END,updated_at=$at WHERE id=$id",
-                ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$q", queue ? 1 : 0), ("$at", Ms(now)), ("$id", want.Id));
-            foreach (var job in jobs.Where(j => j.Input.From != null))
-                Exec(c, t, "UPDATE jobs SET mutation_input=$input WHERE id=$id", ("$input", (job.Input with { From = null }).Canonical), ("$id", job.Id));
-            if (queue) AddJob(c, t, want.Id, owned ?? input, auth!, now, linkReservation: false);
+            foreach (var job in jobs.Where(j => j.State is "queued" or "retry" or "parked" && !j.Uncertain)) Supersede(c, t, job.Id, "identity_lost");
+            // Work whose send is uncertain can't be cancelled: it goes on in TMDB's numbering, so a resend matches by id.
+            foreach (var job in Jobs(c, t, "want_id=$w AND state NOT IN ('succeeded','failed','cancelled')", ("$w", want.Id)))
+                if (job.Input.From != null) Exec(c, t, "UPDATE jobs SET mutation_input=$input WHERE id=$id", ("$input", Back(job.Input).Canonical), ("$id", job.Id));
+            var open = Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND state NOT IN ('succeeded','failed','cancelled') LIMIT 1", ("$w", want.Id)) != null;
+            var (status, reason) = open ? (want.Status, want.Reason) : auth != null ? ("queued", "queued_outage") : ("pending", EpisodeIdentity.Unresolved);
+            Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END,status=$s,reason=$r,updated_at=$at WHERE id=$id",
+                ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$s", status), ("$r", reason), ("$at", Ms(now)), ("$id", want.Id));
+            if (!open && auth != null && RequestDestination.Only(input, lost) is { } fresh) AddJob(c, t, want.Id, fresh, auth, now, linkReservation: false);
         }
         /// <summary>
         /// F83: the id matches already kept for a TMDB-numbered (or switched) request's acquisition applied again, for a request
@@ -1593,21 +1608,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Matches an earlier build kept without a TVDB id can't be checked against Sonarr: dropped, and every request on those
             // acquisitions that relied on them (switched, or sent and still in TMDB numbering with nothing left to send) is
             // matched again by a fresh job (EI-R3-4).
-            var stale = new List<string>();
-            using (var cmd = Cmd(c, t, "SELECT DISTINCT acquisition_id FROM episode_identities WHERE tvdb_id<=0"))
+            // Per acquisition, target and TMDB episode (EI-R4-5): a request elsewhere, or one whose episodes kept their match, is untouched.
+            var stale = new List<(string Acquisition, string Target, RequestEpisode Episode)>();
+            using (var cmd = Cmd(c, t, "SELECT acquisition_id,target_key,season,episode FROM episode_identities WHERE tvdb_id<=0"))
             using (var r = cmd.ExecuteReader())
-                while (r.Read()) stale.Add(r.GetString(0));
+                while (r.Read()) stale.Add((r.GetString(0), r.GetString(1), new RequestEpisode(r.GetInt32(2), r.GetInt32(3))));
             Exec(c, t, "DELETE FROM episode_identities WHERE tvdb_id<=0");
             var now = DateTimeOffset.UtcNow;
-            foreach (var acquisition in stale)
+            foreach (var place in stale.GroupBy(x => (x.Acquisition, x.Target)))
             {
-                foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", acquisition)))
+                var lost = place.Select(x => x.Episode).ToHashSet();
+                foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", place.Key.Acquisition)))
                 {
-                    if (want.Status is "cancelled" or "declined" or "fulfilled") continue;
+                    if (want.Status is "cancelled" or "declined" or "fulfilled" || !RequestDestination.SameTarget(want.TargetKey, place.Key.Target)) continue;
                     var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
                     var stranded = want.Input.Numbering == EpisodeIdentity.Tmdb && want.Status == "sent" && jobs.All(j => j.State is "succeeded" or "failed" or "cancelled");
-                    if (want.Input.From == null && !stranded) continue;
-                    Reresolve(c, t, want, jobs, now);
+                    if (!(stranded || want.Input.From != null) || !RequestDestination.NamesAny(want.Input, lost)) continue;
+                    Reresolve(c, t, want, jobs, lost, now);
                     Changed(c, t);
                     Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", want.Input.Key), ("$at", Ms(now)));
                 }

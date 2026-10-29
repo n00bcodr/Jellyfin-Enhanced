@@ -1,3 +1,7 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -950,7 +954,8 @@ public class IntegrationEpisodeIdentityTests
         var successful = await rig.Create(rig.Add("Member"), one);
         await rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }))).TickAsync(default);
         Assert.Null(rig.Ledger.Find(successful.RequestId!)!.Input.Numbering);
-        Assert.Equal("parked", rig.Ledger.ForWant(held.RequestId!).Single().State);
+        // EI-R4-1: switched with the request that sent it, its never-sent held job is cancelled (charge given back), never sent.
+        Assert.Equal("cancelled", rig.Ledger.ForWant(held.RequestId!).Single().State);
         for (var i = 0; i < 3; i++) rig.Ledger.SettleIdentity(rig.Ledger.Find(held.RequestId!)!, rig.Now.AddMinutes(i * 10));
         var b = rig.Ledger.Find(held.RequestId!)!;
         var facts = LedgerRequestFacts.FactsOf(new[] { b }, b.UserId, () => rig.Ledger.Dispatches(one.Key))!;
@@ -1023,4 +1028,389 @@ public class IntegrationEpisodeIdentityTests
         Assert.Empty(lab.Sonarr.Writes);
     }
 
+
+    // ------------------------------------------------------------------ review round 4 (EI-R4-1 … EI-R4-5)
+
+
+    [Fact]
+    public async Task EIR4_LosingSharedEpisodeMustNotSendUnchangedOwnedEpisodeTwice()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var a = await rig.Create(rig.Admin, one);
+        rig.Now = rig.Now.AddSeconds(1);
+        var b = await rig.Create(rig.Member, one with { Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(1, 3) } });
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990, [(1, 3)] = 297991, [(1, 12)] = 297999 })));
+        await runner.TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(b.RequestId!)!.Status);
+        Assert.Single(rig.Ledger.ForWant(b.RequestId!));
+        Assert.Equal(new[] { new RequestEpisode(1, 3) }, rig.Ledger.Find(b.RequestId!)!.OwnedInput!.From);
+        lab.Sonarr.Episodes.Remove(lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002));
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Admin"), one with { Episodes = new[] { new RequestEpisode(1, 12) } });
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Tmdb, rig.Ledger.Find(b.RequestId!)!.Input.Numbering);
+        lab.Sonarr.Writes.Clear();
+        rig.Now = rig.Now.AddMinutes(3);
+        await runner.TickAsync(default);
+        var searches = lab.Sonarr.Writes.Where(w => w.Path == "/api/v3/command" && w.Body.Contains("EpisodeSearch", StringComparison.Ordinal)).Select(w => w.Body).ToArray();
+        Assert.DoesNotContain(searches, s => Ids(JsonNode.Parse(s)!["episodeIds"]).Contains(4003));
+    }
+
+    [Fact]
+    public async Task EIR4_ReleasedUnknownHoldKeepsItsSingleReservationAndCanFinish()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var ask = await rig.Create(rig.Member, one);
+        var job = rig.Ledger.ForWant(ask.RequestId!).Single();
+        Assert.True(rig.Ledger.Claim(job, rig.Db.Generation, rig.Now));
+        Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, BackendResults.HoldAfterWrite(job.WantId, EpisodeIdentity.Unresolved, "Held"), rig.Now));
+        var before = rig.Db.Read(c => { using var cmd = RequestLedger.Cmd(c, null, "SELECT id||':'||state||':'||cost||':'||job_id FROM reservations WHERE want_id=$w", ("$w", ask.RequestId!)); return (string)cmd.ExecuteScalar()!; });
+        var approved = await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, null, default);
+        Assert.True(approved.HttpStatus < 300, approved.Reason);
+        await rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }))).TickAsync(default);
+        rig.Now = rig.Now.AddMinutes(3);
+        await rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }))).TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Single(rig.Ledger.ForWant(ask.RequestId!));
+        var after = rig.Db.Read(c => { using var cmd = RequestLedger.Cmd(c, null, "SELECT id||':'||state||':'||cost||':'||job_id FROM reservations WHERE want_id=$w", ("$w", ask.RequestId!)); return (string)cmd.ExecuteScalar()!; });
+        Assert.Equal(before, after);
+        Assert.Equal(1, TableCount(rig.Db, "reservations"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_MalformedApprovalIsRejectedBeforeComparingProvenance(bool nullElement)
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var input = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 2) } };
+        var asked = await rig.Create(rig.Kid, input);
+        var stored = rig.Ledger.Find(asked.RequestId!)!.Input with { From = new[] { new RequestEpisode(1, 1) } };
+        rig.Db.Write((c,t) => RequestLedger.Exec(c,t,"UPDATE wants SET mutation_input=$i WHERE id=$w",("$i",stored.Canonical),("$w",asked.RequestId!)));
+        var broken = input with { Episodes = nullElement ? new RequestEpisode[] { null! } : null! };
+        var result = await rig.Controller(rig.Admin).Approve(asked.RequestId!, new ApproveRequest(broken), default);
+        var approved = Assert.IsType<RequestOutcome>(Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(result).Value);
+        Assert.Equal((400, "invalid_input"), (approved.HttpStatus, approved.Reason));
+    }
+
+    [Fact]
+    public async Task EIR4_PreviewAndBatchIgnoreCallerProvenance()
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var normal = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 3) } };
+        var forged = normal with { From = new[] { new RequestEpisode(-100, -100) }, Numbering = "bogus" };
+        var baseline = await rig.Service.PreviewAsync(rig.Member, new CreateRequest("normal", normal), default);
+        var preview = await rig.Service.PreviewAsync(rig.Member, new CreateRequest("forged", forged), default);
+        Assert.Equal(baseline.Outcome.Reason, preview.Outcome.Reason);
+        var batch = await rig.Service.PreviewBatchAsync(rig.Member, new CreateRequest?[] { new("normal", normal), new("forged", forged) }, default);
+        Assert.Equal(batch[0].Outcome.Reason, batch[1].Outcome.Reason);
+        Assert.Equal(0, TableCount(rig.Db, "wants"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_StartupManyPreviewRowsIsIdempotent(bool switched)
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        rig.Service.Numbering = (_,_,_) => Task.FromResult((true,true));
+        for (var i = 0; i < 125; i++)
+        {
+            var input = new MutationInput { Key = "tv:tvdb:" + (80000 + i), Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+            var ask = await rig.Create(rig.Add("Admin"), input);
+            Assert.True(ask.HttpStatus < 300, ask.Reason);
+            var want = rig.Ledger.Find(ask.RequestId!)!;
+            var persisted = switched ? want.Input with { Numbering = null, Episodes = new[] { new RequestEpisode(1, 2) }, From = want.Input.Episodes } : want.Input;
+            rig.Db.Write((c,t) => {
+                RequestLedger.Exec(c,t,"UPDATE wants SET mutation_input=$i,owned_input=$i,status='sent',reason='looking' WHERE id=$w",("$i",persisted.Canonical),("$w",want.Id));
+                RequestLedger.Exec(c,t,"UPDATE jobs SET mutation_input=$i,fingerprint=$f,state='succeeded' WHERE want_id=$w",("$i",persisted.Canonical),("$f",persisted.Fingerprint),("$w",want.Id));
+                RequestLedger.Exec(c,t,"INSERT INTO episode_identities(acquisition_id,target_key,season,episode,to_season,to_episode,tvdb_id,learned_at) VALUES($a,$t,1,1,1,2,0,0)",("$a",want.AcquisitionId),("$t",want.TargetKey));
+                return true;
+            });
+        }
+        var revision = rig.Ledger.Revision;
+        var events = TableCount(rig.Db, "request_events");
+        rig.Reopen();
+        Assert.Equal(0, TableCount(rig.Db, "episode_identities"));
+        Assert.Equal(250, TableCount(rig.Db, "jobs"));
+        Assert.Equal(events + 125, TableCount(rig.Db, "request_events"));
+        Assert.True(rig.Ledger.Revision > revision);
+        revision = rig.Ledger.Revision;
+        for (var i = 0; i < 4; i++) rig.Reopen();
+        Assert.Equal(250, TableCount(rig.Db, "jobs"));
+        Assert.Equal(events + 125, TableCount(rig.Db, "request_events"));
+        Assert.Equal(revision, rig.Ledger.Revision);
+    }
+
+    [Fact]
+    public async Task EIR4_DroppedMatchCannotConfirmTheDifferentEpisodeNowAtItsOldDestination()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var a = await rig.Create(rig.Admin, one);
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990, [(1, 12)] = 297999 })));
+        await runner.TickAsync(default);
+        lab.Sonarr.Episodes.Remove(lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002));
+        var replacement = lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4003);
+        replacement["episodeNumber"] = 2;
+        Assert.False((bool)replacement["monitored"]!);
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Admin"), one with { Episodes = new[] { new RequestEpisode(1, 12) } });
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Tmdb, rig.Ledger.Find(a.RequestId!)!.Input.Numbering);
+        rig.Service.Numbering = (_,_,_) => Task.FromResult((true,false));
+        var b = await rig.Create(rig.Member, one with { Episodes = new[] { new RequestEpisode(1, 2) } });
+        Assert.True(b.HttpStatus < 300, b.Reason);
+        var want = rig.Ledger.Find(b.RequestId!)!;
+        Assert.True(want.Status != "sent" && rig.Ledger.ForWant(want.Id).Count > 0, $"Replacement episode 4003 was never monitored or searched, but request is {want.Status}/{want.Reason} with {rig.Ledger.ForWant(want.Id).Count} jobs");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_KnownUnsentLeftoverCannotDispatchTwiceOrSurviveFulfilment(bool fulfil)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var b = await rig.Create(rig.Member, one);
+        await rig.Runner(Direct(lab, (_,_,_,_) => Task.FromResult(EpisodeExternalId.Unusable))).TickAsync(default);
+        rig.Now = rig.Now.AddSeconds(1);
+        var a = await rig.Create(rig.Add("Member"), one);
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 })));
+        await runner.TickAsync(default);
+        var want = rig.Ledger.Find(b.RequestId!)!;
+        Assert.Equal("sent", want.Status);
+        Assert.Null(want.Input.Numbering);
+        var job = rig.Ledger.ForWant(want.Id).Single();
+        Assert.Equal(new[] { new RequestEpisode(1, 2) }, job.Input.Episodes);
+        // Exercise the stated allowance for a queued known-unsent leftover, already present when Ready arrives.
+        rig.Db.Write((c,t) => RequestLedger.Exec(c,t,"UPDATE jobs SET state='queued',next_attempt=$at WHERE id=$j",("$at",RequestLedger.Ms(rig.Now)),("$j",job.Id)));
+        if (fulfil) Assert.True(rig.Ledger.Fulfil(want.Id, rig.Now, want));
+        lab.Sonarr.Writes.Clear();
+        await runner.TickAsync(default);
+        Assert.True(!fulfil || rig.Ledger.Find(want.Id)!.Status == "fulfilled", $"Fulfilled request became {rig.Ledger.Find(want.Id)!.Status}; leftover job={rig.Ledger.Job(job.Id)!.State}; upstream writes={lab.Sonarr.Writes.Count}");
+        Assert.Empty(lab.Sonarr.Writes);
+        Assert.Equal("cancelled", rig.Ledger.Job(job.Id)!.State);
+    }
+
+    [Fact]
+    public async Task EIR4_AKnownUnsentHeldSharerDoesNotKeepAChargeAfterItFulfils()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var b = await rig.Create(rig.Member, one);
+        await rig.Runner(Direct(lab, (_,_,_,_) => Task.FromResult(EpisodeExternalId.Unusable))).TickAsync(default);
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Member"), one);
+        await rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }))).TickAsync(default);
+        var want = rig.Ledger.Find(b.RequestId!)!;
+        Assert.Equal("sent", want.Status);
+        Assert.True(rig.Ledger.Fulfil(want.Id, rig.Now, want));
+        var charged = rig.Db.Read(c => { using var cmd = RequestLedger.Cmd(c,null,"SELECT COALESCE(SUM(episode_count),0) FROM reservations WHERE want_id=$w AND state='charged'",("$w",want.Id)); return Convert.ToInt32(cmd.ExecuteScalar()); });
+        Assert.True(charged == 0 && rig.Ledger.ForWant(want.Id).All(j => j.State == "cancelled"), $"Fulfilled sharer retains charged episode slots {charged} and known-unsent job {rig.Ledger.ForWant(want.Id).Single().State}; close={rig.Service.Close(want.Id,rig.Member,null).Reason}");
+    }
+
+    [Fact]
+    public async Task EIR4_ParkedSharedRequestHasRecoveryAfterItsSentLeaderFulfilsAndMatchIsLost()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var b = await rig.Create(rig.Member, one);
+        await rig.Runner(Direct(lab, (_,_,_,_) => Task.FromResult(EpisodeExternalId.Unusable))).TickAsync(default);
+        rig.Now = rig.Now.AddSeconds(1);
+        var a = await rig.Create(rig.Add("Member"), one);
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990, [(1, 12)] = 297999 })));
+        await runner.TickAsync(default);
+        var leader = rig.Ledger.Find(a.RequestId!)!;
+        Assert.True(rig.Ledger.Fulfil(leader.Id, rig.Now, leader));
+        lab.Sonarr.Episodes.Remove(lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002));
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Admin"), one with { Episodes = new[] { new RequestEpisode(1, 12) } });
+        await runner.TickAsync(default);
+        var want = rig.Ledger.Find(b.RequestId!)!;
+        Assert.Equal(EpisodeIdentity.Tmdb, want.Input.Numbering);
+        var approved = await rig.Service.ApproveAsync(want.Id, rig.Admin, null, default);
+        Assert.True(want.Status == "pending" || rig.Ledger.ForWant(want.Id).Any(j => j.State is "queued" or "retry" or "maybe_sent"), $"Lost match leaves {want.Status}/{want.Reason}, parked leftover, approve={approved.Reason}, no leader recovery");
+    }
+
+    [Theory]
+    [InlineData("interactive")]
+    [InlineData("list")]
+    [InlineData("automation")]
+    [InlineData("sync")]
+    public async Task EIR4_AllAskOriginsStripCallerProvenance(string kind)
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var forged = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 3) }, From = new[] { new RequestEpisode(-100, -100) }, Numbering = "forged" };
+        var origin = kind == "interactive" ? null : new RequestOrigin(kind, kind == "automation" ? "next-season" : "list:review");
+        var ask = await rig.Service.CreateAsync(rig.Member, new CreateRequest("origin-" + kind, forged), default, origin);
+        Assert.True(ask.HttpStatus < 300, ask.Reason);
+        var want = rig.Ledger.Find(ask.RequestId!)!;
+        Assert.Equal(kind, want.OriginKind);
+        Assert.Null(want.Input.From);
+        Assert.Null(want.Input.Numbering);
+        Assert.Equal(forged.Episodes, want.Input.Episodes);
+        Assert.All(rig.Ledger.ForWant(want.Id), j => Assert.Null(j.Input.From));
+    }
+
+    [Fact]
+    public async Task EIR4_UnchangedApprovalKeepsStoredProvenanceIgnoringForgedFrom()
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var input = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 2) } };
+        var ask = await rig.Create(rig.Kid, input);
+        var stored = rig.Ledger.Find(ask.RequestId!)!.Input with { From = new[] { new RequestEpisode(1, 1) } };
+        rig.Db.Write((c,t) => RequestLedger.Exec(c,t,"UPDATE wants SET mutation_input=$i WHERE id=$w",("$i",stored.Canonical),("$w",ask.RequestId!)));
+        var approved = await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, new ApproveRequest(input with { From = new[] { new RequestEpisode(1, 99) } }), default);
+        Assert.True(approved.HttpStatus < 300, approved.Reason);
+        Assert.Equal(stored.From, rig.Ledger.Find(ask.RequestId!)!.Input.From);
+        Assert.All(rig.Ledger.ForWant(ask.RequestId!), j => Assert.Equal(stored.From, j.Input.From));
+    }
+
+    private sealed class EIR4Activator(IntegrationRequestLedgerTests.Rig rig) : Microsoft.AspNetCore.Mvc.Controllers.IControllerActivator
+    {
+        public object Create(Microsoft.AspNetCore.Mvc.ControllerContext context)
+        {
+            var controller = rig.Controller(rig.Admin);
+            controller.ControllerContext = context;
+            return controller;
+        }
+        public void Release(Microsoft.AspNetCore.Mvc.ControllerContext context, object controller) { }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_MalformedApprovalThroughRealMvcIsA400(bool nullElement)
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var input = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 2) } };
+        var asked = await rig.Create(rig.Kid, input);
+        var stored = rig.Ledger.Find(asked.RequestId!)!.Input with { From = new[] { new RequestEpisode(1, 1) } };
+        rig.Db.Write((c,t) => RequestLedger.Exec(c,t,"UPDATE wants SET mutation_input=$i WHERE id=$w",("$i",stored.Canonical),("$w",asked.RequestId!)));
+        Exception? actionError = null;
+#pragma warning disable ASPDEPR004, ASPDEPR008
+        using var server = new TestServer(new WebHostBuilder().ConfigureServices(services => {
+            services.AddRouting(); services.AddAuthorization();
+            services.AddControllers().AddApplicationPart(typeof(Jellyfin.Plugin.JellyfinEnhanced.Controllers.AcquireRequestsController).Assembly);
+            services.AddSingleton<Microsoft.AspNetCore.Mvc.Controllers.IControllerActivator>(new EIR4Activator(rig));
+        }).Configure(app => {
+            app.UseRouting();
+            app.Use(async (ctx,next) => {
+                ctx.User = TestCallers.Principal(rig.Admin,true);
+                try { await next(); } catch(Exception ex) { actionError = ex; ctx.Response.StatusCode = 500; }
+            });
+            app.UseAuthorization(); app.UseEndpoints(e => e.MapControllers());
+        }));
+#pragma warning restore ASPDEPR004, ASPDEPR008
+        using var client = server.CreateClient();
+        var body = new ApproveRequest(input with { Episodes = nullElement ? new RequestEpisode[] { null! } : null! });
+        using var response = await client.PostAsync("/JellyfinEnhanced/acquire/requests/" + asked.RequestId + "/approve", new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8,"application/json"));
+        Assert.True((int)response.StatusCode == 400, $"MVC status={(int)response.StatusCode}; action error={actionError?.GetType().Name}: {actionError?.Message}");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_ReadBackPermanentIdentityFailureHoldsOnFirstAttempt(bool noId)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var direct = Direct(lab, (_,_,_,_) => Task.FromResult(noId ? EpisodeExternalId.None : EpisodeExternalId.Unusable));
+        var job = lab.Job(Ask((1, 1)), "Sonarr") with { Attempts = 0, Uncertain = true };
+        var result = await direct.ReadBackAsync(job, default);
+        Assert.True(result.Parked);
+        Assert.Equal(EpisodeIdentity.Unresolved, result.Outcome.Reason);
+        Assert.Equal(ArrActionStatus.Unknown, result.Outcome.Certainty);
+        Assert.False(result.VerifiedNotSent);
+        Assert.Empty(lab.Sonarr.Writes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EIR4_ReadBackTransientIdentityFailureWaitsOnceThenHolds(bool missing)
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab, withTvdbIds: !missing);
+        var direct = Direct(lab, (_,_,_,_) => Task.FromResult(missing ? new EpisodeExternalId(true,297990) : EpisodeExternalId.Unread));
+        var job = lab.Job(Ask((1, 1)), "Sonarr") with { Attempts = 0, Uncertain = true };
+        var result = await direct.ReadBackAsync(job, default);
+        Assert.Equal(EpisodeIdentity.Pending, result.Outcome.Reason);
+        Assert.True(result.Resumes);
+        Assert.Equal(ArrActionStatus.Unknown, result.Outcome.Certainty);
+        var second = await direct.ReadBackAsync(job with { Attempts = 1, Reason = result.Outcome.Reason }, default);
+        Assert.True(second.Parked);
+        Assert.Equal(EpisodeIdentity.Unresolved, second.Outcome.Reason);
+        Assert.Equal(ArrActionStatus.Unknown, second.Outcome.Certainty);
+        Assert.Empty(lab.Sonarr.Writes);
+    }
+
+    [Fact]
+    public async Task EIR4_StartupPreviewRecoveryDoesNotRequeueAnotherTargetsValidMatch()
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var secondUser = rig.Add("Admin");
+        rig.Policy.Adjust = (user,input,facts) => facts with { InstanceId = user == secondUser ? "sonarr-second" : "sonarr-first", ConnectionGeneration = "generation" };
+        rig.Service.Numbering = (_,_,_) => Task.FromResult((true,true));
+        var input = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var a = await rig.Create(rig.Admin,input);
+        var b = await rig.Create(secondUser,input);
+        var wa = rig.Ledger.Find(a.RequestId!)!;
+        var wb = rig.Ledger.Find(b.RequestId!)!;
+        Assert.Equal(wa.AcquisitionId,wb.AcquisitionId);
+        Assert.NotEqual(wa.TargetKey,wb.TargetKey);
+        foreach(var want in new[] {wa,wb})
+        {
+            var valid = want.Id == wb.Id;
+            var switched = want.Input with { Numbering = null, From = input.Episodes, Episodes = new[] {new RequestEpisode(1,valid ? 3 : 2)} };
+            rig.Db.Write((c,t) => {
+                RequestLedger.Exec(c,t,"UPDATE wants SET mutation_input=$i,owned_input=$i,status='sent',reason='looking' WHERE id=$w",("$i",switched.Canonical),("$w",want.Id));
+                RequestLedger.Exec(c,t,"UPDATE jobs SET mutation_input=$i,fingerprint=$f,state='succeeded' WHERE want_id=$w",("$i",switched.Canonical),("$f",switched.Fingerprint),("$w",want.Id));
+                RequestLedger.Exec(c,t,"INSERT INTO episode_identities(acquisition_id,target_key,season,episode,to_season,to_episode,tvdb_id,learned_at) VALUES($a,$t,1,1,1,$e,$id,0)",("$a",want.AcquisitionId),("$t",want.TargetKey),("$e",valid ? 3 : 2),("$id",valid ? 297990 : 0));
+                return true;
+            });
+        }
+        rig.Reopen();
+        Assert.Equal(1,TableCount(rig.Db,"episode_identities"));
+        var kept = rig.Ledger.Find(wb.Id)!;
+        Assert.True(kept.Status == "sent" && kept.Input.Numbering == null && rig.Ledger.ForWant(wb.Id).Count == 1,$"Unchanged second-target mapping remains, but request={kept.Status}/{kept.Input.Numbering}, jobs={rig.Ledger.ForWant(wb.Id).Count}");
+        Assert.Equal(new[] {new RequestEpisode(1,3)},kept.Input.Episodes);
+    }
+
+    [Fact]
+    public async Task EIR4_QueuedLeftoverCannotSearchTheWrongEpisodeAfterItsLeaderFulfilsAndTheMatchIsLost()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab(); ExistingFirefly(lab);
+        var (r, _) = Ledger(lab); using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var b = await rig.Create(rig.Member, one);
+        await rig.Runner(Direct(lab, (_,_,_,_) => Task.FromResult(EpisodeExternalId.Unusable))).TickAsync(default);
+        rig.Now = rig.Now.AddSeconds(1);
+        var a = await rig.Create(rig.Add("Member"), one);
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990, [(1, 12)] = 297999 })));
+        await runner.TickAsync(default);
+        var leftover = rig.Ledger.ForWant(b.RequestId!).Single();
+        // The supported sent + queued-known-unsent state, not a post-fulfilment job resurrection.
+        rig.Db.Write((c,t) => RequestLedger.Exec(c,t,"UPDATE jobs SET state='queued',next_attempt=$at WHERE id=$j",("$at",RequestLedger.Ms(rig.Now.AddMinutes(1))),("$j",leftover.Id)));
+        var leader = rig.Ledger.Find(a.RequestId!)!;
+        Assert.True(rig.Ledger.Fulfil(leader.Id, rig.Now, leader));
+        lab.Sonarr.Episodes.Remove(lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002));
+        lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4003)["episodeNumber"] = 2;
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Admin"), one with { Episodes = new[] { new RequestEpisode(1, 12) } });
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Tmdb,rig.Ledger.Find(b.RequestId!)!.Input.Numbering);
+        lab.Sonarr.Writes.Clear();
+        rig.Now = rig.Now.AddMinutes(2);
+        await runner.TickAsync(default);
+        var searches = lab.Sonarr.Writes.Where(w => w.Path == "/api/v3/command" && w.Body.Contains("EpisodeSearch",StringComparison.Ordinal)).Select(w => w.Body).ToArray();
+        Assert.True(!searches.Any(s => Ids(JsonNode.Parse(s)!["episodeIds"]).Contains(4003)), $"TMDB E1 lost TVDB 297990, but leftover searched replacement episode 4003; job numbering={rig.Ledger.Job(leftover.Id)!.Input.Numbering ?? "Sonarr"}");
+    }
 }
