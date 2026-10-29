@@ -373,9 +373,9 @@ Each card shows one badge. The first one that applies wins:
 
 ### Trending ranks
 
-The trending rank reads `#N Today` from TMDB's daily trending list when a TMDB API key is configured. Without a key, or if TMDB does not answer, it reads `#N This Week` from Seerr's trending list, which is TMDB's weekly list. With neither, no trending badges appear. Only movies and series with a TMDB ID can show a rank; seasons and episodes never do.
+The trending rank reads `#N Today` from TMDB's daily trending list when a TMDB API key is configured. Without a key, or if TMDB does not answer or lists nothing, it reads `#N This Week` from Seerr's trending list, which is TMDB's weekly list. With neither, no trending badges appear. Only movies and series with a TMDB ID can show a rank; seasons and episodes never do.
 
-The server fetches the first 60 movie and series ranks and keeps the list for 30 minutes, shared by every user. It holds only public TMDB IDs and ranks. Your browser fetches it once per page load and uses it only to mark items you can already see.
+The server fetches the first 60 movie and series ranks and keeps the list for 30 minutes, shared by every user. It holds only public TMDB IDs and ranks. Your browser fetches it when the first badges are drawn and again after 30 minutes, or after 5 minutes when it came back empty. When the list has changed, the badges already on the page are updated. It is used only to mark items you can already see.
 
 !!! note "Web only"
     Status Tags are web overlays. [Native Poster Tags](#native-poster-tags-experimental) do not draw them into poster images for native apps.
@@ -383,7 +383,9 @@ The server fetches the first 60 movie and series ranks and keeps the list for 30
 ??? info "Data sources and limits"
     Dates come from the [Server-Side Tag Cache](#server-side-tag-cache), which keeps each item's added and premiere dates and, for series and seasons, when their newest episode was added. Adding an episode updates its series and season. With the server cache off, the per-page batch fallback asks the server for the same dates.
 
-    Spoiler Guard keeps date badges on protected items: an added date is not a spoiler, and Jellyfin shows it as **Date Added**. Protected cards carry no TMDB ID, so they never show a trending rank.
+    **New Episode** only counts episodes you can see. If the newest episode is hidden from you (library access, parental rating or blocked tags), its series and season show no **New Episode** badge for it.
+
+    Spoiler Guard keeps date badges on protected items: an added date is not a spoiler, and Jellyfin shows it as **Date Added**. Protected movies and series keep their trending rank too, because a place in the trending list says nothing about the plot. Seasons and episodes never show one.
 
     Restyle the badges with custom CSS through `.status-tag`, or a single kind through `.status-tag--trending`, `.status-tag--new` or `.status-tag--added`. The rank inside a trending badge is `.status-tag-rank`.
 

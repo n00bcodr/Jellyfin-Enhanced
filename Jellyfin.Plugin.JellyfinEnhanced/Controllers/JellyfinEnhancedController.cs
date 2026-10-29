@@ -8532,7 +8532,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // does — the first registered JSON formatter that writes
         // application/json (Jellyfin registers its own PascalCase profile
         // formatter ahead of the default one) — and cached, since the formatter
-        // list is fixed for the process.
+        // list is fixed for the process. The one difference: a copy that leaves
+        // out TagCacheEntry.LatestEpisodeId, which only the server's per-user
+        // filter reads (the disk snapshot keeps it).
         private static JsonSerializerOptions? _tagCacheJsonOptions;
 
         // One shareable full-load serialization at a time (see GetTagCache):
@@ -8559,6 +8561,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             options ??= HttpContext.RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>().Value.JsonSerializerOptions;
+            options = new JsonSerializerOptions(options)
+            {
+                TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.WithAddedModifier(
+                    options.TypeInfoResolver ?? new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+                    static typeInfo =>
+                    {
+                        if (typeInfo.Type != typeof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry)) return;
+                        foreach (var property in typeInfo.Properties)
+                        {
+                            // By CLR name: the JSON name follows the host's naming policy.
+                            if (property.AttributeProvider is System.Reflection.PropertyInfo clrProperty
+                                && clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId))
+                            {
+                                property.ShouldSerialize = static (_, _) => false;
+                            }
+                        }
+                    }),
+            };
             _tagCacheJsonOptions = options;
             return options;
         }
@@ -8756,6 +8776,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Services.TagCacheService.ToUnixMilliseconds(latest?.DateCreated);
             }
 
+            // The Series/Movie stubs carry no provider ids, but a trending rank is
+            // not a spoiler, so the Status Tags get the TMDB id on its own (the
+            // server tag cache's strip keeps TmdbId the same way).
+            string? TagDataTmdbId(BaseItem tagItem) =>
+                tagItem.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true && !string.IsNullOrEmpty(tmdbId) ? tmdbId : null;
+
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
 
@@ -8902,6 +8928,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeries.DateCreated),
                         PremiereDate = TagDataPremiereDate(spSeries),
                         LatestEpisodeAdded = TagDataLatestEpisodeAdded(spSeries),
+                        TmdbId = TagDataTmdbId(spSeries),
                     });
                     continue;
                 }
@@ -8964,6 +8991,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
                         DateCreated = Services.TagCacheService.ToUnixMilliseconds(spMovie.DateCreated),
                         PremiereDate = TagDataPremiereDate(spMovie),
+                        TmdbId = TagDataTmdbId(spMovie),
                     });
                     continue;
                 }

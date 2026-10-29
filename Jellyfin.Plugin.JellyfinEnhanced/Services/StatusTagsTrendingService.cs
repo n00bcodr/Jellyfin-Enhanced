@@ -21,7 +21,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <see cref="TmdbResponseCache"/>) when a TMDB API key is configured; otherwise,
     /// or when TMDB gives nothing back, Seerr's <c>/api/v1/discover/trending</c>
     /// (TMDB's weekly list) with the server's API key and no user header, so no
-    /// per-user parental rewrite applies. Neither: an empty list.
+    /// per-user parental rewrite applies. A source that answers without a single
+    /// rankable title counts as no answer. Neither: an empty list (kept only for
+    /// <see cref="EmptyCacheTtl"/>).
     /// </para>
     /// </summary>
     public sealed class StatusTagsTrendingService
@@ -145,11 +147,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Empty;
         }
 
-        /// <summary>TMDB daily trending, pages 1-3; null when no page could be read.</summary>
+        /// <summary>TMDB daily trending, pages 1-3; null when no ranks could be read.</summary>
         private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey)
         {
             var ranks = new RankBuilder();
-            var anyPage = false;
             for (var page = 1; page <= Pages && !ranks.Full; page++)
             {
                 TmdbResponseCache.TmdbResponse response;
@@ -172,14 +173,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     break;
                 }
 
-                anyPage = true;
                 ranks.AddResults(response.Content, "media_type");
             }
 
-            return anyPage ? ranks.Build("tmdb-day") : null;
+            // A page that answered with no results (or only people) is not a list:
+            // null lets Seerr answer instead, or the empty result's short retry apply.
+            return ranks.IsEmpty ? null : ranks.Build("tmdb-day");
         }
 
-        /// <summary>Seerr's trending (TMDB weekly), pages 1-3; null when no page could be read.</summary>
+        /// <summary>Seerr's trending (TMDB weekly), pages 1-3; null when no ranks could be read.</summary>
         private async Task<TrendingSnapshot?> FetchSeerrAsync(PluginConfiguration config)
         {
             var httpClient = SeerrHttpHelper.CreateClient(_httpClientFactory);
@@ -187,7 +189,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
             var ranks = new RankBuilder();
-            var anyPage = false;
             for (var page = 1; page <= Pages && !ranks.Full; page++)
             {
                 var pageRead = false;
@@ -215,10 +216,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (!pageRead) break;
-                anyPage = true;
             }
 
-            return anyPage ? ranks.Build("seerr-week") : null;
+            return ranks.IsEmpty ? null : ranks.Build("seerr-week");
         }
 
         /// <summary>
@@ -232,6 +232,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             private int _rank;
 
             public bool Full => _rank >= MaxRanks;
+
+            public bool IsEmpty => _rank == 0;
 
             public void AddResults(string json, string mediaTypeProperty)
             {

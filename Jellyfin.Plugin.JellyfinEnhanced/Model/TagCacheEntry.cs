@@ -52,6 +52,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// episodes.
         /// </summary>
         public long? LatestEpisodeAdded { get; set; }
+        /// <summary>
+        /// Series/Season only: the episode (N format, lowercase) that supplied
+        /// <see cref="LatestEpisodeAdded"/>. Server-side: the per-user filter drops
+        /// the date when the user can't see that episode, and the tag-cache
+        /// response leaves it out.
+        /// </summary>
+        public string? LatestEpisodeId { get; set; }
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
         // otherwise. Lets the Spoiler Guard filter strip cache entries for
@@ -100,6 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.DateCreated == b.DateCreated
                 && a.PremiereDate == b.PremiereDate
                 && a.LatestEpisodeAdded == b.LatestEpisodeAdded
+                && a.LatestEpisodeId == b.LatestEpisodeId
                 && a.SeriesId == b.SeriesId;
         }
 
@@ -157,6 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             DateCreated = DateCreated,
             PremiereDate = PremiereDate,
             LatestEpisodeAdded = LatestEpisodeAdded,
+            LatestEpisodeId = LatestEpisodeId,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
         };

@@ -79,6 +79,33 @@ public class PrivacyCacheTests
     }
 
     [Fact]
+    public void LatestEpisodeDateIsDroppedForUsersWhoCannotSeeTheEpisodeItCameFrom()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() }; var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
+        var series = Guid.NewGuid(); var newest = Guid.NewGuid(); var (seriesKey, newestKey) = (series.ToString("N"), newest.ToString("N"));
+        var library = new Mock<ILibraryManager>();
+        // Bob can see the series but not its newest episode (e.g. a parental rating or blocked tag).
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery query) => query.User == alice ? new[] { series, newest } : new[] { series });
+        Seed(f, new()
+        {
+            [seriesKey] = new() { Type = "Series", DateCreated = 100, LatestEpisodeAdded = 500, LatestEpisodeId = newestKey, LastUpdated = 100 },
+            [newestKey] = new() { Type = "Episode", SeriesId = seriesKey, DateCreated = 500, LastUpdated = 100 },
+        });
+        using var cache = Create(f, library); cache.LoadFromDisk();
+
+        Assert.Equal(500, cache.GetCacheForUser(alice, out _, out _, out var aliceRevision)[seriesKey].LatestEpisodeAdded); Assert.Equal("all", aliceRevision);
+        var bobItems = cache.GetCacheForUser(bob, out _, out _, out var bobRevision);
+        Assert.False(bobItems.ContainsKey(newestKey)); Assert.Null(bobItems[seriesKey].LatestEpisodeAdded); Assert.Null(bobItems[seriesKey].LatestEpisodeId);
+        Assert.Equal(100, bobItems[seriesKey].DateCreated); Assert.NotEqual("all", bobRevision);
+        Assert.Null(cache.GetCacheForUser(bob, out _, out _, since: 50)[seriesKey].LatestEpisodeAdded); // a delta filters the same way
+        Assert.True(cache.TryGetEntry(series, out var shared)); Assert.Equal(500, shared.LatestEpisodeAdded); Assert.Equal(newestKey, shared.LatestEpisodeId);
+
+        var copy = shared.Clone(); Assert.Equal(newestKey, copy.LatestEpisodeId); Assert.True(TagCacheEntry.ContentEquals(shared, copy));
+        copy.LatestEpisodeId = seriesKey; Assert.False(TagCacheEntry.ContentEquals(shared, copy));
+    }
+
+    [Fact]
     public void RestartPreservesSnapshotAndQueuedRemovalChangesVersionAndSurvivesShutdown()
     {
         using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
@@ -139,6 +166,6 @@ public class PrivacyCacheTests
     {
         Directory.CreateDirectory(f.Core.ConfigRoot);
         // Schema 8 fixture exercises the persisted contract consumed across process restarts.
-        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 9, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
+        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 10, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
     }
 }

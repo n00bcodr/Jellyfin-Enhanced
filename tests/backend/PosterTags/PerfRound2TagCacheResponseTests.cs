@@ -40,7 +40,7 @@ public class PerfRound2TagCacheResponseTests
         public readonly JellyfinEnhancedController Controller;
         private readonly ServiceProvider _provider;
 
-        public Endpoint()
+        public Endpoint(Func<Endpoint, Dictionary<string, TagCacheEntry>>? extraItems = null)
         {
             Fixture.Plugin.Configuration.TagCacheServerMode = true;
             Fixture.Plugin.Configuration.SpoilerBlurEnabled = false;
@@ -55,13 +55,13 @@ public class PerfRound2TagCacheResponseTests
             Directory.CreateDirectory(Fixture.Core.ConfigRoot);
             File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
             {
-                SchemaVersion = 9, Version = 9, LastModified = 200,
+                SchemaVersion = 10, Version = 9, LastModified = 200,
                 Items = new Dictionary<string, TagCacheEntry>
                 {
                     [First.ToString("N")] = new() { Type = "Movie", Genres = ["First secret"], LastUpdated = 100 },
                     [Second.ToString("N")] = new() { Type = "Movie", Genres = ["Second secret"], LastUpdated = 200 },
                     [Episode.ToString("N")] = new() { Type = "Episode", SeriesId = SeriesId.ToString("N"), Genres = ["Episode secret"], LastUpdated = 150 }
-                }
+                }.Concat(extraItems?.Invoke(this) ?? []).ToDictionary()
             }));
             Cache = new TagCacheService(Library.Object, Fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), Fixture.Core.Logger, new MatroskaLanguageCache(Fixture.Core.Paths.Object, Fixture.Core.Logger));
             Cache.LoadFromDisk();
@@ -253,5 +253,58 @@ public class PerfRound2TagCacheResponseTests
         var tagData = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()]));
         var json = JsonSerializer.Serialize(tagData.Value);
         Assert.Contains(series.Id.ToString(), json); Assert.DoesNotContain("Series secret", json);
+    }
+
+    [Fact]
+    public async Task LatestEpisodeDateOnlyReachesUsersWhoCanSeeThatEpisodeAndItsIdNeverDoes()
+    {
+        // The series entry's "New Episode" date came from Episode. Alice can see
+        // the series but not that episode (parental rating, blocked tag, ...).
+        var seriesKey = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [seriesKey.ToString("N")] = new() { Type = "Series", DateCreated = 100, LatestEpisodeAdded = 5000, LatestEpisodeId = e.Episode.ToString("N"), LastUpdated = 120 }
+        });
+        Assert.True(endpoint.Cache.TryGetEntry(seriesKey, out var shared)); // read back from the snapshot
+        Assert.Equal(endpoint.Episode.ToString("N"), shared.LatestEpisodeId);
+        endpoint.AliceAccess = [endpoint.First, seriesKey];
+
+        var hidden = await endpoint.Read(endpoint.Alice);
+        using (var json = JsonDocument.Parse(hidden.Body))
+        {
+            var entry = json.RootElement.GetProperty("items").GetProperty(seriesKey.ToString("N"));
+            Assert.Equal(100, entry.GetProperty("DateCreated").GetInt64());
+            Assert.False(entry.TryGetProperty("LatestEpisodeAdded", out _));
+        }
+        Assert.DoesNotContain("LatestEpisodeId", hidden.Body);
+        Assert.DoesNotContain(endpoint.Episode.ToString("N"), hidden.Body);
+        Assert.Equal(5000, shared.LatestEpisodeAdded); // the shared entry is untouched
+
+        endpoint.AliceAccess = [endpoint.First, seriesKey, endpoint.Episode];
+        endpoint.Cache.InvalidateUserAccess();
+        var visible = await endpoint.Read(endpoint.Alice);
+        using (var json = JsonDocument.Parse(visible.Body))
+        {
+            Assert.Equal(5000, json.RootElement.GetProperty("items").GetProperty(seriesKey.ToString("N")).GetProperty("LatestEpisodeAdded").GetInt64());
+        }
+        Assert.DoesNotContain("LatestEpisodeId", visible.Body);
+        // Seeing the episode changes the fingerprint, so a stored copy without the date is replaced.
+        Assert.NotEqual(FilterRevision(hidden.Body), FilterRevision(visible.Body));
+    }
+
+    [Fact]
+    public void GuardedSeriesStubKeepsTheTmdbIdForTrendingButNoProviderIds()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.GuardSeries();
+        var series = new Series { Id = endpoint.SeriesId, Name = "Show", Genres = ["Series secret"], ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "4242", ["Imdb"] = "tt0001" } };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, It.IsAny<User>())).Returns(series);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        endpoint.SignIn(endpoint.Alice);
+        var tagData = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()]));
+        var json = JsonSerializer.Serialize(tagData.Value);
+        Assert.DoesNotContain("Series secret", json); // still the strip stub
+        Assert.Contains("\"TmdbId\":\"4242\"", json);
+        Assert.DoesNotContain("tt0001", json);
     }
 }

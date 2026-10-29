@@ -278,8 +278,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // collection entries built before it are stale.
         // v9 adds DateCreated, PremiereDate (Movie/Series) and LatestEpisodeAdded
         // (Series/Season) for the Status Tags badges.
+        // v10 adds LatestEpisodeId (the episode LatestEpisodeAdded came from), so the
+        // per-user filter can drop a date taken from an episode the user can't see.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 9;
+        private const int CurrentCacheSchemaVersion = 10;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1565,7 +1567,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                result[kvp.Key] = kvp.Value;
+                result[kvp.Key] = WithoutHiddenLatestEpisode(kvp.Value, accessibleSet);
             }
 
             accessRevision = FormatAccessRevision(excludedCount, excludedSum);
@@ -1578,6 +1580,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// A Series/Season entry as one user may see it: its LatestEpisodeAdded
+        /// is built over every episode, so when the episode it came from is not
+        /// in the user's access set the date is dropped (a clone, the shared
+        /// entry is untouched) rather than recomputed from the episodes they can
+        /// see. That episode's exclusion is already part of the accessRevision
+        /// (its own entry is excluded), so a stored copy is replaced when it
+        /// changes.
+        /// </summary>
+        private static TagCacheEntry WithoutHiddenLatestEpisode(TagCacheEntry entry, HashSet<string> accessibleSet)
+        {
+            if (entry.LatestEpisodeId == null || accessibleSet.Contains(entry.LatestEpisodeId)) return entry;
+            var filtered = entry.Clone();
+            filtered.LatestEpisodeAdded = null;
+            filtered.LatestEpisodeId = null;
+            return filtered;
         }
 
         private static string FormatAccessRevision(int excludedCount, ulong excludedSum) =>
@@ -2429,8 +2449,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (isContainer)
                 {
-                    var (firstEp, languages, partialLanguages, latestEpisodeAdded) = ScanContainerEpisodes(item, episodeScans);
+                    var (firstEp, languages, partialLanguages, latestEpisodeAdded, latestEpisodeId) = ScanContainerEpisodes(item, episodeScans);
                     entry.LatestEpisodeAdded = latestEpisodeAdded;
+                    entry.LatestEpisodeId = latestEpisodeAdded == null ? null : latestEpisodeId;
                     if (firstEp != null)
                     {
                         if (entry.Genres == null || entry.Genres.Length == 0)
@@ -2711,16 +2732,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// containers); both walks feed the same per-episode step in the same
         /// order, so they produce the same entry.
         /// </summary>
-        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded) ScanContainerEpisodes(
+        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded, string? LatestEpisodeId) ScanContainerEpisodes(
             BaseItem container,
             EpisodeScanMemo? episodeScans)
         {
             // Newest DateCreated over every episode the walk visits (with or
-            // without streams), for the Status Tags "New Episode" badge.
+            // without streams), for the Status Tags "New Episode" badge, and the
+            // episode it came from (the per-user filter drops the date for a
+            // user who can't see that episode, see GetCacheForUserCore).
             DateTime? latestAdded = null;
-            void NoteAdded(DateTime dateCreated)
+            Guid latestId = Guid.Empty;
+            void NoteAdded(Guid id, DateTime dateCreated)
             {
-                if (dateCreated != default && (latestAdded == null || dateCreated > latestAdded)) latestAdded = dateCreated;
+                if (dateCreated != default && (latestAdded == null || dateCreated > latestAdded))
+                {
+                    latestAdded = dateCreated;
+                    latestId = id;
+                }
             }
 
             // Union keeps insertion order (deterministic for a stable library), so
@@ -2762,7 +2790,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         episode => episode.ParentIndexNumber,
                         episode =>
                         {
-                            NoteAdded(episode.DateCreated);
+                            NoteAdded(episode.Id, episode.DateCreated);
                             return Accumulate(episode.ParentIndexNumber, episode.Languages);
                         });
                     firstEp = first == null ? null : new RepresentativeEpisode(first.Genres, first.StreamData, first.Item);
@@ -2771,7 +2799,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     var first = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, null, episode =>
                     {
-                        NoteAdded(episode.DateCreated);
+                        NoteAdded(episode.Id, episode.DateCreated);
                         string[]? languages;
                         if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
                         {
@@ -2829,12 +2857,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return !counted.All(set => Covers(set, identity, separateDubs));
                     })
                     .ToArray();
-                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded));
+                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"));
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
-                return (null, Array.Empty<string>(), null, null);
+                return (null, Array.Empty<string>(), null, null, null);
             }
         }
 
@@ -2842,7 +2870,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// What a container's scan callback reads from one of its episodes, in
         /// the full build (see <see cref="ReadIndexedEpisode"/>).
         /// </summary>
-        private sealed record IndexedEpisode(int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated);
+        private sealed record IndexedEpisode(Guid Id, int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated);
 
         /// <summary>
         /// One indexed episode as the scan callback in
@@ -2858,14 +2886,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             index.Late.TryGetValue(id, out var late);
             if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } placement)
             {
-                return new IndexedEpisode(placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated);
+                return new IndexedEpisode(id, placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated);
             }
 
             // The index only lists episodes that have a placement or a Late item.
             var episode = late ?? throw new InvalidOperationException($"Episode {id} is missing from the container index");
             var languages = ExtractAudioLanguages(episode);
             episodeScans[id] = new EpisodeScan(languages, null, EpisodePlacement.Of(episode));
-            return new IndexedEpisode(episode.ParentIndexNumber, languages, episode.Genres, null, episode, episode.DateCreated);
+            return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, null, episode, episode.DateCreated);
         }
 
         /// <summary>

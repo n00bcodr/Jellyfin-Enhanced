@@ -16,13 +16,16 @@
 //   Episode, BoxSet, Video: Just Added
 // Dates come from the server tag cache (DateCreated / PremiereDate /
 // LatestEpisodeAdded, Unix ms) or the /tag-data batch fallback. Trending ranks
-// come from /JellyfinEnhanced/status-tags/trending, fetched once per page
-// lifetime (30 min TTL); cards drawn before it arrives get their date badge and
-// one targeted pass upgrades the trending ones when it does.
+// come from /JellyfinEnhanced/status-tags/trending, fetched on first use and
+// refreshed after 30 minutes; whenever a fetch brings a different list, one
+// pass re-badges the Movie/Series cards on the page (cards drawn before the
+// first list arrives get their date badge until then).
 //
-// Spoiler Guard: dates are not spoilers (Jellyfin lists Date Added), so a strip
-// stub just gets the normal date-based evaluation. Stubs carry no provider ids,
-// so they never get a trending rank, and nothing extra is fetched for them.
+// Spoiler Guard: dates are not spoilers (Jellyfin lists Date Added), so a
+// guarded item gets the normal date-based evaluation, and a trending rank is
+// not plot information, so a guarded Movie/Series keeps it: the server cache's
+// strip keeps TmdbId and the /tag-data Series/Movie stubs carry it as TmdbId.
+// Season/Episode stubs never get a rank anyway. Nothing extra is fetched.
 (function(JE) {
     'use strict';
 
@@ -67,11 +70,14 @@
     const trending = { data: null, fetchedAt: 0, retryAt: 0, promise: null };
 
     /**
-     * Cards drawn while the first trending fetch was still in flight, upgraded
-     * in one pass when it lands. Only Movies/Series with a TMDB id are kept.
-     * @type {Array<{el: HTMLElement, data: Object}>}
+     * Every drawn Movie/Series card with a TMDB id (the only cards a trending
+     * list can change), with its item data and the badge it shows. The cards
+     * are found again through TRENDABLE_ATTR, so detached ones need no pruning.
+     * @type {WeakMap<HTMLElement, {data: Object, shown: string}>}
      */
-    let awaitingTrending = [];
+    const trendableCards = new WeakMap();
+    const TRENDABLE_ATTR = 'jeStatusTrendable';
+    const TRENDABLE_SELECTOR = '[data-je-status-trendable]';
 
     /**
      * Resolve one badge switch: user override, then admin default, then on.
@@ -157,7 +163,8 @@
      * @returns {{type: string|null, tmdb: string|null, created: number|null, premiere: number|null, latest: number|null}}
      */
     function fromItem(item) {
-        const tmdb = item.ProviderIds?.Tmdb;
+        // A Spoiler Guard strip stub has no ProviderIds, only the bare TmdbId.
+        const tmdb = item.ProviderIds?.Tmdb || item.TmdbId;
         return {
             type: item.Type || null,
             tmdb: tmdb ? String(tmdb) : null,
@@ -312,8 +319,27 @@
     }
 
     /**
-     * Draw a card's badge, and remember it for the trending pass when the
-     * trending list is still on its way and could change its badge.
+     * A badge as a comparable string ('' for none).
+     * @param {{kind: string, label: string, rank?: number}|null} badge
+     * @returns {string}
+     */
+    function badgeKey(badge) {
+        return badge ? `${badge.kind}|${badge.label}|${badge.rank ?? ''}` : '';
+    }
+
+    /**
+     * A trending list as a comparable string; an empty list (or none) is ''.
+     * @param {{source: string|null, movies: Object, series: Object}|null} list
+     * @returns {string}
+     */
+    function trendingKey(list) {
+        if (!list || !list.source) return '';
+        return JSON.stringify([list.source, list.movies, list.series]);
+    }
+
+    /**
+     * Draw a card's badge, and remember a Movie/Series card for the pass that
+     * re-badges them when a different trending list arrives.
      * @param {Object} ctx - Factory context.
      * @param {HTMLElement} el - Render target.
      * @param {Object} data - Normalized item data.
@@ -322,48 +348,58 @@
     function renderData(ctx, el, data) {
         // Cheap when fresh; refreshes a list that expired during a long session.
         ensureTrending(ctx);
-        if (!trending.data && trending.promise && data.tmdb
-            && (data.type === 'Movie' || data.type === 'Series')) {
-            awaitingTrending.push({ el, data });
+        const badge = pickBadge(data);
+        if (data.tmdb && (data.type === 'Movie' || data.type === 'Series')) {
+            trendableCards.set(el, { data, shown: badgeKey(badge) });
+            el.dataset[TRENDABLE_ATTR] = '1';
         }
-        applyStatusTag(ctx, el, pickBadge(data));
+        applyStatusTag(ctx, el, badge);
     }
 
     /**
-     * Once the trending list lands, re-tag the cards drawn without it that
-     * turn out to be trending, then re-stack their corners in one pass.
+     * After a fetch brought a different trending list: re-badge every
+     * Movie/Series card on the page whose badge changes with it (a new or
+     * changed rank, or a title that dropped off and falls back to its date
+     * badge or none), then re-stack their corners in one pass.
      * @param {Object} ctx - Factory context.
      * @returns {void}
      */
     function applyTrendingPass(ctx) {
-        const pending = awaitingTrending;
-        awaitingTrending = [];
         if (!JE.currentSettings?.statusTagsEnabled) return;
         const hosts = [];
-        for (const { el, data } of pending) {
-            if (!el.isConnected || el.closest('.je-hidden')) continue;
-            const badge = pickBadge(data);
-            if (!badge || badge.kind !== 'trending') continue;
-            applyStatusTag(ctx, el, badge);
+        document.querySelectorAll(TRENDABLE_SELECTOR).forEach((el) => {
+            const card = trendableCards.get(/** @type {HTMLElement} */ (el));
+            if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
+            const badge = pickBadge(card.data);
+            const key = badgeKey(badge);
+            if (key === card.shown) return;
+            card.shown = key;
+            // No badge now: removing the overlay is enough, a tagged marker
+            // without one counts as untagged (ctx.isTagged).
+            if (badge) applyStatusTag(ctx, el, badge);
+            else ctx.removeExistingOverlay(el);
             hosts.push(el);
-        }
+        });
         if (hosts.length > 0) JE.core.tagRenderer.applyCornerStacking(hosts);
     }
 
     /**
      * Fetch the trending list unless it is fresh, already loading, switched
-     * off, or recently failed. Stale data keeps being used while a refresh
-     * runs, so only the first load of a page lifetime holds cards back.
+     * off, or recently failed or empty (retried after TRENDING_RETRY_MS; only a
+     * usable list is kept for TRENDING_TTL_MS). Stale data keeps being used
+     * while a refresh runs; when the answer differs from the list in use, one
+     * pass re-badges the cards on the page.
      * @param {Object} ctx - Factory context.
      * @returns {void}
      */
     function ensureTrending(ctx) {
         if (!isTrendingWanted() || trending.promise) return;
         const now = Date.now();
-        if (trending.data && now - trending.fetchedAt < TRENDING_TTL_MS) return;
         if (now < trending.retryAt) return;
+        if (trending.data?.source && now - trending.fetchedAt < TRENDING_TTL_MS) return;
         if (typeof ApiClient === 'undefined') return;
 
+        const previous = trendingKey(trending.data);
         trending.promise = (async () => {
             try {
                 const response = await ApiClient.ajax({
@@ -383,7 +419,7 @@
             } finally {
                 trending.promise = null;
             }
-            applyTrendingPass(ctx);
+            if (trendingKey(trending.data) !== previous) applyTrendingPass(ctx);
         })();
     }
 
@@ -481,9 +517,9 @@
                 if (el.closest('.je-hidden')) return;
 
                 const data = fromItem(item);
-                // A Spoiler Guard strip stub (no provider ids) is rendered from its
-                // dates but not cached, so the full item's TMDB id isn't lost to it.
-                if (item.ProviderIds || (data.type !== 'Movie' && data.type !== 'Series')) {
+                // A Spoiler Guard strip stub (no ProviderIds) is only cached when
+                // it carries the TMDB id, so a full item's id is never lost to it.
+                if (item.ProviderIds || data.tmdb || (data.type !== 'Movie' && data.type !== 'Series')) {
                     setCachedEntry(ctx, item.Id, data);
                 }
                 renderData(ctx, el, data);
@@ -531,7 +567,6 @@
      * @returns {void}
      */
     JE.reinitializeStatusTags = function() {
-        awaitingTrending = [];
         JE.core.tagRenderer.reinitialize('status', spec);
         if (statusCtx && JE.currentSettings?.statusTagsEnabled) ensureTrending(statusCtx);
     };

@@ -1091,7 +1091,7 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `DateCreated`, `PremiereDate`, `LatestEpisodeAdded` | Nullable integer milliseconds |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
 
-`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. Null fields are omitted.
+`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
 
@@ -1101,7 +1101,7 @@ Streams use the trimmed stream fields listed above, and sources contain basename
 
 Container `FirstEpisode` has `{Id,Type,Genres,NeedsStreamFetch:true}`; fetch that episode through `tag-data` for its streams.
 
-Spoiler Guard can strip metadata before return and add `Tags` on stripped stubs. `mediaSourceId` selects a media version; this route does not require cached delivery enabled.
+Spoiler Guard can strip metadata before return and add `Tags` on stripped stubs. Series and movie stubs have no `ProviderIds` but keep the item's `TmdbId`, so Status Tags can still show a trending rank. `mediaSourceId` selects a media version; this route does not require cached delivery enabled.
 
 Statistics aggregate playable descendants where applicable. `size` is bytes, `progress` an integer percentage, durations Jellyfin ticks (**10,000,000 ticks per second**). `mediaSourceId` filters size, rather than watch progress.
 
@@ -1113,9 +1113,9 @@ Statistics aggregate playable descendants where applicable. `size` is bytes, `pr
 {"source":"tmdb-day","movies":{"1084244":54},"series":{"2190":23}}
 ```
 
-`movies` and `series` map TMDB IDs to 1-based ranks across one combined list of at most 60 movies and series. `source` is `tmdb-day` (TMDB `trending/all/day`, pages 1–3, used when a TMDB API key is configured), `seerr-week` (Seerr `discover/trending`, TMDB's weekly list, used without a key or when TMDB does not answer), or null with empty maps when neither source answers. Seerr is called with the server API key only, without per-user parental filtering; the list holds only public TMDB IDs and ranks.
+`movies` and `series` map TMDB IDs to 1-based ranks across one combined list of at most 60 movies and series. `source` is `tmdb-day` (TMDB `trending/all/day`, pages 1–3, used when a TMDB API key is configured), `seerr-week` (Seerr `discover/trending`, TMDB's weekly list, used without a key or when TMDB does not answer or returns no movies or series), or null with empty maps when neither source answers. Seerr is called with the server API key only, without per-user parental filtering; the list holds only public TMDB IDs and ranks.
 
-Any signed-in user may call it, non-administrators included. The server shares one copy for 30 minutes (5 minutes after an empty answer); saving the plugin configuration drops it. With **Enable Status Tags** or **Show Trending rank** off in the plugin configuration, it returns `source:null` with empty maps without calling upstream.
+Any signed-in user may call it, non-administrators included. The server shares one copy for 30 minutes (5 minutes after an empty answer); saving the plugin configuration drops it. The web client fetches it when Status Tags first render and again after 30 minutes, or after 5 minutes following an empty or failed answer. With **Enable Status Tags** or **Show Trending rank** off in the plugin configuration, it returns `source:null` with empty maps without calling upstream.
 
 ### Style and native-preview contracts
 
