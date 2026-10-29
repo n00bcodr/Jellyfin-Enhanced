@@ -310,12 +310,13 @@
         const client = window.ApiClient;
         const season = norm(status.itemId);
         unknown = unknown.filter(id => !seeded.has(id));
-        if (!unknown.length || !/^[0-9a-f]{32}$/.test(season) || typeof client?.getEpisodes !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
+        if (!unknown.length || !/^[0-9a-f]{32}$/.test(season) || typeof client?.getJSON !== 'function' || typeof client.getUrl !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
         unknown.forEach(id => seeded.add(id));
         const still = snapshot(page);
         Promise.resolve().then(() => JE.helpers.getItemCached(status.itemId)).then((item) => {
             if (!item?.SeriesId || norm(item.Id) !== season || !still()) return null;
-            return client.getEpisodes(item.SeriesId, { seasonId: item.Id, userId: client.getCurrentUserId(), EnableImages: false, EnableUserData: false });
+            // The season's list as jellyfin-web reads it for this page (its Shows/{id}/Episodes read), as the viewer.
+            return client.getJSON(client.getUrl(`Shows/${item.SeriesId}/Episodes`, { seasonId: item.Id, userId: client.getCurrentUserId(), EnableImages: false, EnableUserData: false }));
         }).then((result) => {
             if (!Array.isArray(result?.Items) || !still()) return;
             const listed = new Map(result.Items.map(item => [norm(item.Id), item]));
@@ -684,6 +685,9 @@
     }
 
     JE.session?.onUserChange?.('arr-status-episodes', clear);
+    // What the page learnt from the person's status and season reads is theirs under their access: their next reads
+    // teach it again once their access revision moves.
+    document.addEventListener('je-access-revision', forget);
 
     JE.internals = JE.internals || {};
     JE.internals.arrStatusEpisodes = { render, clear, apply, bannerEntries, extend, current, removed };

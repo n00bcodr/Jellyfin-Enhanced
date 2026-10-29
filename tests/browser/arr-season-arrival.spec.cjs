@@ -113,8 +113,9 @@ test('F102: a season Jellyfin first drew with both E1 items converges once its m
     window.__episodes = [];
     const define = () => {
       if (!window.ApiClient) return setTimeout(define, 5);
-      window.ApiClient.getEpisodes = async (seriesId, query) => {
-        window.__episodes.push([seriesId, query.seasonId]);
+      window.ApiClient.getJSON = async url => {
+        const u = new URL(url);
+        window.__episodes.push([u.pathname.split('/')[2], u.searchParams.get('seasonId')]);
         return { Items: [[ids.playableOne, 1, 'FileSystem'], [ids.missingTwo, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
           .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) };
       };

@@ -390,8 +390,11 @@ for (const listed of ['still listed as missing', 'already gone']) test(`regressi
   const heart = list.querySelector(`[data-id="${id(501)}"] button`);
   const episodes = [];
   const item = (k, index, extra = {}) => ({ Id: id(k), IndexNumber: index, ParentIndexNumber: 1, SeasonId: id(100), LocationType: 'FileSystem', ...extra });
-  h.window.ApiClient.getEpisodes = async (seriesId, query) => {
-    episodes.push({ seriesId, query });
+  const getUrl = h.window.ApiClient.getUrl;
+  h.window.ApiClient.getUrl = (path, query) => getUrl(path) + (query ? '?' + new URLSearchParams(query) : '');
+  h.window.ApiClient.getJSON = async url => {
+    const u = new URL(url);
+    episodes.push({ seriesId: u.pathname.split('/')[2], query: { seasonId: u.searchParams.get('seasonId') } });
     return { Items: [
       ...(listed === 'already gone' ? [] : [item(1, 1, { LocationType: 'Virtual' })]),
       item(501, 1), item(2, 2, { LocationType: 'Virtual' }), item(3, 3), item(4, 4), item(5, 5), item(6, 6),
@@ -413,7 +416,7 @@ test('regression F102: a missing row Jellyfin no longer lists stays while an epi
   const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
   const list = page.querySelector('.itemsContainer');
   list.innerHTML = seasonRows(1, { physical: true });
-  h.window.ApiClient.getEpisodes = async () => ({ Items: [501, 3, 4, 5, 6].map(k => ({ Id: id(k), IndexNumber: k === 501 ? 1 : k, SeasonId: id(100), LocationType: 'FileSystem' })) });
+  h.window.ApiClient.getJSON = async () => ({ Items: [501, 3, 4, 5, 6].map(k => ({ Id: id(k), IndexNumber: k === 501 ? 1 : k, SeasonId: id(100), LocationType: 'FileSystem' })) });
   h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: id(100), SeriesId: 'series' } : null);
   // E2's status names a missing item the page has no row for: an unknown missing row could be its.
   const status = seasonStatus(h, 1, { 0: id(501) }); status.episodes[1].itemId = id(702);
@@ -500,4 +503,21 @@ test('regression F102: a host redraw that brings back the replaced missing row i
   await turn();
   assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)], 'in the mutation callback, no debounce or timer');
   assert.ok(list.firstElementChild.querySelector('button.listItemButton'));
+});
+
+test('regression F102: after the person\'s access revision moves, what the page learnt is read again from their own season list', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1, { physical: true });
+  const reads = [];
+  h.window.ApiClient.getJSON = async url => {
+    reads.push(url);
+    return { Items: [[1, 1, 'Virtual'], [501, 1, 'FileSystem'], [2, 2, 'Virtual'], [3, 3], [4, 4], [5, 5], [6, 6]].map(([k, n, type = 'FileSystem']) => ({ Id: id(k), IndexNumber: n, SeasonId: id(100), LocationType: type })) };
+  };
+  h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: id(100), SeriesId: 'series' } : null);
+  D.render(page, seasonStatus(h, 1), {});
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision'));
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.equal(reads.length, 1, 'the missing E1 row is looked up in the viewer\'s list, not taken from before');
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)]);
 });
