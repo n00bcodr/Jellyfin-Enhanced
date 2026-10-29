@@ -66,9 +66,9 @@ public class IntegrationLockOrderArchitectureTests
             };
             // Coverage instrumentation (the suite's coverlet collector) inserts `ldc.i4 <hit>; call Tracker.RecordHit`
             // pairs into every plugin method: they are no plugin code, so neither instruction is part of the body read.
-            if (member is MethodBase { DeclaringType.FullName: { } tracker } && tracker.StartsWith("Coverlet.Core.Instrumentation.Tracker", StringComparison.Ordinal))
+            if (ops.Count > 0 && IsCoverageProbe(method.Module, ops[^1], op, member))
             {
-                if (ops.Count > 0 && ops[^1].Code.Name.StartsWith("ldc.i4", StringComparison.Ordinal)) ops.RemoveAt(ops.Count - 1);
+                ops.RemoveAt(ops.Count - 1);
                 continue;
             }
             ops.Add(new Op(offset, op, member));
@@ -76,8 +76,30 @@ public class IntegrationLockOrderArchitectureTests
         return ops;
     }
 
-    // The plugin, and this assembly for the planted inversion below.
-    private static bool Scanned(Module module) => module == Plugin.ManifestModule || module == typeof(IntegrationLockOrderArchitectureTests).Module;
+    // Exactly what coverlet emits and nothing that merely resembles it: a static call, right after an integer constant
+    // (any ldc.i4 form: small hit indexes are shortened), of `public static void RecordHit(int)` on the tracker type it
+    // adds to the instrumented module: Coverlet.Core.Instrumentation.Tracker.<that assembly's name>_<guid>, a top-level
+    // static class holding the `public static int[] HitsArray` the hits are counted in. Any other call stays visible.
+    private const string CoverageTracker = "Coverlet.Core.Instrumentation.Tracker";
+
+    private static bool IsCoverageProbe(Module caller, Op previous, OpCode op, MemberInfo? member)
+    {
+        if (op != OpCodes.Call || !IsIntegerConstant(previous.Code)) return false;
+        if (member is not MethodInfo { Name: "RecordHit", IsStatic: true, IsPublic: true, IsGenericMethod: false } hit || hit.ReturnType != typeof(void)
+            || hit.GetParameters() is not [{ ParameterType: var index }] || index != typeof(int)) return false;
+        var tracker = hit.DeclaringType;
+        if (tracker is not { Namespace: CoverageTracker, IsNested: false, IsGenericType: false, IsAbstract: true, IsSealed: true } || tracker.Module != caller) return false;
+        var prefix = caller.Assembly.GetName().Name + "_";
+        if (!tracker.Name.StartsWith(prefix, StringComparison.Ordinal) || !Guid.TryParseExact(tracker.Name[prefix.Length..], "D", out _)) return false;
+        return tracker.GetField("HitsArray", BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)?.FieldType == typeof(int[]);
+    }
+
+    private static bool IsIntegerConstant(OpCode code) => code == OpCodes.Ldc_I4 || code == OpCodes.Ldc_I4_S || code == OpCodes.Ldc_I4_M1
+        || code == OpCodes.Ldc_I4_0 || code == OpCodes.Ldc_I4_1 || code == OpCodes.Ldc_I4_2 || code == OpCodes.Ldc_I4_3 || code == OpCodes.Ldc_I4_4
+        || code == OpCodes.Ldc_I4_5 || code == OpCodes.Ldc_I4_6 || code == OpCodes.Ldc_I4_7 || code == OpCodes.Ldc_I4_8;
+
+    // The plugin, and this assembly and the emitted coverage fixture for the planted inversions below.
+    private static bool Scanned(Module module) => module == Plugin.ManifestModule || module == typeof(IntegrationLockOrderArchitectureTests).Module || module == CoverageProbeFixture.Module;
 
     private static IEnumerable<Type> Types()
     {
@@ -335,11 +357,37 @@ public class IntegrationLockOrderArchitectureTests
     public void CoverageProbesAreNotReadAsPluginCode()
     {
         // The full suite collects coverage, so the scan reads instrumented bodies: a probe must not count as a plugin call
-        // (it ended the callback search and failed Publish's proof) and must not hide anything after it.
-        static IEnumerable<(OpCode, MemberInfo?)> Shape(string name) => Read(typeof(ProbedInversion).GetMethod(name, Declared)!).Select(o => (o.Code, o.Member));
+        // (it ended the callback search and failed Publish's proof) and must not hide anything after it. The fixture is
+        // instrumented as coverlet does it (its tracker type can't be written in C#), with long, short and macro hit forms.
+        static IEnumerable<(OpCode, MemberInfo?)> Shape(string name) => Read(CoverageProbeFixture.Planted(name)).Select(o => (o.Code, o.Member));
         Assert.Equal(Shape("Plain"), Shape("Probed"));
-        var violations = Violations(new[] { typeof(ProbedInversion) }, out _);
-        Assert.Contains(violations, v => v.StartsWith("configuration lock: using (CacheMutation()) in JE.Tests.ProbedInversion.Mutation", StringComparison.Ordinal) && v.EndsWith("ProbedInversion.Probed -> JE.Tests.ProbedInversion.Save", StringComparison.Ordinal));
+        Assert.Contains(Violations(CoverageProbeFixture.Types, out _), v => v.StartsWith("configuration lock: using (CacheMutation()) in JE.CoverageProbes.Planted.Mutation", StringComparison.Ordinal) && v.EndsWith("JE.CoverageProbes.Planted.Probed -> JE.CoverageProbes.Planted.Save", StringComparison.Ordinal));
+        // In a coverage run, every probe coverlet put into the plugin is recognised: none is left to read as a call (a
+        // change in its probe shape fails here instead of quietly cutting the callback search short).
+        var left = Types().Where(t => t.Namespace != CoverageTracker).SelectMany(Methods).Where(m => Read(m).Any(o => o.Member?.DeclaringType?.Namespace == CoverageTracker)).Select(Describe).ToList();
+        Assert.True(left.Count == 0, "coverage tracker calls read as plugin code:\n" + string.Join("\n", left.Take(20)));
+    }
+
+    [Fact]
+    public void OnlyCoverletsOwnProbesAreSkipped()
+    {
+        // Lock waits under the monitor behind calls that resemble a probe but are not one: the tracker's namespace or a
+        // name sharing its prefix (the review's counterexample), the probe's name and signature on an ordinary class, a
+        // tracker-named type without the hit counters or named for another assembly, another method or signature on the
+        // real tracker shape. Each must still be found; only the probes themselves are skipped.
+        var violations = Violations(CoverageProbeFixture.Types.Append(typeof(LookalikeInversion)), out _);
+        string Found(string root, string callee) => Assert.Single(violations, v => v.StartsWith("configuration lock: using (CacheMutation()) in " + root + " -> ", StringComparison.Ordinal) && v.EndsWith(callee, StringComparison.Ordinal));
+        Found("JE.Tests.LookalikeInversion.TrackerNamespace", "Coverlet.Core.Instrumentation.Tracker.RealCode.AcquireConfiguration");
+        Found("JE.Tests.LookalikeInversion.SharedPrefix", "Coverlet.Core.Instrumentation.TrackerLikePlugin.RealCode.AcquireConfiguration");
+        Found("JE.Tests.LookalikeInversion.ProbeOnAnOrdinaryClass", "Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit");
+        Found("JE.CoverageProbes.Planted.WithoutHitCounters", CoverageProbeFixture.Uncounted + ".RecordHit");
+        Found("JE.CoverageProbes.Planted.AnotherAssemblysTracker", CoverageProbeFixture.Foreign + ".RecordHit");
+        Found("JE.CoverageProbes.Planted.AnotherTrackerMethod", CoverageProbeFixture.Tracker + ".Acquire");
+        Found("JE.CoverageProbes.Planted.AnotherSignature", CoverageProbeFixture.Tracker + ".RecordHit");
+        Found("JE.CoverageProbes.Planted.Mutation", "JE.CoverageProbes.Planted.Save");
+        Assert.Equal(8, violations.Count);
+        // A real probe call without its constant is kept too (nothing to find behind it: the tracker takes no lock).
+        Assert.Contains(Read(CoverageProbeFixture.Planted("Unconstant")), o => o.Member is MethodInfo { Name: "RecordHit" } hit && hit.DeclaringType!.FullName == CoverageProbeFixture.Tracker);
     }
 }
 
@@ -358,11 +406,10 @@ internal static class PlantedInversion
     internal static bool Facts() => SeerrFacts.PublishSeerr(0, () => ListMetadataEpoch.Capture().IsCurrent);
 }
 
-// PlantedInversion's two-hop wait as a coverage run instruments it: Probed is Plain with the probes coverlet inserts.
-internal static class ProbedInversion
+// Waits for the configuration lock behind calls that look like coverage probes and are not (see CoverageTrackerLookalikes.cs).
+internal static class LookalikeInversion
 {
-    private static int Save() { lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock) return 1; }
-    private static int Plain() => Save();
-    private static int Probed() { Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit(1000); return Save(); }
-    internal static int Mutation() { using (SeerrFacts.CacheMutation()) { Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit(1001); return Probed(); } }
+    internal static void TrackerNamespace() { using (SeerrFacts.CacheMutation()) Coverlet.Core.Instrumentation.Tracker.RealCode.AcquireConfiguration(); }
+    internal static void SharedPrefix() { using (SeerrFacts.CacheMutation()) Coverlet.Core.Instrumentation.TrackerLikePlugin.RealCode.AcquireConfiguration(); }
+    internal static void ProbeOnAnOrdinaryClass() { using (SeerrFacts.CacheMutation()) Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit(1000); }
 }
