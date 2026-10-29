@@ -1320,7 +1320,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var work in Jobs(c, t, "want_id=$w AND id<>$j", ("$w", other.Id), ("$j", job.Id)).Where(j => RequestDestination.Serves(job.Input, target, j.Input, TargetKey(j.Authorization))))
                 {
-                    if (work.State == "succeeded") sent.Add(work.Input);
+                    // A send still in TMDB's numbering never switched to an id match Sonarr backs (F83): it covers nothing here, so
+                    // the request matched again (EI-R3-4) goes out.
+                    if (work.State == "succeeded") { if (work.Input.Numbering != EpisodeIdentity.Tmdb) sent.Add(work.Input); }
                     else if (work.State is "sending" or "maybe_sent" || work.Uncertain && work.State != "cancelled") going.Add(work.Input);
                 }
                 if (LinkedScope(c, t, other) is { } linked && RequestDestination.Serves(job.Input, target, linked, other.TargetKey)) sent.Add(linked);
@@ -1411,7 +1413,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
                 // The same wait again changes nothing anyone sees: no new audit row, notice or event.
-                if (!deletedNotSent && RepeatsWait(job, result)) return true;
+                if (!deletedNotSent && RepeatsWait(job, result))
+                {
+                    // The same wait again tells nobody anything new, but what this attempt read of Sonarr still counts (F83).
+                    Renumber(c, t, storedWant.AcquisitionId, TargetKey(job.Authorization), null, result.Identity, now);
+                    return true;
+                }
                 // A wait only a person can end (no Seerr account linked yet) shows as held for them, while its job is still
                 // checked again now and then and goes out by itself once it can.
                 var held = state is "parked" or "failed" || (state == "retry" && HeldWaits.Contains(result.Outcome.Reason));
@@ -1483,6 +1490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (RequestDestination.SameTarget(r.GetString(0), target))
                         rows.Add((r.GetString(0), new(new RequestEpisode(r.GetInt32(1), r.GetInt32(2)), new RequestEpisode(r.GetInt32(3), r.GetInt32(4)), r.GetInt32(5))));
             var map = new List<EpisodeRenumbering>();
+            var dropped = new HashSet<RequestEpisode>();
             foreach (var (rowTarget, match) in rows)
             {
                 if (identity == null) { map.Add(match); continue; }
@@ -1497,17 +1505,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     Exec(c, t, "DELETE FROM episode_identities WHERE acquisition_id=$a AND target_key=$t AND season=$s AND episode=$e",
                         ("$a", acquisition), ("$t", rowTarget), ("$s", match.From.Season), ("$e", match.From.Episode));
+                    dropped.Add(match.From);
                 }
             }
             var changed = new List<Guid>();
-            if (map.Count == 0) return changed;
+            if (map.Count == 0 && dropped.Count == 0) return changed;
             string? key = null;
             foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", acquisition)))
             {
                 if (want.Status is "cancelled" or "declined" or "fulfilled" || (want.Input.Numbering != EpisodeIdentity.Tmdb && want.Input.From == null)
                     || !RequestDestination.SameTarget(want.TargetKey, target)) continue;
                 var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
-                if (jobs.Any(j => j.State is not ("succeeded" or "failed" or "cancelled"))) continue;
+                // A switched request whose match Sonarr no longer backs loses that coverage and is matched again (EI-R3-2).
+                if (want.Input.From is { } source && source.Any(dropped.Contains))
+                {
+                    Reresolve(c, t, want, jobs, now);
+                    changed.Add(want.UserId);
+                    key = want.Input.Key;
+                    continue;
+                }
+                // A job that may still go out matches by id itself. A request already sent through what others sent (it may keep
+                // a known-unsent job, held or queued, that is no longer needed) switches with them (EI-R3-1).
+                if (jobs.Any(j => j.State is "sending" or "maybe_sent" || (j.State is "queued" or "retry" or "parked" && (want.Status != "sent" || j.Uncertain)))) continue;
                 if (RequestDestination.Renumbered(want.Input, map) is not { } input || !RequestDestination.Moves(want.Input, input)) continue;
                 var owned = want.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
                 Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
@@ -1527,6 +1546,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", key), ("$at", Ms(now)));
             }
             return changed;
+        }
+        /// <summary>
+        /// F83: a switched request whose match can no longer be trusted (Sonarr stopped listing its TVDB id, or a match from an
+        /// earlier build without one) is matched again: it goes back to the TMDB episodes it was switched from, its sent jobs
+        /// stop covering them (their Sonarr numbers may be another episode now), and it is queued with a fresh job (no new
+        /// charge) that matches by id when it goes out. A request in TMDB numbering whose send went out but never switched is
+        /// queued the same way. One with no job of its own (it joined another's) only goes back; it follows that one's job.
+        /// </summary>
+        private static void Reresolve(SqliteConnection c, SqliteTransaction t, RequestWant want, IReadOnlyList<RequestJob> jobs, DateTimeOffset now)
+        {
+            static MutationInput Back(MutationInput i) => i.From is { } source ? i with { Numbering = EpisodeIdentity.Tmdb, Episodes = source, From = null } : i;
+            var input = Back(want.Input);
+            var owned = want.OwnedInput is { } o ? Back(o) : null;
+            var auth = jobs.Count > 0 ? jobs[^1].Authorization : null;
+            var queue = auth != null && !jobs.Any(j => j.State is not ("succeeded" or "failed" or "cancelled"));
+            Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END,status=CASE WHEN $q THEN 'queued' ELSE status END,reason=CASE WHEN $q THEN 'queued_outage' ELSE reason END,updated_at=$at WHERE id=$id",
+                ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$q", queue ? 1 : 0), ("$at", Ms(now)), ("$id", want.Id));
+            foreach (var job in jobs.Where(j => j.Input.From != null))
+                Exec(c, t, "UPDATE jobs SET mutation_input=$input WHERE id=$id", ("$input", (job.Input with { From = null }).Canonical), ("$id", job.Id));
+            if (queue) AddJob(c, t, want.Id, owned ?? input, auth!, now, linkReservation: false);
         }
         /// <summary>
         /// F83: the id matches already kept for a TMDB-numbered (or switched) request's acquisition applied again, for a request
@@ -1551,7 +1590,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             using (var columns = Cmd(c, t, "SELECT COUNT(*) FROM pragma_table_info('episode_identities') WHERE name='tvdb_id'"))
                 if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     Exec(c, t, "ALTER TABLE episode_identities ADD COLUMN tvdb_id INTEGER NOT NULL DEFAULT 0");
+            // Matches an earlier build kept without a TVDB id can't be checked against Sonarr: dropped, and every request on those
+            // acquisitions that relied on them (switched, or sent and still in TMDB numbering with nothing left to send) is
+            // matched again by a fresh job (EI-R3-4).
+            var stale = new List<string>();
+            using (var cmd = Cmd(c, t, "SELECT DISTINCT acquisition_id FROM episode_identities WHERE tvdb_id<=0"))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) stale.Add(r.GetString(0));
             Exec(c, t, "DELETE FROM episode_identities WHERE tvdb_id<=0");
+            var now = DateTimeOffset.UtcNow;
+            foreach (var acquisition in stale)
+            {
+                foreach (var want in Wants(c, t, "acquisition_id=$a", ("$a", acquisition)))
+                {
+                    if (want.Status is "cancelled" or "declined" or "fulfilled") continue;
+                    var jobs = Jobs(c, t, "want_id=$w", ("$w", want.Id));
+                    var stranded = want.Input.Numbering == EpisodeIdentity.Tmdb && want.Status == "sent" && jobs.All(j => j.State is "succeeded" or "failed" or "cancelled");
+                    if (want.Input.From == null && !stranded) continue;
+                    Reresolve(c, t, want, jobs, now);
+                    Changed(c, t);
+                    Exec(c, t, "INSERT INTO request_events(title_key,created_at) VALUES($key,$at)", ("$key", want.Input.Key), ("$at", Ms(now)));
+                }
+            }
             t.Commit();
         }
         /// <summary>

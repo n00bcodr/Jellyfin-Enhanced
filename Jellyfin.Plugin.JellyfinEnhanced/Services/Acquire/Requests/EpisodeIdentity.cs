@@ -164,7 +164,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>
         /// Where Sonarr numbers each TVDB episode now, from an episode list just read (exactly one row per id; an id on two
-        /// rows is left out): what the learned matches are checked and moved against (<c>RequestLedger.Learn</c>).
+        /// rows is left out): what the kept matches are checked and moved against (<c>RequestLedger.Renumber</c>). A list with
+        /// no usable TVDB id at all (empty, or ids not filled in yet) vouches for nothing: callers treat it as unread (kept
+        /// matches stay; a TMDB-numbered send waits or is held), never as "every id is gone" (EI-R3-3).
         /// </summary>
         /// <param name="rows">Sonarr's episode rows of the series.</param>
         /// <returns>TVDB episode id to Sonarr's season and number.</returns>

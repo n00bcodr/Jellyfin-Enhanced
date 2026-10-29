@@ -58,8 +58,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // ledger holds it under, before anything is prepared or decided. learn: false for a read-only check.
         private MutationInput? Normalize(MutationInput? input, bool learn = true)
             => RequestTitleIdentity.Entry(_ledger, _policy, _aliases, _feed, input, _now(), learn && Enabled);
-        // A body's input as asked: whose numbering its episodes are in is the server's to note, never the caller's.
-        private static MutationInput? Asked(MutationInput? input) => input is { Numbering: not null } ? input with { Numbering = null } : input;
+        // A body's input as asked: whose numbering its episodes are in, and what they were switched from, are the server's to
+        // note, never the caller's (F83, EI-R3-5).
+        private static MutationInput? Asked(MutationInput? input) => input is { Numbering: not null } or { From: not null } ? input with { Numbering = null, From = null } : input;
         /// <summary>An input as the ledger keys it (normalized, the title under the key the ledger holds it by); null when invalid.</summary>
         internal MutationInput? NormalizeInput(MutationInput? input) => Normalize(input);
         /// <summary>A title under the key the ledger holds it by (whichever id the caller used).</summary>
@@ -80,7 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
             using var effect = SeerrFacts.BeginEffect();
-            body = body is { Input: { Numbering: not null } } ? body with { Input = Asked(body.Input)! } : body;
+            body = body?.Input is { } given ? body with { Input = Asked(given)! } : body;
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
@@ -161,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestPreview> PreviewAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
         {
             using var effect = SeerrFacts.BeginEffect();
-            body = body is { Input: { Numbering: not null } } ? body with { Input = Asked(body.Input)! } : body;
+            body = body?.Input is { } given ? body with { Input = Asked(given)! } : body;
             var input = Normalize(body?.Input);
             if (body == null || input == null) return new RequestPreview(RequestOutcome.Refused("invalid_input", 400));
             if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
@@ -222,7 +223,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, stored.Input.Key, _now());
             if (_ledger.Find(id) is not { } want) return RequestOutcome.Refused("not_found", 404);
             // An edit of a TMDB-numbered ask's episodes names them by the numbering the request holds (the server's note).
-            var input = body?.Input == null ? want.Input : Normalize(body.Input with { Numbering = body.Input.Scope == "episodes" ? want.Input.Numbering : null });
+            // Its provenance (what a switched request's episodes were switched from) only while the edit keeps those episodes.
+            var input = body?.Input == null ? want.Input : Normalize(body.Input with
+            {
+                Numbering = body.Input.Scope == "episodes" ? want.Input.Numbering : null,
+                From = body.Input.Scope == "episodes" && want.Input.From != null && body.Input.Episodes.OrderBy(e => e.Season).ThenBy(e => e.Episode).SequenceEqual(want.Input.Episodes) ? want.Input.From : null,
+            });
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);
