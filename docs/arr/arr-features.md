@@ -1357,8 +1357,9 @@ way to the status pill while the pill shows.
     its ids only (TMDB's TVDB id for that episode, then the Sonarr episode with that TVDB id), whatever Sonarr numbers it,
     and exactly that episode is monitored and searched. Once a send is confirmed, each request whose episodes are all
     matched shows Sonarr's numbers (on its own: a request sharing some of its episodes never waits for another), and every
-    later read of that Sonarr checks the matches by TVDB id again, so a request follows Sonarr when it renumbers. Titles are
-    never compared. An episode that can't be matched that way (TMDB lists no TVDB id for it, or Sonarr has no episode with
+    later read of that Sonarr checks the matches by TVDB id again, so a request follows Sonarr when it renumbers. If Sonarr
+    stops listing a matched episode's TVDB id, the request goes back to TMDB's numbers and is matched again by a fresh send;
+    an empty episode list from Sonarr changes nothing. Titles are never compared. An episode that can't be matched that way (TMDB lists no TVDB id for it, or Sonarr has no episode with
     it even after a refresh and a short wait) is held instead of sent: the request shows as held, administrators see
     "Stuck · the episode couldn't be matched by its id" on its approval card and "Stuck · needs a look in Requests" on the
     title, and they get a Needs attention alert ("… is held: it couldn't be matched to Sonarr's episodes, so it wasn't searched
