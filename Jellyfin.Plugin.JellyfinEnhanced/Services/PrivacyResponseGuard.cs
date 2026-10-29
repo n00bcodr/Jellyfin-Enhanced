@@ -378,6 +378,18 @@ public sealed class PrivacyResponseGuard : IDisposable
         lock (guard._lock) guard._withholdAsAbsent = true;
     }
 
+    /// <summary>
+    /// True when the parental evidence the response was admitted under has moved since (the guard would withhold its answer
+    /// at the result or commit gate).
+    /// </summary>
+    /// <param name="http">The request.</param>
+    /// <returns>Whether the evidence moved.</returns>
+    internal static bool EvidenceMoved(HttpContext http)
+    {
+        if (Find(http) is not { } guard) return false;
+        lock (guard._lock) return guard._evidence is { Current: false };
+    }
+
     /// <summary>The plain 404 headers of an answer withheld as absent (see <see cref="WithholdAsAbsent"/>).</summary>
     /// <param name="headers">The response headers.</param>
     internal static void AbsentHeaders(IHeaderDictionary headers)

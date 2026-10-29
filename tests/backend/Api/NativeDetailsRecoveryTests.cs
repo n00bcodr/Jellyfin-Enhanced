@@ -4,6 +4,7 @@
 // permanent-looking 404 or the completed empty list a page has no way to recover from; true refusals stay 404.
 using System.Net;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -156,6 +157,17 @@ public partial class ApiNativeDetailsTests
         return (status, headers, body);
     }
 
+    /// <summary>
+    /// A confirmed denial of the rig's title, moving the parental evidence: TMDB now rates it PG-13 in the US (above the
+    /// viewer's limit of 10) and its metadata credential rotates (the evidence revision moves).
+    /// </summary>
+    private static void DenyByEvidence(Rig rig)
+    {
+        rig.R4JeTransport = false;
+        rig.Rating = "PG-13";
+        EvidenceRevision.Advance(() => rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "rotated-credential-" + Guid.NewGuid().ToString("N"));
+    }
+
     [Fact]
     public async Task ArtworkWithheldAtTheFinalPrivacyGateIsExactlyTheMissingImage404()
     {
@@ -171,10 +183,10 @@ public partial class ApiNativeDetailsTests
         rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var pending = Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
         await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        rig.R4Country("AU");
+        DenyByEvidence(rig);
         rig.ImageGate.SetResult();
         var withheld = await pending.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None), "the title is denied now");
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, await rig.Policy.ListAbsentAccessAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None));
         Assert.Equal(missing, Leaves(withheld));
         Assert.DoesNotContain("x-je-art", missing.Headers, StringComparison.Ordinal);
         Assert.DoesNotContain("retry-after", missing.Headers, StringComparison.Ordinal);
@@ -191,14 +203,67 @@ public partial class ApiNativeDetailsTests
         var missingTag = rig.Artwork.Mint(movie, ImageType.Primary, 0, "/missing.jpg", viewer.Id, rig.Policy.Revision(viewer))!;
         var missing = Leaves(await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, missingTag)));
         rig.Policy.Revoke(viewer.Id);
+        var once = 0;
         rig.Library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns(() =>
         {
-            rig.R4Country("AU");
+            if (Interlocked.Exchange(ref once, 1) == 0) DenyByEvidence(rig);
             return new List<MediaBrowser.Controller.Entities.BaseItem>();
         });
         var denied = await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
-        Assert.False(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None), "the title is denied now");
+        Assert.Equal(NativeDetailsPolicy.Access.Refused, await rig.Policy.ListAbsentAccessAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None));
         Assert.Equal(missing, Leaves(denied));
+    }
+
+    [Fact]
+    public async Task AnAllowedImageWhoseEvidenceMovesDuringATemporaryFailureStaysRetryable()
+    {
+        // D110 ACR-R2-1 (the round-2 review's counterexample): recovery is already active (the host's load got 503); while
+        // its re-ask meets another temporary upstream failure, the parental evidence moves (a metadata credential rotates)
+        // but the viewer, the title and the grant all still allow the image. The privacy decision is made first: not a
+        // denial, so the answer stays the retryable 503 + Retry-After with the generic reason any busy answer has; never
+        // the terminal plain 404, and nothing that tells this title's uncertainty from any other.
+        var (rig, viewer, movie, tag) = await WithheldRig();
+        using var owner = rig;
+        var originalRevision = rig.Policy.Revision(viewer);
+        rig.ImageAnswer = _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        Assert.Equal(503, Status((await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag))).Result));
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reask = Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        EvidenceRevision.Advance(() => rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "rotated-credential");
+        rig.ImageGate.SetResult();
+        var moved = await reask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(await rig.Policy.MayListAbsentAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None), "still allowed");
+        Assert.Equal(originalRevision, rig.Policy.Revision(viewer));
+        Assert.Equal(503, Status(moved.Result));
+        Assert.Equal("2", moved.Http.Response.Headers["Retry-After"].ToString());
+        Assert.Equal("server-busy", moved.Http.Response.Headers["X-JE-Art"].ToString());
+        Assert.Equal("private, no-store", moved.Http.Response.Headers.CacheControl.ToString());
+        // Upstream recovers: the very same grant serves.
+        rig.ImageAnswer = _ => null;
+        Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag))).Result);
+    }
+
+    [Fact]
+    public async Task EvidenceThatCanNoLongerBeSettledDuringATemporaryFailureStaysRetryableAndGeneric()
+    {
+        // D110 ACR-R2-1: the evidence moves to a region where the title has no rating (AU: the viewer's parental decision
+        // can't be settled now: Unknown, not a denial). The answer stays the retryable 503 with the generic reason.
+        var (rig, viewer, movie, tag) = await WithheldRig();
+        using var owner = rig;
+        rig.ImageAnswer = _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Call(rig, "Image", "GetItemImage", null, ImageArgs(movie, tag));
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        rig.R4Country("AU");
+        rig.ImageGate.SetResult();
+        var moved = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(NativeDetailsPolicy.Access.Unknown, await rig.Policy.ListAbsentAccessAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None));
+        Assert.Equal(503, Status(moved.Result));
+        Assert.Equal("2", moved.Http.Response.Headers["Retry-After"].ToString());
+        Assert.Equal("server-busy", moved.Http.Response.Headers["X-JE-Art"].ToString());
     }
 
     [Fact]

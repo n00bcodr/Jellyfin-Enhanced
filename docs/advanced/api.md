@@ -1788,9 +1788,10 @@ queued image reads, the queue's two-second wait, TMDB itself, or the page's acce
 `server-busy`, `queue-expired`, `upstream-unavailable`, `policy-unknown`, `budget`). An invalid, refused or denied grant
 and a file TMDB doesn't have are `404` with no reason; a grant minted under a policy revision that has since moved
 (sign-out, a policy change) is `404`, with `X-JE-Art: stale-grant` only when the image would still be served to the
-caller under what holds now (the page's current answer carries its current grant); otherwise a plain `404`. An artwork
-answer the final privacy gate withholds (the viewer's policy or evidence moved while it was built) is exactly that plain
-`404`: no reason, no `Retry-After`, no body. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
+caller under what holds now (the page's current answer carries its current grant); otherwise a plain `404`. When the
+viewer's policy or parental evidence moves while an artwork answer is built, its access is decided again first, afresh:
+a confirmed refusal is exactly that plain `404` (no reason, no `Retry-After`, no body); anything else (still allowed, or not
+settled now) is `503` with `Retry-After: 2` and the generic `X-JE-Art: server-busy`. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
 until it ends, even if its waiter cancels. Raw TMDB cache reads have their own 30-second upstream timeout
 (including any raw-cache slot wait); admission/page waiting and the finite server queue are separate waits.
 

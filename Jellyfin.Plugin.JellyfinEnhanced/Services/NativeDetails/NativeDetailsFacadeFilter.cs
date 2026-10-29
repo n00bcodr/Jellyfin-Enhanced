@@ -632,7 +632,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         internal const string ArtReasonHeader = PrivacyResponseGuard.ArtReasonHeader;
 
+        /// <summary>
+        /// An absent title's image answer, settled under the privacy decision. When the delivery gate withheld it, or the
+        /// evidence it was admitted under moved while it was built (a temporary, stale-hint or served answer), the image's
+        /// access is decided again first, afresh and under freshly captured evidence: a confirmed refusal is the plain 404
+        /// of a missing image; anything else (still allowed, or not settled now) is a temporary 503 + Retry-After with the
+        /// generic <c>server-busy</c> reason, which says nothing of this title and is asked again. That answer leaves only
+        /// while the new evidence holds (the result and commit gates still fence it). Every other answer is as built.
+        /// </summary>
         private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
+        {
+            var http = context.HttpContext;
+            var headers = http.Response.Headers;
+            var answer = await ImageAnswerAsync(context, owner, serverId, ct).ConfigureAwait(false);
+            var settled = answer is WithheldResult
+                || ((answer is StatusCodeResult { StatusCode: StatusCodes.Status503ServiceUnavailable or StatusCodes.Status429TooManyRequests }
+                     || (answer is NotFoundResult && headers.ContainsKey(ArtReasonHeader))
+                     || answer is FileContentResult)
+                    && PrivacyResponseGuard.EvidenceMoved(http));
+            if (!settled) return answer;
+            var access = await ImageAccessNowAsync(context, owner, serverId, ct).ConfigureAwait(false);
+            if (access == NativeDetailsPolicy.Access.Refused)
+            {
+                PrivacyResponseGuard.AbsentHeaders(headers);
+                return new NotFoundResult();
+            }
+
+            headers.Remove("Content-Type");
+            headers[ArtReasonHeader] = "server-busy";
+            return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        /// <summary>
+        /// The image's access under what holds now, read afresh (the privacy decision a withheld answer waits for): the
+        /// grant's viewer's current evidence is captured again (the response is fenced by it from here), then the same
+        /// checks as a new request run (the grant, the viewer, the viewer- and page-level rules, Spoiler Guard), so a refusal
+        /// here is a confirmed one; <see cref="NativeDetailsPolicy.Access.Unknown"/> when it can't be settled now.
+        /// </summary>
+        private async Task<NativeDetailsPolicy.Access> ImageAccessNowAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
+        {
+            const NativeDetailsPolicy.Access Refused = NativeDetailsPolicy.Access.Refused;
+            var tag = Services.ImageTagDecoration.StripAll(Arg<string>(context, "tag"));
+            if (!_artwork.TryRead(tag, out var grant) || grant == null) return Refused;
+            PrivacyResponseGuard.Admit(context.HttpContext, _parental, grant.Viewer, grant: true);
+            User? viewer;
+            try
+            {
+                viewer = _users.GetUserById(grant.Viewer);
+            }
+            catch (Exception)
+            {
+                viewer = null;
+            }
+
+            if (viewer == null || viewer.HasPermission(PermissionKind.IsDisabled)) return Refused;
+            var viewerAccess = await _policy.ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
+            if (viewerAccess != NativeDetailsPolicy.Access.Allowed) return viewerAccess;
+            if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return Refused;
+            if (page.IsTitle)
+            {
+                var access = await _policy.ListAbsentAccessAsync(viewer, page, ct).ConfigureAwait(false);
+                if (access != NativeDetailsPolicy.Access.Allowed) return access;
+            }
+            else if (page.Kind == SyntheticKind.Person)
+            {
+                var person = await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false);
+                if (person.Data is not { } p) return person.NotFound ? Refused : NativeDetailsPolicy.Access.Unknown;
+                if (!NativeDetailsPolicy.PersonAllowed(viewer, p)) return Refused;
+            }
+            else
+            {
+                return Refused;
+            }
+
+            if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return Refused;
+            var pageKey = HiddenContentPolicy.TitleIdentity(page.IsMovie ? "movie" : "tv", page.TmdbId.ToString());
+            var spoiler = _presentation?.Load(viewer.Id, context.HttpContext);
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return Refused;
+            return NativeDetailsPolicy.Access.Allowed;
+        }
+
+        private async Task<IActionResult> ImageAnswerAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
@@ -759,7 +839,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static IActionResult Withheld(IHeaderDictionary headers)
         {
             PrivacyResponseGuard.AbsentHeaders(headers);
-            return new NotFoundResult();
+            return new WithheldResult();
+        }
+
+        /// <summary>The plain 404 the delivery gate withheld an image with: decided again before it leaves (<see cref="ImageAsync"/>).</summary>
+        private sealed class WithheldResult : NotFoundResult
+        {
         }
 
         /// <summary>One projection of an absent title's artwork under the viewer's Spoiler Guard presentation.</summary>
