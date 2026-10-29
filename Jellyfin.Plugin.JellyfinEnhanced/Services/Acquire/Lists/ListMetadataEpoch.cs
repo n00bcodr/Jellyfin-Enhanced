@@ -2,6 +2,7 @@ using System;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Backends;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
@@ -27,20 +28,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // The comparison and effect are indivisible relative to configuration replacement and saved generations.
         // Lifecycle precedes this lock when both are needed; configuration commits never acquire Lifecycle.
+        // Lock order: the configuration lock is outer and the backend monitor inner (configuration writers and
+        // SeerrMigration.SettleHandover read the backend while holding it), so take it before CommitEffective's monitor.
         internal T Publish<T>(Func<T> effect, Func<T> refused)
         {
             // Same neutral dependency owner used by Publication.EnlistEffective; retain this
             // read's original snapshot in the enclosing composition and eventual HTTP stamp.
             EffectiveReadScope.Enlist(EffectiveRequestsBackend.Shared, Backend.Epoch);
+            var configuration = JellyfinEnhanced.AnalyticsCredentialLock;
+            var entered = false;
+            // A caller already inside the backend monitor (a nested facts publication) never waits for the outer lock,
+            // and none of the callbacks (both are caller code) run there without it: when the lock is busy the
+            // enclosing publication is refused, as for a changed configuration, and handles that once its monitor
+            // is released. Every callback below runs with the configuration lock held.
+            if (EffectiveRequestsBackend.Shared.HoldsGate && !(entered = Monitor.TryEnter(configuration)))
+                throw new BackendDisabledException("configuration_changed");
             try
             {
-                return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () =>
-                {
-                    lock (JellyfinEnhanced.AnalyticsCredentialLock)
-                        return IsCurrent ? effect() : refused();
-                });
+                if (!entered) Monitor.Enter(configuration, ref entered);
+                return EffectiveRequestsBackend.Shared.CommitEffective(Backend.Epoch, () => IsCurrent ? effect() : refused());
             }
             catch (BackendDisabledException) { return refused(); }
+            finally { if (entered) Monitor.Exit(configuration); }
         }
     }
 }
