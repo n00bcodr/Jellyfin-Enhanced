@@ -267,6 +267,43 @@ public partial class ApiNativeDetailsTests
     }
 
     [Fact]
+    public async Task ACastPhotoNewlyDeniedBySpoilerGuardDuringTheRecheckIsThePlain404()
+    {
+        // D121a ACR-R3-1 (round-3 review probe): a cast photo's re-ask meets a temporary upstream failure; meanwhile the
+        // viewer guards the movie with Spoiler Guard (hide all cast) and the parental evidence moves. The recheck reads
+        // Spoiler Guard afresh, not the request's earlier snapshot: a confirmed refusal, so the answer is header-for-header
+        // the plain 404 a fresh request with the same grant gets, never the retryable 503.
+        var (rig, viewer, movie, _) = await WithheldRig();
+        using var owner = rig;
+        rig.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        rig.Plugin.Plugin.Configuration.SpoilerStripCast = true;
+        rig.Plugin.Plugin.Configuration.SpoilerStripCastMode = "All";
+        rig.R4IncludePublicationFilter = false;
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result);
+        rig.R4IncludePublicationFilter = true;
+        var cast = dto.People.Single(p => p.Name == "Javier Bardem");
+        var tag = cast.PrimaryImageTag!;
+        rig.ImageAnswer = _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        rig.ImageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.ImageGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = Call(rig, "Image", "GetItemImage", null, ImageArgs(cast.Id, tag));
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        rig.Plugin.Core.Manager.SaveUserConfiguration(viewer.Id.ToString("N"), "spoilerblur.json",
+            new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur { PendingTmdb = new() { ["movie:693134"] = new() } });
+        EvidenceRevision.Advance(() => rig.Plugin.Plugin.Configuration.TMDB_API_KEY = "rotated-credential-r3");
+        rig.ImageGate.SetResult();
+        var moved = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        var fresh = await Call(rig, "Image", "GetItemImage", null, ImageArgs(cast.Id, tag));
+        // The title itself is still allowed: the refusal is Spoiler Guard's (cast hidden), read as it is now.
+        Assert.Equal(NativeDetailsPolicy.Access.Allowed, await rig.Policy.ListAbsentAccessAsync(viewer, SyntheticId.Movie(693134), CancellationToken.None));
+        var now = new SpoilerPresentation(rig.Plugin.Core.Manager, rig.Library.Object, rig.Callers.Users.Object, Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()).Load(viewer.Id);
+        Assert.True(now.Flags(HiddenContentPolicy.TitleIdentity("movie", "693134")!)["cast"]!.GetValue<bool>());
+        Assert.Equal(404, Status(fresh.Result));
+        Assert.False(fresh.Http.Response.Headers.ContainsKey("X-JE-Art"));
+        Assert.Equal(Leaves(fresh), Leaves(moved));
+    }
+
+    [Fact]
     public async Task ATransientSeasonFailureIsRetryableAndTheNextReadHasEveryEpisode()
     {
         using var rig = new Rig();

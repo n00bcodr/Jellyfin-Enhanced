@@ -666,8 +666,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>
         /// The image's access under what holds now, read afresh (the privacy decision a withheld answer waits for): the
         /// grant's viewer's current evidence is captured again (the response is fenced by it from here), then the same
-        /// checks as a new request run (the grant, the viewer, the viewer- and page-level rules, Spoiler Guard), so a refusal
-        /// here is a confirmed one; <see cref="NativeDetailsPolicy.Access.Unknown"/> when it can't be settled now.
+        /// checks as a new request run (the grant, the viewer, the viewer- and page-level rules, Spoiler Guard read afresh,
+        /// not from the request's earlier snapshot), so a refusal here is a confirmed one;
+        /// <see cref="NativeDetailsPolicy.Access.Unknown"/> when it can't be settled now.
         /// </summary>
         private async Task<NativeDetailsPolicy.Access> ImageAccessNowAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
@@ -705,9 +706,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return Refused;
             }
 
+            // Spoiler Guard as it is now: the request's earlier snapshots (the presentation and the per-user state) are read
+            // again, so a guard turned on while the answer was built is a confirmed refusal here too.
+            var spoiler = _presentation?.LoadFresh(viewer.Id, context.HttpContext);
+            _spoilerUsers?.LoadUserStateFresh(context.HttpContext, viewer.Id);
             if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return Refused;
             var pageKey = HiddenContentPolicy.TitleIdentity(page.IsMovie ? "movie" : "tv", page.TmdbId.ToString());
-            var spoiler = _presentation?.Load(viewer.Id, context.HttpContext);
             if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return Refused;
             return NativeDetailsPolicy.Access.Allowed;
         }
