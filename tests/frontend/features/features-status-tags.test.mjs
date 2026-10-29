@@ -111,6 +111,31 @@ test('a replacement cache swapped in under the cards reinitializes the status ba
   assert.equal(h.badge(h.hosts[1]), null, 'drawn from the new dates: no longer a new episode');
 });
 
+test('a replaced or updated server cache also drops the fallback entries it had cached', async t => {
+  const h = setup(t, [
+    { source: 'tmdb-day', movies: {}, series: {} }
+  ]);
+  await h.settle();
+  const renderer = h.JE.tagPipeline.getRenderer('status');
+  const now = h.window.Date.now();
+  const season = { Id: 's1', Type: 'Season', DateCreated: now - 400 * 24 * 60 * MINUTE, LatestEpisodeAdded: now - 60 * MINUTE };
+  renderer.render(h.hosts[0], season);
+  assert.equal(h.badge(h.hosts[0]), 'New Episode');
+  h.hosts[0].querySelector('.status-overlay-container').remove();
+  delete h.hosts[0].closest('.card').dataset.jeStatusTagged;
+  assert.equal(renderer.renderFromCache(h.hosts[0], 's1'), true, 'a fresh fallback entry is a hit');
+  h.hosts[0].querySelector('.status-overlay-container').remove();
+  delete h.hosts[0].closest('.card').dataset.jeStatusTagged;
+  renderer.onServerCacheRefresh(null, { replaced: true });
+  assert.equal(renderer.renderFromCache(h.hosts[0], 's1'), false, 'after a replacement the old entry is not served');
+  assert.equal(h.badge(h.hosts[0]), null);
+  renderer.render(h.hosts[0], season);
+  delete h.hosts[0].closest('.card').dataset.jeStatusTagged;
+  h.hosts[0].querySelector('.status-overlay-container').remove();
+  renderer.onServerCacheRefresh(['s1']);
+  assert.equal(renderer.renderFromCache(h.hosts[0], 's1'), false, 'a delta drops just the entries it replaced');
+});
+
 test('a replacement cache does not draw anything while Status Tags is off', async t => {
   const h = setup(t, [
     { source: 'tmdb-day', movies: { 1: 3 }, series: {} }

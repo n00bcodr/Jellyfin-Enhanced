@@ -403,6 +403,10 @@
      * empty cache) nothing would redraw them, so the status badges are
      * reinitialized: every one is removed and the pipeline is asked to render
      * the cards again from whatever it now has, for every card type.
+     *
+     * The module's own fallback caches (localStorage and the hot bucket, used
+     * when a card has no server entry) hold the same dates and go the same
+     * way, so a re-render cannot be served the outdated entry as a hit.
      * @param {Object} ctx - Factory context.
      * @param {string[]|null} updatedIds - Item ids a delta replaced, or null for everything.
      * @param {{replaced?: boolean}} [info] - What the pipeline did with the cache.
@@ -411,6 +415,10 @@
     function onCacheReplaced(ctx, updatedIds, info) {
         trackRev++;
         if (Array.isArray(updatedIds)) {
+            for (const id of updatedIds) {
+                ctx.deletePersistent(String(id));
+                ctx.hot?.delete(String(id));
+            }
             if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
                 staleBelowRev = trackRev;
                 replacedAt.clear();
@@ -421,6 +429,8 @@
         }
         staleBelowRev = trackRev;
         replacedAt.clear();
+        ctx.clearPersistent();
+        ctx.hot?.clear();
         if (info?.replaced && JE.currentSettings?.statusTagsEnabled) JE.reinitializeStatusTags();
     }
 

@@ -490,6 +490,34 @@
                 state.cache[itemId] = value;
                 if (JE._cacheManager) JE._cacheManager.markDirty();
             },
+            /**
+             * Drop one persistent cache entry and schedule a save.
+             * @param {string} itemId
+             */
+            deletePersistent(itemId) {
+                if (!(itemId in state.cache)) return;
+                delete state.cache[itemId];
+                if (JE._cacheManager) JE._cacheManager.markDirty();
+            },
+            /** Drop every persistent cache entry and schedule a save. */
+            clearPersistent() {
+                state.cache = {};
+                if (JE._cacheManager) JE._cacheManager.markDirty();
+            },
+            /**
+             * Drop one persistent cache entry and schedule a save.
+             * @param {string} itemId
+             */
+            deletePersistent(itemId) {
+                if (!(itemId in state.cache)) return;
+                delete state.cache[itemId];
+                if (JE._cacheManager) JE._cacheManager.markDirty();
+            },
+            /** Drop every persistent cache entry and schedule a save. */
+            clearPersistent() {
+                state.cache = {};
+                if (JE._cacheManager) JE._cacheManager.markDirty();
+            },
             isTagged,
             markTagged,
             shouldIgnore,

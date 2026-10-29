@@ -31,6 +31,19 @@ test('identity reset drops the previous user\'s review ratings',async t=>{
  assert.equal(h.JE.tagPipeline.peekReviewRatings()?.get('movie:42'),4.5);
  changes.get('tag-pipeline')({userId:'b'});assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);
 });
+test('tag pipeline drains the cards queued while a cancelled batch was in flight',async t=>{
+ // A reinitialize (clearProcessed) while a batch awaits its response bumps the
+ // generation; the scan that follows re-queues the card but cannot start a drain
+ // while the old one runs. The old drain must hand over when it exits.
+ const h=setup(t);h.scan();h.fetch();assert.equal(h.calls.length,1);
+ h.JE.tagPipeline.clearProcessed();h.JE.tagPipeline.scheduleScan();h.scan();
+ assert.equal(h.calls.length,1,'no second fetch while the first drain is still running');
+ h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();
+ assert.equal(h.rendered.length,0,'the cancelled generation renders nothing');
+ h.fetch();await settle();
+ assert.equal(h.calls.length,2,'the queued card is fetched by a new drain');
+ assert.equal(h.rendered.length,1);
+});
 test('tag pipeline skips hidden/admin/nonmedia cards without transport',t=>{
  const h=setup(t,`<div id="pluginsPage">${card}</div>${card.replace('class="card"','class="card je-hidden"')}${card.replace('data-type="Movie"','data-type="Person"')}`);h.scan();h.fetch();assert.equal(h.calls.length,0);assert.equal(h.rendered.length,0);
 });

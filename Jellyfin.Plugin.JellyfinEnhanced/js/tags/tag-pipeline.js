@@ -768,12 +768,15 @@
                     : rolledBack ? 'Server cache went back in time' : 'Access or Spoiler Guard filter changed';
                 if (confirming) {
                     // A restored copy that never rendered: download instead.
+                    // Cards may still show what the batch fallback drew while
+                    // the copy was being restored, so this is a replacement
+                    // under them too.
                     console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
                     await downloadFullCache({ fresh: true });
                     settled = true;
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
-                            try { renderer.onServerCacheRefresh(null); } catch {}
+                            try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
                 } else if (revision !== serverFilterRevision) {
@@ -1062,13 +1065,7 @@
                 scheduleIdle(processChunk);
             } else {
                 // All cards processed — schedule batch fetch for cache misses
-                if (requestQueue.length > 0 && !isProcessing) {
-                    if (fetchTimer) clearTimeout(fetchTimer);
-                    fetchTimer = setTimeout(() => {
-                        fetchTimer = null;
-                        processQueue();
-                    }, FETCH_DEBOUNCE_MS);
-                }
+                scheduleFetch();
             }
         }
 
@@ -1218,6 +1215,21 @@
     const SERVER_BATCH_LIMIT = 200;
 
     /**
+     * Debounce a drain of the request queue. No-op while a drain is running:
+     * that drain picks the queued cards up itself, or, when it was cancelled
+     * by a generation bump, schedules the next one as it exits.
+     * @returns {void}
+     */
+    function scheduleFetch() {
+        if (requestQueue.length === 0 || isProcessing) return;
+        if (fetchTimer) clearTimeout(fetchTimer);
+        fetchTimer = setTimeout(() => {
+            fetchTimer = null;
+            processQueue();
+        }, FETCH_DEBOUNCE_MS);
+    }
+
+    /**
      * Drain the request queue in SERVER_BATCH_LIMIT-sized chunks.
      * @returns {Promise<void>}
      */
@@ -1242,6 +1254,10 @@
             }
         } finally {
             isProcessing = false;
+            // Cancelled by a generation bump (a reinitialize or navigation
+            // while a batch was in flight): the scan that followed queued its
+            // cache misses but could not start a drain while this one ran.
+            scheduleFetch();
         }
     }
 
