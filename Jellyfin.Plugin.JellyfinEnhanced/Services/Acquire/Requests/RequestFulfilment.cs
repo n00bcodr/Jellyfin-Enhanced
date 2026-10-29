@@ -271,6 +271,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<bool> ArrivedAsync(RequestWant want, CancellationToken cancellationToken)
         {
             if (TitleKey.Parse(want.Input.Key) is not { } key || _view.Viewer(want.UserId) is not { } viewer) return false;
+            // F83: an ask still in TMDB's numbering has no Sonarr or library episode yet (its id match renumbers it once it
+            // goes out): it is never fulfilled by an episode that merely has the same number.
+            if (want.Input.Numbering == EpisodeIdentity.Tmdb)
+            {
+                // A request sharing its episodes may have been closed or held since its group last went out: the id matches
+                // already known are applied again, so the rest of the group isn't left in TMDB's numbering for good.
+                _ledger.SettleIdentity(want, _now());
+                return false;
+            }
             var title = key.ToString();
             var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _ledger.Dispatches(title));
             var composed = await _status.ComposeForAsync(viewer, new[] { key }, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = scope }, cancellationToken, loadEpisodes: true).ConfigureAwait(false);

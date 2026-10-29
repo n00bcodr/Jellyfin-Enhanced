@@ -447,9 +447,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var ids = await TvdbIdsAsync(key, series ?? lookupRow, input, ct).ConfigureAwait(false);
                 if (ids.Unread)
-                    return job.Uncertain
-                        ? BackendResults.Resume(job.WantId, "TMDB couldn't be read to match the episodes to Sonarr's; sent again shortly.")
-                        : BackendResults.Retry("backend_unavailable", "TMDB couldn't be read to match the asked episodes to Sonarr's; tried again shortly.");
+                {
+                    // TMDB isn't set up or refuses the key: asking again won't help. Otherwise TMDB is waited for like Sonarr's
+                    // list (once, then held; never past the attempt bound).
+                    if (ids.Permanent) return Unresolved(run, false, $"TMDB can't be asked (no key, or it refuses it), so {Which(input.Episodes)} can't be matched to {instance.Name}'s episodes.");
+                    if (!EpisodeIdentity.MayWait(job)) return Unresolved(run, false, $"TMDB still couldn't be read to match {Which(input.Episodes)} to {instance.Name}'s episodes.");
+                    return BackendResults.Held(job.WantId, job.Uncertain, EpisodeIdentity.Pending, "TMDB couldn't be read to match the asked episodes to Sonarr's; checked again shortly.", EpisodeIdentity.PendingWait);
+                }
                 if (ids.Ids == null) return Unresolved(run, false, $"There is no TMDB id to match {Which(input.Episodes)} to {instance.Name}'s episodes by.");
                 if (ids.None.Length > 0) return Unresolved(run, false, $"TMDB lists no TVDB id for {Which(ids.None)}, so {instance.Name}'s episode can't be told by id.");
                 tvdbIds = ids.Ids;
@@ -582,7 +586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     // Sonarr's list may still be catching up (a series just added or refreshed): it is waited for once, a short
                     // while (an existing series is refreshed first so the next read has TVDB's current episodes); then held.
-                    if (job.Reason != EpisodeIdentity.Pending)
+                    if (EpisodeIdentity.MayWait(job))
                     {
                         if (!wrote)
                         {
@@ -671,19 +675,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// The TVDB ids TMDB lists for a TMDB-numbered ask's episodes. <c>Unread</c>: TMDB couldn't be asked (nothing concluded);
         /// <c>Ids</c> null: no TMDB series id is known for the title; <c>None</c>: the episodes TMDB lists no TVDB id for.
         /// </summary>
-        private async Task<(Dictionary<RequestEpisode, int>? Ids, RequestEpisode[] None, bool Unread)> TvdbIdsAsync(TitleKey key, JsonElement? row, MutationInput input, CancellationToken ct)
+        private async Task<(Dictionary<RequestEpisode, int>? Ids, RequestEpisode[] None, bool Unread, bool Permanent)> TvdbIdsAsync(TitleKey key, JsonElement? row, MutationInput input, CancellationToken ct)
         {
-            if (_externalId == null || EpisodeIdentity.TmdbSeries(key, _aliases, row) is not int series) return (null, Array.Empty<RequestEpisode>(), false);
+            if (_externalId == null || EpisodeIdentity.TmdbSeries(key, _aliases, row) is not int series) return (null, Array.Empty<RequestEpisode>(), false, false);
             var ids = new Dictionary<RequestEpisode, int>();
             var none = new List<RequestEpisode>();
             foreach (var ask in input.Episodes)
             {
                 var id = await _externalId(series, ask.Season, ask.Episode, ct).ConfigureAwait(false);
-                if (!id.Read) return (null, Array.Empty<RequestEpisode>(), true);
+                if (!id.Read) return (null, Array.Empty<RequestEpisode>(), true, id.Permanent);
                 if (id.TvdbId is int tvdb) ids[ask] = tvdb;
                 else none.Add(ask);
             }
-            return (ids, none.ToArray(), false);
+            return (ids, none.ToArray(), false, false);
         }
 
         // The library entry for a series key: by TVDB id (from the key or a lookup row), else none.

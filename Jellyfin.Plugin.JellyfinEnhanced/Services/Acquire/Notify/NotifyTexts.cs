@@ -88,7 +88,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             (P("user").Length > 0 && !hideTitles ? $"Asked for by {P("user")}. " : string.Empty) + "Check Seerr's Sonarr/Radarr settings."),
                         Requests.EpisodeIdentity.Unresolved => new NotifyMessage(
                             named ? $"{title}{Scope(P("scope"))} is held: it can't be matched to Sonarr's episodes" : "A request is held: its episode can't be matched to Sonarr's",
-                            (P("user").Length > 0 && !hideTitles ? $"Asked for by {P("user")}. " : string.Empty) + "TMDB and Sonarr number this series differently and the episode couldn't be matched by its id, so nothing was sent. Check it in Requests."),
+                            (P("user").Length > 0 && !hideTitles ? $"Asked for by {P("user")}. " : string.Empty) + "TMDB and Sonarr number this series differently and the episode couldn't be matched by its id, so it wasn't searched for. Check it in Requests."),
                         _ => new NotifyMessage("Something needs attention", "Open the Requests page to see what."),
                     };
                 case NotifyKind.Test:

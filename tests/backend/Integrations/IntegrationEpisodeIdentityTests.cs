@@ -210,13 +210,16 @@ public class IntegrationEpisodeIdentityTests
     {
         using var lab = new IntegrationRequestBackendsTests.Lab();
         ExistingFirefly(lab);
-        var direct = Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }));
+        var asked = new List<string>();
+        var direct = Direct(lab, Tmdb(new() { [(1, 1)] = 297990 }, asked));
         var job = lab.Job(Ask((1, 1)), "Sonarr");
-        // Sonarr's own S01E01 monitored says nothing about TMDB's S01E01.
+        // Sonarr's own S01E01 monitored says nothing about TMDB's S01E01 (EI-7: a number-based read-back calls that "the change").
         lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4001)["monitored"] = true;
         var before = await direct.ReadBackAsync(job, default);
         Assert.False(before.Confirmed);
         Assert.True(before.Resumes);
+        Assert.Contains("has part of the change", before.Outcome.Message, StringComparison.Ordinal);
+        Assert.Equal(new[] { $"{TmdbSeries}:1x1" }, asked);
         lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002)["monitored"] = true;
         var after = await direct.ReadBackAsync(job, default);
         Assert.True(after.Resumes);   // present and matched: the search is sent again to be sure
@@ -302,8 +305,11 @@ public class IntegrationEpisodeIdentityTests
         Assert.NotNull(tmdb.Extra(new[] { sonarr }));
         Assert.NotNull(sonarr.Extra(new[] { tmdb }));
         Assert.Null(tmdb.Extra(new[] { tmdb }));
-        // A whole season still covers it.
-        Assert.Null(tmdb.Extra(new[] { new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } } }));
+        // EI-3: nor does a Sonarr season (TMDB's S00E12 may be Sonarr's S01E12), and a TMDB-numbered ask covers no Sonarr episode.
+        Assert.NotNull(tmdb.Extra(new[] { new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } } }));
+        Assert.False(tmdb.Overlaps(new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } }));
+        Assert.False(tmdb.Covers(new RequestEpisode(1, 1)));
+        Assert.True(sonarr.Covers(new RequestEpisode(1, 1)));
         // Only the server's own note is valid, and only on single episodes; it is not part of the fingerprint.
         Assert.Null((tmdb with { Numbering = "tvdb" }).Normalize());
         Assert.Null(new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 }, Numbering = EpisodeIdentity.Tmdb }.Normalize());
@@ -386,10 +392,153 @@ public class IntegrationEpisodeIdentityTests
         // Told once.
         Assert.Equal(0, await service.DeliverRequestNoticesAsync(rig.Arr.Now, default));
         Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "attention");
-        // The words: held, why, and nothing was sent.
+        // The words: held, why, and that it wasn't searched for.
         var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(told.Payload)!;
         var words = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotifyTexts.Render("attention", payload, false);
         Assert.Contains("can't be matched to Sonarr's episodes", words.Title, StringComparison.Ordinal);
-        Assert.Contains("nothing was sent", words.Body, StringComparison.Ordinal);
+        Assert.Contains("it wasn't searched for", words.Body, StringComparison.Ordinal);
+    }
+
+    // ------------------------------------------------------------------ review round 1 (EI-1 … EI-6)
+
+    [Fact]
+    public async Task EI1_ARetryAfterAFailedSearchMatchesByIdAgainEvenWhenSonarrRenumberedMeanwhile()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        ExistingFirefly(lab);
+        var (r, _) = Ledger(lab);
+        using var rig = r;
+        var ask = await rig.Create(rig.Admin, new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } });
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 })));
+        lab.Sonarr.CommandFailWith = 429;
+        await runner.TickAsync(default);
+        // Not confirmed: the request keeps TMDB's numbering (only a confirmed send switches it).
+        Assert.Equal(EpisodeIdentity.Tmdb, rig.Ledger.Find(ask.RequestId!)!.Input.Numbering);
+        lab.Sonarr.CommandFailWith = 0;
+        // Sonarr swaps E2 and E3 before the retry: the TVDB id still names episode 4002.
+        lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002)["episodeNumber"] = 3;
+        lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4003)["episodeNumber"] = 2;
+        lab.Sonarr.Writes.Clear();
+        rig.Now = rig.Now.AddMinutes(10);
+        await runner.TickAsync(default);
+        Assert.Equal("4002", Search(lab.Sonarr));
+        var want = rig.Ledger.Find(ask.RequestId!)!;
+        Assert.Equal(("sent", null), (want.Status, want.Input.Numbering));
+        Assert.Equal(new[] { new RequestEpisode(1, 3) }, want.Input.Episodes);
+    }
+
+    [Fact]
+    public async Task EI2_AskersSharingSomeEpisodesSwitchToSonarrsNumbersTogetherOnceEveryEpisodeIsMatched()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        ExistingFirefly(lab);
+        var (r, _) = Ledger(lab);
+        using var rig = r;
+        var one = new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } };
+        var first = await rig.Create(rig.Admin, one);
+        rig.Now = rig.Now.AddSeconds(1);
+        var second = await rig.Create(rig.Add("Admin"), one with { Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(1, 3) } });
+        Assert.True(second.HttpStatus < 300, second.Reason);
+        await rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990, [(1, 3)] = 297991 }))).TickAsync(default);
+        var a = rig.Ledger.Find(first.RequestId!)!;
+        var b = rig.Ledger.Find(second.RequestId!)!;
+        Assert.Equal(("sent", null, "sent", null), (a.Status, a.Input.Numbering, b.Status, b.Input.Numbering));
+        Assert.Equal(new[] { new RequestEpisode(1, 2) }, a.Input.Episodes);
+        Assert.Equal(new[] { new RequestEpisode(1, 2), new RequestEpisode(1, 3) }, b.Input.Episodes);
+        // Every job (sent or not) holds the same numbering as its ask.
+        Assert.All(new[] { a, b }.SelectMany(w => rig.Ledger.ForWant(w.Id)), j => Assert.Null(j.Input.Numbering));
+        Assert.All(rig.Ledger.Dispatches("tv:tvdb:" + Tvdb), d => Assert.Null(d.Input.Numbering));
+    }
+
+    [Fact]
+    public async Task EI3_ASonarrSeasonAskNeverCoversATmdbEpisodeThatSonarrNumbersInAnotherSeason()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        ExistingFirefly(lab);
+        var (r, _) = Ledger(lab);
+        using var rig = r;
+        await rig.Create(rig.Admin, new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "seasons", Seasons = new[] { 0 } });
+        rig.Service.Numbering = (_, _, _) => Task.FromResult((true, true));
+        rig.Now = rig.Now.AddSeconds(1);
+        await rig.Create(rig.Add("Admin"), new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(0, 12) } });
+        await rig.Runner(Direct(lab, Tmdb(new() { [(0, 12)] = 297999 }))).TickAsync(default);
+        // TMDB's S00E12 is Sonarr's S01E12: it went out by id although Sonarr's season 0 was asked for too.
+        Assert.True((bool)lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4012)["monitored"]!);
+    }
+
+    [Fact]
+    public async Task EI4_AHeldTmdbNumberedAskIsNeverFulfilledByAnEpisodeWithTheSameNumber()
+    {
+        using var lab = new IntegrationRequestArrivalsTests.Lab();
+        lab.Requests.Numbering = (_, _, _) => Task.FromResult((true, true));
+        var id = await lab.Ask(lab.Admin, new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } });
+        var runner = new RequestOutbox(lab.Ledger, lab.Policy, new Unmatched(), new RequestTitleLocks(), lab.Feed,
+            new ArrAuditLog(Path.Combine(lab.Arr.Plugin.Core.Root, "ei4-audit-" + Guid.NewGuid().ToString("N") + ".jsonl"), 100000, 1), () => lab.Arr.Now);
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Unresolved, lab.Ledger.Find(id)!.Reason);
+        foreach (var instance in lab.Store.Registry.All()) await lab.Store.GetLibraryAsync(instance, default);
+        await lab.Fulfilment.CheckAsync(null, default);
+        // Sonarr's and Jellyfin's S01E01 (another episode) is here: the held ask stays held.
+        Assert.Equal(("pending", EpisodeIdentity.Unresolved), (lab.Ledger.Find(id)!.Status, lab.Ledger.Find(id)!.Reason));
+    }
+
+    [Fact]
+    public async Task EI5_TheAskerSeesAnIdentityHoldAsHeldNotAsWaitingForAnOk()
+    {
+        using var lab = new IntegrationRequestArrivalsTests.Lab();
+        lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 3104)["monitored"] = false;
+        lab.Requests.Numbering = (_, _, _) => Task.FromResult((true, true));
+        var id = await lab.Ask(lab.Emma, new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 4) } });
+        var runner = new RequestOutbox(lab.Ledger, lab.Policy, new Unmatched(), new RequestTitleLocks(), lab.Feed,
+            new ArrAuditLog(Path.Combine(lab.Arr.Plugin.Core.Root, "ei5-audit-" + Guid.NewGuid().ToString("N") + ".jsonl"), 100000, 1), () => lab.Arr.Now);
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Unresolved, lab.Ledger.Find(id)!.Reason);
+        foreach (var instance in lab.Store.Registry.All()) await lab.Store.GetLibraryAsync(instance, default);
+        var reason = (await lab.Page(lab.Emma))["tv:tvdb:78874"].GetProperty("status").GetProperty("reason");
+        Assert.Equal("awaiting_approval", reason.GetProperty("code").GetString());
+        // A neutral flag only: held, and the administrators were told (never why).
+        Assert.Equal("told", reason.GetProperty("params").GetProperty("held").GetString());
+    }
+
+    [Fact]
+    public async Task EI6_TmdbThatCantBeReadIsWaitedForBoundedlyAndAMissingKeyHoldsAtOnce()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        ExistingFirefly(lab);
+        var unread = Direct(lab, (_, _, _, _) => Task.FromResult(EpisodeExternalId.Unread));
+        var job = lab.Job(Ask((1, 1)), "Sonarr");
+        var first = await unread.SendAsync(job, () => null, default);
+        Assert.Equal((EpisodeIdentity.Pending, false, true), (first.Outcome.Reason, first.Parked, first.Retryable));
+        // Once waited (or after many attempts whatever the last reason was): held, nothing written.
+        var again = await unread.SendAsync(job with { Reason = first.Outcome.Reason, Attempts = 2 }, () => null, default);
+        Assert.Equal((EpisodeIdentity.Unresolved, true, false), (again.Outcome.Reason, again.Parked, again.Retryable));
+        var late = await unread.SendAsync(job with { Attempts = 100, Reason = "backend_unavailable" }, () => null, default);
+        Assert.True(late.Parked && !late.Retryable);
+        // No TMDB key (or one TMDB refuses): asking again won't help.
+        var unusable = await Direct(lab, (_, _, _, _) => Task.FromResult(EpisodeExternalId.Unusable)).SendAsync(job, () => null, default);
+        Assert.Equal((EpisodeIdentity.Unresolved, true), (unusable.Outcome.Reason, unusable.Parked));
+        Assert.Empty(lab.Sonarr.Writes);
+    }
+
+    [Fact]
+    public async Task AnAdministratorResumesAnIdentityHoldOnceSonarrListsTheEpisode()
+    {
+        using var lab = new IntegrationRequestBackendsTests.Lab();
+        ExistingFirefly(lab, withTvdbIds: false);
+        var (r, _) = Ledger(lab);
+        using var rig = r;
+        var ask = await rig.Create(rig.Admin, new MutationInput { Key = "tv:tvdb:" + Tvdb, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1) } });
+        var runner = rig.Runner(Direct(lab, Tmdb(new() { [(1, 1)] = 297990 })));
+        await runner.TickAsync(default);
+        rig.Now = rig.Now.AddMinutes(3);
+        await runner.TickAsync(default);
+        Assert.Equal(EpisodeIdentity.Unresolved, rig.Ledger.Find(ask.RequestId!)!.Reason);
+        lab.Sonarr.Episodes.Single(e => (int)e["id"]! == 4002)["tvdbId"] = 297990;
+        var approved = await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, new ApproveRequest(), default);
+        Assert.True(approved.HttpStatus < 300, approved.Reason);
+        lab.Sonarr.Writes.Clear();
+        await runner.TickAsync(default);
+        Assert.Equal(("sent", null), (rig.Ledger.Find(ask.RequestId!)!.Status, rig.Ledger.Find(ask.RequestId!)!.Input.Numbering));
+        Assert.Equal("4002", Search(lab.Sonarr));
     }
 }

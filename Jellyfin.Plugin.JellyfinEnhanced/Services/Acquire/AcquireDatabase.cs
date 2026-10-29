@@ -781,6 +781,8 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 if (UserVersion(connection) >= 8) Ready.ReadyTables.Ensure(connection);
                 if (existed && !extensionBackedUp && Requests.TitleChoiceRegistry.NeedsMigration(connection)) BackupBeforeMigration(connection, version);
                 Requests.TitleChoiceRegistry.Ensure(connection);
+                // F83: the id matches of TMDB-numbered episode requests (additive; no schema step of its own).
+                Requests.RequestLedger.EnsureEpisodeIdentities(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);

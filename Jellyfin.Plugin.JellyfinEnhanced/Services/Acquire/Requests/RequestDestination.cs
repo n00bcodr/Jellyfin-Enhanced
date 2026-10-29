@@ -189,6 +189,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
         }
 
+        /// <summary>
+        /// F83: TMDB-numbered asks of one acquisition and target grouped by the episodes they share (an ask is linked to every
+        /// other naming one of its episodes, transitively), keeping only groups whose every episode <paramref name="map"/>
+        /// names: those are switched to Sonarr's numbers together (<c>RequestLedger.Renumber</c>), the others not at all.
+        /// </summary>
+        /// <param name="asks">The asks (id and input).</param>
+        /// <param name="map">Learned id matches: TMDB episode to Sonarr episode.</param>
+        internal static IReadOnlyList<HashSet<string>> MatchedGroups(IReadOnlyList<(string Id, MutationInput Input)> asks, IReadOnlyList<EpisodeRenumbering> map)
+        {
+            var known = map.Select(m => m.From).ToHashSet();
+            var group = asks.ToDictionary(a => a.Id, a => a.Id, StringComparer.Ordinal);
+            string Root(string id) { while (group[id] != id) id = group[id] = group[group[id]]; return id; }
+            for (var i = 0; i < asks.Count; i++)
+                for (var j = i + 1; j < asks.Count; j++)
+                    if (asks[i].Input.Episodes.Intersect(asks[j].Input.Episodes).Any()) group[Root(asks[i].Id)] = Root(asks[j].Id);
+            return asks.GroupBy(a => Root(a.Id), StringComparer.Ordinal)
+                .Where(g => g.All(a => a.Input.Episodes.Length > 0 && a.Input.Episodes.All(known.Contains)))
+                .Select(g => g.Select(a => a.Id).ToHashSet(StringComparer.Ordinal))
+                .ToList();
+        }
+
         /// <summary>What groups requests by title and edition (the key and the edition).</summary>
         /// <param name="input">An input.</param>
         internal static (string Key, string Variant) Edition(MutationInput input) => (input.Key, input.Variant);

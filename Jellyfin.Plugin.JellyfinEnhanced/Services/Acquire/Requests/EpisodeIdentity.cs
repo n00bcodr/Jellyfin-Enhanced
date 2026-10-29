@@ -16,10 +16,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>What TMDB lists as an episode's TVDB id.</summary>
     /// <param name="Read">TMDB answered (false: it couldn't be asked now; nothing is concluded).</param>
     /// <param name="TvdbId">The TVDB episode id TMDB lists for it; null when TMDB answered and lists none.</param>
-    public readonly record struct EpisodeExternalId(bool Read, int? TvdbId)
+    /// <param name="Permanent">Unread, and asking again won't help (no TMDB key, or TMDB refuses it).</param>
+    public readonly record struct EpisodeExternalId(bool Read, int? TvdbId, bool Permanent = false)
     {
         /// <summary>TMDB couldn't be asked now.</summary>
         public static EpisodeExternalId Unread => new(false, null);
+
+        /// <summary>TMDB can't be asked at all: no key is set up, or TMDB refuses it.</summary>
+        public static EpisodeExternalId Unusable => new(false, null, true);
 
         /// <summary>TMDB answered and lists no TVDB id (or doesn't know the episode).</summary>
         public static EpisodeExternalId None => new(true, null);
@@ -48,6 +52,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public static readonly TimeSpan PendingWait = TimeSpan.FromMinutes(2);
 
         /// <summary>
+        /// The most send attempts an episode's identity is waited for (Sonarr's list catching up, TMDB unreadable): beyond it the
+        /// request is held whatever the last attempt's reason was (another outage between two attempts doesn't reset the wait).
+        /// </summary>
+        public const int MaxAttempts = 5;
+
+        /// <summary>
+        /// True when a request may still wait once more for an episode's identity (<see cref="Pending"/>): its last attempt
+        /// wasn't that wait already, and it is within <see cref="MaxAttempts"/>.
+        /// </summary>
+        /// <param name="job">The job being sent.</param>
+        internal static bool MayWait(RequestJob job) => job.Reason != Pending && job.Attempts < MaxAttempts;
+
+        /// <summary>
+        /// Where a TMDB-numbered episode stands in a request's scope (<c>LedgerRequestFacts.ScopeOf</c>): a negative season no
+        /// Sonarr or library episode is ever in, one per TMDB season, so it is told apart but never matched by number.
+        /// </summary>
+        /// <param name="episode">The episode in TMDB's numbering.</param>
+        /// <returns>The unplaceable coordinates.</returns>
+        internal static RequestEpisode Unplaced(RequestEpisode episode) => new(-1 - episode.Season, episode.Episode);
+
+        /// <summary>
         /// TMDB's external ids of one episode through the shared TMDB cache (public facts, kept with the cache's own lifetime),
         /// read under the request dispatch's own metadata admission. <see cref="EpisodeExternalId.Unread"/> when TMDB isn't set
         /// up, fails or is busy.
@@ -61,12 +86,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static async Task<EpisodeExternalId> TmdbAsync(TmdbResponseCache tmdb, int series, int season, int episode, CancellationToken ct)
         {
             var key = JellyfinEnhanced.Instance?.Configuration.GetTmdbApiKey();
-            if (string.IsNullOrEmpty(key) || series <= 0 || season < 0 || episode < 1) return EpisodeExternalId.Unread;
+            if (string.IsNullOrEmpty(key)) return EpisodeExternalId.Unusable;
+            if (series <= 0 || season < 0 || episode < 1) return EpisodeExternalId.None;
             var path = string.Create(CultureInfo.InvariantCulture, $"tv/{series}/season/{season}/episode/{episode}/external_ids");
             try
             {
                 var response = await AutonomousMetadataAdmission.RunAsync(AutonomousMetadataOwner.RequestDispatch, () => tmdb.GetAsync(path, string.Empty, key, ct), ct).ConfigureAwait(false);
                 if (response.StatusCode == 404) return EpisodeExternalId.None;
+                if (response.StatusCode == 401) return EpisodeExternalId.Unusable;
                 return response.IsSuccess ? Parse(response.Content) : EpisodeExternalId.Unread;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)

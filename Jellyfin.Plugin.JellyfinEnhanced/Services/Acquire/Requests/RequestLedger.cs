@@ -1410,9 +1410,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (deletedNotSent) state = "cancelled";
                 var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
-                // A TMDB-numbered ask matched to Sonarr's episodes by id: it (and every request sharing it) holds Sonarr's numbers
-                // from now on, committed with the outcome, so what went out, arrives and shows is all in one numbering.
-                if (result.Renumbered is { Count: > 0 } renumbered) Renumber(c, t, job, storedWant, renumbered);
                 // The same wait again changes nothing anyone sees: no new audit row, notice or event.
                 if (!deletedNotSent && RepeatsWait(job, result)) return true;
                 // A wait only a person can end (no Seerr account linked yet) shows as held for them, while its job is still
@@ -1452,37 +1449,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         ("$s", remains ? "pending" : "cancelled"), ("$w", job.WantId));
                     WithdrawFollowers(c, t, storedWant.AcquisitionId, now);
                 }
+                // F83: a confirmed send's id matches are kept; then every group of TMDB-numbered asks sharing episodes there whose
+                // every episode is matched takes Sonarr's numbers together, after the outcome (one numbering per group, switched
+                // at once). An unconfirmed outcome teaches nothing: its retry matches by id again.
+                Renumber(c, t, storedWant.AcquisitionId, TargetKey(job.Authorization), result.Confirmed ? result.Renumbered : null, now);
                 Record(c, t, job.WantId, job.Id, job.Authorization.Approver ?? job.Authorization.Requester, "dispatch", result.Outcome.Outcome, result.Outcome.Reason, job.Input.Key, now);
                 return true;
             }, false).Result;
         }
         /// <summary>
-        /// Renumbers a TMDB-numbered ask to Sonarr's numbers (<see cref="EpisodeIdentity"/>): the job sent, and every request
-        /// on the same acquisition and target that names those episodes by TMDB's numbering (the asker's and those sharing it),
-        /// with their unsent jobs. Only an input every episode of which was matched changes (never partly); a want's and a
-        /// job's fingerprint follow their input as a title rekey's do.
+        /// F83: the id matches a confirmed send learned for an acquisition at a target (each TMDB-numbered episode it asked for and
+        /// the Sonarr episode with that episode's TVDB id) are kept (<c>episode_identities</c>); then the TMDB-numbered asks there
+        /// are grouped by the episodes they share, and each group whose every episode is matched takes Sonarr's numbers at once:
+        /// its asks (and owned scope) and all their jobs, fingerprints following their input as a title rekey's do. A group with
+        /// an episode not matched yet keeps TMDB's numbers whole. An ask held because an episode can't be matched, or one closed,
+        /// is no member (it keeps TMDB's numbers until it is matched itself).
         /// </summary>
-        private static void Renumber(SqliteConnection c, SqliteTransaction t, RequestJob job, RequestWant want, IReadOnlyList<EpisodeRenumbering> map)
+        private static void Renumber(SqliteConnection c, SqliteTransaction t, string acquisition, string target, IReadOnlyList<EpisodeRenumbering>? learned, DateTimeOffset now)
         {
-            if (RequestDestination.Renumbered(job.Input, map) is not { } sentInput) return;
-            Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
-                ("$input", sentInput.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? sentInput.Fingerprint : job.Fingerprint), ("$id", job.Id));
-            var target = TargetKey(job.Authorization);
-            foreach (var shared in Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(w => RequestDestination.SameEdition(w.Input, job.Input) && RequestDestination.SameTarget(w.TargetKey, target)))
+            foreach (var m in learned ?? Array.Empty<EpisodeRenumbering>())
+                Exec(c, t, "INSERT INTO episode_identities(acquisition_id,target_key,season,episode,to_season,to_episode,learned_at) VALUES($a,$t,$s,$e,$ts,$te,$at) ON CONFLICT(acquisition_id,target_key,season,episode) DO UPDATE SET to_season=$ts,to_episode=$te,learned_at=$at",
+                    ("$a", acquisition), ("$t", target), ("$s", m.From.Season), ("$e", m.From.Episode), ("$ts", m.To.Season), ("$te", m.To.Episode), ("$at", Ms(now)));
+            var map = new List<EpisodeRenumbering>();
+            using (var cmd = Cmd(c, t, "SELECT target_key,season,episode,to_season,to_episode FROM episode_identities WHERE acquisition_id=$a", ("$a", acquisition)))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                    if (RequestDestination.SameTarget(r.GetString(0), target)) map.Add(new(new RequestEpisode(r.GetInt32(1), r.GetInt32(2)), new RequestEpisode(r.GetInt32(3), r.GetInt32(4))));
+            if (map.Count == 0) return;
+            var members = Wants(c, t, "acquisition_id=$a AND json_extract(mutation_input,'$.Numbering')=$n", ("$a", acquisition), ("$n", EpisodeIdentity.Tmdb))
+                .Where(w => w.Status is not ("cancelled" or "declined" or "fulfilled") && w.Reason != EpisodeIdentity.Unresolved && RequestDestination.SameTarget(w.TargetKey, target))
+                .ToList();
+            foreach (var group in RequestDestination.MatchedGroups(members.Select(w => (w.Id, w.Input)).ToList(), map))
             {
-                if (RequestDestination.Renumbered(shared.Input, map) is { } input)
+                foreach (var want in members.Where(w => group.Contains(w.Id)))
                 {
-                    var owned = shared.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
+                    var input = RequestDestination.Renumbered(want.Input, map)!;
+                    var owned = want.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
                     Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
-                        ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", shared.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", shared.Id));
-                }
-                foreach (var other in Jobs(c, t, "want_id=$w AND id<>$j AND state IN ('queued','retry','parked')", ("$w", shared.Id), ("$j", job.Id)))
-                {
-                    if (RequestDestination.Renumbered(other.Input, map) is not { } renumbered) continue;
-                    Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
-                        ("$input", renumbered.Canonical), ("$f", other.Fingerprint == other.Input.Fingerprint ? renumbered.Fingerprint : other.Fingerprint), ("$id", other.Id));
+                        ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", want.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", want.Id));
+                    foreach (var job in Jobs(c, t, "want_id=$w", ("$w", want.Id)))
+                    {
+                        if (RequestDestination.Renumbered(job.Input, map) is not { } renumbered) continue;
+                        Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                            ("$input", renumbered.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? renumbered.Fingerprint : job.Fingerprint), ("$id", job.Id));
+                    }
                 }
             }
+        }
+        /// <summary>
+        /// F83: the id matches already known for a TMDB-numbered ask's acquisition applied again (a request sharing its episodes
+        /// was closed or held since its group last went out, so the group may be whole now). Run by the arrival sweep.
+        /// </summary>
+        /// <param name="want">The ask.</param>
+        /// <param name="now">Now.</param>
+        public void SettleIdentity(RequestWant want, DateTimeOffset now)
+        {
+            if (!_db.Available || want.Input.Numbering != EpisodeIdentity.Tmdb) return;
+            _db.Write((c, t) => { Renumber(c, t, want.AcquisitionId, want.TargetKey, null, now); return true; });
+        }
+        /// <summary>The table of learned id matches (F83), ensured at every start like the title-choice tables.</summary>
+        internal static void EnsureEpisodeIdentities(SqliteConnection c)
+        {
+            using var t = c.BeginTransaction(deferred: false);
+            Exec(c, t, "CREATE TABLE IF NOT EXISTS episode_identities(acquisition_id TEXT NOT NULL REFERENCES acquisitions(id) ON DELETE CASCADE,target_key TEXT NOT NULL,season INTEGER NOT NULL,episode INTEGER NOT NULL,to_season INTEGER NOT NULL,to_episode INTEGER NOT NULL,learned_at INTEGER NOT NULL,PRIMARY KEY(acquisition_id,target_key,season,episode))");
+            t.Commit();
         }
         /// <summary>
         /// Waits a person has to end (the asker has no Seerr account linked): the want shows as held (pending, with the

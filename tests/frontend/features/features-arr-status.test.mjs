@@ -100,6 +100,9 @@ test('every reason code reads as a plain family sentence from en.json', t => {
   assert.equal(text('awaiting_approval', { params: { held: 'invalid_defaults' } }), 'Stuck · needs a look in Requests');
   assert.equal(h.S.chipText({ stage: 'asked', reason: { code: 'awaiting_approval', params: { held: 'invalid_defaults' } } }), 'Stuck');
   assert.equal(h.S.chipText({ stage: 'asked', reason: { code: 'awaiting_approval' } }), 'Waiting for OK');
+  // F83 (EI-5): the asker of a request held because its episode couldn't be matched by id sees it held (never why).
+  assert.equal(text('awaiting_approval', { params: { held: 'told' } }), 'Stuck · Dad has been told');
+  assert.equal(h.S.chipText({ stage: 'asked', reason: { code: 'awaiting_approval', params: { held: 'told' } } }), 'Stuck');
   assert.equal(text('not_visible_to_user'), 'Not in the library');
   assert.equal(h.S.familyText({ stage: 'ready', reason: { code: 'ready' } }, ctx), 'Ready to watch');
   assert.equal(text('upgrading'), 'Ready · a better copy is coming');

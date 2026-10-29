@@ -630,7 +630,7 @@ test('F83: a request held because its episode can\'t be matched to Sonarr\'s rea
   await h.JE.arrNotify.refresh();
   h.click(h.document.getElementById('je-notify-bell'));
   const row = h.document.querySelector('.je-notify-panel .je-notify-item');
-  assert.equal(row.querySelector('.je-notify-text').textContent, "Firefly S0E7 is held: it couldn't be matched to Sonarr's episodes, so nothing was sent");
+  assert.equal(row.querySelector('.je-notify-text').textContent, "Firefly S0E7 is held: it couldn't be matched to Sonarr's episodes, so it wasn't searched for");
 });
 
 test('a notification created while the inbox is being read still becomes a toast', async t => {

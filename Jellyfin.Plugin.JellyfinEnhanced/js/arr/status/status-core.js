@@ -386,7 +386,8 @@
         const contact = contactOf(ctx);
         switch (reason.code) {
             // Held back at sending (admins only are told): it waits for them, not for an OK.
-            case 'awaiting_approval': return p.held ? tr('arr_status_held') : tr('arr_status_awaiting_approval', { contact });
+            // ('told': held, and the administrators were told; everyone else sees only that.)
+            case 'awaiting_approval': return p.held === 'told' ? tr('arr_status_held_told', { contact }) : p.held ? tr('arr_status_held') : tr('arr_status_awaiting_approval', { contact });
             case 'approved': return tr('arr_status_approved');
             case 'declined': return tr('arr_status_declined', { contact });
             case 'not_released': return date ? tr('arr_status_not_released_date', { date }) : tr('arr_status_not_released');

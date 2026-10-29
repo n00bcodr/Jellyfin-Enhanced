@@ -112,13 +112,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonIgnore] public string Fingerprint => Hash(Numbering == null ? Canonical : (this with { Numbering = null }).Canonical);
         internal static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
         internal IEnumerable<int> SeasonNumbers => Scope == "episodes" ? Episodes.Select(e => e.Season).Distinct() : Seasons;
-        internal bool Covers(RequestEpisode episode) => Seasons.Contains(episode.Season) || Episodes.Contains(episode);
+        internal bool Covers(RequestEpisode episode) => Covers(episode, null);
         /// <summary>
-        /// <see cref="Covers(RequestEpisode)"/> for an episode numbered by <paramref name="numbering"/>: episode numbers compare only
-        /// within one numbering (TMDB's S1E1 may be another episode in Sonarr), so an episode in another numbering is covered by
-        /// nothing it names episode by episode, only by a whole season.
+        /// <see cref="Covers(RequestEpisode)"/> for an episode numbered by <paramref name="numbering"/> (F83): numbers compare only
+        /// within one numbering, seasons included. TMDB's S00E12 may be Sonarr's S01E12, so a TMDB-numbered episode is covered
+        /// only by an ask naming that same TMDB episode, never by a Sonarr season or a Sonarr-numbered episode (and a
+        /// TMDB-numbered ask covers no Sonarr or library episode), until its id match renumbers it.
         /// </summary>
-        internal bool Covers(RequestEpisode episode, string? numbering) => Seasons.Contains(episode.Season) || (Numbering == numbering && Episodes.Contains(episode));
+        internal bool Covers(RequestEpisode episode, string? numbering)
+            => Numbering == numbering && (Seasons.Contains(episode.Season) || Episodes.Contains(episode));
         /// <summary>
         /// True when two inputs ask for some of the same part of a title in the same edition: the movie; a season both
         /// name (whole seasons, next season, "keep getting"); an episode one names in a season the other names whole;
@@ -129,8 +131,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Key != other.Key || Variant != other.Variant) return false;
             if (Scope == "movie" || other.Scope == "movie") return Scope == other.Scope;
             if (Scope == "episodes" && other.Scope == "episodes") return Numbering == other.Numbering && Episodes.Intersect(other.Episodes).Any();
-            if (Scope == "episodes") return Episodes.Any(e => other.Seasons.Contains(e.Season));
-            if (other.Scope == "episodes") return other.Episodes.Any(e => Seasons.Contains(e.Season));
+            if (Scope == "episodes") return Numbering == other.Numbering && Episodes.Any(e => other.Seasons.Contains(e.Season));
+            if (other.Scope == "episodes") return Numbering == other.Numbering && other.Episodes.Any(e => Seasons.Contains(e.Season));
             return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");
         }
         /// <summary>This input's request for one new season (a keep-getting follow): the same title, edition and routing.</summary>

@@ -232,7 +232,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Specials count only when they are all that was asked for (as the Seerr scope).
                 seasons = all.Where(n => n > 0).ToList();
                 if (seasons.Count == 0 && all.Contains(0)) seasons.Add(0);
-                episodes = asked.Where(w => w.Input.Scope == "episodes").SelectMany(w => w.Input.Episodes)
+                // An episode still in TMDB's numbering (not matched by id yet, or held because it can't be) names no Sonarr or
+                // library episode (F83): it stands in the scope as a place nothing is ever at, so it never reads as here,
+                // arrived or ready by an unrelated episode's number, and a scope of only such episodes is never the whole title.
+                episodes = asked.Where(w => w.Input.Scope == "episodes")
+                    .SelectMany(w => w.Input.Numbering == EpisodeIdentity.Tmdb ? w.Input.Episodes.Select(EpisodeIdentity.Unplaced) : w.Input.Episodes)
                     .Where(e => !seasons.Contains(e.Season)).Select(e => (e.Season, e.Episode)).Distinct()
                     .OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
             }
@@ -318,7 +322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var e in want.Input.Episodes)
                 {
-                    if (When(i => i.Covers(e)) is DateTime at) yield return new RequestSentPart(fourK, e.Season, e.Episode, at);
+                    if (When(i => i.Covers(e, want.Input.Numbering)) is DateTime at) yield return new RequestSentPart(fourK, e.Season, e.Episode, at);
                 }
             }
             else if (want.Input.Scope == "movie" || want.Input.Seasons.Length == 0)
