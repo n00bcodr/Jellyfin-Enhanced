@@ -64,6 +64,13 @@ public class IntegrationLockOrderArchitectureTests
                 OperandType.InlineSwitch => 4 + 4 * BitConverter.ToInt32(il, i),
                 _ => 4,
             };
+            // Coverage instrumentation (the suite's coverlet collector) inserts `ldc.i4 <hit>; call Tracker.RecordHit`
+            // pairs into every plugin method: they are no plugin code, so neither instruction is part of the body read.
+            if (member is MethodBase { DeclaringType.FullName: { } tracker } && tracker.StartsWith("Coverlet.Core.Instrumentation.Tracker", StringComparison.Ordinal))
+            {
+                if (ops.Count > 0 && ops[^1].Code.Name.StartsWith("ldc.i4", StringComparison.Ordinal)) ops.RemoveAt(ops.Count - 1);
+                continue;
+            }
             ops.Add(new Op(offset, op, member));
         }
         return ops;
