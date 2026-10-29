@@ -40,6 +40,18 @@ test('keyboard focus stays within modal and Escape cleans up across repeated ope
     await expect(page.locator('body')).not.toHaveClass(/jellyseerr-modal-is-open/);
   }
 });
+test('a key pressed while the modal is still opening keeps its focus', async ({ page }) => {
+  // The surface stack moves focus into the form at once; the form's own late focus step (a 10 ms timer) is held back
+  // by the paused clock, so the viewer's Shift+Tab lands first, as on a slow device or under a fast keyboard.
+  await pauseClock(page);
+  await page.locator('#open').click();
+  await expect(page.locator('#season')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Request', exact: true })).toBeFocused();
+  await page.clock.runFor(50);
+  await expect(page.locator('.jellyseerr-modal.show, [role="dialog"]').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request', exact: true })).toBeFocused();
+});
 test('cancel and browser Back close without submitting', async ({ page }) => {
   await page.locator('#open').click();
   await page.getByRole('button', { name: 'Cancel' }).click();
