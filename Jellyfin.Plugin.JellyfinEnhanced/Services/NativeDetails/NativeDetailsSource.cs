@@ -275,6 +275,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Feed reads started upstream and not finished, running or queued (for tests).</summary>
         internal int FeedReadsPending => _feeds.Outstanding;
 
+        /// <summary>Feed reads holding an upstream slot (for tests).</summary>
+        internal int FeedReadsRunning => _feeds.Running;
+
         /// <summary>A viewer's feed reads started upstream and not finished (for tests).</summary>
         /// <param name="viewer">The viewer.</param>
         /// <returns>Their running and queued reads.</returns>

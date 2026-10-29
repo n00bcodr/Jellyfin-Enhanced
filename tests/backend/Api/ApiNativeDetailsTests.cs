@@ -3142,13 +3142,14 @@ public class NativeDetailsSourceTests
             {
                 var gaveUp = source.DiscoverAsync(false, "network", 49, queued, null, Guid.NewGuid(), cts.Token);
                 cts.Cancel();
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gaveUp);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gaveUp.WaitAsync(limit));
             }
 
-            // Every upstream slot taken (signalled by the transport, not polled against a clock); then a moment for a
-            // read wrongly started past them to show up.
+            // Every upstream slot taken: the transport signals the reads that reached it (no clock), and the scheduler,
+            // which hands out turns synchronously, has granted no more than that (a read started past them can't hide
+            // behind a time window, whenever it would reach the transport).
             await full.Task.WaitAsync(limit);
-            await Task.Delay(50);
+            Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, source.FeedReadsRunning);
             Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, Volatile.Read(ref running));
             Assert.Equal(queued, source.FeedReadsPending);
             // A fresh viewer's new read isn't started (nor queued) while the queue is full ...
@@ -3173,7 +3174,7 @@ public class NativeDetailsSourceTests
         }
 
         // Room again: new reads start.
-        Assert.NotNull((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none)).Data);
+        Assert.NotNull((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none).WaitAsync(limit)).Data);
     }
 
     [Fact]
