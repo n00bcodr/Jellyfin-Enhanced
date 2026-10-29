@@ -92,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var run = new Run(job, instance, client, key, finalGuard, admission, ct);
             ChoiceNames(run, _store.PeekSystem(instance.Id));
             var result = key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
-            return result with { AddChoiceDetails = run.AddChoiceDetailsFacts, Renumbered = run.Renumbered };
+            return result with { AddChoiceDetails = run.AddChoiceDetailsFacts, Renumbered = run.RenumberedFacts is { Count: > 0 } renumbered ? renumbered.ToArray() : null };
         }
 
         /// <inheritdoc />
@@ -121,8 +121,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private sealed record Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
         {
             public Dictionary<string, string> AddChoiceDetails = new();
-            /// <summary>A TMDB-numbered ask's episodes matched to Sonarr's by id in this attempt (null: none were).</summary>
-            public IReadOnlyList<EpisodeRenumbering>? Renumbered;
+            /// <summary>A TMDB-numbered ask's episodes matched to Sonarr's by id in this attempt (empty: none were).</summary>
+            public List<EpisodeRenumbering> Renumbered = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<EpisodeRenumbering>> RenumberedFactsOwner = new(prepared: true);
+            public List<EpisodeRenumbering> RenumberedFacts => RenumberedFactsOwner.Read(ref Renumbered, () => new());
             private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, string>> AddChoiceDetailsFactsOwner = new(prepared: true);
             public Dictionary<string, string> AddChoiceDetailsFacts => AddChoiceDetailsFactsOwner.Read(ref AddChoiceDetails, () => new());
         }
@@ -593,9 +595,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     }
                     return Unresolved(run, wrote, $"{instance.Name} has no episode with the TVDB id TMDB lists for {Which(unmatched)}.");
                 }
-                run.Renumbered = EpisodeIdentity.Renumbering(matched);
+                var renumbering = EpisodeIdentity.Renumbering(matched);
+                run.RenumberedFacts.Clear();
+                run.RenumberedFacts.AddRange(renumbering);
                 targets = matched.Select(m => m.Row).ToList();
-                asked = EpisodeIdentity.Renumber(input, run.Renumbered)!;
+                asked = EpisodeIdentity.Renumber(input, renumbering)!;
             }
             else if (input.Scope == "episodes")
             {
