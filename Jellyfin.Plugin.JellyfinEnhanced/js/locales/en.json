@@ -1451,6 +1451,7 @@
     "arr_notify_attention": "Something on the Requests page needs attention",
     "arr_notify_attention_import_blocked": "{title}{scope} needs a manual import in {instance}",
     "arr_notify_attention_approved_not_in_arr": "{title} was OK'd in Seerr, but none of the Sonarr/Radarr Jellyfin Enhanced watches has it",
+    "arr_notify_attention_episode_identity": "{title}{scope} is held: it couldn't be matched to Sonarr's episodes, so nothing was sent",
     "arr_notify_attention_approved_not_in_4k": "{title} (4K) was OK'd in Seerr, but none of the 4K Sonarr/Radarr Jellyfin Enhanced watches has it",
     "arr_notify_test": "Test: alerts work",
     "arr_notify_summary": "{count} more notifications arrived",

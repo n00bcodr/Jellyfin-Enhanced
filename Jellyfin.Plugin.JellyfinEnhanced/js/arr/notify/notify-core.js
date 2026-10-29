@@ -422,6 +422,8 @@
         if (item.kind === 'attention') {
             if (p.code === 'import_blocked') return 'arr_notify_attention_import_blocked';
             if (p.code === 'approved_not_in_arr') return p.variant === '4k' ? 'arr_notify_attention_approved_not_in_4k' : 'arr_notify_attention_approved_not_in_arr';
+            // F83: a request held because its episode can't be matched to Sonarr's by id.
+            if (p.code === 'episode_identity_unresolved') return 'arr_notify_attention_episode_identity';
         }
         return KIND_KEYS[item.kind] || 'arr_notify_generic';
     }

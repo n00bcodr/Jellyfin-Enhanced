@@ -621,6 +621,18 @@ test('administrators\' Needs attention alerts read like the Overview row and ope
   assert.equal(h.window.location.hash, '#/requests');
 });
 
+test('F83: a request held because its episode can\'t be matched to Sonarr\'s reads as such in an administrator\'s bell', async t => {
+  const h = setup(t);
+  h.state.inbox = { unread: 1, more: false, items: [item(9, 'attention', { code: 'episode_identity_unresolved', title: 'Firefly', scope: 'S0E7', user: 'Emma' }, { link: '#/requests?tab=overview' })] };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.loadPrefs();
+  await h.JE.arrNotify.refresh();
+  h.click(h.document.getElementById('je-notify-bell'));
+  const row = h.document.querySelector('.je-notify-panel .je-notify-item');
+  assert.equal(row.querySelector('.je-notify-text').textContent, "Firefly S0E7 is held: it couldn't be matched to Sonarr's episodes, so nothing was sent");
+});
+
 test('a notification created while the inbox is being read still becomes a toast', async t => {
   let release = null;
   const h = setup(t, {

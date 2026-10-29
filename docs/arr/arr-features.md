@@ -1359,7 +1359,14 @@ way to the status pill while the pill shows.
     never compared. An episode that can't be matched that way (TMDB lists no TVDB id for it, or Sonarr has no episode with
     it even after a refresh and a short wait) is held instead of sent: the request shows as held, administrators see
     "Stuck · the episode couldn't be matched by its id" on its approval card and "Stuck · needs a look in Requests" on the
-    title, and they get a Needs attention alert. Whole-season asks are unaffected. Single episodes are held, with the
+    title, and they get a Needs attention alert ("… is held: it couldn't be matched to Sonarr's episodes, so nothing was
+    sent"). Whole-season asks are unaffected.
+
+    ![Pick episodes while no Sonarr has the series: TMDB's numbers, matched to Sonarr's own episodes before anything is sent](../images/arr-episode-numbering-sheet.png)
+
+    ![An administrator's approval card for a request held because its episode couldn't be matched by id](../images/arr-episode-identity-held.png)
+
+    Single episodes are held, with the
     whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
     read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
     or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
