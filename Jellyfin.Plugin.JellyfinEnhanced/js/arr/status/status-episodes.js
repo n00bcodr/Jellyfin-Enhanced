@@ -156,7 +156,8 @@
      * - pending: item reads in flight; rowsByEpisode: the rows bound on the last pass; before: what a row JE pointed at an
      *   item showed before (to undo it);
      * - listed: rows the season's list answered for; listFailed: rows whose list read failed (asked again with the next
-     *   status read); unlisted: rows whose list read failed and that no list answered for since; drawn: rows no read identified yet, by the episode number Jellyfin drew on them (see drawnSlots);
+     *   status read); unknown: missing rows no read has identified yet (as of the last pass);
+     * - held: arrivals waiting for the season's list (a missing row no read identified may be theirs: no row is added);
      * - arrivalFailed: rowless arrivals whose read failed (tried again with the next status read); fresh: a new owner after
      *   the person's access moved (its first trusted status adds the arrivals the old one had drawn).
      * @param {HTMLElement} page Season page.
@@ -167,7 +168,7 @@
         return {
             page, itemId: norm(itemId), placeholders: new Map(), playable: new Set(), missingItems: new Set(), orphans: new Set(),
             seeded: new Set(), items: new Map(), denied: new Set(), failed: new Set(), pending: new Map(), rowsByEpisode: new Map(),
-            before: new WeakMap(), listed: new Set(), listFailed: new Set(), unlisted: new Set(), drawn: new Map(), drawnNumbers: new Set(), arrivalFailed: new Set(), fresh: false,
+            before: new WeakMap(), listed: new Set(), listFailed: new Set(), unknown: new Set(), held: new Set(), arrivalFailed: new Set(), fresh: false,
         };
     }
 
@@ -216,41 +217,6 @@
     }
 
     /**
-     * Missing rows no read has identified yet (no status named them, the season's list has not answered for them: it is
-     * on its way, or failed), bound by the episode number Jellyfin drew on them ("N. Title"), only where exactly one such
-     * row carries that number: an arrival for that episode then updates that row in place instead of adding one.
-     * @param {Element[]} rows Season rows.
-     * @returns {Map<string, Set<number>>} Normalised id → episode number.
-     */
-    function drawnSlots(rows) {
-        const season = state.season;
-        const byNumber = new Map();
-        for (const row of rows) {
-            const id = norm(row.getAttribute('data-id'));
-            if (season.playable.has(id) || season.placeholders.has(id) || season.listed.has(id) || !row.querySelector(MISSING)) continue;
-            const title = row.querySelector('.listItemBody .listItemBodyText:not(.secondary):not(.listItem-overview)');
-            const drawn = title && /^\s*(\d+)\s*\./.exec(title.textContent);
-            if (!drawn) continue;
-            const n = Number(drawn[1]);
-            byNumber.set(n, byNumber.has(n) ? null : id);
-        }
-        const slots = new Map();
-        for (const [n, id] of byNumber) if (id) slots.set(id, new Set([n]));
-        // Every number an unidentified missing row is drawn with (also where two rows carry it): no arrival is added there.
-        season.drawnNumbers = new Set(byNumber.keys());
-        return slots;
-    }
-
-    /**
-     * The episodes a missing row stands for: as a read identified it, else as Jellyfin drew it (drawnSlots).
-     * @param {string} id Row's normalised id.
-     * @returns {Set<number>|undefined} Episode numbers.
-     */
-    function slotsOf(id) {
-        return state.season.placeholders.get(id) || state.season.drawn.get(id);
-    }
-
-    /**
      * The status entry a row stands for: its item named now; else the episode its missing item stood for, or the
      * episode this very row showed on the last pass. Never an episode whose item has a row of its own on the page.
      * @param {Element} row Row.
@@ -262,7 +228,7 @@
         const season = state.season;
         const named = index.byId.get(id);
         if (named) return named;
-        const episodes = !season.playable.has(id) && slotsOf(id);
+        const episodes = !season.playable.has(id) && season.placeholders.get(id);
         const ep = (episodes && [...episodes].sort((a, b) => a - b).map(n => index.byEpisode.get(n)).find(Boolean)) || index.byRow.get(row);
         return ep && !(ep.itemId && index.live.has(norm(ep.itemId))) ? ep : undefined;
     }
@@ -276,9 +242,7 @@
      */
     function missingRow(row, id) {
         const season = state.season;
-        if (season.playable.has(id)) return false;
-        // A row known only by the number Jellyfin drew on it is removed as a duplicate only once its list read failed.
-        if (!season.placeholders.has(id)) return season.drawn.has(id) && season.unlisted.has(id);
+        if (season.playable.has(id) || !season.placeholders.has(id)) return false;
         return season.missingItems.has(id) || !!row.querySelector(MISSING);
     }
 
@@ -320,7 +284,7 @@
                 continue;
             }
             if (!covers.size || !missingRow(row, id)) continue;
-            for (const n of slotsOf(id)) {
+            for (const n of season.placeholders.get(id)) {
                 if (target.has(n)) {
                     join(target.get(n), row);
                     break;
@@ -465,12 +429,13 @@
                     season.orphans.add(id);
                 }
                 season.listed.add(id);
-                season.unlisted.delete(id);
             }
             apply();
+            // Arrivals that waited for this list: now reconciled by id (an identified missing row is pointed in place).
+            release();
         }).catch(() => {
-            // Asked again with the next status read; until then the rows stay bound as Jellyfin drew them.
-            if (still()) unknown.forEach(id => { season.listFailed.add(id); season.unlisted.add(id); });
+            // Asked again with the next status read; until then arrivals that could be these rows' wait.
+            if (still()) unknown.forEach(id => season.listFailed.add(id));
         });
     }
 
@@ -491,7 +456,6 @@
         // A status from before the person's access moved neither points nor removes rows: it is being read again.
         const season = state.season;
         const all = [...page.querySelectorAll('.listItem[data-id]')];
-        season.drawn = drawnSlots(all);
         const rows = trusted() ? reconcile(all, status) : all;
         const byRow = new Map([...season.rowsByEpisode].filter(([n]) => byEpisode.has(n)).map(([n, row]) => [row, byEpisode.get(n)]));
         const index = { byId, byEpisode, byRow, live: new Set(rows.map(row => norm(row.getAttribute('data-id')))) };
@@ -545,6 +509,7 @@
             });
         });
         for (const write of writes) write();
+        season.unknown = new Set(unknown);
         // Rows just pointed at a playable item: a second missing row of the same item (a file covering several episodes)
         // goes in this same pass.
         if (pointed && !reapplying) {
@@ -807,8 +772,10 @@
 
     /**
      * Adds an episode that had no native row, using viewer-authorized native metadata read under the season owner and
-     * access of this status. Existing rows and their event targets are retained; a late answer cannot decorate a
-     * departed view.
+     * access of this status. Never beside a row that may be the episode's: while a missing row on the page has not been
+     * identified (no status named it, the season's list has not answered for it), the arrival waits (`held`) for the
+     * list and is reconciled by id once it answers. Existing rows and their event targets are retained; a late answer
+     * cannot decorate a departed view.
      * @param {HTMLElement} page Season page.
      * @param {Object[]} arrivals Newly playable episodes.
      * @returns {void}
@@ -816,20 +783,35 @@
     function addArrivals(page, arrivals) {
         const season = state.season;
         const still = snapshot();
+        const user = window.ApiClient?.getCurrentUserId?.();
+        const server = window.ApiClient?.serverId?.();
+        const retained = () => state?.season === season && routeItem() === season.itemId
+            && user === window.ApiClient?.getCurrentUserId?.() && server === window.ApiClient?.serverId?.();
         for (const ep of arrivals) {
             const id = norm(ep.itemId);
-            // An episode with a row on the page (its missing item's, however identified) is updated in place (patchReady).
-            // One drawn with its number that no read identified yet (two rows carry it, say) waits for the season's list.
-            const bound = () => season.rowsByEpisode.get(ep.episode)?.isConnected || season.drawnNumbers.has(ep.episode)
-                || page.querySelector(`.listItem[data-id="${ep.itemId}"]`);
+            // An episode with a row on the page (its missing item's) is updated in place (patchReady).
+            const bound = () => season.rowsByEpisode.get(ep.episode)?.isConnected || page.querySelector(`.listItem[data-id="${ep.itemId}"]`);
             if (!ep.itemId || season.pending.has(id) || season.denied.has(id) || bound()) continue;
+            if (season.unknown.size) {
+                season.held.add(id);
+                continue;
+            }
             if (typeof JE.helpers?.getItemCached !== 'function') continue;
             const answer = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
             season.pending.set(id, answer);
+            let again = false;
             answer.then(item => {
-                if (!item || norm(item.Id) !== id || !still()) return;
+                if (!still()) {
+                    again = retained();
+                    return;
+                }
+                if (!item || norm(item.Id) !== id) return;
                 season.items.set(id, item);
                 if (!stillReady(ep) || bound()) return;
+                if (season.unknown.size) {
+                    season.held.add(id);
+                    return;
+                }
                 const list = page.querySelector('#listChildrenCollapsible .itemsContainer, .itemsContainer');
                 if (!list) return;
                 const row = arrivalRow(item, ep);
@@ -837,11 +819,33 @@
                 list.insertBefore(row, after || null);
                 season.rowsByEpisode.set(ep.episode, row);
             }, err => {
-                if (still()) ([401, 403, 404].includes(err?.status) ? season.denied : season.arrivalFailed).add(id);
+                if (!still()) {
+                    again = retained();
+                    return;
+                }
+                ([401, 403, 404].includes(err?.status) ? season.denied : season.arrivalFailed).add(id);
             }).finally(() => {
                 if (season.pending.get(id) === answer) season.pending.delete(id);
+                // Its view moved within the season (its route, say): asked again as it is now.
+                if (again && retained()) {
+                    const now = state.status.episodes?.find(e => e.episode === ep.episode);
+                    if (now && isReady(now) && norm(now.itemId) === id) addArrivals(page, [now]);
+                }
             });
         }
+    }
+
+    /**
+     * Arrivals that waited for the season's list, once it answered: the ones still playable go through addArrivals
+     * again (an identified missing row is pointed in place instead).
+     * @returns {void}
+     */
+    function release() {
+        const season = state?.season;
+        if (!season?.held.size || !trusted()) return;
+        const held = season.held;
+        season.held = new Set();
+        addArrivals(state.page, (state.status.episodes || []).filter(ep => ep.row && isReady(ep) && ep.itemId && held.has(norm(ep.itemId))));
     }
 
     /**
@@ -915,8 +919,9 @@
             season.failed.clear();
             for (const id of season.listFailed) season.seeded.delete(id);
             season.listFailed.clear();
-            retry = season.arrivalFailed;
+            retry = new Set([...season.arrivalFailed, ...season.held]);
             season.arrivalFailed = new Set();
+            season.held = new Set();
             fresh = season.fresh;
             season.fresh = false;
             learn(season, status);

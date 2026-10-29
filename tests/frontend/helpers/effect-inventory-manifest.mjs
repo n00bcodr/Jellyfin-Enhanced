@@ -485,6 +485,8 @@ export const SITES = {
     // SRD-3: the polite live region that names the episode a moved focus landed on (visually hidden, not a surface).
     'announce state liveRegion': [1, 'module', 'ui'],
     'announce surface insert body': [1, 'module', 'render: a visually hidden polite live region for the season rows, no foreground surface'],
+    // F105b: a rowless arrival read dropped while its season owner, route and viewer stay asks again.
+    'addArrivals state closure again': [2, 'module', 'ui'],
     'apply state closure firstRow': [1, 'module', 'ui'],
     'apply state closure pointed': [1, 'module', 'ui'],
     'apply state reapplying': [2, 'module', 'ui'],

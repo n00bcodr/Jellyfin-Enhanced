@@ -310,23 +310,70 @@ test('SRD-R2-4: leaving the season drops what the visit learnt; coming back read
   expect(arr.items.hits).toBe(2);
 });
 
-test('SRD-R3-1: the person\'s access moves as E1 arrives and the viewer\'s season list fails: exactly one E1 row, updated in place', async ({ page, arr }) => {
+test('SRD-R3-1: the person\'s access moves as E1 arrives and the viewer\'s season list fails: one E1 row, pointed once the list answers', async ({ page, arr }) => {
   await open(page, arr, seasonStatus());
   await withAccess(page, arr, seasonStatus());
   await drawList(page);
   await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
-  await page.evaluate(() => {
+  await page.evaluate(ids => {
     window.__listReads = 0;
-    window.ApiClient.getJSON = async () => { window.__listReads++; throw Object.assign(new Error('HTTP 500'), { status: 500 }); };
-  });
+    window.ApiClient.getJSON = async () => {
+      window.__listReads++;
+      if (window.__listReads === 1) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return { Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+        .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) };
+    };
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
   // Their access moves; the status read again under it names E1 playable.
   arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus(PLAYABLE_ONE)] };
   await moveAccess(page, 'rev-b');
   await answer(page, arr, seasonStatus(PLAYABLE_ONE));
-  await expectOneEpisodeOne(page, { nativeControls: false });
-  expect(await page.evaluate(() => window.__listReads)).toBe(1);
-  // Another status read: still one row per episode.
-  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => page.evaluate(() => window.__listReads)).toBe(1);
+  // Not identified (the list failed): nothing guessed, no row added.
+  await expectMissingOne(page);
   await expect(page.locator('#childrenContent .itemsContainer > .listItem')).toHaveCount(3);
+  // The next status read asks for the list again: E1's missing row is identified and pointed in place.
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
   await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(await page.evaluate(() => window.__listReads)).toBe(2);
+});
+
+test('SRD-R4-1: a specials season (titles without numbers) and a failing season list: three specials keep three rows, never four', async ({ page, arr }) => {
+  const special = playable => {
+    const s = seasonStatus(playable);
+    s.key = 'tv:tvdb:9:s0';
+    s.episodes.forEach(ep => { ep.season = 0; ep.key = `tv:tvdb:9:s0:e${ep.episode}`; });
+    return s;
+  };
+  await open(page, arr, special());
+  await withAccess(page, arr, special());
+  await drawList(page);
+  // Jellyfin draws specials with their names (no "N." number), in air-date order.
+  await page.evaluate(() => {
+    const list = document.querySelector('#childrenContent .itemsContainer');
+    [...list.children].forEach((row, n) => { row.querySelector('.listItemBodyText bdi').textContent = ['Christmas Special', 'Behind the scenes', 'Pilot (unaired)'][n]; });
+    list.prepend(list.children[2]);
+  });
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.evaluate(ids => {
+    window.__listReads = 0;
+    window.ApiClient.getJSON = async () => {
+      window.__listReads++;
+      if (window.__listReads === 1) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return { Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+        .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 0, SeasonId: ids.season, LocationType })) };
+    };
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [special(PLAYABLE_ONE)] };
+  await moveAccess(page, 'rev-b');
+  await answer(page, arr, special(PLAYABLE_ONE));
+  await expect.poll(() => page.evaluate(() => window.__listReads)).toBe(1);
+  const rows = page.locator('#childrenContent .itemsContainer > .listItem');
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(0);
+  // The list answers with the next status read: the special's own missing row is pointed in place.
+  await answer(page, arr, special(PLAYABLE_ONE));
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(1);
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator(`#childrenContent [data-id="${VIRTUAL_ONE}"]`)).toHaveCount(0);
 });
