@@ -2101,6 +2101,8 @@ test('UX-3 (round 3): with no Sonarr holding the series the picker offers TMDB\'
   await settle();
   assert.equal(toggles(h).length, 11);
   assert.match(h.document.querySelector('.je-sheet-numbering:not([hidden])').textContent, /No Sonarr has this series yet, so Season 1's episodes are numbered as TMDB lists them/);
+  // F83: and says they are matched to Sonarr's own episodes before anything goes out.
+  assert.match(h.document.querySelector('.je-sheet-numbering:not([hidden])').textContent, /Each one is matched to Sonarr's own episode before anything is sent\./);
   click(h, h.document.querySelector('.je-sheet-episode[data-episode="3"]'));
   click(h, primary(h));
   await pending;

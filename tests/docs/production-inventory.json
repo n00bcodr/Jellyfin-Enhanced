@@ -1079,6 +1079,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/EpisodeIdentity.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/FutureSeasonCharges.cs",
       "category": "Services"
     },
@@ -12046,7 +12050,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 778,
+    "files": 779,
     "routes": 316,
     "configuration_properties": 672,
     "storage_references": 106,

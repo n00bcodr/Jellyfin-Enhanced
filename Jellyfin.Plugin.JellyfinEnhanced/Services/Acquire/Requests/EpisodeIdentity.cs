@@ -140,17 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="input">The input.</param>
         /// <param name="map">Asked episode to Sonarr episode.</param>
         /// <returns>The renumbered input, or null.</returns>
-        internal static MutationInput? Renumber(MutationInput input, IReadOnlyList<EpisodeRenumbering> map)
-        {
-            if (input.Scope != "episodes" || input.Numbering != Tmdb) return null;
-            var to = map.GroupBy(m => m.From).ToDictionary(g => g.Key, g => g.First().To);
-            if (input.Episodes.Length == 0 || !input.Episodes.All(to.ContainsKey)) return null;
-            return input with
-            {
-                Numbering = null,
-                Episodes = input.Episodes.Select(e => to[e]).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray(),
-            };
-        }
+        internal static MutationInput? Renumber(MutationInput input, IReadOnlyList<EpisodeRenumbering> map) => RequestDestination.Renumbered(input, map);
 
         /// <summary>
         /// The TMDB series id a series key stands for: its own TMDB id, else a TMDB alias, else the TMDB id the arr's series (or

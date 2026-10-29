@@ -168,6 +168,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static string[] SplitTitleGroups(IEnumerable<string> aliases, IEnumerable<string> observed, string canonical)
             => aliases.Except(observed, StringComparer.Ordinal).Append(canonical).Distinct(StringComparer.Ordinal).ToArray();
 
+        /// <summary>
+        /// A TMDB-numbered ask in the target's own numbers (F83, <see cref="EpisodeIdentity"/>): every one of its episodes by
+        /// <paramref name="map"/> (asked episode to the Sonarr episode with its TVDB id), or null when it isn't TMDB-numbered
+        /// episodes or the map doesn't name every one of its episodes (it is never partly renumbered). The one place an
+        /// episode of one numbering is taken for one of another.
+        /// </summary>
+        /// <param name="input">An input.</param>
+        /// <param name="map">Asked episode to Sonarr episode.</param>
+        internal static MutationInput? Renumbered(MutationInput input, IReadOnlyList<EpisodeRenumbering> map)
+        {
+            if (input.Scope != "episodes" || input.Numbering != EpisodeIdentity.Tmdb) return null;
+            var to = new Dictionary<RequestEpisode, RequestEpisode>();
+            foreach (var m in map) to.TryAdd(m.From, m.To);
+            if (input.Episodes.Length == 0 || !input.Episodes.All(to.ContainsKey)) return null;
+            return input with
+            {
+                Numbering = null,
+                Episodes = input.Episodes.Select(e => to[e]).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray(),
+            };
+        }
+
         /// <summary>What groups requests by title and edition (the key and the edition).</summary>
         /// <param name="input">An input.</param>
         internal static (string Key, string Variant) Edition(MutationInput input) => (input.Key, input.Variant);

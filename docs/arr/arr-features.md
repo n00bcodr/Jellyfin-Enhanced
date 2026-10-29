@@ -1352,7 +1352,14 @@ way to the status pill while the pill shows.
     on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
     you can ask through has the series (or Seerr takes requests), and the sheet says so. Episodes picked by TMDB's numbers
     are checked again when you press **Request**: if a Sonarr has taken the series in meanwhile, nothing is sent, the
-    season shows Sonarr's numbers and you pick again. Single episodes are held, with the
+    season shows Sonarr's numbers and you pick again. An ask made by TMDB's numbers is never sent by its number: once the
+    series is in the Sonarr it goes to (added for the ask, or already there when it goes out), each episode is matched by
+    its ids only (TMDB's TVDB id for that episode, then the Sonarr episode with that TVDB id), whatever Sonarr numbers it,
+    and exactly that episode is monitored and searched; from then on the request shows Sonarr's number for it. Titles are
+    never compared. An episode that can't be matched that way (TMDB lists no TVDB id for it, or Sonarr has no episode with
+    it even after a refresh and a short wait) is held instead of sent: the request shows as held, administrators see
+    "Stuck · the episode couldn't be matched by its id" on its approval card and "Stuck · needs a look in Requests" on the
+    title, and they get a Needs attention alert. Whole-season asks are unaffected. Single episodes are held, with the
     whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
     read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
     or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode

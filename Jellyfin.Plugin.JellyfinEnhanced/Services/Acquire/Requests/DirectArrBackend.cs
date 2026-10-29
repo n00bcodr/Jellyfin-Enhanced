@@ -585,7 +585,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         if (!wrote)
                         {
                             if (Gate(run, false) is { } refused) return refused;
-                            var (_, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = seriesId }).ConfigureAwait(false);
+                            var unmatchedSeries = seriesId;
+                            var (_, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = unmatchedSeries }).ConfigureAwait(false);
                             if (stopped != null) return stopped;
                         }
                         return BackendResults.Held(job.WantId, wrote || job.Uncertain, EpisodeIdentity.Pending, $"{instance.Name} doesn't list {Which(unmatched)} by its TVDB id yet; checked again shortly.", EpisodeIdentity.PendingWait);

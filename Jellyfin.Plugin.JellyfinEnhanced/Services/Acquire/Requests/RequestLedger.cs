@@ -1464,21 +1464,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private static void Renumber(SqliteConnection c, SqliteTransaction t, RequestJob job, RequestWant want, IReadOnlyList<EpisodeRenumbering> map)
         {
-            if (EpisodeIdentity.Renumber(job.Input, map) is not { } sentInput) return;
+            if (RequestDestination.Renumbered(job.Input, map) is not { } sentInput) return;
             Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
                 ("$input", sentInput.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? sentInput.Fingerprint : job.Fingerprint), ("$id", job.Id));
             var target = TargetKey(job.Authorization);
-            foreach (var shared in Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(w => w.Input.Key == job.Input.Key && w.Input.Variant == job.Input.Variant && RequestDestination.SameTarget(w.TargetKey, target)))
+            foreach (var shared in Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(w => RequestDestination.SameEdition(w.Input, job.Input) && RequestDestination.SameTarget(w.TargetKey, target)))
             {
-                if (EpisodeIdentity.Renumber(shared.Input, map) is { } input)
+                if (RequestDestination.Renumbered(shared.Input, map) is { } input)
                 {
-                    var owned = shared.OwnedInput is { } o ? EpisodeIdentity.Renumber(o, map) ?? o : null;
+                    var owned = shared.OwnedInput is { } o ? RequestDestination.Renumbered(o, map) ?? o : null;
                     Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
                         ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", shared.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", shared.Id));
                 }
                 foreach (var other in Jobs(c, t, "want_id=$w AND id<>$j AND state IN ('queued','retry','parked')", ("$w", shared.Id), ("$j", job.Id)))
                 {
-                    if (EpisodeIdentity.Renumber(other.Input, map) is not { } renumbered) continue;
+                    if (RequestDestination.Renumbered(other.Input, map) is not { } renumbered) continue;
                     Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
                         ("$input", renumbered.Canonical), ("$f", other.Fingerprint == other.Input.Fingerprint ? renumbered.Fingerprint : other.Fingerprint), ("$id", other.Id));
                 }

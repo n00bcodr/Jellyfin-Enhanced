@@ -1070,7 +1070,7 @@
     "arr_approvals_stuck_whole_series": "Stuck · only whole series can be asked for",
     "arr_approvals_stuck_seerr_account": "Stuck · needs a Seerr account linked to them",
     "arr_approvals_stuck_no_4k": "Stuck · nothing can take the 4K copy now",
-    "arr_approvals_stuck_episode_identity": "Stuck · the episode can't be matched to Sonarr's",
+    "arr_approvals_stuck_episode_identity": "Stuck · the episode couldn't be matched by its id",
     "arr_approvals_details": "Details",
     "arr_approvals_details_code": "Reason code: {code}",
     "arr_approvals_details_answer": "Last answer: {code}",
