@@ -3113,6 +3113,7 @@ public class NativeDetailsSourceTests
     public async Task FeedReadsRunAFewAtATimeBehindABoundedQueue()
     {
         var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var full = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var running = 0;
         var most = 0;
         var gate = new object();
@@ -3120,6 +3121,7 @@ public class NativeDetailsSourceTests
         {
             var now = Interlocked.Increment(ref running);
             lock (gate) most = Math.Max(most, now);
+            if (now == SeerrNativeDetailsSource.FeedConcurrency) full.TrySetResult();
             await hold.Task;
             Interlocked.Decrement(ref running);
             return IntegrationTransport.Response("""{"page":1,"totalPages":500,"results":[]}""");
@@ -3143,7 +3145,9 @@ public class NativeDetailsSourceTests
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gaveUp);
             }
 
-            for (var i = 0; i < 200 && Volatile.Read(ref running) < SeerrNativeDetailsSource.FeedConcurrency; i++) await Task.Delay(10);
+            // Every upstream slot taken (signalled by the transport, not polled against a clock); then a moment for a
+            // read wrongly started past them to show up.
+            await full.Task.WaitAsync(limit);
             await Task.Delay(50);
             Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, Volatile.Read(ref running));
             Assert.Equal(queued, source.FeedReadsPending);
@@ -3151,9 +3155,13 @@ public class NativeDetailsSourceTests
             Assert.True((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none).WaitAsync(limit)).Busy);
             // ... but joining a read already running costs nothing.
             var join = source.DiscoverAsync(false, "network", 49, 1, null, Guid.NewGuid(), none);
+            // The read its viewer gave up on keeps its place until it ends, after the others: join it too (free, as
+            // above), so the counts below are read once it has let go, not while it is still finishing.
+            var abandoned = source.DiscoverAsync(false, "network", 49, queued, null, Guid.NewGuid(), none);
             hold.SetResult();
             Assert.All(await Task.WhenAll(reads).WaitAsync(limit), r => Assert.NotNull(r.Data));
             Assert.NotNull((await join.WaitAsync(limit)).Data);
+            Assert.NotNull((await abandoned.WaitAsync(limit)).Data);
             Assert.Equal(queued, seerr.Calls);
             Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, most);
             Assert.Equal(0, source.FeedReadsPending);
