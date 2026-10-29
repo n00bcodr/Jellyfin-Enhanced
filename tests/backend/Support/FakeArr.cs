@@ -75,6 +75,8 @@ internal sealed class FakeArr : IDisposable
         public bool LookupIgnoresTerm { get; set; }
         /// <summary>Episodes a series gets when it is added, by TVDB id: (season, episode) pairs.</summary>
         public Dictionary<int, (int Season, int Episode)[]> EpisodeList { get; } = new();
+        /// <summary>The TVDB episode id an added series' episode carries, by (series TVDB id, season, episode); none when absent.</summary>
+        public Dictionary<(int Series, int Season, int Episode), int> EpisodeTvdbIds { get; } = new();
         /// <summary>Non-null: runs after a write was applied (under the host's lock); throw to lose the answer.</summary>
         public Action<string, string>? AfterWrite { get; set; }
         /// <summary>Non-null: answers a write (method, path, body) before it is applied (null: apply it).</summary>
@@ -369,7 +371,11 @@ internal sealed class FakeArr : IDisposable
                 // Like Sonarr with addOptions.monitor "skip": new episodes take their season's flag.
                 var flags = body["seasons"]!.AsArray().ToDictionary(x => (int)x!["seasonNumber"]!, x => (bool)x!["monitored"]!);
                 foreach (var (season, episode) in host.EpisodeList.GetValueOrDefault((int)body["tvdbId"]!, Array.Empty<(int, int)>()))
-                    host.Episodes.Add(new JsonObject { ["id"] = ++host.NextId, ["seriesId"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["monitored"] = flags.GetValueOrDefault(season), ["hasFile"] = false });
+                {
+                    var row = new JsonObject { ["id"] = ++host.NextId, ["seriesId"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["monitored"] = flags.GetValueOrDefault(season), ["hasFile"] = false };
+                    if (host.EpisodeTvdbIds.TryGetValue(((int)body["tvdbId"]!, season, episode), out var episodeTvdb)) row["tvdbId"] = episodeTvdb;
+                    host.Episodes.Add(row);
+                }
                 reply = IntegrationTransport.Response(body.ToJsonString(), 201);
                 break;
             }

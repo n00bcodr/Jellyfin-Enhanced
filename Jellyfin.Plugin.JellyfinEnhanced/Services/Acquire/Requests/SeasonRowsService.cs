@@ -306,10 +306,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         internal static async Task<DestinationSeason> DestinationSeasonAsync(Arr.ArrStateStore arrs, string instanceId, IReadOnlyList<TitleKey> titles, int season, CancellationToken ct)
         {
+            var (read, instance, series) = await TargetSeriesAsync(arrs, instanceId, titles, ct).ConfigureAwait(false);
+            if (!read) return DestinationSeason.Unread;
+            if (series == null) return DestinationSeason.NotHeld;
+            var episodes = await arrs.GetEpisodesAsync(instance!, series.Id, ct).ConfigureAwait(false);
+            if (episodes.Error != null || episodes.Value is not { } list) return DestinationSeason.Unread;
+            return new DestinationSeason(true, true, list.Episodes.Where(e => e.SeasonNumber == season).Select(e => new DestinationEpisode(e.EpisodeNumber, e.Title, e.AirDateUtc, e.AirDateIsDay)).ToList());
+        }
+
+        /// <summary>
+        /// The request target's Sonarr entry for a series (aliases tried in turn), from its library as the season rows read it:
+        /// <c>Read</c> false when the target isn't a usable Sonarr or its library couldn't be read now; <c>Series</c> null when
+        /// it doesn't hold the series.
+        /// </summary>
+        internal static async Task<(bool Read, Arr.ArrConnection? Instance, Arr.ArrSeriesEntry? Series)> TargetSeriesAsync(Arr.ArrStateStore arrs, string instanceId, IReadOnlyList<TitleKey> titles, CancellationToken ct)
+        {
             var instance = arrs.Registry.Get(instanceId);
-            if (instance == null || !instance.Usable || instance.Kind != Arr.ArrKind.Sonarr) return DestinationSeason.Unread;
+            if (instance == null || !instance.Usable || instance.Kind != Arr.ArrKind.Sonarr) return (false, null, null);
             var library = await arrs.GetLibraryAsync(instance, ct).ConfigureAwait(false);
-            if (library.Error != null || library.Value is not { } snapshot) return DestinationSeason.Unread;
+            if (library.Error != null || library.Value is not { } snapshot) return (false, instance, null);
             var series = titles.Select(t => t.Provider switch
             {
                 "tvdb" when t.NumericId is int tvdb => snapshot.SeriesByTvdb(tvdb),
@@ -317,10 +332,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 "imdb" => snapshot.SeriesByImdb(t.Id),
                 _ => null,
             }).FirstOrDefault(s => s != null);
-            if (series == null) return DestinationSeason.NotHeld;
-            var episodes = await arrs.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
-            if (episodes.Error != null || episodes.Value is not { } list) return DestinationSeason.Unread;
-            return new DestinationSeason(true, true, list.Episodes.Where(e => e.SeasonNumber == season).Select(e => new DestinationEpisode(e.EpisodeNumber, e.Title, e.AirDateUtc, e.AirDateIsDay)).ToList());
+            return (true, instance, series);
+        }
+
+        /// <summary>
+        /// Whose numbering single episodes are asked by (F83), by the rule the season rows follow: TMDB's (<c>Tmdb</c>) while the
+        /// ask's Jellyfin Enhanced request target is a Sonarr that doesn't hold the series, else the target's own. <c>Read</c>
+        /// false when the target's library couldn't be read now (single episodes can't be told apart then). Nothing to say for
+        /// whole seasons, Seerr mode or an ask with no Jellyfin Enhanced target.
+        /// </summary>
+        internal static async Task<(bool Read, bool Tmdb)> NumberingAsync(Arr.ArrStateStore arrs, IRequestPolicy policy, TitleAliases? aliases, Guid user, MutationInput input, CancellationToken ct)
+        {
+            if (input.Scope != "episodes" || policy.Configuration.ArrRequestBackend == "seerr" || TitleKey.Parse(input.Key) is not { } key) return (true, false);
+            var instance = policy.JeTarget(user, input).InstanceId;
+            if (string.IsNullOrEmpty(instance)) return (true, false);
+            var canonical = aliases?.Canonical(key.Title) ?? key.Title;
+            var titles = (aliases?.Of(key.Title) ?? Array.Empty<TitleKey>()).Append(key.Title).Append(canonical).Distinct().ToList();
+            var (read, _, series) = await TargetSeriesAsync(arrs, instance, titles, ct).ConfigureAwait(false);
+            return read ? (true, series == null) : (false, false);
         }
 
         /// <summary>The policy probe of a season's episodes in one edition.</summary>
@@ -341,14 +370,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var facts = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "standard"));
             var facts4k = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "4k"));
             IReadOnlyList<RequestWant> wants = _ledger.Database.Available ? _ledger.ForTitle(canonical.ToString()) : Array.Empty<RequestWant>();
+            // Access is checked again at publication: a target the viewer may no longer use says nothing (TMDB's facts only).
+            var source = (prepared.Variant == "4k" ? facts4k : facts).Visible ? prepared.Source : "unchecked";
+            // Rows in the target's own numbering never show an ask still in TMDB's (not matched by id yet, or held because it
+            // can't be): its S1E1 may be another episode there. The title's status says it is held.
+            if (source == "destination") wants = wants.Where(w => w.Input.Numbering != EpisodeIdentity.Tmdb).ToList();
             var cooldown = _policy.Configuration.ArrRequestDeclineCooldownDays;
             var (perEpisode, seasonState) = RequestStates(wants, viewer.UserId, season, _now(), cooldown, RequestLedger.TargetKey(facts));
             var (perEpisode4k, seasonState4k) = RequestStates(wants, viewer.UserId, season, _now(), cooldown, RequestLedger.TargetKey(facts4k), "4k");
 
             var canRequest = facts.Refusal == null && facts.CanCreate && facts.Backend is "je" or "seerr";
             var canRequest4k = facts4k.Refusal == null && facts4k.CanCreate && facts4k.Can4k && facts4k.Backend is "je" or "seerr";
-            // Access is checked again at publication: a target the viewer may no longer use says nothing (TMDB's facts only).
-            var source = (prepared.Variant == "4k" ? facts4k : facts).Visible ? prepared.Source : "unchecked";
             // With the target's Sonarr holding the series its list is the season: its numbers, titles and air days, never TMDB's.
             var destination = source == "destination" ? prepared.Destination.GroupBy(e => e.Episode).ToDictionary(g => g.Key, g => g.First()) : null;
             var tmdbFacts = source is "provider" or "unchecked";

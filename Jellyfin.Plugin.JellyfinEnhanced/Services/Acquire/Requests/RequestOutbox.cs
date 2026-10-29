@@ -29,6 +29,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         /// <summary>Allowlisted add-choice names resolved by the direct backend; never configuration or credentials.</summary>
         public IReadOnlyDictionary<string, string>? AddChoiceDetails { get; init; }
+        /// <summary>
+        /// A TMDB-numbered ask matched to the target's own episodes by their ids (<see cref="EpisodeIdentity"/>): each asked
+        /// episode and the Sonarr episode it is. The ledger renumbers the request to Sonarr's numbers with the outcome.
+        /// </summary>
+        public IReadOnlyList<EpisodeRenumbering>? Renumbered { get; init; }
         /// <summary>A refusal at the final send; the job is parked for human review.</summary>
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);
         /// <summary>An uncertain send; the reservation remains until a scoped fresh read resolves it.</summary>

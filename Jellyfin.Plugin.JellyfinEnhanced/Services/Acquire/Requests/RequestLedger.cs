@@ -1410,6 +1410,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (deletedNotSent) state = "cancelled";
                 var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
+                // A TMDB-numbered ask matched to Sonarr's episodes by id: it (and every request sharing it) holds Sonarr's numbers
+                // from now on, committed with the outcome, so what went out, arrives and shows is all in one numbering.
+                if (result.Renumbered is { Count: > 0 } renumbered) Renumber(c, t, job, storedWant, renumbered);
                 // The same wait again changes nothing anyone sees: no new audit row, notice or event.
                 if (!deletedNotSent && RepeatsWait(job, result)) return true;
                 // A wait only a person can end (no Seerr account linked yet) shows as held for them, while its job is still
@@ -1452,6 +1455,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Record(c, t, job.WantId, job.Id, job.Authorization.Approver ?? job.Authorization.Requester, "dispatch", result.Outcome.Outcome, result.Outcome.Reason, job.Input.Key, now);
                 return true;
             }, false).Result;
+        }
+        /// <summary>
+        /// Renumbers a TMDB-numbered ask to Sonarr's numbers (<see cref="EpisodeIdentity"/>): the job sent, and every request
+        /// on the same acquisition and target that names those episodes by TMDB's numbering (the asker's and those sharing it),
+        /// with their unsent jobs. Only an input every episode of which was matched changes (never partly); a want's and a
+        /// job's fingerprint follow their input as a title rekey's do.
+        /// </summary>
+        private static void Renumber(SqliteConnection c, SqliteTransaction t, RequestJob job, RequestWant want, IReadOnlyList<EpisodeRenumbering> map)
+        {
+            if (EpisodeIdentity.Renumber(job.Input, map) is not { } sentInput) return;
+            Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                ("$input", sentInput.Canonical), ("$f", job.Fingerprint == job.Input.Fingerprint ? sentInput.Fingerprint : job.Fingerprint), ("$id", job.Id));
+            var target = TargetKey(job.Authorization);
+            foreach (var shared in Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(w => w.Input.Key == job.Input.Key && w.Input.Variant == job.Input.Variant && RequestDestination.SameTarget(w.TargetKey, target)))
+            {
+                if (EpisodeIdentity.Renumber(shared.Input, map) is { } input)
+                {
+                    var owned = shared.OwnedInput is { } o ? EpisodeIdentity.Renumber(o, map) ?? o : null;
+                    Exec(c, t, "UPDATE wants SET mutation_input=$input,owned_input=$owned,fingerprint=CASE WHEN fingerprint=$old THEN $f ELSE fingerprint END WHERE id=$id",
+                        ("$input", input.Canonical), ("$owned", owned?.Canonical), ("$old", shared.Input.Fingerprint), ("$f", input.Fingerprint), ("$id", shared.Id));
+                }
+                foreach (var other in Jobs(c, t, "want_id=$w AND id<>$j AND state IN ('queued','retry','parked')", ("$w", shared.Id), ("$j", job.Id)))
+                {
+                    if (EpisodeIdentity.Renumber(other.Input, map) is not { } renumbered) continue;
+                    Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$id",
+                        ("$input", renumbered.Canonical), ("$f", other.Fingerprint == other.Input.Fingerprint ? renumbered.Fingerprint : other.Fingerprint), ("$id", other.Id));
+                }
+            }
         }
         /// <summary>
         /// Waits a person has to end (the asker has no Seerr account linked): the want shows as held (pending, with the
