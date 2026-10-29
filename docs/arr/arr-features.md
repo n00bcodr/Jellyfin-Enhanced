@@ -590,7 +590,7 @@ Follow every request through to **Ready to watch**, on the title's own page and 
 | **Tell me, and admin essentials (phase 2)** | Off | [Admin tools](#admin-tools-phase-2) and [notifications](#notifications-phase-2). |
 | **Ask for it (durable requests, phase 3)** | Off | [Request controls](#asking-for-titles) on Jellyfin's own pages, approvals, the household, and requests sent through Seerr or by Jellyfin Enhanced itself. |
 
-When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
+When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links, and an arriving episode replaces its missing row instead of appearing twice. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
 
 ### Where things have got to
 
@@ -643,6 +643,8 @@ again for you as you are now (if you were removed or keep changing, the Requests
       A copy in another library is a separate item, and the page stays on the one it shows. A season or series page you come back to
       catches up on episodes that arrived while you were elsewhere, and while a season pack arrives file by file it is
       redrawn once things settle (at most 30 seconds after the first arrival).
+      An open season page shows each arriving episode once, in its place: the missing episode's row becomes the
+      playable one (its title, overview and still), also when Jellyfin briefly lists both or redraws its list meanwhile.
     - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
     - **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
       "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".

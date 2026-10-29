@@ -330,3 +330,160 @@ test('regression F1: an authoritative empty answer cannot be repainted from the 
   await D.update(true);assert.equal(h.document.querySelector('.je-arr-status'),null);
   D.repaint();assert.equal(h.document.querySelector('.je-arr-status'),null,'empty is authoritative during later reconciliation');
 });
+
+// F102: a season page open while an episode arrives shows the episode once. Jellyfin replaces a missing (virtual) episode
+// with a playable item under another id, may draw both for a moment, and never tells the page the missing one went.
+const nativeRow = (itemId, n, { missing = false, name = `Episode ${n}`, overview = `Virtual overview ${n}`, heart = false } = {}) =>
+  `<div class="listItem listItem-largeImage" data-type="Episode" data-id="${itemId}" data-action="link"><div class="listItemImage" data-src="still-${itemId}.jpg"></div>`
+  + `<div class="listItemBody itemAction"><div class="listItemBodyText"><bdi>${n}. ${name}</bdi></div><div class="secondary listItemMediaInfo listItemBodyText" style="display:none">`
+  + `${missing ? '<div class="mediaInfoItem starRatingContainer">7.4</div><div class="missingIndicator">Missing</div>' : '<div class="mediaInfoItem">22m</div>'}</div>`
+  + `<a class="itemAction" href="#/details?id=${itemId}">Open</a><div class="secondary listItem-overview listItemBodyText"><bdi>${overview}</bdi></div></div>`
+  + `${heart ? `<button is="emby-ratingbutton" class="listItemButton itemAction" data-id="${itemId}">Favourite</button>` : ''}</div>`;
+// Missing E(first) and E(first + 1), then four playable siblings; optionally the playable item of E(first) beside its missing one.
+const seasonRows = (first, { physical = false } = {}) => [
+  nativeRow(id(1), first, { missing: true }),
+  ...(physical ? [nativeRow(id(501), first, { name: 'Playable one', overview: 'Physical overview', heart: true })] : []),
+  nativeRow(id(2), first + 1, { missing: true }),
+  ...[3, 4, 5, 6].map(k => nativeRow(id(k), first + k - 1, { overview: `Overview ${k}` })),
+].join('');
+function seasonStatus(h, first, ready = {}) {
+  const s = h.status();
+  s.episodes.forEach((ep, n) => { ep.episode = first + n; ep.key = `${base}:s${first ? 1 : 0}:e${first + n}`; });
+  for (const [at, itemId] of Object.entries(ready)) Object.assign(s.episodes[at], { stage: 'ready', reason: { code: 'ready' }, itemId, progress: null });
+  s.summary.ready = Object.keys(ready).length;
+  return s;
+}
+const rowIds = page => [...page.querySelectorAll('.itemsContainer > .listItem')].map(row => row.getAttribute('data-id'));
+const physicalOne = itemId => ({ Id: itemId, Name: 'Playable one', Overview: 'Physical overview', SeriesId: 'series', ImageTags: { Primary: 'still' } });
+
+for (const first of [1, 0]) for (const redraw of [true, false]) test(`regression F102: season ${first ? 1 : 0}, ${redraw ? 'after the host redrew its list' : 'with the native row retained'}, the missing E${first} arriving under a new id leaves one row at its place with the playable item`, async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(first);
+  h.window.ApiClient.getImageUrl = (itemId, o) => `img/${itemId}/${o.tag}`;
+  D.render(page, seasonStatus(h, first), {});
+  if (redraw) { list.innerHTML = seasonRows(first); await turn(); await h.advance(100); }
+  const row = list.firstElementChild, link = row.querySelector('a[href]');
+  h.JE.helpers.getItemCached = async itemId => physicalOne(itemId);
+  D.render(page, seasonStatus(h, first, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)], 'one E1 row, at its place, before E2');
+  assert.equal(list.firstElementChild, row, 'the row under the viewer\'s finger stays');
+  assert.equal(row.querySelector('a[href]'), link);
+  assert.ok(link.getAttribute('href').includes(id(501)));
+  assert.equal(row.querySelector('.missingIndicator, .je-arr-chip'), null);
+  assert.equal(row.querySelector('.listItemBodyText bdi').textContent, `${first}. Playable one`);
+  assert.equal(row.querySelector('.listItem-overview').textContent, 'Physical overview');
+  assert.ok(row.querySelector('.listItemImage').style.backgroundImage.includes(`img/${id(501)}/still`));
+  assert.ok(!page.textContent.includes(`Virtual overview ${first}`));
+  assert.equal(page.querySelectorAll('.listItem .missingIndicator').length, 1, 'E2 is still missing');
+  // The same answer again (and a later host mutation pass) changes nothing.
+  D.render(page, seasonStatus(h, first, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)]);
+  assert.equal(list.firstElementChild, row);
+});
+
+for (const listed of ['still listed as missing', 'already gone']) test(`regression F102: a season drawn with E1's missing item beside its playable one (${listed}) shows E1 once; a special numbered 1 stays`, async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  // Jellyfin interleaves a missing special (season 0, E1) into the season's list.
+  list.innerHTML = seasonRows(1, { physical: true }) + nativeRow(id(900), 1, { missing: true, name: 'A special', overview: 'Special overview' });
+  const heart = list.querySelector(`[data-id="${id(501)}"] button`);
+  const episodes = [];
+  const item = (k, index, extra = {}) => ({ Id: id(k), IndexNumber: index, ParentIndexNumber: 1, SeasonId: id(100), LocationType: 'FileSystem', ...extra });
+  h.window.ApiClient.getEpisodes = async (seriesId, query) => {
+    episodes.push({ seriesId, query });
+    return { Items: [
+      ...(listed === 'already gone' ? [] : [item(1, 1, { LocationType: 'Virtual' })]),
+      item(501, 1), item(2, 2, { LocationType: 'Virtual' }), item(3, 3), item(4, 4), item(5, 5), item(6, 6),
+      item(900, 1, { ParentIndexNumber: 0, SeasonId: id(899), LocationType: 'Virtual' }),
+    ] };
+  };
+  h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: id(100), SeriesId: 'series' } : null);
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6), id(900)]);
+  assert.equal(list.firstElementChild.querySelector('button'), heart, 'the native playable row keeps its controls');
+  assert.deepEqual(episodes.map(e => [e.seriesId, e.query.seasonId]), [['series', id(100)]], 'one viewer list read');
+  assert.ok(!page.textContent.includes('Virtual overview 1'));
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn(); await h.advance(100);
+  assert.equal(episodes.length, 1, 'the season is listed once for the same rows');
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6), id(900)]);
+});
+
+test('regression F102: a missing row Jellyfin no longer lists stays while an episode still waits for its row', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1, { physical: true });
+  h.window.ApiClient.getEpisodes = async () => ({ Items: [501, 3, 4, 5, 6].map(k => ({ Id: id(k), IndexNumber: k === 501 ? 1 : k, SeasonId: id(100), LocationType: 'FileSystem' })) });
+  h.JE.helpers.getItemCached = async itemId => (itemId === id(100) ? { Id: id(100), SeriesId: 'series' } : null);
+  // E2's status names a missing item the page has no row for: an unknown missing row could be its.
+  const status = seasonStatus(h, 1, { 0: id(501) }); status.episodes[1].itemId = id(702);
+  D.render(page, status, {}); await turn(); await h.advance(100);
+  assert.ok(rowIds(page).includes(id(1)), 'kept while E2 waits for its own row');
+});
+
+test('regression F102: a file covering E1–E2 replaces both missing rows with one row at E1', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  list.innerHTML = seasonRows(1); await turn(); await h.advance(100);
+  D.render(page, seasonStatus(h, 1, { 0: id(501), 1: id(501) }), {}); await turn(); await h.advance(100);
+  assert.deepEqual(rowIds(page), [id(501), id(3), id(4), id(5), id(6)]);
+});
+
+test('regression F102: through JE\'s one host redraw that draws the missing E1 beside its playable row, then a later arrival after it', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  const handlers = [];
+  h.window.ApiClient.subscribe = (_types, fn) => { handlers.push(fn); return () => {}; };
+  list.innerHTML = seasonRows(1);
+  let current = seasonStatus(h, 1);
+  h.JE.core.api.plugin = async path => { h.calls.push(path); return { items: [current] }; };
+  let shows = 0;
+  page.addEventListener('viewshow', () => { shows++; list.innerHTML = seasonRows(1, { physical: true }); });
+  await D.update(false); await h.advance(500);
+  assert.equal(handlers.length, 1);
+  current = seasonStatus(h, 1, { 0: id(501) });
+  await h.change([`${base}:s1:e1`]); await h.advance(20000);
+  assert.equal(shows, 1);
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)]);
+  assert.ok(list.firstElementChild.querySelector('button.listItemButton'), 'the native playable row and its controls');
+  // After that one redraw Jellyfin names E2's missing item removed alone (no season): the status is read again and the
+  // row stays while E2 is not playable yet.
+  const reads = h.calls.length;
+  handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsAdded: [], ItemsUpdated: [], ItemsRemoved: [id(2)] } });
+  await h.advance(2000);
+  assert.ok(h.calls.length > reads, 'the removal of a row\'s item reads the season again');
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)]);
+  // E2 arrives (its metadata answer held back); the removal named with its season too, twice.
+  const meta = deferred();
+  h.JE.helpers.getItemCached = () => meta.promise;
+  current = seasonStatus(h, 1, { 0: id(501), 1: id(502) });
+  for (let n = 0; n < 2; n++) { handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsRemoved: [id(2)], FoldersRemovedFrom: [id(100)] } }); await h.advance(2000); }
+  await h.change([`${base}:s1:e2`]); await h.advance(20000);
+  assert.equal(shows, 1, 'no second host redraw');
+  assert.deepEqual(rowIds(page), [id(501), id(502), id(3), id(4), id(5), id(6)]);
+  const two = list.children[1];
+  assert.equal(two.querySelector('.missingIndicator'), null);
+  meta.resolve({ Id: id(502), Name: 'Playable two', Overview: 'Physical overview two', SeriesId: 'series' }); await turn();
+  assert.equal(two.querySelector('.listItemBodyText bdi').textContent, '2. Playable two');
+  assert.equal(two.querySelector('.listItem-overview').textContent, 'Physical overview two');
+  handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsRemoved: [id(2)] } }); await h.advance(2000);
+  assert.deepEqual(rowIds(page), [id(501), id(502), id(3), id(4), id(5), id(6)]);
+  assert.equal(list.children[1], two);
+});
+
+for (const leave of ['route', 'user']) test(`regression F102: a playable item's metadata read late never writes after a ${leave} change`, async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  const meta = deferred();
+  h.JE.helpers.getItemCached = () => meta.promise;
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  if (leave === 'route') h.window.history.replaceState(null, '', '#/home');
+  else h.window.ApiClient.getCurrentUserId = () => 'user-b';
+  meta.resolve(physicalOne(id(501))); await turn();
+  assert.equal(list.firstElementChild.querySelector('.listItemBodyText bdi').textContent, '1. Episode 1');
+  assert.equal(list.firstElementChild.querySelector('.listItem-overview').textContent, 'Virtual overview 1');
+});
