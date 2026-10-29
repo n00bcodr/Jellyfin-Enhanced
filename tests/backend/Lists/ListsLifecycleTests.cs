@@ -93,16 +93,16 @@ public class ListsLifecycleTests
         var collectionDoc = f.Doc(collectionId, ListKinds.Collection);
         await f.Lifecycle.StartAsync(CancellationToken.None);
         f.Library.VerifyAdd(l => l.ItemRemoved += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
+        // The deletions run off the event thread. Wait for each to finish (the store raises Changed once its cache has let
+        // go of the document, after the file is gone): the files alone vanish first, and Load still served the cached copy.
+        var deleted = new[] { playlistDoc, collectionDoc }.ToDictionary(id => id, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        f.Store.Changed += id => { if (deleted.TryGetValue(id, out var done)) done.TrySetResult(); };
 
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new Playlist { Id = playlistId } });
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new BoxSet { Id = collectionId } });
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new Movie { Id = Guid.NewGuid() } });
-        // The deletions run off the event thread: wait by a deadline, not a loop count (a loaded test run is slow).
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (f.Store.EnumerateListIds().Count > 0 && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(20);
-        }
+        // The timeout only stops a hang (a deletion that never runs) from blocking the run; it orders nothing.
+        await Task.WhenAll(deleted.Values.Select(d => d.Task)).WaitAsync(TimeSpan.FromSeconds(60));
 
         Assert.Empty(f.Store.EnumerateListIds());
         Assert.Null(f.Store.Load(playlistDoc));
