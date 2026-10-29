@@ -479,49 +479,23 @@ export const SITES = {
     '(module) state collapsed': [1, 'module', 'ui'],
   },
   'arr/status/status-episodes.js': {
-    'addArrivals state pendingRows': [2, 'module', 'ui'],
-    'addArrivals state rowsByEpisode': [1, 'module', 'ui'],
+    // F102: what an open season learnt (its id history, the playable items' answers, refusals, reads in flight) lives
+    // on the season owner in `state` (not module bindings) and goes with it: another season or page, leaving it, a
+    // user switch, the person's access moving.
     // SRD-3: the polite live region that names the episode a moved focus landed on (visually hidden, not a surface).
     'announce state liveRegion': [1, 'module', 'ui'],
     'announce surface insert body': [1, 'module', 'render: a visually hidden polite live region for the season rows, no foreground surface'],
     'apply state closure firstRow': [1, 'module', 'ui'],
-    'apply state rowsByEpisode': [2, 'module', 'ui'],
-    'clear state distrusted': [1, 'module', 'ui'],
+    'apply state closure pointed': [1, 'module', 'ui'],
+    'apply state reapplying': [2, 'module', 'ui'],
     'clear state extension': [1, 'module', 'ui'],
-    'clear state pendingRows': [1, 'module', 'ui'],
     'clear state state': [1, 'module', 'ui'],
     'extend state extension': [1, 'module', 'ui'],
-    // F102: which item stood for which episode on the open season (from the person's status and season reads),
-    // dropped with the page, on a user switch and when their access revision moves.
-    'forget state denied': [1, 'module', 'cache'],
-    'forget state generation': [1, 'module', 'lifecycle: the season rows\' own generation (what the page learnt dropped)'],
-    'forget state hydrated': [1, 'module', 'cache'],
-    'forget state missingItems': [1, 'module', 'cache'],
-    'forget state orphans': [1, 'module', 'cache'],
-    'forget state placeholders': [1, 'module', 'cache'],
-    'forget state playable': [1, 'module', 'cache'],
-    'forget state rowsByEpisode': [1, 'module', 'ui'],
-    'forget state seeded': [1, 'module', 'cache'],
-    'hydrate state denied': [1, 'module', 'cache'],
-    'hydrate state hydrated': [1, 'module', 'cache'],
-    'hydrate state pendingRows': [2, 'module', 'ui'],
-    'learn state placeholders': [2, 'module', 'cache'],
-    'learn state playable': [1, 'module', 'cache'],
-    // SRD-2: the status the page had when the person's access moved (nothing is pointed or removed on its word).
-    'onAccessRevision state distrusted': [1, 'module', 'cache'],
-    // SRD-2: what a row JE pointed at a playable item showed before, to undo it.
-    'patchReady state before': [1, 'module', 'ui'],
     // A row the viewer was on that goes (its episode's other row stays): focus moves to that episode's row, announced.
     'reconcile feedback announce': [1, 'module', 'effect'],
     'reconcile focus focus': [2, 'module', 'effect'],
-    'render state distrusted': [1, 'module', 'cache'],
     'render state observer': [1, 'module', 'ui'],
     'render state state': [1, 'module', 'ui'],
-    'seed state missingItems': [1, 'module', 'cache'],
-    'seed state orphans': [1, 'module', 'cache'],
-    'seed state placeholders': [1, 'module', 'cache'],
-    'seed state seeded': [1, 'module', 'cache'],
-    'unpoint state before': [1, 'module', 'ui'],
   },
   'core/access-revision.js': {
     'noteRevision feedback announce': [2, 'core', 'core'],

@@ -111,20 +111,38 @@
     /**
      * GET a status route. A 403 feature_disabled switches the module off for this page load.
      * The answer carries `since`: the change-feed position from before the read, for
-     * {@link subscribe}.
+     * {@link subscribe}; and `access`: the person's access revision it was read under (core/access-revision.js), the
+     * one it was asked under, or one no revision matches when their access moved while it was read.
      * @param {string} path Path under /JellyfinEnhanced.
      * @param {{priority?: 'low', signal?: AbortSignal}} [options] Fetch options.
-     * @returns {Promise<{contact: string, lookingHours: number, items: Array<Object>, since?: {epoch: string, cursor: number}|null}|null>} The response, or null.
+     * @returns {Promise<{contact: string, lookingHours: number, items: Array<Object>, since?: {epoch: string, cursor: number}|null, access?: string|null}|null>} The response, or null.
      */
     async function get(path, options) {
         if (!enabled()) return null;
         const current = responseGuard();
         const since = await feedPosition();
         if (!current()) return null;
+        const asked = accessRevision();
         const data = await read(path, options, current);
         if (!current()) return null;
-        if (data && typeof data === 'object') data.since = since;
+        if (data && typeof data === 'object') {
+            data.since = since;
+            const now = accessRevision();
+            data.access = asked == null || asked === now ? now : `moved:${asked}`;
+        }
         return data;
+    }
+
+    /**
+     * The signed-in person's access revision as JE last saw it, or null.
+     * @returns {string|null} Revision.
+     */
+    function accessRevision() {
+        try {
+            return JE.core?.revision?.access?.() ?? null;
+        } catch {
+            return null;
+        }
     }
 
     /**

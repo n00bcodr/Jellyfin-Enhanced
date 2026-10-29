@@ -59,14 +59,6 @@ arr/status/status-cards.js	cache	revisioned	status and badge per card, 60 s: eve
 arr/status/status-cards.js	flushTimer	state	a timer
 arr/status/status-cards.js	inFlight	uncached	cards being read (in flight only)
 arr/status/status-details.js	current	state	the details panel being drawn (its read is made on each open)
-arr/status/status-episodes.js	denied	revisioned	playable items Jellyfin refused the viewer on the open season (no row is pointed at them), kept with that page: dropped when the server's access revision moves, on a user switch and with the page
-arr/status/status-episodes.js	hydrated	revisioned	the playable items' own answers (Jellyfin's, read as the viewer) drawn on the open season's rows JE pointed at them, kept with that page: dropped when the server's access revision moves, on a user switch and with the page
-arr/status/status-episodes.js	missingItems	revisioned	ids of the open season's rows the viewer's season list gave as missing items, kept with that page: dropped when the server's access revision moves, on a user switch and with the page
-arr/status/status-episodes.js	orphans	revisioned	ids of the open season's missing rows the viewer's season list no longer has, kept with that page: dropped when the server's access revision moves, on a user switch and with the page
-arr/status/status-episodes.js	pendingRows	uncached	only the current native row reads in flight, removed on completion and cleared with the page
-arr/status/status-episodes.js	placeholders	revisioned	which missing item stood for which episode in the viewer's status reads of the open season, kept with that page: dropped when the server's access revision moves, on a user switch and with the page
-arr/status/status-episodes.js	rowsByEpisode	state	DOM row identities on the current season page, discarded when the page changes
-arr/status/status-episodes.js	seeded	state	ids of the open season's rows already looked up in its list (bookkeeping, no answer), cleared with the page
 core/access-revision.js	probing	uncached	the revision probe in flight (one at a time); its answer is the revision itself
 core/session-action.js	gestures	state	weak event ownership for one actual gesture; contains no server answer
 elsewhere/elsewhere.js	availableProviders	shared	TMDB's watch providers of the region, the same for everyone

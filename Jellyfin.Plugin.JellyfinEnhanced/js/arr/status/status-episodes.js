@@ -10,36 +10,12 @@
 (function (JE) {
     'use strict';
 
-    let state = null; // { page, status, ctx }
+
+    /** The season page shown now: { page, status, ctx, access, season } (season: what the page learnt, see owner()). */
+    let state = null;
     let observer = null;
-    /** The season list's rows by the episode they show, bound afresh on each pass (never a row Jellyfin replaced). */
-    let rowsByEpisode = new Map();
-    /**
-     * Library ids the page's status named for an episode Jellyfin could not play yet (its missing item), with the
-     * episodes each stood for, kept while the season page is open: a row Jellyfin draws again with that id is still
-     * that episode's, after the episode's playable item has a different id (normalised id → episode numbers).
-     */
-    let placeholders = new Map();
-    /** Ids the page's status named as playable: never an episode's placeholder. */
-    let playable = new Set();
-    /** Rows the status never named that the season list gave as missing items of this season. */
-    let missingItems = new Set();
-    /** Missing rows whose item Jellyfin no longer lists for the viewer, while every pending episode keeps its own row. */
-    let orphans = new Set();
-    /** Unknown missing rows the season list was read for (each once). */
-    let seeded = new Set();
-    /** The playable items' own answers read as the viewer, for every row JE points at them (normalised id → item). */
-    let hydrated = new Map();
-    /** Playable items Jellyfin refused the viewer: no row is pointed at them. */
-    let denied = new Set();
-    /** Bumped whenever what the page learnt is dropped: an answer read before it is not used. */
-    let generation = 0;
-    /** The status the page had when the person's access moved: nothing is pointed or removed on its word again. */
-    let distrusted = null;
-    /** What a row JE pointed at a playable item showed before (its id, marks, title, overview, still), to undo it. */
-    const before = new WeakMap();
-    /** Read each newly playable item once while its native row is being prepared. */
-    const pendingRows = new Map();
+    /** True while apply() runs again in its own pass. */
+    let reapplying = false;
     /** The polite live region that says which episode a moved focus landed on. */
     let liveRegion = null;
     /** A native missing episode's mark (Jellyfin's "Missing" / "Unaired"). */
@@ -167,26 +143,72 @@
         return ep?.stage === 'ready' && ep.reason?.code === 'ready';
     }
 
+
+    /**
+     * What one open concrete season learnt from the person's reads, under one access revision: everything lives here and
+     * goes with it (another season or page, leaving it, a user switch, their access moving).
+     * - placeholders: the missing items the status named for episodes not playable yet (normalised id → episode numbers);
+     * - playable: ids the status named as playable (never a placeholder);
+     * - missingItems / orphans / seeded: rows no status named, looked up once in the season's list (missing items of this
+     *   season; missing items Jellyfin no longer lists; ids already looked up);
+     * - items: the playable items' own answers, read as the viewer (a row is pointed at an item only with its answer);
+     * - denied: items Jellyfin refused the viewer; failed: items whose read failed since the last status read;
+     * - pending: item reads in flight; rowsByEpisode: the rows bound on the last pass; before: what a row JE pointed at an
+     *   item showed before (to undo it).
+     * @param {HTMLElement} page Season page.
+     * @param {string} itemId The season's item id.
+     * @returns {Object} Owner.
+     */
+    function owner(page, itemId) {
+        return {
+            page, itemId: norm(itemId), placeholders: new Map(), playable: new Set(), missingItems: new Set(), orphans: new Set(),
+            seeded: new Set(), items: new Map(), denied: new Set(), failed: new Set(), pending: new Map(), rowsByEpisode: new Map(),
+            before: new WeakMap(),
+        };
+    }
+
+    /**
+     * Ends what a season owner did to its page: rows JE pointed at playable items go back to their missing items and
+     * JE's own arrival rows go. Its reads still in flight answer nothing (they belong to it).
+     * @param {Object|null} season Owner.
+     * @returns {void}
+     */
+    function dispose(season) {
+        if (!season) return;
+        season.page.querySelectorAll('.listItem[data-je-arr-was]').forEach(row => unpoint(season, row));
+        season.page.querySelectorAll('.listItem[data-je-arr-arrival]').forEach(row => row.remove());
+    }
+
+    /**
+     * True when the page's status was read under the person's access as it is now: only then does it point, remove or
+     * teach anything. A status read before their access moved (or while it moved) is not.
+     * @returns {boolean} Trusted.
+     */
+    function trusted() {
+        return !!state && state.access === accessNow();
+    }
+
     /**
      * Records which library item stands for which episode in a status read: playable items, and the missing items
      * of episodes not playable yet (their latest numbers).
+     * @param {Object} season Owner.
      * @param {Object} status Season status.
      * @returns {void}
      */
-    function learn(status) {
+    function learn(season, status) {
         const now = new Map();
         for (const ep of status.episodes || []) {
             if (!ep.row || !ep.itemId) continue;
             const id = norm(ep.itemId);
             if (ep.stage === 'ready') {
-                playable.add(id);
-                placeholders.delete(id);
-            } else if (!playable.has(id)) {
+                season.playable.add(id);
+                season.placeholders.delete(id);
+            } else if (!season.playable.has(id)) {
                 if (!now.has(id)) now.set(id, new Set());
                 now.get(id).add(ep.episode);
             }
         }
-        for (const [id, episodes] of now) placeholders.set(id, episodes);
+        for (const [id, episodes] of now) season.placeholders.set(id, episodes);
     }
 
     /**
@@ -198,9 +220,10 @@
      * @returns {Object|undefined} Episode status.
      */
     function entryOf(row, id, index) {
+        const season = state.season;
         const named = index.byId.get(id);
         if (named) return named;
-        const episodes = !playable.has(id) && placeholders.get(id);
+        const episodes = !season.playable.has(id) && season.placeholders.get(id);
         const ep = (episodes && [...episodes].sort((a, b) => a - b).map(n => index.byEpisode.get(n)).find(Boolean)) || index.byRow.get(row);
         return ep && !(ep.itemId && index.live.has(norm(ep.itemId))) ? ep : undefined;
     }
@@ -213,25 +236,27 @@
      * @returns {boolean} A missing item's row.
      */
     function missingRow(row, id) {
-        if (playable.has(id) || !placeholders.has(id)) return false;
-        return missingItems.has(id) || !!row.querySelector(MISSING);
+        const season = state.season;
+        if (season.playable.has(id) || !season.placeholders.has(id)) return false;
+        return season.missingItems.has(id) || !!row.querySelector(MISSING);
     }
 
     /**
      * One row per episode: each playable item keeps one row at the place of the first row standing for its episodes
      * (its missing item's, as Jellyfin drew the season). A native row of the playable item is kept with its own
      * controls and moved there; the missing item's row and JE's own rows for it go. Without a native row, the missing
-     * item's row is the one kept (retargeted and refreshed when it is the playable one). Rows of missing items Jellyfin
+     * item's row is the one kept (pointed at the playable item once its answer is read). Rows of missing items Jellyfin
      * no longer lists go too.
      * @param {Element[]} rows Season rows in page order.
      * @param {Object} status Season status.
      * @returns {Element[]} The rows left.
      */
     function reconcile(rows, status) {
+        const season = state.season;
         const covers = new Map();
         const target = new Map();
         for (const ep of status.episodes || []) {
-            if (!ep.row || !ep.itemId || !isReady(ep) || denied.has(norm(ep.itemId))) continue;
+            if (!ep.row || !ep.itemId || !isReady(ep) || season.denied.has(norm(ep.itemId))) continue;
             const id = norm(ep.itemId);
             if (!covers.has(id)) covers.set(id, new Set());
             covers.get(id).add(ep.episode);
@@ -249,12 +274,12 @@
                 join(id, row);
                 continue;
             }
-            if (orphans.has(id) && row.querySelector(MISSING)) {
+            if (season.orphans.has(id) && row.querySelector(MISSING)) {
                 gone.push(row);
                 continue;
             }
             if (!covers.size || !missingRow(row, id)) continue;
-            for (const n of placeholders.get(id)) {
+            for (const n of season.placeholders.get(id)) {
                 if (target.has(n)) {
                     join(target.get(n), row);
                     break;
@@ -266,7 +291,9 @@
             if (group.length < 2) continue;
             const own = row => !!(row.dataset.jeArrWas || row.dataset.jeArrArrival);
             const named = group.filter(row => norm(row.getAttribute('data-id')) === id);
-            const keeper = named.find(row => !own(row)) || named.find(row => row.dataset.jeArrWas) || named[0] || group[0];
+            // A missing row stays only while no row of the item is drawn (it is pointed at the item once its answer is read).
+            const keeper = named.find(row => !own(row)) || named.find(row => row.dataset.jeArrWas) || named[0];
+            if (!keeper) continue;
             const extra = group.filter(row => row !== keeper && (norm(row.getAttribute('data-id')) !== id || own(row)));
             if (!extra.length) continue;
             extra.forEach(row => removed.add(row));
@@ -335,6 +362,7 @@
         setTimeout(() => { region.textContent = String(text); }, 50);
     }
 
+
     /**
      * True when an element the host added holds a row of a missing item whose episode plays under another item now
      * (Jellyfin's list drawn while it still listed both), or of a missing item it no longer lists.
@@ -343,11 +371,12 @@
      * @returns {boolean} A replaced row.
      */
     function replaced(node, ready) {
+        const season = state.season;
         const rows = node.matches('.listItem[data-id]') ? [node] : node.querySelectorAll('.listItem[data-id]');
         for (const row of rows) {
             const id = norm(row.getAttribute('data-id'));
-            if (orphans.has(id)) return true;
-            const slot = !playable.has(id) && placeholders.get(id);
+            if (season.orphans.has(id)) return true;
+            const slot = !season.playable.has(id) && season.placeholders.get(id);
             if (slot && [...slot].some(n => ready.has(n) && ready.get(n) !== id)) return true;
         }
         return false;
@@ -357,7 +386,7 @@
      * Reads the season's episode list once for rows of missing items no status named (a page drawn while Jellyfin
      * listed a missing item and the file that replaces it): a listed missing item of this season stands for its
      * numbers; one no longer listed is gone, unless an episode not playable yet could be waiting on it. Viewer-authorised
-     * list, never titles or positions.
+     * list, never titles or positions; its answer belongs to the season owner and access it was asked under.
      * @param {HTMLElement} page Season page.
      * @param {Object} status Season status.
      * @param {string[]} unknown Normalised ids of the unknown missing rows.
@@ -365,13 +394,14 @@
      */
     function seed(page, status, unknown) {
         const client = window.ApiClient;
-        const season = norm(status.itemId);
-        unknown = unknown.filter(id => !seeded.has(id));
-        if (!unknown.length || !state?.trusted || !/^[0-9a-f]{32}$/.test(season) || typeof client?.getJSON !== 'function' || typeof client.getUrl !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
-        unknown.forEach(id => seeded.add(id));
-        const still = snapshot(page);
+        const season = state.season;
+        const seasonId = norm(status.itemId);
+        unknown = unknown.filter(id => !season.seeded.has(id));
+        if (!unknown.length || !/^[0-9a-f]{32}$/.test(seasonId) || typeof client?.getJSON !== 'function' || typeof client.getUrl !== 'function' || typeof JE.helpers?.getItemCached !== 'function') return;
+        unknown.forEach(id => season.seeded.add(id));
+        const still = snapshot();
         Promise.resolve().then(() => JE.helpers.getItemCached(status.itemId)).then((item) => {
-            if (!item?.SeriesId || norm(item.Id) !== season || !still()) return null;
+            if (!item?.SeriesId || norm(item.Id) !== seasonId || !still()) return null;
             // The season's list as jellyfin-web reads it for this page (its Shows/{id}/Episodes read), as the viewer.
             return client.getJSON(client.getUrl(`Shows/${item.SeriesId}/Episodes`, { seasonId: item.Id, userId: client.getCurrentUserId(), EnableImages: false, EnableUserData: false }));
         }).then((result) => {
@@ -383,19 +413,20 @@
             const waiting = (state.status.episodes || []).every(ep => !ep.row || !ep.itemId || ep.stage === 'ready' || live.has(norm(ep.itemId)));
             for (const id of unknown) {
                 const item = listed.get(id);
-                if (item?.LocationType === 'Virtual' && norm(item.SeasonId) === season && Number.isInteger(item.IndexNumber)) {
+                if (item?.LocationType === 'Virtual' && norm(item.SeasonId) === seasonId && Number.isInteger(item.IndexNumber)) {
                     const episodes = new Set();
                     const end = Number.isInteger(item.IndexNumberEnd) && item.IndexNumberEnd >= item.IndexNumber ? Math.min(item.IndexNumberEnd, item.IndexNumber + 200) : item.IndexNumber;
                     for (let n = item.IndexNumber; n <= end; n++) episodes.add(n);
-                    if (!placeholders.has(id) && !playable.has(id)) placeholders.set(id, episodes);
-                    missingItems.add(id);
+                    if (!season.placeholders.has(id) && !season.playable.has(id)) season.placeholders.set(id, episodes);
+                    season.missingItems.add(id);
                 } else if (!item && waiting) {
-                    orphans.add(id);
+                    season.orphans.add(id);
                 }
             }
             apply();
         }).catch(() => { /* the host's next view lists the season afresh */ });
     }
+
 
     /**
      * Puts chips on the episode rows and the banner above the list (idempotent).
@@ -411,24 +442,26 @@
         }
         const byEpisode = new Map((status.episodes || []).map(ep => [ep.episode, ep]));
         // A status from before the person's access moved neither points nor removes rows: it is being read again.
+        const season = state.season;
         const all = [...page.querySelectorAll('.listItem[data-id]')];
-        const rows = state.trusted ? reconcile(all, status) : all;
-        const byRow = new Map([...rowsByEpisode].filter(([n]) => byEpisode.has(n)).map(([n, row]) => [row, byEpisode.get(n)]));
+        const rows = trusted() ? reconcile(all, status) : all;
+        const byRow = new Map([...season.rowsByEpisode].filter(([n]) => byEpisode.has(n)).map(([n, row]) => [row, byEpisode.get(n)]));
         const index = { byId, byEpisode, byRow, live: new Set(rows.map(row => norm(row.getAttribute('data-id')))) };
-        rowsByEpisode = new Map();
+        season.rowsByEpisode = new Map();
         const unknown = [];
         let firstRow = null;
+        let pointed = false;
         // All geometry reads happen before the first row write. Existing chips retain their host.
         const writes = [];
         rows.forEach(row => {
             const id = norm(row.getAttribute('data-id'));
             const ep = entryOf(row, id, index);
-            if (ep) rowsByEpisode.set(ep.episode, row);
-            else if (!playable.has(id) && !orphans.has(id) && row.querySelector(MISSING)) unknown.push(id);
+            if (ep) season.rowsByEpisode.set(ep.episode, row);
+            else if (!season.playable.has(id) && !season.orphans.has(id) && row.querySelector(MISSING)) unknown.push(id);
             if (!firstRow && row.getAttribute('data-type') === 'Episode') firstRow = row;
             const existing = row.querySelector('.je-arr-chip');
             const ready = ep?.stage === 'ready' && ep.reason?.code === 'ready';
-            if (ready && state.trusted) writes.push(() => patchReady(row, ep));
+            if (ready && trusted()) writes.push(() => { if (patchReady(row, ep, index.live)) pointed = true; });
             if (!ep || ready) {
                 if (existing) writes.push(() => remove(existing));
                 return;
@@ -464,7 +497,18 @@
             });
         });
         for (const write of writes) write();
-        if (unknown.length && state.trusted && (status.episodes || []).some(ep => ep.row && isReady(ep))) seed(page, status, unknown);
+        // Rows just pointed at a playable item: a second missing row of the same item (a file covering several episodes)
+        // goes in this same pass.
+        if (pointed && !reapplying) {
+            reapplying = true;
+            try {
+                apply();
+            } finally {
+                reapplying = false;
+            }
+            return;
+        }
+        if (unknown.length && trusted() && (status.episodes || []).some(ep => ep.row && isReady(ep))) seed(page, status, unknown);
         // A season without any episode row of Jellyfin's own still has its (empty) list once
         // jellyfin-web has rendered the season's children.
         const list = firstRow ? firstRow.closest('.itemsContainer') : page.querySelector('#listChildrenCollapsible:not(.hide) .itemsContainer');
@@ -488,27 +532,75 @@
         if (extension?.decorate) extension.decorate(page, status, state.ctx, { banner: shownBanner, list, drawn });
     }
 
+
     /**
-     * Makes an existing native episode row point at its accepted playable library item.
-     * Links and the row stay under the viewer's finger even when Jellyfin changed the item id.
+     * Points a missing episode's row at its accepted playable item, as one step: only once that item's own answer has
+     * been read as the viewer under the season owner and access this status belongs to (read()). Until then, or when
+     * the read fails or is refused, the row stays exactly as Jellyfin drew it. Pointing keeps the row, its links and
+     * controls under the viewer's finger and draws the item's title, overview and still on it.
      * @param {Element} row Native row.
      * @param {Object} ep Accepted episode availability.
+     * @param {Set<string>} live Ids the page's rows have (a row pointed here is added).
+     * @returns {boolean} True when the row was pointed now.
+     */
+    function patchReady(row, ep, live) {
+        const season = state.season;
+        const id = norm(ep.itemId);
+        if (!ep.itemId || season.denied.has(id)) return false;
+        const prior = row.getAttribute('data-id');
+        if (norm(prior) === id) {
+            if (row.dataset.jeArrWas && season.items.has(id)) paint(row, ep, season.items.get(id));
+            return false;
+        }
+        const item = season.items.get(id);
+        if (!item) {
+            read(ep);
+            return false;
+        }
+        // Another row has the item already (pointed earlier in this pass): this one is a duplicate, reconciled away.
+        if (live.has(id)) return false;
+        live.add(id);
+        const marks = [...row.querySelectorAll('.missingIndicator, .virtualEpisodeIndicator')];
+        // What it showed is kept to undo it (the person's access moves, the season is left).
+        if (!season.before.has(row)) season.before.set(row, { id: prior, marks: marks.map(node => ({ node, parent: node.parentNode, next: node.nextSibling })), content: content(row) });
+        row.setAttribute('data-id', ep.itemId);
+        row.dataset.jeArrWas = prior;
+        retarget(row, prior, ep.itemId);
+        marks.forEach(node => node.remove());
+        paint(row, ep, item);
+        return true;
+    }
+
+    /**
+     * Reads a ready episode's playable item as the viewer, once per season owner (again after a failure only with the
+     * next status read). The answer is used only under the owner, access and trust it was asked under, and only while
+     * the status still names that item ready: then the rows are pointed at it. A refusal (401/403/404) means no row is
+     * pointed at it on this visit; any other failure leaves the rows as they are.
+     * @param {Object} ep Accepted availability.
      * @returns {void}
      */
-    function patchReady(row, ep) {
-        if (denied.has(norm(ep.itemId))) return;
-        const prior = row.getAttribute('data-id');
-        const marks = [...row.querySelectorAll('.missingIndicator, .virtualEpisodeIndicator')];
-        if (ep.itemId && prior !== ep.itemId) {
-            // What it showed is kept to undo it (the person's access moves, Jellyfin refuses them the item).
-            if (!before.has(row)) before.set(row, { id: prior, marks: marks.map(node => ({ node, parent: node.parentNode, next: node.nextSibling })), content: content(row) });
-            row.setAttribute('data-id', ep.itemId);
-            row.dataset.jeArrWas = prior;
-            retarget(row, prior, ep.itemId);
-            // Still the missing item's title, still and overview: the playable item's are drawn on it (read once).
-            hydrate(ep);
-        }
-        marks.forEach(node => node.remove());
+    function read(ep) {
+        const season = state.season;
+        const id = norm(ep.itemId);
+        if (season.pending.has(id) || season.failed.has(id) || season.denied.has(id) || typeof JE.helpers?.getItemCached !== 'function') return;
+        const still = snapshot();
+        const answer = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
+        season.pending.set(id, answer);
+        answer.then(item => {
+            if (!still()) return;
+            if (!item || norm(item.Id) !== id) {
+                season.failed.add(id);
+                return;
+            }
+            if (!stillReady(ep)) return;
+            season.items.set(id, item);
+            apply();
+        }, err => {
+            if (!still()) return;
+            ([401, 403, 404].includes(err?.status) ? season.denied : season.failed).add(id);
+        }).finally(() => {
+            if (season.pending.get(id) === answer) season.pending.delete(id);
+        });
     }
 
     /**
@@ -545,16 +637,18 @@
         };
     }
 
+
     /**
      * Undoes JE's pointing of a row at a playable item: its missing item's id, links, marks, title, overview and still.
+     * @param {Object} season Owner that pointed it.
      * @param {Element} row Row JE pointed.
      * @returns {void}
      */
-    function unpoint(row) {
-        const was = before.get(row);
+    function unpoint(season, row) {
+        const was = season.before.get(row);
         const now = row.getAttribute('data-id');
         if (!was) return;
-        before.delete(row);
+        season.before.delete(row);
         delete row.dataset.jeArrWas;
         row.setAttribute('data-id', was.id);
         retarget(row, now, was.id);
@@ -572,21 +666,21 @@
     }
 
     /**
-     * What an asynchronous read must still find to write into the page: the same page shown on the same route, session,
-     * user and server.
-     * @param {HTMLElement} page Season page.
+     * What an asynchronous read must still find to use its answer: the same season owner on the same page shown on the
+     * same route, session, user and server, under the same access revision, with a trusted status.
      * @returns {function(): boolean} True while the read's answer may be used.
      */
-    function snapshot(page) {
+    function snapshot() {
+        const season = state?.season;
+        const page = state?.page;
         const epoch = JE.session?.getEpoch?.();
         const user = window.ApiClient?.getCurrentUserId?.();
         const server = window.ApiClient?.serverId?.();
         const route = window.location.hash;
-        const learnt = generation;
-        const access = accessNow();
-        return () => state?.page === page && page.isConnected && !page.classList.contains('hide') && window.location.hash === route
+        const access = state?.access;
+        return () => !!season && state?.season === season && page.isConnected && !page.classList.contains('hide') && window.location.hash === route
             && epoch === JE.session?.getEpoch?.() && user === window.ApiClient?.getCurrentUserId?.() && server === window.ApiClient?.serverId?.()
-            && learnt === generation && access === accessNow() && !!state.trusted;
+            && state.access === access && trusted();
     }
 
     /**
@@ -601,6 +695,7 @@
         }
     }
 
+
     /**
      * The status entry of an episode while it still names the item ready.
      * @param {Object} ep Accepted availability.
@@ -612,93 +707,64 @@
     }
 
     /**
-     * Rows JE pointed at a playable item get that item's title, overview and still, read as the viewer once per page
-     * (Spoiler Guard's series keep what the page drew until Jellyfin's next view). Every row pointed at it gets them:
-     * the one waiting when the answer comes, and any Jellyfin draws again later (drawn from the answer at once). An
-     * item Jellyfin refuses them is never pointed at: rows pointed at it go back to their missing item.
-     * @param {Object} ep Accepted availability.
-     * @returns {void}
-     */
-    function hydrate(ep) {
-        const page = state?.page;
-        const id = norm(ep.itemId);
-        if (!page) return;
-        if (hydrated.has(id)) {
-            paint(page, ep, hydrated.get(id));
-            return;
-        }
-        if (pendingRows.has(ep.itemId) || typeof JE.helpers?.getItemCached !== 'function') return;
-        const still = snapshot(page);
-        const read = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
-        pendingRows.set(ep.itemId, read);
-        read.then(item => {
-            if (!item || norm(item.Id) !== id || !still() || !stillReady(ep)) return;
-            hydrated.set(id, item);
-            paint(page, ep, item);
-        }, err => {
-            if (!still() || ![401, 403, 404].includes(err?.status)) return;
-            denied.add(id);
-            page.querySelectorAll('.listItem[data-je-arr-was]').forEach(row => { if (norm(row.getAttribute('data-id')) === id) unpoint(row); });
-        }).finally(() => {
-            if (pendingRows.get(ep.itemId) === read) pendingRows.delete(ep.itemId);
-        });
-    }
-
-    /**
-     * Draws a playable item's answer on every row of the page JE pointed at it.
-     * @param {HTMLElement} page Season page.
+     * Draws a playable item's answer (title, overview, still) on a row JE pointed at it. Spoiler Guard's series keep
+     * what the page drew until Jellyfin's next view.
+     * @param {Element} row Pointed row.
      * @param {Object} ep Accepted availability.
      * @param {Object} item The item's answer, read as the viewer.
      * @returns {void}
      */
-    function paint(page, ep, item) {
+    function paint(row, ep, item) {
         if (JE.spoilerBlur?.isEnabledFor?.(item.SeriesId)) return;
-        const id = norm(ep.itemId);
-        page.querySelectorAll('.listItem[data-je-arr-was]').forEach(row => {
-            if (norm(row.getAttribute('data-id')) !== id) return;
-            const { name, overviews, image } = content(row);
-            if (name && item.Name) {
-                const number = /^\s*\d+(?:\s*-\s*\d+)?\.\s*/.exec(name.textContent);
-                const text = (number ? number[0] : '') + item.Name;
-                if (name.textContent !== text) name.textContent = text;
-            }
-            for (const o of overviews) {
-                if (!o.text) continue;
-                if (!item.Overview) o.node.remove();
-                else if (o.text.textContent !== item.Overview) o.text.textContent = item.Overview;
-            }
-            if (image && item.ImageTags?.Primary && window.ApiClient?.getImageUrl) {
-                image.removeAttribute('data-src');
-                image.style.backgroundImage = `url("${window.ApiClient.getImageUrl(ep.itemId, { type: 'Primary', tag: item.ImageTags.Primary, maxWidth: 400 })}")`;
-            }
-        });
+        const { name, overviews, image } = content(row);
+        if (name && item.Name) {
+            const number = /^\s*\d+(?:\s*-\s*\d+)?\.\s*/.exec(name.textContent);
+            const text = (number ? number[0] : '') + item.Name;
+            if (name.textContent !== text) name.textContent = text;
+        }
+        for (const o of overviews) {
+            if (!o.text) continue;
+            if (!item.Overview) o.node.remove();
+            else if (o.text.textContent !== item.Overview) o.text.textContent = item.Overview;
+        }
+        if (image && item.ImageTags?.Primary && window.ApiClient?.getImageUrl) {
+            const still = `url("${window.ApiClient.getImageUrl(ep.itemId, { type: 'Primary', tag: item.ImageTags.Primary, maxWidth: 400 })}")`;
+            image.removeAttribute('data-src');
+            if (image.style.backgroundImage !== still) image.style.backgroundImage = still;
+        }
     }
 
     /**
-     * Adds an episode that had no native row, using viewer-authorized native metadata.
-     * Existing rows and their event targets are retained; a late answer cannot decorate a departed view.
+     * Adds an episode that had no native row, using viewer-authorized native metadata read under the season owner and
+     * access of this status. Existing rows and their event targets are retained; a late answer cannot decorate a
+     * departed view.
      * @param {HTMLElement} page Season page.
      * @param {Object[]} arrivals Newly playable episodes.
      * @returns {void}
      */
     function addArrivals(page, arrivals) {
-        const still = snapshot(page);
+        const season = state.season;
+        const still = snapshot();
         for (const ep of arrivals) {
-            if (!ep.itemId || pendingRows.has(ep.itemId) || page.querySelector(`.listItem[data-id="${ep.itemId}"]`)) continue;
+            const id = norm(ep.itemId);
+            if (!ep.itemId || season.pending.has(id) || season.denied.has(id) || page.querySelector(`.listItem[data-id="${ep.itemId}"]`)) continue;
             if (typeof JE.helpers?.getItemCached !== 'function') continue;
-            const read = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
-            pendingRows.set(ep.itemId, read);
-            read.then(item => {
-                if (!item || norm(item.Id) !== norm(ep.itemId) || !still()) return;
+            const answer = Promise.resolve().then(() => JE.helpers.getItemCached(ep.itemId, { forceRefresh: true }));
+            season.pending.set(id, answer);
+            answer.then(item => {
+                if (!item || norm(item.Id) !== id || !still()) return;
+                season.items.set(id, item);
                 if (!stillReady(ep) || page.querySelector(`.listItem[data-id="${ep.itemId}"]`)) return;
                 const list = page.querySelector('#listChildrenCollapsible .itemsContainer, .itemsContainer');
                 if (!list) return;
                 const row = arrivalRow(item, ep);
-                const after = [...rowsByEpisode].filter(([n, r]) => n > ep.episode && r.parentNode === list).sort((a, b) => a[0] - b[0])[0]?.[1];
+                const after = [...season.rowsByEpisode].filter(([n, r]) => n > ep.episode && r.parentNode === list).sort((a, b) => a[0] - b[0])[0]?.[1];
                 list.insertBefore(row, after || null);
-                rowsByEpisode.set(ep.episode, row);
-            }).catch(() => { /* the host's next view can read a temporarily unavailable item */ }).finally(() => {
-                if (pendingRows.get(ep.itemId) === read) pendingRows.delete(ep.itemId);
+                season.rowsByEpisode.set(ep.episode, row);
+            }, err => {
+                if (still() && [401, 403, 404].includes(err?.status)) season.denied.add(id);
+            }).finally(() => {
+                if (season.pending.get(id) === answer) season.pending.delete(id);
             });
         }
     }
@@ -745,8 +811,11 @@
         return row;
     }
 
+
     /**
-     * Shows a season's episode states on its page (and keeps them on while rows render).
+     * Shows a season's episode states on its page (and keeps them on while rows render). A status is used only when it
+     * was read under the person's access as it is now (`ctx.access`, stamped by the status read; a status without a
+     * stamp counts as read now): an older one points, removes and teaches nothing.
      * @param {HTMLElement} page Season details page.
      * @param {Object} status Season status with episodes.
      * @param {Object} ctx Response context.
@@ -754,18 +823,23 @@
      */
     function render(page, status, ctx) {
         // The same concrete season shown on the same page: another season (or page) starts from nothing.
-        const same = state?.page === page && norm(state.status.itemId) === norm(status.itemId);
+        const same = state?.page === page && state.season.itemId === norm(status.itemId);
         const previous = same ? new Map((state.status.episodes || []).map(ep => [ep.episode, ep])) : null;
-        const regained = same && !state.trusted;
-        if (!same) forget();
-        state = { page, status, ctx, trusted: !(same && status === distrusted) };
-        if (state.trusted) {
-            distrusted = null;
-            learn(status);
+        if (!same) {
+            dispose(state?.season);
+            state = { page, season: owner(page, status.itemId) };
+        }
+        state.status = status;
+        state.ctx = ctx;
+        state.access = ctx && Object.prototype.hasOwnProperty.call(ctx, 'access') ? ctx.access : accessNow();
+        if (trusted()) {
+            // A failed item read is tried again once per status read.
+            state.season.failed.clear();
+            learn(state.season, status);
         }
         apply();
-        if (previous && state.trusted) addArrivals(page, (status.episodes || []).filter(ep => ep.row && ep.stage === 'ready'
-            && (regained || (previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)))));
+        if (previous && trusted()) addArrivals(page, (status.episodes || []).filter(ep => ep.row && ep.stage === 'ready'
+            && previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)));
         if (!observer && JE.helpers?.onBodyMutation) {
             const schedule = JE.helpers.debounce ? JE.helpers.debounce(apply, 80) : apply;
             // Heard before the frame is painted: a redraw that brings back a row an arrival replaced is put right in it.
@@ -781,7 +855,7 @@
                             ready = new Map();
                             for (const ep of state.status.episodes || []) if (ep.itemId && isReady(ep) && !ready.has(ep.episode)) ready.set(ep.episode, norm(ep.itemId));
                         }
-                        if (state.trusted && replaced(node, ready)) {
+                        if (trusted() && replaced(node, ready)) {
                             apply();
                             return;
                         }
@@ -794,35 +868,18 @@
     }
 
     /**
-     * Drops what the page learnt about its rows (another page, or none).
-     * @returns {void}
-     */
-    function forget() {
-        generation++;
-        rowsByEpisode = new Map();
-        placeholders = new Map();
-        playable = new Set();
-        missingItems = new Set();
-        orphans = new Set();
-        seeded = new Set();
-        hydrated = new Map();
-        denied = new Set();
-    }
-
-    /**
-     * The person's access moved (a library or parental limit changed): what the page learnt from their earlier reads
-     * goes, rows JE pointed at playable items go back to their missing items and JE's own arrival rows go, and the
-     * status is read again. Until that answer nothing is pointed or removed on the old one.
+     * The person's access moved (a library or parental limit changed): the season owner goes (rows JE pointed at
+     * playable items go back to their missing items, JE's own arrival rows go, its reads still in flight answer
+     * nothing), a new one starts empty, and the status is read again. Until a status read under the new access renders,
+     * nothing is pointed, removed or learnt.
      * @returns {void}
      */
     function onAccessRevision() {
-        forget();
         if (!state) return;
-        distrusted = state.status;
-        state.trusted = false;
-        const page = state.page;
-        page.querySelectorAll('.listItem[data-je-arr-was]').forEach(unpoint);
-        page.querySelectorAll('.listItem[data-je-arr-arrival]').forEach(row => row.remove());
+        dispose(state.season);
+        state.season = owner(state.page, state.season.itemId);
+        // The status shown was read under the access that moved: it is not trusted again, whatever it carries.
+        state.access = {};
         JE.internals?.arrStatusDetails?.update?.(true);
     }
 
@@ -835,14 +892,16 @@
      */
     function removed(ids) {
         if (!state || !Array.isArray(ids) || !ids.length || !state.page.isConnected || state.page.classList.contains('hide')) return false;
-        const known = ids.map(norm).filter(id => placeholders.has(id) || missingItems.has(id));
+        const season = state.season;
+        const known = ids.map(norm).filter(id => season.placeholders.has(id) || season.missingItems.has(id));
         if (!known.length) return false;
         apply();
         return true;
     }
 
     /**
-     * Removes chips and banner and stops following the season.
+     * Removes chips and banner and stops following the season (leaving it, another kind of page, a user switch): the
+     * season owner goes with what it did to the page.
      * @returns {void}
      */
     function clear() {
@@ -851,10 +910,8 @@
             state.page.querySelectorAll('.je-arr-banner').forEach(n => n.remove());
             if (extension?.clear) extension.clear(state.page);
         }
+        dispose(state?.season);
         state = null;
-        distrusted = null;
-        forget();
-        pendingRows.clear();
     }
 
     /**
@@ -874,9 +931,8 @@
         return state;
     }
 
+
     JE.session?.onUserChange?.('arr-status-episodes', clear);
-    // What the page learnt from the person's status and season reads is theirs under their access: their next reads
-    // teach it again once their access revision moves.
     document.addEventListener('je-access-revision', onAccessRevision);
 
     JE.internals = JE.internals || {};
