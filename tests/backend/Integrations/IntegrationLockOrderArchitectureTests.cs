@@ -64,6 +64,13 @@ public class IntegrationLockOrderArchitectureTests
                 OperandType.InlineSwitch => 4 + 4 * BitConverter.ToInt32(il, i),
                 _ => 4,
             };
+            // Coverage instrumentation (the suite's coverlet collector) inserts `ldc.i4 <hit>; call Tracker.RecordHit`
+            // pairs into every plugin method: they are no plugin code, so neither instruction is part of the body read.
+            if (member is MethodBase { DeclaringType.FullName: { } tracker } && tracker.StartsWith("Coverlet.Core.Instrumentation.Tracker", StringComparison.Ordinal))
+            {
+                if (ops.Count > 0 && ops[^1].Code.Name.StartsWith("ldc.i4", StringComparison.Ordinal)) ops.RemoveAt(ops.Count - 1);
+                continue;
+            }
             ops.Add(new Op(offset, op, member));
         }
         return ops;
@@ -323,6 +330,17 @@ public class IntegrationLockOrderArchitectureTests
         // Before the monitor; and with the monitor already held it only tries, refusing by a throw before any callback.
         Assert.True(PublishRunsCallbacksUnderConfiguration(), "ListMetadataEpoch.Publish must take the configuration lock before CommitEffective, and run no callback without it");
     }
+
+    [Fact]
+    public void CoverageProbesAreNotReadAsPluginCode()
+    {
+        // The full suite collects coverage, so the scan reads instrumented bodies: a probe must not count as a plugin call
+        // (it ended the callback search and failed Publish's proof) and must not hide anything after it.
+        static IEnumerable<(OpCode, MemberInfo?)> Shape(string name) => Read(typeof(ProbedInversion).GetMethod(name, Declared)!).Select(o => (o.Code, o.Member));
+        Assert.Equal(Shape("Plain"), Shape("Probed"));
+        var violations = Violations(new[] { typeof(ProbedInversion) }, out _);
+        Assert.Contains(violations, v => v.StartsWith("configuration lock: using (CacheMutation()) in JE.Tests.ProbedInversion.Mutation", StringComparison.Ordinal) && v.EndsWith("ProbedInversion.Probed -> JE.Tests.ProbedInversion.Save", StringComparison.Ordinal));
+    }
 }
 
 // Inversions the scan must catch: under the monitor, a direct and a two-hop wait for the configuration lock, and waits
@@ -338,4 +356,13 @@ internal static class PlantedInversion
     internal static int Publication() => EffectiveRequestsBackend.Shared.CommitEffective(0, () => Indirect());
     internal static int Mutation() { using (SeerrFacts.CacheMutation()) return Indirect(); }
     internal static bool Facts() => SeerrFacts.PublishSeerr(0, () => ListMetadataEpoch.Capture().IsCurrent);
+}
+
+// PlantedInversion's two-hop wait as a coverage run instruments it: Probed is Plain with the probes coverlet inserts.
+internal static class ProbedInversion
+{
+    private static int Save() { lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock) return 1; }
+    private static int Plain() => Save();
+    private static int Probed() { Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit(1000); return Save(); }
+    internal static int Mutation() { using (SeerrFacts.CacheMutation()) { Coverlet.Core.Instrumentation.Tracker.Probes.RecordHit(1001); return Probed(); } }
 }
