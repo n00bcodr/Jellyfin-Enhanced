@@ -1,9 +1,9 @@
 # Tags & Badges
 
-See quality, genres, audio languages, scores, and age classifications while browsing your library. You can choose which badges appear, move them between corners, and change their colors. People Tags add age and birthplace information to cast cards.
+See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, move them between corners, and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
-*The optional tag groups are enabled for this example; all six groups start off.*
+*The optional tag groups are enabled for this example; all seven groups start off.*
 
 ## Set up your tags
 
@@ -43,6 +43,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards, subject to item-type and row scopes |
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
+| [Status Tags](#status-tags) | One badge: trending rank, New Movie/Series/Episode, or Just Added | Supported library cards; web only |
 | [People Tags](#people-tags) | Age, age at release, birthplace, deceased styling | Cast and guest-cast cards on web item detail pages |
 | [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages |
 | [Player badges](#player-badges) | Scores in the controls; optional age/advisory badge at playback start | Jellyfin web video player |
@@ -75,6 +76,7 @@ You can place each poster group in a corner and hide badges on hover to make car
 | **Position** — Language Tags | **Bottom Left** | Admin default and personal corner choice for flags |
 | **Position** — Rating Tags | **Bottom Right** | Admin default and personal corner choice for score and review chips |
 | **Position** — Age Rating Tags | **Bottom Right** | Admin default and personal corner choice for classification badges |
+| **Position** — Status Tags | **Top Right** | Admin default and personal corner choice for status badges |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster overlays when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster overlays on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
@@ -343,6 +345,48 @@ Poster age badges use classification colors independently of **Colored Ratings B
 !!! note "Spoiler Guard and classifications"
     Age classifications remain visible. When score stripping protects unwatched episodes or unstarted seasons, the badge can deliberately use the series classification instead of the child's own rating, avoiding a hint from an unusually high episode classification.
 
+## Status Tags
+
+Status Tags mark what is new or popular with a small translucent badge, such as `Just Added`, `New Movie`, or `#3 Today`. The badge sits over the card, so your poster image, including custom poster sets, stays as it is.
+
+**How to use:** Turn on **Show Status Tags** in **UI Settings** and choose a corner. Open **Choose which badges to show** to turn single badges off.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Admin: **Enable Status Tags** / personal: **Show Status Tags** | Off | Shows one status badge on supported cards. The admin switch also allows the server to fetch the trending list |
+| Admin: **Show Trending rank** / personal: **Trending rank** | On | Shows the title's place in the trending list. Turning it off in the admin settings stops the trending list for everyone |
+| Admin: **Show New Movie / New Series / New Episode** / personal: **New Movie / New Series / New Episode** | On | Shows the release badges |
+| Admin: **Show Just Added** / personal: **Just Added** | On | Shows the badge for items recently added to the library |
+| Admin: **New release window (days)** | 30 | How long after its premiere date a movie or series counts as new; range 1–365 |
+| Admin: **Just added window (days)** | 7 | How long after it reached the library an item counts as just added, and how recent a series or season's newest episode must be for **New Episode**; range 1–365 |
+
+Each card shows one badge. The first one that applies wins:
+
+| Card | Badge order |
+|---|---|
+| Movie | Trending → **New Movie** (premiered within the new release window, not in the future) → **Just Added** |
+| Series | Trending → **New Series** → **New Episode** (newest episode added within the just added window, and the series itself added before it) → **Just Added** |
+| Season | **New Episode** → **Just Added** |
+| Episode, collection, video | **Just Added** |
+
+**Just Added** uses the date Jellyfin added the item to the library, the same date its **Date Added** sort uses.
+
+### Trending ranks
+
+The trending rank reads `#N Today` from TMDB's daily trending list when a TMDB API key is configured. Without a key, or if TMDB does not answer, it reads `#N This Week` from Seerr's trending list, which is TMDB's weekly list. With neither, no trending badges appear. Only movies and series with a TMDB ID can show a rank; seasons and episodes never do.
+
+The server fetches the first 60 movie and series ranks and keeps the list for 30 minutes, shared by every user. It holds only public TMDB IDs and ranks. Your browser fetches it once per page load and uses it only to mark items you can already see.
+
+!!! note "Web only"
+    Status Tags are web overlays. [Native Poster Tags](#native-poster-tags-experimental) do not draw them into poster images for native apps.
+
+??? info "Data sources and limits"
+    Dates come from the [Server-Side Tag Cache](#server-side-tag-cache), which keeps each item's added and premiere dates and, for series and seasons, when their newest episode was added. Adding an episode updates its series and season. With the server cache off, the per-page batch fallback asks the server for the same dates.
+
+    Spoiler Guard keeps date badges on protected items: an added date is not a spoiler, and Jellyfin shows it as **Date Added**. Protected cards carry no TMDB ID, so they never show a trending rank.
+
+    Restyle the badges with custom CSS through `.status-tag`, or a single kind through `.status-tag--trending`, `.status-tag--new` or `.status-tag--added`. The rank inside a trending badge is `.status-tag-rank`.
+
 ## People Tags
 
 People Tags add age and birthplace facts to cast and guest-cast cards on item detail pages. They support rectangular and round portraits.
@@ -472,7 +516,8 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
     | Route | Access and behavior |
     |---|---|
     | `GET /JellyfinEnhanced/tag-cache/{userId}` | Own account or administrator; filtered cache payload. Returns 404 when server mode is off. Optional `since` is a Unix-millisecond cursor; use the returned generation `timestamp`, not `servedAt` |
-    | `POST /JellyfinEnhanced/tag-data/{userId}` | Own account or administrator; per-page fallback for accessible items. Body is a nonempty array of at most 200 item-ID strings; optional `mediaSourceId` selects a media version |
+    | `POST /JellyfinEnhanced/tag-data/{userId}` | Own account or administrator; per-page fallback for accessible items. Body is a nonempty array of at most 200 item-ID strings; optional `mediaSourceId` selects a media version; optional `latestEpisode=true` adds the newest episode's added date to series and seasons |
+    | `GET /JellyfinEnhanced/status-tags/trending` | Any signed-in user; the shared trending list for Status Tags. Empty while the admin has Status Tags or the trending rank off |
     | `POST /JellyfinEnhanced/tag-cache/rebuild` | Administrator only; starts a full background rebuild. Returns 400 with server mode off, or 409 if a rebuild is already running |
     | `GET /JellyfinEnhanced/audio-language-tags?codes=…` | Returns base/regional synchronized tag names for the supplied comma-separated language codes; empty mapping when sync is off |
 

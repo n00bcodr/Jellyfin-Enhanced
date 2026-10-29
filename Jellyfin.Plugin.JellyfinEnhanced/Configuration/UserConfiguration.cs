@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        public bool StatusTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
@@ -71,6 +72,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnContinueWatching { get; set; } = true;
         public bool RatingTagsOnNextUp { get; set; } = true;
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        public string StatusTagsPosition { get; set; } = "top-right";
+        public bool StatusTagsJustAdded { get; set; } = true;
+        public bool StatusTagsNewRelease { get; set; } = true;
+        public bool StatusTagsTrending { get; set; } = true;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

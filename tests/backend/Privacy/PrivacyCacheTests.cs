@@ -139,6 +139,6 @@ public class PrivacyCacheTests
     {
         Directory.CreateDirectory(f.Core.ConfigRoot);
         // Schema 8 fixture exercises the persisted contract consumed across process restarts.
-        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 8, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
+        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 9, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
     }
 }

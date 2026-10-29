@@ -118,6 +118,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
             AgeRatingTagsEnabled = false;
+            StatusTagsEnabled = false;
             PeopleTagsEnabled = false;
             NativePosterTagsEnabled = false;
             NativePosterTagsWebClientNames = string.Empty;
@@ -146,6 +147,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsOnContinueWatching = true;
             RatingTagsOnNextUp = true;
             AgeRatingTagsPosition = "bottom-right";
+            StatusTagsPosition = "top-right";
+            StatusTagsJustAdded = true;
+            StatusTagsNewRelease = true;
+            StatusTagsTrending = true;
+            StatusTagsJustAddedDays = 7;
+            StatusTagsNewReleaseDays = 30;
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -644,6 +651,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        /// <summary>Default for the per-user Status Tags (Just Added / New / Trending poster badges). Also gates the trending endpoint.</summary>
+        public bool StatusTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
         public bool NativePosterTagsEnabled { get; set; }
@@ -739,6 +748,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnNextUp { get; set; } = true;
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        [AnalyticsInclude]
+        public string StatusTagsPosition { get; set; } = "top-right";
+        // Which Status Tags badges may show (per-user defaults, like the rating
+        // tag scope switches). All default to true; the master switch is off.
+        public bool StatusTagsJustAdded { get; set; } = true;
+        public bool StatusTagsNewRelease { get; set; } = true;
+        /// <summary>Default for the trending badge. Admin off also disables the trending endpoint for everyone.</summary>
+        public bool StatusTagsTrending { get; set; } = true;
+        /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
+        public int StatusTagsJustAddedDays { get; set; } = 7;
+        /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
+        public int StatusTagsNewReleaseDays { get; set; } = 30;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

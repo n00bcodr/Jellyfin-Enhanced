@@ -14,7 +14,7 @@ This section follows the client from loader injection through initialization and
 
 `Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Controllers/JellyfinEnhancedController.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 161 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 164 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
 
 **Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
 
@@ -313,6 +313,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags and quality tags such as resolution, dynamic range and audio format. |
 | `ratingtags.js` | Jellyfin `CommunityRating` and `CriticRating`, with star/tomato presentation. Metadata providers or MDBList synchronization determine the upstream scores. |
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
+| `statustags.js` | Status Tags: one Just Added, New Movie/Series/Episode or trending-rank badge per card, from tag-cache dates and the shared trending list (`Services/StatusTagsTrendingService.cs`). |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating overlay. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
 | `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. |
@@ -418,6 +419,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `WatchlistMonitor.cs`, `SeerrScanTriggerService.cs` | Watchlist event handling and debounced library-add → Seerr recently-added scan bridge. |
 | `SeerrParentalFilter.cs` | Shared parental filtering for integration responses. |
 | `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs` | TMDB response caching/coalescing and studio-produced TV discovery shaped for Seerr consumers. |
+| `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
 | `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists tag data and incrementally maintains it from library events. |

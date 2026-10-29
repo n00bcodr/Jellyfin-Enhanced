@@ -34,6 +34,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string[]? PartialAudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
+        /// <summary>
+        /// When the item was added to the library (Jellyfin's DateCreated), in Unix
+        /// milliseconds UTC. Drives the Status Tags "Just Added" badge. Null when
+        /// Jellyfin has no date for it.
+        /// </summary>
+        public long? DateCreated { get; set; }
+        /// <summary>
+        /// Movie/Series only: premiere date in Unix milliseconds UTC, for the Status
+        /// Tags "New Movie" / "New Series" badge. Null for every other type.
+        /// </summary>
+        public long? PremiereDate { get; set; }
+        /// <summary>
+        /// Series/Season only: the newest <see cref="DateCreated"/> among its
+        /// non-virtual episodes, in Unix milliseconds UTC, for the Status Tags
+        /// "New Episode" badge. Null for every other type or a container without
+        /// episodes.
+        /// </summary>
+        public long? LatestEpisodeAdded { get; set; }
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
         // otherwise. Lets the Spoiler Guard filter strip cache entries for
@@ -79,6 +97,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
+                && a.DateCreated == b.DateCreated
+                && a.PremiereDate == b.PremiereDate
+                && a.LatestEpisodeAdded == b.LatestEpisodeAdded
                 && a.SeriesId == b.SeriesId;
         }
 
@@ -133,6 +154,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,
             StreamData = StreamData,
+            DateCreated = DateCreated,
+            PremiereDate = PremiereDate,
+            LatestEpisodeAdded = LatestEpisodeAdded,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
         };

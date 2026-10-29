@@ -70,7 +70,7 @@
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
     const MEMORY_SOFT_CAP = 20000;
-    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -131,6 +131,8 @@
      *   This is called BEFORE any batch fetch to handle revisited pages instantly.
      * @param {boolean} [config.needsFirstEpisode=false] - Whether Series/Season items need first episode data.
      * @param {boolean} [config.needsParentSeries=false] - Whether Season items need parent Series data.
+     * @param {boolean} [config.needsLatestEpisode=false] - Whether the /tag-data batch should resolve
+     *   Series/Season LatestEpisodeAdded (one extra server query per container, so only on request).
      * @param {Function} [config.injectCss] - Called once on registration to inject styles.
      * @param {Function} [config.cleanup] - Called to clean up old overlays before re-render.
      */
@@ -143,6 +145,7 @@
             isEnabled: config.isEnabled,
             needsFirstEpisode: config.needsFirstEpisode || false,
             needsParentSeries: config.needsParentSeries || false,
+            needsLatestEpisode: config.needsLatestEpisode || false,
             injectCss: config.injectCss || null,
             cleanup: config.cleanup || null,
         });
@@ -1257,11 +1260,18 @@
         }
         const ids = [...elMap.keys()];
 
+        // Series/Season "latest episode added" costs the server a query per
+        // container, so it is only asked for when an enabled renderer reads it.
+        let needsLatestEpisode = false;
+        for (const [, r] of renderers) {
+            if (r.isEnabled() && r.needsLatestEpisode) { needsLatestEpisode = true; break; }
+        }
+
         try {
             // Single API call for ALL cache-miss items via POST (no URL length limit)
             const response = await ApiClient.ajax({
                 type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, needsLatestEpisode ? { latestEpisode: true } : undefined),
                 data: JSON.stringify(ids),
                 contentType: 'application/json',
                 dataType: 'json'
@@ -1449,6 +1459,7 @@
             'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
             'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
             'age-rating-overlay-container': JE.currentSettings?.ageRatingTagsPosition || JE.pluginConfig?.AgeRatingTagsPosition || 'bottom-right',
+            'status-overlay-container': JE.currentSettings?.statusTagsPosition || JE.pluginConfig?.StatusTagsPosition || 'top-right',
         };
         const topRightContainers = Object.entries(posMap)
             .filter(([, pos]) => pos === 'top-right')
@@ -1540,7 +1551,8 @@
                 .je-tag-host .quality-overlay-container,
                 .je-tag-host .language-overlay-container,
                 .je-tag-host .rating-overlay-container,
-                .je-tag-host .age-rating-overlay-container {
+                .je-tag-host .age-rating-overlay-container,
+                .je-tag-host .status-overlay-container {
                     contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
@@ -1690,18 +1702,19 @@
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
                         + '.genre-overlay-container, .language-overlay-container, '
-                        + '.age-rating-overlay-container'
+                        + '.age-rating-overlay-container, .status-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
                         + '[data-je-genre-tagged], [data-je-language-tagged], '
-                        + '[data-je-age-rating-tagged]'
+                        + '[data-je-age-rating-tagged], [data-je-status-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
                         delete el.dataset.jeGenreTagged;
                         delete el.dataset.jeLanguageTagged;
                         delete el.dataset.jeAgeRatingTagged;
+                        delete el.dataset.jeStatusTagged;
                     });
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);

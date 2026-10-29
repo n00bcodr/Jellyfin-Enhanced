@@ -44,6 +44,7 @@
      * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null) => void.
      * @property {boolean} [needsFirstEpisode]
      * @property {boolean} [needsParentSeries]
+     * @property {boolean} [needsLatestEpisode]
      */
 
     /**
@@ -585,6 +586,7 @@
                 isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
                 needsFirstEpisode: !!p.needsFirstEpisode,
                 needsParentSeries: !!p.needsParentSeries,
+                needsLatestEpisode: !!p.needsLatestEpisode,
                 injectCss,
             });
             console.log(`${logPrefix} Registered with unified tag pipeline.`);

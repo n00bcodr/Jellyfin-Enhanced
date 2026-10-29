@@ -107,6 +107,16 @@
                         restackTagCorners();
                     }
                     requiresRefresh = false;
+                } else if (id === 'statusTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeStatusTags === 'function') {
+                            JE.initializeStatusTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.status-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
+                    }
+                    requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
                     if (e.target.checked) {
                         if (typeof JE.initializePeopleTags === 'function') {
@@ -348,6 +358,7 @@
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
+        addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
@@ -389,6 +400,42 @@
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
                     JE.reinitializeRatingTags();
+                }
+                resetAutoCloseTimer();
+            });
+        }
+        // Status tag badges (Trending / New / Just Added): same nested
+        // sub-toggle pattern as the rating scope above.
+        const statusMasterToggle = document.getElementById('statusTagsToggle');
+        const statusSubWrap = document.getElementById('statusTagsSubWrap');
+        const statusSubGroup = document.getElementById('statusTagsSubToggles');
+        const statusSubExpander = document.getElementById('statusTagsSubToggleExpander');
+        if (statusMasterToggle && statusSubWrap) {
+            statusMasterToggle.addEventListener('change', () => {
+                statusSubWrap.style.display = statusMasterToggle.checked ? 'block' : 'none';
+                if (!statusMasterToggle.checked && statusSubGroup && statusSubExpander) {
+                    statusSubGroup.style.display = 'none';
+                    statusSubExpander.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+        if (statusSubExpander && statusSubGroup) {
+            statusSubExpander.addEventListener('click', () => {
+                const expanded = statusSubExpander.getAttribute('aria-expanded') === 'true';
+                statusSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                statusSubGroup.style.display = expanded ? 'none' : 'block';
+            });
+        }
+        if (statusSubGroup) {
+            statusSubGroup.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
+                if (!settingKey) return;
+                JE.currentSettings[settingKey] = target.checked;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeStatusTags === 'function' && JE.currentSettings.statusTagsEnabled) {
+                    JE.reinitializeStatusTags();
                 }
                 resetAutoCloseTimer();
             });
@@ -707,6 +754,10 @@
                 } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
                     if (typeof JE.reinitializeAgeRatingTags === 'function') {
                         JE.reinitializeAgeRatingTags();
+                    }
+                } else if (settingKey === 'statusTagsPosition' && JE.currentSettings.statusTagsEnabled) {
+                    if (typeof JE.reinitializeStatusTags === 'function') {
+                        JE.reinitializeStatusTags();
                     }
                 }
 

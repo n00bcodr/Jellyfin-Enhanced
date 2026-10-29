@@ -460,6 +460,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `LanguageTagsEnabled` | Boolean | `false` |
 | `RatingTagsEnabled` | Boolean | `false` |
 | `AgeRatingTagsEnabled` | Boolean | `false` |
+| `StatusTagsEnabled` | Boolean | `false` |
 | `PeopleTagsEnabled` | Boolean | `false` |
 | `TagsHideOnHover` | Boolean | `false` |
 | `QualityTagsPosition` | String | `"top-left"` |
@@ -474,6 +475,10 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `RatingTagsOnContinueWatching` | Boolean | `true` |
 | `RatingTagsOnNextUp` | Boolean | `true` |
 | `AgeRatingTagsPosition` | String | `"bottom-right"` |
+| `StatusTagsPosition` | String | `"top-right"` |
+| `StatusTagsJustAdded` | Boolean | `true` |
+| `StatusTagsNewRelease` | Boolean | `true` |
+| `StatusTagsTrending` | Boolean | `true` |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
 | `LastOpenedTab` | String | `""` |
@@ -1037,7 +1042,8 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
-| POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId` → `{Items:[<item>]}`. |
+| POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>]}`. |
+| GET | `status-tags/trending` | Authenticated | `{source,movies,series}` trending ranks for Status Tags; see below. |
 | GET | `item-stats/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
 | GET | `file-size/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size}`. |
 | GET | `watch-progress/{userId}/{itemId}` | Own/admin | `{success,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
@@ -1082,11 +1088,14 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `Genres`, `AudioLanguages`, `PartialAudioLanguages` | Nullable string arrays |
 | `CommunityRating`, `CriticRating` | Nullable numbers |
 | `LastUpdated` | Integer milliseconds |
+| `DateCreated`, `PremiereDate`, `LatestEpisodeAdded` | Nullable integer milliseconds |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
+
+`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. Null fields are omitted.
 
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, and nullable `FirstEpisode`.
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies and series) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
 
 Streams use the trimmed stream fields listed above, and sources contain basename-only `Path` and `Name`.
 
@@ -1095,6 +1104,18 @@ Container `FirstEpisode` has `{Id,Type,Genres,NeedsStreamFetch:true}`; fetch tha
 Spoiler Guard can strip metadata before return and add `Tags` on stripped stubs. `mediaSourceId` selects a media version; this route does not require cached delivery enabled.
 
 Statistics aggregate playable descendants where applicable. `size` is bytes, `progress` an integer percentage, durations Jellyfin ticks (**10,000,000 ticks per second**). `mediaSourceId` filters size, rather than watch progress.
+
+### Status Tags trending list
+
+`status-tags/trending` returns the server-wide trending ranks behind the Status Tags badges:
+
+```json
+{"source":"tmdb-day","movies":{"1084244":54},"series":{"2190":23}}
+```
+
+`movies` and `series` map TMDB IDs to 1-based ranks across one combined list of at most 60 movies and series. `source` is `tmdb-day` (TMDB `trending/all/day`, pages 1–3, used when a TMDB API key is configured), `seerr-week` (Seerr `discover/trending`, TMDB's weekly list, used without a key or when TMDB does not answer), or null with empty maps when neither source answers. Seerr is called with the server API key only, without per-user parental filtering; the list holds only public TMDB IDs and ranks.
+
+Any signed-in user may call it, non-administrators included. The server shares one copy for 30 minutes (5 minutes after an empty answer); saving the plugin configuration drops it. With **Enable Status Tags** or **Show Trending rank** off in the plugin configuration, it returns `source:null` with empty maps without calling upstream.
 
 ### Style and native-preview contracts
 
@@ -1245,6 +1266,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
+    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |
@@ -1262,9 +1284,11 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerBlurTrickplay`, `SpoilerAdvancedMode` | Boolean |
     | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
+    | `StatusTagsJustAddedDays`, `StatusTagsNewReleaseDays` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
+    | `StatusTagsPosition` | String |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |

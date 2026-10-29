@@ -180,10 +180,11 @@ The administrator's **Display** → **Media Tags** settings provide defaults. Al
 | **Enable Language Tags** (admin) / **Show Language Tags** (viewer) | Off | `LanguageTagsEnabled`: audio-language flags. |
 | **Enable Rating Tags** (admin) / **Show Rating Tags** (viewer) | Off | `RatingTagsEnabled`: community and critic scores. |
 | **Enable Age Rating Tags** (admin) / **Show Age Rating Tags** (viewer) | Off | `AgeRatingTagsEnabled`: official age/content certification. |
+| **Enable Status Tags** (admin) / **Show Status Tags** (viewer) | Off | `StatusTagsEnabled`: Just Added, New Movie/Series/Episode and trending rank badges. |
 | **Enable People Tags** (admin) / **Show People Tags** (viewer) | Off | `PeopleTagsEnabled`: cast ages, birthplace, and deceased status. |
 | **Hide Tags on Hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
 
-New user settings for the six tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
+New user settings for the seven tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
@@ -209,6 +210,7 @@ The normal poster structure places `.je-tag-host` inside `.cardScalable`, before
 | `.language-overlay-container` | `LanguageTagsPosition` | `bottom-left` |
 | `.rating-overlay-container` | `RatingTagsPosition` | `bottom-right` |
 | `.age-rating-overlay-container` | `AgeRatingTagsPosition` | `bottom-right` |
+| `.status-overlay-container` | `StatusTagsPosition` | `top-right` |
 
 Containers carry `data-je-corner` with one of those four corner values. JE stacks containers sharing a corner with inline transforms and a 4px gap, and offsets top-right tags around card indicators. Custom transforms can disrupt that stacking.
 
@@ -499,6 +501,28 @@ To override a shipped detail/player color:
     background-color: #000 !important;
 }
 ```
+
+### Status Tags CSS
+
+Use `.status-overlay-container` and `.status-tag` to style the Just Added, New and trending badges. Each badge also carries one kind class: `.status-tag--trending`, `.status-tag--new` (New Movie, New Series, New Episode) or `.status-tag--added` (Just Added). The `#N` inside a trending badge is `.status-tag-rank`.
+
+**Give each kind its own colour:**
+
+```css
+.status-tag--trending {
+    background-color: rgba(120, 40, 0, 0.8) !important;
+}
+
+.status-tag--new {
+    background-color: rgba(0, 90, 160, 0.8) !important;
+}
+
+.status-tag .status-tag-rank {
+    color: #fff !important;
+}
+```
+
+The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
 
 ### People Tags CSS
 
@@ -884,11 +908,12 @@ Conditional controls appear only when their feature is available.
 | Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
-| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
+| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
 | Category layout | `.je-quality-cat-wrap`, `.je-quality-cat-expander`, `.je-cat-chevron`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |
 | Quality category controls | `#qualityTagsSubWrap`, `#qualityTagsSubToggleExpander`, `#qualityTagsSubToggles`, `#qualityTagsAudioLanguageSelect`, `#showResolutionTagToggle`, `#showSourceTagToggle`, `#showDynamicRangeTagToggle`, `#showSpecialFormatTagToggle`, `#showVideoCodecTagToggle`, `#showAudioInfoTagToggle` |
 | Rating scopes | `#ratingTagsSubWrap`, `#ratingTagsSubToggleExpander`, `#ratingTagsSubToggles`, `#ratingTagsOnMoviesToggle`, `#ratingTagsOnSeriesToggle`, `#ratingTagsOnSeasonsToggle`, `#ratingTagsOnEpisodesToggle`, `#ratingTagsOnContinueWatchingToggle`, `#ratingTagsOnNextUpToggle` |
-| Corner grids | `.position-selector[data-setting="qualityTagsPosition"]` (also `genreTagsPosition`, `languageTagsPosition`, `ratingTagsPosition`, `ageRatingTagsPosition`); child `div[data-pos="top-left"]` (also the other three corners) |
+| Status badge choices | `#statusTagsSubWrap`, `#statusTagsSubToggleExpander`, `#statusTagsSubToggles`, `#statusTagsTrendingToggle`, `#statusTagsNewReleaseToggle`, `#statusTagsJustAddedToggle` |
+| Corner grids | `.position-selector[data-setting="qualityTagsPosition"]` (also `genreTagsPosition`, `languageTagsPosition`, `ratingTagsPosition`, `ageRatingTagsPosition`, `statusTagsPosition`); child `div[data-pos="top-left"]` (also the other three corners) |
 | Language and About | `#displayLanguageSelect`, `#clearTranslationCacheButton`, `#releaseNotesBtn`, conditional `.footer-logo` |
 
 Category rows use `data-cat-key`, and quality rows also have `data-order-key` and `data-default-order`.

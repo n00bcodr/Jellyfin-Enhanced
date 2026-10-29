@@ -2398,6 +2398,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/trending?page={page}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// Trending ranks for the Status Tags poster badges:
+        /// <c>{ source: "tmdb-day" | "seerr-week" | null, movies: { "&lt;tmdbId&gt;": rank }, series: { ... } }</c>.
+        /// Any signed-in user: the list is public TMDB data shared server-wide (see
+        /// <see cref="Services.StatusTagsTrendingService"/>), and the client only uses
+        /// it to decorate items the user can already see. Empty while the admin has
+        /// Status Tags or their trending badge switched off.
+        /// </summary>
+        [HttpGet("status-tags/trending")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> GetStatusTagsTrending([FromServices] Services.StatusTagsTrendingService trendingService)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var snapshot = Services.StatusTagsTrendingService.Empty;
+            if (config != null && config.StatusTagsEnabled && config.StatusTagsTrending)
+            {
+                try
+                {
+                    snapshot = await trendingService.GetAsync(config, HttpContext.RequestAborted).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    return StatusCode(499); // browser went away
+                }
+            }
+
+            Response.Headers["Cache-Control"] = "private, max-age=300";
+            return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
+        }
+
         [HttpGet("jellyseerr/discover/movies")]
         [Authorize]
         public Task<IActionResult> DiscoverMovies([FromQuery] int page = 1)
@@ -3697,6 +3728,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsEnabled,
                 config.RatingTagsEnabled,
                 config.AgeRatingTagsEnabled,
+                config.StatusTagsEnabled,
                 config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
@@ -3722,6 +3754,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RatingTagsOnContinueWatching,
                 config.RatingTagsOnNextUp,
                 config.AgeRatingTagsPosition,
+                config.StatusTagsPosition,
+                config.StatusTagsJustAdded,
+                config.StatusTagsNewRelease,
+                config.StatusTagsTrending,
+                config.StatusTagsJustAddedDays,
+                config.StatusTagsNewReleaseDays,
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -5180,6 +5218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                         AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                        StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -5193,6 +5232,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
                         RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                        StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                        StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
+                        StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
+                        StatusTagsTrending = defaultConfig.StatusTagsTrending,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8167,6 +8210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                 AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 TagsHideOnHover = defaultConfig.TagsHideOnHover,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -8180,6 +8224,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
                 RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
+                StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
+                StatusTagsTrending = defaultConfig.StatusTagsTrending,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8577,7 +8625,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public IActionResult GetTagData(
             Guid userId,
             [FromBody] string[] ids,
-            [FromQuery] string? mediaSourceId = null)
+            [FromQuery] string? mediaSourceId = null,
+            [FromQuery] bool latestEpisode = false)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -8677,6 +8726,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var spStripGenres = spoilerPolicy?.StripGenres == true;
             var spStripRatings = spoilerPolicy?.StripRatings == true;
             var spReplaceTitle = spoilerPolicy?.ReplaceTitle == true;
+
+            // Status Tags dates (Unix ms, like the server tag cache's entries; null
+            // is omitted). LatestEpisodeAdded costs one query per Series/Season, so
+            // it is only resolved when the client's Status Tags ask for it
+            // (?latestEpisode=true), and through the user so only episodes they can
+            // see count.
+            long? TagDataPremiereDate(BaseItem tagItem) =>
+                tagItem is MediaBrowser.Controller.Entities.Movies.Movie || tagItem is MediaBrowser.Controller.Entities.TV.Series
+                    ? Services.TagCacheService.ToUnixMilliseconds(tagItem.PremiereDate)
+                    : null;
+            long? TagDataLatestEpisodeAdded(BaseItem tagItem)
+            {
+                if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
+                {
+                    return null;
+                }
+
+                var latest = _libraryManager.GetItemList(new InternalItemsQuery(user)
+                {
+                    ParentId = tagItem.Id,
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    Recursive = true,
+                    IsVirtualItem = false,
+                    OrderBy = new[] { (ItemSortBy.DateCreated, JSortOrder.Descending) },
+                    Limit = 1,
+                    DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
+                }).FirstOrDefault();
+                return Services.TagCacheService.ToUnixMilliseconds(latest?.DateCreated);
+            }
 
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
@@ -8783,6 +8861,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         FirstEpisode = (object?)null,
                         // Align with the field-strip filter (which empties Tags).
                         Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
+                        // When it was added is not a spoiler (Jellyfin lists it as Date Added).
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spEp.DateCreated),
                     });
                     continue;
                 }
@@ -8819,6 +8899,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeries.DateCreated),
+                        PremiereDate = TagDataPremiereDate(spSeries),
+                        LatestEpisodeAdded = TagDataLatestEpisodeAdded(spSeries),
                     });
                     continue;
                 }
@@ -8879,6 +8962,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spMovie.DateCreated),
+                        PremiereDate = TagDataPremiereDate(spMovie),
                     });
                     continue;
                 }
@@ -8916,6 +9001,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeason.DateCreated),
+                        LatestEpisodeAdded = TagDataLatestEpisodeAdded(spSeason),
                     });
                     continue;
                 }
@@ -9002,7 +9089,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
-                    FirstEpisode = firstEpisodeData
+                    FirstEpisode = firstEpisodeData,
+                    DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),
+                    PremiereDate = TagDataPremiereDate(item),
+                    LatestEpisodeAdded = TagDataLatestEpisodeAdded(item),
                 });
             }
 

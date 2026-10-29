@@ -595,6 +595,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsTrendingService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheMonitor.cs",
       "category": "Services"
     },
@@ -1427,6 +1431,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/statustags.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-cache-store.js",
       "category": "js"
     },
@@ -1766,6 +1774,16 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/status-tags/trending",
+      "method": "GetStatusTagsTrending",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
       ]
     },
     {
@@ -3914,6 +3932,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "StatusTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "PeopleTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -4206,6 +4232,54 @@
       "type": "string",
       "initializer": "\"bottom-right\"",
       "constructor_assignment": "\"bottom-right\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsPosition",
+      "type": "string",
+      "initializer": "\"top-right\"",
+      "constructor_assignment": "\"top-right\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsJustAdded",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsNewRelease",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsTrending",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsJustAddedDays",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": "7",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsNewReleaseDays",
+      "type": "int",
+      "initializer": "30",
+      "constructor_assignment": "30",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -6410,6 +6484,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PeopleTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -6517,6 +6599,38 @@
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsPosition",
+      "type": "string",
+      "initializer": "\"top-right\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsJustAdded",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsNewRelease",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsTrending",
+      "type": "bool",
+      "initializer": "true",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -7829,9 +7943,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 359,
-    "routes": 180,
-    "configuration_properties": 533,
+    "files": 361,
+    "routes": 181,
+    "configuration_properties": 545,
     "storage_references": 70,
     "scheduled_tasks": 13,
     "locales": 33

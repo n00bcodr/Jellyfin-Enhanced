@@ -83,7 +83,7 @@ Select **Feature toggle states (on/off only)** before saving to include this cat
     | --- | --- |
     | Icon style | `IconStyle` |
     | Maintenance actions and affected users | `MaintenanceModeAction`, `MaintenanceScheduleAction` and `MaintenanceModeAffectedUsers`. The user scope is reduced to `all` or `selected`, without selected user IDs. |
-    | Tag positions | `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`, `AgeRatingTagsPosition` |
+    | Tag positions | `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`, `AgeRatingTagsPosition`, `StatusTagsPosition` |
     | Tag styling | `TagStyleTarget`, `TagStylePreset`, `TagStyleApplyScope` |
     | Language priority | `LanguageTagsPriority`, filtered to tokens shaped like language codes and converted to lowercase |
     | Additional Native Poster Tags client exclusions | `NativePosterTagsWebClientNames`, filtered to short app-name-shaped entries, deduplicated and limited to 20. Built-in web clients are omitted. |

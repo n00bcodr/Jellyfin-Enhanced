@@ -274,9 +274,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     }
                 }
 
+                // Status Tags day windows: the config page clamps them too, but a
+                // save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration statusTagsConfig)
+                {
+                    statusTagsConfig.StatusTagsJustAddedDays = Math.Clamp(statusTagsConfig.StatusTagsJustAddedDays, 1, 365);
+                    statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
+                }
+
                 base.UpdateConfiguration(configuration);
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
+
+            // The trending source (TMDB key, Seerr) or the switches may have changed.
+            Services.StatusTagsTrendingService.Invalidate();
 
             try
             {

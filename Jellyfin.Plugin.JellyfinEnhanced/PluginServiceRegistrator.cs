@@ -80,6 +80,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and
             // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
             serviceCollection.AddSingleton<TmdbResponseCache>();
+            // Server-wide trending list for the Status Tags poster badges (30-minute cache).
+            serviceCollection.AddSingleton<StatusTagsTrendingService>();
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
