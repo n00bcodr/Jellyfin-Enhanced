@@ -1414,6 +1414,19 @@ change while it loads makes it ask once more. The page's artwork is loaded once:
 second time as it appears, or again when it is scrolled out of view and back. New artwork (another grant, a changed
 setting) is a new address or a new page and loads anew.
 
+Something the server can't give right now doesn't stay missing until you leave the page. An image that is busy (the
+person's eight places or the server's image queue are full), that TMDB couldn't send, or whose access can't be settled
+at that moment (the person's policy or the library changing while it is checked) is answered as temporary (503 with
+`Retry-After`), and the page asks for it again itself: after the wait the server named, backing off, at most three at
+once, and for about a minute at most. It appears as soon as it loads, usually within a few seconds of the server being
+free again. A season's episode list (and a series' seasons) that can't be read right now works the same way: the list
+stays pending, never an empty season, and is drawn when a later read answers. An image that is refused or that TMDB
+doesn't have (404) isn't asked for again, so a missing poster stays a placeholder. An image whose address was made
+before your access changed (a sign-out, a new parental limit) is read once more under your current access, and is
+shown only if that still allows it. Leaving the page, signing out or an access change stops all of this at once;
+nothing from the old page is drawn afterwards. Whether a library title or a refused one, nothing is shown that
+wouldn't be shown on a fresh visit.
+
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 
 ### Server-side cache for artwork

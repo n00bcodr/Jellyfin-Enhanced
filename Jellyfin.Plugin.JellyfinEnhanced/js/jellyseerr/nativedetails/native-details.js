@@ -877,6 +877,131 @@
     /** Elements whose artwork this module joined to jellyfin-web's preloader, with the policy generation it was asked under. */
     const artwork = new WeakMap();
     /**
+     * Failed artwork loads reported before the page they belong to had its state (a cold deep link): url → {status, at}.
+     * Handed to the next page state, dropped on navigation and after EARLY_FAILURE_MS; at most EARLY_FAILURE_MAX.
+     * @type {Map<string, {status: number, at: number}>}
+     */
+    const earlyFailures = new Map();
+    const EARLY_FAILURE_MS = 30000;
+    /** When the visit shown now began (performance clock; 0: the document's own first page). */
+    let visitStartedAt = 0;
+    /** The route generation that visit began with. */
+    let visitGeneration = null;
+
+    /**
+     * A navigation happened: when it moved the semantic route, a new visit begins now.
+     * @returns {void}
+     */
+    function noteVisit() {
+        const generation = JE.routeGeneration?.() ?? null;
+        if (generation === visitGeneration) return;
+        visitGeneration = generation;
+        visitStartedAt = typeof performance?.now === 'function' ? performance.now() : 0;
+    }
+    const EARLY_FAILURE_MAX = 100;
+
+    /**
+     * The page's artwork recovery (native-recovery.js): an image the server couldn't serve right now is asked for again
+     * (Retry-After, bounded) and shown when it comes. It belongs to the page state and to the policy generation it was
+     * made under: the page ending or the policy moving ends it (artPolicyMoved makes a new one).
+     * @param {Object} state Page state.
+     * @returns {Object|null} Recovery, or null when the helper isn't loaded.
+     */
+    function artRecovery(state) {
+        const helper = JE.internals?.nativeRecovery;
+        if (!helper) return null;
+        const generation = artGeneration;
+        // The visit it was made for: navigating away ends it (even to another absent title, while this state is still
+        // the current one), and the page shown again gets a new one (onView).
+        const visit = JE.routeGeneration?.() ?? null;
+        state.recoveryVisit = visit;
+        const live = () => !state.aborted && current === state && artGeneration === generation
+            && (visit === null || JE.routeGeneration() === visit);
+        const recovery = helper.images({
+            page: () => (live() ? state.page : null),
+            live,
+            // Shown under the policy that holds now: kept like any image this page loaded (see keepImages).
+            onShown: node => artwork.set(node, artGeneration),
+            getItem: id => window.ApiClient.getItem(window.ApiClient.getCurrentUserId(), id),
+            outside: (state.backdrop = backdropSlot(state, live))
+        });
+        const now = Date.now();
+        for (const [url, failure] of earlyFailures) if (now - failure.at < EARLY_FAILURE_MS) recovery.failed(url, failure.status);
+        earlyFailures.clear();
+        return recovery;
+    }
+
+    /**
+     * jellyfin-web's backdrop of the shown page (outside the page element): it preloads it once and shows it only on
+     * load. A recovered backdrop is shown as that load would show it, in the slot not shown now, while the page holds,
+     * only for this page's own artwork (its item's, or for a season or episode its series') and when the backdrop shown
+     * is not already this image. What recovery draws there is its own: taken away again when the page ends or its
+     * policy moves (clear), so it never outlives the access it was loaded under.
+     * @param {Object} state Page state.
+     * @param {() => boolean} live Whether the page still holds.
+     * @returns {{expected: () => string|null, waiting: (url: string) => boolean, show: (url: string) => void, clear: () => void}} Backdrop target.
+     */
+    function backdropSlot(state, live) {
+        const shownUrl = () => document.querySelector('.backdropImage.displayingBackdropImage')?.getAttribute('data-url') || '';
+        const base = url => String(url).replace(/([?&])_jer=\d+&?/, '$1').replace(/[?&]$/, '');
+        const flat = id => String(id || '').replace(/-/g, '').toLowerCase();
+        const owners = new Set([flat(state.id)]);
+        if (state.parts.kind === 'season' || state.parts.kind === 'episode') owners.add(flat(syntheticId('series', state.parts.tmdbId)));
+        const ownerOf = url => flat(/\/Items\/([0-9a-f-]{32,36})\/Images\/Backdrop/i.exec(String(url))?.[1]);
+        /** The URL recovery drew in a slot, if any. */
+        let drawn = null;
+        return {
+            // The page's own backdrop jellyfin-web asked for on this visit (resource timing; for browsers that don't report
+            // statuses): a request from an earlier visit says nothing about what this one wants (backdrops since turned off).
+            expected: () => {
+                const entries = typeof performance?.getEntriesByType === 'function' ? performance.getEntriesByType('resource') : [];
+                for (let i = entries.length - 1; i >= 0; i--) {
+                    const { name, startTime } = entries[i];
+                    if (startTime >= visitStartedAt && !/_jer=/.test(name) && owners.has(ownerOf(name))) return name;
+                }
+                return null;
+            },
+            waiting: url => live() && owners.has(ownerOf(url)) && !!document.getElementById('backdropImage0') && base(shownUrl()) !== base(url),
+            show: url => {
+                if (!live() || !owners.has(ownerOf(url))) return;
+                const slots = [document.getElementById('backdropImage0'), document.getElementById('backdropImage1')].filter(Boolean);
+                const next = slots.find(n => !n.classList.contains('displayingBackdropImage')) || slots[0];
+                if (!next) return;
+                next.style.backgroundImage = "url('" + url + "')";
+                next.setAttribute('data-url', url);
+                next.classList.add('displayingBackdropImage', 'backdropImageFadeIn');
+                slots.forEach(n => { if (n !== next) n.classList.remove('displayingBackdropImage'); });
+                document.querySelector('.backgroundContainer')?.classList.add('withBackdrop');
+                drawn = url;
+            },
+            clear: () => {
+                if (!drawn) return;
+                const ours = [...document.querySelectorAll('.backdropImage')].filter(n => n.getAttribute('data-url') === drawn);
+                drawn = null;
+                for (const n of ours) {
+                    n.classList.remove('displayingBackdropImage', 'backdropImageFadeIn');
+                    n.style.backgroundImage = 'none';
+                    n.removeAttribute('data-url');
+                }
+                if (ours.length && !document.querySelector('.backdropImage.displayingBackdropImage')) document.querySelector('.backgroundContainer')?.classList.remove('withBackdrop');
+            }
+        };
+    }
+
+    /**
+     * A failed load of a synthetic image (resource timing): the shown page's recovery takes it, or it waits for the page
+     * state still to come.
+     * @param {string} url Image URL.
+     * @param {number} status HTTP status (0: no answer).
+     * @returns {void}
+     */
+    function artFailed(url, status) {
+        const state = current;
+        if (state && !state.aborted && state.recovery && state.recoveryVisit === (JE.routeGeneration?.() ?? null)) { state.recovery.failed(url, status); return; }
+        if (earlyFailures.size >= EARLY_FAILURE_MAX) earlyFailures.delete(earlyFailures.keys().next().value);
+        earlyFailures.set(url, { status, at: Date.now() });
+    }
+    /**
      * At most this many images of one page are kept loaded out of view (the ones that left it last, about four rows of
      * cards on a computer): older ones go back to jellyfin-web's own unloaded state, so a very long page never holds every
      * image it ever showed (F30).
@@ -893,8 +1018,15 @@
      */
     function artPolicyMoved() {
         artGeneration++;
+        earlyFailures.clear();
+        endChildReads();
         const state = current;
         if (!state || state.aborted) return;
+        // Recovery under the old policy ends (and a backdrop it drew goes); anything that fails from now on is recovered
+        // under the new one.
+        state.recovery?.dispose();
+        state.backdrop?.clear();
+        state.recovery = artRecovery(state);
         // Nothing kept from before is kept on (see keepImages): every image is jellyfin-web's again once it leaves view.
         state.retained?.clear();
         state.page.querySelectorAll('[style*="/Images/"]').forEach((node) => {
@@ -958,6 +1090,7 @@
                     // The exact text jellyfin-web assigns, so its own assignment is no change.
                     node.style.backgroundImage = "url('" + src + "')";
                     artwork.set(node, artGeneration);
+                    state.recovery?.started(node, src);
                     continue;
                 }
                 // Emptied after it was shown: kept only when this page loaded it under the policy that holds now;
@@ -1043,6 +1176,8 @@
             state.absentMarked?.forEach(n => n.removeAttribute(ABSENT_ATTR));
             state.absentMarked?.clear();
             state.imageObserver?.disconnect();
+            state.recovery?.dispose();
+            state.backdrop?.clear();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             if (state.relookTimer) clearTimeout(state.relookTimer);
             controlsOf(state).forEach(n => n.remove());
@@ -1556,6 +1691,7 @@
      * @returns {Promise<void>}
      */
     async function onView() {
+        wrapChildReads();
         const id = idFromHash();
         const page = visiblePage();
         // Capability or admin switch off (or a 10.11 server): native pages stay exactly as they are.
@@ -1605,6 +1741,7 @@
             dispose();
             current = state;
             state.imageObserver = keepImages(state);
+            state.recovery = artRecovery(state);
             // Titles get their request controls in the native action row; a person page has none.
             state.primary = isTitle ? primaryOf(state) : null;
             state.container = actionsOf(state);
@@ -1642,6 +1779,12 @@
                 document.addEventListener('keydown', state.onKey, true);
                 markRow(state.primary);
             }
+        }
+        // A page shown again (Back) is another visit: its artwork recovery is that visit's own.
+        if (!state.aborted && state.recoveryVisit !== (JE.routeGeneration?.() ?? null)) {
+            state.recovery?.dispose();
+            state.backdrop?.clear();
+            state.recovery = artRecovery(state);
         }
         // Every look starts from the live controls only (copies and leftovers gone), and ends so too.
         reconcile(state);
@@ -1780,6 +1923,40 @@
         e.stopPropagation();
     }
 
+    /** The end hooks of list re-reads in progress (each ends its read only when its page no longer holds). */
+    const childEnds = new Set();
+
+    /**
+     * Something a list re-read's page depends on moved (a navigation, another viewer, the access policy): every re-read
+     * whose page no longer holds is aborted now, its timers cleared.
+     * @returns {void}
+     */
+    function endChildReads() {
+        for (const end of [...childEnds]) end();
+    }
+
+    /**
+     * Wraps the API client's season and episode list reads for synthetic ids (native-recovery.js): a temporary answer is
+     * asked again and the list drawn when it comes, while the page that asked is still shown (the same visit of the same
+     * route, viewer and access policy); otherwise it is never drawn.
+     * @returns {void}
+     */
+    function wrapChildReads() {
+        const helper = JE.internals?.nativeRecovery;
+        if (!helper) return;
+        const routeNow = () => (typeof JE.routeKey === 'function' ? JE.routeKey() : window.location.hash);
+        const userNow = () => window.ApiClient?.getCurrentUserId?.() || null;
+        helper.childReads({
+            isSynthetic,
+            // The route generation moves on with every semantic route change and never comes back: a read of a page left
+            // and opened again is the old visit's, never the new one's.
+            capture: () => ({ route: routeNow(), visit: JE.routeGeneration?.() ?? null, user: userNow(), generation: artGeneration }),
+            live: page => page.route === routeNow() && (page.visit === null || page.visit === JE.routeGeneration?.())
+                && page.user === userNow() && page.generation === artGeneration,
+            watch: (page, end) => { childEnds.add(end); return () => childEnds.delete(end); }
+        });
+    }
+
     /**
      * Starts the page adapter (once).
      * @returns {void}
@@ -1787,6 +1964,8 @@
     function start() {
         if (started) return;
         started = true;
+        // The document's first page is the first visit (it began with the document).
+        visitGeneration = JE.routeGeneration?.() ?? null;
         const run = () => { onView().catch(() => { /* the page keeps its native state */ }); };
         if (JE.core?.navigation?.onViewPage) {
             JE.core.navigation.onViewPage(run);
@@ -1795,18 +1974,32 @@
         }
         // A cold deep link or reload: the first look happens after load has settled.
         setTimeout(run, 350);
-        const moved = () => { navigated = true; notePendingMove(); };
+        const moved = () => { navigated = true; noteVisit(); notePendingMove(); };
         if (JE.core?.navigation?.onNavigate) JE.core.navigation.onNavigate(moved);
         else window.addEventListener('hashchange', moved);
         JE.core?.navigation?.onNavigate?.(() => {
+            noteVisit();
+            earlyFailures.clear();
+            // The visit's own recovery work ends with it (the page shown again starts its own: onView).
+            const state = current;
+            if (state?.recovery && state.recoveryVisit !== (JE.routeGeneration?.() ?? null)) {
+                state.recovery.dispose();
+                state.recovery = null;
+                state.backdrop?.clear();
+            }
+            endChildReads();
             if (parse(idFromHash())) return;
             unrefuse(null);
             dispose();
         });
+        // Artwork and season/episode lists the server couldn't give right now are asked for again (native-recovery.js).
+        JE.internals?.nativeRecovery?.watchResources(artFailed, isSynthetic);
+        wrapChildReads();
         document.addEventListener('contextmenu', guard, true);
         window.addEventListener('je-spoiler-policy-changed', event => {
             const state = current;
             artGeneration++;
+            endChildReads();
             if (!state || event.detail?.type && (Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail.type !== state.mediaType)) return;
             // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
             state.page.replaceChildren();
@@ -1814,7 +2007,7 @@
             // The reload is this page's own step: it happens only while this page is still the one shown (D46S2-R11-6).
             JE.internals.spoilerGuard?.scheduleFullReload?.(JE.operation());
         });
-        JE.session?.onUserChange?.('native-details', () => { artGeneration++; cancelPendingModal(); dispose(); });
+        JE.session?.onUserChange?.('native-details', () => { artGeneration++; earlyFailures.clear(); endChildReads(); cancelPendingModal(); dispose(); });
         // Artwork follows the person's access and presentation (Spoiler Guard reloads the page above).
         document.addEventListener('je-access-revision', artPolicyMoved);
         window.addEventListener('je-hidden-content-changed', artPolicyMoved);

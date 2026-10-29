@@ -114,8 +114,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return;
             }
 
-            // A busy answer says when to come back (the client waits at least that long).
-            if (result is StatusCodeResult { StatusCode: StatusCodes.Status429TooManyRequests }) context.HttpContext.Response.Headers["Retry-After"] = "2";
+            // A busy or temporarily unavailable answer says when to come back (the client waits at least that long), and
+            // no refusal (temporary or not) is kept by the browser or a proxy: the next ask reaches the server again.
+            if (result is StatusCodeResult { StatusCode: StatusCodes.Status429TooManyRequests or StatusCodes.Status503ServiceUnavailable })
+                context.HttpContext.Response.Headers["Retry-After"] = RetryAfterSeconds;
+            if (result is StatusCodeResult) context.HttpContext.Response.Headers.CacheControl = "private, no-store";
             context.Result = result;
         }
 
@@ -443,6 +446,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // The parts the viewer can open in the library are themselves (a season of a series Jellyfin has
             // but this season isn't in it), never a stand-in from public data.
             var physical = _policy.Physical(viewer, false, title.TmdbId, null);
+            if (physical.Unreadable) return Unavailable();
             var options = Options(context);
             var list = new List<BaseItemDto>();
             if (title.Kind == SyntheticKind.Episode)
@@ -476,6 +480,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var special = Arg<bool?>(context, "isSpecialSeason");
             // A season the library has but hides from this viewer is never drawn from public data instead.
             var physical = _policy.Physical(viewer, false, series.TmdbId, null);
+            // A library that can't be read now can't say which seasons it hides from the viewer: retryable.
+            if (physical.Unreadable) return Unavailable();
             var hidden = physical.HiddenSeasons;
             var options = Options(context);
             // A season the viewer can open in the library is listed as itself.
@@ -518,15 +524,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!viewer.DisplayMissingEpisodes) return empty;
             var seriesData = await _source.SeriesAsync(series.Id.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (seriesData.Data is not { } sd) return Failed(seriesData);
-            // A season the series doesn't have is unknown (404); a season whose episode list can't be
-            // had right now is an empty list: jellyfin-web's episode list has no error handler.
+            // A season the series doesn't have is unknown (404).
             if (!NativeDetailsDtos.Seasons(sd).Any(e => NativeDetailsDtos.Int(e, "seasonNumber") == number.Value)) return new NotFoundResult();
             // The library's own season and episodes the viewer may not see are never drawn from public data:
-            // a hidden season is unknown, a hidden episode has no row.
+            // a hidden season is unknown, a hidden episode has no row; a library that can't be read now is retryable.
             var physical = _policy.Physical(viewer, false, series.Id.TmdbId, number.Value);
+            if (physical.Unreadable) return Unavailable();
             if (physical.Hidden || physical.HiddenSeasons.Contains(number.Value)) return new NotFoundResult();
             var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, viewer.Id, ct).ConfigureAwait(false);
-            if (seasonData.Data is not { } se) return empty;
+            // A season the source says has no data of its own is a verified empty list. One whose data can't be had right
+            // now is retryable (429/503 with Retry-After, which JE's child-list reader waits out and asks again), never a
+            // completed empty list a temporary outage would leave on the page.
+            if (seasonData.Data is not { } se) return seasonData.NotFound ? empty : Failed(seasonData);
             var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             var options = Options(context);
             // An episode the viewer can open in the library is listed as itself; a file holding several episodes
@@ -611,16 +620,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return Ok(new QueryResult<BaseItemDto>(0, items.Count, items));
         }
 
+        /// <summary>How long a busy or temporarily unavailable answer asks the client to wait (Retry-After, seconds).</summary>
+        internal const string RetryAfterSeconds = "2";
+
+        /// <summary>
+        /// The header naming why an absent title's image wasn't served, for a reason the client acts on: a temporary one
+        /// (<c>viewer-busy</c>, <c>server-busy</c>, <c>queue-expired</c>, <c>upstream-unavailable</c>, <c>policy-unknown</c>,
+        /// <c>budget</c>: 503/429 with Retry-After, ask again) or a grant minted under a policy that has moved
+        /// (<c>stale-grant</c>: 404, the page's current answer mints a new one). A refusal or a missing file is a plain
+        /// 404 with no reason.
+        /// </summary>
+        internal const string ArtReasonHeader = "X-JE-Art";
+
         private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
+            var headers = context.HttpContext.Response.Headers;
+            headers.CacheControl = "private, no-store";
+            headers["X-Content-Type-Options"] = "nosniff";
+            IActionResult Refused()
+            {
+                _artwork.Note(ArtworkRead.Not(ArtworkOutcome.Refused));
+                return new NotFoundResult();
+            }
+
+            IActionResult Again(ArtworkOutcome outcome, string reason, int status = StatusCodes.Status503ServiceUnavailable)
+            {
+                _artwork.Note(ArtworkRead.Not(outcome));
+                headers[ArtReasonHeader] = reason;
+                return new StatusCodeResult(status);
+            }
+
             // A synthetic card served outside this facade (a Home Screen Sections row, for one) passes JE's
             // response filters, which decorate every image tag ("sb-…", "-jet…", "-jeu…"); the grant is the base.
             var tag = Services.ImageTagDecoration.StripAll(Arg<string>(context, "tag"));
-            if (!_artwork.TryRead(tag, out var grant) || grant == null) return new NotFoundResult();
+            if (!_artwork.TryRead(tag, out var grant) || grant == null) return Refused();
             var itemId = Arg<Guid?>(context, "itemId");
             var type = context.ActionArguments.TryGetValue("imageType", out var t) && t is ImageType it ? it : (ImageType?)null;
             var index = Arg<int?>(context, "imageIndex") ?? 0;
-            if (itemId != grant.Owner || type != grant.Type || index != grant.Index || owner.Kind == 0) return new NotFoundResult();
+            if (itemId != grant.Owner || type != grant.Type || index != grant.Index || owner.Kind == 0) return Refused();
             User? viewer;
             try
             {
@@ -631,51 +668,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 viewer = null;
             }
 
-            if (viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) || _policy.Revision(viewer) != grant.PolicyRevision) return new NotFoundResult();
+            if (viewer == null || viewer.HasPermission(PermissionKind.IsDisabled)) return Refused();
+            // Minted before the viewer's policy or session moved: this grant serves nothing (404). Whether the answer may say
+            // so (stale-grant: the page's current answer mints a new grant) is decided only after the image passes every
+            // check below under what holds now; one the viewer may no longer see is a plain 404, like any refusal.
+            var stale = _policy.Revision(viewer) != grant.PolicyRevision;
+            IActionResult Temporary(ArtworkOutcome outcome, string reason, int status = StatusCodes.Status503ServiceUnavailable)
+                => stale ? Refused() : Again(outcome, reason, status);
+
             PrivacyResponseGuard.Admit(context.HttpContext, _parental, grant.Viewer, grant: true);
             // Grants outlive their page: the viewer-level eligibility (Seerr linkage) and, for a title's own
             // artwork, the title-level one (cached rating, request visibility) are checked again.
-            if (!await _policy.ViewerMayUseAsync(viewer, ct).ConfigureAwait(false)) return new NotFoundResult();
+            var viewerAccess = await _policy.ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
+            if (viewerAccess == NativeDetailsPolicy.Access.Unknown) return Temporary(ArtworkOutcome.PolicyUnknown, "policy-unknown");
+            if (viewerAccess != NativeDetailsPolicy.Access.Allowed) return Refused();
             // And the page it was minted for: the title (its own artwork and the cast photos shown on it),
             // or a person's own page (an adult performer's photo isn't for a viewer with a parental limit).
-            // A rating the cache no longer holds (a restart) is read again rather than refused.
-            if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return new NotFoundResult();
+            // A rating the cache no longer holds (a restart) is read again rather than refused; request visibility
+            // that can't be settled now (the person or the library changing under every read) is temporary too.
+            if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return Refused();
             if (page.IsTitle)
             {
                 var access = await _policy.ListAbsentAccessAsync(viewer, page, ct).ConfigureAwait(false);
-                if (access == NativeDetailsPolicy.Access.Unknown) return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
-                if (access != NativeDetailsPolicy.Access.Allowed) return new NotFoundResult();
+                if (access == NativeDetailsPolicy.Access.Unknown) return Temporary(ArtworkOutcome.PolicyUnknown, "policy-unknown");
+                if (access != NativeDetailsPolicy.Access.Allowed) return Refused();
             }
             else if (page.Kind == SyntheticKind.Person)
             {
-                if ((await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
+                if ((await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return Refused();
             }
             else
             {
-                return new NotFoundResult();
+                return Refused();
             }
             // An episode still or a later season's poster of a title the viewer guards with Spoiler Guard:
             // never served (a page drawn before they guarded it still holds the URL).
             var spoiler = _presentation?.Load(viewer.Id, context.HttpContext);
-            if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return new NotFoundResult();
+            if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return Refused();
             var pageKey = HiddenContentPolicy.TitleIdentity(page.IsMovie ? "movie" : "tv", page.TmdbId.ToString());
-            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return Refused();
             var protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
                 owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             var width = Arg<int?>(context, "maxWidth") ?? Arg<int?>(context, "fillWidth") ?? Arg<int?>(context, "width");
             var height = Arg<int?>(context, "fillHeight") ?? Arg<int?>(context, "maxHeight") ?? Arg<int?>(context, "height");
             if (width == null && height is int h) width = grant.Type == ImageType.Backdrop ? h * 16 / 9 : grant.Type == ImageType.Logo ? h * 4 : h * 2 / 3;
             var size = NativeDetailsArtwork.SizeFor(grant.Type, width);
+            if (stale)
+            {
+                _artwork.Note(ArtworkRead.Not(ArtworkOutcome.StaleGrant));
+                headers[ArtReasonHeader] = "stale-grant";
+                return new NotFoundResult();
+            }
+
             // One viewer can't make the server fetch without bound: images not cached yet (in memory or in the
             // server-side cache) come out of their budget.
-            if (!await _artwork.IsCachedAsync(grant.Path, size, ct).ConfigureAwait(false) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
-            var image = await _artwork.FetchAsync(grant.Path, size, grant.Viewer, ct).ConfigureAwait(false);
-            if (image is not { } bytes) return new NotFoundResult();
+            if (!await _artwork.IsCachedAsync(grant.Path, size, ct).ConfigureAwait(false) && !_artwork.TakeUpstream(grant.Viewer))
+                return Again(ArtworkOutcome.Budget, "budget", StatusCodes.Status429TooManyRequests);
+            // Admission pressure and an upstream outage are temporary (503 + Retry-After: ask again); a file TMDB doesn't
+            // have is not (404).
+            var read = await _artwork.ReadAsync(grant.Path, size, grant.Viewer, ct).ConfigureAwait(false);
+            if (read.Retryable)
+            {
+                headers[ArtReasonHeader] = read.Outcome switch
+                {
+                    ArtworkOutcome.ViewerBusy => "viewer-busy",
+                    ArtworkOutcome.ServerBusy => "server-busy",
+                    ArtworkOutcome.QueueExpired => "queue-expired",
+                    _ => "upstream-unavailable",
+                };
+                return new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+            }
+
+            if (read.Image is not { } bytes) return new NotFoundResult();
             // The one delivery gate after the fetch (the last await): the artwork is projected under the viewer's policy
             // revisions (an absent title has no watched state or owner of its own) and leaves only when they still hold.
-            var headers = context.HttpContext.Response.Headers;
-            headers.CacheControl = "private, no-store";
-            headers["X-Content-Type-Options"] = "nosniff";
             return PrivacyDelivery.Deliver<IActionResult>(viewer.Id, () =>
             {
                 var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);

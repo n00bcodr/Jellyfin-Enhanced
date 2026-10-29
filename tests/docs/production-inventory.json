@@ -2835,6 +2835,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/nativedetails/native-recovery.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-catalog.js",
       "category": "js"
     },
@@ -12046,7 +12050,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 778,
+    "files": 779,
     "routes": 316,
     "configuration_properties": 672,
     "storage_references": 106,

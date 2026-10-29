@@ -1774,8 +1774,21 @@ free; admission refusals are not cached. Missing parental evidence yields retrya
 while a verified parental refusal remains `404`. Artwork revalidation also returns `503` for unavailable evidence.
 Library collection gaps return `503 metadata_unavailable` with `Retry-After: 1` when admission refuses any
 required collection/evidence read, so a partial list is never acknowledged as complete.
-The status route retains its successful empty status; optional Similar/episode rails retain their empty-answer
-contracts. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
+The status route retains its successful empty status; the optional Similar rail retains its empty-answer contract.
+A season's episode list whose own data can't be read right now answers `503` (or `429` when the read wasn't started)
+with `Retry-After: 2`, never a completed empty list; a season the source has no data for is still an empty list, and a
+season the series doesn't have, or one the library hides from the caller, is `404`. A seasons, episodes or parents
+answer, or the page itself, whose library copy facts can't be read now answers `503` rather than the `404` of a hidden
+title, as does request visibility that can't be settled (the person, their policy or the library changed through every
+confirmation read, or the copy lookup proved neither a copy nor an absence). Every refusal of these routes is
+`private, no-store`. Artwork (`Items/{pageId}/Images/…` with a signed grant, anonymous like a plain image): served
+`private, no-store`; `503` with `Retry-After: 2` while the caller's eight image places, the server's 16 running and 32
+queued image reads, the queue's two-second wait, TMDB itself, or the page's access check can't serve it now (`429` with
+`Retry-After: 2` when the caller's upstream image budget is spent); `X-JE-Art` names which (`viewer-busy`,
+`server-busy`, `queue-expired`, `upstream-unavailable`, `policy-unknown`, `budget`). An invalid, refused or denied grant
+and a file TMDB doesn't have are `404` with no reason; a grant minted under a policy revision that has since moved
+(sign-out, a policy change) is `404`, with `X-JE-Art: stale-grant` only when the image would still be served to the
+caller under what holds now (the page's current answer carries its current grant); otherwise a plain `404`. Eight admitted tasks run and at most 40 wait server-wide. A task retains its original viewer's place
 until it ends, even if its waiter cancels. Raw TMDB cache reads have their own 30-second upstream timeout
 (including any raw-cache slot wait); admission/page waiting and the finite server queue are separate waits.
 
