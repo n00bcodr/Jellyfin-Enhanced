@@ -279,6 +279,24 @@
     }
 
     /**
+     * True when an element the host added holds a row of a missing item whose episode plays under another item now
+     * (Jellyfin's list drawn while it still listed both), or of a missing item it no longer lists.
+     * @param {Element} node Added element.
+     * @returns {boolean} A replaced row.
+     */
+    function replaced(node) {
+        const rows = node.matches('.listItem[data-id]') ? [node] : node.querySelectorAll('.listItem[data-id]');
+        const episodes = state.status.episodes || [];
+        for (const row of rows) {
+            const id = norm(row.getAttribute('data-id'));
+            if (orphans.has(id)) return true;
+            const slot = !playable.has(id) && placeholders.get(id);
+            if (slot && episodes.some(ep => slot.has(ep.episode) && isReady(ep) && ep.itemId && norm(ep.itemId) !== id)) return true;
+        }
+        return false;
+    }
+
+    /**
      * Reads the season's episode list once for rows of missing items no status named (a page drawn while Jellyfin
      * listed a missing item and the file that replaces it): a listed missing item of this season stands for its
      * numbers; one no longer listed is gone, unless an episode not playable yet could be waiting on it. Viewer-authorised
@@ -585,17 +603,23 @@
             && previous.has(ep.episode) && (previous.get(ep.episode).stage !== 'ready' || previous.get(ep.episode).itemId !== ep.itemId)));
         if (!observer && JE.helpers?.onBodyMutation) {
             const schedule = JE.helpers.debounce ? JE.helpers.debounce(apply, 80) : apply;
+            // Heard before the frame is painted: a redraw that brings back a row an arrival replaced is put right in it.
             observer = JE.helpers.onBodyMutation('arr-status-episodes', (mutations) => {
                 if (!state || state.page.classList.contains('hide')) return;
+                let added = false;
                 for (const m of mutations) {
                     if (!state.page.contains(m.target)) continue;
-                    if ([...(m.addedNodes || [])].some(node => node.nodeType === 1 && !node.hasAttribute('data-je-arr-arrival') &&
-                        (node.matches('.listItem[data-id]') || node.querySelector('.listItem[data-id]')))) {
-                        schedule();
-                        return;
+                    for (const node of m.addedNodes || []) {
+                        if (node.nodeType !== 1 || node.hasAttribute('data-je-arr-arrival') || !(node.matches('.listItem[data-id]') || node.querySelector('.listItem[data-id]'))) continue;
+                        if (replaced(node)) {
+                            apply();
+                            return;
+                        }
+                        added = true;
                     }
                 }
-            });
+                if (added) schedule();
+            }, { priority: 1 });
         }
     }
 

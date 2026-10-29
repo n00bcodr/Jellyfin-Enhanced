@@ -487,3 +487,17 @@ for (const leave of ['route', 'user']) test(`regression F102: a playable item's 
   assert.equal(list.firstElementChild.querySelector('.listItemBodyText bdi').textContent, '1. Episode 1');
   assert.equal(list.firstElementChild.querySelector('.listItem-overview').textContent, 'Virtual overview 1');
 });
+
+test('regression F102: a host redraw that brings back the replaced missing row is put right before the frame is painted', async t => {
+  const h = fixture(t), page = h.document.getElementById('itemDetailPage'), D = h.JE.internals.arrStatusDetails;
+  const list = page.querySelector('.itemsContainer');
+  list.innerHTML = seasonRows(1);
+  D.render(page, seasonStatus(h, 1), {});
+  D.render(page, seasonStatus(h, 1, { 0: id(501) }), {}); await turn();
+  // Jellyfin's list as a 12.2 server drew it live: the playable item first, its missing twin after it.
+  list.innerHTML = seasonRows(1, { physical: true }).replace(/(<div class="listItem[^>]*data-id="0+1"[\s\S]*?)(<div class="listItem[^>]*data-id="0+501"[\s\S]*?)(<div class="listItem[^>]*data-id="0+2")/, '$2$1$3');
+  assert.equal(rowIds(page)[0], id(501), 'fixture: physical drawn first');
+  await turn();
+  assert.deepEqual(rowIds(page), [id(501), id(2), id(3), id(4), id(5), id(6)], 'in the mutation callback, no debounce or timer');
+  assert.ok(list.firstElementChild.querySelector('button.listItemButton'));
+});
