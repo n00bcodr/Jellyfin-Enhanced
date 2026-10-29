@@ -29,6 +29,8 @@
     "// Native details for titles not in the library (JE.titleDetails; experimental, Jellyfin 12). Needs only core;",
     "// loads before every module that checks JE.titleDetails.isSynthetic, which some do at load time on a cold",
     "// deep link (item-details' Request More and rails, seerr-detail-link, tags).",
+    "// native-recovery.js: the bounded artwork and season/episode list recovery native-details.js uses at load time.",
+    "jellyseerr/nativedetails/native-recovery.js",
     "jellyseerr/nativedetails/native-details.js",
 
     "// enhanced",

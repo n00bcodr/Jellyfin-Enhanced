@@ -125,7 +125,9 @@ export const SITES = {
   'jellyseerr/discovery/person-discovery.js': 2, 'jellyseerr/issue-reporter.js': 7, 'jellyseerr/item-details.js': 5,
   'jellyseerr/jellyseerr.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions.js': 2,
   'jellyseerr/moreinfo/more-info-modal-data.js': 2, 'jellyseerr/moreinfo/more-info-modal-seasons.js': 3,
-  'jellyseerr/nativedetails/native-details.js': 5, 'jellyseerr/seerr-detail-link.js': 1,
+  // native-details: + the stale-grant item re-read (artRecovery.getItem); native-recovery: the image re-ask (an
+  // anonymous GET of the page's own signed image) and the list re-read (a session-bound GET).
+  'jellyseerr/nativedetails/native-details.js': 6, 'jellyseerr/nativedetails/native-recovery.js': 2, 'jellyseerr/seerr-detail-link.js': 1,
   'jellyseerr/ui/ui-badges.js': 1, 'jellyseerr/ui/ui-buttons.js': 2, 'jellyseerr/ui/ui-quota.js': 1,
   'jellyseerr/ui/ui-request-modals.js': 3, 'jellyseerr/ui/ui-season-modal.js': 5, 'others/letterboxd-links.js': 1,
   'others/mdblist-ratings.js': 3, 'plugin.js': 8, 'tags/ageratingtags.js': 1, 'tags/peopletags.js': 3,

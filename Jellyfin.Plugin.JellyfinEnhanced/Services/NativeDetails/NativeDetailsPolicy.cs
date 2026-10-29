@@ -57,6 +57,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             Unknown,
         }
 
+        /// <summary>Whether a library the title would land in is open to the viewer (<see cref="LibraryVisibility"/>).</summary>
+        private enum Visibility
+        {
+            /// <summary>Open to them.</summary>
+            Visible,
+
+            /// <summary>Not open to them (a confirmed refusal).</summary>
+            Hidden,
+
+            /// <summary>
+            /// Can't be settled now: the person, their policy or the library kept changing under every read
+            /// (<c>authorization_changed</c>), the copy lookup stopped before it proved a copy or an absence, or the read
+            /// failed. Never shown; answered as temporary (a retryable 503), not as a hidden title's 404.
+            /// </summary>
+            Unknown,
+        }
+
         private static readonly TimeSpan LibrariesTtl = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan RevisionTtl = TimeSpan.FromSeconds(5);
 
@@ -184,7 +201,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // visibility's fresh final read can confirm that read is the person now. Only a decision so confirmed is
             // answered: when the stamp doesn't confirm the read, the person is read again and the whole decision (viewer
             // rule, parental, request visibility, the library's copies and hidden seasons and episodes) is made again from
-            // that read, confirmed the same way; a person who keeps changing is refused after three reads.
+            // that read, confirmed the same way. A person (or a library) who keeps changing through three reads is never
+            // answered from any of them: the decision is unknown for now (a retryable 503), not a hidden title's 404; a
+            // person who is gone or disabled is refused.
             if (HeldReadsConfirmable())
             {
                 for (var attempt = 0; attempt < Confirmations; attempt++)
@@ -201,7 +220,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     if (current) return decided;
                 }
 
-                return Access.Refused;
+                return Access.Unknown;
             }
 
             return (await TitleAccessAsync(viewer, title, false, ct).ConfigureAwait(false)).Access;
@@ -225,14 +244,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 && !await (held ? _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer, ct) : _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, id, ct)).ConfigureAwait(false))
             {
                 // A known hidden native copy is a refusal even when public parental facts remain unavailable.
-                var visible = LibraryVisible(viewer, title, held, out var confirmed);
-                if (!visible || Physical(viewer, title).Hides(title)) return (Access.Refused, confirmed);
+                var visible = LibraryVisibility(viewer, title, held, out var confirmed);
+                var copies = Physical(viewer, title);
+                if (visible == Visibility.Hidden || (!copies.Unreadable && copies.Hides(title))) return (Access.Refused, confirmed);
                 var verdict = held ? _parental.AbsentVerdict(mediaType, title.TmdbId, viewer) : _parental.AbsentVerdict(mediaType, title.TmdbId, id);
                 return (JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) && verdict == null ? Access.Unknown : Access.Refused, confirmed);
             }
             using var library = StageTimings.Time(Stage.Library);
-            var shown = LibraryVisible(viewer, title, held, out var current);
-            return (shown && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused, current);
+            var shown = LibraryVisibility(viewer, title, held, out var current);
+            return (Decide(shown, Physical(viewer, title), title), current);
+        }
+
+        /// <summary>
+        /// The library part of a title decision: a confirmed refusal (not open to the viewer, or a copy, season or episode
+        /// the library hides from them) is final; visibility or a library that can't be settled now is temporary; else allowed.
+        /// </summary>
+        private static Access Decide(Visibility shown, PhysicalTitle copies, SyntheticId title)
+        {
+            if (shown == Visibility.Hidden || (!copies.Unreadable && copies.Hides(title))) return Access.Refused;
+            return shown == Visibility.Unknown || copies.Unreadable ? Access.Unknown : Access.Allowed;
         }
 
         /// <summary>
@@ -290,8 +320,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
             catch (Exception)
             {
-                // The library can't be read: nothing may stand in for what it might hide.
-                return new PhysicalTitle { Hidden = true };
+                // The library can't be read: nothing may stand in for what it might hide, and nothing is known to be hidden.
+                return new PhysicalTitle { Hidden = true, Unreadable = true };
             }
         }
 
@@ -313,7 +343,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
             catch (Exception)
             {
-                return new PhysicalTitle { Hidden = true };
+                return new PhysicalTitle { Hidden = true, Unreadable = true };
             }
         }
 
@@ -560,7 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var evidence = await _parental.CheckAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false);
             if (evidence == null) return JellyfinEnhanced.Instance?.Configuration is { } config && JeBackend(config) ? Access.Unknown : Access.Refused;
             if (!evidence.Value) return Access.Refused;
-            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
+            return Decide(LibraryVisibility(viewer, title, false, out _), Physical(viewer, title), title);
         }
 
         /// <summary>
@@ -626,17 +656,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Whether the viewer can open a library the title would land in (request visibility when requests are on).</summary>
         private bool LibraryVisible(User viewer, SyntheticId title) => LibraryVisible(viewer, title, false, out _);
 
-        /// <summary>
-        /// <see cref="LibraryVisible(User, SyntheticId)"/>. <paramref name="held"/>: request visibility starts from
-        /// <paramref name="viewer"/> as read, and <paramref name="current"/> is true only when its fresh final read confirmed
-        /// that read (every authorization fact of the person, their parental policy among them, is the person's now).
-        /// Otherwise the person is read again and <paramref name="current"/> is true.
-        /// </summary>
+        /// <summary><see cref="LibraryVisibility"/> for a list (shown or left out): anything not confirmed visible is left out.</summary>
         private bool LibraryVisible(User viewer, SyntheticId title, bool held, out bool current)
+            => LibraryVisibility(viewer, title, held, out current) == Visibility.Visible;
+
+        /// <summary>
+        /// Whether the viewer can open a library the title would land in (request visibility when requests are on).
+        /// <paramref name="held"/>: request visibility starts from <paramref name="viewer"/> as read, and
+        /// <paramref name="current"/> is true only when its fresh final read confirmed that read (every authorization fact of
+        /// the person, their parental policy among them, is the person's now). Otherwise the person is read again and
+        /// <paramref name="current"/> is true. Request visibility that couldn't be settled (its own three reads never agreed:
+        /// <c>authorization_changed</c>; a copy lookup that proved neither a copy nor an absence; a failed read) is
+        /// <see cref="Visibility.Unknown"/>, never visible.
+        /// </summary>
+        private Visibility LibraryVisibility(User viewer, SyntheticId title, bool held, out bool current)
         {
             current = !held;
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null) return false;
+            if (config == null) return Visibility.Hidden;
             if (RequestsOn(config) && _requests != null)
             {
                 try
@@ -646,16 +683,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         Key = (title.IsMovie ? "movie" : "tv") + ":tmdb:" + title.TmdbId.ToString(CultureInfo.InvariantCulture),
                         Scope = title.IsMovie ? "movie" : "seasons",
                     };
-                    return held ? _requests.Evaluate(viewer, input, out current).Visible : _requests.Evaluate(viewer.Id, input).Visible;
+                    var facts = held ? _requests.Evaluate(viewer, input, out current) : _requests.Evaluate(viewer.Id, input);
+                    if (facts.Visible) return Visibility.Visible;
+                    return facts.Refusal == "authorization_changed" || facts.CopiesUnproven ? Visibility.Unknown : Visibility.Hidden;
                 }
                 catch (Exception)
                 {
                     current = !held;
-                    return false;
+                    return Visibility.Unknown;
                 }
             }
 
-            return CanOpenLibraryFor(viewer, title.IsMovie);
+            return CanOpenLibraryFor(viewer, title.IsMovie) ? Visibility.Visible : Visibility.Hidden;
         }
 
         /// <summary>True when the viewer can open at least one library a title of this kind lands in.</summary>

@@ -163,6 +163,9 @@ jellyseerr/moreinfo/more-info-modal-actions.js	pauseVerdicts	state	a More Info w
 jellyseerr/moreinfo/more-info-modal-init.js	shell	state	the loading shell of the opening in progress (UI state), not an answer
 jellyseerr/nativedetails/native-details.js	current	state	the details page being drawn (read on each visit)
 jellyseerr/nativedetails/native-details.js	fellBackFrom	state	the page it fell back from
+jellyseerr/nativedetails/native-recovery.js	controllers	state	the recovery asks in flight (aborted when the page ends)
+jellyseerr/nativedetails/native-recovery.js	entries	state	the page's images being asked for again (URLs and attempts; no answer is kept, dropped when the page or its policy ends)
+jellyseerr/nativedetails/native-recovery.js	retry	state	a list re-read's pending retry timer (cleared when it settles or its page ends)
 jellyseerr/recommendations/recommendations-category.js	categoryDeduplicator	state	titles already drawn on this page
 jellyseerr/recommendations/recommendations-category.js	stopStickyTracking	state	a cleanup function
 jellyseerr/recommendations/recommendations-render.js	stopTitleTracking	state	a cleanup function

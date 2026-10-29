@@ -34,6 +34,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Copies exist and the viewer can open none of them.</summary>
         public bool Hidden { get; init; }
 
+        /// <summary>
+        /// The library couldn't be read (<see cref="Hidden"/> is set too, so every reader fails closed): nothing is known to
+        /// be hidden, so a page's answer is temporary (503) rather than the 404 of a title the viewer may not see.
+        /// </summary>
+        public bool Unreadable { get; init; }
+
         /// <summary>Season numbers the library has but no season item of which the viewer can open.</summary>
         public IReadOnlySet<int> HiddenSeasons { get; init; } = new HashSet<int>();
 

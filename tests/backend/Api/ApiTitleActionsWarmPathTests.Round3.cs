@@ -221,7 +221,8 @@ public partial class ApiTitleActionsWarmPathTests
         var roots = new FakeLibraryAccess();
         var requests = new RequestPolicy(view.Object, rig.Store, new ArrInstanceLibraries(rig.Store, roots), new TitleAliases(rig.Store, null), rig.Gate, rig.Arr.Factory, new UnavailableRequestBackend());
         var policy = new NativeDetailsPolicy(rig.Gate, Mock.Of<INativeDetailsSource>(), roots, requests);
-        var expected = churn ? NativeDetailsPolicy.Access.Refused : NativeDetailsPolicy.Access.Allowed;
+        // Never answered from an unconfirmed read: a page gets a temporary answer (Unknown, a retryable 503), never allowed.
+        var expected = churn ? NativeDetailsPolicy.Access.Unknown : NativeDetailsPolicy.Access.Allowed;
         Assert.Equal(expected, await policy.SeeDetailsAsync(rig.Viewer, Title, CancellationToken.None));
         Assert.Equal(!churn, policy.MayListAbsent(rig.Viewer, Title));
         Assert.Equal(churn ? NativeDetailsPolicy.ListedTitle.Left : NativeDetailsPolicy.ListedTitle.Absent, policy.Listed(rig.Viewer, true, TmdbId));
