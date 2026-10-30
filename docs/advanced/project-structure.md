@@ -428,7 +428,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
-| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists schema 13 tag data, maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
+| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists schema 14 tag data, maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
 | `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
 | `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
 | `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
