@@ -9,7 +9,7 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle'];
 function setup(t, config = {}) {
   const writes = [], toasts = [];
-  const h = createHarness({ html: toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput">',
+  const h = createHarness({ html: toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><div id="statusTagsSubToggles">' + ['statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus'].map(key => `<div class="je-quality-cat-row" data-cat-key="${key}"><input id="${key}Toggle" type="checkbox"></div>`).join('') + '</div>',
     JE: { pluginConfig: config, userConfig: { settings: {}, shortcuts: { Shortcuts: [] } }, currentSettings: {},
       t: key => key, toast: message => toasts.push(message), pauseScreenInstance: {} }, apiClient: { ajax: async request => { writes.push(request); } } });
   t.after(() => h.close());
@@ -58,3 +58,19 @@ test('quality toggle initializes on enable and removes overlays on disable while
   assert.equal(h.writes.length, 2);
   assert.equal(JSON.parse(h.writes[1].data).qualityTagsEnabled, false);
 });
+
+
+for (const key of ['statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus']) {
+  test(`${key} uses the delegated panel handler, saves and refreshes status badges`, async t => {
+    const h = setup(t);
+    let refreshed = 0;
+    h.JE.currentSettings.statusTagsEnabled = true;
+    h.JE.reinitializeStatusTags = () => refreshed++;
+    await h.change(`${key}Toggle`, false);
+    assert.equal(JSON.parse(h.writes.at(-1).data)[key], false);
+    assert.equal(refreshed, 1);
+    await h.change(`${key}Toggle`, true);
+    assert.equal(JSON.parse(h.writes.at(-1).data)[key], true);
+    assert.equal(refreshed, 2);
+  });
+}

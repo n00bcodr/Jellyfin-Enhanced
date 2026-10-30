@@ -599,6 +599,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsEpisodeFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsSeriesService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsTrendingService.cs",
       "category": "Services"
     },
@@ -1792,6 +1800,16 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/status-tags/trending",
       "method": "GetStatusTagsTrending",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/status-tags/series",
+      "method": "GetStatusTagsSeries",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -4276,6 +4294,30 @@
       "type": "bool",
       "initializer": "true",
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsSchedule",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsMilestones",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsSeriesStatus",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -6800,6 +6842,30 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsSchedule",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsMilestones",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsSeriesStatus",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "TagLayout",
       "type": "string",
       "initializer": "\"corners\"",
@@ -8155,9 +8221,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 364,
-    "routes": 181,
-    "configuration_properties": 570,
+    "files": 366,
+    "routes": 182,
+    "configuration_properties": 576,
     "storage_references": 70,
     "scheduled_tasks": 13,
     "locales": 33

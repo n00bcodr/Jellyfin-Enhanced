@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
 const MINUTE = 60 * 1000;
+const en = JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json', import.meta.url), 'utf8'));
+const translate = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), en[key] || key);
 const card = id => `<div class="card" data-id="${id}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>`;
 
 /**
@@ -19,7 +22,7 @@ function setup(t, answers) {
     JE: {
       currentSettings: { statusTagsEnabled: true },
       pluginConfig: { StatusTagsEnabled: true, TagCacheServerMode: false },
-      t: key => key,
+      t: translate,
       session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
       tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() { rescans.push('clear'); }, scheduleScan() { rescans.push('scan'); } }

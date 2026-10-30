@@ -47,3 +47,51 @@ test('tag pipeline drains the cards queued while a cancelled batch was in flight
 test('tag pipeline skips hidden/admin/nonmedia cards without transport',t=>{
  const h=setup(t,`<div id="pluginsPage">${card}</div>${card.replace('class="card"','class="card je-hidden"')}${card.replace('data-type="Movie"','data-type="Person"')}`);h.scan();h.fetch();assert.equal(h.calls.length,0);assert.equal(h.rendered.length,0);
 });
+
+/**
+ * The pipeline over a stub IndexedDB store holding one complete copy with the
+ * given meta; records which requests and store calls happen.
+ */
+async function loadWithStoredCopy(t, meta) {
+  const calls = [];
+  const cleared = [];
+  const h = createHarness({
+    globals: { requestIdleCallback: () => {} },
+    apiClient: { getCurrentUserId: () => 'user-a', ajax: async ({ url }) => { calls.push(url); return { items: {}, count: 0, version: 3, timestamp: 50, filterRevision: 'all', servedAt: 60 }; } },
+    JE: {
+      pluginConfig: { TagCacheServerMode: true }, currentSettings: { qualityTagsEnabled: true },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      tagCacheStore: {
+        available: () => true,
+        getMeta: async () => ({ scope: 'server-a:user-a', version: 3, timestamp: 40, filterRevision: 'all', count: 5, clearStamp: 0, servedAt: 45, savedAt: 1, ...meta }),
+        getMany: async () => ({ entries: new Map(), meta: null }),
+        clearScope: async scope => { cleared.push(scope); },
+        clearOtherScopes: async () => {},
+        beginFullWrite: async () => false,
+        putManyIfOwner: async () => false,
+        commitFullWrite: async () => false,
+        applyDelta: async () => true,
+      }
+    }
+  });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  h.JE.tagPipeline.initialize();
+  await h.JE.tagPipeline.invalidateServerCache();
+  await settle();
+  return { calls, cleared };
+}
+
+test('a stored tag cache copy from an older entry schema is dropped and downloaded in full', async t => {
+  const { calls, cleared } = await loadWithStoredCopy(t, {});
+  assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
+  assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');
+});
+
+test('a stored tag cache copy with the current entry schema is restored and only the delta is fetched', async t => {
+  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 12 });
+  assert.deepEqual(cleared, []);
+  assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
+});
