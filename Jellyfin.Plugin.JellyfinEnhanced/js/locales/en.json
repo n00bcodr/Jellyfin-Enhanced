@@ -322,7 +322,7 @@
     "panel_media_tags_preview_source_lock": "Locked",
     "panel_media_tags_preview_source_rule": "Rule {n}",
     "panel_media_tags_preview_default": "Your default:",
-    "panel_media_tags_preview_precedence": "Locks override rules; rules override your default.",
+    "panel_media_tags_preview_precedence": "Locks override rules; rules override shape looks; shape looks override your default.",
     "panel_media_tags_preview_hover_hidden": "Hide Tags on Hover is on: your cards fade their tags while you hover them.",
     "panel_media_tags_preview_summary": "{title} · {source} · {look}",
     "panel_media_tags_preview_none": "No tags: every group is off",
@@ -1097,5 +1097,18 @@
     "language_tags_badge_both": "Badge and flags",
     "language_tags_dual": "Dual",
     "language_tags_multi": "Multi",
-    "language_tags_count_tooltip": "{count} audio languages"
+    "language_tags_count_tooltip": "{count} audio languages",
+    "tag_shapes_landscape": "Episode thumbnails",
+    "tag_shapes_list": "List rows",
+    "tag_shapes_different": "Use a different look",
+    "tag_shapes_recommended": "Use recommended",
+    "tag_shapes_layout_for": "Layout for {shape}",
+    "tag_shapes_density_for": "Label density for {shape}",
+    "tag_shapes_position_for": "{group} position for {shape}",
+    "tag_shapes_cap_for": "{group} chip limit for {shape}",
+    "tag_shapes_fewer": "Fewer {group} tags",
+    "tag_shapes_more": "More {group} tags",
+    "tag_shapes_limitations": "Square cards use the poster look. List rows keep caption tags on the image. Native Poster Tags use the poster settings and ignore shape overrides.",
+    "tag_shapes_preview_list": "Episode list row",
+    "tag_shapes_preview_source": "{shape} look"
 }

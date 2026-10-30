@@ -126,6 +126,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // documents only); locks are this user's alone, keyed by item id.
         public List<TagLookRule>? TagLookRules { get; set; }
         public Dictionary<string, TagLayoutLock>? TagLayoutLocks { get; set; }
+        // Per-shape tag looks (see TagShapeRules): landscape cards and list rows
+        // can have their own layout, density, slots and caps. Null inherits the
+        // administrator's (normalized documents only); a null shape uses the
+        // default look.
+        public TagShapeOverrides? TagShapeOverrides { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

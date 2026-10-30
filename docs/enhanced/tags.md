@@ -36,14 +36,14 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 
 | Tab | What you set there |
 |---|---|
-| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
+| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
 | **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones** and **Series status**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
 | **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with three sample chips in its real colours. Only shown while the administrator lets users pick a preset. |
 | **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags** on the plugin configuration page. Other users never get this tab. |
 
-**The live preview** draws three sample cards with the same layout code and tag styles as your library: a movie poster, a series poster and an episode still. Each says where its look comes from (**Default**, **🔒 Locked** or **Rule N**), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
+**The live preview** draws four sample cards with the same layout code and tag styles as your library: a movie poster, a series poster, an episode still and a 92px list row. Each says where its look comes from (**Default**, **🔒 Locked**, **Rule N** or a shape look), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
 
 On a phone the section fills the screen: the tabs use short names (**Badges**, **Rules**), and the preview folds into a one-line strip under them. The strip names the sample that your current edit affects (the episode on **Rules & locks**, the series for schedule badges) and lists its chips, the edited group's first; tap **Preview** to unfold the full preview.
 
@@ -122,6 +122,31 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
     ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
 
+#### Episode thumbnails and list rows
+
+On **Layout**, turn on **Use a different look** under **Episode thumbnails** or **List rows**. Each shape has its own layout, label density, group positions and chip limits. **Use recommended** restores these starting arrangements:
+
+| Shape | Recommended look |
+|---|---|
+| Episode thumbnails and backdrop cards | **Bands**, **Compact**: status and age rating on top, quality and rating below, language and genre hidden |
+| Large list images | **Corners**, **Compact**: quality top left, status top right, rating bottom right, each limited to two chips; the other groups hidden |
+
+Both switches start off. Switching one off uses your default look again. Portrait posters and square cards (including music and people) use the default look. Jellyfin's card classes determine the shape first; otherwise the image's rendered aspect ratio does (wider than 1.2:1 is landscape; square cards count as portrait).
+
+The choice for each card is **item lock → first matching rule → shape override → default**. A rule or lock takes precedence over the general shape settings. Stored rules and locks may also contain their own shape looks through the API; the rule editor continues to edit layout and density only.
+
+The episode and list samples in the live preview follow their own shape settings. **Caption** on list rows still puts caption chips on the image; choose another layout to avoid this fallback. **Native Poster Tags** draw on poster images only and ignore shape overrides.
+
+Shape chip limits run from **1** to **10**, then **All**. From **All**, press **−** to return to **10**; at **1**, **−** is disabled.
+
+Administrators can choose **Same look as posters** or the recommended look for each shape under **Card shape defaults**. This seeds new users and applies when overwriting personal settings. Existing version-0 documents keep their old look until an explicit edit; merely loading or saving unrelated preferences does not enable overrides.
+
+![The episode thumbnail layout editor and its live samples](../images/tags/tag-shape-settings.webp)
+
+![Episode thumbnail before and after enabling the recommended landscape look](../images/tags/tag-shape-thumbnails.webp)
+
+![Large episode list image before and after enabling the recommended list look](../images/tags/tag-shape-list.webp)
+
 #### Tag groups: order, position, limits
 
 Each group has a row on the **Groups** tab, highest priority first. Groups higher in the list win when space is short: they stack nearest the edge of a shared corner, come first in a band or the caption, and take the summary pill's three places first. The row shows where the group goes in the selected layout and how many tags it shows (for example **Bottom row · up to 3**); the switch on the right turns the group on or off.
@@ -190,7 +215,8 @@ Each card gets its look from the first of these that applies:
 
 1. **A lock** on the item. A locked series also locks its seasons and episodes, unless one of them has its own lock.
 2. **The first enabled rule** whose conditions all hold, from the top of the list.
-3. **Your default** Tag Layout and Label Density (the **Otherwise** row).
+3. **The shape override**, if enabled for an episode thumbnail or list row.
+4. **Your default** Tag Layout and Label Density (the **Otherwise** row).
 
 | Condition | Matches | Notes |
 |---|---|---|

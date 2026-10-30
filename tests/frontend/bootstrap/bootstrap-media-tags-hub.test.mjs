@@ -340,7 +340,7 @@ test('the preview names where each sample\'s look comes from, through the resolv
   assert.equal(host('episode').dataset.jeLayout, 'caption', 'the rule\'s look');
   assert.ok(h.$('.je-mtp-sample[data-sample="episode"] .je-tag-caption'), 'caption chips go under the still');
   assert.match(h.$('.je-mtp-foot').textContent, /panel_media_tags_preview_precedence/);
-  assert.equal(h.document.querySelectorAll('.je-tag-host').length, 3, 'the strip draws no copy of a card the layout controller would manage');
+  assert.equal(h.document.querySelectorAll('.je-tag-host').length, 4, 'the strip draws no copy of a card the layout controller would manage');
 
   // Switching the rule off, then unlocking: each sample falls back to the next source.
   await h.JE.core.tagLook.saveRules([{ ...rule, enabled: false }]);
@@ -399,7 +399,7 @@ test('the preview is built only once Media Tags is on screen and torn down with 
   assert.equal(io.targets[0].id, 'jeMediaTagsHub');
   assert.equal(h.$('.je-mtp'), null);
   io.fire();
-  assert.equal(h.document.querySelectorAll('.je-mtp-card').length, 3);
+  assert.equal(h.document.querySelectorAll('.je-mtp-card').length, 4);
   assert.equal(h.ui.mediaTagsHub.hasPreview(), true);
   h.$('#closeSettingsPanel').click();
   assert.equal(h.ui.mediaTagsHub, null);
@@ -493,3 +493,103 @@ test('phone search and section select stay outside the inert section list while 
   assert.equal(h.selected(), 'rules');
   assert.equal(section.value, 'media-tags');
 });
+test('shape switches and reduced group editors write independent profiles and drive both preview samples', async t => {
+  const h = setup(t);
+  await h.open();
+  const control = (shape, action) => h.$(`[data-shape="${shape}"] [data-shape-action="${action}"]`);
+  const host = sample => h.$(`.je-mtp-sample[data-sample="${sample}"] .je-tag-host`);
+  await h.change(control('landscape', 'enabled'), true);
+  assert.equal(h.saved().tagShapeOverrides.landscape.layout, 'bands');
+  assert.equal(h.saved().tagShapeOverrides.landscape.density, 'compact');
+  assert.equal(h.saved().tagShapeOverrides.list, null);
+  assert.equal(host('episode').dataset.jeLayout, 'bands');
+  assert.equal(host('episode').dataset.jeShape, 'landscape');
+  assert.match(h.$('.je-mtp-sample[data-sample="episode"] .je-mtp-meta').textContent, /tag_shapes_preview_source:tag_shapes_landscape/);
+  assert.equal(host('movie').dataset.jeLayout, 'corners');
+  await h.change(control('list', 'enabled'), true);
+  assert.equal(host('list').dataset.jeShape, 'list');
+  assert.equal(host('list').dataset.jeLayout, 'corners');
+  assert.equal(h.saved().tagShapeOverrides.list.caps.quality, 2);
+  const plus = () => h.$('[data-shape="list"] [data-shape-group="quality"] [data-shape-action="cap"][data-value="1"]');
+  h.click(plus()); await h.settle();
+  assert.equal(h.saved().tagShapeOverrides.list.caps.quality, 3);
+  assert.equal(h.saved().tagGroupCaps, null, 'the default caps are untouched');
+  const hidden = h.$('[data-shape="list"] [data-shape-group="quality"] [data-shape-action="slot"][data-value="off"]');
+  h.click(hidden); await h.settle();
+  assert.ok(h.saved().tagShapeOverrides.list.slots.some(s => s.group === 'quality' && s.slot === 'off'));
+  assert.equal(host('list').querySelector('[data-je-group="quality"]'), null);
+  assert.ok(host('episode').querySelector('[data-je-group="quality"]'));
+  await h.change(control('list', 'layout'), 'caption');
+  assert.equal(host('list').querySelector('.je-tag-slot[data-je-slot="poster"]') !== null, true, 'caption falls back on the list image');
+  assert.equal(h.$('.je-mtp-sample[data-sample="list"] .je-tag-caption'), null);
+  await h.change(control('list', 'density'), 'full');
+  assert.equal(h.saved().tagShapeOverrides.list.density, 'full');
+  h.click(control('list', 'recommended')); await h.settle();
+  assert.equal(h.saved().tagShapeOverrides.list.layout, 'corners');
+  assert.equal(h.saved().tagShapeOverrides.list.caps.quality, 2);
+  await h.change(control('list', 'enabled'), false);
+  await h.change(control('landscape', 'enabled'), false);
+  assert.deepEqual(h.saved().tagShapeOverrides, { landscape: null, list: null });
+  assert.equal(host('episode').dataset.jeLayout, 'corners');
+});
+
+test('turning inherited shape defaults off persists an explicit opt-out through reload', async t => {
+  const plugin = { TagShapeOverrides: { Landscape: { Layout: 'bands', Density: 'compact' } } };
+  const h = setup(t, { plugin });
+  await h.open();
+  assert.equal(h.$('[data-shape="landscape"] [data-shape-action="enabled"]').checked, true);
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="enabled"]'), false);
+  const saved = h.saved();
+  assert.deepEqual(saved.tagShapeOverrides, { landscape: null, list: null });
+  const reload = setup(t, { plugin, stored: saved });
+  await reload.open();
+  assert.equal(reload.$('[data-shape="landscape"] [data-shape-action="enabled"]').checked, false);
+  assert.equal(reload.$('.je-mtp-sample[data-sample="episode"] .je-tag-host').dataset.jeLayout, 'corners');
+});
+
+// Exercise the actual panel host, delegated clicks, settings transport and
+// preview resolver at both ends of the 1..10, All sequence in each editor.
+for (const editor of ['landscape', 'list', 'default']) {
+  for (const initial of [0, 1, 10]) {
+    test(`${editor} quality cap boundary ${initial}: saved limits, disabled controls and preview agree`, async t => {
+      const shape = editor !== 'default';
+      const h = setup(t, { stored: shape
+        ? { tagShapeOverrides: { [editor]: { layout: 'bands', density: 'compact', caps: { quality: initial } } } }
+        : { tagGroupCaps: { quality: initial } } });
+      await h.open();
+      h.click(h.tab(shape ? 'layout' : 'groups'));
+      const row = () => h.$(shape ? `[data-shape="${editor}"] [data-shape-group="quality"]` : '.je-tge-row[data-group="quality"]');
+      if (!shape) h.click(row().querySelector('.je-tge-expand'));
+      const step = dir => row().querySelector(shape ? `[data-shape-action="cap"][data-value="${dir}"]` : `[data-step="${dir}"]`);
+      const value = () => row().querySelector('output').textContent;
+      const sample = shape ? editor === 'landscape' ? 'episode' : 'list' : 'movie';
+      const chips = () => h.$(`.je-mtp-sample[data-sample="${sample}"]`).querySelectorAll('[data-je-group="quality"] .quality-overlay-label').length;
+      const available = shape ? 2 : 5;
+      assert.equal(chips(), initial === 0 ? available : Math.min(initial, available));
+      assert.equal(step(-1).disabled, initial === 1);
+      assert.equal(step(1).disabled, initial === 0);
+      if (initial !== 10) {
+        const count = h.writes.length;
+        h.click(step(initial === 0 ? 1 : -1)); await h.settle();
+        assert.equal(h.writes.length, count, 'a disabled boundary press does not save');
+      }
+      let current = initial;
+      // Travel across 10/All in both directions, and down to 1 and back.
+      const directions = initial === 0 ? [-1, 1, -1, ...Array(9).fill(-1), 1]
+        : initial === 1 ? [1, -1] : [1, -1, -1, 1];
+      for (const dir of directions) {
+        current = dir < 0 ? current === 0 ? 10 : current - 1 : current === 10 ? 0 : current + 1;
+        h.click(step(dir)); await h.settle();
+        const saved = h.saved();
+        assert.equal(shape ? saved.tagShapeOverrides[editor].caps.quality : saved.tagGroupCaps.quality, current);
+        if (shape) assert.equal(saved.tagGroupCaps, null, 'shape edits leave the default caps alone');
+        assert.equal(value(), current === 0
+          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'panel_settings_ui_tag_editor_cap_all'
+          : String(current));
+        assert.equal(step(-1).disabled, current === 1);
+        assert.equal(step(1).disabled, current === 0);
+        assert.equal(chips(), current === 0 ? available : Math.min(current, available), 'preview follows the saved cap');
+      }
+    });
+  }
+}

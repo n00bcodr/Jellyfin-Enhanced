@@ -6,8 +6,8 @@
 // had when it was locked). A look is { layout, density, colourPreset, slots }.
 //
 // This module only reads, normalises, matches and saves rules and locks. The
-// decision which look a card gets (lock → first matching enabled rule → the
-// user's default layout) is made in one place, resolveLayout() in
+// decision which look a card gets (lock → first matching enabled rule → shape
+// override → the user's default layout) is made in one place, resolveLayout() in
 // core/tag-layout.js, which calls the helpers below.
 //
 // Settings (camelCase on JE.currentSettings, PascalCase on the server):
@@ -18,6 +18,9 @@
 //                   { layout, density, colourPreset, slots, lockedAt }.
 // slots travel as [{ group, slot }] (values, not keys, so the settings key
 // conversion never touches them) and are held here as { group: slot }.
+// A rule or lock may also carry shapes: { landscape, list } looks laid over
+// its look on cards of that shape (core/tag-layout.js reads and writes them);
+// the panel has no control for it, it is kept and honoured as stored.
 //
 // Public surface: JE.core.tagLook (see the object at the bottom).
 (function (JE) {
@@ -113,6 +116,17 @@
     }
 
     /**
+     * A rule's or lock's per-shape looks (core/tag-layout.js
+     * readShapeOverrides), or null when no shape has one.
+     * @param {*} raw
+     * @returns {Object|null}
+     */
+    function normalizeShapes(raw) {
+        const shapes = JE.core.tagLayout?.readShapeOverrides?.(raw);
+        return shapes && (shapes.landscape || shapes.list) ? shapes : null;
+    }
+
+    /**
      * One condition normalised, or null when its field or value is invalid.
      * @param {*} raw
      * @returns {{field: string, value: string}|null}
@@ -139,6 +153,7 @@
      * @property {string} density
      * @property {string|null} colourPreset - Reserved (a later phase).
      * @property {Object<string, string>|null} slots - Slot overrides for the layout.
+     * @property {Object|null} shapes - Per-shape looks over the rule's look (landscape, list).
      */
 
     /**
@@ -176,6 +191,7 @@
                 density,
                 colourPreset: PRESET.test(preset) ? preset : null,
                 slots: normalizeSlots(pick(rule, 'slots'), layout),
+                shapes: normalizeShapes(pick(rule, 'shapes')),
             });
         }
         return out;
@@ -200,6 +216,7 @@
      * @property {string} density
      * @property {string|null} colourPreset - Reserved (a later phase).
      * @property {Object<string, string>|null} slots - Every group's slot at lock time.
+     * @property {Object|null} shapes - Per-shape looks over the locked look (landscape, list).
      * @property {number} lockedAt - Unix milliseconds.
      */
 
@@ -228,6 +245,7 @@
                 density,
                 colourPreset: PRESET.test(preset) ? preset : null,
                 slots: normalizeSlots(pick(value, 'slots'), layout),
+                shapes: normalizeShapes(pick(value, 'shapes')),
                 lockedAt,
             });
         }
@@ -375,6 +393,15 @@
         return slots ? Object.entries(slots).map(([group, slot]) => ({ group, slot })) : null;
     }
 
+    /**
+     * Wire form of per-shape looks (null stays null).
+     * @param {Object|null} shapes
+     * @returns {Object|null}
+     */
+    function shapesToWire(shapes) {
+        return shapes ? JE.core.tagLayout?.shapesToWire?.(shapes) || null : null;
+    }
+
     /** Re-present every card (no refetch) with the rules and locks as they now are. */
     function represent() {
         JE.core.tagLayout?.invalidateSettings?.();
@@ -412,7 +439,7 @@
      * @returns {Promise<boolean>} Whether the rules were saved (false: the previous rules are back).
      */
     function saveRules(rules) {
-        return persist('tagLookRules', normalizeRules(rules).map((rule) => ({ ...rule, slots: slotsToWire(rule.slots) })));
+        return persist('tagLookRules', normalizeRules(rules).map((rule) => ({ ...rule, slots: slotsToWire(rule.slots), shapes: shapesToWire(rule.shapes) })));
     }
 
     /**
@@ -423,7 +450,7 @@
     function locksToWire(locks) {
         /** @type {Object<string, Object>} */
         const out = {};
-        for (const [id, lock] of locks) out[id] = { ...lock, slots: slotsToWire(lock.slots) };
+        for (const [id, lock] of locks) out[id] = { ...lock, slots: slotsToWire(lock.slots), shapes: shapesToWire(lock.shapes) };
         return Object.keys(out).length ? out : null;
     }
 
@@ -448,6 +475,7 @@
             density,
             colourPreset: null,
             slots: normalizeSlots(look.slots || null, layout),
+            shapes: null,
             lockedAt: Math.max(Date.now(), ...Array.from(locks.values(), (l) => l.lockedAt + 1)),
         });
         return persist('tagLayoutLocks', locksToWire(normalizeLocks(Object.fromEntries(locks))));

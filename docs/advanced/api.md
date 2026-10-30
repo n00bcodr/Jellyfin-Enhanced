@@ -519,8 +519,9 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
 | `TagLabelDensity` | String: `full` or `compact` | `"full"` |
 | `TagStylePreset` | Nullable string: `default`, `glass`, `outline`, `dark`, `light` or `mono`; unknown values are stored as `null` | `null` (follow the admin's preset; only used while the admin allows user presets) |
-| `TagLookRules` | Nullable array of `{Id,Enabled,When:[{Field,Value}],Layout,Density,ColourPreset,Slots}`; `Field` is `library` (32-hex library id), `type`, `genre` or `ageRating`; at most 50 rules of 1–5 conditions; `Slots` nullable `[{Group,Slot}]`; `ColourPreset` reserved, `null`. `null` inherits the administrator's rules (version `1` documents only) | `null` (new users: the admin rules) |
-| `TagLayoutLocks` | Nullable object keyed by item id (32 lowercase hex) of `{Layout,Density,ColourPreset,Slots,LockedAt}`; at most 500, the oldest `LockedAt` dropped first | `null` |
+| `TagLookRules` | Nullable array of `{Id,Enabled,When:[{Field,Value}],Layout,Density,ColourPreset,Slots,Shapes}`; `Field` is `library` (32-hex library id), `type`, `genre` or `ageRating`; at most 50 rules of 1–5 conditions; `Slots` nullable `[{Group,Slot}]`; `ColourPreset` reserved, `null`. `null` inherits the administrator's rules (version `1` documents only) | `null` (new users: the admin rules) |
+| `TagShapeOverrides` | Nullable `{Landscape,List}`, each null or `{Layout,Density,Slots:[{Group,Slot}],Caps:{Quality,Genre,Language,Rating,AgeRating,Status}}`. Optional fields inherit the default look. Unknown layouts/densities become null, invalid groups/slots are dropped, caps clamp to 0–10. Null inherits admin defaults only for version `1`; `{Landscape:null,List:null}` explicitly turns both off | `null` |
+| `TagLayoutLocks` | Nullable object keyed by item id (32 lowercase hex) of `{Layout,Density,ColourPreset,Slots,Shapes,LockedAt}`; at most 500, the oldest `LockedAt` dropped first | `null` |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
 | `LastOpenedTab` | String | `""` |
@@ -528,6 +529,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `DisplayLanguage` | String | `""` |
 | `CalendarDisplayMode` | String | `"list"` |
 | `CalendarDefaultViewMode` | String | `"agenda"` |
+
+`Shapes` on rules and locks uses the same `{Landscape,List}` map as `TagShapeOverrides`; it layers over that rule's or lock's look, independently of the user's shape overrides. Resolution is lock → first matching rule → shape override → default. POST also accepts a shape slot map such as `{"quality":"bottom","status":"top"}`; stored responses use arrays, matching `TagLayouts` and preserving group ids across key-case conversion. `Layout`/`Density` null inherits, and null caps inherit per group. A shape that changes layout uses the profile of the new layout. Portrait and square cards always use the default shape; Native Poster Tags ignore these objects.
 
 ### Shortcuts and Elsewhere documents
 
@@ -1383,7 +1386,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
     | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset` | String |
-    | `TagLayouts`, `TagGroupCaps` | Nullable object (shapes as in `settings.json`) |
+    | `TagLayouts`, `TagGroupCaps`, `TagShapeOverrides` | Nullable object (shapes as in `settings.json`) |
     | `TagGroupOrder` | Nullable array of group ids |
     | `TagLookRules` | Nullable array of rules (shape as in `settings.json`), normalized |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |

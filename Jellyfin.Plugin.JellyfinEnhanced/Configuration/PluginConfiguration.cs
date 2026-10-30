@@ -179,6 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupCaps = null;
             TagLabelDensity = "full";
             TagLookRules = null;
+            TagShapeOverrides = null;
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -848,6 +849,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string TagLabelDensity { get; set; } = "full";
         /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
         public List<TagLookRule>? TagLookRules { get; set; }
+        /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>
+        public TagShapeOverrides? TagShapeOverrides { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

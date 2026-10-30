@@ -272,6 +272,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
     | Setting | Default | What it does |
     | --- | --- | --- |
+    | **Episode thumbnails** / **List rows** → **Use a different look** | Off | Optional layout, density, Position pills and chip limit per shape. **Use recommended** starts with compact bands for thumbnails or compact corners for list images. Locks and rules take precedence. Portrait and square cards, and Native Poster Tags, keep the default look. |
     | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
     | **Label Density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
     | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
@@ -305,7 +306,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | Setting | Default | What it does |
     | --- | --- | --- |
     | **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. Arrows reorder, **On**/**Off** pauses a rule, **Edit** loads it into the form, **Delete** removes it. |
-    | **Otherwise** | Your layout | Every other card uses your default layout and density; **Change** goes to the Layout tab. |
+    | **Otherwise** | Your layout | Every other card uses its shape override, if enabled, or your default layout and density; **Change** goes to the Layout tab. |
     | **Locked items** | None | The items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
     | **Add a rule** | Library condition, **Caption**, **Compact** | Up to five conditions, each needing a value; **Add rule** adds it at the end of the list. |
 

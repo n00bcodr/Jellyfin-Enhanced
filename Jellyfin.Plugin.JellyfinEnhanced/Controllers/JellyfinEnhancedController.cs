@@ -3903,6 +3903,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
                 // Tag look rules starting default (normalized; null = none)
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
+                // Per-shape tag looks starting default (normalized; null = none)
+                TagShapeOverrides = TagShapeRules.NormalizeDefaults(config.TagShapeOverrides),
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -5407,6 +5409,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
                     TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
                     LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    TagShapeRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5491,6 +5494,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Rules and locks: invalid entries are dropped one by one (ids
                 // validated, limits applied), never the whole document.
                 TagLookValidation.Normalize(userConfiguration);
+                // Per-shape looks: unknown layouts and slots dropped, caps clamped.
+                TagShapeRules.Normalize(userConfiguration);
 
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
@@ -8438,6 +8443,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
             TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
             LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
+            TagShapeRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();

@@ -235,6 +235,10 @@
         mergedSettings.tagLookRules = Array.isArray(userSettings.tagLookRules) ? userSettings.tagLookRules : null;
         mergedSettings.tagLayoutLocks = userSettings.tagLayoutLocks && typeof userSettings.tagLayoutLocks === 'object'
             && !Array.isArray(userSettings.tagLayoutLocks) ? userSettings.tagLayoutLocks : null;
+        // Per-shape tag looks (null = inherit the admin's, normalized documents
+        // only); core/tag-layout.js normalises the value when it reads it.
+        mergedSettings.tagShapeOverrides = userSettings.tagShapeOverrides && typeof userSettings.tagShapeOverrides === 'object'
+            && !Array.isArray(userSettings.tagShapeOverrides) ? userSettings.tagShapeOverrides : null;
 
         mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
             && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined

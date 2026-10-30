@@ -59,3 +59,30 @@ test('the configuration page\'s layout rules match the layout controller and the
     assert.equal(nextCap(group, page.MAX_CAP, 1), meta.capAll ? 0 : null, `${group} ${meta.capAll ? 'offers' : 'has no'} All`);
   }
 });
+
+test('admin shape defaults load and collect recommendations, preserve custom looks, and detect unsaved changes', t => {
+  const h = createHarness({ html: ['Landscape', 'List'].map(shape => `<select id="tagShape${shape}Default"><option value="inherit">inherit</option><option value="recommended">recommended</option><option value="custom" hidden>custom</option></select>`).join('') });
+  t.after(() => h.close());
+  const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
+  const start = page.indexOf('var tagShapeAdmin = (function () {');
+  const end = page.indexOf('})();', start) + 5;
+  assert.ok(start > 0 && end > start);
+  h.window.eval(`${page.slice(start, end)}; window.shapeDefaults = tagShapeAdmin;`);
+  const admin = h.window.shapeDefaults;
+  const custom = { Layout: 'summary', Density: 'full', Slots: [{ Group: 'rating', Slot: 'pill' }], Caps: { Rating: 1 } };
+  admin.load({ TagShapeOverrides: { Landscape: custom, List: null } });
+  assert.equal(h.document.querySelector('#tagShapeLandscapeDefault').value, 'custom');
+  const before = admin.snapshot();
+  h.document.querySelector('#tagShapeListDefault').value = 'recommended';
+  assert.notEqual(admin.snapshot(), before);
+  const collected = {};
+  admin.collect(collected);
+  assert.deepEqual(plain(collected.TagShapeOverrides.Landscape), custom);
+  assert.equal(collected.TagShapeOverrides.List.Layout, 'corners');
+  assert.equal(collected.TagShapeOverrides.List.Caps.Quality, 2);
+  admin.load(collected);
+  assert.equal(h.document.querySelector('#tagShapeListDefault').value, 'recommended');
+  for (const el of h.document.querySelectorAll('select')) el.value = 'inherit';
+  admin.collect(collected);
+  assert.equal(collected.TagShapeOverrides, null);
+});
