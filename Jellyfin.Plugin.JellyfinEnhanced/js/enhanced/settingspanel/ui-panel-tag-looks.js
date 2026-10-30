@@ -255,7 +255,19 @@
         const hadFocus = mount.contains(document.activeElement);
 
         const rerender = () => render(mount, state, touch);
-        const saveRules = (next) => { touch(); look.saveRules(next).catch(() => {}); rerender(); };
+        // Changes show at once; a failed save puts the previous rules or
+        // locks back (core/tag-look.js), says so and redraws the list.
+        const settle = (saving, doneKey) => {
+            saving.then((saved) => {
+                if (saved) {
+                    if (doneKey) JE.toast?.(JE.t(doneKey));
+                    return;
+                }
+                JE.toast?.(JE.t('tag_looks_save_failed_toast'));
+                if (mount.isConnected && state.editing === null) rerender();
+            });
+        };
+        const saveRules = (next, doneKey) => { touch(); settle(look.saveRules(next), doneKey); rerender(); };
 
         const root = el('section', 'je-tag-looks');
         root.setAttribute('aria-labelledby', 'jeTagLooksTitle');
@@ -294,8 +306,7 @@
                 }, CONFIRM_MS);
                 return;
             }
-            look.unlockItems().catch(() => {});
-            JE.toast?.(JE.t('tag_looks_unlocked_all_toast'));
+            settle(look.unlockItems(), 'tag_looks_unlocked_all_toast');
             state.lockedOpen = false;
             rerender();
         });
@@ -316,8 +327,7 @@
                 const type = info?.type ? ` · ${typeName(info.type)}` : '';
                 row.append(el('span', '', `${name}${type} — ${outcomeText(lock)}`));
                 const unlock = button(JE.t('tag_looks_unlock'), () => {
-                    look.unlockItems([id]).catch(() => {});
-                    JE.toast?.(JE.t('tag_look_unlocked_toast'));
+                    settle(look.unlockItems([id]), 'tag_look_unlocked_toast');
                     touch();
                     rerender();
                 }, JE.t('tag_looks_unlock_named', { name: info?.name || id }));
@@ -413,7 +423,7 @@
      * @param {Array<Object>} rules
      * @param {() => void} touch
      * @param {() => void} rerender
-     * @param {(rules: Array<Object>) => void} saveRules
+     * @param {(rules: Array<Object>, doneKey?: string) => void} saveRules - Saves; doneKey is the toast once saved.
      * @returns {HTMLElement}
      */
     function buildForm(state, rules, touch, rerender, saveRules) {
@@ -576,8 +586,7 @@
             }
             const next = existing ? rules.map((r) => (r.id === existing.id ? candidate : r)) : rules.concat([candidate]);
             state.editing = null;
-            saveRules(next);
-            JE.toast?.(JE.t('tag_looks_saved_toast'));
+            saveRules(next, 'tag_looks_saved_toast');
         });
 
         queueMicrotask(() => { /** @type {HTMLElement|null} */ (form.querySelector('[data-je-cond-field]'))?.focus(); });

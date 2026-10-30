@@ -94,27 +94,32 @@
         const itemType = button.getAttribute('data-je-item-type') || '';
         if (!id) return;
         button.disabled = true;
+        const wasLocked = isLocked(id);
+        let saved = false;
         try {
-            if (isLocked(id)) {
-                await JE.core.tagLook.unlockItems([id]);
-                renderButton(button, false);
-                JE.toast?.(JE.t('tag_look_unlocked_toast'));
+            if (wasLocked) {
+                saved = await JE.core.tagLook.unlockItems([id]);
+                if (saved) JE.toast?.(JE.t('tag_look_unlocked_toast'));
             } else {
                 // The look the item's cards have now (rule or default; a
                 // season/episode of a locked series inherits the series' lock).
                 const conf = JE.core.tagLayout.resolveLayout(await itemFacts(id, itemType));
-                await JE.core.tagLook.lockItem(id, { layout: conf.layout, density: conf.density, slots: conf.slots });
-                renderButton(button, true);
-                JE.toast?.(JE.t('tag_look_locked_toast', { look: JE.t('tag_looks_outcome', {
-                    layout: JE.t(`tag_looks_layout_${conf.layout}`),
-                    density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full'),
-                }) }));
+                saved = await JE.core.tagLook.lockItem(id, { layout: conf.layout, density: conf.density, slots: conf.slots });
+                if (saved) {
+                    JE.toast?.(JE.t('tag_look_locked_toast', { look: JE.t('tag_looks_outcome', {
+                        layout: JE.t(`tag_looks_layout_${conf.layout}`),
+                        density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full'),
+                    }) }));
+                }
             }
         } catch (err) {
             console.warn(`${logPrefix} lock toggle failed:`, err);
-            JE.toast?.(JE.t('tag_look_error_toast'));
         } finally {
+            if (!saved) JE.toast?.(JE.t('tag_look_error_toast'));
             button.disabled = false;
+            const locked = isLocked(id);
+            button.setAttribute('data-je-lock-state', locked ? 'on' : 'off');
+            renderButton(button, locked);
         }
     }
 

@@ -159,6 +159,7 @@ Each card gets its look from the first of these that applies:
     - A lock stores the layout, the density and where every group sits in that layout at that moment, so later changes to your arrangement do not move a locked item. Group order and per-group limits still follow your settings.
     - A rule uses your arrangement for its layout. Group order and limits are yours for every look.
     - Rules on library, genre and age rating read the item's entry in the server tag cache (or the batch lookup when the cache is off). Cards rendered only from the browser's per-tag fallback cache match on type and locks.
+    - If a rule or lock change cannot be saved, it is undone on screen and a message says so.
     - Mixing Caption with other looks on one row is allowed; caption cards are taller than their neighbours.
     - Settings saved before layouts existed never pick up the administrator's default rules; rules you add yourself apply.
     - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.

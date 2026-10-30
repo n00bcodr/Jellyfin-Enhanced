@@ -240,6 +240,7 @@
     "tag_look_locked_toast": "Tag look locked: {look}",
     "tag_look_unlocked_toast": "Tag look unlocked",
     "tag_look_error_toast": "Could not change the tag look lock",
+    "tag_looks_save_failed_toast": "Could not save the tag look change",
     "panel_settings_ui_people_tags": "Show People Tags",
     "panel_settings_ui_people_tags_desc": "Display age, birthplace, and deceased status for cast members.",
     "panel_settings_ui_hide_tags_on_hover": "Hide Tags on Hover",

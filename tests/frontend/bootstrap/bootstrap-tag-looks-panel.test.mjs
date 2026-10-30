@@ -9,24 +9,32 @@ const SERIES = 'cccccccccccccccccccccccccccccccc';
 /**
  * The real "Where each look applies" section (and the detail-page lock
  * button) over the real layout controller and tag look module, with the
- * Jellyfin API mocked: /UserViews, /Genres and /Users/{id}/Items.
+ * Jellyfin API mocked: /UserViews, /Genres and /Users/{id}/Items. With realSave
+ * the real JE.saveUserSettings posts the settings, failing with HTTP 500
+ * while saveStatus is 500.
  */
-function setup(t, { settings = {}, genresFail = false, html = '' } = {}) {
+function setup(t, { settings = {}, genresFail = false, html = '', realSave = false } = {}) {
   const writes = [], toasts = [], requests = [], reinit = [];
+  const io = { saveStatus: 200 };
   const h = createHarness({
     html: '<select id="tagLayoutSelect"><option value="corners">corners</option><option value="bands">bands</option></select><div id="jeTagLooksMount"></div>' + html,
     JE: {
       currentSettings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', qualityTagsEnabled: true, ...settings },
       pluginConfig: {},
       t: (key, params) => params ? `${key}:${Object.values(params).join('|')}` : key,
-      saveUserSettings: (file, doc) => { writes.push(plain(doc)); return Promise.resolve(); },
+      ...(realSave ? {} : { saveUserSettings: (file, doc) => { writes.push(plain(doc)); return Promise.resolve(); } }),
       session: { onUserChange() {} },
     },
     apiClient: {
       getUrl: (path, query) => `http://jellyfin.test/${path}${query ? `?${new URLSearchParams(query)}` : ''}`,
-      ajax: async ({ url }) => {
+      ajax: async ({ url, data }) => {
         requests.push(url);
         const u = new URL(url);
+        if (u.pathname.includes('/JellyfinEnhanced/user-settings/')) {
+          if (io.saveStatus !== 200) throw Object.assign(new Error('Internal Server Error'), { status: io.saveStatus });
+          writes.push(JSON.parse(data));
+          return null;
+        }
         if (u.pathname.endsWith('/UserViews')) return { Items: [{ Id: KIDS, Name: 'Kids' }, { Id: '33333333-3333-3333-3333-333333333333', Name: 'Movies' }] };
         if (u.pathname.endsWith('/Genres')) { if (genresFail) throw new Error('nope'); return { Items: [{ Name: 'Animation' }, { Name: 'Drama' }] }; }
         if (u.pathname.includes('/Items')) return { Items: u.searchParams.get('Ids').split(',').filter(id => !id.startsWith('f')).map(id => ({ Id: id, Name: `Title ${id.slice(-2)}`, Type: 'Movie' })) };
@@ -37,7 +45,9 @@ function setup(t, { settings = {}, genresFail = false, html = '' } = {}) {
     },
   });
   t.after(() => h.close());
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-look-lock.js']) h.load(file);
+  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-look-lock.js'];
+  if (realSave) files.unshift('enhanced/config.js');
+  for (const file of files) h.load(file);
   h.JE.toast = message => toasts.push(message);
   const real = h.JE.reinitializeTagLayout;
   h.JE.reinitializeTagLayout = () => { reinit.push(1); return real(); };
@@ -46,7 +56,7 @@ function setup(t, { settings = {}, genresFail = false, html = '' } = {}) {
   const rows = () => Array.from(mount().querySelectorAll('.je-tag-looks-list > li'), li => li.dataset.jeRow === 'rule' ? li.querySelector('.je-tag-looks-text').textContent : li.dataset.jeRow);
   const click = el => el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
   const buttonIn = (root, label) => Array.from(root.querySelectorAll('button')).find(b => b.textContent === label);
-  return { ...h, writes, toasts, requests, reinit, settle, mount, rows, click, buttonIn,
+  return { ...h, writes, toasts, requests, reinit, settle, mount, rows, click, buttonIn, io,
     async open() { h.JE.internals.enhancedUi.wireTagLooks({ resetAutoCloseTimer() {} }); await settle(); await settle(); } };
 }
 
@@ -243,4 +253,46 @@ test('the detail-page button is absent with every poster tag off or for non-medi
   assert.ok(page.querySelector('.je-tag-look-lock-btn'));
   h.JE.tagLookLock.addLockButton('not-an-id', page, 'Series');
   assert.equal(page.querySelector('.je-tag-look-lock-btn'), null);
+});
+
+test('a save that fails with HTTP 500 resolves false, restores the locks and rules and says so', async t => {
+  const h = setup(t, { html: detailPage(), realSave: true, settings: { tagLookRules: [kidsRule] } });
+  h.io.saveStatus = 500;
+  const before = plain(h.JE.currentSettings);
+
+  // Straight through the module: false, the previous locks back, cards re-presented again.
+  const reinitBefore = h.reinit.length;
+  assert.equal(await h.JE.core.tagLook.lockItem(MOVIE, { layout: 'bands', density: 'full' }), false);
+  assert.equal(h.JE.currentSettings.tagLayoutLocks, before.tagLayoutLocks ?? undefined);
+  assert.equal(h.JE.core.tagLook.read().locks.size, 0);
+  assert.ok(h.reinit.length >= reinitBefore + 2, 'presented with the lock, then without it');
+  assert.equal(await h.JE.core.tagLook.saveRules([]), false);
+  assert.deepEqual(plain(h.JE.currentSettings.tagLookRules), before.tagLookRules);
+
+  // The detail-page button: no "locked" toast, an error one, still unlocked.
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  const button = page.querySelector('.je-tag-look-lock-btn');
+  h.click(button);
+  await h.settle(); await h.settle(); await h.settle();
+  assert.deepEqual(h.toasts, ['tag_look_error_toast']);
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+  assert.equal(h.JE.core.tagLook.read().locks.size, 0);
+
+  // The panel: deleting the rule shows at once, then comes back with a toast.
+  await h.open();
+  assert.equal(h.rows().length, 3);
+  h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
+  assert.equal(h.rows().length, 2, 'optimistic');
+  await h.settle(); await h.settle();
+  assert.equal(h.toasts.at(-1), 'tag_looks_save_failed_toast');
+  assert.equal(h.rows().length, 3, 'the rule is back');
+  assert.equal(h.writes.length, 0, 'nothing reached the server');
+
+  // Once the server answers again the same change saves.
+  h.io.saveStatus = 200;
+  h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
+  await h.settle(); await h.settle();
+  assert.deepEqual(h.writes.at(-1).TagLookRules ?? h.writes.at(-1).tagLookRules, []);
+  assert.equal(h.rows().length, 2);
 });

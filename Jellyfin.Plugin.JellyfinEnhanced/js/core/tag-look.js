@@ -375,37 +375,56 @@
         return slots ? Object.entries(slots).map(([group, slot]) => ({ group, slot })) : null;
     }
 
-    /**
-     * Save the settings document and re-present every card (no refetch).
-     * @returns {Promise<void>}
-     */
-    function persist() {
+    /** Re-present every card (no refetch) with the rules and locks as they now are. */
+    function represent() {
         JE.core.tagLayout?.invalidateSettings?.();
-        const saved = typeof JE.saveUserSettings === 'function'
-            ? Promise.resolve(JE.saveUserSettings('settings.json', JE.currentSettings)) : Promise.resolve();
         if (typeof JE.reinitializeTagLayout === 'function') JE.reinitializeTagLayout();
-        return saved.then(() => undefined);
+    }
+
+    /**
+     * Apply a change to the rules or locks, re-present the cards and save the
+     * settings document. When the save fails the previous value is put back
+     * (unless a later change replaced it meanwhile) and the cards re-presented
+     * again.
+     * @param {'tagLookRules'|'tagLayoutLocks'} key
+     * @param {*} value - The new setting value.
+     * @returns {Promise<boolean>} Whether the change was saved.
+     */
+    function persist(key, value) {
+        const previous = JE.currentSettings[key];
+        JE.currentSettings[key] = value;
+        represent();
+        if (typeof JE.saveUserSettings !== 'function') return Promise.resolve(true);
+        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true })))
+            .then(() => true, (err) => {
+                console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the tag looks failed:', err);
+                if (JE.currentSettings[key] === value) {
+                    JE.currentSettings[key] = previous;
+                    represent();
+                }
+                return false;
+            });
     }
 
     /**
      * Replace the user's rules (normalised) and save.
      * @param {Array<Object>} rules
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} Whether the rules were saved (false: the previous rules are back).
      */
     function saveRules(rules) {
-        JE.currentSettings.tagLookRules = normalizeRules(rules).map((rule) => ({ ...rule, slots: slotsToWire(rule.slots) }));
-        return persist();
+        return persist('tagLookRules', normalizeRules(rules).map((rule) => ({ ...rule, slots: slotsToWire(rule.slots) })));
     }
 
     /**
-     * Write a lock map back to the settings document.
+     * Wire form of a lock map (null when empty).
      * @param {Map<string, TagLayoutLock>} locks
+     * @returns {Object<string, Object>|null}
      */
-    function writeLocks(locks) {
+    function locksToWire(locks) {
         /** @type {Object<string, Object>} */
         const out = {};
         for (const [id, lock] of locks) out[id] = { ...lock, slots: slotsToWire(lock.slots) };
-        JE.currentSettings.tagLayoutLocks = Object.keys(out).length ? out : null;
+        return Object.keys(out).length ? out : null;
     }
 
     /**
@@ -414,7 +433,8 @@
      * Past 500 locks the oldest is dropped.
      * @param {string} itemId
      * @param {{layout: string, density: string, slots?: Object<string, string>|null, colourPreset?: string|null}} look
-     * @returns {Promise<boolean>} False when the id or look is invalid.
+     * @returns {Promise<boolean>} False when the id or look is invalid or the
+     *   save failed (the previous locks are back).
      */
     function lockItem(itemId, look) {
         const id = normalizeId(itemId);
@@ -430,21 +450,19 @@
             slots: normalizeSlots(look.slots || null, layout),
             lockedAt: Math.max(Date.now(), ...Array.from(locks.values(), (l) => l.lockedAt + 1)),
         });
-        writeLocks(normalizeLocks(Object.fromEntries(locks)));
-        return persist().then(() => true);
+        return persist('tagLayoutLocks', locksToWire(normalizeLocks(Object.fromEntries(locks))));
     }
 
     /**
      * Unlock items (all of them when no ids are given).
      * @param {string[]} [ids]
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} Whether the change was saved (false: the previous locks are back).
      */
     function unlockItems(ids) {
         const locks = normalizeLocks(JE.currentSettings.tagLayoutLocks);
         if (ids === undefined) locks.clear();
         else for (const raw of ids) { const id = normalizeId(raw); if (id) locks.delete(id); }
-        writeLocks(locks);
-        return persist();
+        return persist('tagLayoutLocks', locksToWire(locks));
     }
 
     JE.core.tagLook = {
