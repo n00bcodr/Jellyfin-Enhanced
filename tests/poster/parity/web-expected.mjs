@@ -11,8 +11,9 @@
 // registration order), waits for the async user-review chips, and reads the
 // resulting groups from the layout controller in arrival order (their corner
 // slot and the displayed, capped chips). The top-right indicator offset comes
-// from the real slot rules tags/tag-layout-styles.js builds, applied when
-// jellyfin-web would show a played / unplayed-count indicator.
+// from the real slot and (settings saved before layouts) container rules
+// tags/tag-layout-styles.js builds, applied when jellyfin-web would show a
+// played / unplayed-count indicator.
 //
 // Output: data/out/web-<profile>.json
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -298,9 +299,12 @@ async function runProfile(profile) {
     JE.tagPipeline.initialize();
     await sleep(20); // quality waits for the Jellyfin audio preference before registering
 
-    // Corner slots that earn the indicator offset (on a host the controller
-    // marks data-je-indicator-gap), from the real layout CSS.
-    const offsetSlots = new Set([...JE.core.tagLayout.buildStyles().matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-indicator-gap\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\]/g)].map((m) => m[1]));
+    // Corner slots that earn the indicator offset, from the real layout CSS:
+    // the whole slot on a host the controller marks data-je-indicator-gap, or
+    // (settings saved before layouts) the containers it marks there.
+    const layoutCss = JE.core.tagLayout.buildStyles();
+    const offsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-indicator-gap\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\]/g)].map((m) => m[1]));
+    const legacyOffsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\] > \[data-je-indicator-gap\]/g)].map((m) => m[1]));
 
     const hosts = [];
     for (const [id, entry] of Object.entries(entries)) {
@@ -323,7 +327,9 @@ async function runProfile(profile) {
             .filter((d) => d.element && CONTAINERS[d.element.className.split(' ')[0]])
             .map((d) => {
                 const group = CONTAINERS[d.element.className.split(' ')[0]];
-                return { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot), t: readTags(group, d.element) };
+                const offset = (host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot))
+                    || (d.element.dataset.jeIndicatorGap === '1' && legacyOffsetSlots.has(d.slot));
+                return { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && offset, t: readTags(group, d.element) };
             })
             .filter((g) => g.t.length > 0);
     }
