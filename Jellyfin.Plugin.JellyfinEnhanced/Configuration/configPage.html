@@ -7159,36 +7159,34 @@
                 const box = document.querySelector('#tagStyleContrast');
                 box.textContent = '';
                 if (current === 'language') return;
-                // Poster preset: colours from the artwork can only be graded by their worst case.
-                let posterWorst = null;
-                (target === ALL ? labelsOf(current) : [{ key: target }]).forEach((label) => {
-                    const ratio = posterContrast(label);
-                    if (ratio !== null && (posterWorst === null || ratio < posterWorst)) posterWorst = ratio;
-                });
-                if (posterWorst !== null) {
-                    const grade = contrastLevel(posterWorst);
-                    const badge = el('span', 'je-ts-contrast-badge je-ts-contrast-' + grade.level, grade.label + ' · ' + posterWorst.toFixed(1) + ':1');
-                    badge.dataset.level = grade.level;
-                    badge.dataset.poster = 'worst';
-                    box.appendChild(badge);
-                    box.appendChild(el('span', 'je-ts-contrast-hint', 'Worst case over any artwork: Poster takes each tag\'s colours from the poster it sits on, so this is the lowest contrast the poster colours can give'));
-                    return;
-                }
-                // One label: its own contrast. Whole group: the label that reads worst.
+                // One label: its own contrast. Whole group: the label that reads worst. Under Poster, a
+                // label whose text or background comes from the artwork counts with its worst case over
+                // any artwork, a label with both set here with its own colours.
                 let worst = null;
+                let sampled = false;
                 (target === ALL ? labelsOf(current) : [{ key: target }]).forEach((label) => {
-                    const c = effective(current, label.key);
-                    const ratio = contrastRatio(c.text, c.background);
-                    if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name };
+                    let ratio = posterContrast(label);
+                    const poster = ratio !== null;
+                    if (poster) sampled = true;
+                    else {
+                        const c = effective(current, label.key);
+                        ratio = contrastRatio(c.text, c.background);
+                    }
+                    if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name, poster };
                 });
                 if (!worst) return;
                 const grade = contrastLevel(worst.ratio);
                 const badge = el('span', 'je-ts-contrast-badge je-ts-contrast-' + grade.level, grade.label + ' · ' + worst.ratio.toFixed(1) + ':1');
                 badge.dataset.level = grade.level;
+                if (sampled) badge.dataset.poster = worst.poster ? 'worst' : 'fixed';
                 box.appendChild(badge);
-                box.appendChild(el('span', 'je-ts-contrast-hint', target === ALL
+                const hint = target === ALL
                     ? 'Lowest in the group (' + worst.name + '): text over background, on a dark poster'
-                    : 'Text over background, on a dark poster'));
+                    : 'Text over background, on a dark poster';
+                const artwork = 'Poster takes each tag\'s colours from the poster it sits on, so this is the lowest contrast the poster colours can give';
+                box.appendChild(el('span', 'je-ts-contrast-hint', !sampled ? hint
+                    : worst.poster ? 'Worst case over any artwork: ' + artwork
+                    : hint + '. Its colours are all set here; tags without their own take them from the poster they sit on'));
             }
 
             /** @returns {void} */
