@@ -28,8 +28,8 @@ public class PrivacySpoilerStripTests
         Assert.Equal(!watched, stripped);
         Assert.Equal(watched ? SpoilerTagDataStub.None : SpoilerTagDataStub.Episode, stripper.GetTagDataStub(policy, user, episode));
         if (watched) Assert.Same(source, result);
-        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.AudioLanguages); Assert.Null(result.SubtitleLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); Assert.Null(result.QualitySummary); Assert.Null(result.QualityEpisodeIds); }
-        Assert.Equal(new[] { "Mystery" }, source.Genres); Assert.Equal(8f, source.CommunityRating); Assert.Equal("The killer", source.StreamData!.ItemName);
+        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.Logos); Assert.Null(result.AudioLanguages); Assert.Null(result.SubtitleLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); Assert.Null(result.QualitySummary); Assert.Null(result.QualityEpisodeIds); }
+        Assert.Equal(new[] { "Mystery" }, source.Genres); Assert.Equal(8f, source.CommunityRating); Assert.Equal("The killer", source.StreamData!.ItemName); Assert.NotNull(source.Logos);
         Assert.NotNull(source.QualitySummary); Assert.NotNull(source.QualityEpisodeIds);
         var unguarded = new UserSpoilerBlur(); unguarded.Series[Guid.NewGuid().ToString("N")] = new();
         var otherPolicy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = true }, unguarded)!;
@@ -78,6 +78,7 @@ public class PrivacySpoilerStripTests
         Assert.Equal("Final reveal", source.StreamData!.Streams![0].DisplayTitle);
         Assert.Equal("secret.mkv", source.StreamData.Sources![0].Path);
         Assert.Equal(source.Genres, result.Genres); Assert.Equal(source.CommunityRating, result.CommunityRating);
+        Assert.Same(source.Logos, result.Logos);
     }
 
     [Fact]
@@ -110,12 +111,32 @@ public class PrivacySpoilerStripTests
         var source = Entry(season.SeriesId); source.Type = "Season";
         var user = new User("test", "default", "default");
         var result = stripper.StripEntry(policy, user, season, source, out var stripped);
-        Assert.True(stripped); Assert.Equal(source.Genres, result.Genres); Assert.Same(source.StreamData, result.StreamData);
+        Assert.True(stripped); Assert.Equal(source.Genres, result.Genres); Assert.Same(source.StreamData, result.StreamData); Assert.Same(source.Logos, result.Logos);
         Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); Assert.Equal(8f, source.CommunityRating);
         Assert.Equal(SpoilerTagDataStub.None, stripper.GetTagDataStub(policy, user, season));
     }
 
-    private static TagCacheEntry Entry(Guid seriesId) => new() { Type = "Episode", SeriesId = seriesId.ToString("N"), Genres = ["Mystery"],
+    [Theory]
+    [InlineData(true, false)] [InlineData(false, true)] [InlineData(true, true)]
+    public void NativeAndSharedStripDropsLogosExactlyWhenTagsAreHidden(bool stripTags, bool optOut)
+    {
+        // The poster path (StripEntry) and the shared cache use the same field strip.
+        var user = new User("test", "default", "default") { Id = Guid.NewGuid() };
+        var episode = new Episode { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid() };
+        var userData = new Mock<IUserDataManager>();
+        userData.Setup(x => x.GetUserData(user, episode)).Returns(new UserItemData { Key = "test", Played = false });
+        var state = new UserSpoilerBlur(); state.Series[episode.SeriesId.ToString("N")] = new();
+        if (optOut) state.Prefs = new SpoilerBlurUserPrefs { HideTags = false };
+        var policy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = stripTags, SpoilerStripRatings = true }, state)!;
+        var source = Entry(episode.SeriesId);
+        var result = new SpoilerTagDataStripper(Mock.Of<ILibraryManager>(), userData.Object, null!).StripEntry(policy, user, episode, source, out var stripped);
+        Assert.True(stripped);
+        if (stripTags && !optOut) Assert.Null(result.Logos); else Assert.Same(source.Logos, result.Logos);
+        Assert.Null(result.CommunityRating);
+        Assert.Equal("Northwind", Assert.Single(source.Logos!).Name);
+    }
+
+    private static TagCacheEntry Entry(Guid seriesId) => new() { Type = "Episode", SeriesId = seriesId.ToString("N"), Genres = ["Mystery"], Logos = [new TagLogo { Kind = "network", Name = "Northwind", Logo = "/nw.png" }],
         QualitySummary = new TagQualitySummary { EpisodeCount = 2 }, QualityEpisodeIds = ["contributor"],
         CommunityRating = 8, CriticRating = 90, Ratings = new() { Imdb = 8.1 }, AudioLanguages = ["en"], SubtitleLanguages = ["fr"], StreamData = new TagStreamData { ItemName = "The killer", ItemPath = "secret.mkv",
         Streams = [new TagMediaStream { Codec = "hevc", Height = 2160, DisplayTitle = "Final reveal" }], Sources = [new TagMediaSource { Name = "The killer", Path = "secret.mkv" }] } };

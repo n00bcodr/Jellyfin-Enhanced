@@ -287,6 +287,81 @@ public class PerfRound2TagCacheResponseTests
         Assert.Contains(series.Id.ToString(), json); Assert.DoesNotContain("Series secret", json);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SpoilerGuardHideTagsStripsLogosFromGuardedCacheEntriesOnLoadsAndDeltas(bool guard)
+    {
+        var guardedEpisode = Guid.NewGuid();
+        var openMovie = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [guardedEpisode.ToString("N")] = new() { Type = "Episode", SeriesId = e.SeriesId.ToString("N"), Logos = [new() { Kind = "network", Name = "Guarded Network" }], LastUpdated = 130 },
+            [openMovie.ToString("N")] = new() { Type = "Movie", Logos = [new() { Kind = "provider", Name = "Open Provider" }], LastUpdated = 130 },
+        });
+        endpoint.AliceAccess = [guardedEpisode, openMovie];
+        if (guard) endpoint.GuardSeries();
+        foreach (var since in new long?[] { null, 100 })
+        {
+            var body = (await endpoint.Read(endpoint.Alice, since: since)).Body;
+            Assert.Contains("Open Provider", body);
+            Assert.Equal(!guard, body.Contains("Guarded Network", StringComparison.Ordinal));
+        }
+
+        if (!guard) return;
+        // Watched: the episode is no longer stripped, its logo returns.
+        endpoint.AlicePlayed.Add(guardedEpisode);
+        Assert.Contains("Guarded Network", (await endpoint.Read(endpoint.Alice)).Body);
+    }
+
+    [Theory]
+    [InlineData("off")]
+    [InlineData("hide-tags")]
+    [InlineData("ratings-only")]
+    public async Task SpoilerGuardHideTagsStripsLogosFromEveryBatchStub(string policy)
+    {
+        using var endpoint = new Endpoint();
+        var config = endpoint.Fixture.Plugin.Configuration;
+        config.LogoTagsEnabled = true;
+        endpoint.Cache.OnLogoSettingsChanged();
+        await endpoint.Cache.LogoWorkQueue.WaitAsync(TimeSpan.FromSeconds(10));
+        var series = new Series { Id = endpoint.SeriesId, Name = "Guarded show", Studios = ["Series Network"] };
+        var episode = new TagCacheSubtitleLanguagesTests.Episode { Id = endpoint.Episode, SeriesId = endpoint.SeriesId, Name = "Guarded episode" };
+        var movie = new TagCacheSubtitleLanguagesTests.Movie { Id = Guid.NewGuid(), Name = "Guarded movie", Studios = ["Movie Studio"] };
+        var open = new TagCacheSubtitleLanguagesTests.Movie { Id = Guid.NewGuid(), Name = "Open movie", Studios = ["Open Studio"] };
+        foreach (var item in new BaseItem[] { series, episode, movie, open })
+            endpoint.Library.Setup(x => x.GetItemById<BaseItem>(item.Id, It.IsAny<User>())).Returns(item);
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id)).Returns(series); // the episode's logo owner
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        if (policy != "off")
+        {
+            config.SpoilerBlurEnabled = true;
+            config.SpoilerStripTags = true;
+            config.SpoilerStripRatings = true;
+            var state = new UserSpoilerBlur();
+            state.Series[series.Id.ToString("N")] = new();
+            state.Movies[movie.Id.ToString("N")] = new();
+            // The user's own "don't hide tags for me" keeps the logos (ratings are still stripped).
+            if (policy == "ratings-only") state.Prefs = new SpoilerBlurUserPrefs { HideTags = false };
+            endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        }
+
+        endpoint.SignIn(endpoint.Alice);
+        var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, new[] { series.Id, episode.Id, movie.Id, open.Id }.Select(id => id.ToString()).ToArray()));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        string[] LogoNames(Guid id)
+        {
+            var logos = json.RootElement.GetProperty("Items").EnumerateArray().Single(i => i.GetProperty("Id").GetGuid() == id).GetProperty("Logos");
+            return logos.ValueKind == JsonValueKind.Null ? [] : logos.EnumerateArray().Select(l => l.GetProperty("name").GetString()!).ToArray();
+        }
+
+        var stripped = policy == "hide-tags";
+        Assert.Equal(stripped ? [] : ["Series Network"], LogoNames(series.Id));
+        Assert.Equal(stripped ? [] : ["Series Network"], LogoNames(episode.Id));
+        Assert.Equal(stripped ? [] : ["Movie Studio"], LogoNames(movie.Id));
+        Assert.Equal(["Open Studio"], LogoNames(open.Id));
+    }
+
     [Fact]
     public async Task SubtitleLanguagesReachTagCacheAndTagDataAndFollowTheSpoilerStrip()
     {
