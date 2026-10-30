@@ -1441,19 +1441,25 @@
             if (!['tl', 'tr', 'bl', 'br'].includes(slot || '')) continue;
             boxes[slot] = Array.from(el.children).filter((g) => /** @type {HTMLElement} */ (g).dataset.jeGroup).map((g) => g.getBoundingClientRect());
         }
+        /** @param {string[]} slots @returns {number} Symmetric horizontal reserve. */
         const width = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + 4 : host.right - b.left + 4)));
+        /** @param {string[]} slots @returns {number} Symmetric vertical reserve. */
         const height = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + 4 : host.bottom - b.top + 4)));
         const scalable = ctrl.host.parentElement;
         const progress = scalable?.querySelector('.itemProgressBar, .cardProgressBar, .cardProgress');
         const bottom = progress ? Math.max(6, host.bottom - progress.getBoundingClientRect().top + 4) : 6;
         let top = 6;
-        for (const overlay of scalable?.querySelectorAll('.cardIndicators > *') || []) {
+        let topReserve = width(['tl', 'tr']);
+        for (const overlay of scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
             const b = overlay.getBoundingClientRect();
-            if (b.left < host.left + host.width / 2 && b.right > host.left + host.width / 2) top = Math.max(top, b.bottom - host.top + 4);
+            if (b.bottom <= host.top || b.top >= host.top + host.height / 3) continue;
+            const middle = host.left + host.width / 2;
+            if (b.left < middle && b.right > middle) top = Math.max(top, b.bottom - host.top + 4);
+            else topReserve = Math.max(topReserve, b.right <= middle ? b.right - host.left + 4 : host.right - b.left + 4);
         }
         return centres.map((el) => {
             const slot = el.dataset.jeSlot;
-            return { el, top, bottom, reserve: slot === 'tc' ? width(['tl', 'tr']) : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : 6 };
+            return { el, top, bottom, reserve: slot === 'tc' ? topReserve : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : 6 };
         });
     }
 

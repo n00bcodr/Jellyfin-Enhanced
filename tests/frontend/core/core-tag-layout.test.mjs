@@ -1064,3 +1064,58 @@ test('top and bottom centre overflow counts eligible chips after the group cap a
     assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).lastElementChild.hasAttribute('data-je-overflow'), true);
   }
 });
+
+test('centre budgets reserve occupied corners, top-centre overlays and progress bars in the batched pass', t => {
+  const h = setup(t, {settings: {tagLayoutSettingsVersion: 1, tagLayouts: {corners: {groups: [
+    {group:'quality',slot:'tl'}, {group:'rating',slot:'br'}, {group:'status',slot:'tc'},
+    {group:'language',slot:'ml'}, {group:'genre',slot:'bc'}, {group:'ageRating',slot:'off'},
+  ]}}}});
+  const scalable = h.document.querySelector('.cardScalable');
+  scalable.insertAdjacentHTML('beforeend','<div class="itemProgressBar"></div><div class="cardIndicators"><span></span><span class="countIndicator"></span></div>');
+  h.render();
+  const proto = h.window.HTMLElement.prototype;
+  const rect = proto.getBoundingClientRect;
+  const width = Object.getOwnPropertyDescriptor(h.window.Element.prototype,'clientWidth');
+  const height = Object.getOwnPropertyDescriptor(h.window.Element.prototype,'clientHeight');
+  proto.getBoundingClientRect = function () {
+    if (this.classList.contains('je-tag-host')) return {left:0,right:180,top:0,bottom:270,width:180,height:270};
+    if (this.dataset.jeGroup === 'quality') return {left:6,right:66,top:6,bottom:86,width:60,height:80};
+    if (this.dataset.jeGroup === 'rating') return {left:134,right:174,top:224,bottom:264,width:40,height:40};
+    if (this.classList.contains('itemProgressBar')) return {top:260,bottom:270};
+    if (this.classList.contains('countIndicator')) return {left:90,right:174,top:6,bottom:30};
+    if (this.parentElement?.classList.contains('cardIndicators')) return {left:80,right:100,top:6,bottom:24};
+    return {left:0,right:20,top:0,bottom:18,width:20,height:18};
+  };
+  Object.defineProperty(h.window.Element.prototype,'clientWidth',{configurable:true,get(){return 180;}});
+  Object.defineProperty(h.window.Element.prototype,'clientHeight',{configurable:true,get(){return 270;}});
+  try {
+    h.layout.refreshPresentation(h.host());
+    h.layout.flushFit();
+    const slot = name => h.host().querySelector(`[data-je-slot="${name}"]`);
+    assert.equal(slot('tc').style.getPropertyValue('--je-anchor-reserve'),'94px');
+    assert.equal(slot('bc').style.getPropertyValue('--je-anchor-reserve'),'50px');
+    assert.equal(slot('ml').style.getPropertyValue('--je-anchor-reserve'),'90px');
+    assert.equal(slot('tc').style.getPropertyValue('--je-anchor-top'),'28px');
+    assert.equal(slot('bc').style.getPropertyValue('--je-anchor-bottom'),'14px');
+  } finally {
+    proto.getBoundingClientRect = rect;
+    Object.defineProperty(h.window.Element.prototype,'clientWidth',width);
+    Object.defineProperty(h.window.Element.prototype,'clientHeight',height);
+  }
+});
+
+test('side-centre columns fit whole chips and an overflow count inside short cards', t => {
+  for (const slot of ['ml','mr']) {
+    const h = setup(t, {settings: {tagLayoutSettingsVersion:1, tagLayouts:{corners:{groups:[
+      ...['quality','rating','ageRating','status','genre'].map(group=>({group,slot:'off'})), {group:'language',slot},
+    ]}}}});
+    h.render();
+    fitCard(h,{width:113,height:64});
+    const column = h.host().querySelector(`[data-je-slot="${slot}"]`);
+    assert.equal(column.querySelectorAll('[data-je-group] > :not([data-je-overflow])').length,1);
+    assert.equal(column.lastElementChild.textContent,'+2');
+    assert.equal(column.lastElementChild.hasAttribute('data-je-overflow'),false);
+    fitCard(h,{width:113,height:16});
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),true);
+  }
+});

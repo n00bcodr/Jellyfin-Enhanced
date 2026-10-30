@@ -2,6 +2,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
 using Newtonsoft.Json;
+using SkiaSharp;
 
 namespace JE.Tests;
 
@@ -46,10 +47,16 @@ public class PosterCentreAnchorTests
         using var assets = PosterTagAssets.Load();
         using var text = new PosterTagText(assets.TextTypeface);
         var planner = new PosterTagPlanner(assets, text);
+        using var renderer = new PosterTagRenderer();
         foreach (int height in new[] { 100, 270 })
         {
             var layout = new PosterTagLayout([new(PosterTagGroup.Rating, anchor, [new RatingTag(PosterRatingSource.Community, "8.1", false)])], false, false);
             var plan = planner.Plan(180, height, layout);
+            using var source = new SKBitmap(180, height);
+            source.Erase(SKColors.Transparent);
+            using var rendered = renderer.Render(source, layout);
+            Assert.NotNull(rendered);
+            Assert.Contains(rendered.Pixels, pixel => pixel.Alpha > 0);
             var group = Assert.Single(plan.Groups);
             var chip = Assert.Single(group.Items);
             Assert.False(chip.Hidden);
