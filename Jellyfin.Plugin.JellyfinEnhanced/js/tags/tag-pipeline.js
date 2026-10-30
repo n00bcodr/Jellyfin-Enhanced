@@ -85,7 +85,7 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
-    let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId }
+    let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting }
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
     // Elements matching these selectors are skipped before any renderer runs.
@@ -1023,11 +1023,14 @@
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
         const layout = JE.core.tagLayout;
-        // Tag look rules match on the entry (library, genres, age rating).
-        // The card's identity travels with a queued fetch, so an answer for
-        // an item the card no longer shows is dropped.
+        // Tag look rules match on the item data (library, genres, age
+        // rating): the server entry. Without it, a card a rule or lock
+        // could restyle waits for the batch fetch below before showing its
+        // tags.
         const cardId = layout?.cardIdentity?.(renderTarget) ?? '';
+        let awaiting = false;
         if (serverEntry) layout?.setCardContext?.(renderTarget, serverEntry, itemId, cardId);
+        else awaiting = !!layout?.awaitCardContext?.(renderTarget, cardId, itemType);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
         JE.core.tagLayout?.prepareCard(renderTarget);
@@ -1056,8 +1059,8 @@
         }
         hosts.push(renderTarget);
 
-        if (!allCacheHits) {
-            requestQueue.push({ el, renderTarget, itemId, itemType, cardId });
+        if (!allCacheHits || awaiting) {
+            requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting });
         }
     }
 
@@ -1283,6 +1286,11 @@
                     .filter((entry) => entry.el.isConnected);
                 if (batch.length === 0) continue;
                 await processBatch(batch, myGeneration);
+                // Cards still waiting for item data the batch didn't bring
+                // (failed, or no such item) show their tags without it.
+                for (const entry of batch) {
+                    if (entry.awaiting) JE.core.tagLayout?.releaseCardContext?.(entry.renderTarget);
+                }
             }
         } finally {
             isProcessing = false;

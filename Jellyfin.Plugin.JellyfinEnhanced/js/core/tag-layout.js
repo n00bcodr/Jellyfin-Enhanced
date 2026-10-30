@@ -373,6 +373,11 @@
     const controllers = new WeakMap();
     /** @type {WeakMap<HTMLElement, Object>} render target / host → what the card's item data says (setCardContext) */
     let cardData = new WeakMap();
+    /** @type {WeakMap<HTMLElement, {cardId: string, timer: *}>} render target / host → item data the card waits for (awaitCardContext) */
+    let awaitingData = new WeakMap();
+    // A card waiting for its item data shows its tags after this long even
+    // when the data never comes (a failed fetch the pipeline didn't report).
+    const AWAIT_CONTEXT_MS = 8000;
     let outletSeq = 0;
     let stylesInjected = false;
 
@@ -502,10 +507,46 @@
         const el = cardContext?.host || (cardContext?.nodeType === 1 ? cardContext : null);
         if (!el) return look.factsFrom(cardContext, { itemId: cardContext?.itemId, cardType: cardContext?.cardType || null });
         const cardId = cardContext.host ? cardContext.itemId : identityOf(el);
-        const data = cardData.get(el) || (el.parentElement ? cardData.get(el.parentElement) : undefined);
+        const data = contextOf(cardData, el);
         const usable = data && (!data.cardId || data.cardId === cardId);
         const cardType = el.closest('[data-type]')?.getAttribute('data-type') || null;
         return look.factsFrom(usable ? data.entry : null, { itemId: usable ? data.itemId : '', cardId, cardType });
+    }
+
+    /**
+     * A per-card record kept for a render target or its host: the pipeline
+     * may hand over the target before the host inside it exists.
+     * @template T
+     * @param {WeakMap<HTMLElement, T>} map
+     * @param {HTMLElement} el - Host or render target.
+     * @returns {T|undefined}
+     */
+    function contextOf(map, el) {
+        return map.get(el) || (el.parentElement ? map.get(el.parentElement) : undefined);
+    }
+
+    /**
+     * Whether some rule or lock could give this card another look once its
+     * item data (library, genres, rating) is known. Without rules, or with
+     * type-only rules on a typed card, it cannot.
+     * @param {string|null} cardType - The card's data-type.
+     * @returns {boolean}
+     */
+    function needsCardData(cardType) {
+        const looks = currentLooks();
+        if (!looks.rules.length && !looks.locks.size) return false;
+        if (!cardType) return true;
+        return looks.rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field !== 'type'));
+    }
+
+    /**
+     * Whether a card's tags wait for its item data (see awaitCardContext).
+     * @param {HTMLElement} host
+     * @returns {boolean}
+     */
+    function isAwaiting(host) {
+        const rec = contextOf(awaitingData, host);
+        return !!rec && rec.cardId === identityOf(host);
     }
 
     /**
@@ -562,11 +603,62 @@
         const current = identityOf(host);
         if (cardId !== undefined && cardId !== null && cardId !== current) return false;
         cardData.set(host, { entry, itemId, cardId: current });
+        const waited = endAwait(host);
         const ctrl = controllers.get(host);
         if (!ctrl || !ctrl.host.isConnected || !ctrl.groups.size) return true;
         const looks = currentLooks();
-        if ((looks.rules.length || looks.locks.size) && resolveLayout(ctrl).lookKey !== ctrl.lookKey) presentAll(ctrl);
+        if (waited || ((looks.rules.length || looks.locks.size) && resolveLayout(ctrl).lookKey !== ctrl.lookKey)) presentAll(ctrl);
         return true;
+    }
+
+    /**
+     * Hold a card's tags back until its item data arrives (setCardContext)
+     * when a rule or lock could change its look, so its chips don't land in
+     * the default look first and then move. Caption space follows the
+     * default meanwhile. The pipeline calls this for a card it has no item
+     * data for yet and then fetches the data.
+     * @param {HTMLElement} target - Render target.
+     * @param {string} cardId - cardIdentity() of the card.
+     * @param {string|null} cardType - The card's data-type.
+     * @returns {boolean} Whether the card now waits (the caller must fetch).
+     */
+    function awaitCardContext(target, cardId, cardType) {
+        if (!target || !needsCardData(cardType)) return false;
+        const host = findHost(target) || target;
+        endAwait(host);
+        const timer = setTimeout(() => releaseCardContext(target), AWAIT_CONTEXT_MS);
+        awaitingData.set(host, { cardId, timer });
+        return true;
+    }
+
+    /**
+     * Stop a card waiting.
+     * @param {HTMLElement} el - Host or render target the wait was recorded on.
+     * @returns {boolean} Whether it was waiting.
+     */
+    function endAwait(el) {
+        let waited = false;
+        for (const key of [el, el.parentElement]) {
+            const rec = key ? awaitingData.get(key) : undefined;
+            if (!rec) continue;
+            clearTimeout(rec.timer);
+            awaitingData.delete(key);
+            waited = true;
+        }
+        return waited;
+    }
+
+    /**
+     * Show a waiting card's tags in the look known without its item data
+     * (the fetch failed or returned nothing for it). No-op for other cards.
+     * @param {HTMLElement} target - Render target.
+     */
+    function releaseCardContext(target) {
+        if (!target) return;
+        const host = findHost(target) || target;
+        if (!endAwait(host)) return;
+        const ctrl = controllers.get(host);
+        if (ctrl && ctrl.host.isConnected && ctrl.groups.size) presentAll(ctrl);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -946,6 +1038,8 @@
         ctrl.host.dataset.jeLayout = conf.layout;
         if (conf.locked) ctrl.host.dataset.jeLocked = '1';
         if (conf.layout === 'caption' && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
+        // Waiting for item data: keep the groups, show none yet.
+        if (isAwaiting(ctrl.host)) return;
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
@@ -976,7 +1070,7 @@
         ctrl.groups.set(group, { master: overlay, seq: previous ? previous.seq : ++ctrl.seq });
         if (ctrl.layout !== conf.layout || ctrl.lookKey !== conf.lookKey) {
             presentAll(ctrl);
-        } else {
+        } else if (!isAwaiting(ctrl.host)) {
             presentGroup(ctrl, conf, group);
             if (conf.layout === 'summary') refreshPill(ctrl, conf);
             syncIndicatorGap(ctrl, conf);
@@ -995,6 +1089,7 @@
         if (!group || !ctrl || !ctrl.groups.has(group)) return;
         ctrl.groups.delete(group);
         removeNodes(ctrl, group);
+        if (isAwaiting(ctrl.host)) return;
         const conf = resolveLayout(ctrl);
         if (conf.layout === 'summary') refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
@@ -1144,12 +1239,13 @@
 
     // A user switch: forget the outgoing user's settings and every fact their
     // cards hold (they may be spoiler-stripped differently for the incoming
-    // user), including the item data kept for hosts without a controller;
-    // the pipeline re-renders the cards, and je:user-data-loaded re-applies
-    // the incoming user's layout.
+    // user), including the item data kept for hosts without a controller and
+    // the waits for it; the pipeline re-renders the cards, and
+    // je:user-data-loaded re-applies the incoming user's layout.
     JE.session?.onUserChange?.('tag-layout', () => {
         invalidateSettings();
         cardData = new WeakMap();
+        awaitingData = new WeakMap();
         clearAll();
     });
 
@@ -1171,6 +1267,8 @@
         resolveLayout,
         setCardContext,
         cardIdentity,
+        awaitCardContext,
+        releaseCardContext,
         ensureHost,
         commitGroup,
         removeGroup,
