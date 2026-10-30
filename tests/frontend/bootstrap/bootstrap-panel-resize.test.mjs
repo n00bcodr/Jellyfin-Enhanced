@@ -433,3 +433,14 @@ for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) test(`
   assert.equal(h.panel().classList.contains('je-panel-resizing'), false);
   assert.equal(JSON.parse(h.stored()).width, 1062);
 });
+
+
+test('a moved panel re-centres fully on screen when entering narrow mode', async t => {
+  const h = setup(t);
+  await h.open();
+  Object.assign(h.panel().style, { left: '1000px', top: '700px', transform: 'none' });
+  h.resizeWindow(850, 700);
+  assert.equal(h.panel().style.transform, 'translate(-50%, -50%)');
+  const rect = h.panel().getBoundingClientRect();
+  assert.ok(rect.left >= 0 && rect.top >= 0 && rect.right <= 850 && rect.bottom <= 700);
+});

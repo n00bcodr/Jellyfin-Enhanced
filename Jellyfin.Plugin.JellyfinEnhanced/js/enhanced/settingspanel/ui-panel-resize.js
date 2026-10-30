@@ -226,6 +226,7 @@
             handles.forEach((handle) => { handle.hidden = !wide; });
             if (!wide || size.preset === 'default') {
                 Object.assign(help.style, DEFAULT_STYLE);
+                if (!wide) Object.assign(help.style, { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' });
                 if (wide) {
                     const rect = help.getBoundingClientRect();
                     keepInView(rect.width, rect.height);
