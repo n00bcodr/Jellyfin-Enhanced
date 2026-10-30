@@ -64,6 +64,8 @@
     const SERIES_BATCH = 50;
     // Ids asked for while cards are drawn are collected this long, then sent together.
     const SERIES_FLUSH_MS = 30;
+    /** Parent refreshes use the tag pipeline's 200-id /tag-data limit. */
+    const PARENT_FACTS_BATCH = 200;
     // Schedule badge windows: "Airs {date}" up to a week ahead; "Returns {date}"
     // when the next episode is more than two weeks after the last one and at
     // most a month ahead.
@@ -114,8 +116,14 @@
     const seriesInfo = new Map();
     /** @type {Set<string>} series ids waiting for the next batched request */
     const seriesQueue = new Set();
-    /** @type {Map<string, Promise<void>>} Parent refreshes while the TMDB schedule is still fresh. */
-    const parentFactsLoads = new Map();
+    /** @type {Set<string>} Expired parents waiting for a shared lookup. */
+    const parentFactsQueue = new Set();
+    /** @type {Set<string>} Parent ids already queued or loading. */
+    const parentFactsLoads = new Set();
+    /** @type {ReturnType<typeof setTimeout>|null} */
+    let parentFactsTimer = null;
+    /** @type {boolean} A single drain stays in flight even across reinitialisation. */
+    let parentFactsLoading = false;
     /** @type {ReturnType<typeof setTimeout>|null} */
     let seriesTimer = null;
     /** @type {ReturnType<typeof setTimeout>|null} One timer for failed visible lookups. */
@@ -954,6 +962,8 @@
         seriesEpoch++;
         seriesInfo.clear();
         seriesQueue.clear();
+        parentFactsQueue.clear();
+        parentFactsLoads.clear();
         ctx.clearPersistent();
         ctx.hot?.clear();
         if (info?.replaced && JE.currentSettings?.statusTagsEnabled) JE.reinitializeStatusTags();
@@ -1046,13 +1056,9 @@
         if (known && (known.loading || Date.now() < known.expires)) {
             if (!known.loading && TMDB_ENDED.has(known.facts?.status) && JE.tagPipeline?.lookupItemFacts
                 && !JE.tagPipeline.peekItemFacts(seriesId) && !parentFactsLoads.has(seriesId)) {
-                const epoch = seriesEpoch;
-                const load = JE.tagPipeline.lookupItemFacts([seriesId]).then(() => {
-                    if (epoch === seriesEpoch && JE.tagPipeline.peekItemFacts(seriesId)) applyLivePass(ctx);
-                }).finally(() => {
-                    if (parentFactsLoads.get(seriesId) === load) parentFactsLoads.delete(seriesId);
-                });
-                parentFactsLoads.set(seriesId, load);
+                parentFactsLoads.add(seriesId);
+                parentFactsQueue.add(seriesId);
+                scheduleParentFacts(ctx);
             }
             return;
         }
@@ -1060,6 +1066,49 @@
         seriesInfo.set(seriesId, { facts: known?.facts ?? null, expires: known?.expires ?? 0, loading: true });
         seriesQueue.add(seriesId);
         if (!seriesTimer) seriesTimer = setTimeout(() => { flushSeries(ctx); }, SERIES_FLUSH_MS);
+    }
+
+    /**
+     * Collect visible expired parents before starting a single serial drain.
+     * @param {Object} ctx - Factory context.
+     * @returns {void}
+     */
+    function scheduleParentFacts(ctx) {
+        if (parentFactsLoading || parentFactsTimer !== null || !parentFactsQueue.size || !statusActive) return;
+        parentFactsTimer = setTimeout(() => { flushParentFacts(ctx); }, SERIES_FLUSH_MS);
+    }
+
+    /**
+     * Refresh parents through the pipeline in bounded batches, with one live
+     * recomputation per completed batch. New ids join the running drain; ids
+     * already queued or loading cannot start duplicate requests. Cleanup drops
+     * queued work and stale completions without opening another in-flight drain.
+     * @param {Object} ctx - Factory context.
+     * @returns {Promise<void>}
+     */
+    async function flushParentFacts(ctx) {
+        parentFactsTimer = null;
+        const epoch = seriesEpoch;
+        parentFactsLoading = true;
+        try {
+            while (parentFactsQueue.size && statusActive && epoch === seriesEpoch) {
+                const ids = [...parentFactsQueue].slice(0, PARENT_FACTS_BATCH);
+                for (const id of ids) parentFactsQueue.delete(id);
+                const visible = new Set();
+                for (const el of observedSeriesCards) {
+                    const card = liveCards.get(el);
+                    if (eligibleSeriesCard(el, card)) visible.add(card.data.seriesId);
+                }
+                const batch = ids.filter(id => visible.has(id));
+                if (batch.length) await JE.tagPipeline.lookupItemFacts(batch);
+                if (epoch !== seriesEpoch) return;
+                for (const id of ids) parentFactsLoads.delete(id);
+                if (batch.some(id => JE.tagPipeline.peekItemFacts(id))) applyLivePass(ctx);
+            }
+        } finally {
+            parentFactsLoading = false;
+            scheduleParentFacts(ctx);
+        }
     }
 
     /**
@@ -1201,11 +1250,12 @@
     function stopStatus() {
         statusActive = false;
         seriesEpoch++;
-        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer]) {
+        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer, parentFactsTimer]) {
             if (timer !== null) clearTimeout(timer);
         }
-        midnightTimer = seriesTimer = seriesRetryTimer = null;
+        midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = null;
         seriesQueue.clear();
+        parentFactsQueue.clear();
         parentFactsLoads.clear();
         for (const value of seriesInfo.values()) value.loading = false;
         releaseSeriesObservers();

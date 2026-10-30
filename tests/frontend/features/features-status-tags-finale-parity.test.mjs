@@ -15,10 +15,11 @@ const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, 
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
-async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, facts = schedule, parentResponse = null } = {}) {
+async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null } = {}) {
   const changes = new Map(), calls = [], idle = [];
   const items = new Map(cards.map(item => [item.Id, item]));
   if (parent) items.set(SERIES, parent);
+  for (const item of parents) items.set(item.Id, item);
   let epoch = 0;
   const h = createHarness({
     html: cards.map(item => card(item.Id, item.Type)).join(''),
@@ -46,7 +47,10 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
           if (parentResponse && ids.length === 1 && ids[0] === SERIES) return parentResponse.promise;
           return { Items: ids.map(id => items.get(id)).filter(Boolean) };
         }
-        if (options.url.includes('/status-tags/series')) return { [SERIES]: facts };
+        if (options.url.includes('/status-tags/series')) {
+          const ids = new URL(options.url, 'http://jellyfin.test').searchParams.get('ids').split(',');
+          return Object.fromEntries(ids.map(id => [id, facts]));
+        }
         throw new Error(`Unexpected URL: ${options.url}`);
       }
     }
@@ -59,6 +63,11 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   await delay(0);
   while (idle.length) idle.shift()({ timeRemaining: () => 50 });
   await delay(240);
+  // Large pages yield between render slices and enqueue the next idle scan.
+  while (idle.length) {
+    while (idle.length) idle.shift()({ timeRemaining: () => 50 });
+    await delay(60);
+  }
   return Object.assign(h, { calls, changes, idle, items, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
@@ -126,6 +135,83 @@ test('an episode hot-cache hit refreshes expired parent facts while its schedule
   await delay(60);
   assert.equal(h.key(EPISODE), 'series_finale');
   assert.equal(h.calls.filter(c => c.url.includes('/status-tags/series')).length, 1, 'schedule remains fresh');
+});
+
+for (const count of [30, 230]) {
+  test(`expired parents on a ${count}-series episode-only page use bounded batches and one live pass per batch`, async t => {
+    const parents = Array.from({ length: count }, (_, i) => ({ ...aggregate, Id: (i + 1).toString(16).padStart(32, '0') }));
+    const episodes = parents.map((parent, i) => ({ ...finale, Id: (i + 1001).toString(16).padStart(32, '0'), SeriesId: parent.Id }));
+    // Two cards for one episode also exercise parent-id deduplication.
+    const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]] });
+    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+    if (count === 30) assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2, 'initial episodes and parent facts each use one batch');
+    const initialRequests = h.calls.length;
+    const ajax = h.window.ApiClient.ajax;
+    let inFlight = 0, maxInFlight = 0;
+    h.window.ApiClient.ajax = async options => {
+      if (!options.url.includes('/tag-data/')) return ajax(options);
+      maxInFlight = Math.max(maxInFlight, ++inFlight);
+      try {
+        await delay(5);
+        return await ajax(options);
+      } finally { inFlight--; }
+    };
+    h.window.Date.now = () => NOW + 11 * 60 * 1000;
+    h.JE.reinitializeStatusTags();
+    while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+    let passes = 0;
+    const querySelectorAll = h.document.querySelectorAll.bind(h.document);
+    h.document.querySelectorAll = selector => {
+      const nodes = querySelectorAll(selector);
+      // Visibility checks iterate the list; a live recomputation walks it with forEach.
+      if (selector === '[data-je-status-live]') {
+        const forEach = nodes.forEach.bind(nodes);
+        nodes.forEach = callback => { passes++; return forEach(callback); };
+      }
+      return nodes;
+    };
+    await delay(500);
+    while (h.idle.length) {
+      while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+      await delay(60);
+    }
+    const refreshed = h.calls.slice(initialRequests).filter(c => c.url.includes('/tag-data/'));
+    assert.equal(refreshed.length, Math.ceil(count / 200), 'expired parents share the existing 200-id lookup batches');
+    assert.ok(refreshed.every(c => JSON.parse(c.data).length <= 200), 'no request exceeds the pipeline limit');
+    assert.equal(maxInFlight, 1, 'parent batches drain serially');
+    const ids = refreshed.flatMap(c => JSON.parse(c.data));
+    assert.equal(ids.length, parents.length, 'each parent is fetched exactly once');
+    assert.deepEqual(new Set(ids), new Set(parents.map(item => item.Id)));
+    assert.equal(passes, refreshed.length, 'one live recomputation per completed batch');
+    assert.equal(h.calls.slice(initialRequests).filter(c => c.url.includes('/status-tags/series')).length, 0, 'schedules remain fresh');
+    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+  });
+}
+
+test('reinitialising during a parent refresh keeps one drain and recomputes the new cards', async t => {
+  const h = await setup(t, { cards: [finale] });
+  const response = deferred(), ajax = h.window.ApiClient.ajax;
+  let requests = 0;
+  h.window.ApiClient.ajax = async options => {
+    if (options.url.includes('/tag-data/')) {
+      requests++;
+      await response.promise;
+    }
+    return ajax(options);
+  };
+  h.window.Date.now = () => NOW + 11 * 60 * 1000;
+  h.JE.reinitializeStatusTags();
+  while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+  await delay(50);
+  assert.equal(requests, 1);
+  h.JE.reinitializeStatusTags();
+  while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+  await delay(50);
+  assert.equal(requests, 1, 'cleanup must not open a second drain while the old one is in flight');
+  response.resolve();
+  await delay(100);
+  assert.equal(requests, 1, 'the new drain reuses facts completed by the previous lifetime');
+  assert.equal(h.key(EPISODE), 'series_finale', 'the current cards are recomputed after the stale completion');
 });
 
 test('cache invalidation cannot reuse the previous parent aggregate', async t => {
