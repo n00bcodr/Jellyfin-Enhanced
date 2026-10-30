@@ -188,12 +188,6 @@
         };
     }
 
-    /** ISO 639-1 when available, otherwise the canonical three-letter base. @param {string} code */
-    function shortCode(code) {
-        const parsed = JE.core.mediaLanguage.parseLanguageTag(code);
-        return parsed?.base ? JE.core.mediaLanguage.canonicalBase(parsed.base).toUpperCase() : '';
-    }
-
     /**
      * Deduplicated chips for one track type, full coverage first, then admin priority.
      * Flags preserve country grouping; codes group canonical languages, retaining
@@ -206,9 +200,9 @@
         const unique = new Map();
         for (const lang of normalizeLanguages(languages)) {
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
-            const code = shortCode(lang.code);
+            const code = JE.core.mediaLanguage.displayCode(lang.code);
             const parsed = JE.core.mediaLanguage.parseLanguageTag(lang.code);
-            const key = style === 'codes' ? code + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
+            const key = style === 'codes' ? JE.core.mediaLanguage.canonicalBase(parsed?.base) + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
             if (!key || (style === 'codes' && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
@@ -237,7 +231,7 @@
         const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
         const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
         // Count languages rather than countries: Hindi and Tamil share a flag.
-        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => chip.text).filter(code => code !== 'ZXX')).size : 0;
+        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base)).filter(code => code !== 'zxx')).size : 0;
         const badge = conf.badge !== 'off' && count >= 2;
         const chips = [];
         if (badge) chips.push({ badge: count === 2 ? 'dual' : 'multi' });
@@ -284,34 +278,10 @@
         return wrap;
     }
 
-    const clickOwners = new WeakSet();
-
-    /**
-     * Chips receive title hover above Jellyfin's card link. Delegate from the
-     * card because the layout clones groups and may move them into captions.
-     * @param {MouseEvent} event
-     */
-    function forwardLanguageClick(event) {
-        const target = event.target instanceof Element ? event.target : null;
-        const group = target?.closest('.language-overlay-container');
-        const card = group?.closest('.card');
-        const link = card?.querySelector('.cardOverlayContainer a.cardImageContainer, a.cardImageContainer[href]');
-        if (!link || event.defaultPrevented) return;
-        event.preventDefault();
-        event.stopPropagation();
-        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true,
-            ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, altKey: event.altKey, button: event.button }));
-    }
-
     /** Attach the language group through the shared renderer/layout controller. */
     function insertLanguageTags(ctx, container, languages) {
         if (!container || ctx.isTagged(container)) return;
         ctx.removeExistingOverlay(container);
-        const owner = container.closest('.card') || container;
-        if (!clickOwners.has(owner)) {
-            clickOwners.add(owner);
-            owner.addEventListener('click', forwardLanguageClick);
-        }
         if (container.style.position !== 'relative') container.style.position = 'relative';
         const cap = JE.core.tagLayout ? JE.core.tagLayout.resolveLayout(container).caps.language : 3;
         ctx.commitOverlay(container, buildGroup(languages, cap));
@@ -358,9 +328,11 @@
                 }
                 /* The host is otherwise below Jellyfin's full-card image link.
                    Its empty space remains pointer-transparent; only language
-                   chips receive hover, and forward clicks to the image link. */
+                   chips receive hover through native anchors supplied by the layout. */
                 .je-tag-host:has(.${containerClass}) { z-index: 2; }
                 .${containerClass} > * { pointer-events: auto; }
+                .language-link { display: inline-flex; color: inherit; text-decoration: none; }
+                .je-tag-pill[href] { pointer-events: auto; text-decoration: none; }
                 .language-chip {
                     display: inline-flex; align-items: center; gap: 3px;
                     align-self: flex-start; flex-shrink: 0; width: max-content;

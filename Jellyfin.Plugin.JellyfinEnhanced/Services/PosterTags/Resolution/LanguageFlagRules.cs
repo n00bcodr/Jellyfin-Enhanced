@@ -77,18 +77,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         // media-language.js iso6392To6391 (consulted before Intl canonicalization).
         private static readonly FrozenDictionary<string, string> Iso6392To6391 = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["eng"] = "en", ["jpn"] = "ja", ["spa"] = "es", ["fre"] = "fr", ["fra"] = "fr", ["ger"] = "de", ["deu"] = "de", ["ita"] = "it", ["kor"] = "ko",
-            ["chi"] = "zh", ["zho"] = "zh", ["rus"] = "ru", ["por"] = "pt", ["hin"] = "hi", ["dut"] = "nl", ["nld"] = "nl", ["ara"] = "ar", ["ben"] = "bn",
-            ["cze"] = "cs", ["ces"] = "cs", ["dan"] = "da", ["gre"] = "el", ["ell"] = "el", ["fin"] = "fi", ["heb"] = "he", ["hun"] = "hu", ["ind"] = "id", ["nor"] = "no", ["pol"] = "pl",
-            ["per"] = "fa", ["fas"] = "fa", ["ron"] = "ro", ["rum"] = "ro", ["swe"] = "sv", ["tha"] = "th", ["tur"] = "tr", ["ukr"] = "uk", ["vie"] = "vi",
-            ["msa"] = "ms", ["may"] = "ms", ["swa"] = "sw", ["tam"] = "ta", ["tel"] = "te", ["mar"] = "mr", ["pan"] = "pa", ["urd"] = "ur", ["guj"] = "gu",
-            ["kan"] = "kn", ["mal"] = "ml", ["sin"] = "si", ["nep"] = "ne", ["pus"] = "ps", ["kur"] = "ku", ["slo"] = "sk", ["slk"] = "sk", ["slv"] = "sl", ["srp"] = "sr",
-            ["hrv"] = "hr", ["bul"] = "bg", ["mac"] = "mk", ["mkd"] = "mk", ["alb"] = "sq", ["sqi"] = "sq", ["est"] = "et", ["lav"] = "lv", ["lit"] = "lt", ["ice"] = "is", ["isl"] = "is",
-            ["geo"] = "ka", ["kat"] = "ka", ["arm"] = "hy", ["hye"] = "hy", ["mon"] = "mn", ["kaz"] = "kk", ["uzb"] = "uz", ["aze"] = "az", ["bel"] = "be", ["amh"] = "am", ["zul"] = "zu", ["afr"] = "af",
-            ["hau"] = "ha", ["yor"] = "yo", ["ibo"] = "ig", ["cat"] = "ca", ["glg"] = "gl", ["eus"] = "eu", ["baq"] = "eu",
-            ["bur"] = "my", ["mya"] = "my", ["wel"] = "cy", ["cym"] = "cy", ["tib"] = "bo", ["bod"] = "bo", ["mao"] = "mi", ["mri"] = "mi",
-            ["tgl"] = "fil", ["tl"] = "fil",
-            ["nob"] = "no", ["nb"] = "no", ["nno"] = "no", ["nn"] = "no",
+            ["aar"] = "aa", ["abk"] = "ab", ["afr"] = "af", ["aka"] = "ak", ["alb"] = "sq", ["amh"] = "am", ["ara"] = "ar", ["arg"] = "an",
+            ["arm"] = "hy", ["asm"] = "as", ["ava"] = "av", ["ave"] = "ae", ["aym"] = "ay", ["aze"] = "az", ["bak"] = "ba", ["bam"] = "bm",
+            ["baq"] = "eu", ["bel"] = "be", ["ben"] = "bn", ["bis"] = "bi", ["bod"] = "bo", ["bos"] = "bs", ["bre"] = "br", ["bul"] = "bg",
+            ["bur"] = "my", ["cat"] = "ca", ["ces"] = "cs", ["cha"] = "ch", ["che"] = "ce", ["chi"] = "zh", ["chu"] = "cu", ["chv"] = "cv",
+            ["cor"] = "kw", ["cos"] = "co", ["cre"] = "cr", ["cym"] = "cy", ["cze"] = "cs", ["dan"] = "da", ["deu"] = "de", ["div"] = "dv",
+            ["dut"] = "nl", ["dzo"] = "dz", ["ell"] = "el", ["eng"] = "en", ["epo"] = "eo", ["est"] = "et", ["eus"] = "eu", ["ewe"] = "ee",
+            ["fao"] = "fo", ["fas"] = "fa", ["fij"] = "fj", ["fin"] = "fi", ["fra"] = "fr", ["fre"] = "fr", ["fry"] = "fy", ["ful"] = "ff",
+            ["geo"] = "ka", ["ger"] = "de", ["gla"] = "gd", ["gle"] = "ga", ["glg"] = "gl", ["glv"] = "gv", ["gre"] = "el", ["grn"] = "gn",
+            ["guj"] = "gu", ["hat"] = "ht", ["hau"] = "ha", ["heb"] = "he", ["her"] = "hz", ["hin"] = "hi", ["hmo"] = "ho", ["hrv"] = "hr",
+            ["hun"] = "hu", ["hye"] = "hy", ["ibo"] = "ig", ["ice"] = "is", ["ido"] = "io", ["iii"] = "ii", ["iku"] = "iu", ["ile"] = "ie",
+            ["ina"] = "ia", ["ind"] = "id", ["ipk"] = "ik", ["isl"] = "is", ["ita"] = "it", ["jav"] = "jv", ["jpn"] = "ja", ["kal"] = "kl",
+            ["kan"] = "kn", ["kas"] = "ks", ["kat"] = "ka", ["kau"] = "kr", ["kaz"] = "kk", ["khm"] = "km", ["kik"] = "ki", ["kin"] = "rw",
+            ["kir"] = "ky", ["kom"] = "kv", ["kon"] = "kg", ["kor"] = "ko", ["kua"] = "kj", ["kur"] = "ku", ["lao"] = "lo", ["lat"] = "la",
+            ["lav"] = "lv", ["lim"] = "li", ["lin"] = "ln", ["lit"] = "lt", ["ltz"] = "lb", ["lub"] = "lu", ["lug"] = "lg", ["mac"] = "mk",
+            ["mah"] = "mh", ["mal"] = "ml", ["mao"] = "mi", ["mar"] = "mr", ["may"] = "ms", ["mkd"] = "mk", ["mlg"] = "mg", ["mlt"] = "mt",
+            ["mon"] = "mn", ["mri"] = "mi", ["msa"] = "ms", ["mya"] = "my", ["nau"] = "na", ["nav"] = "nv", ["nbl"] = "nr", ["nde"] = "nd",
+            ["ndo"] = "ng", ["nep"] = "ne", ["nld"] = "nl", ["nno"] = "nn", ["nob"] = "nb", ["nor"] = "no", ["nya"] = "ny", ["oci"] = "oc",
+            ["oji"] = "oj", ["ori"] = "or", ["orm"] = "om", ["oss"] = "os", ["pan"] = "pa", ["per"] = "fa", ["pli"] = "pi", ["pol"] = "pl",
+            ["por"] = "pt", ["pus"] = "ps", ["que"] = "qu", ["roh"] = "rm", ["ron"] = "ro", ["rum"] = "ro", ["run"] = "rn", ["rus"] = "ru",
+            ["sag"] = "sg", ["san"] = "sa", ["sin"] = "si", ["slk"] = "sk", ["slo"] = "sk", ["slv"] = "sl", ["sme"] = "se", ["smo"] = "sm",
+            ["sna"] = "sn", ["snd"] = "sd", ["som"] = "so", ["sot"] = "st", ["spa"] = "es", ["sqi"] = "sq", ["srd"] = "sc", ["srp"] = "sr",
+            ["ssw"] = "ss", ["sun"] = "su", ["swa"] = "sw", ["swe"] = "sv", ["tah"] = "ty", ["tam"] = "ta", ["tat"] = "tt", ["tel"] = "te",
+            ["tgk"] = "tg", ["tgl"] = "tl", ["tha"] = "th", ["tib"] = "bo", ["tir"] = "ti", ["ton"] = "to", ["tsn"] = "tn", ["tso"] = "ts",
+            ["tuk"] = "tk", ["tur"] = "tr", ["twi"] = "tw", ["uig"] = "ug", ["ukr"] = "uk", ["urd"] = "ur", ["uzb"] = "uz", ["ven"] = "ve",
+            ["vie"] = "vi", ["vol"] = "vo", ["wel"] = "cy", ["wln"] = "wa", ["wol"] = "wo", ["xho"] = "xh", ["yid"] = "yi", ["yor"] = "yo",
+            ["zha"] = "za", ["zho"] = "zh", ["zul"] = "zu",
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         /// <summary>A parsed language tag. <see cref="Base"/> is null for the web's prototype-key quirk (see <see cref="Parse"/>).</summary>
@@ -279,15 +293,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return ordered.Count == 0 ? null : ordered;
         }
 
-        /// <summary>Canonical ISO 639-1 code, or the three-letter fallback, for a Codes chip.</summary>
+        /// <summary>ISO 639-1 code, or the original three-letter fallback, independent of audio equivalence.</summary>
         internal static string ShortCode(string code) => Parse(code, out var parsed) && parsed.Base is not null
-            ? JsText.ToUpper(CanonicalBase(parsed.Base) ?? parsed.Base) : string.Empty;
+            ? JsText.ToUpper(Iso6392To6391.GetValueOrDefault(parsed.Base, parsed.Base)) : string.Empty;
 
         /// <summary>Codes retain explicit regional/script variants unless the administrator merges them.</summary>
         private static string CodeIdentity(string code, bool mergeRegions)
         {
             Parse(code, out var parsed);
-            return ShortCode(code) + (mergeRegions ? string.Empty : ":" + (parsed.Region ?? parsed.Script ?? string.Empty));
+            return CanonicalBase(parsed.Base) + (mergeRegions ? string.Empty : ":" + (parsed.Region ?? parsed.Script ?? string.Empty));
         }
 
         /// <summary>Language chips in the combined cap order: badge, audio, subtitles.</summary>
@@ -300,7 +314,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var audio = settings.LanguageShowAudio ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, codes) : null;
             var subtitles = settings.LanguageShowSubtitles ? ResolveTracks(entry.SubtitleLanguages, null, codes) : null;
             var count = settings.LanguageShowAudio && settings.LanguageCountBadge != "off"
-                ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, true)?.Select(f => ShortCode(f.Code)).Where(c => c != "ZXX").Distinct().Count() ?? 0 : 0;
+                ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, true)?.Select(f => { Parse(f.Code, out var parsed); return CanonicalBase(parsed.Base); }).Where(c => c != "zxx").Distinct().Count() ?? 0 : 0;
             bool badge = settings.LanguageCountBadge != "off" && count >= 2;
             var tags = new List<PosterTag>();
             if (badge) tags.Add(new LanguageTag(string.Empty, string.Empty, false) { CountBadge = count == 2 ? "Dual" : "Multi" });
@@ -402,6 +416,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         internal static string? CanonicalBase(string? baseCode)
         {
             if (baseCode is null) return null;
+            if (baseCode is "tl" or "tgl") return "fil";
+            if (baseCode is "nb" or "nob" or "nn" or "nno") return "no";
             return Iso6392To6391.TryGetValue(baseCode, out var mapped) ? mapped : LanguageNames.CanonicalLanguage(baseCode);
         }
 

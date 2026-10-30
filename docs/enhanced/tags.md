@@ -343,7 +343,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 ## Language Tags
 
-Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix. Hover a chip for the full language name. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
+Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix. Hover a chip for the full language name. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
 
 ![Subtitle language chips with CC markers on library posters](../images/tags/language-subtitles.webp)
 
@@ -363,7 +363,7 @@ Administrators can favor particular languages under **Priority languages**.
 |---|---|---|
 | Admin: **Enable Language Tags** / personal: **Language** switch | Off | Shows distinct flags/symbols on supported cards (three by default; see [Layouts](#layouts)) |
 | **Include: Audio / Subtitles** | Audio on, subtitles off | Choose either or both track types; repeated forced/SDH tracks count once per language |
-| **Style: Flags / Codes** | Flags | Codes use uppercase ISO 639-1 where available, otherwise the three-letter code; both styles have full-name tooltips |
+| **Style: Flags / Codes** | Flags | Codes use uppercase ISO 639-1 where available, otherwise the three-letter code (for example `TL`, `NB`, `NN`, `FIL`); audio equivalence still governs deduplication and counting. Both styles have full-name tooltips |
 | **Audio count badge** | Off | **Badge only** replaces audio chips when two or more audio languages qualify; **Badge and flags** keeps them (or codes with Codes style). Selected subtitles remain. Counts distinct canonical audio languages after priority filtering and before the cap; regional versions and no-dialogue tracks do not increase the count |
 | Admin: **Priority Languages** | Empty | Comma-separated language names or codes; use names such as `English, Japanese` to avoid differences between two- and three-letter codes. Matching flags appear first in list order |
 | Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer flags than its limit, or none |

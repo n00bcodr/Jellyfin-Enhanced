@@ -42,3 +42,18 @@ JE_PANEL_LAB_URL=http://127.0.0.1:18520 JE_PANEL_LAB_USER=real-admin \
 ```
 
 Use `real-viewer` to check the non-admin path. Passwords come from the local lab accounts file, or `JE_PANEL_LAB_PASSWORD`. `JE_PANEL_SHOTS` optionally saves successful screenshots. The lab mode fails if the deployed host lacks the focus fix; it never injects the checkout's scripts over Jellyfin's bundle.
+
+Language-chip navigation also has a real-host mode. Run only that spec against
+an authorized disposable lab, serially, with `JE_LANGUAGE_LAB_URL`,
+`JE_LANGUAGE_LAB_USER` (defaults to `real-admin`) and
+`JE_LANGUAGE_LAB_PASSWORD` supplied in the environment:
+
+```sh
+npx playwright test --config tests/browser/playwright.config.cjs language-navigation --project=chromium --workers=1
+```
+
+Without the lab variables it uses the fixture host. Both modes check actual
+left-click navigation and new tabs from Control/Command-click and middle-click
+for audio flags, codes, subtitle captions, subtitle summary pills and count
+badges. Lab fixtures change only the current browser's display settings and
+card facts; no user preferences or media metadata are saved.

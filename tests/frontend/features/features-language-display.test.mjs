@@ -92,18 +92,28 @@ test('a language code or count badge remains visible as a Summary pill fact', t 
   assert.match(h.target.querySelector('.je-tag-pill').textContent, /EN/);
 });
 
-test('hoverable language chips retain Jellyfin link clicks and modifier keys', t => {
+test('hoverable language chips use native anchors through clones and caption moves', async t => {
   const h = setup(t, { languageTagsShowSubtitles: true });
   const overlay = h.document.createElement('div'); overlay.className = 'cardOverlayContainer';
   const link = h.document.createElement('a'); link.className = 'cardImageContainer'; link.href = '#/details?id=a';
   overlay.append(link); h.target.append(overlay);
-  const received = [];
-  link.addEventListener('click', event => { received.push(event.ctrlKey); event.preventDefault(); });
   h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'], SubtitleLanguages: ['fr'] });
-  h.target.querySelector('.language-subtitle').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, ctrlKey: true }));
-  assert.deepEqual(received, [true]);
-  h.renderer.injectCss();
-  assert.match(h.document.getElementById('language-tags-styles').textContent, /\.je-tag-host:has\(\.language-overlay-container\) \{ z-index: 2;/);
+  const anchors = h.target.querySelectorAll('a.language-link');
+  assert.equal(anchors.length, 2);
+  for (const a of anchors) assert.equal(a.getAttribute('href'), '#/details?id=a');
+  assert.equal(anchors[0].title, 'English');
+  assert.equal(anchors[1].title, 'Subtitles: French');
+  assert.ok(anchors[0].querySelector('img.language-flag'));
+  assert.ok(anchors[1].querySelector('.language-cc'));
+  h.JE.currentSettings.tagLayout = 'caption';
+  h.JE.currentSettings.tagLayoutSettingsVersion = 1;
+  await h.JE.core.tagLayout.reinitialize();
+  assert.equal(h.document.querySelectorAll('.je-tag-caption a.language-link').length, 2);
+  h.JE.currentSettings.tagLayout = 'summary';
+  h.JE.currentSettings.tagLayouts = { summary: { groups: [{ group: 'language', slot: 'pill' }] } };
+  await h.JE.core.tagLayout.reinitialize();
+  assert.equal(h.target.querySelector('a.je-tag-pill').getAttribute('href'), '#/details?id=a');
+  assert.equal(h.target.querySelectorAll('[data-je-slot="hover"] a.language-link').length, 2);
 });
 
 test('container batch fallback reads subtitle facts from the projected first episode', t => {
@@ -113,3 +123,50 @@ test('container batch fallback reads subtitle facts from the projected first epi
   });
   assert.deepEqual(h.chips().map(el => el.textContent), ['EN', 'CCFR']);
 });
+
+for (const [input, expected] of [['tl', 'TL'], ['tgl', 'TL'], ['nb', 'NB'], ['nob', 'NB'], ['nn', 'NN'], ['nno', 'NN'], ['fil', 'FIL'], ['srd', 'SC'], ['cmn', 'CMN']]) {
+  test(`ISO display code is independent of audio equivalence: ${input}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsShowSubtitles: true });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: [input], SubtitleLanguages: [input] });
+    assert.deepEqual(h.chips().map(el => el.textContent), [expected, `CC${expected}`]);
+    assert.equal(h.JE.core.mediaLanguage.displayCode(input.toUpperCase() + '-PH'), expected);
+  });
+}
+
+for (const audio of [['tgl', 'tl', 'fil'], ['nob', 'nb', 'nno', 'nn', 'nor']]) {
+  test(`audio-equivalent codes still dedupe and count once: ${audio}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsCountBadge: 'both' });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: audio });
+    assert.equal(h.chips().length, 1);
+    assert.equal(h.target.querySelector('.language-count-badge'), null);
+    assert.equal(h.chips()[0].textContent, audio[0] === 'tgl' ? 'TL' : 'NB');
+    assert.ok(h.JE.core.mediaLanguage.matchesLanguage(audio[0], audio.at(-1)));
+  });
+}
+
+for (const style of ['flags', 'codes']) {
+  test(`Summary subtitle ${style} keeps CC and full-name title`, t => {
+    const h = setup(t, { languageTagsShowAudio: false, languageTagsShowSubtitles: true, languageTagsStyle: style,
+      tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+    h.renderer.renderFromServerCache(h.target, { SubtitleLanguages: ['en'] });
+    const pill = h.target.querySelector('.je-tag-pill');
+    assert.equal(pill.querySelector('.language-cc').textContent, 'CC');
+    assert.equal(pill.title, 'Subtitles: English');
+    assert.equal(pill.getAttribute('aria-label'), 'Subtitles: English');
+    assert.equal(pill.querySelector('.je-tag-pill-fact').title, 'Subtitles: English');
+    if (style === 'flags') assert.ok(pill.querySelector('img.je-tag-pill-flag'));
+    else assert.equal(pill.textContent, 'CC EN');
+  });
+}
+
+for (const [audio, text, title] of [[['en'], 'EN', 'English'], [['en', 'ja'], 'Dual', '2 audio languages'], [['en', 'ja', 'fr'], 'Multi', '3 audio languages']]) {
+  test(`Summary keeps the original title for ${text}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsCountBadge: 'both',
+      tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: audio });
+    const pill = h.target.querySelector('.je-tag-pill');
+    assert.equal(pill.textContent, text);
+    assert.equal(pill.title, title);
+    assert.equal(pill.getAttribute('aria-label'), title);
+  });
+}
