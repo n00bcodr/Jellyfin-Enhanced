@@ -244,7 +244,14 @@ Open **UI Settings** and turn on the options you want.
 | **Show Audio Languages** | On | Shows available audio languages on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Tag toggles, corners, category ordering, rating scopes, hover behavior, and the conditional native-client preference also live in **UI Settings**. See [Tags & Badges](tags.md) for their complete settings reference.
+Tag toggles, corners, category ordering, rating scopes, hover behavior, and the conditional native-client preference also live in **UI Settings**, together with two tag layout controls:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Tag Layout** | **Corners** | Chooses where poster tags appear: corners, top and bottom bands, a caption below the poster, a summary pill, or a minimal set. |
+| **Label Density** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference.
 
 ??? info "How it works"
 

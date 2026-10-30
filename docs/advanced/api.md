@@ -405,7 +405,7 @@ curl -X POST "$JE_URL/user-settings/$USER_ID/elsewhere.json" \
 
 ### Settings document
 
-GET can create a first settings file using saved administrator defaults. It adds `IsAdmin`, computed for the **caller**, even when reading another user's document. POST ignores that derived field.
+GET can create a first settings file using saved administrator defaults. It adds `IsAdmin`, computed for the **caller**, even when reading another user's document. POST ignores that derived field. POST normalizes the tag layout fields before saving: an unknown layout or density falls back to `corners` / `full`, unknown groups and slots are dropped, caps are clamped to 0–10 and the group order is deduplicated.
 
 Read the current document, modify the needed properties, and send it back to preserve other preferences.
 
@@ -479,6 +479,12 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `StatusTagsJustAdded` | Boolean | `true` |
 | `StatusTagsNewRelease` | Boolean | `true` |
 | `StatusTagsTrending` | Boolean | `true` |
+| `TagLayout` | String: `corners`, `bands`, `caption`, `summary` or `minimal` | `"corners"` |
+| `TagLayoutSettingsVersion` | Integer; `0` = saved before layouts (keeps corners, positions, arrival order and the original limits), `1` = layout settings apply | `0` (new users: `1`) |
+| `TagLayouts` | Nullable object `{Corners,Bands,Caption,Summary,Minimal}`, each `{Groups:[{Group,Slot}]}` | `null` |
+| `TagGroupOrder` | Nullable array of group ids (`status`, `quality`, `rating`, `ageRating`, `language`, `genre`) | `null` |
+| `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
+| `TagLabelDensity` | String: `full` or `compact` | `"full"` |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
 | `LastOpenedTab` | String | `""` |
@@ -1288,7 +1294,9 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
-    | `StatusTagsPosition` | String |
+    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity` | String |
+    | `TagLayouts`, `TagGroupCaps` | Nullable object (shapes as in `settings.json`) |
+    | `TagGroupOrder` | Nullable array of group ids |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |

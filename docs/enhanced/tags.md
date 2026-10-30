@@ -1,6 +1,6 @@
 # Tags & Badges
 
-See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, move them between corners, and change their colors. People Tags add age and birthplace information to cast cards.
+See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
 *The optional tag groups are enabled for this example; all seven groups start off.*
@@ -91,6 +91,35 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
   <figcaption>Genre names expand with Hide Tags on Hover off; turning it on fades the tags instead.</figcaption>
 </figure>
 
+### Layouts
+
+A layout decides where the poster groups appear and how much of each you see. Pick one per user; each layout keeps its own arrangement, so you can switch back and forth.
+
+**How to use:** In **UI Settings**, choose a **Tag Layout** and a **Label Density**.
+
+| Layout | Where tags go | Default arrangement |
+|---|---|---|
+| **Corners** (default) | One stack per corner, as described above | Your corner choices |
+| **Bands** | A gradient band along the top (first group left, the others right) and one along the bottom that wraps; the middle of the poster stays clear | Status and age rating on top; quality, rating and language at the bottom; genre off |
+| **Caption** | A strip below the poster, between the image and the title, plus a small stack at the poster's top left | Status on the poster; quality, rating, age rating and language in the caption; genre off |
+| **Summary** | One pill at the bottom of the poster with up to three short facts (for example `Just Added · 4K DV · ★ 8.1`); every group's full chips appear over a dark scrim on hover or keyboard focus | Status, quality and rating in the pill; genre, language and age rating on hover |
+| **Minimal** | Status at the top left, one coloured dot per quality chip (resolution blue, dynamic range orange, audio green, codec grey), the rating in the bottom-right corner; full chips on hover or focus | As listed; genre, language and age rating on hover |
+
+Groups in the same place appear in priority order: status, quality, rating, age rating, language, genre. Each group shows at most a set number of chips after its own filtering (quality categories, language grouping and priority, rating scopes): genre 3, language 3, age rating 1, status 1, quality and rating unlimited — the same limits as before layouts existed.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Personal: **Tag Layout** | **Corners** | Chooses one of the layouts above |
+| Personal: **Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+
+??? info "Upgrades, defaults, and limits"
+    - Settings saved before layouts existed keep the **Corners** layout, your corner choices, the original stacking order and limits, until you change the layout or density, or pick a corner. Administrators' new layout defaults never change an existing user's view.
+    - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. Their controls on the configuration page arrive in a later release; until then the defaults are Corners with the original arrangement.
+    - Per-group slots, the priority order and per-group limits are stored with your settings but have no editor yet. Picking a corner still sets the group's place in the Corners layout.
+    - **Caption** needs a title block below the image. List rows and other cards without one show the caption groups in the poster's top-left stack instead. The caption strip has room for two rows of chips; lower-priority chips that do not fit are left out. Space for it is reserved as soon as a card appears so titles do not jump when the chips arrive.
+    - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
+    - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose.
+
 ## Quality Tags
 
 Quality badges help you identify a file's picture and sound format before opening it. They read Jellyfin's media metadata and naming signals.
@@ -149,7 +178,7 @@ Series and season quality describes one representative episode, not every episod
 
 ## Genre Tags
 
-Genre Tags show up to three genres as compact Material Design icons, so you can recognize them while browsing. You can hover to see names beside the icons.
+Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) as compact Material Design icons, so you can recognize them while browsing. You can hover to see names beside the icons.
 
 ![Genre icons and expanded genre names on posters](../images/tags/genre-tags.webp)
 
@@ -556,7 +585,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ??? info "Supported groups and preferences"
     JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
 
-    It uses personal tag switches, corners, quality categories/order, sound-language preference, and rating item-type scopes, together with the administrator's language-priority policy.
+    It uses personal tag switches, corners, quality categories/order, sound-language preference, and rating item-type scopes, together with the administrator's language-priority policy. Native posters always use the corner positions, the original stacking order, the original genre and language limits and full labels, whatever web layout, slots, order, limits or density the user picked.
 
 ### Eligible clients and requests
 

@@ -199,9 +199,39 @@ If tag data is stale or missing, also check the server's cache configuration und
 
 Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open **Admin** → **Tag Cache** and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
-Use the position grids in **UI Settings** to move tag containers between corners.
+Use the position grids and the **Tag Layout** choice in **UI Settings** to move tag containers.
 
-The normal poster structure places `.je-tag-host` inside `.cardScalable`, before `.cardOverlayContainer`. Fallback targets are used when that structure is unavailable.
+The normal poster structure places `.je-tag-host` inside `.cardScalable`, before `.cardOverlayContainer`. Fallback targets are used when that structure is unavailable: a list row's image gets its own `.je-tag-host`.
+
+```html
+<div class="cardBox">
+  <div class="cardScalable">
+    <div class="cardImageContainer"></div>
+    <div class="je-tag-host" data-je-layout="caption">
+      <div class="je-tag-slot" data-je-slot="poster">
+        <div class="status-overlay-container" data-je-group="status">…</div>
+      </div>
+    </div>
+    <div class="cardOverlayContainer"></div>
+  </div>
+  <div class="je-tag-slot je-tag-caption" data-je-slot="caption">
+    <div class="quality-overlay-container" data-je-group="quality">…</div>
+  </div>
+  <div class="cardText">…</div>
+</div>
+```
+
+`data-je-layout` on the host names the layout (`corners`, `bands`, `caption`, `summary`, `minimal`). Each place is a `.je-tag-slot` with `data-je-slot`:
+
+| Layout | Slots |
+| --- | --- |
+| Corners | `tl`, `tr`, `bl`, `br` |
+| Bands | `top`, `bottom` |
+| Caption | `poster`, plus the outlet `.je-tag-caption` (`caption`) between `.cardScalable` and the title block, outside the image |
+| Summary | `pill` (holds `.je-tag-pill` with `.je-tag-pill-fact` spans), `hover` |
+| Minimal | `top`, `dots` (holds `.je-tag-dots` with `.je-tag-dot` spans whose `data-je-dot` is `resolution`, `range`, `audio` or `codec`), `corner`, `hover` |
+
+Group containers keep their classes and chip markup in every layout and carry `data-je-group`. In flowing slots (the bottom band, the caption and the hover scrim) containers use `display: contents`, so their chips wrap together in one row. The `hover` slot fades in on `.card:hover` and `.card:focus-within`.
 
 | Tag container | Position property | Factory corner |
 | --- | --- | --- |
@@ -212,7 +242,7 @@ The normal poster structure places `.je-tag-host` inside `.cardScalable`, before
 | `.age-rating-overlay-container` | `AgeRatingTagsPosition` | `bottom-right` |
 | `.status-overlay-container` | `StatusTagsPosition` | `top-right` |
 
-Containers carry `data-je-corner` with one of those four corner values. JE stacks containers sharing a corner with inline transforms and a 4px gap, and offsets top-right tags around card indicators. Custom transforms can disrupt that stacking.
+In the Corners layout, containers carry `data-je-corner` with one of those four corner values. Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
 
 Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.
 
