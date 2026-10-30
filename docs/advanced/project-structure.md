@@ -391,7 +391,7 @@ Administrator settings under **Pages** (the final two controls are under **Extra
 
 `js/others/mdblist-ratings.js` displays the details-page ratings row. `Services/MdblistService.cs` fetches/caches upstream results, with cache/account models in `Model/MdblistRatings.cs`.
 
-`ScheduledTasks/MdblistRatingsFetchTask.cs` uses `MdblistRatingsFetchRunner.cs` to populate the cache and stops when remaining quota reaches the reserve. `MdblistRatingsSyncTask.cs` writes cached scores into Jellyfin's `CommunityRating` and `CriticRating`; the display overlay does not write metadata.
+`ScheduledTasks/MdblistRatingsFetchTask.cs` uses `MdblistRatingsFetchRunner.cs` to populate the cache and stops when remaining quota reaches the reserve. It and the tag-rating warmers send batches only through `MdblistService.GetMediaBatchWithinReserveAsync`, which checks the reserve and sends under one gate. `MdblistRatingsSyncTask.cs` writes cached scores into Jellyfin's `CommunityRating` and `CriticRating`; the display overlay does not write metadata.
 
 See [MDBList Ratings](../other/other-settings.md#mdblist-ratings) for controls and defaults. Administrator settings under **Display** map to these properties:
 

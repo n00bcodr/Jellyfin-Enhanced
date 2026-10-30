@@ -418,7 +418,7 @@ Your item-type and row choices both apply. Turn off **Episodes** to hide these c
 
     Season/episode score fallback differs by data path. The server cache substitutes both series scores when the child's community score is null. Batch fallback and player scores use the series only when neither child score is truthy. A child with only a critic score can therefore display differently between the cache and fallback paths.
 
-Named sources use the server's existing MDBList service when its API key is configured. Full tag-cache builds warm bounded batches, and reconciliation refreshes expired ratings even when library metadata has not changed. Found titles have a seven-day TTL; confirmed misses and failures keep the existing MDBList retry policy. Batch mode also shares this cache. The API key stays on the server. Without a key or a returned score, that source produces no chip. Seasons and episodes use their series' source ratings.
+Named sources use the server's existing MDBList service when its API key is configured. Full tag-cache builds warm bounded batches, and reconciliation refreshes expired ratings even when library metadata has not changed. Found titles have a seven-day TTL; confirmed misses and failures keep the existing MDBList retry policy. This background enrichment and the Fetch task share one quota check: both stop at the [Fetch Task Reserve](../other/other-settings.md#mdblist-ratings), and neither sends requests while MDBList's account status is unavailable, leaving those titles to retry later. Batch mode also shares this cache. The API key stays on the server. Without a key or a returned score, that source produces no chip. Seasons and episodes use their series' source ratings.
 
 | Source | Example | Native scale |
 |---|---|---|
