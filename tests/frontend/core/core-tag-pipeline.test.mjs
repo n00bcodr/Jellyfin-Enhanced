@@ -76,6 +76,26 @@ for (const inFlight of [false, true]) test(`navigation retries cards whose work 
  assert.equal(h.rendered.length,1);
 });
 
+test('cache-off navigation cancels the old debounce and requeues every pending season card', async t => {
+ const ids=['11111111111111111111111111111111','22222222222222222222222222222222'];
+ const seasons=ids.map(id=>card.replace('AA-BB',id).replace('Movie','Season')).join('');
+ const h=setup(t,seasons);let navigate;
+ h.JE.currentSettings.qualityTagsEnabled=true;
+ h.JE.helpers={onBodyMutation(){},onNavigate(fn){navigate=fn;}};
+ h.JE.tagPipeline.initialize();await settle();h.scan();
+ assert.ok([...h.timers.values()].some(timer=>timer.ms===150),'seasons queued before navigation');
+ const detached=h.document.querySelector('.card');detached.remove();
+ h.window.location.hash='#/details?id=series';navigate();
+ assert.equal([...h.timers.values()].filter(timer=>timer.ms===150).length,0,'the cancelled queue owns no fetch timer');
+ h.document.body.append(detached);h.scan();h.fetch();
+ assert.equal(h.calls.length,1);
+ assert.deepEqual(JSON.parse(h.calls[0].data).sort(),ids,'both surviving and reattached seasons are retried');
+ h.response.resolve({Items:ids.map(Id=>({Id,Type:'Season'}))});await settle();
+ assert.equal(h.document.querySelectorAll('.probe-tag').length,2,'both seasons render without reload');
+ h.window.location.hash='#/details?id=another-series';navigate();h.scan();h.fetch();
+ assert.equal(h.calls.length,1,'completed cards keep their processed markers');
+});
+
 /**
  * The pipeline over a stub IndexedDB store holding one complete copy with the
  * given meta; records which requests and store calls happen.

@@ -782,6 +782,10 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
 
     For [rules and locked items](#rules-and-locked-items), the batch lookup's type, series, library, genres and age rating of each item are remembered beside those entries (`JE_tagLookFacts`, at most 3,000 items, newest kept). Like the per-tag entries, they belong to the signed-in user and are dropped when another account signs in or by **Clear All Client Caches**.
 
+### Tags after navigation
+
+With the server cache off, cards still waiting for a batch fetch are retried after navigation. Season cards added as a series page opens receive tags without a reload; completed cards keep their tags.
+
 ### Related routes
 
 ??? info "Diagnostic routes"

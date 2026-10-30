@@ -1904,6 +1904,10 @@
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 requestQueue = [];
+                // The discarded queue must not leave a debounce behind. The
+                // next scan schedules a fresh fetch for its released cards.
+                if (fetchTimer) clearTimeout(fetchTimer);
+                fetchTimer = null;
                 // Pick up any new items added since last load
                 scheduleNavigationRefresh();
                 scheduleScan();
