@@ -242,3 +242,35 @@ test('plain /Items fallback facts cannot complete a library rule and the next sc
   h.fetch(); await h.answer();
   assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
 });
+
+test('an old batch cannot render into a reused card or release its new facts hold', async t => {
+  const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
+  const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
+  h.scan(); h.fetch();
+  const host = h.hostOf(EPISODE);
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  h.layout.awaitCardContext(host, OTHER, 'Movie');
+  let staleRenders = 0;
+  h.JE.tagPipeline.registerRenderer('probe', { isEnabled: () => true, render() { staleRenders++; } });
+  const chip = h.document.createElement('div'); chip.innerHTML = '<span>4K</span>';
+  h.layout.commitGroup(host, 'quality', chip);
+  assert.equal(h.shown(OTHER), false);
+  await h.answer();
+  assert.equal(staleRenders, 0, 'rejected identity skips every renderer');
+  assert.equal(h.shown(OTHER), false, 'B remains held after A settles');
+  h.layout.setCardContext(host, { Id: OTHER, Type: 'Movie', LibraryId: KIDS_LIB }, OTHER, OTHER);
+  assert.ok(h.shown(OTHER));
+  assert.equal(host.dataset.jeLayout, 'bands');
+});
+
+test('a wait token cannot release a newer hold for the same card identity', t => {
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock } });
+  h.scan();
+  const host = h.hostOf(EPISODE);
+  const old = h.layout.awaitCardContext(host, EPISODE, 'Episode');
+  const current = h.layout.awaitCardContext(host, EPISODE, 'Episode');
+  h.layout.releaseCardContext(host, old);
+  assert.equal(h.shown(EPISODE), false);
+  h.layout.releaseCardContext(host, current);
+  assert.ok(h.shown(EPISODE));
+});

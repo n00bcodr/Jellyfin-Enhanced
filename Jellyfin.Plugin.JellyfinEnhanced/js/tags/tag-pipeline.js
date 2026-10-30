@@ -1142,7 +1142,7 @@
         const known = serverEntry || (!needsLibraryFacts() || enrichedLookFacts(remembered) ? remembered : null);
         let awaiting = false;
         if (known) layout?.setCardContext?.(renderTarget, known, itemId, cardId);
-        else awaiting = !!layout?.awaitCardContext?.(renderTarget, cardId, itemType);
+        else awaiting = layout?.awaitCardContext?.(renderTarget, cardId, itemType);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
         JE.core.tagLayout?.prepareCard(renderTarget);
@@ -1401,7 +1401,7 @@
                 // Cards still waiting for item data the batch didn't bring
                 // (failed, or no such item) show their tags without it.
                 for (const entry of batch) {
-                    if (entry.awaiting) JE.core.tagLayout?.releaseCardContext?.(entry.renderTarget);
+                    if (entry.awaiting) JE.core.tagLayout?.releaseCardContext?.(entry.renderTarget, entry.awaiting);
                 }
             }
         } finally {
@@ -1537,7 +1537,7 @@
                     }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
                     // Dropped by the layout when the card shows another item by now.
-                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId);
+                    if (JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId) === false) continue;
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try {
@@ -1615,7 +1615,9 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
-                    if (!needsLibraryFacts()) JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, cardId);
+                    const layout = JE.core.tagLayout;
+                    if (layout?.cardIdentity && layout.cardIdentity(renderTarget) !== cardId) continue;
+                    if (!needsLibraryFacts() && layout?.setCardContext?.(renderTarget, item, itemId, cardId) === false) continue;
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;

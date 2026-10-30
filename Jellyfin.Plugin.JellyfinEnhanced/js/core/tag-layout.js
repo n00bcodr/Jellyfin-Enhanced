@@ -373,8 +373,9 @@
     const controllers = new WeakMap();
     /** @type {WeakMap<HTMLElement, Object>} render target / host → what the card's item data says (setCardContext) */
     let cardData = new WeakMap();
-    /** @type {WeakMap<HTMLElement, {cardId: string, timer: *}>} render target / host → item data the card waits for (awaitCardContext) */
+    /** @type {WeakMap<HTMLElement, {cardId: string, timer: *, token: {cardId: string, generation: number}}>} render target / host → item data the card waits for (awaitCardContext) */
     let awaitingData = new WeakMap();
+    let waitGeneration = 0;
     // A card waiting for its item data shows its tags after this long even
     // when the data never comes (a failed fetch the pipeline didn't report).
     const AWAIT_CONTEXT_MS = 8000;
@@ -622,15 +623,16 @@
      * @param {HTMLElement} target - Render target.
      * @param {string} cardId - cardIdentity() of the card.
      * @param {string|null} cardType - The card's data-type.
-     * @returns {boolean} Whether the card now waits (the caller must fetch).
+     * @returns {{cardId: string, generation: number}|false} Token for this hold, or false when no data is needed.
      */
     function awaitCardContext(target, cardId, cardType) {
         if (!target || !needsCardData(cardType)) return false;
         const host = findHost(target) || target;
         endAwait(host);
-        const timer = setTimeout(() => releaseCardContext(target), AWAIT_CONTEXT_MS);
-        awaitingData.set(host, { cardId, timer });
-        return true;
+        const token = { cardId, generation: ++waitGeneration };
+        const timer = setTimeout(() => releaseCardContext(target, token), AWAIT_CONTEXT_MS);
+        awaitingData.set(host, { cardId, timer, token });
+        return token;
     }
 
     /**
@@ -654,10 +656,13 @@
      * Show a waiting card's tags in the look known without its item data
      * (the fetch failed or returned nothing for it). No-op for other cards.
      * @param {HTMLElement} target - Render target.
+     * @param {{cardId: string, generation: number}} token - The hold being released.
      */
-    function releaseCardContext(target) {
+    function releaseCardContext(target, token) {
         if (!target) return;
         const host = findHost(target) || target;
+        const rec = contextOf(awaitingData, host);
+        if (!rec || rec.token !== token || token.cardId !== identityOf(host)) return;
         if (!endAwait(host)) return;
         const ctrl = controllers.get(host);
         if (ctrl && ctrl.host.isConnected && ctrl.groups.size) presentAll(ctrl);
