@@ -33,6 +33,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// sizes in <see cref="Sizes"/> and file names this service has seen in a
     /// lookup are served, so the route is not an open TMDB image proxy.
     /// Native Poster Tags read the same files (<see cref="TryReadCached"/>).
+    /// The files share one size budget (<see cref="ImageBudgetBytes"/>): the
+    /// least recently read go first. A lookup not refreshed for
+    /// <see cref="LookupTtl"/> plus <see cref="StaleLookupGrace"/> is dropped
+    /// with the images only it named, and a start removes files no lookup
+    /// names and abandoned downloads.
     /// </para>
     /// </summary>
     public sealed class TagLogoService : IDisposable
@@ -61,12 +66,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>A warm stops starting lookups after this many failures without a success.</summary>
         internal const int FailFastAfter = 8;
 
+        /// <summary>The disk cache's size budget, both image sizes together; past it the least recently read images are deleted.</summary>
+        public const long ImageBudgetBytes = 64L * 1024 * 1024;
+
+        /// <summary>
+        /// A lookup not refreshed for <see cref="LookupTtl"/> plus this long (a title gone from the
+        /// library, an old region) is dropped, and the images only it named with it.
+        /// </summary>
+        public static readonly TimeSpan StaleLookupGrace = TimeSpan.FromDays(30);
+
         private const int MaxImageBytes = 256 * 1024;
         private const int MaxNameLength = 120;
         private const int DiskSchemaVersion = 1;
         private static readonly TimeSpan ImageRetryAfter = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan ImageTimeout = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
+
+        /// <summary>A read moves an image's file time forward at most this often (its LRU order after a restart).</summary>
+        private static readonly TimeSpan AccessStampInterval = TimeSpan.FromHours(1);
 
         /// <summary>
         /// A TMDB logo file name ("pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg"): no directories, a raster
@@ -100,6 +117,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public Dictionary<string, Lookup> Lookups { get; set; } = new();
         }
 
+        /// <summary>One image file in the disk cache: its size and when it was last read (Unix ms).</summary>
+        private sealed class CachedImage
+        {
+            public CachedImage(string size, string file, long bytes, long lastAccess)
+            {
+                Size = size;
+                File = file;
+                Bytes = bytes;
+                LastAccess = lastAccess;
+                Stamped = lastAccess;
+            }
+
+            public string Size { get; }
+
+            public string File { get; }
+
+            public long Bytes { get; }
+
+            /// <summary>The eviction order.</summary>
+            public long LastAccess;
+
+            /// <summary>The file's last write time, which carries the order across a restart.</summary>
+            public long Stamped;
+        }
+
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly TmdbResponseCache _tmdb;
         private readonly Logger? _logger;
@@ -110,6 +152,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ConcurrentDictionary<string, byte> _knownFiles = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, long> _imageFailures = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, Task<LogoImage?>> _imageFetches = new(StringComparer.Ordinal);
+        // The disk cache's files ("w92/name.png"), the only ones served; changed under _imageLock.
+        private readonly ConcurrentDictionary<string, CachedImage> _images = new(StringComparer.Ordinal);
+        private readonly object _imageLock = new();
+        private readonly long _imageBudget;
+        private long _imageBytes;
+        // Lookup writes and the allowlist rebuild from the lookups.
+        private readonly object _lookupLock = new();
         private readonly SemaphoreSlim _slots;
         private readonly int _perWindow;
         private readonly TimeSpan _window;
@@ -125,13 +174,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public TagLogoService(IHttpClientFactory httpClientFactory, TmdbResponseCache tmdb, IApplicationPaths applicationPaths, Logger logger)
             : this(httpClientFactory, tmdb, TimeProvider.System,
                 Path.Combine(applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tag-logos.json"),
-                Path.Combine(applicationPaths.CachePath, "jellyfin-enhanced", "logos"), logger, MaxInFlight, UpstreamPerWindow, RateWindow)
+                Path.Combine(applicationPaths.CachePath, "jellyfin-enhanced", "logos"), logger, MaxInFlight, UpstreamPerWindow, RateWindow, ImageBudgetBytes)
         {
             Instance = this;
         }
 
         internal TagLogoService(IHttpClientFactory httpClientFactory, TmdbResponseCache tmdb, TimeProvider time, string? storePath, string imageDir, Logger? logger,
-            int maxInFlight = MaxInFlight, int perWindow = UpstreamPerWindow, TimeSpan? window = null)
+            int maxInFlight = MaxInFlight, int perWindow = UpstreamPerWindow, TimeSpan? window = null, long imageBudgetBytes = ImageBudgetBytes)
         {
             _httpClientFactory = httpClientFactory;
             _tmdb = tmdb;
@@ -142,7 +191,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _slots = new SemaphoreSlim(maxInFlight, maxInFlight);
             _perWindow = perWindow;
             _window = window ?? RateWindow;
+            _imageBudget = imageBudgetBytes;
             LoadFromDisk();
+            if (PruneLookups()) ScheduleSave();
+            SweepImages();
         }
 
         /// <summary>Store key of a lookup: "movie:603|providers|US" or "tv:1399|details".</summary>
@@ -190,10 +242,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (result.Failed) Interlocked.Increment(ref failures);
                 else Interlocked.Increment(ref successes);
                 var key = KeyOf(t.MediaType, t.TmdbId, t.Kind, region);
-                var previous = _lookups.TryGetValue(key, out var old) ? old : null;
-                var stored = result.Failed && previous != null ? previous with { Fetched = result.Fetched, Failed = true } : result;
-                _lookups[key] = stored;
-                foreach (var item in stored.Items) Remember(item.Logo);
+                Lookup? previous;
+                Lookup stored;
+                lock (_lookupLock)
+                {
+                    previous = _lookups.TryGetValue(key, out var old) ? old : null;
+                    stored = result.Failed && previous != null ? previous with { Fetched = result.Fetched, Failed = true } : result;
+                    _lookups[key] = stored;
+                    foreach (var item in stored.Items) Remember(item.Logo);
+                }
+
                 if (previous == null || !previous.Items.SequenceEqual(stored.Items)) Interlocked.Increment(ref changed);
             }).ToArray();
             await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -336,27 +394,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private string ImagePath(string size, string file) => Path.Combine(_imageDir, size, file);
 
+        private static string ImageKey(string size, string file) => size + "/" + file;
+
+        private long Now => _time.GetUtcNow().ToUnixTimeMilliseconds();
+
+        /// <summary>Bytes the disk cache holds now (tests).</summary>
+        internal long CachedImageBytes
+        {
+            get
+            {
+                lock (_imageLock) return _imageBytes;
+            }
+        }
+
         /// <summary>Whether the image is in the disk cache (no read, no network).</summary>
-        public bool IsCached(string size, string file) => IsAllowed(size, file) && File.Exists(ImagePath(size, file));
+        public bool IsCached(string size, string file) => IsAllowed(size, file) && _images.ContainsKey(ImageKey(size, file));
 
         /// <summary>A cached logo image, without network I/O (native posters); null when not cached or not allowed.</summary>
         public LogoImage? TryReadCached(string size, string file)
         {
-            if (!IsAllowed(size, file)) return null;
+            if (!IsAllowed(size, file) || !_images.TryGetValue(ImageKey(size, file), out var record)) return null;
+            var path = ImagePath(size, file);
             try
             {
-                var path = ImagePath(size, file);
-                if (!File.Exists(path)) return null;
                 var bytes = File.ReadAllBytes(path);
-                return bytes.Length == 0 ? null : new LogoImage(bytes, ContentTypeOf(file), ETagOf(bytes));
+                if (bytes.Length == 0) return null;
+                Touch(record, path);
+                return new LogoImage(bytes, ContentTypeOf(file), ETagOf(bytes));
             }
             catch (IOException)
             {
+                // Gone from disk behind the cache's back: forget it, the proxy fetches it again.
+                lock (_imageLock)
+                {
+                    if (_images.TryRemove(new KeyValuePair<string, CachedImage>(ImageKey(size, file), record))) _imageBytes -= record.Bytes;
+                }
+
                 return null;
             }
             catch (UnauthorizedAccessException)
             {
                 return null;
+            }
+        }
+
+        /// <summary>Note a read for the eviction order, and now and then on the file for after a restart.</summary>
+        private void Touch(CachedImage record, string path)
+        {
+            var now = Now;
+            Volatile.Write(ref record.LastAccess, now);
+            if (now - Volatile.Read(ref record.Stamped) < AccessStampInterval.TotalMilliseconds) return;
+            Volatile.Write(ref record.Stamped, now);
+            StampFile(path, now);
+        }
+
+        private static void StampFile(string path, long unixMs)
+        {
+            try
+            {
+                File.SetLastWriteTimeUtc(path, DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Only the order after a restart suffers.
             }
         }
 
@@ -370,7 +470,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (!IsAllowed(size, file)) return Task.FromResult<LogoImage?>(null);
             if (TryReadCached(size, file) is { } cached) return Task.FromResult<LogoImage?>(cached);
-            var key = size + "/" + file;
+            var key = ImageKey(size, file);
             if (_imageFailures.TryGetValue(key, out var failedAt)
                 && _time.GetUtcNow().ToUnixTimeMilliseconds() - failedAt < ImageRetryAfter.TotalMilliseconds)
                 return Task.FromResult<LogoImage?>(null);
@@ -428,6 +528,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 await File.WriteAllBytesAsync(temp, bytes, CancellationToken.None).ConfigureAwait(false);
                 File.Move(temp, path, overwrite: true);
+                var now = Now;
+                StampFile(path, now);
+                lock (_imageLock)
+                {
+                    if (_images.TryGetValue(key, out var replaced)) _imageBytes -= replaced.Bytes;
+                    _images[key] = new CachedImage(size, file, bytes.Length, now);
+                    _imageBytes += bytes.Length;
+                }
+
+                EnforceBudget(key);
                 _imageFailures.TryRemove(key, out _);
                 return new LogoImage(bytes, ContentTypeOf(file), ETagOf(bytes));
             }
@@ -448,6 +558,147 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Strong ETag of the image bytes.</summary>
         public static string ETagOf(byte[] bytes) => "\"" + Convert.ToHexString(SHA256.HashData(bytes), 0, 16).ToLowerInvariant() + "\"";
+
+        /// <summary>
+        /// Delete the least recently read images until the cache fits its budget
+        /// (never <paramref name="keep"/>, the image just stored).
+        /// </summary>
+        private void EnforceBudget(string? keep)
+        {
+            lock (_imageLock)
+            {
+                if (_imageBytes <= _imageBudget) return;
+                foreach (var pair in _images.OrderBy(p => Volatile.Read(ref p.Value.LastAccess)).ToArray())
+                {
+                    if (_imageBytes <= _imageBudget) break;
+                    if (pair.Key != keep) DeleteImage(pair.Key, pair.Value);
+                }
+            }
+        }
+
+        /// <summary>Delete one image and forget it (under <see cref="_imageLock"/>); kept when the file cannot be deleted.</summary>
+        private void DeleteImage(string key, CachedImage record)
+        {
+            try
+            {
+                File.Delete(ImagePath(record.Size, record.File));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger?.Debug($"[LogoTags] Could not delete logo image {key}: {ex.Message}");
+                return;
+            }
+
+            if (_images.TryRemove(new KeyValuePair<string, CachedImage>(key, record))) _imageBytes -= record.Bytes;
+        }
+
+        /// <summary>
+        /// At start: index the disk cache (file time = last read), delete what
+        /// no lookup names (old spellings included), abandoned downloads and
+        /// empty files, then fit the budget.
+        /// </summary>
+        private void SweepImages()
+        {
+            lock (_imageLock)
+            {
+                foreach (var size in Sizes)
+                {
+                    var dir = Path.Combine(_imageDir, size);
+                    try
+                    {
+                        if (!Directory.Exists(dir)) continue;
+                        foreach (var info in new DirectoryInfo(dir).EnumerateFiles())
+                        {
+                            if (info.Length == 0 || !FilePattern.IsMatch(info.Name) || !_knownFiles.ContainsKey(info.Name))
+                            {
+                                TryDelete(info);
+                                continue;
+                            }
+
+                            _images[ImageKey(size, info.Name)] = new CachedImage(size, info.Name, info.Length, new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds());
+                            _imageBytes += info.Length;
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        _logger?.Warning($"[LogoTags] Could not read the logo cache {dir}: {ex.Message}");
+                    }
+                }
+            }
+
+            EnforceBudget(null);
+
+            void TryDelete(FileInfo info)
+            {
+                try
+                {
+                    info.Delete();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger?.Debug($"[LogoTags] Could not delete {info.FullName}: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Drop lookups not refreshed for <see cref="LookupTtl"/> plus
+        /// <see cref="StaleLookupGrace"/> and rebuild the allowlist from the
+        /// rest, so a logo no lookup names any more (an old region, a changed
+        /// logo, a title gone from the library) is no longer served. True when
+        /// a lookup was dropped.
+        /// </summary>
+        private bool PruneLookups()
+        {
+            var cutoff = Now - (long)(LookupTtl + StaleLookupGrace).TotalMilliseconds;
+            var pruned = false;
+            lock (_lookupLock)
+            {
+                foreach (var pair in _lookups)
+                {
+                    if (pair.Value.Fetched < cutoff && _lookups.TryRemove(pair)) pruned = true;
+                }
+
+                var named = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var lookup in _lookups.Values)
+                {
+                    foreach (var item in lookup.Items)
+                    {
+                        if (IsLogoPath(item.Logo)) named.Add(item.Logo![1..]);
+                    }
+                }
+
+                foreach (var file in _knownFiles.Keys)
+                {
+                    if (!named.Contains(file)) _knownFiles.TryRemove(file, out _);
+                }
+            }
+
+            return pruned;
+        }
+
+        /// <summary>
+        /// Prune stale lookups, delete the images no lookup names any more and
+        /// forget old image failures. Runs before each debounced save (after
+        /// warms) and at start.
+        /// </summary>
+        internal void Maintain()
+        {
+            PruneLookups();
+            lock (_imageLock)
+            {
+                foreach (var pair in _images.ToArray())
+                {
+                    if (!_knownFiles.ContainsKey(pair.Value.File)) DeleteImage(pair.Key, pair.Value);
+                }
+            }
+
+            var retryCutoff = Now - (long)ImageRetryAfter.TotalMilliseconds;
+            foreach (var failure in _imageFailures)
+            {
+                if (failure.Value < retryCutoff) _imageFailures.TryRemove(failure);
+            }
+        }
 
         private void LoadFromDisk()
         {
@@ -476,7 +727,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (_storePath == null || _disposed) return;
             lock (_saveLock)
             {
-                _saveTimer ??= new Timer(_ => SaveToDisk(), null, Timeout.Infinite, Timeout.Infinite);
+                _saveTimer ??= new Timer(_ =>
+                {
+                    Maintain();
+                    SaveToDisk();
+                }, null, Timeout.Infinite, Timeout.Infinite);
                 _saveTimer.Change(SaveDebounce, Timeout.InfiniteTimeSpan);
             }
         }

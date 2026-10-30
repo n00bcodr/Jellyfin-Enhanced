@@ -154,7 +154,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public SKImage? GetLogo(string logoPath)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_logos.TryGetValue(logoPath, out var cached)) return cached;
+            // A decoded logo whose file the disk cache evicted draws as the name chip, as the
+            // poster's data key (HasLogo) says, until the file is cached again.
+            if (_logos.TryGetValue(logoPath, out var cached)) return HasLogo(logoPath) ? cached : null;
             if (_logos.Count >= MaxCachedLogos) return null;
             byte[]? bytes;
             try

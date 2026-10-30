@@ -289,6 +289,78 @@ public class LogoTagTests
     }
 
     [Fact]
+    public async Task TheDiskCacheKeepsItsBudgetByEvictingTheLeastRecentlyReadAndSweepsOrphansOnStart()
+    {
+        const string companies = """{"production_companies":[{"name":"A","logo_path":"/a.png"},{"name":"B","logo_path":"/b.png"},{"name":"C","logo_path":"/c.png"},{"name":"D","logo_path":"/d.png"},{"name":"E","logo_path":"/e.png"}]}""";
+        var dir = Path.Combine(Path.GetTempPath(), "je-logos-" + Guid.NewGuid().ToString("N"));
+        var clock = new Clock();
+        var images = 0;
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            if (request.RequestUri!.Host != "image.tmdb.org") return Task.FromResult(IntegrationTransport.Response(companies));
+            images++;
+            return Task.FromResult(Image(Png));
+        });
+        // Room for three images, both sizes together.
+        var budget = 3L * Png.Length + Png.Length / 2;
+        TagLogoService Start() => new(transport, new TmdbResponseCache(transport, clock), clock, Path.Combine(dir, "tag-logos.json"), Path.Combine(dir, "logos"), null, 4, 1000, TimeSpan.FromSeconds(10), budget);
+        string FileOf(string size, string name) => Path.Combine(dir, "logos", size, name);
+        var service = Start();
+        try
+        {
+            await service.WarmAsync("key", [("movie", "603", TagLogoService.LookupKind.Details)], "US", CancellationToken.None);
+            foreach (var (size, name) in new[] { ("w92", "a.png"), ("w45", "b.png"), ("w92", "c.png") })
+            {
+                Assert.NotNull(await service.GetImageAsync(size, name, CancellationToken.None));
+                clock.Advance(TimeSpan.FromHours(2));
+            }
+
+            Assert.Equal(3L * Png.Length, service.CachedImageBytes);
+            Assert.NotNull(service.TryReadCached("w92", "a.png")); // a is now the most recently read
+            clock.Advance(TimeSpan.FromHours(2));
+
+            // Over budget: the least recently read (b, the w45 copy) goes, the new image stays.
+            Assert.NotNull(await service.GetImageAsync("w92", "d.png", CancellationToken.None));
+            Assert.False(File.Exists(FileOf("w45", "b.png")));
+            Assert.False(service.IsCached("w45", "b.png"));
+            Assert.All(new[] { "a.png", "c.png", "d.png" }, name => Assert.True(service.IsCached("w92", name)));
+            Assert.InRange(service.CachedImageBytes, 0, budget);
+
+            // Restart: abandoned downloads, names no lookup knows and other spellings are deleted;
+            // the rest is counted again and keeps its read order.
+            File.WriteAllBytes(FileOf("w92", "orphan.png"), Png);
+            File.WriteAllBytes(FileOf("w92", "a.png.0123456789abcdef.tmp"), Png);
+            File.WriteAllBytes(FileOf("w92", "C.PNG"), Png);
+            Directory.CreateDirectory(Path.GetDirectoryName(FileOf("w45", "x"))!);
+            File.WriteAllBytes(FileOf("w45", "empty.png"), []);
+            service.Dispose();
+            service = Start();
+            Assert.False(File.Exists(FileOf("w92", "orphan.png")));
+            Assert.False(File.Exists(FileOf("w92", "a.png.0123456789abcdef.tmp")));
+            Assert.Equal(new[] { "a.png", "c.png", "d.png" }, Directory.GetFiles(Path.Combine(dir, "logos", "w92")).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+            Assert.Empty(Directory.GetFiles(Path.Combine(dir, "logos", "w45")));
+            Assert.Equal(3L * Png.Length, service.CachedImageBytes);
+            clock.Advance(TimeSpan.FromHours(2));
+            Assert.NotNull(await service.GetImageAsync("w92", "e.png", CancellationToken.None));
+            Assert.False(File.Exists(FileOf("w92", "c.png")), "c was read longest ago (a was read after it before the restart)");
+            Assert.True(service.IsCached("w92", "a.png"));
+            Assert.Equal(5, images);
+
+            // A lookup nothing refreshes past its lifetime and the grace is dropped with its images.
+            clock.Advance(TagLogoService.LookupTtl + TagLogoService.StaleLookupGrace);
+            service.Maintain();
+            Assert.False(service.TryGet("movie", "603", TagLogoService.LookupKind.Details, "US", out _));
+            Assert.False(service.IsAllowed("w92", "a.png"));
+            Assert.Empty(Directory.GetFiles(Path.Combine(dir, "logos", "w92")));
+            Assert.Equal(0, service.CachedImageBytes);
+        }
+        finally
+        {
+            Cleanup(service, dir);
+        }
+    }
+
+    [Fact]
     public async Task EntriesTakeProvidersStudiosOrNetworksPerModeWithTheAdministratorsMaximum()
     {
         var (service, _, _, dir) = Service(request => request.RequestUri!.AbsolutePath switch
