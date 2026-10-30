@@ -150,7 +150,12 @@ for (const [style, slot] of [['flags', 'corner'], ['codes', 'corner'], ['subtitl
     page.on('pageerror', e => errors.push(String(e)));
     page.on('console', m => { if (m.type() === 'error' && /Jellyfin Enhanced|\bJE\b/.test(m.text())) errors.push(m.text()); });
     const destination = await prepare(page, style, slot);
-    const chip = page.locator(slot === 'pill' ? '#language-navigation-proof .je-tag-pill' : '#language-navigation-proof .language-link').first();
+    // Hover hides Summary's linked pill and exposes the full language chips.
+    if (slot === 'pill') {
+      await page.locator('#language-navigation-proof').hover();
+      await expect(page.locator('#language-navigation-proof .je-tag-pill')).toHaveCSS('pointer-events', 'none');
+    }
+    const chip = page.locator('#language-navigation-proof .language-link').first();
     await expect(chip).toHaveAttribute('href', /.+/);
     await expect(chip).toHaveAttribute('title', style === 'subtitles' ? /Subtitles: English/ : style === 'badge' ? /2 audio languages/ : /English/);
     for (const action of [{ modifiers: ['ControlOrMeta'] }, { button: 'middle' }]) {
