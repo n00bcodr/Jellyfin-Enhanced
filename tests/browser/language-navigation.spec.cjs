@@ -62,6 +62,60 @@ async function prepare(page, style, slot) {
   }, { style, slot, isLab: !!lab });
 }
 
+/** Tab (or Shift+Tab) from a sentinel before (after) the proof card to one after (before) it; returns the focus stops between. */
+async function keyboardStops(page, reverse) {
+  await page.evaluate(() => {
+    const card = document.getElementById('language-navigation-proof');
+    for (const [id, where] of [['language-tab-before', 'before'], ['language-tab-after', 'after']]) {
+      if (document.getElementById(id)) continue;
+      const button = document.createElement('button');
+      button.id = id;
+      button.textContent = id;
+      card[where](button);
+    }
+  });
+  const [start, end] = reverse ? ['#language-tab-after', '#language-tab-before'] : ['#language-tab-before', '#language-tab-after'];
+  await page.locator(start).focus();
+  const stops = [];
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press(reverse ? 'Shift+Tab' : 'Tab');
+    const stop = await page.evaluate(endId => {
+      const el = document.activeElement;
+      const card = document.getElementById('language-navigation-proof');
+      if (el?.id === endId) return null;
+      return { inCard: card.contains(el), cardLink: el === card.querySelector('a.cardImageContainer[href]'),
+        overlay: !!el?.closest('.language-link, .je-tag-pill, .je-tag-host, .je-tag-caption'), label: `${el?.tagName}.${el?.className}` };
+    }, end.slice(1));
+    if (!stop) return stops;
+    stops.push(stop);
+  }
+  throw new Error(`focus never reached ${end}: ${JSON.stringify(stops)}`);
+}
+
+for (const [style, slot] of [['flags', 'corner'], ['subtitles', 'caption'], ['subtitles', 'pill']]) {
+  test(`${style} in ${slot}: keyboard focus skips language links`, async ({ page }) => {
+    test.setTimeout(lab ? 90000 : 30000);
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    page.on('console', m => { if (m.type() === 'error' && /Jellyfin Enhanced|\bJE\b/.test(m.text())) errors.push(m.text()); });
+    await prepare(page, style, slot);
+    const overlay = page.locator(slot === 'pill' ? '#language-navigation-proof a.je-tag-pill' : '#language-navigation-proof a.language-link');
+    await expect(overlay.first()).toHaveAttribute('tabindex', '-1');
+    await expect(overlay.first()).toHaveAttribute('title', style === 'subtitles' ? /Subtitles: English/ : /English/);
+    const forward = await keyboardStops(page, false);
+    const backward = await keyboardStops(page, true);
+    const inCard = stops => stops.filter(s => s.inCard);
+    // The card's own link is the first stop inside it; the next stops leave the card (or, on a live
+    // Jellyfin card, visit only its native controls) without touching a language link or pill.
+    expect(inCard(forward)[0]?.cardLink).toBe(true);
+    expect(forward.filter(s => s.overlay)).toEqual([]);
+    expect(backward.filter(s => s.overlay)).toEqual([]);
+    expect(inCard(backward).map(s => s.label).reverse()).toEqual(inCard(forward).map(s => s.label));
+    if (!lab) expect(forward.map(s => s.label)).toEqual(['A.cardImageContainer']);
+    expect(errors).toEqual([]);
+  });
+}
+
 for (const [style, slot] of [['flags', 'corner'], ['codes', 'corner'], ['subtitles', 'caption'], ['subtitles', 'pill'], ['badge', 'corner']]) {
   test(`${style} in ${slot}: native left, modifier and middle navigation`, async ({ page, context }) => {
     test.setTimeout(lab ? 90000 : 30000);

@@ -44,5 +44,6 @@ npx playwright test --config tests/browser/playwright.config.cjs language-naviga
 Without the lab variables it uses the fixture host. Both modes check actual
 left-click navigation and new tabs from Control/Command-click and middle-click
 for audio flags, codes, subtitle captions, subtitle summary pills and count
-badges. Lab fixtures change only the current browser's display settings and
+badges, and that Tab and Shift+Tab move through the card's own link without
+stopping on language links or the Summary pill. Lab fixtures change only the current browser's display settings and
 card facts; no user preferences or media metadata are saved.
