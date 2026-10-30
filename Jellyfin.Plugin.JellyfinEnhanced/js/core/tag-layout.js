@@ -850,15 +850,32 @@
      * @param {string} group
      * @param {HTMLElement} master
      * @param {TagLayoutSettings} conf
+     * @param {HTMLElement} [host] - Card host for native language-chip links.
      * @returns {HTMLElement}
      */
-    function buildChips(group, master, conf) {
+    function buildChips(group, master, conf, host) {
         const node = /** @type {HTMLElement} */ (master.cloneNode(true));
         node.dataset.jeGroup = group;
         // Event handler properties are not cloned: a flag whose country is
         // missing from the flag set still removes itself.
         for (const img of node.querySelectorAll('img')) img.onerror = () => img.remove();
         applyDensityAndCap(group, node, conf);
+        if (group === 'language' && host) {
+            const link = cardLinkOf(host);
+            if (link?.matches('a[href]') && !link.contains(host)) {
+                for (const chip of Array.from(node.children)) {
+                    const anchor = document.createElement('a');
+                    anchor.className = 'language-link';
+                    anchor.href = link.getAttribute('href');
+                    anchor.title = chip.getAttribute('title') || '';
+                    for (const attr of ['target', 'rel']) {
+                        if (link.hasAttribute(attr)) anchor.setAttribute(attr, link.getAttribute(attr));
+                    }
+                    chip.replaceWith(anchor);
+                    anchor.appendChild(chip);
+                }
+            }
+        }
         return node;
     }
 
@@ -925,7 +942,7 @@
             case 'language': {
                 const first = master.firstElementChild;
                 if (first?.classList.contains('language-code') || first?.classList.contains('language-count-badge')) {
-                    const copy = first.cloneNode(true);
+                    const copy = /** @type {HTMLElement} */ (first.cloneNode(true));
                     const marker = copy.querySelector('.language-cc');
                     const glyph = marker?.textContent || undefined;
                     marker?.remove();
@@ -1081,7 +1098,14 @@
             if (facts.length >= PILL_MAX_FACTS) break;
         }
         if (facts.length === 0) return;
-        const pill = document.createElement('div');
+        const link = facts.some(f => f.group === 'language') ? cardLinkOf(ctrl.host) : null;
+        const pill = document.createElement(link?.matches('a[href]') && !link.contains(ctrl.host) ? 'a' : 'div');
+        if (pill.tagName === 'A') {
+            pill.setAttribute('href', link.getAttribute('href'));
+            for (const attr of ['target', 'rel']) {
+                if (link.hasAttribute(attr)) pill.setAttribute(attr, link.getAttribute(attr));
+            }
+        }
         pill.className = 'je-tag-pill';
         const spoken = [];
         facts.forEach((fact, i) => {
@@ -1135,7 +1159,7 @@
             const dots = buildDots(rec.master, conf);
             if (dots) { placeSorted(ctrl, conf, slotElement(ctrl, 'dots'), dots); nodes.push(dots); }
         } else if (slot !== 'pill') {
-            const chips = buildChips(group, rec.master, slot === 'hover' || (conf.layout === 'bands' && ctrl.narrow) ? revealSettings(conf) : conf);
+            const chips = buildChips(group, rec.master, slot === 'hover' || (conf.layout === 'bands' && ctrl.narrow) ? revealSettings(conf) : conf, ctrl.host);
             if (conf.layout === 'corners') chips.dataset.jeCorner = SLOT_TO_POSITION[slot];
             // The original web rule for settings saved before layouts: only a
             // container set to exactly top-right clears the played indicator.
@@ -1145,7 +1169,7 @@
         // Summaries (pill, dots, corner score) keep their full chips for the
         // hover/focus scrim of the summary and minimal layouts.
         if (SUMMARY_SLOTS.has(slot) && (conf.layout === 'summary' || conf.layout === 'minimal')) {
-            const full = buildChips(group, rec.master, revealSettings(conf));
+            const full = buildChips(group, rec.master, revealSettings(conf), ctrl.host);
             if (full.children.length > 0) { placeSorted(ctrl, conf, slotElement(ctrl, 'hover'), full); nodes.push(full); }
         }
         ctrl.nodes.set(group, nodes);

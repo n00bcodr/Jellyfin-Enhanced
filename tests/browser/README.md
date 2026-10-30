@@ -31,3 +31,18 @@ npm run test:visual
 Commit the reviewed PNG changes with their reason. Do not update them merely to clear a failure. Existing baselines were initially created on Linux; use Linux for visual comparisons. Missing browsers, missing snapshots, and unavailable servers are failures, not skips.
 
 Remaining scope: full Enhanced panel wiring, poster-tag interactions, bookmarks, hidden-content/Spoiler Guard browser journeys, playback, real touch hardware, and complete native Jellyfin navigation are not established by this fixture suite. Consult the coverage matrix for their other test layers and gaps.
+
+Language-chip navigation also has a real-host mode. Run only that spec against
+an authorized disposable lab, serially, with `JE_LANGUAGE_LAB_URL`,
+`JE_LANGUAGE_LAB_USER` (defaults to `real-admin`) and
+`JE_LANGUAGE_LAB_PASSWORD` supplied in the environment:
+
+```sh
+npx playwright test --config tests/browser/playwright.config.cjs language-navigation --project=chromium --workers=1
+```
+
+Without the lab variables it uses the fixture host. Both modes check actual
+left-click navigation and new tabs from Control/Command-click and middle-click
+for audio flags, codes, subtitle captions, subtitle summary pills and count
+badges. Lab fixtures change only the current browser's display settings and
+card facts; no user preferences or media metadata are saved.
