@@ -39,12 +39,13 @@
 
     /**
      * Read the stored size. Anything unreadable or malformed counts as Default.
+     * @param {string} key - Identity captured when this panel opened.
      * @returns {PanelSize}
      */
-    function readSize() {
+    function readSize(key) {
         let raw = null;
         try {
-            raw = localStorage.getItem(storeKey());
+            raw = localStorage.getItem(key);
         } catch (err) {
             return { preset: 'default' };
         }
@@ -65,11 +66,12 @@
     /**
      * Store the size; Default removes the entry.
      * @param {PanelSize} size
+     * @param {string} key - Identity captured when this panel opened.
      */
-    function writeSize(size) {
+    function writeSize(size, key) {
         try {
-            if (size.preset === 'default') localStorage.removeItem(storeKey());
-            else localStorage.setItem(storeKey(), JSON.stringify(size));
+            if (size.preset === 'default') localStorage.removeItem(key);
+            else localStorage.setItem(key, JSON.stringify(size));
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: could not save the panel size', err);
         }
@@ -163,7 +165,7 @@
     /**
      * Wire the size controls of an open panel. Every listener outside the
      * panel element is dropped through ctx.onClose.
-     * @param {{help: HTMLElement, resetAutoCloseTimer: Function, onClose: (fn: Function) => void}} ctx
+     * @param {{help: HTMLElement, resetAutoCloseTimer: Function, closePanel: Function, onClose: (fn: Function) => void}} ctx
      */
     internal.wirePanelResize = function(ctx) {
         const { help } = ctx;
@@ -175,7 +177,19 @@
         JE.core.ui?.injectCss?.('je-panel-resize', RESIZE_CSS);
 
         const desktop = window.matchMedia(DESKTOP_QUERY);
-        let size = readSize();
+        const key = storeKey();
+        let closed = false;
+        let size = readSize(key);
+        /** Close the old user's panel through the shared teardown. */
+        const identityChanged = () => { if (!closed) ctx.closePanel(); };
+        /** Reject stale input even before the session event has been delivered. */
+        const sameIdentity = () => {
+            if (closed) return false;
+            if (storeKey() === key) return true;
+            identityChanged();
+            return false;
+        };
+        document.addEventListener('je:user-changed', identityChanged);
         /** @type {{handle: HTMLElement, pointerId: number, axis: string, x: number, y: number, width: number, height: number, centred: boolean, left: number, moved: boolean}|null} */
         let drag = null;
 
@@ -242,8 +256,9 @@
          * @param {PanelSize} next
          */
         const choose = (next) => {
+            if (!sameIdentity()) return;
             size = next;
-            writeSize(size);
+            writeSize(size, key);
             apply();
             ctx.resetAutoCloseTimer();
         };
@@ -277,7 +292,7 @@
 
         handles.forEach((handle) => {
             handle.addEventListener('pointerdown', (e) => {
-                if (drag || e.button !== 0 || !desktop.matches) return;
+                if (!sameIdentity() || drag || e.button !== 0 || !desktop.matches) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = help.getBoundingClientRect();
@@ -294,7 +309,7 @@
                 ctx.resetAutoCloseTimer();
             });
             handle.addEventListener('pointermove', (e) => {
-                if (!desktop.matches || !drag || e.pointerId !== drag.pointerId) return;
+                if (!sameIdentity() || !desktop.matches || !drag || e.pointerId !== drag.pointerId) return;
                 const factor = drag.centred ? 2 : 1;
                 let width = drag.axis === 'y' ? drag.width : drag.width + (e.clientX - drag.x) * factor;
                 const height = drag.axis === 'x' ? drag.height : drag.height + (e.clientY - drag.y) * factor;
@@ -315,7 +330,7 @@
         const grip = handles.find((handle) => handle.dataset.jeResize === 'both');
         grip?.addEventListener('keydown', (e) => {
             const steps = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[e.key];
-            if (!steps || !desktop.matches || e.altKey || e.ctrlKey || e.metaKey) return;
+            if (!sameIdentity() || !steps || !desktop.matches || e.altKey || e.ctrlKey || e.metaKey) return;
             e.preventDefault();
             e.stopPropagation();
             const step = e.shiftKey ? KEY_STEP_LARGE : KEY_STEP;
@@ -331,6 +346,8 @@
         window.addEventListener('resize', handleWindowResize);
         desktop.addEventListener('change', handleWindowResize);
         ctx.onClose(() => {
+            closed = true;
+            document.removeEventListener('je:user-changed', identityChanged);
             document.removeEventListener('selectstart', blockSelection);
             window.removeEventListener('resize', handleWindowResize);
             desktop.removeEventListener('change', handleWindowResize);

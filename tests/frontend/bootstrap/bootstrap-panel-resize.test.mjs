@@ -469,3 +469,23 @@ for (const width of [850, 1000]) test(`viewport resize to ${width}px cancels cap
   assert.deepEqual(h.size(), size, 'captured moves cannot revive the drag');
   assert.equal(h.stored(), null, 'a cancelled drag does not overwrite the chosen size');
 });
+
+
+for (const notify of [true, false]) test(`identity switch closes the old panel without writing the incoming user's size (event=${notify})`, async t => {
+  const h = setup(t, { stored: '{"preset":"large"}' });
+  const nextKey = 'JE_panelSize_user-b';
+  h.window.localStorage.setItem(nextKey, '{"preset":"fill"}');
+  await h.open();
+  const stalePreset = h.preset('large');
+  h.pointer(h.grip(), 'pointerdown', 10, 10);
+  h.pointer(h.grip(), 'pointermove', 20, 20);
+  h.window.ApiClient.getCurrentUserId = () => 'user-b';
+  if (notify) h.document.dispatchEvent(new h.window.CustomEvent('je:user-changed'));
+  else h.pointer(h.grip(), 'pointermove', 30, 30);
+  assert.equal(h.panel(), null);
+  stalePreset.click();
+  assert.equal(h.window.localStorage.getItem(nextKey), '{"preset":"fill"}');
+  assert.equal(h.stored(), '{"preset":"large"}');
+  await h.open();
+  assert.deepEqual(h.pressed(), ['fill'], 'incoming identity reads its own choice');
+});
