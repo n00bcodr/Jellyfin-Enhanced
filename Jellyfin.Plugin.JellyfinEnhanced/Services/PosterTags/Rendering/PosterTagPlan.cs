@@ -184,6 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd, styles),
                     GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
+                    AwardTag a when group.Group == PosterTagGroup.Awards => MeasureAward(a, css, keepEnd, styles),
                     AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
                     _ => null,
@@ -204,6 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 PosterTagGroup.Quality => PosterTagCss.Lu(css.QualityGap),
                 PosterTagGroup.Genre => PosterTagCss.Lu(css.GenreGap),
                 PosterTagGroup.Rating => PosterTagCss.Lu(css.RatingGap),
+                PosterTagGroup.Awards => 4,
                 PosterTagGroup.Language => PosterTagCss.Lu(css.LanguageGap),
                 _ => 0f, // the age-rating container has no gap
             };
@@ -422,6 +424,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 IconWidth = iconWidth,
                 IconHeight = iconHeight,
             };
+        }
+
+        private PlannedItem MeasureAward(AwardTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
+        {
+            var text = ClampText(tag.Text, keepEnd);
+            var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
+            var colours = styles.Resolve(TagStyleKeys.Awards, tag.Id);
+            var style = tag.Id + (colours.IsEmpty ? "" : "\n" + colours.Encode());
+            var width = 2 * PosterTagCss.Lu(css.ChipPaddingH) + 14 + PosterTagCss.Lu(css.RatingInnerGap) + PosterTagCss.LuCeil(layout.Width);
+            var height = Math.Max(14, PosterTagCss.Lu(css.ChipFontSize)) + 2 * PosterTagCss.Lu(css.ChipPaddingV);
+            return new PlannedItem(PosterTagTileKind.Award, tag, text, style, width, height) { TextLayout = layout, IconWidth = 14, IconHeight = 14 };
         }
 
         private PlannedItem MeasureAge(AgeRatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)

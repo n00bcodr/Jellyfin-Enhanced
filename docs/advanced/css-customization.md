@@ -1141,3 +1141,7 @@ Both fall back to `1` in the stylesheet. Version-0 posters retain their original
 ```
 
 Saved size and gap choices also affect native posters; custom web CSS does not affect composited images. Prefer the built-in controls when the same appearance is needed in both.
+
+### Awards chips
+
+The Awards wrapper is `.awards-overlay-container`, placed by the shared tag layout controller. Each `.awards-tag[data-je-award]` contains `.awards-tag-logo` (decorative bundled SVG) and a text span. Stable ids are `imdbTop250`, `certifiedFresh`, `oscar`, `emmy`, `letterboxdTop250`. The chip's title and accessible label include rank/year when known. On linked posters the layout wraps chips in `.awards-link` anchors (`tabindex="-1"`) so hover titles and poster navigation remain reachable. Layout slots, caption outlets, caps and hover suppression apply as for other groups. Tag Styles supplies Awards group and per-label background/text/inner-border colours. SVG source colours remain their identifying colours; CSS cannot change native image pixels.

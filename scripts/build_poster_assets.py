@@ -118,6 +118,7 @@ IN_REPO = {
     "media-language": PLUGIN / "js/core/media-language.js",
     "qualitytags": PLUGIN / "js/tags/qualitytags.js",
     "rating-sources": PLUGIN / "js/tags/rating-sources.js",
+    "award-tags": PLUGIN / "js/tags/awardstags.js",
     "ratings-css": REPO / "css/ratings.css",
     "symbols-outlined": PLUGIN / "js/fonts/materialsymbolsoutlined.woff2",
     "symbols-rounded": PLUGIN / "js/fonts/materialsymbolsrounded.woff2",
@@ -288,6 +289,7 @@ def derived_json() -> dict:
         "age-rating-colours.json": to_json(age_rating_colours()),
         "quality-colours.json": to_json(quality_colours()),
         "rating-source-icons.json": to_json(rating_source_icons()),
+        "award-icons.json": to_json(award_icons()),
     }
 
 
@@ -425,6 +427,28 @@ def rating_source_icons() -> dict:
     return {"rating-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in logos.items()}
 
 
+def award_icons() -> dict:
+    """Convert the same bundled nominative marks used by Awards web chips."""
+    source = IN_REPO["award-tags"].read_text(encoding="utf-8")
+    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    if not match:
+        raise ValueError("awardstags.js: bundled LOGOS object not found")
+    return {"award-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in json.loads(match.group(1)).items()}
+
+
+def build_awards(out: Path) -> None:
+    """Regenerate Awards logos and their provenance without unrelated asset drift."""
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = "award-icons.json"
+    data = to_json(award_icons()).encode("utf-8")
+    write(out / name, data.decode("utf-8"))
+    manifest["inputs"][str(IN_REPO["award-tags"].relative_to(REPO))] = sha256(IN_REPO["award-tags"].read_bytes())
+    manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
+    write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"{out / name}: regenerated Awards logos and manifest records")
+
+
 def build_vector_icons(out: Path, cache: Path) -> None:
     data = {"rt-fresh": svg_to_paths(fetch("rt-fresh", cache)),
             "rt-rotten": svg_to_paths(fetch("rt-rotten", cache))}
@@ -509,6 +533,7 @@ for the native poster tag renderer (`Services/PosterTags/Rendering`).
 | `flags/*.webp` | flag-icons 4x3 SVGs, {PINS['flag-icons']['version']}, rasterised at {FLAG_WIDTH}x{FLAG_HEIGHT} by headless Chromium. Copyright (c) 2013 Panayiotis Lipiridis. | MIT, full text below |
 | `flags/zxx.webp` | JE's own "no dialogue" artwork (`specialFlags.zxx` in `js/core/media-language.js`). | GPL-3.0 (this project) |
 | `vector-icons.json` | `fresh.svg` and `rotten.svg` from jellyfin-web v12.1 (`src/assets/img/`, commit `{JELLYFIN_WEB_COMMIT}`), converted to path data unchanged. jellyfin-web ships them for its critic rating indicator (`CriticRatingMediaInfo`); JE's web rating tags load the same files from jellyfin-web. | GPL-2.0-or-later (jellyfin-web). Rotten Tomatoes and the tomato and splat marks are trademarks of Fandango; they are used only to identify the source of a critic rating, as in jellyfin-web. |
+| `award-icons.json` | Derived from JE’s bundled simplified award silhouettes and rating source marks in `js/tags/awardstags.js`, identical to the web chips. Nominative identification only; trademarks belong to their respective owners. | GPL-3.0 (this project); service and award marks belong to their respective owners |
 | `rating-source-icons.json` | Derived from the bundled SVG source-identification logos in JE’s `js/tags/rating-sources.js`; shared with the web chips. Source marks identify their respective rating services. | GPL-3.0 (this project); service marks belong to their respective owners |
 | `age-rating-colours.json` | Derived from JE's `css/ratings.css` (the rules `js/tags/ageratingtags.js` applies to the poster badge). | GPL-3.0 (this project) |
 | `quality-colours.json` | Derived from JE's `js/tags/qualitytags.js`. | GPL-3.0 (this project) |
@@ -650,11 +675,17 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--cache", type=Path,
                     default=Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "jellyfin-enhanced" / "poster-assets")
+    ap.add_argument("--awards-only", action="store_true", help="regenerate only Awards logos and their manifest records")
     ap.add_argument("--quality-only", action="store_true", help="regenerate only quality colours and their manifest records")
     ap.add_argument("--check", action="store_true", help="verify instead of writing")
     ap.add_argument("--full", action="store_true", help="with --check: regenerate everything and compare bytes")
     ap.add_argument("--keep-tmp", action="store_true")
     a = ap.parse_args()
+    if a.awards_only:
+        if a.check or a.full or a.quality_only:
+            ap.error("--awards-only cannot be combined with other modes")
+        build_awards(a.out)
+        return 0
     if a.quality_only:
         if a.check or a.full:
             ap.error("--quality-only cannot be combined with --check or --full")

@@ -688,6 +688,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AgeRatingTagsEnabled { get; set; }
         /// <summary>Default for the per-user Status Tags (Just Added / New / Trending poster badges). Also gates the trending endpoint.</summary>
         public bool StatusTagsEnabled { get; set; }
+
+        /// <summary>Opt-in Awards poster group; administrator also gates refresh work.</summary>
+        public bool AwardsTagsEnabled { get; set; }
+        public bool AwardsTagsImdb { get; set; } = true;
+        public bool AwardsTagsCertifiedFresh { get; set; } = true;
+        public bool AwardsTagsOscar { get; set; } = true;
+        public bool AwardsTagsEmmy { get; set; } = true;
+        public bool AwardsTagsLetterboxd { get; set; } = true;
+        /// <summary>MDBList numeric id or owner/list slug; never a URL or credential.</summary>
+        public string AwardsTagsImdbList { get; set; } = "sacwooky/imdb-top-250";
+        public string AwardsTagsLetterboxdList { get; set; } = "abdulwahabaa/letterboxd-top-250";
+        /// <summary>Refresh TTL in hours, clamped to 1..168 at use.</summary>
+        public int AwardsTagsRefreshHours { get; set; } = 24;
+        /// <summary>Legacy corner fallback for Awards.</summary>
+        public string AwardsTagsPosition { get; set; } = "top-left";
         public bool PeopleTagsEnabled { get; set; }
         /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
         public bool NativePosterTagsEnabled { get; set; }

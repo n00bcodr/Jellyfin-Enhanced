@@ -728,3 +728,14 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 `Configuration/TagLayoutSettings.cs` validates `TagScale` and `TagGap` for user settings and admin defaults; `TagShapeSettings.cs` reuses those validators for optional per-shape values. `js/core/tag-layout.js` resolves inheritance and writes `--je-tag-scale` / `--je-tag-gap` to hosts and caption outlets. The existing tag styles retain their responsive clamps and multiply their metrics by those properties. `preserveLegacySizing` derives the original declarations for version-0 hosts inside the same responsive rules, preserving exact legacy rasterization. The Media Tags hub controls save through `ui-panel-settings.js`; the preview uses the same card resolver.
 
 Native settings and cache digests are resolved in `Services/PosterTags/PosterTagSettings.cs`. `Rendering/PosterTagCss.cs` scales logical metrics, `PosterTagPlan.cs` places the resulting chips, and `PosterTagTileCache.cs` keys tiles by size and gap as well as image scale. `tests/backend/Core/CoreTagScaleSettingsTests.cs` covers validation, round trips, inherited defaults, native metrics and cache pixels; the existing frontend layout/hub suites and poster parity profiles cover web behavior and effective native settings. No new production module or tag-cache entry field is added.
+
+### Awards poster tags
+
+- `Model/TagAwards.cs`: immutable exact-work chart/certification/winner facts in `TagCacheEntry.Awards`.
+- `Services/AwardTagsService.cs`: persistent `award-tags.json`, configurable MDBList list membership, provider certification, cached Wikidata winner projection, TTLs, quota reserve and cancellation.
+- `Services/TagCacheAwards.cs`: cache-only batch/native projection and normal tag-cache publication after scheduled refresh or config changes.
+- `ScheduledTasks/RefreshAwardTagsTask.cs`: **Refresh Awards Tags**, daily 04:00 and on demand, hidden while Awards is off.
+- `js/tags/awardstags.js`: IIFE renderer and shared preview chips/logos, registered in the component manifest.
+- `Assets/PosterTags/award-icons.json`: generated logo paths loaded by `PosterTagAssets`; `scripts/build_poster_assets.py --awards-only` regenerates just those paths and manifest records. Source marks are nominative; project artwork is GPL-3.0 and trademarks remain with their owners.
+
+The layout, settings hub, Tag Styles and native resolver/plan/renderer use the same `awards` group id and five stable label ids. Native pixel/resolver versions retire old variants. Regression coverage is in `tests/backend/PosterTags/AwardTagsTests.cs`, `tests/frontend/features/features-awards-tags.test.mjs` and the Awards offline parity profiles.

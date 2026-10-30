@@ -112,6 +112,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
             if (reviewOnly is not null) groups.Add(reviewOnly);
+            if (settings.Shows(PosterTagGroup.Awards) && entry.Awards is { } awards)
+            {
+                var tags = new List<PosterTag>();
+                if (settings.AwardsImdb && awards.ImdbRank is > 0 and <= 250) tags.Add(new AwardTag("imdbTop250", "Top 250"));
+                if (settings.AwardsCertifiedFresh && awards.CertifiedFresh) tags.Add(new AwardTag("certifiedFresh", "Certified Fresh"));
+                if (settings.AwardsOscar && awards.OscarWinner) tags.Add(new AwardTag("oscar", "Oscar winner"));
+                if (settings.AwardsEmmy && awards.EmmyWinner) tags.Add(new AwardTag("emmy", "Emmy winner"));
+                if (settings.AwardsLetterboxd && awards.LetterboxdRank is > 0 and <= 250) tags.Add(new AwardTag("letterboxdTop250", "Top 250"));
+                if (tags.Count > 0) groups.Add(Group(PosterTagGroup.Awards, settings, tags));
+            }
             if (groups.Count == 0) return null;
 
             // An explicit priority order replaces arrival order: groups sharing a corner stack in it

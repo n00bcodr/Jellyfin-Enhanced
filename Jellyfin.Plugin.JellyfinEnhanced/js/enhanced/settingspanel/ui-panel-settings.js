@@ -55,7 +55,7 @@
     };
 
     /** Panel toggles of the poster tag groups the layout controller places. */
-    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle'];
+    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'awardsTagsToggle'];
 
     /**
      * Wires the feature toggles, quality-tag category controls and subtitle
@@ -130,6 +130,10 @@
                     } else {
                         removeTagGroup('status', 'status-overlay-container');
                     }
+                    requiresRefresh = false;
+                } else if (id === 'awardsTagsToggle') {
+                    if (e.target.checked) JE.initializeAwardsTags?.();
+                    else removeTagGroup('awards', 'awards-overlay-container');
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
                     if (e.target.checked) {
@@ -398,6 +402,7 @@
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
         addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
         addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
+        if (document.getElementById('awardsTagsToggle')) addSettingToggleListener('awardsTagsToggle', 'awardsTagsEnabled', 'feature_awards_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // --- Tag layout and label density ---

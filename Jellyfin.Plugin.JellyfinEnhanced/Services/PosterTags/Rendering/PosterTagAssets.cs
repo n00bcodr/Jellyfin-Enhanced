@@ -72,6 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 LoadIcons(icons);
                 LoadVectorIcons(vectors);
                 LoadVectorIcons(vectors, "rating-source-icons.json");
+                LoadVectorIcons(vectors, "award-icons.json");
                 var (qualityColours, bases) = LoadQualityColours();
                 var ageStyles = LoadAgeRatingStyles();
 

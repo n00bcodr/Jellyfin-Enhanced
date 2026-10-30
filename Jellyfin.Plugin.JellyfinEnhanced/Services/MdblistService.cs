@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan RetryTtl = TimeSpan.FromHours(1);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(2);
-        private const int CurrentSchemaVersion = 1;
+        private const int CurrentSchemaVersion = 2;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IApplicationPaths _applicationPaths;
@@ -513,14 +513,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             finally { _backgroundQuotaGate.Release(); }
         }
 
+        /// <summary>
+        /// Fetch a bounded Awards chart under the same reserve/status/spend gate as
+        /// background rating batches. Unknown quota sends nothing; callers retain
+        /// their last good snapshot and retry rather than confirming a missing chart.
+        /// </summary>
+        internal async Task<Dictionary<string, int>?> GetAwardListWithinReserveAsync(string id, int reserve, CancellationToken cancellationToken)
+        {
+            var apiKey = JellyfinEnhanced.Instance?.Configuration.MdblistApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || !AwardTagsService.IsListId(id)) return null;
+            await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
+                    return null;
+                var remaining = RemainingQuota();
+                if (remaining == null || remaining.Value <= Math.Max(SafetyMargin, reserve)) return null;
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                var uri = $"{ApiBase}/lists/{id}/items?apikey={Uri.EscapeDataString(apiKey)}&limit=250&sort=rank&order=asc";
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
+                RecordQuotaSpent();
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
+                return AwardTagsService.ParseList(json.RootElement);
+            }
+            finally { _backgroundQuotaGate.Release(); }
+        }
+
         /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and the background quota reserve.</summary>
-        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin)
+        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin, TimeSpan? maxAge = null)
         {
             if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
             await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)).GroupBy(t => t.MediaType))
+                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)
+                    || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
+                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds)).GroupBy(t => t.MediaType))
                 {
                     foreach (var chunk in group.Chunk(150))
                     {
@@ -620,6 +653,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // non-string value here is simply skipped.
                         Url = r.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String ? urlEl.GetString() : null,
                         Fresh = GetNullableInt(r, "fresh"),
+                        Certified = r.TryGetProperty("certified", out var certified)
+                            ? certified.ValueKind == JsonValueKind.True || (certified.ValueKind == JsonValueKind.Number && certified.TryGetInt32(out var flag) && flag == 1)
+                            : null,
                     });
                 }
             }

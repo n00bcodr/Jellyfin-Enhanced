@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Language flags (only the border ring applies: a flag is an image).</summary>
         public const string Language = "language";
+        public const string Awards = "awards";
 
         /// <summary>The label every chip of a group falls back to when it is not in the catalog.</summary>
         public const string AnyLabel = "*";
@@ -36,13 +37,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public const string DefaultPreset = "default";
 
         /// <summary>Every group, in editor tab order.</summary>
-        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language };
+        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language, Awards };
 
         /// <summary>Every preset, in editor order.</summary>
         public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono" };
 
         /// <summary>The rating chip labels.</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt") };
+
+        public static readonly IReadOnlyList<(string Key, string Name)> AwardLabels = new[] { ("imdbTop250", "IMDb Top 250"), ("certifiedFresh", "Certified Fresh"), ("oscar", "Oscar winner"), ("emmy", "Emmy winner"), ("letterboxdTop250", "Letterboxd Top 250") };
 
         /// <summary>The Status Tags labels (the <c>data-je-status</c> values the web draws).</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> StatusLabels = new[]
@@ -122,6 +125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 TagStyleKeys.Genre => new TagColors("rgba(10, 10, 10, 0.8)", "rgba(255, 255, 255, 0.2)", "#E0E0E0"),
                 TagStyleKeys.Status => new TagColors("rgba(15, 15, 15, 0.72)", "rgba(255, 255, 255, 0.18)", White),
                 TagStyleKeys.Language => new TagColors(Transparent, Transparent, White),
+                TagStyleKeys.Awards => new TagColors("rgba(15, 15, 15, 0.85)", Transparent, White),
                 _ => Unknown,
             };
             return Normalised(c);

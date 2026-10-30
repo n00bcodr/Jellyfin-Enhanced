@@ -404,11 +404,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // server tag cache. Null when there is nothing to strip.
         private static TagCacheEntry? StripExemptSeasonRating(TagCacheEntry entry, bool stripRatingsEnabled)
         {
-            if (!stripRatingsEnabled || (entry.CommunityRating == null && entry.CriticRating == null && entry.Ratings == null)) return null;
+            if (!stripRatingsEnabled || (entry.CommunityRating == null && entry.CriticRating == null && entry.Ratings == null && entry.Awards == null)) return null;
             var seasonStripped = entry.Clone();
             seasonStripped.CommunityRating = null;
             seasonStripped.CriticRating = null;
             seasonStripped.Ratings = null;
+            seasonStripped.Awards = null;
             return seasonStripped;
         }
 
@@ -460,6 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.CommunityRating = null;
                 stripped.CriticRating = null;
                 stripped.Ratings = null;
+                stripped.Awards = null;
                 // Age rating: keep the series-level one (not a spoiler) but
                 // drop an Episode/Season's own, which can differ from the
                 // series and Jellyfin never shows. Mirrors GetTagData's stubs.

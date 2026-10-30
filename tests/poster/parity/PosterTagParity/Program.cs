@@ -183,6 +183,8 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
     RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
     AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+    AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
+    AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
     PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
     QualityTagsPosition = defaultConfig.QualityTagsPosition,
     GenreTagsPosition = defaultConfig.GenreTagsPosition,
@@ -305,6 +307,7 @@ void ResolveAll()
         if (settings.RatingTagsEnabled) groupOrder.Add("rating");
         if (settings.AgeRatingTagsEnabled) groupOrder.Add("agerating");
         if (settings.LanguageTagsEnabled) groupOrder.Add("language");
+        if (settings.AwardsTagsEnabled) groupOrder.Add("awards");
         if (settings.QualityTagsEnabled && settings.UsesJellyfinAudioPreference) groupOrder.Add("quality");
 
         var summary = new Dictionary<string, object?>
@@ -316,6 +319,7 @@ void ResolveAll()
             ["languageTagsEnabled"] = settings.LanguageTagsEnabled,
             ["ratingTagsEnabled"] = settings.RatingTagsEnabled,
             ["ageRatingTagsEnabled"] = settings.AgeRatingTagsEnabled,
+            ["awardsTagsEnabled"] = settings.AwardsTagsEnabled,
             ["qualityTagsPosition"] = settings.QualityTagsPosition,
             ["genreTagsPosition"] = settings.GenreTagsPosition,
             ["languageTagsPosition"] = settings.LanguageTagsPosition,
@@ -359,7 +363,7 @@ void ResolveAll()
             ["ratingTagsColorByScore"] = settings.RatingTagsColorByScore,
             ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
             ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
-            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
         };
 
         var document = new { settings = summary, items, digest = settings.Digest, preferredAudioLanguage = settings.PreferredAudioLanguage };
@@ -377,6 +381,7 @@ static string LayoutId(PosterTagGroup group) => group switch
     PosterTagGroup.Genre => "genre",
     PosterTagGroup.Rating => "rating",
     PosterTagGroup.AgeRating => "ageRating",
+    PosterTagGroup.Awards => "awards",
     _ => "language",
 };
 
@@ -390,6 +395,7 @@ static string Describe(PosterTag tag) => tag switch
     RatingTag r when r.Source == PosterRatingSource.Critic => $"Critic|{r.Text}|{(r.Fresh ? "fresh" : "rotten")}",
     RatingTag r when r.IsSource => $"{r.SourceId}|{r.Text}",
     RatingTag r => $"{r.Source}|{r.Text}",
+    AwardTag a => $"{a.Id}|{a.Text}",
     AgeRatingTag a => $"{a.Text}|{a.ColorKey}",
     _ => tag.ToString() ?? string.Empty,
 };

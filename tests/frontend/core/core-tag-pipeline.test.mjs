@@ -1,7 +1,8 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { setImmediate as settle } from 'node:timers/promises';
-import { createHarness, deferred } from '../helpers/harness.mjs';
+import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
 const card='<div class="card" data-id="AA-BB" data-type="Movie"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>';
 function setup(t,html=card){const idle=[],timers=new Map(),changes=new Map(),calls=[],rendered=[];let seq=0;const response=deferred();
  const h=createHarness({html,globals:{requestIdleCallback:fn=>idle.push(fn),setTimeout:(fn,ms)=>{timers.set(++seq,{fn,ms});return seq;},clearTimeout:id=>timers.delete(id)},apiClient:{ajax:options=>{calls.push(options);return response.promise;}},JE:{pluginConfig:{TagCacheServerMode:false},currentSettings:{},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},session:{onUserChange:(id,fn)=>changes.set(id,fn)}}});t.after(()=>h.close());h.load('tags/tag-pipeline.js');
@@ -174,14 +175,14 @@ async function loadWithStoredCopy(t, meta) {
   return { calls, cleared };
 }
 
-for (const schema of [undefined, 11, 12, 13, 14, 15]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
+for (const schema of [undefined, 11, 12, 13, 14, 15, 16]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
   const { calls, cleared } = await loadWithStoredCopy(t, schema === undefined ? {} : { schema });
   assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
   assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');
 });
 
 test('a stored tag cache copy with the current entry schema is restored and only the delta is fetched', async t => {
-  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 16 });
+  const { calls, cleared } = await loadWithStoredCopy(t, { schema: Number(readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8').match(/CurrentCacheSchemaVersion = (\d+);/)[1]) });
   assert.deepEqual(cleared, []);
   assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
 });

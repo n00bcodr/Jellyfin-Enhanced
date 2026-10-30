@@ -692,6 +692,36 @@ For series cards on screen, and parent series of season/episode cards, the brows
 
     Style `.status-tag` or its `--trending`, `--new`, `--added`, `--schedule`, `--milestone`, `--status` modifiers. Each chip has `data-je-status`: existing styles keep `added`, `newMovie`, `newSeries`, `newEpisode` and `trending`; new badges use keys such as `new_season`; the number inside a trending chip is `.status-tag-rank`.
 
+## Awards Tags
+
+Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winner**, **Emmy winner** and **Letterboxd Top 250** chips to movie and series posters. Each has a source logo. Hover for its list rank or most recent known ceremony year. Clicking a chip opens the poster’s item; modifier and middle clicks open it in a new tab. Chips add no keyboard tab stops. In Summary, the hidden summary pill lets pointer events reach the revealed chips even when its three facts come from other groups. A nomination never produces a winner chip, and a high tomato score never implies Certified Fresh.
+
+![Awards chips on real library posters using deterministic fixture facts](../images/tags/awards-desktop.webp)
+*Fixture facts demonstrate all ribbons without an MDBList key; this is rendering evidence, not verified award history for these titles.*
+
+**How to use:**
+
+1. An administrator enables **Display → Media Tags → Awards Tags → Enable Awards Tags**, selects ribbons and saves.
+2. For chart membership and Certified Fresh, configure the existing server **MDBList API Key**. Without a key these three ribbons are off; Oscar/Emmy use Wikidata without a key.
+3. Run **Refresh Awards Tags** in **Dashboard → Scheduled Tasks → Jellyfin Enhanced**. Its default daily trigger is 04:00. The task also works with Server-Side Tag Cache off.
+4. Each existing user enables **Awards** in **Media Tags → Groups**. New users take the admin default. Set its position, priority and **Show up to** limit like other groups (two by default, or All).
+
+| Administrator setting | Default | Behavior |
+|---|---|---|
+| **Enable Awards Tags** | Off | Gates enrichment and the group's admin starting default; existing users retain their switch |
+| **IMDb Top 250 / Certified Fresh / Oscar winner / Emmy winner / Letterboxd Top 250** | On while enabled | Selects which facts to fetch and which ribbons may appear |
+| **IMDb Top 250 MDBList id or owner/slug** | `sacwooky/imdb-top-250` | Configurable community list; numeric list IDs are accepted too |
+| **Letterboxd Top 250 MDBList id or owner/slug** | `abdulwahabaa/letterboxd-top-250` | Configurable community list; only ranks 1–250 qualify |
+| **Refresh interval (hours)** | 24 | Fact/list freshness, clamped to 1–168 hours; adjust the scheduled task trigger too for a shorter cadence |
+
+The default [IMDb](https://mdblist.com/lists/sacwooky/imdb-top-250) and [Letterboxd](https://mdblist.com/lists/abdulwahabaa/letterboxd-top-250) lists are maintained by MDBList users. Their availability, order and accuracy can change; a displayed rank is the configured list's rank. Replace the id/slug with a preferred maintained list as needed. An invalid or unavailable list fails independently; it does not become an empty successful chart.
+
+Refreshes happen on the server, never per card. Chart requests and batched certification requests respect MDBList's existing account reserve. Wikidata queries share the detail-page awards cache (180-day positive, 30-day confirmed-negative, one-hour failure retry), with one actual query at a time, at least one second apart and provider Retry-After backoff. Refresh cancellation stops pending requests. Provider failures retain the last good facts for the same configuration and retry after an hour. Changing the key, lists or ribbon switches retires incompatible facts until refreshed. Facts and lists survive server restarts in `award-tags.json`; no key is written there.
+
+Awards belongs to the exact movie or series, so seasons and episodes do not inherit a series win. Wikidata coverage is incomplete; no known win produces no winner chip. Unknown ceremony years omit the year. Spoiler Guard removes Awards wherever it strips score facts. Batch fallback and Native Poster Tags consume the same cached facts; native posters use the Corners profile and its caps/order. Static images cannot show hover details. All five labels and the whole Awards group have colours in **Tag Styles**.
+
+The bundled simplified source marks and award silhouettes provide the same paths on web and native posters without remote logo downloads. They are nominative identification, distributed under this project's GPL-3.0 terms; award/service trademarks remain with their owners. See the asset generator and its provenance table. The existing detail-page CDN award logos remain independent.
+
 ## People Tags
 
 People Tags add age and birthplace facts to cast and guest-cast cards on item detail pages. They support rectangular and round portraits.
@@ -868,7 +898,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
     The master switch alone does not produce visible tags: each user's applicable groups start off.
 
 ??? info "Supported groups and preferences"
-    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
+    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, age-classification and Awards. People Tags are not a native group.
 
     It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with your personal language-priority policy (or the live administrator fallback). Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
 
@@ -961,6 +991,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Rating** | **Community**, **Critic**, **User review** | Rating chips have no border of their own: a border colour draws a thin inner ring |
 | **Genre** | **Genre** | **Text** colours the genre icon |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending** | Web only: native posters do not show Status Tags. A Trending text colour also recolours the rank |
+| **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.

@@ -40,6 +40,7 @@ const SCRIPTS = [
     'tags/qualitytags.js',
     'tags/ratingtags.js',
     'tags/ageratingtags.js',
+    'tags/awardstags.js',
     'tags/userreviewtags.js',
     'extras/colored-ratings.js',
 ];
@@ -237,6 +238,7 @@ const CONTAINERS = {
     'rating-overlay-container': 'Rating',
     'age-rating-overlay-container': 'AgeRating',
     'language-overlay-container': 'Language',
+    'awards-overlay-container': 'Awards',
 };
 const cornerOf = (pos) => {
     const centre = { 'top-center': 'TopCenter', 'bottom-center': 'BottomCenter', 'center-left': 'CenterLeft', 'center-right': 'CenterRight', center: 'Center' };
@@ -266,6 +268,9 @@ function readTags(group, container) {
                 else tags.push(`Community|${text}`);
                 break;
             }
+            case 'Awards':
+                tags.push(`${child.dataset.jeAward}|${child.textContent}`);
+                break;
             case 'AgeRating':
                 tags.push(`${child.textContent.toUpperCase()}|${child.getAttribute('rating')}`);
                 break;
@@ -310,6 +315,7 @@ async function runProfile(profile) {
     if (s?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
     if (JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && s?.ratingTagsEnabled) JE.initializeUserReviewTags();
     if (s?.languageTagsEnabled) JE.initializeLanguageTags();
+    if (s?.awardsTagsEnabled && JE.pluginConfig.AwardsTagsEnabled !== false) JE.initializeAwardsTags();
     JE.tagPipeline.initialize();
     await sleep(20); // quality waits for the Jellyfin audio preference before registering
 
@@ -367,13 +373,14 @@ async function runProfile(profile) {
         return SLOT_POS[slot] || null;
     };
     const pos = (u, p, f) => ownCorner(u) || JE.core.tagRenderer.resolvePosition(u, p, f).pos;
-    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language'].filter((g) => layoutConf.profiles.corners[g] === 'off');
+    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards'].filter((g) => layoutConf.profiles.corners[g] === 'off');
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
     const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
     const settings = {
         tagScale: layoutConf.tagScale, tagGap: layoutConf.tagGap,
         qualityTagsEnabled: !!s.qualityTagsEnabled, genreTagsEnabled: !!s.genreTagsEnabled, languageTagsEnabled: !!s.languageTagsEnabled,
         ratingTagsEnabled: !!s.ratingTagsEnabled, ageRatingTagsEnabled: !!s.ageRatingTagsEnabled,
+        awardsTagsEnabled: !!s.awardsTagsEnabled && JE.pluginConfig.AwardsTagsEnabled === true,
         qualityTagsPosition: pos('qualityTagsPosition', 'QualityTagsPosition', 'top-left'),
         genreTagsPosition: pos('genreTagsPosition', 'GenreTagsPosition', 'top-right'),
         languageTagsPosition: pos('languageTagsPosition', 'LanguageTagsPosition', 'bottom-left'),
@@ -411,7 +418,7 @@ async function runProfile(profile) {
         ratingTagsColorByScore: JE.ratingSources.settings().color,
         layoutOrder: layoutConf.order ? layoutConf.order.filter((g) => g !== 'status').join(',') : null,
         layoutOff: offGroups.join(','),
-        layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
+        layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating', 'awards'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
     };
 
     writeFileSync(join(outDir, `web-${profile.name}.json`), JSON.stringify({ settings, items }));

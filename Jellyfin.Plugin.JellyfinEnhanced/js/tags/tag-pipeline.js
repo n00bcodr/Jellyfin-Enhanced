@@ -72,10 +72,10 @@
     // Shape of the stored entries (the server's tag cache schema they were
     // written under). A stored copy of another shape is dropped on restore and
     // downloaded in full, so new entry fields never wait for a server rebuild
-    // that happens to change the cache version. 16: naming, ratings, quality summaries and subtitles.
-    const STORED_ENTRY_SCHEMA = 16;
+    // that happens to change the cache version. 17: cached Awards facts.
+    const STORED_ENTRY_SCHEMA = 17;
     const MEMORY_SOFT_CAP = 20000;
-    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -2104,12 +2104,12 @@
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
                         + '.genre-overlay-container, .language-overlay-container, '
-                        + '.age-rating-overlay-container, .status-overlay-container'
+                        + '.age-rating-overlay-container, .status-overlay-container, .awards-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
                         + '[data-je-genre-tagged], [data-je-language-tagged], '
-                        + '[data-je-age-rating-tagged], [data-je-status-tagged]'
+                        + '[data-je-age-rating-tagged], [data-je-status-tagged], [data-je-awards-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
