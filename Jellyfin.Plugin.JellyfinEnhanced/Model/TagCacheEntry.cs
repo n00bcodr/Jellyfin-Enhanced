@@ -41,8 +41,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public long? DateCreated { get; set; }
         /// <summary>
-        /// Movie/Series only: premiere date in Unix milliseconds UTC, for the Status
-        /// Tags "New Movie" / "New Series" badge. Null for every other type.
+        /// Movie/Series/Episode only: premiere (air) date in Unix milliseconds UTC,
+        /// for the Status Tags "New Movie" / "New Series" / "Coming Soon" badges
+        /// and an episode's own "New Episode" / premiere / finale badges. Null for
+        /// every other type.
         /// </summary>
         public long? PremiereDate { get; set; }
         /// <summary>
@@ -59,6 +61,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// response leaves it out.
         /// </summary>
         public string? LatestEpisodeId { get; set; }
+
+        // ── Status Tags schedule and milestone facts (combined schema v13) ──────────
+        // Built from the same episode walk as LatestEpisodeAdded; every field
+        // here that comes from episodes is dropped together, per user, when
+        // one of the episodes in StatusEpisodeIds is hidden from them (see
+        // TagCacheService.WithoutHiddenLatestEpisode).
+
+        /// <summary>
+        /// Series only: Jellyfin's series status ("Continuing", "Ended",
+        /// "Unreleased"), for the Status Tags Returning / Ended badge.
+        /// </summary>
+        public string? Status { get; set; }
+        /// <summary>Episode only: its numbers and whether it is the last non-virtual episode in its season.</summary>
+        public TagEpisodeIndex? EpisodeIndex { get; set; }
+        /// <summary>
+        /// Series/Season only: the newest premiere (air) date among the non-virtual
+        /// regular episodes, in Unix milliseconds UTC (specials count only in a
+        /// Specials season).
+        /// </summary>
+        public long? LatestEpisodeAired { get; set; }
+        /// <summary>Server-only next premiere boundary; a due container is recomputed even without metadata changes.</summary>
+        public long? NextEpisodePremiere { get; set; }
+        /// <summary>Series/Season only: season and episode number of the episode behind <see cref="LatestEpisodeAired"/>.</summary>
+        public TagEpisodeIndex? LatestEpisodeIndex { get; set; }
+        /// <summary>
+        /// Series: the newest regular season in the library and the air date of
+        /// its first aired episode ("New Season"). Season: the season itself and
+        /// its first aired episode ("Season Premiere").
+        /// </summary>
+        public TagSeasonPremiere? SeasonPremiere { get; set; }
+        /// <summary>
+        /// Season only: when its first and newest episodes were added, and how
+        /// many non-virtual episodes it has ("Complete Season").
+        /// </summary>
+        public TagAddedSpan? SeasonAddedSpan { get; set; }
+        /// <summary>
+        /// Series/Season only: the episodes (N format, lowercase) the fields
+        /// above came from. Server-side like <see cref="LatestEpisodeId"/>: the
+        /// per-user filter drops those fields when the user can't see one of
+        /// them, and the tag-cache response leaves it out.
+        /// </summary>
+        public string[]? StatusEpisodeIds { get; set; }
+
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
         // otherwise. Lets the Spoiler Guard filter strip cache entries for
@@ -115,6 +160,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.PremiereDate == b.PremiereDate
                 && a.LatestEpisodeAdded == b.LatestEpisodeAdded
                 && a.LatestEpisodeId == b.LatestEpisodeId
+                && a.EpisodeIndex == b.EpisodeIndex
+                && a.Status == b.Status
+                && a.NextEpisodePremiere == b.NextEpisodePremiere
+                && a.LatestEpisodeAired == b.LatestEpisodeAired
+                && a.LatestEpisodeIndex == b.LatestEpisodeIndex
+                && a.SeasonPremiere == b.SeasonPremiere
+                && a.SeasonAddedSpan == b.SeasonAddedSpan
+                && SequencesEqual(a.StatusEpisodeIds, b.StatusEpisodeIds)
                 && a.SeriesId == b.SeriesId
                 && a.LibraryId == b.LibraryId;
         }
@@ -174,10 +227,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             PremiereDate = PremiereDate,
             LatestEpisodeAdded = LatestEpisodeAdded,
             LatestEpisodeId = LatestEpisodeId,
+            EpisodeIndex = EpisodeIndex,
+            Status = Status,
+            NextEpisodePremiere = NextEpisodePremiere,
+            LatestEpisodeAired = LatestEpisodeAired,
+            LatestEpisodeIndex = LatestEpisodeIndex,
+            SeasonPremiere = SeasonPremiere,
+            SeasonAddedSpan = SeasonAddedSpan,
+            StatusEpisodeIds = StatusEpisodeIds,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
             LibraryId = LibraryId,
         };
+    }
+
+    /// <summary>
+    /// A season and episode number (Status Tags). Immutable and value-compared,
+    /// so entries can share one instance.
+    /// </summary>
+    public sealed record TagEpisodeIndex
+    {
+        public int Season { get; init; }
+        public int Episode { get; init; }
+        /// <summary>True for the last known episode of its season; null when not resolved.</summary>
+        public bool? IsLast { get; init; }
+    }
+
+    /// <summary>A season number and the air date (Unix ms UTC) of its first aired episode (Status Tags).</summary>
+    public sealed record TagSeasonPremiere
+    {
+        public int Season { get; init; }
+        public long Aired { get; init; }
+    }
+
+    /// <summary>When a season's first and newest episodes were added (Unix ms UTC), and its episode count (Status Tags).</summary>
+    public sealed record TagAddedSpan
+    {
+        public long First { get; init; }
+        public long Last { get; init; }
+        public int Count { get; init; }
     }
 
     /// <summary>

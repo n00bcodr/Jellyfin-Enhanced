@@ -799,7 +799,7 @@
 
     /**
      * Apply density and the cap to a group copy in place: compact shortens
-     * quality labels and drops the critic chip next to a community score;
+     * quality and status labels and drops the critic chip next to a community score;
      * the cap then keeps the first N chips.
      * @param {string} group
      * @param {HTMLElement} node
@@ -815,6 +815,11 @@
                 }
             } else if (group === 'rating' && node.querySelector('.rating-tag-tmdb')) {
                 node.querySelector('.rating-tag-critic')?.remove();
+            } else if (group === 'status') {
+                // Status badges carry their own short label ("Season Premiere" → "Premiere").
+                for (const chip of node.querySelectorAll('[data-je-compact]')) {
+                    chip.textContent = /** @type {HTMLElement} */ (chip).dataset.jeCompact || chip.textContent;
+                }
             }
         }
         const cap = conf.caps[group];

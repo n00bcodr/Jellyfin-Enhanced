@@ -78,6 +78,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsJustAdded { get; set; } = true;
         public bool StatusTagsNewRelease { get; set; } = true;
         public bool StatusTagsTrending { get; set; } = true;
+        // Status Tags schedule / milestone / series-status badge groups.
+        public bool StatusTagsSchedule { get; set; } = true;
+        public bool StatusTagsMilestones { get; set; } = true;
+        public bool StatusTagsSeriesStatus { get; set; } = false;
         // Poster tag layout (see TagLayoutRules). Version 0 marks a document
         // written before layouts existed: it keeps the corners layout, its
         // position settings above, arrival ordering and the original limits

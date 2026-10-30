@@ -2454,6 +2454,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
         }
 
+        /// <summary>
+        /// TMDB schedule facts for the Status Tags series badges, for up to
+        /// <see cref="Services.StatusTagsSeriesService.MaxIds"/> Series item ids
+        /// (comma-separated): <c>{ "&lt;itemId&gt;": { status, lastAired: { date,
+        /// season, episode, type }, nextAired: { date, season, episode } } }</c>.
+        /// Ids are resolved through the caller, so a series they cannot see (or
+        /// one without a TMDB id) is simply left out, as are series TMDB has no
+        /// answer for. Empty while the admin has Status Tags off or no TMDB key
+        /// is set. The client asks only for series cards on screen (and the
+        /// series of season/episode cards).
+        /// </summary>
+        [HttpGet("status-tags/series")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> GetStatusTagsSeries([FromQuery] string? ids, [FromServices] Services.StatusTagsSeriesService seriesService)
+        {
+            var requested = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (requested.Length == 0)
+            {
+                return BadRequest(new { error = "ids required" });
+            }
+
+            if (requested.Length > Services.StatusTagsSeriesService.MaxIds)
+            {
+                return BadRequest(new { error = $"Maximum {Services.StatusTagsSeriesService.MaxIds} ids per request" });
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User);
+            var user = callerId is { } id && id != Guid.Empty ? _userManager.GetUserById(id) : null;
+            if (user == null)
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var payload = new Dictionary<string, object>(StringComparer.Ordinal);
+            var retry = false;
+            if (config != null && config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY))
+            {
+                var tmdbIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var raw in requested)
+                {
+                    if (!Guid.TryParse(raw, out var itemId) || itemId == Guid.Empty)
+                    {
+                        continue;
+                    }
+
+                    // Through the user: library access, parental rating and blocked tags apply.
+                    if (_libraryManager.GetItemById<BaseItem>(itemId, user) is MediaBrowser.Controller.Entities.TV.Series series
+                        && series.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true
+                        && long.TryParse(tmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var tmdbNumber)
+                        && tmdbNumber > 0)
+                    {
+                        tmdbIds[itemId.ToString("N")] = tmdbNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+
+                try
+                {
+                    var schedules = await seriesService.GetAsync(config.TMDB_API_KEY, tmdbIds, HttpContext.RequestAborted).ConfigureAwait(false);
+                    foreach (var (key, schedule) in schedules)
+                    {
+                        if (schedule.Retry)
+                        {
+                            retry = true;
+                            payload[key] = new { retry = true };
+                            continue;
+                        }
+                        payload[key] = new
+                        {
+                            status = schedule.Status,
+                            lastRegularAired = schedule.LastRegularAired == null ? null : new { date = schedule.LastRegularAired.Date, season = schedule.LastRegularAired.Season, episode = schedule.LastRegularAired.Episode, type = schedule.LastRegularAired.Type },
+                            lastAired = schedule.LastAired == null ? null : new { date = schedule.LastAired.Date, season = schedule.LastAired.Season, episode = schedule.LastAired.Episode, type = schedule.LastAired.Type },
+                            nextAired = schedule.NextAired == null ? null : new { date = schedule.NextAired.Date, season = schedule.NextAired.Season, episode = schedule.NextAired.Episode },
+                        };
+                    }
+                }
+                catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    return StatusCode(499); // browser went away
+                }
+            }
+
+            Response.Headers["Cache-Control"] = retry ? "private, no-store" : "private, max-age=600";
+            return Ok(payload);
+        }
+
         [HttpGet("jellyseerr/discover/movies")]
         [Authorize]
         public Task<IActionResult> DiscoverMovies([FromQuery] int page = 1)
@@ -3789,6 +3876,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsJustAdded,
                 config.StatusTagsNewRelease,
                 config.StatusTagsTrending,
+                config.StatusTagsSchedule,
+                config.StatusTagsMilestones,
+                config.StatusTagsSeriesStatus,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)
@@ -5279,6 +5369,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         StatusTagsTrending = defaultConfig.StatusTagsTrending,
                         // Tag Styles preset: null follows the admin's preset.
                         TagStylePreset = null,
+                        StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
+                        StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
+                        StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8291,6 +8384,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 StatusTagsTrending = defaultConfig.StatusTagsTrending,
                 // Tag Styles preset: null follows the admin's preset.
                 TagStylePreset = null,
+                StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
+                StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
+                StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8598,8 +8694,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // application/json (Jellyfin registers its own PascalCase profile
         // formatter ahead of the default one) — and cached, since the formatter
         // list is fixed for the process. The one difference: a copy that leaves
-        // out TagCacheEntry.LatestEpisodeId, which only the server's per-user
-        // filter reads (the disk snapshot keeps it).
+        // out TagCacheEntry.LatestEpisodeId and StatusEpisodeIds, which only the
+        // server's per-user filter reads (the disk snapshot keeps them).
         private static JsonSerializerOptions? _tagCacheJsonOptions;
 
         // One shareable full-load serialization at a time (see GetTagCache):
@@ -8637,7 +8733,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             // By CLR name: the JSON name follows the host's naming policy.
                             if (property.AttributeProvider is System.Reflection.PropertyInfo clrProperty
-                                && clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId))
+                                && (clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.StatusEpisodeIds)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.NextEpisodePremiere)))
                             {
                                 property.ShouldSerialize = static (_, _) => false;
                             }
@@ -8817,32 +8915,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var spReplaceTitle = spoilerPolicy?.ReplaceTitle == true;
 
             // Status Tags dates (Unix ms, like the server tag cache's entries; null
-            // is omitted). LatestEpisodeAdded costs one query per Series/Season, so
-            // it is only resolved when the client's Status Tags ask for it
+            // is omitted). The episode-derived facts (LatestEpisodeAdded and the
+            // schedule/milestone facts) cost one episode query per Series/Season,
+            // so they are only resolved when the client's Status Tags ask for them
             // (?latestEpisode=true), and through the user so only episodes they can
-            // see count.
+            // see count (the server cache gets the same rules from
+            // StatusTagsEpisodeFacts and filters them per user instead).
             long? TagDataPremiereDate(BaseItem tagItem) =>
-                tagItem is MediaBrowser.Controller.Entities.Movies.Movie || tagItem is MediaBrowser.Controller.Entities.TV.Series
+                tagItem is MediaBrowser.Controller.Entities.Movies.Movie
+                    || tagItem is MediaBrowser.Controller.Entities.TV.Series
+                    || tagItem is MediaBrowser.Controller.Entities.TV.Episode
                     ? Services.TagCacheService.ToUnixMilliseconds(tagItem.PremiereDate)
                     : null;
-            long? TagDataLatestEpisodeAdded(BaseItem tagItem)
+            string? TagDataSeriesStatus(BaseItem tagItem) =>
+                tagItem is MediaBrowser.Controller.Entities.TV.Series statusSeries ? statusSeries.Status?.ToString() : null;
+            (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
                 if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
                 {
-                    return null;
+                    return (null, null);
                 }
 
-                var latest = _libraryManager.GetItemList(new InternalItemsQuery(user)
+                var episodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
                 {
                     ParentId = tagItem.Id,
                     IncludeItemTypes = new[] { BaseItemKind.Episode },
                     Recursive = true,
                     IsVirtualItem = false,
-                    OrderBy = new[] { (ItemSortBy.DateCreated, JSortOrder.Descending) },
-                    Limit = 1,
                     DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
-                }).FirstOrDefault();
-                return Services.TagCacheService.ToUnixMilliseconds(latest?.DateCreated);
+                });
+                var seasonItem = tagItem as MediaBrowser.Controller.Entities.TV.Season;
+                var facts = new Services.StatusTagsEpisodeFacts(seasonItem != null, seasonItem?.IndexNumber);
+                DateTime? latestAdded = null;
+                foreach (var episode in episodes)
+                {
+                    if (episode is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
+                    facts.Note(ep.Id, ep.DateCreated, ep.PremiereDate, ep.ParentIndexNumber, ep.IndexNumber);
+                    if (ep.DateCreated != default && (latestAdded == null || ep.DateCreated > latestAdded)) latestAdded = ep.DateCreated;
+                }
+
+                return (Services.TagCacheService.ToUnixMilliseconds(latestAdded), facts);
             }
 
             // The Series/Movie stubs carry no provider ids, but a trending rank is
@@ -8979,6 +9091,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ? "Spoiler Guard activated"
                             : spoilerCfg.SpoilerOverviewPlaceholder;
                     }
+                    var seriesFacts = TagDataEpisodeFacts(spSeries);
                     results.Add(new
                     {
                         Id = item.Id,
@@ -8998,7 +9111,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
                         DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeries.DateCreated),
                         PremiereDate = TagDataPremiereDate(spSeries),
-                        LatestEpisodeAdded = TagDataLatestEpisodeAdded(spSeries),
+                        LatestEpisodeAdded = seriesFacts.LatestAdded,
+                        // A new season or the show's status says nothing about the plot.
+                        Status = TagDataSeriesStatus(spSeries),
+                        LatestEpisodeAired = seriesFacts.Facts?.LatestAired,
+                        LatestEpisodeIndex = seriesFacts.Facts?.LatestIndex,
+                        SeasonPremiere = seriesFacts.Facts?.SeasonPremiere,
                         TmdbId = TagDataTmdbId(spSeries),
                     });
                     continue;
@@ -9085,6 +9203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         stubName = $"Season {spSeason.IndexNumber.Value}";
                     }
+                    var seasonFacts = TagDataEpisodeFacts(spSeason);
                     results.Add(new
                     {
                         Id = item.Id,
@@ -9103,7 +9222,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
                         DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeason.DateCreated),
-                        LatestEpisodeAdded = TagDataLatestEpisodeAdded(spSeason),
+                        LatestEpisodeAdded = seasonFacts.LatestAdded,
+                        // Only the added span: air dates and numbers are what the
+                        // premiere/finale badges read (the cache strip drops them too).
+                        SeasonAddedSpan = seasonFacts.Facts?.AddedSpan,
                     });
                     continue;
                 }
@@ -9175,6 +9297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
                              : (item is MediaBrowser.Controller.Entities.TV.Season sItem) ? sItem.SeriesId
                              : (Guid?)null;
+                var episodeFacts = TagDataEpisodeFacts(item);
 
                 results.Add(new
                 {
@@ -9194,7 +9317,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     FirstEpisode = firstEpisodeData,
                     DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),
                     PremiereDate = TagDataPremiereDate(item),
-                    LatestEpisodeAdded = TagDataLatestEpisodeAdded(item),
+                    LatestEpisodeAdded = episodeFacts.LatestAdded,
+                    Status = TagDataSeriesStatus(item),
+                    LatestEpisodeAired = episodeFacts.Facts?.LatestAired,
+                    LatestEpisodeIndex = episodeFacts.Facts?.LatestIndex,
+                    SeasonPremiere = episodeFacts.Facts?.SeasonPremiere,
+                    SeasonAddedSpan = episodeFacts.Facts?.AddedSpan,
+                    EpisodeIndex = latestEpisode && item is MediaBrowser.Controller.Entities.TV.Episode statusEpisode
+                        ? _tagCacheService.BuildStatusEpisodeIndex(statusEpisode, user, out _) : null,
+                    // Episodes: their numbers, for the premiere/finale badges.
+                    IndexNumber = item is MediaBrowser.Controller.Entities.TV.Episode numbered ? numbered.IndexNumber : null,
+                    ParentIndexNumber = item is MediaBrowser.Controller.Entities.TV.Episode numberedIn ? numberedIn.ParentIndexNumber : null,
                 });
             }
 

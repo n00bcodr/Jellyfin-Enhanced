@@ -481,6 +481,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 };
                 stripped.StreamData = clonedSd;
             }
+            // Status Tags: an unwatched episode's or season's air dates and
+            // numbers are what Season Premiere / Season Finale / Series Finale
+            // read, and an air-date gap can itself hint at a finale (the field
+            // strip clears PremiereDate for the same reason), so a guarded
+            // Episode/Season keeps only its added-date badges.
+            if (isEpisode || isSeason)
+            {
+                stripped.EpisodeIndex = null;
+                stripped.PremiereDate = null;
+                stripped.LatestEpisodeAired = null;
+                stripped.LatestEpisodeIndex = null;
+                stripped.SeasonPremiere = null;
+            }
             return stripped;
         }
 

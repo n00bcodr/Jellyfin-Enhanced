@@ -24,12 +24,14 @@ test('tag pipeline rejects a late previous-user batch after identity reset',asyn
 });
 test('identity reset drops the previous user\'s review ratings',async t=>{
  const changes=new Map();
- const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{},count:0})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
+ const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{series:{Type:'Series',LatestEpisodeIndex:{Season:1,Episode:10}}},count:1})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
   session:{getUserId:()=>'user-a',getServerId:()=>'server-a',getEpoch:()=>0,isCurrent:()=>true,onUserChange:(id,fn)=>changes.set(id,fn)}}});t.after(()=>h.close());
  // The cache is only wanted while a tag type is on: start the pipeline with one enabled.
  h.load('tags/tag-pipeline.js');h.JE.tagPipeline.initialize();await h.JE.tagPipeline.invalidateServerCache();
  assert.equal(h.JE.tagPipeline.peekReviewRatings()?.get('movie:42'),4.5);
- changes.get('tag-pipeline')({userId:'b'});assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);
+ assert.equal(h.JE.tagPipeline.peekServerEntry('series')?.LatestEpisodeIndex.Episode,10);
+ assert.equal(h.JE.tagPipeline.peekServerEntry('missing'),null);
+ changes.get('tag-pipeline')({userId:'b'});assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);assert.equal(h.JE.tagPipeline.peekServerEntry('series'),null);
 });
 test('tag pipeline drains the cards queued while a cancelled batch was in flight',async t=>{
  // A reinitialize (clearProcessed) while a batch awaits its response bumps the
@@ -72,4 +74,110 @@ for (const inFlight of [false, true]) test(`navigation retries cards whose work 
  assert.equal(h.calls.length,inFlight?2:1,'cancelled cards are fetched again');
  h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();
  assert.equal(h.rendered.length,1);
+});
+
+/**
+ * The pipeline over a stub IndexedDB store holding one complete copy with the
+ * given meta; records which requests and store calls happen.
+ */
+async function loadWithStoredCopy(t, meta) {
+  const calls = [];
+  const cleared = [];
+  const h = createHarness({
+    globals: { requestIdleCallback: () => {} },
+    apiClient: { getCurrentUserId: () => 'user-a', ajax: async ({ url }) => { calls.push(url); return { items: {}, count: 0, version: 3, timestamp: 50, filterRevision: 'all', servedAt: 60 }; } },
+    JE: {
+      pluginConfig: { TagCacheServerMode: true }, currentSettings: { qualityTagsEnabled: true },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      tagCacheStore: {
+        available: () => true,
+        getMeta: async () => ({ scope: 'server-a:user-a', version: 3, timestamp: 40, filterRevision: 'all', count: 5, clearStamp: 0, servedAt: 45, savedAt: 1, ...meta }),
+        getMany: async () => ({ entries: new Map(), meta: null }),
+        clearScope: async scope => { cleared.push(scope); },
+        clearOtherScopes: async () => {},
+        beginFullWrite: async () => false,
+        putManyIfOwner: async () => false,
+        commitFullWrite: async () => false,
+        applyDelta: async () => true,
+      }
+    }
+  });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  h.JE.tagPipeline.initialize();
+  await h.JE.tagPipeline.invalidateServerCache();
+  await settle();
+  return { calls, cleared };
+}
+
+for (const schema of [undefined, 11, 12]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
+  const { calls, cleared } = await loadWithStoredCopy(t, schema === undefined ? {} : { schema });
+  assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
+  assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');
+});
+
+test('a stored tag cache copy with the current entry schema is restored and only the delta is fetched', async t => {
+  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 13 });
+  assert.deepEqual(cleared, []);
+  assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
+});
+
+/** Track the private fact maps without exposing production-only diagnostics. */
+function factsHarness(t) {
+  const maps = [];
+  class TrackedMap extends Map {
+    constructor(...args) { super(...args); maps.push(this); }
+  }
+  const h = createHarness({ globals: { Map: TrackedMap, requestIdleCallback() {} } });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  let now = 1000000;
+  h.window.Date.now = () => now;
+  const pipeline = h.JE.tagPipeline;
+  pipeline.rememberItemFacts({ Id: 'seed', Type: 'Season', SeriesId: 'series', IndexNumber: 1 });
+  const seasons = maps.find(map => map.get('series:1') === 'seed');
+  const items = maps.find(map => map.get('seed')?.entry?.Id === 'seed');
+  return { pipeline, items, seasons, advance() { now += 11 * 60 * 1000; } };
+}
+
+test('20,000 expired season facts also evict their season lookups', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: `season${i}`, Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+    h.advance();
+    assert.equal(h.pipeline.peekItemFacts(`season${i}`), null);
+  }
+  assert.equal(h.pipeline.peekItemFacts('seed'), null);
+  assert.equal(h.items.size, 0);
+  assert.equal(h.seasons.size, 0, 'expired items leave no orphan season keys');
+});
+
+test('replacing season identities and reusing a season key keep both maps consistent', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: 'seed', Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+  }
+  assert.equal(h.items.size, 1);
+  assert.equal(h.seasons.size, 1, 'a changed series/season removes its previous key');
+  assert.equal(h.pipeline.peekSeasonFacts('series', 1), null);
+  h.pipeline.rememberItemFacts({ Id: 'replacement', Type: 'Season', SeriesId: 'series', IndexNumber: 20001 });
+  assert.equal(h.pipeline.peekSeasonFacts('series', 20001).Id, 'replacement');
+  for (const [key, id] of h.seasons) assert.equal(h.items.get(id)?.seasonKey, key);
+  h.pipeline.rememberItemFacts({ Id: 'replacement', Type: 'Series' });
+  assert.equal(h.seasons.size, 0, 'replacing a season with another type removes its lookup');
+});
+
+test('container facts evict the oldest entries and their lookups at the memory cap', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: `season${i}`, Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+  }
+  assert.equal(h.items.size, 20000);
+  assert.equal(h.seasons.size, 20000);
+  assert.equal(h.pipeline.peekItemFacts('seed'), null, 'oldest fact evicted first');
+  assert.equal(h.pipeline.peekSeasonFacts('series', 1), null);
+  assert.equal(h.pipeline.peekSeasonFacts('series', 2).Id, 'season0', 'newer facts survive the cap');
+  for (const [key, id] of h.seasons) assert.equal(h.items.get(id)?.seasonKey, key);
 });

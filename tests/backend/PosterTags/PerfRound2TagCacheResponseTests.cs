@@ -55,7 +55,7 @@ public class PerfRound2TagCacheResponseTests
             Directory.CreateDirectory(Fixture.Core.ConfigRoot);
             File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
             {
-                SchemaVersion = 11, Version = 9, LastModified = 200,
+                SchemaVersion = 13, Version = 9, LastModified = 200,
                 Items = new Dictionary<string, TagCacheEntry>
                 {
                     [First.ToString("N")] = new() { Type = "Movie", Genres = ["First secret"], LastUpdated = 100 },
@@ -306,5 +306,174 @@ public class PerfRound2TagCacheResponseTests
         Assert.DoesNotContain("Series secret", json); // still the strip stub
         Assert.Contains("\"TmdbId\":\"4242\"", json);
         Assert.DoesNotContain("tt0001", json);
+    }
+    [Fact]
+    public async Task StatusFactSourceIdsNeverReachTheClient()
+    {
+        var seasonKey = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [seasonKey.ToString("N")] = new()
+            {
+                Type = "Season", DateCreated = 100, LastUpdated = 120, LatestEpisodeAired = 900, NextEpisodePremiere = 1800,
+                LatestEpisodeIndex = new() { Season = 2, Episode = 5 }, StatusEpisodeIds = [e.Episode.ToString("N")],
+            }
+        });
+        endpoint.AliceAccess = [endpoint.First, seasonKey, endpoint.Episode];
+        var read = await endpoint.Read(endpoint.Alice);
+        using var json = JsonDocument.Parse(read.Body);
+        var entry = json.RootElement.GetProperty("items").GetProperty(seasonKey.ToString("N"));
+        Assert.Equal(900, entry.GetProperty("LatestEpisodeAired").GetInt64());
+        Assert.Equal(5, entry.GetProperty("LatestEpisodeIndex").GetProperty("Episode").GetInt32());
+        Assert.False(entry.TryGetProperty("StatusEpisodeIds", out _));
+        Assert.False(entry.TryGetProperty("NextEpisodePremiere", out _));
+    }
+
+    /// <summary>GET status-tags/series through the endpoint fixture, with a TMDB transport that records its calls.</summary>
+    private static async Task<(IActionResult Result, List<string> Upstream)> SeriesLookup(Endpoint endpoint, User? caller, string? ids, int status = 200)
+    {
+        var upstream = new List<string>();
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            lock (upstream) upstream.Add(request.RequestUri!.AbsolutePath);
+            return Task.FromResult(IntegrationTransport.Response("""{"status":"Ended","last_episode_to_air":{"air_date":"2026-10-28","season_number":2,"episode_number":10,"episode_type":"finale"}}""", status));
+        });
+        using var tmdbCache = new TmdbResponseCache(transport, TimeProvider.System);
+        var service = new StatusTagsSeriesService(tmdbCache, endpoint.Fixture.Core.Logger);
+        if (caller != null) endpoint.SignIn(caller);
+        else endpoint.Controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
+        var result = await endpoint.Controller.GetStatusTagsSeries(ids, service);
+        return (result, upstream);
+    }
+
+    [Fact]
+    public async Task SeriesLookupMarks429ForRetryWithoutHttpCaching()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.Fixture.Plugin.Configuration.StatusTagsEnabled = true;
+        endpoint.Fixture.Plugin.Configuration.TMDB_API_KEY = "key";
+        var series = new Series { Id = Guid.NewGuid(), ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "100" } };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, endpoint.Alice)).Returns(series);
+        var (result, upstream) = await SeriesLookup(endpoint, endpoint.Alice, series.Id.ToString(), 429);
+        var payload = Assert.IsType<Dictionary<string, object>>(Assert.IsType<OkObjectResult>(result).Value);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        Assert.True(json.RootElement.GetProperty(series.Id.ToString("N")).GetProperty("retry").GetBoolean());
+        Assert.Equal("private, no-store", endpoint.Controller.Response.Headers.CacheControl);
+        Assert.Single(upstream);
+    }
+
+    [Fact]
+    public async Task SeriesLookupAnswersOnlyForSeriesTheCallerCanSeeWithATmdbId()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.Fixture.Plugin.Configuration.StatusTagsEnabled = true;
+        endpoint.Fixture.Plugin.Configuration.TMDB_API_KEY = "key";
+        var visible = new Series { Id = Guid.NewGuid(), Name = "Visible", ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "100" } };
+        var hidden = new Series { Id = Guid.NewGuid(), Name = "Hidden", ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "200" } };
+        var noTmdb = new Series { Id = Guid.NewGuid(), Name = "No TMDB" };
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Movie", ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "300" } };
+        foreach (var item in new BaseItem[] { visible, noTmdb, movie })
+        {
+            endpoint.Library.Setup(x => x.GetItemById<BaseItem>(item.Id, endpoint.Alice)).Returns(item);
+        }
+        // Through the user: the hidden series resolves for Bob only.
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(hidden.Id, endpoint.Bob)).Returns(hidden);
+
+        var ids = string.Join(',', visible.Id.ToString(), hidden.Id.ToString("N"), noTmdb.Id.ToString(), movie.Id.ToString(), "not-a-guid");
+        var (result, upstream) = await SeriesLookup(endpoint, endpoint.Alice, ids);
+        var payload = Assert.IsType<Dictionary<string, object>>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([visible.Id.ToString("N")], payload.Keys);
+        var json = JsonSerializer.Serialize(payload);
+        Assert.Contains("\"type\":\"finale\"", json);
+        Assert.Contains("\"status\":\"Ended\"", json);
+        Assert.Equal(["/3/tv/100"], upstream);
+    }
+
+    [Fact]
+    public async Task SeriesLookupNeedsASignedInUserAndAtMostFiftyIds()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.Fixture.Plugin.Configuration.StatusTagsEnabled = true;
+        endpoint.Fixture.Plugin.Configuration.TMDB_API_KEY = "key";
+        var one = Guid.NewGuid().ToString();
+        Assert.IsType<ForbidResult>((await SeriesLookup(endpoint, null, one)).Result);
+        Assert.IsType<BadRequestObjectResult>((await SeriesLookup(endpoint, endpoint.Alice, null)).Result);
+        Assert.IsType<BadRequestObjectResult>((await SeriesLookup(endpoint, endpoint.Alice, " , ")).Result);
+        var fiftyOne = string.Join(',', Enumerable.Range(0, 51).Select(_ => Guid.NewGuid().ToString()));
+        Assert.IsType<BadRequestObjectResult>((await SeriesLookup(endpoint, endpoint.Alice, fiftyOne)).Result);
+        var fifty = string.Join(',', Enumerable.Range(0, 50).Select(_ => Guid.NewGuid().ToString()));
+        Assert.IsType<OkObjectResult>((await SeriesLookup(endpoint, endpoint.Alice, fifty)).Result);
+    }
+
+    [Theory]
+    [InlineData(false, "key")]
+    [InlineData(true, "")]
+    public async Task SeriesLookupIsEmptyWithStatusTagsOffOrNoTmdbKey(bool statusTags, string apiKey)
+    {
+        using var endpoint = new Endpoint();
+        endpoint.Fixture.Plugin.Configuration.StatusTagsEnabled = statusTags;
+        endpoint.Fixture.Plugin.Configuration.TMDB_API_KEY = apiKey;
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show", ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "100" } };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, endpoint.Alice)).Returns(series);
+        var (result, upstream) = await SeriesLookup(endpoint, endpoint.Alice, series.Id.ToString());
+        Assert.Empty(Assert.IsType<Dictionary<string, object>>(Assert.IsType<OkObjectResult>(result).Value));
+        Assert.Empty(upstream);
+    }
+
+    [Fact]
+    public async Task GuardedEpisodesAndSeasonsLoseTheAirDatesThePremiereAndFinaleBadgesRead()
+    {
+        var seasonKey = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [seasonKey.ToString("N")] = new()
+            {
+                Type = "Season", SeriesId = e.SeriesId.ToString("N"), DateCreated = 100, LastUpdated = 120, LatestEpisodeAdded = 700,
+                LatestEpisodeAired = 900, LatestEpisodeIndex = new() { Season = 3, Episode = 5 }, SeasonPremiere = new() { Season = 3, Aired = 800 },
+                SeasonAddedSpan = new() { First = 600, Last = 700, Count = 5 },
+            }
+        });
+        // The seeded episode gets an air date of its own.
+        Assert.True(endpoint.Cache.TryGetEntry(endpoint.Episode, out var episodeEntry));
+        episodeEntry.PremiereDate = 950;
+        endpoint.AliceAccess = [endpoint.First, seasonKey, endpoint.Episode];
+        endpoint.GuardSeries();
+        var read = await endpoint.Read(endpoint.Alice);
+        using var json = JsonDocument.Parse(read.Body);
+        var items = json.RootElement.GetProperty("items");
+        var season = items.GetProperty(seasonKey.ToString("N"));
+        Assert.False(season.TryGetProperty("LatestEpisodeAired", out _));
+        Assert.False(season.TryGetProperty("LatestEpisodeIndex", out _));
+        Assert.False(season.TryGetProperty("SeasonPremiere", out _));
+        Assert.Equal(700, season.GetProperty("LatestEpisodeAdded").GetInt64()); // added dates are not spoilers
+        Assert.Equal(5, season.GetProperty("SeasonAddedSpan").GetProperty("Count").GetInt32());
+        Assert.False(items.GetProperty(endpoint.Episode.ToString("N")).TryGetProperty("PremiereDate", out _));
+    }
+
+    [Fact]
+    public void TagDataFallbackSendsTheSameFactsThroughTheUser()
+    {
+        using var endpoint = new Endpoint();
+        var season = new Season { Id = Guid.NewGuid(), Name = "Season 2", IndexNumber = 2, SeriesId = endpoint.SeriesId, DateCreated = new DateTime(2020, 1, 1) };
+        Episode Make(int number, DateTime aired, DateTime added) => new()
+        {
+            Id = Guid.NewGuid(), Name = "E" + number, IndexNumber = number, ParentIndexNumber = 2, PremiereDate = aired, DateCreated = added, SeasonId = season.Id, SeriesId = endpoint.SeriesId,
+        };
+        var episodes = new BaseItem[] { Make(1, new DateTime(2026, 10, 1), new DateTime(2026, 10, 20)), Make(2, new DateTime(2026, 10, 8), new DateTime(2026, 10, 21)) };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(season.Id, It.IsAny<User>())).Returns(season);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == endpoint.Alice && q.Limit == null ? episodes : []); // the facts query; the representative-episode scan pages
+        endpoint.SignIn(endpoint.Alice);
+        var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [season.Id.ToString()], latestEpisode: true));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        var items = json.RootElement.GetProperty("Items");
+        var seasonItem = items[0];
+        Assert.Equal(new DateTimeOffset(2026, 10, 21, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), seasonItem.GetProperty("LatestEpisodeAdded").GetInt64());
+        Assert.Equal(2, seasonItem.GetProperty("LatestEpisodeIndex").GetProperty("Episode").GetInt32());
+        Assert.Equal(2, seasonItem.GetProperty("SeasonPremiere").GetProperty("Season").GetInt32());
+        Assert.Equal(2, seasonItem.GetProperty("SeasonAddedSpan").GetProperty("Count").GetInt32());
+
+        // Without the flag nothing is queried for the facts.
+        var plain = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [season.Id.ToString()]));
+        Assert.DoesNotContain("SeasonAddedSpan\":{", JsonSerializer.Serialize(plain.Value));
     }
 }

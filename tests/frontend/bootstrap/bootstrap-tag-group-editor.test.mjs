@@ -287,3 +287,20 @@ test('expanding a row is a real button with aria-expanded; every editor control 
   }
   assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 24);
 });
+
+
+test('status badge families survive in the group editor with defaults and personal overrides', async t => {
+  const h = setup(t, { stored: { statusTagsEnabled: true } });
+  h.JE.reinitializeStatusTags = () => h.calls.push('status');
+  assert.equal(h.row('status').querySelectorAll('#statusTagsSubToggles input').length, 6);
+  for (const [name, expected] of [['Schedule', true], ['Milestones', true], ['SeriesStatus', false]]) {
+    const input = h.$(`#statusTags${name}Toggle`);
+    assert.equal(input.checked, expected, name);
+    await h.change(input, !expected);
+    assert.equal(h.saved()[`statusTags${name}`], !expected);
+  }
+  assert.equal(h.calls.filter(name => name === 'status').length, 3);
+  const inherited = setup(t, { plugin: { StatusTagsSeriesStatus: true, StatusTagsSchedule: false } });
+  assert.equal(inherited.$('#statusTagsSeriesStatusToggle').checked, true);
+  assert.equal(inherited.$('#statusTagsScheduleToggle').checked, false);
+});

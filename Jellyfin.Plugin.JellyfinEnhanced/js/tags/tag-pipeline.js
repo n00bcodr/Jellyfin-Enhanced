@@ -69,6 +69,11 @@
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
+    // Shape of the stored entries (the server's tag cache schema they were
+    // written under). A stored copy of another shape is dropped on restore and
+    // downloaded in full, so new entry fields never wait for a server rebuild
+    // that happens to change the cache version. 13: LibraryId plus Status Tags facts.
+    const STORED_ENTRY_SCHEMA = 13;
     const MEMORY_SOFT_CAP = 20000;
     const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
@@ -77,6 +82,10 @@
     const renderers = new Map();        // name → { render, isEnabled, needsFirstEpisode, needsParentSeries }
     let processedCards = new WeakSet(); // let, not const — needs reassignment on reinit
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
+    // Caller-filtered Series/Season facts from /tag-data, shared with server-cache readers.
+    const seasonFactIds = new Map(); // seriesId:season → normalized season id
+    const itemFacts = new Map(); // normalized id → { entry, fetchedAt, expires, seasonKey }
+    const ITEM_FACTS_TTL_MS = 10 * 60 * 1000;
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
     let pipelineStarted = false;           // initialize() has wired the observers and loaded the server cache
@@ -88,6 +97,96 @@
     let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
     const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+
+    /**
+     * Remove a container fact and the season lookup owned by it.
+     * @param {string} id - Normalized item id.
+     * @returns {void}
+     */
+    function forgetItemFacts(id) {
+        const saved = itemFacts.get(id);
+        if (saved?.seasonKey && seasonFactIds.get(saved.seasonKey) === id) seasonFactIds.delete(saved.seasonKey);
+        itemFacts.delete(id);
+    }
+
+    /**
+     * Retain only caller-filtered container projections, including stripped facts.
+     * @param {Object} entry - A server entry or /tag-data item.
+     * @param {string} id - Its item id.
+     * @param {number} [fetchedAt] - Original fetch time; cached redraws retain it.
+     * @returns {void}
+     */
+    function rememberItemFacts(entry, id = entry.Id, fetchedAt = Date.now()) {
+        if (!id || (entry.Type !== 'Series' && entry.Type !== 'Season')) return;
+        const itemId = String(id).replace(/-/g, '').toLowerCase();
+        // A redraw cannot revive an expired fetch or replace newer shared facts.
+        if (!Number.isFinite(fetchedAt) || fetchedAt + ITEM_FACTS_TTL_MS <= Date.now()
+            || (itemFacts.get(itemId)?.fetchedAt ?? -Infinity) > fetchedAt) return;
+        forgetItemFacts(itemId);
+        const seriesId = entry.SeriesId ? String(entry.SeriesId).replace(/-/g, '').toLowerCase() : null;
+        const seasonKey = entry.Type === 'Season' && seriesId ? `${seriesId}:${entry.SeasonNumber ?? entry.IndexNumber}` : null;
+        if (seasonKey) {
+            const previousId = seasonFactIds.get(seasonKey);
+            if (previousId) forgetItemFacts(previousId);
+            seasonFactIds.set(seasonKey, itemId);
+        }
+        itemFacts.set(itemId, { entry, fetchedAt, expires: fetchedAt + ITEM_FACTS_TTL_MS, seasonKey });
+        // Map insertion order implements oldest-first eviction for each store.
+        while (itemFacts.size > MEMORY_SOFT_CAP) forgetItemFacts(itemFacts.keys().next().value);
+        while (seasonFactIds.size > MEMORY_SOFT_CAP) {
+            const [key, seasonId] = seasonFactIds.entries().next().value;
+            seasonFactIds.delete(key);
+            forgetItemFacts(seasonId);
+        }
+    }
+
+    /** @param {string} id @returns {Object|null} A fresh, caller-filtered projection. */
+    function peekItemFacts(id) {
+        const entry = serverCache?.get(id);
+        if (entry) return entry;
+        const saved = itemFacts.get(id);
+        if (saved && saved.expires > Date.now()) return saved.entry;
+        forgetItemFacts(id);
+        return null;
+    }
+
+    /**
+     * Warm parent facts through the confirmed server cache or the same filtered
+     * /tag-data projection used for cards. Native parent DTOs lack these aggregates.
+     * @param {string[]} ids - Normalized parent ids.
+     * @returns {Promise<void>}
+     */
+    async function lookupItemFacts(ids) {
+        const generation = cacheGeneration;
+        const epoch = JE.session?.getEpoch?.();
+        await lookupServerEntries(ids);
+        if (generation !== cacheGeneration || (JE.session && !JE.session.isCurrent(epoch))) return;
+        const missing = [...new Set(ids)].filter(id => !peekItemFacts(id));
+        const userId = ApiClient.getCurrentUserId();
+        if (!userId) return;
+        for (let i = 0; i < missing.length; i += 200) {
+            try {
+                const response = await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, { latestEpisode: true }),
+                    data: JSON.stringify(missing.slice(i, i + 200)),
+                    contentType: 'application/json', dataType: 'json'
+                });
+                if (generation !== cacheGeneration || (JE.session && !JE.session.isCurrent(epoch))) return;
+                for (const entry of response?.Items || []) rememberItemFacts(entry);
+            } catch { /* Missing or inaccessible parents never supply a fallback. */ }
+        }
+    }
+
+    /**
+     * A season aggregate already fetched for this caller, as a local fallback.
+     * @param {string} seriesId @param {number} season
+     * @returns {Object|null}
+     */
+    function peekSeasonFacts(seriesId, season) {
+        const id = seasonFactIds.get(`${seriesId}:${season}`);
+        return id ? peekItemFacts(id) : null;
+    }
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
     // Elements matching these selectors are skipped before any renderer runs.
@@ -352,6 +451,8 @@
      * Queued stored-copy writes stop at their next slice.
      */
     function dropServerCache() {
+        itemFacts.clear();
+        seasonFactIds.clear();
         serverCache = null;
         serverCacheComplete = false;
         serverCacheVersion = 0;
@@ -406,6 +507,7 @@
         const store = JE.tagCacheStore;
         const entries = Object.entries(resp.items);
         const meta = {
+            schema: STORED_ENTRY_SCHEMA,
             version: resp.version,
             timestamp: resp.timestamp,
             filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
@@ -495,6 +597,12 @@
                 await store.clearScope(scope);
                 return false;
             }
+            // Written under an older entry shape (missing fields a renderer reads).
+            if (meta.schema !== STORED_ENTRY_SCHEMA) {
+                console.log(`${logPrefix} Stored copy has entry schema ${meta.schema ?? 'none'}, expected ${STORED_ENTRY_SCHEMA}; dropping it`);
+                await store.clearScope(scope);
+                return false;
+            }
             serverCache = new Map();
             serverCacheComplete = false;
             serverCacheVersion = meta.version;
@@ -557,6 +665,8 @@
         }
 
         persistGeneration++;
+        itemFacts.clear();
+        seasonFactIds.clear();
         serverCache = new Map(Object.entries(resp.items));
         serverCacheComplete = true;
         serverCacheVersion = resp.version;
@@ -809,6 +919,7 @@
             const newEntries = Object.entries(resp.items);
             if (newEntries.length > 0) {
                 for (const [id, entry] of newEntries) {
+                    forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
                     deltaIds.add(id);
@@ -1546,6 +1657,7 @@
 
             // Abort if navigation happened while we were waiting for the API response
             if (!isCurrent()) return;
+            if (needsLatestEpisode) items.forEach(item => rememberItemFacts(item));
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1891,6 +2003,18 @@
         initialize,
         getFirstEpisode,
         getParentSeries,
+        lookupServerEntries,
+        rememberItemFacts,
+        peekItemFacts,
+        lookupItemFacts,
+        peekSeasonFacts,
+        /**
+         * Peek at an already loaded, caller-filtered entry without fetching.
+         * Consumers must treat the shared entry as read-only; a memory miss is null.
+         * @param {string} id - Normalized item id.
+         * @returns {Object|null}
+         */
+        peekServerEntry(id) { return serverCache?.get(id) || null; },
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
         /**

@@ -226,8 +226,9 @@ test('one density change on a legacy document changes only the labels it shorten
   const before = snapshot(h.host);
   await h.change(h.document.getElementById('tagLabelDensitySelect'), 'compact');
   const after = snapshot(h.host);
-  // Compact shortens quality labels and drops the critic chip beside a community one.
-  assertOnlyChanged(before, after, ['quality', 'rating']);
+  // Compact shortens quality/status labels and drops the critic chip beside a community one.
+  assertOnlyChanged(before, after, ['quality', 'rating', 'status']);
+  assert.equal(h.host.querySelector('.status-tag').textContent, 'status_tag_compact_added');
   assert.equal(after.groups.rating.slot, before.groups.rating.slot);
   assert.deepEqual(after.groups.rating.before, before.groups.rating.before);
   const saved = h.saved();

@@ -32,6 +32,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PAGE = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "configPage.html"
 PLUGIN_CONFIG_CS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "PluginConfiguration.cs"
+ENGLISH_LABELS = json.loads((REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "locales" / "en.json").read_text())
 OUTPUT = REPO_ROOT / "docs" / "advanced" / "config-flag-groups.json"
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin
@@ -181,6 +182,11 @@ class ConfigPageParser(HTMLParser):
                 top["found_input_id"] = attr_dict["id"]
             if tag in SKIP_TEXT_INSIDE_TAGS:
                 top["icon_skip_depth"] += 1
+            # Status controls get their dashboard copy from the locale at runtime.
+            # Preserve the same English labels in analytics/What's New registries.
+            locale_key = attr_dict.get("data-je-status-label")
+            if locale_key and top["icon_skip_depth"] == 0:
+                top["text_parts"].append(ENGLISH_LABELS.get(locale_key, locale_key))
 
         # --- Fieldset/legend grouping (existing behavior) ---
         if tag == "fieldset":

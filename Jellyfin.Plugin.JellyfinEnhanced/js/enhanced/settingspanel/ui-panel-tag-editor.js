@@ -133,16 +133,17 @@
     }
 
     /**
-     * Resolve a boolean setting: user override, then admin default, then on.
+     * Resolve a boolean setting: user override, then admin default, then the built-in default.
      * @param {string} userKey
      * @param {string} pluginKey
+     * @param {boolean} [fallback=true] - Built-in default.
      * @returns {boolean}
      */
-    function effectiveBool(userKey, pluginKey) {
+    function effectiveBool(userKey, pluginKey, fallback = true) {
         const u = JE.currentSettings?.[userKey];
         if (typeof u === 'boolean') return u;
         const a = JE.pluginConfig?.[pluginKey];
-        return typeof a === 'boolean' ? a : true;
+        return typeof a === 'boolean' ? a : fallback;
     }
 
     /**
@@ -237,10 +238,10 @@
     function extrasHtml(group, ctx) {
         const { detailsBackground, toggleAccentColor } = ctx;
         /** @param {string} key @param {string} pluginKey @param {string} id @param {string} labelKey */
-        const scopeRow = (id, key, pluginKey, labelKey) => `
+        const scopeRow = (id, key, pluginKey, labelKey, fallback = true) => `
             <div class="je-quality-cat-row" data-cat-key="${key}">
                 <label class="je-quality-cat-label-wrap">
-                    <input type="checkbox" id="${id}" ${effectiveBool(key, pluginKey) ? 'checked' : ''} style="accent-color:${toggleAccentColor};">
+                    <input type="checkbox" id="${id}" ${effectiveBool(key, pluginKey, fallback) ? 'checked' : ''} style="accent-color:${toggleAccentColor};">
                     <span class="je-quality-cat-label">${escapeHtml(JE.t(labelKey))}</span>
                 </label>
             </div>`;
@@ -278,6 +279,9 @@
                         ${scopeRow('statusTagsTrendingToggle', 'statusTagsTrending', 'StatusTagsTrending', 'panel_settings_ui_status_tags_trending')}
                         ${scopeRow('statusTagsNewReleaseToggle', 'statusTagsNewRelease', 'StatusTagsNewRelease', 'panel_settings_ui_status_tags_new_release')}
                         ${scopeRow('statusTagsJustAddedToggle', 'statusTagsJustAdded', 'StatusTagsJustAdded', 'panel_settings_ui_status_tags_just_added')}
+                        ${scopeRow('statusTagsScheduleToggle', 'statusTagsSchedule', 'StatusTagsSchedule', 'panel_settings_ui_status_tags_schedule')}
+                        ${scopeRow('statusTagsMilestonesToggle', 'statusTagsMilestones', 'StatusTagsMilestones', 'panel_settings_ui_status_tags_milestones')}
+                        ${scopeRow('statusTagsSeriesStatusToggle', 'statusTagsSeriesStatus', 'StatusTagsSeriesStatus', 'panel_settings_ui_status_tags_series_status', false)}
                     </div>
                 </div>`;
         }
