@@ -14,8 +14,8 @@ async function prepare(page, style, slot) {
     await page.locator('#txtManualPassword').press('Enter');
     await page.waitForFunction(() => window.ApiClient?.getCurrentUserId());
     await page.goto(`${lab}/web/index.html#/home`);
-    await page.waitForFunction(() => window.JellyfinEnhanced?.core?.languageTags);
-    await page.waitForSelector('.card[data-id] a.cardImageContainer[href]');
+    await page.waitForFunction(() => window.JellyfinEnhanced?.initialized && window.JellyfinEnhanced?.core?.languageTags);
+    await page.waitForSelector('.card[data-type="Movie"] a.cardImageContainer[href]');
   } else {
     await page.goto('/');
     await page.setContent(`<style>
@@ -45,8 +45,12 @@ async function prepare(page, style, slot) {
       languageTagsStyle: style === 'codes' ? 'codes' : 'flags', languageTagsCountBadge: style === 'badge' ? 'only' : 'off', tagsHideOnHover: false,
       tagLayout: slot === 'pill' ? 'summary' : slot === 'caption' ? 'caption' : 'corners', tagLayoutSettingsVersion: 1,
       tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } };
+    if (isLab) {
+      JE.initializeLanguageTags();
+      JE.tagPipeline.getRenderer('language').injectCss();
+    }
     await JE.core.tagLayout.reinitialize();
-    const card = [...document.querySelectorAll('.card[data-id]')].find(c => c.querySelector('a.cardImageContainer[href]') && c.getBoundingClientRect().width > 100);
+    const card = [...document.querySelectorAll('.card[data-id]')].find(c => (!isLab || c.dataset.type === 'Movie') && c.querySelector('a.cardImageContainer[href]') && c.getBoundingClientRect().width > 100);
     card.id = 'language-navigation-proof';
     const host = JE.core.tagLayout.ensureHost(card.querySelector('.cardScalable'));
     for (const group of JE.core.tagLayout.GROUPS) JE.core.tagLayout.removeGroup(host, group);
