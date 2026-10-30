@@ -212,7 +212,7 @@ test('the Media Tags hub preset tiles save the choice and re-apply the styles', 
   });
   t.after(() => h.close());
   h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('core/tag-layout.js');
-  h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
+  h.load('tags/rating-sources.js'); h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
   assert.equal(h.JE.currentSettings.tagStylePreset, null, 'no preset of their own: follow the admin');
   h.JE.toast = m => toasts.push(m);
   let applied = 0; h.JE.initializeTagStyles = () => { applied++; };

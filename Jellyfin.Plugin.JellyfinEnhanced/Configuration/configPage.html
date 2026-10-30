@@ -376,8 +376,12 @@
                                     <div class="checkboxContainer"><label><input id="ratingTagsOnContinueWatching" is="emby-checkbox" type="checkbox"/><span>Show in the Continue Watching row</span></label></div>
                                     <div class="checkboxContainer"><label><input id="ratingTagsOnNextUp" is="emby-checkbox" type="checkbox"/><span>Show in the Next Up row</span></label></div>
                                     <div class="fieldDescription je-field-desc-sm">Which scores the rating tags include. Users can override these in their personal settings.</div>
-                                    <div class="checkboxContainer"><label><input id="ratingTagsShowCommunity" is="emby-checkbox" type="checkbox"/><span>Include the community score</span></label></div>
-                                    <div class="checkboxContainer"><label><input id="ratingTagsShowCritic" is="emby-checkbox" type="checkbox"/><span>Include the critic score</span></label></div>
+                                    <!-- Source rating defaults are independent of the detail-page MDBList row. -->
+                                    <label for="ratingTagsSources"><span data-je-status-label="rating_sources_label"></span></label><input id="ratingTagsSources" type="hidden"><div id="ratingTagsSourceRows" class="je-rating-sources-admin"></div>
+                                    <div class="selectContainer"><label for="ratingTagsMinScore"><span data-je-status-label="rating_sources_minimum"></span></label><select id="ratingTagsMinScore" is="emby-select"><option value="0" data-je-status-label="rating_sources_off"></option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsColorByScore" is="emby-checkbox" type="checkbox"><span data-je-status-label="rating_sources_color"></span></label></div>
+                                    <div data-je-status-label="rating_sources_help"></div>
+
                                 </div>
                             </details>
 
@@ -4286,6 +4290,7 @@
                 if (typeof tagLayoutAdmin !== 'undefined') parts.push('tagLayouts=' + tagLayoutAdmin.snapshot());
                 // So is the Tag Styles document (preset tiles, swatches and opacity pills are buttons).
                 parts.push('tagStyles=' + tagStyles.snapshot());
+                if (typeof posterRatingSources !== 'undefined') parts.push('ratingSources=' + JSON.stringify(posterRatingSources.collect()));
                 return parts.join('');
             }
 
@@ -5992,6 +5997,63 @@
             return { load: load, collect: collect, render: render, snapshot: snapshot };
         })();
 
+        /** Ordered poster source defaults, separate from MDBList's detail-page source preferences. */
+        const posterRatingSources = (() => {
+            const ids = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt'];
+            let labels = {};
+            let translator = key => key;
+            /** Localized copy is loaded from the same en.json as the injected client. */
+            function translate(en) {
+                labels = en;
+                translator = window.JellyfinEnhanced?.t || (key => labels[key] || key);
+                const JE = { t: translator };
+                document.querySelectorAll('#ratingTagsSourceRows [data-rating-label]').forEach(el => {
+                    el.textContent = JE.t(el.dataset.ratingLabel);
+                });
+                document.querySelectorAll('#ratingTagsSourceRows button').forEach(el => {
+                    const key = el.dataset.step === '-1' ? 'rating_sources_up' : 'rating_sources_down';
+                    el.setAttribute('aria-label', String(JE.t(key)).replace('{source}', JE.t('rating_source_' + el.closest('[data-source]').dataset.source)));
+                });
+            }
+            /** Collect enabled sources in DOM order, preserving an intentional empty list. */
+            function collect() {
+                return Array.from(document.querySelectorAll('#ratingTagsSourceRows [data-source]')).filter(row => row.querySelector('input').checked).map(row => row.dataset.source);
+            }
+            /** Recompute move boundaries after moving an existing row (preserves checkbox state). */
+            function boundaries() {
+                const rows = Array.from(document.querySelectorAll('#ratingTagsSourceRows [data-source]'));
+                rows.forEach((row, i) => { row.querySelector('[data-step="-1"]').disabled = i === 0; row.querySelector('[data-step="1"]').disabled = i === rows.length - 1; });
+            }
+            /** Load explicit choices or the two legacy includes without changing the saved configuration. */
+            function load(config) {
+                const selected = Array.isArray(config.RatingTagsSources) ? config.RatingTagsSources.filter(id => ids.includes(id))
+                    : ['community', 'critic'].filter(id => config[id === 'community' ? 'RatingTagsShowCommunity' : 'RatingTagsShowCritic'] !== false);
+                const root = document.getElementById('ratingTagsSourceRows');
+                root.replaceChildren();
+                [...new Set(selected.concat(ids))].forEach(id => {
+                    const row = document.createElement('div');
+                    row.dataset.source = id;
+                    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+                    const label = document.createElement('label');
+                    label.style.flex = '1';
+                    const input = document.createElement('input'); input.type = 'checkbox'; input.checked = selected.includes(id);
+                    const text = document.createElement('span'); text.dataset.ratingLabel = 'rating_source_' + id;
+                    label.append(input, text); row.append(label);
+                    [-1, 1].forEach(step => {
+                        const button = document.createElement('button'); button.type = 'button'; button.dataset.step = String(step);
+                        button.textContent = step < 0 ? '↑' : '↓'; button.style.cssText = 'min-width:36px;min-height:36px';
+                        button.onclick = () => { const next = step < 0 ? row.previousElementSibling : row.nextElementSibling; if (next) { if (step < 0) next.before(row); else next.after(row); boundaries(); root.dispatchEvent(new Event('change', { bubbles: true })); } };
+                        row.append(button);
+                    });
+                    root.append(row);
+                });
+                boundaries(); translate(labels);
+                document.getElementById('ratingTagsMinScore').value = String(config.RatingTagsMinScore || 0);
+                document.getElementById('ratingTagsColorByScore').checked = config.RatingTagsColorByScore === true;
+            }
+            return { load, collect, translate };
+        })();
+
         // MDBList rating sources: key (matches the API's source string), display
         // label, and logo filename (served via the "mdblist-logos" CDN source,
         // see CdnAssetService.cs).
@@ -6490,7 +6552,7 @@
                 status: 'Status tags are drawn on the web only: native posters do not show them.',
                 language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.'
             };
-            const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'] };
+            const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'] };
             const STATUS_SAMPLES = { added: 'Just Added', newMovie: 'New Movie', newSeries: 'New Series', newEpisode: 'New Episode', trending: '#3 Today' };
             const ALL = '*';
 
@@ -6707,6 +6769,23 @@
             }
 
             /**
+             * A named source sample using the bundled client logo, or its catalog name on a dashboard without the bundle.
+             * @param {{key: string, name: string}} label
+             * @returns {HTMLElement}
+             */
+            function sourceRatingChip(label) {
+                const text = (RATING_SAMPLES[label.key] || [null, ''])[1];
+                let n = window.JellyfinEnhanced?.ratingSources?.chip({ id: label.key, value: parseFloat(text), text, color: null });
+                if (!n) {
+                    n = el('span', 'rating-tag rating-tag--source');
+                    n.dataset.jeRatingSource = label.key;
+                    n.append(el('span', 'je-ts-source-name', label.name), el('span', 'rating-text', text));
+                }
+                n.classList.add('je-ts-chip', 'je-ts-rate');
+                return n;
+            }
+
+            /**
              * A sample chip for a label, with the real chip classes.
              * @param {string} g
              * @param {{key: string, name: string}} label
@@ -6719,6 +6798,8 @@
                     n = el('span', 'je-ts-chip je-ts-q quality-overlay-label', label.name);
                 } else if (g === 'ageRating') {
                     n = el('span', 'je-ts-chip je-ts-age age-rating-tag', label.name);
+                } else if (g === 'rating' && !['community', 'critic', 'userReview'].includes(label.key)) {
+                    n = sourceRatingChip(label);
                 } else if (g === 'rating') {
                     const [icon, text] = RATING_SAMPLES[label.key] || ['star', '8.1'];
                     n = el('span', 'je-ts-chip je-ts-rate rating-tag');
@@ -6949,9 +7030,11 @@
                 } else if (g === 'ageRating') {
                     n = el('div', 'age-rating-tag je-ts-chip je-ts-age', label.name);
                     n.setAttribute('rating', label.name);
+                } else if (g === 'rating' && !['community', 'critic', 'userReview'].includes(label.key)) {
+                    n = sourceRatingChip(label);
                 } else if (g === 'rating') {
                     const [icon, text] = RATING_SAMPLES[label.key] || ['star', '8.1'];
-                    const kind = { community: 'rating-tag-tmdb', critic: 'rating-tag-critic', userReview: 'rating-tag-userreview je-userreview-tag' }[label.key] || 'rating-tag-tmdb';
+                    const kind = { community: 'rating-tag-tmdb', critic: 'rating-tag-critic', userReview: 'rating-tag-userreview je-userreview-tag' }[label.key] || 'rating-tag--source';
                     n = el('div', 'rating-tag ' + kind + ' je-ts-chip je-ts-rate');
                     if (label.key === 'community') n.appendChild(el('i', 'material-icons rating-star-icon je-ts-rate-icon', icon));
                     else if (label.key === 'userReview') {
@@ -6960,7 +7043,8 @@
                         wrap.appendChild(el('i', 'material-icons je-ts-rate-icon', icon));
                         n.appendChild(wrap);
                     }
-                    else n.appendChild(el('i', 'rating-tomato-icon fresh je-ts-tomato'));
+                    else if (label.key === 'critic') n.appendChild(el('i', 'rating-tomato-icon fresh je-ts-tomato'));
+                    else { n.dataset.jeRatingSource = label.key; n.appendChild(el('span', 'je-rating-source-logo', label.name)); }
                     n.appendChild(el('span', 'rating-text', text));
                 } else if (g === 'genre') {
                     n = el('div', 'genre-tag je-ts-chip je-ts-genre');
@@ -7203,6 +7287,7 @@
         async function loadStatusTagLabels() {
             const en = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/locales/en.json'), dataType: 'json' });
             const JE = window.JellyfinEnhanced?.t ? window.JellyfinEnhanced : { t: key => en[key] || key };
+            posterRatingSources.translate(en);
             document.querySelectorAll('[data-je-status-label], [data-je-source-label]').forEach(element => {
                 const key = element.dataset.jeStatusLabel || element.dataset.jeSourceLabel;
                 const translated = JE.t(key);
@@ -7401,8 +7486,7 @@
                 document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
                 document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
                 document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
-                document.querySelector('#ratingTagsShowCommunity').checked = config.RatingTagsShowCommunity !== false;
-                document.querySelector('#ratingTagsShowCritic').checked = config.RatingTagsShowCritic !== false;
+                posterRatingSources.load(config);
                 tagLayoutAdmin.load(config);
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
@@ -7997,8 +8081,9 @@
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.StatusTagsPosition = document.querySelector('#statusTagsPosition').value;
-            config.RatingTagsShowCommunity = document.querySelector('#ratingTagsShowCommunity').checked;
-            config.RatingTagsShowCritic = document.querySelector('#ratingTagsShowCritic').checked;
+            config.RatingTagsSources = posterRatingSources.collect();
+            config.RatingTagsMinScore = Number(document.getElementById('ratingTagsMinScore').value);
+            config.RatingTagsColorByScore = document.getElementById('ratingTagsColorByScore').checked;
             tagLayoutAdmin.collect(config);
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
@@ -9617,7 +9702,7 @@
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showEditionTag', 'showLowQualitySourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsShowCommunity', 'ratingTagsShowCritic', 'tagGroupAdminRowRating'], noHint: true },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsSources', 'ratingTagsSourceRows', 'ratingTagsMinScore', 'ratingTagsColorByScore', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.

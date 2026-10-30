@@ -53,6 +53,12 @@ const catalog = {
   }
 };
 
+// New source labels use the server's native-unit sample formats.
+for (const [key, name] of [['imdb','IMDb'], ['tmdb','TMDb'], ['rtCritic','RT critic'], ['rtAudience','RT audience'], ['metacritic','Metacritic'], ['letterboxd','Letterboxd'], ['trakt','Trakt']]) {
+  catalog.groups.rating.push({ key, name });
+  for (const preset of catalog.presets) catalog.palettes[preset]['rating:' + key] = pal('rgba(0, 0, 0, 0.8)', 'rgba(0, 0, 0, 0)', 'rgba(255, 255, 255, 1)');
+}
+
 /**
  * jsdom has no canvas: a 2D context whose fillStyle, like a browser's, takes hex and rgb() colours
  * and keeps its previous value for anything else.
@@ -297,4 +303,21 @@ test('without the web client on the page the preview paints the chips inline', a
   assert.equal(h.$('#tagStylePreview').dataset.styles, 'inline');
   assert.equal(h.$('#tagStylePreviewCss'), null);
   assert.equal(h.$('#tagStylePreview .quality-overlay-label[data-quality="4K"]').style.background, 'rgb(30, 136, 229)');
+});
+
+
+test('all source labels use their own logo with the bundle and readable names without it', async t => {
+  for (const bundled of [false, true]) {
+    const h = await setup(t);
+    if (bundled) { h.JE.t = key => key; h.load('tags/rating-sources.js'); }
+    h.click('#tagStyleTabs [data-group="rating"]');
+    const chips = h.$$('#tagStyleTargets .rating-tag--source');
+    assert.equal(chips.length, 7);
+    for (const chip of chips) {
+      assert.ok(chip.dataset.jeRatingSource);
+      assert.equal(!!chip.querySelector('svg'), bundled);
+      assert.equal(chip.querySelector('.je-ts-tomato'), null, 'new labels never inherit the legacy critic icon');
+      if (!bundled) assert.ok(chip.querySelector('.je-ts-source-name').textContent);
+    }
+  }
 });

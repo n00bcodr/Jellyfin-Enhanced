@@ -783,6 +783,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // true so existing installs render exactly as before.
         public bool RatingTagsShowCommunity { get; set; } = true;
         public bool RatingTagsShowCritic { get; set; } = true;
+
+        // Multi-source rating preferences. Null source list preserves legacy include switches.
+        /// <summary>Enabled rating sources in display order; empty hides all source scores.</summary>
+        public string[]? RatingTagsSources { get; set; }
+        /// <summary>Minimum rating normalised to ten (zero shows every score).</summary>
+        public double RatingTagsMinScore { get; set; } = 0;
+        /// <summary>Colour rating text by score, below explicit Tag Styles.</summary>
+        public bool RatingTagsColorByScore { get; set; } = false;
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         [AnalyticsInclude]

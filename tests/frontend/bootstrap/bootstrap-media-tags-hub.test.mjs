@@ -61,7 +61,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, p
   t.after(() => h.close());
   // Boxes for every element: jsdom lays nothing out.
   h.window.Element.prototype.getClientRects = function () { return [{ width: 1, height: 1 }]; };
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-looks.js', 'ui-panel-tag-preview.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
@@ -270,7 +270,7 @@ test('the settings search finds hub controls by their visible label, opens their
 
   for (const [query, label, tab] of [['compact', 'panel_settings_ui_tag_density_compact', 'layout'], ['caption', 'tag_looks_layout_caption', 'layout'],
     ['people', 'panel_settings_ui_people_tags', 'layout'], ['edit rule', 'tag_looks_edit_named:tag_looks_when:tag_looks_cond_library:Kids', 'rules'],
-    ['glass', 'panel_settings_ui_tag_style_preset_glass', 'colours'], ['critic', 'panel_settings_ui_tag_editor_rating_critic', 'groups'],
+    ['glass', 'panel_settings_ui_tag_style_preset_glass', 'colours'], ['critic', 'rating_source_critic', 'groups'],
     ['condition 1 field', 'tag_looks_condition_field:1', 'rules']]) {
     results = await h.search(query);
     const hit = results.find(r => r.label === label);

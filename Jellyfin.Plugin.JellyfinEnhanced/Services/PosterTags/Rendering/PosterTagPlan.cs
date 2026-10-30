@@ -315,13 +315,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     break;
             }
 
+            if (tag.IsSource) iconWidth = iconHeight = 14; // Bundled source logos match the web's fixed 14px box.
+            if (tag.Compact) iconWidth = iconHeight = 2;
             float textHeight = PosterTagCss.Lu(css.ChipFontSize);
             float width = (2 * PosterTagCss.Lu(css.ChipPaddingH)) + iconWidth + PosterTagCss.Lu(css.RatingInnerGap) + PosterTagCss.LuCeil(layout.Width);
             float height = Math.Max(iconHeight, textHeight) + (2 * PosterTagCss.Lu(css.ChipPaddingV));
             var style = tag.Source == PosterRatingSource.Critic
                 ? (tag.Fresh ? "critic-fresh" : "critic-rotten")
                 : tag.Source.ToString();
-            var chipKey = tag.Source switch { PosterRatingSource.Community => "community", PosterRatingSource.Critic => "critic", _ => "userReview" };
+            style += ":" + tag.ScoreColor + ":" + tag.Compact;
+            var chipKey = tag.SourceId;
             var chip = styles.Resolve(TagStyleKeys.Rating, chipKey);
             if (!chip.IsEmpty)
             {

@@ -206,6 +206,11 @@
             }
         }
 
+        // Source scores: retain legacy includes for old documents and preserve an intentional empty list.
+        mergedSettings.ratingTagsSources = JE.ratingSources?.normalizeSources(userSettings.ratingTagsSources) ?? null;
+        mergedSettings.ratingTagsMinScore = JE.ratingSources?.settings(userSettings, JE.pluginConfig).minimum ?? 0;
+        mergedSettings.ratingTagsColorByScore = JE.ratingSources?.settings(userSettings, JE.pluginConfig).color ?? false;
+
         // Structured layout settings: the loop above treats object values as
         // corrupt, so these are carried over explicitly. A missing or malformed
         // value is null, meaning "inherit" — core/tag-layout.js resolves it

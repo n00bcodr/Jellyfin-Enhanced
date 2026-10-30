@@ -210,8 +210,10 @@ public class CoreTagLookSettingsTests
         Assert.Null(cache.BuildEntryOnDemand(movie)!.LibraryId);
     }
 
-    [Fact]
-    public void SchemaTenSnapshotsAreDiscardedForRebuild()
+    [Theory]
+    [InlineData(10)]
+    [InlineData(13)]
+    public void OlderSnapshotsAreDiscardedForRebuild(int oldSchema)
     {
         using var f = new ApiPluginFixture();
         f.Plugin.Configuration.TagCacheServerMode = true;
@@ -221,7 +223,7 @@ public class CoreTagLookSettingsTests
         var library = new Mock<ILibraryManager>();
         TagCacheService Create() => new(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
 
-        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 10, Version = 7, LastModified = 200, Items = items }));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = oldSchema, Version = 7, LastModified = 200, Items = items }));
         using (var old = Create())
         {
             old.LoadFromDisk();

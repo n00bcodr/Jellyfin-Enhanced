@@ -46,12 +46,6 @@
         { id: 'showEditionTagToggle', settingKey: 'showEditionTag', pluginKey: 'ShowEditionTag', orderKey: 'editionTagOrder', orderPluginKey: 'EditionTagOrder', defaultOrder: 7, labelKey: 'panel_settings_ui_quality_tags_edition', sample: null },
     ];
 
-    /** The rating group's include switches (user override → admin default → on). */
-    const RATING_INCLUDES = [
-        { settingKey: 'ratingTagsShowCommunity', pluginKey: 'RatingTagsShowCommunity', labelKey: 'panel_settings_ui_tag_editor_rating_community' },
-        { settingKey: 'ratingTagsShowCritic', pluginKey: 'RatingTagsShowCritic', labelKey: 'panel_settings_ui_tag_editor_rating_critic' },
-    ];
-
     const escapeHtml = (value) => JE.escapeHtml(String(value));
 
     /** @returns {any} The layout controller (core/tag-layout.js), or null. */
@@ -213,14 +207,21 @@
         </div>`;
     }
 
-    /** @returns {string} The rating group's Include pills (community / critic). */
+    /** Ordered source checkboxes and accessible move controls, plus score preferences. */
     function ratingIncludeHtml() {
-        return `<div class="je-tge-includes je-tge-rating-includes">${RATING_INCLUDES.map((inc) => `
-            <label class="je-tge-toggle-pill">
-                <input type="checkbox" data-include-key="${inc.settingKey}" ${effectiveBool(inc.settingKey, inc.pluginKey) ? 'checked' : ''}>
-                <span>${escapeHtml(JE.t(inc.labelKey))}</span>
-            </label>`).join('')}
-        </div>`;
+        const conf = JE.ratingSources.settings();
+        const order = conf.sources.concat(JE.ratingSources.IDS.filter(id => !conf.sources.includes(id)));
+        return `<div class="je-tge-rating-includes">${order.map((id, index) => {
+            const source = JE.t('rating_source_' + id);
+            return `<div class="je-rating-source-row" data-source="${id}">
+                <label><input type="checkbox" data-rating-source="${id}" ${conf.sources.includes(id) ? 'checked' : ''}>${escapeHtml(source)}</label>
+                <button type="button" data-rating-move="-1" ${index === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('rating_sources_up', { source }))}">↑</button>
+                <button type="button" data-rating-move="1" ${index === order.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('rating_sources_down', { source }))}">↓</button>
+            </div>`;
+        }).join('')}
+        <label>${escapeHtml(JE.t('rating_sources_minimum'))} <select data-rating-minimum>${[0,5,6,7,8].map(n => `<option value="${n}" ${conf.minimum === n ? 'selected' : ''}>${n || escapeHtml(JE.t('rating_sources_off'))}</option>`).join('')}</select></label>
+        <label><input type="checkbox" data-rating-color ${conf.color ? 'checked' : ''}>${escapeHtml(JE.t('rating_sources_color'))}</label>
+        <div class="je-tge-hint">${escapeHtml(JE.t('rating_sources_help'))}</div></div>`;
     }
 
     /**
@@ -484,6 +485,11 @@
 
     /** CSS for the editor (panel-scoped). */
     const EDITOR_CSS = `
+        #jellyfin-enhanced-panel .je-rating-source-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        #jellyfin-enhanced-panel .je-rating-source-row label { flex: 1; }
+        #jellyfin-enhanced-panel .je-rating-source-row button { min-width: 32px; min-height: 32px; color: inherit; background: transparent; border: 1px solid #777; border-radius: 4px; }
+        #jellyfin-enhanced-panel .je-tge-rating-includes > label { display: block; margin: 8px 0; }
+
         #jellyfin-enhanced-panel .je-tge { margin-bottom: 16px; padding: 12px; background: var(--je-tge-box); border-radius: 6px; border-left: 3px solid var(--je-tge-accent); }
         #jellyfin-enhanced-panel .je-tge-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
         #jellyfin-enhanced-panel .je-tge-top > div { flex: 1 1 220px; min-width: 0; }
@@ -580,8 +586,33 @@
             });
         };
 
+        /** Persist ordered enabled sources after a toggle or a move, then redraw the real preview. */
+        const saveRatings = () => {
+            const box = root.querySelector('.je-tge-rating-includes');
+            JE.currentSettings.ratingTagsSources = Array.from(box.querySelectorAll('[data-rating-source]:checked')).map(el => el.dataset.ratingSource);
+            JE.currentSettings.ratingTagsMinScore = Number(box.querySelector('[data-rating-minimum]').value);
+            JE.currentSettings.ratingTagsColorByScore = box.querySelector('[data-rating-color]').checked;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.reinitializeRatingTags?.();
+            internal.mediaTagsHub?.refreshPreview?.();
+            document.dispatchEvent(new CustomEvent('je:tag-layout-changed'));
+            touch();
+        };
+
         root.addEventListener('click', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);
+            const sourceMove = target.closest('[data-rating-move]');
+            if (sourceMove && !sourceMove.disabled) {
+                const sourceRow = sourceMove.closest('[data-source]');
+                const before = sourceMove.dataset.ratingMove === '-1' ? sourceRow.previousElementSibling : sourceRow.nextElementSibling;
+                if (!before?.matches('[data-source]')) return;
+                if (sourceMove.dataset.ratingMove === '-1') before.before(sourceRow); else before.after(sourceRow);
+                const rows = Array.from(sourceRow.parentElement.querySelectorAll('[data-source]'));
+                rows.forEach((el, i) => { el.querySelector('[data-rating-move="-1"]').disabled = i === 0; el.querySelector('[data-rating-move="1"]').disabled = i === rows.length - 1; });
+                saveRatings();
+                (sourceMove.disabled ? sourceRow.querySelector('[data-rating-move]:not(:disabled)') : sourceMove)?.focus();
+                return;
+            }
             const row = /** @type {HTMLElement|null} */ (target.closest('.je-tge-row'));
             const group = row?.dataset.group || '';
 
@@ -648,6 +679,7 @@
 
         root.addEventListener('change', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
+            if (target.matches('[data-rating-source], [data-rating-minimum], [data-rating-color]')) { saveRatings(); return; }
             const includeKey = target.dataset?.includeKey;
             if (includeKey) {
                 JE.currentSettings[includeKey] = target.checked;

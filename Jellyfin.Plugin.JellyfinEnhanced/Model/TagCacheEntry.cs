@@ -19,6 +19,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? Genres { get; set; }
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }
+
+        // Multi-source ratings (schema v14). Immutable, shared across users.
+        /// <summary>MDBList source values in their native units; absent without a configured key.</summary>
+        public TagSourceRatings? Ratings { get; set; }
+
         /// <summary>
         /// Parental / age rating as stored by Jellyfin (e.g. "PG-13", "TV-MA",
         /// "DE-12"). Seasons and Episodes fall back to their Series' rating at
@@ -159,6 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.Genres, b.Genres)
                 && NullableFloatEquals(a.CommunityRating, b.CommunityRating)
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
+                && a.Ratings == b.Ratings
                 && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
@@ -228,6 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             Genres = Genres,
             CommunityRating = CommunityRating,
             CriticRating = CriticRating,
+            Ratings = Ratings,
             OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,

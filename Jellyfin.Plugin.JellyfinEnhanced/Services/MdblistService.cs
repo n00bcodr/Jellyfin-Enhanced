@@ -253,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch account status: {ex.GetType().Name}");
                 return null;
             }
         }
@@ -319,7 +319,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // short-lived miss (RetryTtl, not NegativeTtl) so the same
                 // title isn't retried on every view but isn't trusted as a
                 // confirmed "no data" either.
-                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {ex.GetType().Name}");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
         }
@@ -383,7 +383,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids). Body: {Truncate(responseBody, 500)}");
+                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids).");
                     return null;
                 }
 
@@ -407,20 +407,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
-                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected. Body: {Truncate(responseBody, 500)}");
+                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected.");
                 }
 
                 return result;
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.GetType().Name}");
                 return null;
             }
         }
 
-        private static string Truncate(string s, int maxLength) =>
-            string.IsNullOrEmpty(s) || s.Length <= maxLength ? s : s.Substring(0, maxLength) + "...";
+        private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
+
+        /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and quota floor.</summary>
+        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
+            await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)).GroupBy(t => t.MediaType))
+                {
+                    foreach (var chunk in group.Chunk(150))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var ids = chunk.Select(t => t.Id).ToArray();
+                        var results = await GetMediaBatchAsync(group.Key, ids, cancellationToken).ConfigureAwait(false);
+                        if (results == null)
+                        {
+                            // Match single-title failures: short retry TTL, never a confirmed negative.
+                            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            foreach (var id in ids) _cache[CacheKey(group.Key, id)] = new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
+                            ScheduleDebouncedSave();
+                            return;
+                        }
+                        MergeMediaBatchIntoCache(group.Key, ids, results);
+                        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+            finally { _tagRatingsGate.Release(); }
+        }
 
         /// <summary>
         /// Writes a round of GetMediaBatchAsync results into the same cache the
@@ -589,7 +618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to load cache from disk: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to load cache from disk: {ex.GetType().Name}");
             }
         }
 
@@ -623,7 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 catch (Exception ex)
                 {
                     _dirty = true; // retry on the next debounce cycle / Dispose
-                    _logger.Error($"[MDBList] Failed to save cache to disk: {ex.Message}");
+                    _logger.Error($"[MDBList] Failed to save cache to disk: {ex.GetType().Name}");
                 }
             }
         }

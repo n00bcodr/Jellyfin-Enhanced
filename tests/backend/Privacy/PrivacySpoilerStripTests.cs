@@ -28,7 +28,7 @@ public class PrivacySpoilerStripTests
         Assert.Equal(!watched, stripped);
         Assert.Equal(watched ? SpoilerTagDataStub.None : SpoilerTagDataStub.Episode, stripper.GetTagDataStub(policy, user, episode));
         if (watched) Assert.Same(source, result);
-        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.AudioLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); }
+        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.AudioLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); }
         Assert.Equal(new[] { "Mystery" }, source.Genres); Assert.Equal(8f, source.CommunityRating); Assert.Equal("The killer", source.StreamData!.ItemName);
         var unguarded = new UserSpoilerBlur(); unguarded.Series[Guid.NewGuid().ToString("N")] = new();
         var otherPolicy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = true }, unguarded)!;
@@ -89,11 +89,11 @@ public class PrivacySpoilerStripTests
         var user = new User("test", "default", "default");
         var result = stripper.StripEntry(policy, user, season, source, out var stripped);
         Assert.True(stripped); Assert.Equal(source.Genres, result.Genres); Assert.Same(source.StreamData, result.StreamData);
-        Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Equal(8f, source.CommunityRating);
+        Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); Assert.Equal(8f, source.CommunityRating);
         Assert.Equal(SpoilerTagDataStub.None, stripper.GetTagDataStub(policy, user, season));
     }
 
     private static TagCacheEntry Entry(Guid seriesId) => new() { Type = "Episode", SeriesId = seriesId.ToString("N"), Genres = ["Mystery"],
-        CommunityRating = 8, CriticRating = 90, AudioLanguages = ["en"], StreamData = new TagStreamData { ItemName = "The killer", ItemPath = "secret.mkv",
+        CommunityRating = 8, CriticRating = 90, Ratings = new() { Imdb = 8.1 }, AudioLanguages = ["en"], StreamData = new TagStreamData { ItemName = "The killer", ItemPath = "secret.mkv",
         Streams = [new TagMediaStream { Codec = "hevc", Height = 2160, DisplayTitle = "Final reveal" }], Sources = [new TagMediaSource { Name = "The killer", Path = "secret.mkv" }] } };
 }

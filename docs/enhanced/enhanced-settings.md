@@ -285,7 +285,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | Group switch | Off | Turns the group's tags on or off. |
     | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corner picks also set the position Native Poster Tags use. |
     | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
-    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Rating: **Community score**, **Critic score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
+    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
     | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
 
 === "Status badges"

@@ -3875,6 +3875,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RatingTagsOnNextUp,
                 config.RatingTagsShowCommunity,
                 config.RatingTagsShowCritic,
+                // Multi-source rating defaults.
+                RatingTagsSources = RatingSourceSettings.Defaults(config),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
+                config.RatingTagsColorByScore,
                 config.AgeRatingTagsPosition,
                 config.StatusTagsPosition,
                 config.StatusTagsJustAdded,
@@ -5370,6 +5374,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
                         RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
                         RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
+                        // Multi-source rating defaults (copy the ordered array).
+                        RatingTagsSources = RatingSourceSettings.Defaults(defaultConfig).ToArray(),
+                        RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
+                        RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                         StatusTagsPosition = defaultConfig.StatusTagsPosition,
                         StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
@@ -5463,6 +5471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Unknown layouts, groups and slots are normalized away and caps
                 // clamped, so a stale client cannot store an unusable layout.
+                RatingSourceSettings.Normalize(userConfiguration);
                 TagLayoutRules.Normalize(userConfiguration);
                 // An unknown Tag Styles preset follows the admin's instead.
                 userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
@@ -8389,6 +8398,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
                 RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
                 RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
+                // Multi-source rating defaults (copy the ordered array).
+                RatingTagsSources = RatingSourceSettings.Defaults(defaultConfig).ToArray(),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
+                RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                 StatusTagsPosition = defaultConfig.StatusTagsPosition,
                 StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
@@ -8662,7 +8675,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 var filterRevision = Convert.ToHexString(
-                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint)), 0, 12);
+                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
 
                 // Body { version, timestamp, servedAt, filterRevision, count, items,
                 // reviewRatings }, assembled around the serialized items without
@@ -8975,19 +8988,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             string? TagDataTmdbId(BaseItem tagItem) =>
                 tagItem.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true && !string.IsNullOrEmpty(tmdbId) ? tmdbId : null;
 
-            var itemIds = ids;
-            var results = new List<object>(itemIds.Length);
+            // Hydrate through the viewer before enrichment; denied ids never trigger upstream requests.
+            var accessibleItems = ids.Where(id => Guid.TryParse(id?.Trim(), out _))
+                .Select(id => _libraryManager.GetItemById<BaseItem>(Guid.Parse(id.Trim()), user))
+                .Where(item => item != null).Select(item => item!).ToArray();
+            _tagCacheService.WarmSourceRatingsForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            var results = new List<object>(accessibleItems.Length);
 
-            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
-            foreach (var idStr in itemIds)
+            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources).
+            foreach (var item in accessibleItems)
             {
-                if (!Guid.TryParse(idStr.Trim(), out var itemId))
-                    continue;
-
-                var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
-                if (item == null)
-                    continue;
-
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
                 var spoilerStub = stripTagsEnabled
@@ -9067,6 +9077,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
                         // Suppress the parent-series rating fallback only when the
@@ -9111,6 +9122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
                         SeriesId = (Guid?)null,
@@ -9181,6 +9193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
                         SeriesId = (Guid?)null,
@@ -9223,6 +9236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
@@ -9320,6 +9334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
+                    Ratings = _tagCacheService.GetSourceRatings(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
                     LibraryId = TagDataLibraryId(item),
                     SeriesId = seriesId,

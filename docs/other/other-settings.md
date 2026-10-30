@@ -194,6 +194,8 @@ Show supported metadata and external links as icons on item detail pages.
 
 ## MDBList Ratings
 
+Poster **Rating** groups can also select named source chips using the configured key, independently of the detail-row and metadata-sync switches; see [Rating Tags](../enhanced/tags.md#rating-tags).
+
 Show ratings from several sources on detail pages, or fill Jellyfin's own Community/Critic Rating fields. Displaying ratings, fetching data, and writing Jellyfin fields have separate controls.
 
 ### How to use

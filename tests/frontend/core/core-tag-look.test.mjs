@@ -56,7 +56,7 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
   t.after(() => h.close());
   const files = ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js'];
   if (withLook) files.push('core/tag-look.js');
-  files.push('tags/tag-layout-styles.js', 'tags/qualitytags.js', 'tags/genretags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js');
+  files.push('tags/tag-layout-styles.js', 'tags/qualitytags.js', 'tags/genretags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js');
   for (const file of files) h.load(file);
   const JE = h.JE;
   JE.toast = message => toasts.push(message);
