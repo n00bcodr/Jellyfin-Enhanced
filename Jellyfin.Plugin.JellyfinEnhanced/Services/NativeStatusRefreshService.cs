@@ -108,11 +108,13 @@ public sealed class NativeStatusRefreshService : BackgroundService
         if (!config.NativePosterTagsEnabled || !config.StatusTagsEnabled) return;
         try
         {
-            await _trending.GetNativeAsync(config, cancellationToken).ConfigureAwait(false);
+            await _trending.GetNativeAsync(config, cancellationToken, workerLifetime: cancellationToken).ConfigureAwait(false);
             lock (_lock) _trendingMissLogged = false;
             foreach (var id in pending)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var result = await _series.GetAsync(config.TMDB_API_KEY, new Dictionary<string, string> { [id] = id }, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 result.TryGetValue(id, out var schedule);
                 lock (_lock)
                 {

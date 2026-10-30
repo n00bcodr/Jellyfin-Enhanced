@@ -118,9 +118,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return shared.WaitAsync(cancellationToken);
         }
 
-        /// <summary>Native posters use TMDB daily ranks only, refreshed at UTC midnight; no key means no popular chip.</summary>
-        public Task<TrendingSnapshot> GetNativeAsync(PluginConfiguration config, CancellationToken cancellationToken)
+        /// <summary>Native posters use TMDB daily ranks only. The worker lifetime owns pagination;
+        /// a caller's cancellation token only stops its wait, preserving shared HTTP ownership.</summary>
+        public Task<TrendingSnapshot> GetNativeAsync(PluginConfiguration config, CancellationToken cancellationToken, CancellationToken workerLifetime = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            workerLifetime.ThrowIfCancellationRequested();
             if (!config.StatusTagsEnabled || !config.StatusTagsTrending || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return Task.FromResult(Empty);
             lock (_nativeLock)
             {
@@ -131,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _nativeFlight = null;
                 }
                 if (_nativeCached != null && _nativeTime.GetUtcNow().UtcDateTime < _nativeUntil) return Task.FromResult(_nativeCached);
-                _nativeFlight ??= FetchNativeAsync(config, bypassResponseCache: _nativeCached?.Source == null && _nativeCached != null);
+                _nativeFlight ??= FetchNativeAsync(config, bypassResponseCache: _nativeCached?.Source == null && _nativeCached != null, workerLifetime);
                 return _nativeFlight.WaitAsync(cancellationToken);
             }
         }
@@ -151,24 +154,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<TrendingSnapshot> FetchNativeAsync(PluginConfiguration config, bool bypassResponseCache)
+        private async Task<TrendingSnapshot> FetchNativeAsync(PluginConfiguration config, bool bypassResponseCache, CancellationToken workerLifetime)
         {
             await Task.Yield();
             var day = _nativeTime.GetUtcNow().UtcDateTime.Date;
-            TrendingSnapshot answer;
-            try { answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache, new DateTimeOffset(day, TimeSpan.Zero)).ConfigureAwait(false) ?? Empty; }
-            catch (Exception ex) { _logger.Debug($"[StatusTags] Native trending unavailable: {ex.Message}"); answer = Empty; }
-            lock (_nativeLock)
+            try
             {
-                if (ReferenceEquals(config, _nativeConfig))
+                TrendingSnapshot answer;
+                try
                 {
-                    _nativeCached = answer;
-                    var now = _nativeTime.GetUtcNow().UtcDateTime;
-                    _nativeUntil = answer.Source == null ? now.AddMinutes(5) : day.AddDays(1);
-                    _nativeFlight = null;
+                    answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache,
+                        new DateTimeOffset(day, TimeSpan.Zero), workerLifetime).ConfigureAwait(false) ?? Empty;
+                }
+                catch (OperationCanceledException) when (workerLifetime.IsCancellationRequested) { throw; }
+                catch (Exception ex) { _logger.Debug($"[StatusTags] Native trending unavailable: {ex.Message}"); answer = Empty; }
+                lock (_nativeLock)
+                {
+                    workerLifetime.ThrowIfCancellationRequested();
+                    if (ReferenceEquals(config, _nativeConfig))
+                    {
+                        _nativeCached = answer;
+                        var now = _nativeTime.GetUtcNow().UtcDateTime;
+                        _nativeUntil = answer.Source == null ? now.AddMinutes(5) : day.AddDays(1);
+                    }
+                }
+                return answer;
+            }
+            finally
+            {
+                lock (_nativeLock)
+                {
+                    if (ReferenceEquals(config, _nativeConfig)) _nativeFlight = null;
                 }
             }
-            return answer;
         }
 
         private async Task<TrendingSnapshot> FetchAndStoreAsync(PluginConfiguration config, long generation, bool bypassResponseCache)
@@ -224,25 +242,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// empty page would otherwise outlive <see cref="EmptyCacheTtl"/> and
         /// keep every retry empty until it expired.
         /// </summary>
-        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey, bool bypassResponseCache, DateTimeOffset? notBefore = null)
+        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey, bool bypassResponseCache, DateTimeOffset? notBefore = null, CancellationToken workerLifetime = default)
         {
             var ranks = new RankBuilder();
             for (var page = 1; page <= Pages && !ranks.Full; page++)
             {
+                workerLifetime.ThrowIfCancellationRequested();
                 TmdbResponseCache.TmdbResponse response;
                 try
                 {
-                    using var timeout = new CancellationTokenSource(TmdbTimeout);
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(workerLifetime);
+                    timeout.CancelAfter(TmdbTimeout);
                     response = await _tmdbResponseCache
                         .GetAsync("trending/all/day", "?page=" + page.ToString(CultureInfo.InvariantCulture), apiKey, timeout.Token, bypassCache: bypassResponseCache, notBefore: notBefore)
                         .ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (workerLifetime.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.Debug($"[StatusTags] TMDB trending page {page} failed: {ex.Message}");
                     break;
                 }
 
+                workerLifetime.ThrowIfCancellationRequested();
                 if (!response.IsSuccess)
                 {
                     _logger.Debug($"[StatusTags] TMDB trending page {page} returned {response.StatusCode}");

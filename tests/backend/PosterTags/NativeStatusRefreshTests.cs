@@ -68,6 +68,81 @@ public class NativeStatusRefreshTests
         Assert.Equal(6, transport.Calls);
     }
 
+    [Fact]
+    public async Task Hosted_stop_during_page_one_prevents_later_pages_and_snapshot_publication()
+    {
+        using var plugin = new ApiPluginFixture();
+        var clock = new Clock();
+        var config = plugin.Plugin.Configuration;
+        config.NativePosterTagsEnabled = config.StatusTagsEnabled = true;
+        config.TMDB_API_KEY = "fixture";
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken httpToken = default;
+        using var transport = new IntegrationTransport(async (_, token) =>
+        {
+            httpToken = token;
+            started.TrySetResult();
+            await release.Task;
+            return IntegrationTransport.Response("{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}");
+        });
+        using var cache = new TmdbResponseCache(transport, clock);
+        var trending = new StatusTagsTrendingService(transport, cache, plugin.Core.Logger, clock);
+        var series = new StatusTagsSeriesService(cache, plugin.Core.Logger, clock, 4, 35, TimeSpan.FromSeconds(10));
+        using var worker = new NativeStatusRefreshService(trending, series, plugin.Core.Logger, clock);
+        await worker.StartAsync(default);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // Join the worker's native flight before stopping so no replacement
+        // refresh can obscure continued pagination or stale publication.
+        var nativeFlight = trending.GetNativeAsync(config, default);
+        var sharedPage = cache.GetAsync("trending/all/day", "?page=1", "fixture", default);
+        try
+        {
+            await worker.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, transport.Calls);
+            Assert.False(httpToken.IsCancellationRequested); // shared HTTP still belongs to the cache
+            release.TrySetResult();
+            Assert.True((await sharedPage.WaitAsync(TimeSpan.FromSeconds(5))).IsSuccess);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => nativeFlight.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(1, transport.Calls);
+            Assert.False(trending.TryGetNative(config, out _));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await worker.StopAsync(default);
+        }
+    }
+
+    [Fact]
+    public async Task Individual_native_waiter_cancellation_does_not_cancel_worker_pagination()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new Clock();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var transport = new IntegrationTransport(async (_, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            return IntegrationTransport.Response("{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}");
+        });
+        using var cache = new TmdbResponseCache(transport, clock);
+        var trending = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
+        var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "fixture" };
+        using var lifetime = new CancellationTokenSource();
+        var owner = trending.GetNativeAsync(config, default, lifetime.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var waiterToken = new CancellationTokenSource();
+        var waiter = trending.GetNativeAsync(config, waiterToken.Token);
+        waiterToken.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+        release.TrySetResult();
+        Assert.Equal(1, (await owner.WaitAsync(TimeSpan.FromSeconds(5))).Movies["2"]);
+        Assert.Equal(3, transport.Calls);
+        Assert.True(trending.TryGetNative(config, out _));
+    }
+
     [Theory]
     [InlineData(200)]
     [InlineData(503)]
