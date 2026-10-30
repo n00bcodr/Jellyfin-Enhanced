@@ -1,5 +1,7 @@
 # Enhanced settings
 
+Series and season quality can summarize a representative episode (default), the latest aired episode, the best value per category, values shared by every episode, or best quality with a **Mixed** marker (**±** in compact mode). Choose **Media Tags** → **Groups** → **Quality** → **Series and seasons show:**. The admin default seeds new users and **Apply defaults to all users**; personal choices override it. Native Poster Tags use the same policy. See [Quality Tags](tags.md#quality-tags) for missing metadata, language and source/format behavior.
+
 Use the Enhanced panel for your preferences, or **Dashboard** → **Plugins** → **Jellyfin Enhanced** for server features and new users' starting values. This page covers Enhanced; [Tags & Badges](tags.md) and specialist settings pages cover their own controls. Defaults below are for plugin 12.12.0.0; your administrator may choose different starting values.
 
 ## Enhanced Settings — User configuration

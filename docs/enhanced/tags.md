@@ -62,7 +62,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 
 | Feature | What you see | Where it appears |
 |---|---|---|
-| [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound | Supported library cards; series/season quality describes a representative episode |
+| [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound | Supported library cards; series/season quality follows your aggregation policy |
 | [Genre Tags](#genre-tags) | Genre icons (three by default), with names on hover | Supported library cards with genre metadata |
 | [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards, subject to item-type and row scopes |
@@ -259,7 +259,32 @@ Administrators configure the same defaults under **Categories and sound language
 
 ### Detection limits
 
-Series and season quality describes one representative episode, not every episode or media version. Missing streams or naming information can leave categories empty. Collections have no streams of their own and normally have no quality badges.
+Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default under **Display** → **Media Tags** → **Quality Tags**. Each user can choose:
+
+| Policy | What appears |
+|---|---|
+| **Representative episode** (default) | Today's behavior: the first non-virtual episode with usable streams, preferring regular episodes over specials |
+| **Latest episode** | Quality of the non-virtual episode with the newest known air date at or before now; future and undated episodes cannot win |
+| **Best quality** | The best resolution, dynamic range, video codec and audio found independently across episodes; these facts can come from different episodes |
+| **Only what every episode has** | A category appears only when every episode has the same value; mixed 1080p/4K episodes therefore show no resolution chip |
+| **Best, marked when mixed** | Best quality plus a **Mixed** chip when an enabled category differs; compact density uses **±** |
+
+The policy covers each series' episodes or each season's own episodes, including specials and all available media versions. Source and special-format chips retain the representative episode for best/shared/mixed; latest takes those chips from its own episode. The codec and dynamic-range rankings follow the quality category orders below. Aggregated audio ranks recognized codecs first (Atmos, DTS-X, TrueHD, DTS, DD+, channel-only), then richer channels, among the preferred language's tracks; an unavailable language falls back to the available tracks.
+
+Missing streams count as unknown: a known/unknown difference suppresses that category in shared mode and marks mixed mode. Empty containers show no mixed marker. Collections keep their existing behavior and normally have no quality badges. Older cache entries without a summary fall back to representative streams until rebuilt.
+
+The server stores policy-independent summaries, so changing the policy does not need another episode fetch. Access-restricted users receive summaries recomputed from the episodes they can see, using the existing access/filter revision. The batch fallback and Native Poster Tags honor the same policy. Quality category switches, ordering, layout limits, label density and Tag Styles still apply; **Mixed** is an editable quality label in Tag Styles.
+
+![Quality settings with the series and season aggregation selector](../images/tags/quality-aggregation-hub.webp)
+
+=== "Shared values"
+
+    ![Shows with differing quality categories omitted by the shared policy](../images/tags/quality-aggregation-shared.webp)
+
+=== "Best with Mixed"
+
+    ![Shows with their best quality and Mixed chips where episode qualities differ](../images/tags/quality-aggregation-mixed.webp)
+
 
 ??? info "Detection and sound-language details"
 

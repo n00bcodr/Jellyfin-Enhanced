@@ -14,6 +14,31 @@ Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path 
 
     Seerr request, issue, user, and service IDs belong to Seerr; they are not Jellyfin GUIDs or TMDB IDs.
 
+## Series and season quality summaries
+
+`SeriesQualityAggregation` is an administrator default and per-user `settings.json` preference. Its fixed values are `representative` (default), `latest`, `best`, `shared` and `mixed`; unknown values normalize to `representative`. Null personal values inherit the admin default. The public configuration includes the normalized default; new-user seeding and resetting all users copy it.
+
+Series and Season entries in `GET /JellyfinEnhanced/tag-cache/{userId}` and items in `POST /JellyfinEnhanced/tag-data/{userId}` include `QualitySummary`:
+
+```json
+{
+  "EpisodeCount": 2,
+  "Categories": {
+    "resolution": { "Best": "4K", "Latest": "1080p", "Values": ["1080p", "4K"], "AllAgree": false },
+    "dynamicRange": { "Best": "HDR10", "Latest": null, "Values": [null, "HDR10"], "AllAgree": false },
+    "videoCodec": { "Best": "HEVC", "Latest": "H264", "Values": ["H264", "HEVC"], "AllAgree": false },
+    "audioInfo": { "Best": "ATMOS 7.1", "Latest": "DTS 5.1", "Values": ["DTS 5.1", "ATMOS 7.1"], "AllAgree": false }
+  },
+  "AudioByLanguage": {},
+  "AudioRegionFallback": {},
+  "LatestExtras": []
+}
+```
+
+Each category keeps at most four distinct values (including null for missing metadata). `Best`, `Latest` and `AllAgree` are computed over every episode independently of that bound. `AudioByLanguage` maps available track language codes and base-language fallbacks to audio category facts; clients select exact-region matches first, then `AudioRegionFallback` (generic tracks for an unavailable region), then the base language and `Categories.audioInfo`. `LatestExtras` contains source/special-format labels for the newest aired non-virtual episode. Unknown/future air dates cannot supply latest values.
+
+Persisted cache schema 14 adds the summary and server-only `QualityEpisodeIds`. Contributor IDs never appear in either response. Access filtering rebuilds summaries from visible contributors and replaces representative streams when necessary; the existing `filterRevision` changes when visibility changes. Spoiler Guard removes the summary whenever it removes quality streams. Missing summaries support legacy representative fallback. Collections are unchanged.
+
 ## Quick Start: Normal User vs Admin
 
 Start here to set up your URL and credential. Use a user token for personal data or administrator credentials for admin routes.
@@ -465,6 +490,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagsHideOnHover` | Boolean | `false` |
 | `QualityTagsPosition` | String | `"top-left"` |
 | `QualityTagsPreferredAudioLanguage` | String | `""` |
+| `SeriesQualityAggregation` | Nullable string: `representative`, `latest`, `best`, `shared`, `mixed`; null inherits the admin default | `null` |
 | `GenreTagsPosition` | String | `"top-right"` |
 | `LanguageTagsPosition` | String | `"bottom-left"` |
 | `RatingTagsPosition` | String | `"bottom-right"` |
