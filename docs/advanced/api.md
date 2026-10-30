@@ -479,6 +479,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `StatusTagsJustAdded` | Boolean | `true` |
 | `StatusTagsNewRelease` | Boolean | `true` |
 | `StatusTagsTrending` | Boolean | `true` |
+| `StatusTagsSchedule`, `StatusTagsMilestones` | Boolean | `true` |
+| `StatusTagsSeriesStatus` | Boolean | `false` |
 | `TagLayout` | String: `corners`, `bands`, `caption`, `summary` or `minimal` | `"corners"` |
 | `TagLayoutSettingsVersion` | Integer; `0` = saved before layouts (keeps corners, positions, arrival order and the original limits), `1` = layout settings apply | `0` (new users: `1`) |
 | `TagLayouts` | Nullable object `{Corners,Bands,Caption,Summary,Minimal}`, each `{Groups:[{Group,Slot}]}` | `null` |
@@ -1049,6 +1051,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>]}`. |
+| GET | `status-tags/series?ids=…` | Authenticated, user-filtered | Up to 50 series item IDs → `{id:{status,lastAired,nextAired}}`; see below. |
 | GET | `status-tags/trending` | Authenticated | `{source,movies,series}` trending ranks for Status Tags; see below. |
 | GET | `item-stats/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
 | GET | `file-size/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size}`. |
@@ -1095,13 +1098,20 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `CommunityRating`, `CriticRating` | Nullable numbers |
 | `LastUpdated` | Integer milliseconds |
 | `DateCreated`, `PremiereDate`, `LatestEpisodeAdded` | Nullable integer milliseconds |
+| `Status` | Nullable Jellyfin series status string |
+| `LatestEpisodeAired` | Nullable integer milliseconds, series/season |
+| `LatestEpisodeIndex`, `EpisodeIndex` | Nullable `{Season,Episode,IsLast}`; `IsLast` is nullable when unresolved |
+| `SeasonPremiere` | Nullable `{Season,Aired}`; newest regular season's episode 1 for a series, the season's own episode 1 for a season |
+| `SeasonAddedSpan` | Nullable `{First,Last,Count}` for season episode added dates |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
 
-`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
+`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies and series) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+
+With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 12 invalidates older disk and IndexedDB copies.
 
 Streams use the trimmed stream fields listed above, and sources contain basename-only `Path` and `Name`.
 
@@ -1122,6 +1132,18 @@ Statistics aggregate playable descendants where applicable. `size` is bytes, `pr
 `movies` and `series` map TMDB IDs to 1-based ranks across one combined list of at most 60 movies and series. `source` is `tmdb-day` (TMDB `trending/all/day`, pages 1–3, used when a TMDB API key is configured), `seerr-week` (Seerr `discover/trending`, TMDB's weekly list, used without a key or when TMDB does not answer or returns no movies or series), or null with empty maps when neither source answers. Seerr is called with the server API key only, without per-user parental filtering; the list holds only public TMDB IDs and ranks.
 
 Any signed-in user may call it, non-administrators included. The server shares one copy for 30 minutes (5 minutes after an empty answer); saving the plugin configuration drops it. The web client fetches it when Status Tags first render and again after 30 minutes, or after 5 minutes following an empty or failed answer. With **Enable Status Tags** or **Show Trending rank** off in the plugin configuration, it returns `source:null` with empty maps without calling upstream.
+
+### Status Tags series schedules
+
+`GET /JellyfinEnhanced/status-tags/series?ids=<id>,<id>` requires authentication and 1–50 comma-separated Jellyfin item-ID strings. An empty request or more than 50 IDs returns `400`. Malformed/empty GUIDs, inaccessible items, non-series and series without a positive numeric TMDB ID are omitted. Lookup uses the caller's Jellyfin access (including parental limits and blocked tags); no target-user parameter is accepted.
+
+```json
+{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"status":"Returning Series","lastAired":{"date":"2026-10-28","season":2,"episode":10,"type":"finale"},"nextAired":{"date":"2027-03-01","season":3,"episode":1}}}
+```
+
+Item-ID keys use lowercase N-format GUIDs. Missing status/episode facts may be null; air dates are `yyyy-MM-dd` calendar dates, interpreted in the user's local calendar by the client. `type` is TMDB's `episode_type`, read from the latest aired season when absent from `tv/{id}`.
+
+The endpoint returns `{}` without upstream calls while admin `StatusTagsEnabled` is off or no TMDB key is configured. Failed/missing upstream series are omitted. Responses use `Cache-Control: private, max-age=600`. TMDB responses are shared in `TmdbResponseCache` for six hours; credential changes use a separate cache key. At most four upstream lookups run concurrently, with 35 starts per ten-second window. The web client requests visible series and parent series of visible season/episode cards in batches of 50, caches answers for one hour, retries failures after five minutes, and drops stale card/user answers.
 
 ### Style and native-preview contracts
 
@@ -1272,7 +1294,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
-    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending` | Boolean |
+    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `StatusTagsSchedule`, `StatusTagsMilestones`, `StatusTagsSeriesStatus` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |

@@ -689,13 +689,17 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
     The server retains `catchup-log.jsonl` and `catchup-log.1.jsonl` in the plugin configuration folder. It rotates before the next append once the live file exceeds 5 MiB.
 
-### Tags: Quality, Genre, Language, Rating, Age Rating, People
+### Tags: Quality, Genre, Language, Rating, Age Rating, Status, People
 
 All tag settings have moved to [Tags & Badges](tags.md): personal **UI Settings** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
 
 #### Configuration
 
 For personal tag choices, open **UI Settings**. Administrators use **Display** → **Media Tags**. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
+
+#### Status Tags badge groups
+
+Under **UI Settings** → **Show Status Tags** → **Choose which badges to show**, the six personal switches are Trending rank, New Movie / New Series / New Episode, Just Added, Airing Today / Airs / Returns / Coming Soon, New Season / Premiere / Finale / Complete Season, and Returning / Ended / Cancelled. All default on except the last. Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
 
 #### Server-Side Tag Cache
 

@@ -43,7 +43,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards, subject to item-type and row scopes |
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
-| [Status Tags](#status-tags) | One badge: trending rank, New Movie/Series/Episode, or Just Added | Supported library cards; web only |
+| [Status Tags](#status-tags) | One badge: trending, release, schedule, milestone or series status | Supported library cards; web only |
 | [People Tags](#people-tags) | Age, age at release, birthplace, deceased styling | Cast and guest-cast cards on web item detail pages |
 | [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages |
 | [Player badges](#player-badges) | Scores in the controls; optional age/advisory badge at playback start | Jellyfin web video player |
@@ -381,49 +381,78 @@ Poster age badges use classification colors independently of **Colored Ratings B
 
 ## Status Tags
 
-Status Tags mark what is new or popular with a small translucent badge, such as `Just Added`, `New Movie`, or `#3 Today`. The badge sits over the card, so your poster image, including custom poster sets, stays as it is.
+Status Tags show one translucent badge per card: what is new, trending, airing next, or reaching a season milestone. They use the existing poster artwork and the selected [tag layout](#layouts).
 
-![Just Added, New Episode, New Movie and daily trending badges on library cards](../images/tags/status-tags.webp)
+![Status badges on library cards](../images/tags/status-tags.webp)
 
-**How to use:** Turn on **Show Status Tags** in **UI Settings** and choose a corner. Open **Choose which badges to show** to turn single badges off.
+**How to use:** Turn on **Show Status Tags** in **UI Settings**. Open **Choose which badges to show** to select badge groups. Administrators set starting defaults under **Display** → **Media Tags**; each user can override the six group switches.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Status Tags** / personal: **Show Status Tags** | Off | Shows one status badge on supported cards. The admin switch also allows the server to fetch the trending list |
-| Admin: **Show Trending rank** / personal: **Trending rank** | On | Shows the title's place in the trending list. Turning it off in the admin settings stops the trending list for everyone |
-| Admin: **Show New Movie / New Series / New Episode** / personal: **New Movie / New Series / New Episode** | On | Shows the release badges |
-| Admin: **Show Just Added** / personal: **Just Added** | On | Shows the badge for items recently added to the library |
-| Admin: **New release window (days)** | 30 | How long after its premiere date a movie or series counts as new; range 1–365 |
-| Admin: **Just added window (days)** | 7 | How long after it reached the library an item counts as just added, and how recent a series or season's newest episode must be for **New Episode**; range 1–365 |
+| Admin: **Enable Status Tags** / personal: **Show Status Tags** | Off | Shows one badge per supported card. The admin switch also allows server trending and series schedule lookups |
+| **Trending rank** | On | Shows the title's trending rank. Admin **Show Trending rank** off stops the shared list for everyone |
+| **New Movie / New Series / New Episode** | On | Shows release and episode-arrival badges |
+| **Just Added** | On | Shows recently added library items |
+| **Airing Today / Airs / Returns / Coming Soon** | On | Shows schedule badges; Coming Soon works without TMDB |
+| **New Season / Premiere / Finale / Complete Season** | On | Shows season and series milestones |
+| **Returning / Ended / Cancelled** | Off | Shows a series' status when no higher-priority badge applies |
+| Admin: **New release window (days)** | 30 | Premiere dates, new seasons, season premieres and recent TMDB finales; range 1–365 |
+| Admin: **Just added window (days)** | 7 | Item/episode added dates, an episode's own air date and season binge drops; range 1–365 |
 
-Each card shows one badge. The first one that applies wins:
+### Badges and priority
+
+First match wins, with one badge per card:
 
 | Card | Badge order |
 |---|---|
-| Movie | Trending → **New Movie** (premiered within the new release window, not in the future) → **Just Added** |
-| Series | Trending → **New Series** → **New Episode** (newest episode added within the just added window, and the series itself added before it) → **Just Added** |
-| Season | **New Episode** → **Just Added** |
-| Episode, collection, video | **Just Added** |
+| Movie | Trending → Coming Soon → New Movie → Just Added |
+| Series | Trending → Airing Today → Series Finale → New Season → Airs {date} → Returns {date} → New Episode → Coming Soon → New Series → Just Added → Returning / Ended / Cancelled |
+| Season | Complete Season → Season Premiere → Season Finale → New Episode → Just Added |
+| Episode | Season Premiere → Series Finale / Season Finale → New Episode → Just Added |
+| Collection, video | Just Added |
 
-**Just Added** uses the date Jellyfin added the item to the library, the same date its **Date Added** sort uses.
+| Badge | Cards | Data and conditions |
+|---|---|---|
+| **#N Today / #N This Week** | Movie, series | TMDB daily trending rank, or Seerr weekly trending fallback; requires the item's TMDB ID |
+| **Coming Soon** | Movie, series | Jellyfin `PremiereDate` is in the future, including virtual items returned through fallback |
+| **New Movie / New Series** | Movie / series | Jellyfin premiere date falls within the new-release window and has passed |
+| **New Episode** | Series, season, episode | A container's latest non-virtual episode was added within the just-added window and the container predates that window. An episode itself aired or was added within that window |
+| **Just Added** | All supported types | Jellyfin `DateCreated`, the date used by **Date Added** sorting, falls within the just-added window |
+| **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
+| **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
+| **Season Finale** | Season, episode | The latest aired TMDB episode matches the library episode and is within the new-release window. TMDB `episode_type=finale` confirms it; if absent, the local episode must be last in its season and TMDB must have no next episode, or one in a later season |
+| **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and its latest aired episode matches the visible library episode and falls within the new-release window |
+| **Complete Season** | Season | Every non-virtual episode available in the library has an added date within the just-added window. This describes the available episodes; it does not certify acquisition of missing TMDB episodes |
+| **Airing Today** | Series | TMDB's next episode air date is today in the user's local calendar |
+| **Airs {date}** | Series | TMDB's next episode airs in the next seven days |
+| **Returns {date}** | Series | TMDB's next episode airs within 30 days, more than 14 days after the last aired episode. Airs takes priority inside seven days |
+| **Returning / Ended / Cancelled** | Series | Jellyfin Continuing/Ended first. TMDB may refine Ended to Cancelled, or supply a missing Jellyfin status |
 
-### Trending ranks
+Dates read **Tomorrow**, then a localized weekday for two to five days ahead, then a localized short date such as **Nov 6**. The user's Jellyfin display language is preferred, followed by the JE language and browser locale.
 
-The trending rank reads `#N Today` from TMDB's daily trending list when a TMDB API key is configured. Without a key, or if TMDB does not answer or lists nothing, it reads `#N This Week` from Seerr's trending list, which is TMDB's weekly list. With neither, no trending badges appear. Only movies and series with a TMDB ID can show a rank; seasons and episodes never do.
+With **Compact** density, Season Premiere becomes **Premiere**; Season Finale and Series Finale become **Finale**; Complete Season becomes **Complete**; Airing Today becomes **Today**; Coming Soon becomes **Soon**; Just Added becomes **Added**; New Episode becomes **New Ep**. Other labels retain their full text.
 
-The server fetches the first 60 movie and series ranks and keeps the list for 30 minutes, shared by every user. It holds only public TMDB IDs and ranks. Your browser fetches it when the first badges are drawn and again after 30 minutes, or after 5 minutes when it came back empty. When the list has changed, the badges already on the page are updated. It is used only to mark items you can already see.
+### TMDB and trending
+
+A TMDB API key is required for Airing Today, Airs, Returns, Season Finale and Series Finale. Without one, Jellyfin supplies added/release badges, New Season, Season Premiere, Complete Season and Returning/Ended. Cancelled requires TMDB. No Seerr schedule fallback is used.
+
+Trending reads **#N Today** from TMDB's daily list when a key is configured. Without a key, or when TMDB fails or returns no rankable titles, it reads **#N This Week** from Seerr. With neither source, no rank appears. Only movies and series with TMDB IDs receive ranks.
+
+The server shares up to 60 movie/series ranks for 30 minutes, with a five-minute retry after an empty answer. The list contains only public TMDB IDs and ranks. Changed ranks re-badge cards already on the page.
+
+For series cards on screen, and parent series of season/episode cards, the browser batches up to 50 accessible IDs through `GET /JellyfinEnhanced/status-tags/series`. It retains schedules for an hour and retries failures after five minutes. The server shares TMDB responses for six hours, with at most four lookups in flight and 35 upstream requests per ten-second window. If the series response omits `episode_type`, its latest aired season supplies it. No schedule is stored per user or in the tag cache.
 
 !!! note "Web only"
-    Status Tags are web overlays. [Native Poster Tags](#native-poster-tags-experimental) do not draw them into poster images for native apps.
+    [Native Poster Tags](#native-poster-tags-experimental) do not draw Status Tags into poster images.
 
-??? info "Data sources and limits"
-    Dates come from the [Server-Side Tag Cache](#server-side-tag-cache), which keeps each item's added and premiere dates and, for series and seasons, when their newest episode was added. Adding an episode updates its series and season. With the server cache off, the per-page batch fallback asks the server for the same dates.
+??? info "Cache, access filtering and styling"
+    Tag cache schema 12 adds `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex` (`Season`, `Episode`, `IsLast`), `SeasonPremiere` (`Season`, `Aired`), `SeasonAddedSpan` (`First`, `Last`, `Count`) and `EpisodeIndex` (`Season`, `Episode`, nullable `IsLast`). Dates are Unix milliseconds UTC. Movie, series and episode entries can have `PremiereDate`. The persisted browser copy is replaced when its entry schema differs.
 
-    **New Episode** only counts episodes you can see. If the newest episode is hidden from you (library access, parental rating or blocked tags), its series and season show no **New Episode** badge for it.
+    All derived episode facts follow the existing access-filtering and `filterRevision` path. When any contributing episode is inaccessible, related aggregates are omitted conservatively; the shared entry is unchanged. The server-only `StatusEpisodeIds` and `LatestEpisodeId` never enter client responses. With server cache off, `tag-data?latestEpisode=true` computes through the target user's access.
 
-    Spoiler Guard keeps date badges on protected items: an added date is not a spoiler, and Jellyfin shows it as **Date Added**. Protected movies and series keep their trending rank too, because a place in the trending list says nothing about the plot. Seasons and episodes never show one.
+    Spoiler Guard preserves added-date badges and movie/series trending ranks. Guarded season/episode entries omit air dates and milestone indexes, suppressing premiere/finale badges. Complete Season still describes their visible added-date span.
 
-    Restyle the badges with custom CSS through `.status-tag`, or a single kind through `.status-tag--trending`, `.status-tag--new` or `.status-tag--added`. The rank inside a trending badge is `.status-tag-rank`.
+    Style `.status-tag` or its `--trending`, `--new`, `--added`, `--schedule`, `--milestone`, `--status` modifiers. Each chip has `data-je-status="<badge key>"`, for example `new_season`; the number inside a trending chip is `.status-tag-rank`.
 
 ## People Tags
 
@@ -555,6 +584,7 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
     |---|---|
     | `GET /JellyfinEnhanced/tag-cache/{userId}` | Own account or administrator; filtered cache payload. Returns 404 when server mode is off. Optional `since` is a Unix-millisecond cursor; use the returned generation `timestamp`, not `servedAt` |
     | `POST /JellyfinEnhanced/tag-data/{userId}` | Own account or administrator; per-page fallback for accessible items. Body is a nonempty array of at most 200 item-ID strings; optional `mediaSourceId` selects a media version; optional `latestEpisode=true` adds the newest episode's added date to series and seasons |
+    | `GET /JellyfinEnhanced/status-tags/series?ids=…` | Signed-in caller; up to 50 accessible series IDs, returning TMDB status and last/next aired facts |
     | `GET /JellyfinEnhanced/status-tags/trending` | Any signed-in user; the shared trending list for Status Tags. Empty while the admin has Status Tags or the trending rank off |
     | `POST /JellyfinEnhanced/tag-cache/rebuild` | Administrator only; starts a full background rebuild. Returns 400 with server mode off, or 409 if a rebuild is already running |
     | `GET /JellyfinEnhanced/audio-language-tags?codes=…` | Returns base/regional synchronized tag names for the supplied comma-separated language codes; empty mapping when sync is off |
