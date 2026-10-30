@@ -8574,6 +8574,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             });
         }
 
+        /// <summary>
+        /// Saves a few plugin configuration fields on top of the configuration the server holds now (the Media Tags
+        /// page saves field by field), so another administrator's changes to other fields are never overwritten.
+        /// A field listed in <c>Expected</c> with the value the caller read before editing it is refused with 409 and
+        /// the server's value when that value has changed since; nothing is written then. Admin only.
+        /// </summary>
+        /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
+        /// <returns>200 with the stored values, 400 for an unknown field or bad value, 409 with the conflicts.</returns>
+        [HttpPost("admin/configuration")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult PatchConfiguration([FromBody] ConfigurationPatchRequest? request)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            if (request?.Changes == null || request.Changes.Count == 0) return BadRequest(new { error = "No changes." });
+
+            var result = PluginConfigurationPatch.Apply(plugin, request.Changes, request.Expected);
+            if (result.Error != null) return BadRequest(new { error = result.Error });
+            if (result.Conflicts.Count > 0) return Conflict(new { conflicts = result.Conflicts });
+            return Ok(new { values = result.Values });
+        }
+
+        /// <summary>The body of <see cref="PatchConfiguration"/>.</summary>
+        public sealed class ConfigurationPatchRequest
+        {
+            /// <summary>Gets or sets the changed fields (PluginConfiguration property name → value).</summary>
+            public Dictionary<string, JsonElement>? Changes { get; set; }
+
+            /// <summary>Gets or sets, per changed field, the value read before it was edited.</summary>
+            public Dictionary<string, JsonElement>? Expected { get; set; }
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]

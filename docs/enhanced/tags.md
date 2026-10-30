@@ -18,7 +18,7 @@ You can choose tags for your own account. If you administer the server, you can 
 **How to use — admin defaults:**
 
 1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then on the **Display** tab select **Open Media Tags** on the **Media Tags** card. The page has its own address, `#/configurationpage?name=JellyfinEnhancedMediaTags`, and opens at a tab with `&tab=<id>` (`overview`, `layout`, `groups`, `rules`, `colours`, `badges`, `server`; on Groups add `&group=quality` and so on).
-2. Choose your settings. Each change saves on its own; the chip next to the title says **Saving…**, then **All changes saved**. If a save fails it says **Not saved** with the settings it could not save and **Retry**. Those changes stay waiting while you move between Media Tags tabs and links, and leaving the page while they wait asks first.
+2. Choose your settings. Each change saves on its own; the chip next to the title says **Saving…**, then **All changes saved**. If a save fails it says **Not saved** with the settings it could not save and **Retry**. Those changes stay waiting while you move between Media Tags tabs and links, and leaving the page while they wait asks first. Only the settings you change are saved, so another administrator's changes elsewhere are kept. If someone else changed the same setting since you opened the page, the chip says **Changed elsewhere** and offers **Keep mine** or **Take theirs**.
 3. Refresh affected web clients to load the changes.
 
 ![The Media Tags settings page: tab strip, the Overview cards and the live preview of a new user's cards](../images/media-tags-admin-overview.png)

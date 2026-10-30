@@ -1088,6 +1088,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
+| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Unknown fields or bad values: `400`. Used by the Media Tags settings page. |
 | GET | `tag-cache/summary` | Administrator | No body → `{enabled, entries, lastModified, rebuilding}`: whether the server tag cache is on, how many items it holds, its last change (Unix ms, `0` = never) and whether a full build is running or a manual one is queued. Counts are `0` while the cache is off. Used by the Media Tags settings page's Overview. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>]}`. |

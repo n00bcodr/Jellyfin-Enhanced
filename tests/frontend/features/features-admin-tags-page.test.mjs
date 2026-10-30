@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
+import { createHarness, deferred, plain, jsRoot } from '../helpers/harness.mjs';
 
 // The Media Tags admin page (Configuration/mediaTagsPage.html): the real page
 // core and every real section module over a mocked plugin configuration and
@@ -35,14 +35,36 @@ const BASE = {
 
 const catalog = { presets: ['default', 'glass'], age: [], groups: { quality: [{ key: '4K', name: '4K' }], ageRating: [], rating: [{ key: 'community', name: 'Community' }], genre: [{ key: 'genre', name: 'Genre' }], status: [{ key: 'added', name: 'Just Added' }], language: [{ key: 'flag', name: 'Flag' }] }, palettes: { default: {}, glass: {} } };
 
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * POST JellyfinEnhanced/admin/configuration as the server answers it
+ * (Helpers/PluginConfigurationPatch.cs): refused with the server's values when
+ * an expected field moved on (and is not already the requested value),
+ * otherwise only the changed fields are written.
+ * @param {object} server
+ * @param {{Changes: object, Expected?: object}} body
+ */
+function serverPatch(server, body) {
+  const conflicts = {};
+  for (const [key, before] of Object.entries(body.Expected || {})) {
+    if (!same(server[key], before) && !same(server[key], body.Changes[key])) conflicts[key] = structuredClone(server[key] ?? null);
+  }
+  if (Object.keys(conflicts).length) throw { status: 409, json: async () => ({ conflicts }) };
+  Object.assign(server, structuredClone(body.Changes));
+  return { values: structuredClone(body.Changes) };
+}
+
 /**
  * A browser realm with the page core and every section module loaded, over a
- * mocked server (`server`), without a page built yet.
+ * mocked server (`server`), without a page built yet. Field saves go through
+ * `patch` (default: serverPatch) and are recorded in `patches`.
  * @param {import('node:test').TestContext} t
- * @param {{server: object, url?: string, apiClient?: object, globals?: object}} options
+ * @param {{server: object, url?: string, apiClient?: object, globals?: object, patch?: Function}} options
  */
-function boot(t, { server, url, apiClient = {}, globals = {} }) {
+function boot(t, { server, url, apiClient = {}, globals = {}, patch }) {
   const posts = [];
+  const patches = [];
   const h = createHarness({
     html: '<div id="jeTaRoot"></div>',
     url: url || 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags',
@@ -53,6 +75,11 @@ function boot(t, { server, url, apiClient = {}, globals = {} }) {
       getPluginConfiguration: async () => structuredClone(server),
       ajax: async (request) => {
         const path = new URL(request.url).pathname;
+        if (request.type === 'POST' && path.endsWith('/JellyfinEnhanced/admin/configuration')) {
+          const body = JSON.parse(request.data);
+          patches.push(structuredClone(body));
+          return (patch || ((b) => serverPatch(server, b)))(body);
+        }
         if (request.type === 'POST') { posts.push(path); return { message: 'started' }; }
         if (path.endsWith('/tag-cache/summary')) return { enabled: true, entries: 1234, lastModified: 0, rebuilding: false };
         if (path.endsWith('/Localization/Cultures')) return [{ TwoLetterISOLanguageName: 'en', DisplayName: 'English' }, { TwoLetterISOLanguageName: 'ja', DisplayName: 'Japanese' }];
@@ -85,7 +112,7 @@ function boot(t, { server, url, apiClient = {}, globals = {} }) {
     else el.value = value;
     el.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   };
-  return Object.assign(h, { A, posts, settle, change, cleanup });
+  return Object.assign(h, { A, posts, patches, settle, change, cleanup });
 }
 
 /**
@@ -95,17 +122,14 @@ function boot(t, { server, url, apiClient = {}, globals = {} }) {
  */
 function setup(t, { config = {}, url, confirm = true } = {}) {
   const server = structuredClone({ ...BASE, ...config });
-  const puts = [];
   const confirms = [];
   const h = boot(t, { server, url });
   const root = h.document.getElementById('jeTaRoot');
-  const ctx = h.A.createPage(root, structuredClone(server), {
-    api: { get: async () => structuredClone(server), put: async (c) => { puts.push(structuredClone(c)); Object.assign(server, structuredClone(c)); } },
-    confirm: (text, title) => { confirms.push(title); return confirm; },
-  });
+  // The page's own host: ApiClient.getPluginConfiguration and the field patch above.
+  const ctx = h.A.createPage(root, structuredClone(server), { confirm: (text, title) => { confirms.push(title); return confirm; } });
   h.cleanup.push(() => ctx.dispose());
   const $ = (sel) => root.querySelector(sel);
-  return { ...h, ctx, root, server, puts, confirms, $, $$: (sel) => [...root.querySelectorAll(sel)], save: async () => { await ctx.flush(); } };
+  return { ...h, ctx, root, server, confirms, $, $$: (sel) => [...root.querySelectorAll(sel)], save: async () => { await ctx.flush(); } };
 }
 
 test('every declared field reads its configuration field and saves the new value through the plugin configuration', async t => {
@@ -139,7 +163,7 @@ test('every declared field reads its configuration field and saves the new value
   assert.equal(h.server.DevMode, false, 'fields the page does not own keep the server value');
 });
 
-test('a save copies only the changed fields into a fresh configuration', async t => {
+test('a save sends only the changed fields, each with the value read before the edit', async t => {
   const h = setup(t);
   // Another admin (or the main configuration page) changed two fields meanwhile.
   h.server.DevMode = true;
@@ -147,11 +171,73 @@ test('a save copies only the changed fields into a fresh configuration', async t
   h.change(h.$('#tagsHideOnHover'), true);
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saving');
   await h.save();
-  assert.equal(h.puts.length, 1);
+  assert.deepEqual(h.patches, [{ Changes: { TagsHideOnHover: true }, Expected: { TagsHideOnHover: false } }]);
   assert.equal(h.server.TagsHideOnHover, true);
   assert.equal(h.server.DevMode, true, 'untouched fields keep the newer server value');
   assert.equal(h.server.GenreTagsEnabled, true);
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+  // The next edit of the same field expects what the last save stored.
+  h.change(h.$('#tagsHideOnHover'), false);
+  await h.save();
+  assert.deepEqual(h.patches[1], { Changes: { TagsHideOnHover: false }, Expected: { TagsHideOnHover: true } });
+});
+
+test('another administrator\'s save between this page\'s read and its write is kept (different fields)', async t => {
+  const server = structuredClone(BASE);
+  const gate = deferred();
+  let first = true;
+  const h = boot(t, {
+    server,
+    // Hold this page's request until a second administrator saved another field.
+    patch: async (body) => { if (first) { first = false; await gate.promise; } return serverPatch(server, body); },
+  });
+  const root = h.document.getElementById('jeTaRoot');
+  const ctx = h.A.createPage(root, structuredClone(server));
+  h.cleanup.push(() => ctx.dispose());
+  h.change(root.querySelector('#tagsHideOnHover'), true);
+  const saved = ctx.flush();
+  await h.settle();
+  serverPatch(server, { Changes: { DisableTagsOnSearchPage: true }, Expected: { DisableTagsOnSearchPage: false } });
+  gate.resolve();
+  assert.equal(await saved, true);
+  assert.equal(server.TagsHideOnHover, true);
+  assert.equal(server.DisableTagsOnSearchPage, true, 'the other administrator\'s field is not written back');
+});
+
+test('both administrators editing the same field: Changed elsewhere, nothing overwritten, Keep mine or Take theirs', async t => {
+  const h = setup(t);
+  h.server.StatusTagsJustAddedDays = 9;   // saved by someone else after this page loaded 7
+  h.change(h.$('#statusTagsJustAddedDays'), '8');
+  h.change(h.$('#tagsHideOnHover'), true);
+  assert.equal(await h.ctx.flush(), false);
+  assert.equal(h.server.StatusTagsJustAddedDays, 9, 'theirs is not overwritten');
+  assert.equal(h.server.TagsHideOnHover, true, 'the other field in the refused request still saves');
+  const chip = h.$('#jeTaSaved');
+  assert.equal(chip.dataset.state, 'conflict');
+  assert.match(chip.textContent, /admin_tags_conflict:admin_tags_badges_just_added_days/);
+  // A later edit elsewhere saves without touching the refused field.
+  h.change(h.$('#disableTagsOnSearchPage'), true);
+  assert.equal(await h.ctx.flush(), false);
+  assert.equal(h.server.DisableTagsOnSearchPage, true);
+  assert.ok(!('StatusTagsJustAddedDays' in h.patches.at(-1).Changes));
+  // Keep mine: saved over theirs, against their value.
+  chip.querySelector('[data-je-keep]').click();
+  assert.equal(await h.ctx.flush(), true);
+  assert.deepEqual(h.patches.at(-1), { Changes: { StatusTagsJustAddedDays: 8 }, Expected: { StatusTagsJustAddedDays: 9 } });
+  assert.equal(h.server.StatusTagsJustAddedDays, 8);
+  assert.equal(chip.dataset.state, 'saved');
+  // Take theirs: the page shows their value and sends nothing for it.
+  h.server.StatusTagsJustAddedDays = 12;
+  h.change(h.$('#statusTagsJustAddedDays'), '3');
+  assert.equal(await h.ctx.flush(), false);
+  const count = h.patches.length;
+  chip.querySelector('[data-je-theirs]').click();
+  assert.equal(await h.ctx.flush(), true);
+  assert.equal(h.patches.length, count, 'nothing more is sent');
+  assert.equal(h.server.StatusTagsJustAddedDays, 12);
+  assert.equal(h.ctx.config.StatusTagsJustAddedDays, 12);
+  assert.equal(h.$('#statusTagsJustAddedDays').value, '12');
+  assert.equal(chip.dataset.state, 'saved');
 });
 
 test('a failed save says so, keeps the change and retries', async t => {
@@ -162,7 +248,7 @@ test('a failed save says so, keeps the change and retries', async t => {
   h.ctx.dispose();
   const server = structuredClone(BASE);
   const root = h.document.getElementById('jeTaRoot');
-  const ctx = h.A.createPage(root, structuredClone(server), { api: { get: async () => structuredClone(server), put: async (c) => { if (fail) throw new Error('offline'); Object.assign(server, c); } }, confirm: () => true });
+  const ctx = h.A.createPage(root, structuredClone(server), { api: { get: async () => structuredClone(server), patch: async (changes, expected) => { if (fail) throw new Error('offline'); return serverPatch(server, { Changes: changes, Expected: expected }); } }, confirm: () => true });
   t.after(() => ctx.dispose());
   h.change(root.querySelector('#disableTagsOnSearchPage'), true);
   assert.equal(await ctx.flush(), false);
@@ -185,7 +271,7 @@ test('a failed save survives navigating to another Media Tags view: still pendin
   const h = boot(t, {
     server,
     url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout',
-    apiClient: { updatePluginConfiguration: async (id, c) => { if (fail) throw new Error('offline'); writes.push(structuredClone(c)); Object.assign(server, structuredClone(c)); } },
+    patch: (body) => { if (fail) throw new Error('offline'); writes.push(body); return serverPatch(server, body); },
     globals: { Dashboard: { confirm: (text, title, cb) => { asked.push(title); cb(false); } } },
   });
   h.expectConsoleError(/could not save the Media Tags settings/);

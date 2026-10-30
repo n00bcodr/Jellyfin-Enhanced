@@ -21,9 +21,12 @@
  * A.fieldHtml; the page still binds it) and break (start a new box).
  *
  * Every change writes the field into the page's working copy and saves it
- * on its own after a short pause: the save re-reads the server
- * configuration and copies only the fields this page changed, so this page
- * and the main configuration page never overwrite each other. The preview
+ * on its own after a short pause, through POST JellyfinEnhanced/admin/configuration:
+ * the server writes only the changed fields on top of the configuration it
+ * holds at that moment, so other administrators' changes to other fields
+ * are kept. Each field carries the value the page read before it was
+ * edited; when another administrator changed that same field meanwhile the
+ * server refuses it and the page asks: Keep mine or Take theirs. The preview
  * column is the settings panel hub's preview (ui-panel-tag-preview.js) fed a
  * new user's document seeded from these defaults, as the server seeds one.
  *
@@ -289,7 +292,11 @@
     const store = {
         /** @type {Map<string, *>} field → the value to save */
         values: new Map(),
-        /** @type {'saved'|'saving'|'error'} */
+        /** @type {Map<string, *>} field → the value read before it was edited (what the server should still hold) */
+        base: new Map(),
+        /** @type {Map<string, *>} field → another administrator's value that refused this edit */
+        conflicts: new Map(),
+        /** @type {'saved'|'saving'|'error'|'conflict'} */
         state: 'saved',
         /** @type {string[]} the fields the last failed save carried */
         failed: [],
@@ -297,7 +304,7 @@
         timer: null,
         /** @type {Promise<boolean>|null} the save on its way */
         saving: null,
-        /** @type {{get: () => Promise<Object>, put: (config: Object) => Promise<*>}|null} the newest view's host */
+        /** @type {{get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<{values?: Object}>}|null} the newest view's host */
         host: null,
         /** @type {Set<(event: {type: string, values?: Object}) => void>} live views */
         views: new Set(),
@@ -311,7 +318,7 @@
         for (const view of Array.from(store.views)) view(event);
     }
 
-    /** @param {'saved'|'saving'|'error'} state */
+    /** @param {'saved'|'saving'|'error'|'conflict'} state */
     function setStoreState(state) {
         store.state = state;
         notify({ type: 'state' });
@@ -322,47 +329,105 @@
         return store.values.size > 0 || !!store.saving || !!store.timer;
     }
 
+    /** @param {*} value @returns {*} A deep copy (JSON values only). */
+    const copy = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
+
     /**
-     * Save every pending edit now: re-read the server configuration, copy
-     * only the pending fields into it and write it back. A failed save keeps
-     * its edits here (state 'error') for a retry from any view.
+     * The fields another administrator changed: the server's 409 body.
+     * @param {*} err - The rejected request (a fetch Response from ApiClient.ajax).
+     * @returns {Promise<Object<string, *>|null>}
+     */
+    async function conflictsOf(err) {
+        if (!err || err.status !== 409) return null;
+        try {
+            const body = typeof err.json === 'function' ? await err.json() : err;
+            return body && typeof body.conflicts === 'object' ? body.conflicts : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Save every pending edit now: the server writes only these fields, on
+     * top of the configuration it holds, and refuses (409) any whose value
+     * another administrator changed since this page read it. A failed save
+     * keeps its edits here (state 'error') for a retry from any view; a
+     * refused one waits for Keep mine / Take theirs (state 'conflict') while
+     * the other fields still save.
      * @returns {Promise<boolean>} Whether everything pending so far is saved.
      */
     function flushStore() {
         clearTimeout(store.timer);
         store.timer = null;
         if (store.saving) return store.saving.then((ok) => (ok && store.values.size ? flushStore() : ok));
-        if (!store.values.size) {
-            if (store.state !== 'saved') setStoreState('saved');
-            return Promise.resolve(true);
+        const sent = new Map(Array.from(store.values).filter(([key]) => !store.conflicts.has(key)));
+        if (!sent.size) {
+            setStoreState(store.conflicts.size ? 'conflict' : 'saved');
+            return Promise.resolve(!store.conflicts.size);
         }
         const host = store.host;
-        const sent = new Map(store.values);
-        store.values.clear();
+        for (const key of sent.keys()) store.values.delete(key);
+        const changes = Object.fromEntries(sent);
+        const expected = {};
+        for (const key of sent.keys()) if (store.base.has(key)) expected[key] = store.base.get(key);
         setStoreState('saving');
+        let refused = false;
         store.saving = (async () => {
             try {
-                const fresh = await host.get();
-                for (const [key, value] of sent) fresh[key] = value;
-                await host.put(fresh);
+                const result = await host.patch(changes, expected);
+                const stored = result && result.values && typeof result.values === 'object' ? result.values : changes;
+                for (const key of sent.keys()) {
+                    const value = key in stored ? stored[key] : changes[key];
+                    // Edited again meanwhile: the next save expects what this one stored.
+                    if (store.values.has(key)) store.base.set(key, copy(value));
+                    else store.base.delete(key);
+                }
                 store.failed = [];
-                notify({ type: 'saved', values: Object.fromEntries(sent) });
+                notify({ type: 'saved', values: Object.fromEntries(Array.from(sent.keys()).map((key) => [key, key in stored ? stored[key] : changes[key]])) });
                 return true;
             } catch (err) {
-                console.error('🪼 Jellyfin Enhanced: could not save the Media Tags settings', err);
                 for (const [key, value] of sent) if (!store.values.has(key)) store.values.set(key, value);
-                store.failed = Array.from(sent.keys());
+                const conflicts = await conflictsOf(err);
+                if (conflicts && Object.keys(conflicts).length) {
+                    for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
+                    refused = true;
+                } else {
+                    console.error('🪼 Jellyfin Enhanced: could not save the Media Tags settings', err);
+                    store.failed = Array.from(sent.keys());
+                }
                 return false;
             } finally {
                 store.saving = null;
             }
         })();
         return store.saving.then((ok) => {
+            // Refused fields wait for a choice; the others in that request still save.
+            if (refused) return flushStore();
             if (!ok) setStoreState('error');
             else if (store.values.size) return flushStore();
-            else setStoreState('saved');
-            return ok;
+            else setStoreState(store.conflicts.size ? 'conflict' : 'saved');
+            return ok && !store.conflicts.size;
         });
+    }
+
+    /**
+     * Settle the fields another administrator changed: keep this page's
+     * values (saved again over theirs) or take theirs.
+     * @param {boolean} mine
+     * @returns {Promise<boolean>} Whether everything pending is saved afterwards.
+     */
+    function resolveConflicts(mine) {
+        const theirs = Object.fromEntries(store.conflicts);
+        store.conflicts.clear();
+        for (const [key, value] of Object.entries(theirs)) {
+            if (mine) store.base.set(key, copy(value));
+            else {
+                store.values.delete(key);
+                store.base.delete(key);
+            }
+        }
+        if (!mine) notify({ type: 'saved', values: theirs });
+        return flushStore();
     }
 
     /** Queue a save after a short pause (a burst of changes saves once). */
@@ -397,14 +462,21 @@
      * @param {HTMLElement} root - The .je-tag-admin element.
      * @param {Object} config - The plugin configuration (the page's working copy).
      * @param {{api?: Object, confirm?: Function, now?: () => number}} [options] - Host
-     *   hooks (tests): api = { get(): Promise<config>, put(config): Promise },
+     *   hooks (tests): api = { get(): Promise<config>, patch(changes, expected): Promise<{values}> }
+     *   (patch rejects with {status: 409, json()} → {conflicts} when refused),
      *   confirm(text, title): Promise<boolean>.
      * @returns {Object} The page context.
      */
     function createPage(root, config, options = {}) {
         const host = options.api || {
             get: () => ApiClient.getPluginConfiguration(PLUGIN_ID),
-            put: (c) => ApiClient.updatePluginConfiguration(PLUGIN_ID, c),
+            patch: (changes, expected) => ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('/JellyfinEnhanced/admin/configuration'),
+                data: JSON.stringify({ Changes: changes, Expected: expected }),
+                contentType: 'application/json',
+                dataType: 'json',
+            }),
         };
         store.host = host;
         // Edits a failed save left behind (another view's) show here too.
@@ -474,14 +546,20 @@
         const drawSaveState = () => {
             const state = store.state;
             savedChip.dataset.state = state;
-            if (state === 'error') {
-                const fields = store.failed.length ? store.failed : Array.from(store.values.keys());
-                const names = Array.from(new Set(fields.map(fieldName))).join(', ');
-                savedChip.innerHTML = `<span>${names ? tx('admin_tags_save_failed_fields', { fields: names }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
+            const names = (keys) => Array.from(new Set(keys.map(fieldName))).join(', ');
+            if (state === 'conflict') {
+                savedChip.innerHTML = `<span>${tx('admin_tags_conflict', { fields: names(Array.from(store.conflicts.keys())) })}</span>`
+                    + `<button type="button" data-je-keep>${tx('admin_tags_keep_mine')}</button><button type="button" data-je-theirs>${tx('admin_tags_take_theirs')}</button>`;
+            } else if (state === 'error') {
+                const fields = names(store.failed.length ? store.failed : Array.from(store.values.keys()));
+                savedChip.innerHTML = `<span>${fields ? tx('admin_tags_save_failed_fields', { fields }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
             } else savedChip.innerHTML = tx(state === 'saving' ? 'admin_tags_saving' : 'admin_tags_saved');
         };
         savedChip.addEventListener('click', (e) => {
-            if (/** @type {HTMLElement} */ (e.target).closest('[data-je-retry]')) flush();
+            const target = /** @type {HTMLElement} */ (e.target);
+            if (target.closest('[data-je-retry]')) flush();
+            else if (target.closest('[data-je-keep]')) resolveConflicts(true);
+            else if (target.closest('[data-je-theirs]')) resolveConflicts(false);
         });
         /** @returns {Promise<boolean>} Whether everything pending is saved. */
         const flush = () => flushStore();
@@ -493,8 +571,18 @@
          */
         const onStore = (event) => {
             if (disposed) return;
+            let moved = false;
             if (event.type === 'saved' && event.values) {
-                for (const [key, value] of Object.entries(event.values)) if (!store.values.has(key)) config[key] = value;
+                for (const [key, value] of Object.entries(event.values)) {
+                    if (store.values.has(key) || JSON.stringify(config[key] ?? null) === JSON.stringify(value ?? null)) continue;
+                    // The server stored something else (it normalised the value, or theirs was taken).
+                    config[key] = copy(value);
+                    moved = true;
+                }
+            }
+            if (moved) {
+                for (const s of sections) s.load?.(ctx, bodyOf(s));
+                refresh();
             }
             drawSaveState();
         };
@@ -507,6 +595,8 @@
          */
         function setMany(values, opts = {}) {
             for (const [key, value] of Object.entries(values)) {
+                // What the server should still hold when this edit is saved.
+                if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
                 config[key] = value;
                 store.values.set(key, value);
             }

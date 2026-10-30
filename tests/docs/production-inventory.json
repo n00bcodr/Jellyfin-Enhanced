@@ -179,6 +179,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluginConfigurationPatch.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ProviderHelper.cs",
       "category": "Helpers"
     },
@@ -2954,6 +2958,16 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/tag-cache/summary",
       "method": "GetTagCacheSummary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/configuration",
+      "method": "PatchConfiguration",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -8839,8 +8853,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 403,
-    "routes": 183,
+    "files": 404,
+    "routes": 184,
     "configuration_properties": 631,
     "storage_references": 75,
     "scheduled_tasks": 13,
