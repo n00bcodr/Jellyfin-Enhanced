@@ -287,3 +287,16 @@ test('a detached waiting card presents retained groups after timeout and reconne
   assert.ok(h.shown(EPISODE), 'reattachment presents the retained quality group');
   assert.equal(h.requests.length, 0, 'no response needed for safety-release presentation');
 });
+
+for (const keepFresh of [false, true]) test(`admin clear immediately removes stale facts from localStorage (fresh=${keepFresh})`, t => {
+  const clearedAt = Date.now() - 1000;
+  const facts = { [EPISODE]: { Type: 'Episode', SeriesId: SERIES, Genres: ['private'], at: clearedAt - 1 } };
+  if (keepFresh) facts[OTHER] = { Type: 'Movie', Genres: ['public'], at: clearedAt + 1 };
+  const h = setupReal(t, { storage: { JE_tagLookFacts: JSON.stringify(facts), 'JE_tagLookFacts:identity-owner': 's:a' } });
+  h.JE.pluginConfig.ClearLocalStorageTimestamp = clearedAt;
+  h.scan();
+  const stored = JSON.parse(h.window.localStorage.getItem('JE_tagLookFacts') || '{}');
+  assert.equal(stored[EPISODE], undefined, 'stale ids and genres are erased before any later cache save');
+  assert.equal(JSON.stringify(stored).includes('private'), false);
+  assert.deepEqual(Object.keys(stored), keepFresh ? [OTHER] : []);
+});

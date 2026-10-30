@@ -1036,6 +1036,9 @@
                 for (const [id, facts] of Object.entries(stored)) {
                     if (facts && typeof facts === 'object' && Number(facts.at) > clearedAt) lookFacts.set(id, facts);
                 }
+                // Admin clears must erase the stored payload now, even when
+                // every renderer hits its cache and no later save is scheduled.
+                if (lookFacts.size !== Object.keys(stored).length) saveLookFacts();
             }
         } catch (err) {
             console.warn(`${logPrefix} Ignoring unreadable tag look facts`, err);
