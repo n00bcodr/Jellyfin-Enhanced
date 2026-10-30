@@ -497,6 +497,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     case PosterTagTileKind.AgeRating:
                         PaintAge(canvas, plan, item, local, border, space);
                         break;
+                    case PosterTagTileKind.LanguageChip:
+                        PaintLanguageChip(canvas, plan, item, local, border, space);
+                        break;
                     case PosterTagTileKind.Flag:
                         PaintFlag(canvas, item, local, border, space);
                         break;
@@ -639,6 +642,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float top = 1f + PosterTagCss.Lu(css.ChipPaddingV);
                 float baseline = top + Assets.TextMetrics.BaselineOffset(fontSize, lineHeight);
                 DrawText(canvas, item.TextLayout!, x, baseline, style.Text, style.TextShadow ? TextShadowColor : null, space);
+            }
+
+            /// <summary>Codes, audio-count badges, and CC-prefixed subtitle flags.</summary>
+            private void PaintLanguageChip(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                var tag = (LanguageTag)item.Tag;
+                var parts = item.Style.Split('|', 3);
+                var colors = parts.Length == 3 ? TagColors.Decode(parts[2]) : default;
+                using var opacity = new SKPaint { Color = new SKColor(0, 0, 0, tag.Partial ? CssColor.AlphaByte(0.55f) : (byte)255) };
+                canvas.SaveLayer(opacity);
+                using var shape = new SKRoundRect(local, 3f);
+                PaintBox(canvas, shape, colors.Background ?? new SKColor(0, 0, 0, 191), colors.Border ?? SKColors.White, border, ChipShadow);
+                var fontSize = plan.Css.ChipFontSize;
+                DrawText(canvas, item.TextLayout!, 5f, 3f + Assets.TextMetrics.BaselineOffset(fontSize, local.Height - 6f), colors.Text ?? SKColors.White, null, space);
+                if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
+                {
+                    var target = SKRect.Create(local.Width - item.IconWidth - 5f, 3f, item.IconWidth, item.IconHeight);
+                    canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Linear));
+                }
+                if (tag.Partial)
+                {
+                    using var dash = SKPathEffect.CreateDash(new[] { 3f * border, 2f * border }, 0f);
+                    using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = border, PathEffect = dash };
+                    canvas.DrawRoundRect(shape, paint);
+                }
+                canvas.Restore();
             }
 
             private void PaintFlag(SKCanvas canvas, PlannedItem item, SKRect local, float border, TileSpace space)

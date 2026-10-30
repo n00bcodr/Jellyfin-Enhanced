@@ -82,6 +82,10 @@ const synthetic = {
     g07: movie({ Genres: ['constructor', '__proto__', 'Constructor'] }),
     g08: movie({ Genres: ['toString', 'hasOwnProperty', '__PROTO__'] }),
     // Languages
+    sub01: movie({ AudioLanguages: ['eng', 'en', 'jpn'], SubtitleLanguages: ['eng', 'fra', 'pt-BR'] }),
+    sub02: movie({ Type: 'Series', AudioLanguages: ['hi', 'ta', 'te'], PartialAudioLanguages: ['ta'], SubtitleLanguages: ['ger', 'deu', 'fr'] }),
+    sub03: movie({ AudioLanguages: [], SubtitleLanguages: ['eo', 'zxx', 'pt-br', 'pt-pt'] }),
+    sub04: movie({ AudioLanguages: ['en-US', 'en-GB', 'zxx'], SubtitleLanguages: ['zh-Hant', 'zh-Hans', 'pt_BR'] }),
     l01: { Type: 'Series', TmdbId: '2000', Genres: ['Animation'], CommunityRating: 8.4, OfficialRating: 'TV-Y7', AudioLanguages: ['en', 'eng', 'en-us', 'pt-br', 'es-419', 'ja'], PartialAudioLanguages: ['en-us', 'pt-br', 'es-419'], StreamData: sd([video(), audio()]) },
     l02: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Genres: ['Animation'], CommunityRating: 8.4, OfficialRating: 'TV-Y7', AudioLanguages: ['pt-br', 'es-419', 'nb', 'nb-no', 'zxx'], PartialAudioLanguages: ['pt-br', 'zxx'], StreamData: sd([video(), audio()]), SeriesId: 'x' },
     l03: movie({ AudioLanguages: ['pt_BR', 'zh-Hant', 'zh-hans-cn', 'es-LA', 'iw', 'gre', 'fil', 'tgl', 'cnr', 'sh', 'mo', 'in'] }),
@@ -289,6 +293,15 @@ synthText('settings-text-array', '[{"GenreTagsEnabled": true}]', adminTagDefault
 synthText('settings-text-garbage', '{"GenreTagsEnabled": tru', adminTagDefaults);
 synthText('settings-text-json5', "{'GenreTagsEnabled': true, RatingTagsEnabled: true, /* note */ RatingTagsPosition: 'top-left', // x\n QualityTagsEnabled: true,}", adminTagDefaults);
 synthText('settings-text-duplicates', '{"GenreTagsEnabled": false, "genreTagsEnabled": true, "LanguageTagsEnabled": true, "LANGUAGETAGSENABLED": null}', adminTagDefaults);
+
+// Language includes, codes, combined caps and badge modes over every fixture.
+for (const style of ['flags', 'codes']) {
+    for (const badge of ['off', 'only', 'both']) {
+        synth(`language-${style}-${badge}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: style, LanguageTagsCountBadge: badge });
+    }
+}
+synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
+synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
 
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

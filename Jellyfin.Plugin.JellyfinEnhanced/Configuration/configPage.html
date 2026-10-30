@@ -323,7 +323,7 @@
                                 </div>
                             </div>
                             <div class="je-setting-description" data-desc-for="languageTagsEnabled">
-                                <div class="fieldDescription">Display available audio languages as country flags on poster cards.</div>
+                                <div class="fieldDescription">Display audio and subtitle languages as country flags or codes, with an optional Dual/Multi audio badge.</div>
                             </div>
                             <details id="languagePriorityAdminDetails" class="je-details-section" style="margin-left: 20px;">
                                 <summary>Priority languages</summary>
@@ -6754,6 +6754,8 @@
                     n.appendChild(el('i', 'material-icons', 'theaters'));
                 } else if (g === 'status') {
                     n = el('span', 'je-ts-chip je-ts-status status-tag', STATUS_SAMPLES[label.key] || label.name);
+                } else if (label.key === 'countBadge' || label.key === 'subtitles') {
+                    n = el('span', 'je-ts-chip language-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                 } else {
                     n = el('img', 'je-ts-chip je-ts-flag language-flag');
                     n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
@@ -6953,7 +6955,8 @@
                     rating: map('rating'),
                     genre: web(effective('genre', 'genre')),
                     status: map('status'),
-                    language: { border: effective('language', 'flag').border }
+                    language: { border: effective('language', 'flag').border },
+                    languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }]))
                 };
             }
 
@@ -6995,6 +6998,9 @@
                     n.dataset.jeStatus = label.key;
                     if (label.key === 'trending') n.append(el('span', 'status-tag-rank', '#3'), ' Today');
                     else n.textContent = STATUS_SAMPLES[label.key] || label.name;
+                } else if (label.key === 'countBadge' || label.key === 'subtitles') {
+                    n = el('span', 'language-chip je-ts-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
+                    n.dataset.jeLanguage = label.key;
                 } else {
                     n = el('img', 'language-flag je-ts-chip je-ts-flag');
                     n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');

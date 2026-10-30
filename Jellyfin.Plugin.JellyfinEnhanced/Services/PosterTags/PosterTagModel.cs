@@ -54,7 +54,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// A language flag. <paramref name="FlagCode"/> is the flag-icons code (e.g. "gb", "es-ct") or
     /// "no-dialogue"; <paramref name="Partial"/> marks a language present on only some episodes.
     /// </summary>
-    public sealed record LanguageTag(string FlagCode, string Language, bool Partial) : PosterTag;
+    public sealed record LanguageTag(string FlagCode, string Language, bool Partial) : PosterTag
+    {
+        /// <summary>A subtitle chip, with a CC prefix.</summary>
+        public bool Subtitle { get; init; }
+        /// <summary>Uppercase ISO code for Codes style; null for a flag.</summary>
+        public string? Code { get; init; }
+        /// <summary>Dual/Multi audio count label, or null for a language chip.</summary>
+        public string? CountBadge { get; init; }
+    }
 
     /// <summary>
     /// A rating chip. <paramref name="Text"/> is the formatted value exactly as the web shows it

@@ -368,6 +368,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         private PlannedItem? MeasureFlag(LanguageTag tag, PosterTagCss css, TagStyleSet styles)
         {
+            if (tag.Code is not null || tag.CountBadge is not null || tag.Subtitle)
+            {
+                var text = tag.CountBadge ?? (tag.Subtitle ? "CC " : string.Empty) + (tag.Code ?? string.Empty);
+                var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
+                float flagWidth = tag.Code is null && tag.CountBadge is null ? PosterTagCss.Lu(css.FlagWidth) : 0;
+                var flagCode = PosterTagRenderer.FlagAssetCode(tag.FlagCode);
+                if (flagWidth > 0 && (flagCode is null || !_assets.HasFlag(flagCode))) return null;
+                var label = tag.CountBadge is not null ? "countBadge" : tag.Subtitle ? "subtitles" : "flag";
+                var colors = styles.Resolve(TagStyleKeys.Language, label);
+                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + 10f;
+                float chipHeight = Math.Max(PosterTagCss.Lu(css.ChipFontSize), flagWidth * 0.75f) + 6f;
+                // The key carries flag identity, partial treatment, and label-specific style.
+                return new PlannedItem(PosterTagTileKind.LanguageChip, tag, text, (flagCode ?? string.Empty) + "|" + tag.Partial + "|" + colors.Encode(), chipWidth, chipHeight)
+                { TextLayout = layout, IconWidth = flagWidth, IconHeight = flagWidth * 0.75f };
+            }
+
             var code = PosterTagRenderer.FlagAssetCode(tag.FlagCode);
             if (code is null || !_assets.HasFlag(code))
             {

@@ -105,6 +105,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Most language flags shown (0 = unlimited; default 3).</summary>
         public int LanguageCap { get; private init; } = 3;
 
+        // Language display settings are separate from layout settings for stacked branches.
+        /// <summary>Include audio track languages.</summary>
+        public bool LanguageShowAudio { get; private init; } = true;
+        /// <summary>Include subtitle track languages, with a CC marker.</summary>
+        public bool LanguageShowSubtitles { get; private init; }
+        /// <summary>Flags or uppercase ISO codes.</summary>
+        public string LanguageStyle { get; private init; } = "flags";
+        /// <summary>Off, badge only, or badge with audio chips.</summary>
+        public string LanguageCountBadge { get; private init; } = "off";
+
         /// <summary>Most rating chips shown, user-review chip included (0 = unlimited).</summary>
         public int RatingCap { get; private init; }
 
@@ -353,6 +363,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 QualityCap = layout.Cap("quality"),
                 GenreCap = layout.Cap("genre"),
                 LanguageCap = layout.Cap("language"),
+                LanguageShowAudio = user.LanguageTagsShowAudio,
+                LanguageShowSubtitles = user.LanguageTagsShowSubtitles,
+                LanguageStyle = LanguageTagDisplay.NormalizeStyle(user.LanguageTagsStyle),
+                LanguageCountBadge = LanguageTagDisplay.NormalizeCountBadge(user.LanguageTagsCountBadge),
                 RatingCap = layout.Cap("rating"),
                 AgeRatingCap = layout.Cap("ageRating"),
                 ShowResolutionTag = user.ShowResolutionTag,
@@ -679,6 +693,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 values["language.position"] = LanguageTagsPosition;
                 values["language.cap"] = Int(LanguageCap);
+                values["language.audio"] = Bool(LanguageShowAudio);
+                values["language.subtitles"] = Bool(LanguageShowSubtitles);
+                values["language.style"] = LanguageStyle;
+                values["language.countBadge"] = LanguageCountBadge;
                 values["language.priority"] = string.Join(",", LanguagePriorityTerms);
                 values["language.priorityStrict"] = Bool(LanguagePriorityStrict);
                 values["language.mergeRegions"] = Bool(LanguageMergeRegions);

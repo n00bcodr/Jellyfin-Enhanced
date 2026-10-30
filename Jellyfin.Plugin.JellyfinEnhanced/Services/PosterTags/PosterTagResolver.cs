@@ -105,16 +105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
             }
 
-            if (settings.Shows(PosterTagGroup.Language)
-                && LanguageFlagRules.Resolve(entry.AudioLanguages, entry.PartialAudioLanguages, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict, settings.LanguageMergeRegions, settings.LanguageCap) is { } flags)
+            if (settings.Shows(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
             {
-                var tags = new List<PosterTag>(flags.Count);
-                foreach (var flag in flags)
-                {
-                    tags.Add(new LanguageTag(LanguageFlagRules.ToFlagCode(flag.CountryCode), string.Join(", ", flag.AllLanguages), flag.Partial));
-                }
-
-                groups.Add(Group(PosterTagGroup.Language, settings, tags));
+                groups.Add(Group(PosterTagGroup.Language, settings, languages));
             }
 
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
