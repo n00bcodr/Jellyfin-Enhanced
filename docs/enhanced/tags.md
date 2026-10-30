@@ -198,7 +198,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
     With **Server-Side Tag Cache** on, series and season cards keep their own genres when present and use episode or parent-series genres only when their own are missing. In batch fallback, season cards prefer the parent series' genres whenever available, even if the season has its own. Series cards without genres use the first episode.
 
-    With **Hide Tags on Hover** on, hover-name spans are omitted and the overlays fade out instead. There is no genre-name expansion in a static native poster image.
+    With **Hide Tags on Hover** on, names do not expand on the poster and the overlays fade out instead; the Summary and Minimal hover reveal still lists each genre by name, and a caption strip still shows names on hover. There is no genre-name expansion in a static native poster image.
 
 ## Language Tags
 

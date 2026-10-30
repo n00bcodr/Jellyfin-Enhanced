@@ -105,8 +105,20 @@
             .je-tag-caption > [data-je-group] {
                 display: contents;
             }
-            .je-tag-slot:is([data-je-slot="top"], [data-je-slot="bottom"]) .genre-text,
-            .je-tag-caption .genre-text {
+            /* Genre names: on the poster they float out on hover unless Hide Tags
+               on Hover is on (it fades the poster slots instead); the caption
+               strip, which stays readable, shows them on hover either way; the
+               summary / minimal reveal shows them inline (below). */
+            ${host('bands')}[data-je-slot="top"] > [data-je-group]:not(:first-child) .genre-tag .genre-text,
+            ${host('bands')}[data-je-slot="bottom"] .genre-tag .genre-text {
+                right: calc(100% + 4px);
+                left: auto;
+            }
+            .je-tag-caption .genre-tag .genre-text {
+                left: calc(100% + 4px);
+                right: auto;
+            }
+            body.je-tags-hide-on-hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
                 display: none;
             }
 

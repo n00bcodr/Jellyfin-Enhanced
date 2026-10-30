@@ -378,9 +378,8 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
 
-1. Turn off **Hide Tags on Hover**.
-2. Reload so existing chips include text spans.
-3. Apply the following CSS:
+1. Turn off **Hide Tags on Hover** (with it on, the names are hidden on the poster).
+2. Apply the following CSS:
 
 ```css
 .genre-tag {
@@ -397,7 +396,7 @@ By default, text appears on hover and floats inward from the selected corner. To
 }
 ```
 
-Changing `display` alone does not reveal text hidden by opacity. CSS cannot restore a span omitted when hover hiding was enabled. Long labels can cover more of the poster.
+Changing `display` alone does not reveal text hidden by opacity. Every genre chip carries its `.genre-text` span; in the Summary and Minimal hover reveal it is shown inline. Long labels can cover more of the poster.
 
 ### Language Tags CSS
 

@@ -113,7 +113,6 @@
         const genreContainer = document.createElement('div');
         genreContainer.className = containerClass;
 
-        const hideOnHover = !!JE.currentSettings?.tagsHideOnHover;
         genres.forEach(function(genreName) {
             const genreKey = genreName.toLowerCase();
             const iconName = genreIconMap[genreKey] || genreIconMap['default'];
@@ -124,13 +123,13 @@
             iconSpan.className = 'je-msym-outlined';
             iconSpan.textContent = iconName;
             tag.appendChild(iconSpan);
-            // Skip text labels when tags are hidden on hover — they'd never be visible
-            if (!hideOnHover) {
-                const textSpan = document.createElement('span');
-                textSpan.className = 'genre-text';
-                textSpan.textContent = genreName;
-                tag.appendChild(textSpan);
-            }
+            // The name is always part of the group: the summary and minimal
+            // reveals show it whatever Hide Tags on Hover says; where it shows
+            // elsewhere is up to the layout stylesheet.
+            const textSpan = document.createElement('span');
+            textSpan.className = 'genre-text';
+            textSpan.textContent = genreName;
+            tag.appendChild(textSpan);
             genreContainer.appendChild(tag);
         });
 

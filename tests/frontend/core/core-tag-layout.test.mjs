@@ -652,3 +652,19 @@ test('bands on a card under 160px switch to compact labels and keep the bottom b
   assert.equal(bottom().querySelectorAll('[data-je-overflow]').length, 1, 'only the unneeded "+N" chip is hidden');
   assert.ok(bottom().lastElementChild.hasAttribute('data-je-overflow'));
 });
+
+test('genre names are always in the group; layout CSS decides where they show, with Hide Tags on Hover on or off', async t => {
+  for (const tagsHideOnHover of [true, false]) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagsHideOnHover } });
+    const host = h.render();
+    const names = Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .genre-tag .genre-text'), n => n.textContent);
+    assert.deepEqual(names, ['Drama', 'Crime', 'Thriller'], `the reveal names each genre (hide on hover ${tagsHideOnHover})`);
+    await h.apply({ tagLayout: 'corners' });
+    assert.equal(host.querySelectorAll('.genre-overlay-container .genre-text').length, 3, 'corners keep the spans too');
+    const css = h.document.getElementById('je-tag-layout').textContent;
+    assert.match(css, /body\.je-tags-hide-on-hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\) \.genre-text \{\s*display: none;/,
+      'Hide Tags on Hover keeps names off the poster slots, not the reveal');
+    assert.match(css, /\.je-tag-slot\[data-je-slot="hover"\] \.genre-tag \.genre-text \{\s*position: static;\s*opacity: 1;/, 'the reveal shows them inline');
+    assert.doesNotMatch(css, /\.je-tag-caption \.genre-text \{\s*display: none/, 'the caption strip shows them on hover');
+  }
+});
