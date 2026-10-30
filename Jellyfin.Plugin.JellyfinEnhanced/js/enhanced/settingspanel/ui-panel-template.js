@@ -386,7 +386,8 @@
                                         </select>
                                     </div>
                                 </div>
-                            </div>`;
+                            </div>
+                            <div id="jeTagLooksMount" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};"></div>`;
                             })()}
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">

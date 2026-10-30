@@ -118,6 +118,7 @@
     "enhanced/settingspanel/ui-panel-settings.js",
     "enhanced/settingspanel/ui-panel-hidden-content.js",
     "enhanced/settingspanel/ui-panel-language.js",
+    "enhanced/settingspanel/ui-panel-tag-looks.js",
     "enhanced/settingspanel/ui-panel.js",
     "enhanced/bookmarks/bookmarks.js",
     "// bookmarks-library modules — order matters: styles/page/render",
@@ -200,6 +201,8 @@
     "tags/statustags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",
+    "// Detail-page Lock tag look button (reads JE.core.tagLook at call time).",
+    "tags/tag-look-lock.js",
 
     "// arr",
     "arr/arr-links.js",

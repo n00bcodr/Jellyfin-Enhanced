@@ -363,6 +363,7 @@
         ctx.createToast = createToast;
 
         internal.wireSettingsListeners(ctx);
+        internal.wireTagLooks?.(ctx);
         internal.wireHiddenContentListeners(ctx);
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
