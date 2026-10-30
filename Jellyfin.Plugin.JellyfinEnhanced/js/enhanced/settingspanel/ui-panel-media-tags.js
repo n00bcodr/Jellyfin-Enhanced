@@ -25,7 +25,7 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
-    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono'];
+    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
     const CONFIG_PAGE_NAME = 'Jellyfin Enhanced';
     const TAB_STORE_PREFIX = 'JE_mediaTagsTab:';
 
@@ -58,6 +58,13 @@
         status: { background: 'rgba(15, 15, 15, 0.72)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.18)' },
         rating: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107', border: 'transparent' },
     };
+
+    /**
+     * The Poster preset's tile: each chip in the colours a different artwork
+     * gives it (a red, a blue and a teal poster), through the same
+     * normalisation as the cards (tags/tag-poster-colours.js).
+     */
+    const POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130] };
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));
     /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
@@ -109,10 +116,10 @@
         return `${base}#/configurationpage?name=${encodeURIComponent(CONFIG_PAGE_NAME)}${section ? `&jeSection=${encodeURIComponent(section)}` : ''}`;
     }
 
-    /** @returns {any} The effective layout settings (layout, density), read fresh. */
+    /** @returns {any} The effective layout settings (layout, density, edge spacing), read fresh. */
     function layoutConf() {
         const L = JE.core?.tagLayout;
-        if (!L) return { layout: 'corners', density: 'full' };
+        if (!L) return { layout: 'corners', density: 'full', edge: 'default' };
         L.invalidateSettings();
         return L.normalizeSettings();
     }
@@ -211,7 +218,10 @@
         </div>`;
     }
 
-    /** @returns {string} The Layout tab: tiles, density and the quick switches. */
+    /** Corners edge spacing choices (core/tag-layout.js EDGE_SPACINGS), in display order. */
+    const EDGES = ['default', 'tight', 'flush'];
+
+    /** @returns {string} The Layout tab: tiles, density, edge spacing and the quick switches. */
     function layoutPanelHtml() {
         const conf = layoutConf();
         const tiles = LAYOUTS.map((id) => `
@@ -224,6 +234,11 @@
             <label class="je-mth-pill">
                 <input type="radio" name="jeTagDensity" value="${id}" ${conf.density === id ? 'checked' : ''}>
                 <span data-je-label>${tx(`panel_settings_ui_tag_density_${id}`)}</span>
+            </label>`).join('');
+        const edge = EDGES.map((id) => `
+            <label class="je-mth-pill">
+                <input type="radio" name="jeTagEdge" value="${id}" ${conf.edge === id ? 'checked' : ''}>
+                <span data-je-label>${tx(`panel_settings_ui_tag_edge_${id}`)}</span>
             </label>`).join('');
         const native = JE.pluginConfig?.NativePosterTagsEnabled === true
             ? switchRow('nativePosterTagsToggle', JE.currentSettings.useNativePosterTags !== false, 'panel_settings_ui_native_poster_tags', 'panel_settings_ui_native_poster_tags_desc')
@@ -241,6 +256,11 @@
                 </div>
                 ${sizeControlHtml('scale', conf)}
                 ${sizeControlHtml('gap', conf)}
+                <div class="je-mth-density je-mth-edge">
+                    <span class="je-mth-label" id="jeMthEdgeLabel">${tx('panel_settings_ui_tag_edge')}</span>
+                    <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
+                    <span class="je-mth-hint" id="jeMthEdgeDesc">${tx('panel_settings_ui_tag_edge_desc')}</span>
+                </div>
             </section>
             <div class="je-mth-shapes">${shapesHtml()}</div>
             <p class="je-mth-hint">${tx('tag_shapes_limitations')}</p>
@@ -726,6 +746,7 @@
             for (const name of ['Scale', 'Gap']) {
                 hub.querySelectorAll(`input[name="jeTag${name}"]`).forEach(r => { r.checked = r.value === conf[`tag${name}`]; });
             }
+            hub.querySelectorAll('input[name="jeTagEdge"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.edge; });
             if (layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${conf.layout}`);
             const off = hub.querySelector('#jeMthBadgesOff');
             if (off) /** @type {HTMLElement} */ (off).hidden = !!JE.currentSettings?.statusTagsEnabled;
@@ -858,9 +879,14 @@
                             status: styles?.status?.added,
                             rating: styles?.rating?.community,
                         };
+                        const sampled = styles?.preset === 'poster' ? JE.tagPosterColours : null;
                         box.querySelectorAll('[data-chip]').forEach((chip) => {
                             const kind = /** @type {HTMLElement} */ (chip).dataset.chip || 'quality';
-                            const colours = { ...CHIP_DEFAULTS[kind], ...(pick[kind] || {}) };
+                            const art = sampled ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
+                            const base = art ? { background: sampled.css(art.background), color: sampled.css(art.text), border: sampled.css(art.border) } : CHIP_DEFAULTS[kind];
+                            // Overrides the admin set stay on top, field by field.
+                            const own = Object.fromEntries(Object.entries(pick[kind] || {}).filter(([, v]) => v));
+                            const colours = { ...base, ...own };
                             const style = /** @type {HTMLElement} */ (chip).style;
                             style.setProperty('background', colours.background, 'important');
                             style.setProperty('color', colours.color, 'important');

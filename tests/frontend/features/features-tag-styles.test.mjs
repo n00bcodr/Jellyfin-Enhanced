@@ -234,3 +234,14 @@ test('the Media Tags hub preset tiles save the choice and re-apply the styles', 
   assert.equal(JSON.parse(writes.at(-1).data).tagStylePreset, null, 'back to the admin\'s preset');
   assert.equal(applied, 2);
 });
+
+
+test('Poster includes Awards and lets explicit Award colours override sampled fields', t => {
+  const h = setup(t);
+  const css = h.JE.tagStyles.buildCss({ preset: 'poster', awards: { oscar: c('rgba(0, 0, 255, 1)', null, 'rgba(0, 255, 0, 1)') } });
+  const sampled = css.indexOf('[data-je-poster-colour] .awards-overlay-container .awards-tag');
+  const own = css.indexOf('.awards-overlay-container .awards-tag[data-je-award="oscar"]');
+  assert.ok(sampled >= 0 && own > sampled);
+  assert.match(css.slice(sampled, own), /background: var\(--je-tag-bg\) !important/);
+  assert.match(css.slice(own), /background: rgba\(0, 0, 255, 1\) !important;color: rgba\(0, 255, 0, 1\) !important/);
+});

@@ -471,6 +471,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterColour.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagComposer.cs",
       "category": "Services"
     },
@@ -1596,6 +1600,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-pipeline.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-poster-colours.js",
       "category": "js"
     },
     {
@@ -4722,6 +4730,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagEdgeSpacing",
+      "type": "string",
+      "initializer": "\"default\"",
+      "constructor_assignment": "\"default\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLookRules",
       "type": "List<TagLookRule>?",
       "initializer": null,
@@ -7626,6 +7642,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "TagEdgeSpacing",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "TagStylePreset",
       "type": "string?",
       "initializer": null,
@@ -9046,9 +9070,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 400,
+    "files": 402,
     "routes": 182,
-    "configuration_properties": 658,
+    "configuration_properties": 660,
     "storage_references": 77,
     "scheduled_tasks": 14,
     "locales": 33

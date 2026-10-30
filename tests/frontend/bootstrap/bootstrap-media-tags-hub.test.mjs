@@ -150,20 +150,20 @@ test('admin-only content is never rendered for a user; presets disallowed remove
   assert.deepEqual(await user.search('colours editor'), []);
 });
 
-test('a user with presets allowed gets Colours with seven tiles painted from each preset\'s real palette', async t => {
+test('a user with presets allowed gets Colours with eight tiles painted from each preset\'s real palette', async t => {
   const h = setup(t, { plugin: { TagStylesAllowUserPreset: true, TagStylePreset: 'glass' }, stored: { tagStylePreset: 'mono' } });
   await h.open();
   assert.ok(h.tab('colours'));
   assert.equal(h.$('.je-mth-admin'), null, 'no colour editor card for a user');
   const tiles = Array.from(h.document.querySelectorAll('input[name="jeTagPreset"]'));
-  assert.deepEqual(tiles.map(r => r.value), ['', 'default', 'glass', 'outline', 'dark', 'light', 'mono']);
+  assert.deepEqual(tiles.map(r => r.value), ['', 'default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster']);
   assert.equal(h.$('input[name="jeTagPreset"]:checked').value, 'mono');
   assert.match(h.$('#jeTagPresetChoice').textContent, /panel_settings_ui_tag_style_preset_server:panel_settings_ui_tag_style_preset_glass/);
   assert.equal(h.requests.filter(u => u.includes('/tag-styles')).length, 0, 'palettes load only when Colours shows');
   h.click(h.tab('colours'));
   await h.settle();
   const styleRequests = h.requests.filter(u => u.includes('/tag-styles'));
-  assert.equal(styleRequests.length, 7);
+  assert.equal(styleRequests.length, 8);
   assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=glass'));
   assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles'), 'the server default tile asks for the admin\'s');
   const chip = h.$('.je-mth-preset-chips[data-preset="glass"] [data-chip="quality"]');
@@ -664,4 +664,33 @@ test('shape size and gap selectors preserve inheritance and update the preview',
   await h.change(h.$('[data-shape="landscape"] [data-shape-action="tagGap"]'), '');
   assert.equal(host.style.getPropertyValue('--je-tag-scale'), '1.3');
   assert.equal(host.style.getPropertyValue('--je-tag-gap'), '1.5');
+});
+
+test('the Edge Spacing pills show the effective spacing, save it and the preview follows', async t => {
+  const h = setup(t, { plugin: { TagEdgeSpacing: 'tight' }, observer: true });
+  await h.open();
+  assert.deepEqual(Array.from(h.document.querySelectorAll('input[name="jeTagEdge"]'), r => r.value), ['default', 'tight', 'flush']);
+  assert.equal(h.$('input[name="jeTagEdge"]:checked').value, 'tight', 'a normalized document inherits the admin default');
+  assert.equal(h.$('#jeTagEdgeChoice').getAttribute('role'), 'radiogroup');
+  h.observers.forEach(o => o.fire());
+  await h.settle();
+  await h.change(h.$('input[name="jeTagEdge"][value="flush"]'), true);
+  assert.equal(h.saved().tagEdgeSpacing, 'flush');
+  assert.equal(h.saved().tagLayoutSettingsVersion, 1);
+  await h.settle();
+  const hosts = Array.from(h.document.querySelectorAll('.je-mtp-sample .je-tag-host[data-je-layout="corners"]'));
+  assert.ok(hosts.length > 0, 'the preview draws corners samples');
+  for (const host of hosts) assert.equal(host.dataset.jeEdge, 'flush');
+});
+
+test('a legacy document promoted by the Edge Spacing pills keeps everything else it showed', async t => {
+  const h = setup(t, { plugin: { TagEdgeSpacing: 'flush', TagGroupCaps: { genre: 9 } }, stored: { tagLayoutSettingsVersion: 0 } });
+  await h.open();
+  assert.equal(h.$('input[name="jeTagEdge"]:checked').value, 'default', 'a legacy document ignores the admin default');
+  await h.change(h.$('input[name="jeTagEdge"][value="tight"]'), true);
+  const saved = h.saved();
+  assert.equal(saved.tagEdgeSpacing, 'tight');
+  assert.equal(saved.tagLayoutSettingsVersion, 1);
+  assert.equal(saved.tagLayout, 'corners');
+  assert.equal(saved.tagGroupCaps.genre, 3, 'the built-in caps are pinned, not the admin\'s');
 });

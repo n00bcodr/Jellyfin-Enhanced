@@ -78,11 +78,12 @@ function fakeCanvas(window) {
  * client's tag-styles.js is loaded too (as on the dashboard), unless `generator`
  * is false: the preview styles itself with its buildCss.
  */
-async function setup(t, json = '', preset = 'default', { generator = true } = {}) {
-  const h = createHarness({ html: markup, apiClient: { ajax: async () => catalog }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
+async function setup(t, json = '', preset = 'default', { generator = true, cat = catalog, poster = false } = {}) {
+  const h = createHarness({ html: markup, apiClient: { ajax: async () => cat }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
   t.after(() => h.close());
   fakeCanvas(h.window);
   if (generator) h.load('tags/tag-styles.js');
+  if (poster) h.load('tags/tag-poster-colours.js');
   h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
   const editor = h.window.__editor;
   editor.load(json, preset);
@@ -200,6 +201,33 @@ test('opacity pills, Default buttons and the contrast badge follow the editing t
   reset.click();
   assert.equal(h.editor.serialize(), '', 'back to the preset: nothing stored');
   assert.equal(h.$('.je-ts-field-row[data-field="background"] .je-ts-reset').disabled, true);
+});
+
+test('under Poster the Whole group badge covers labels set here as well as those taken from the artwork', async t => {
+  const cat = { ...catalog, presets: [...catalog.presets, 'poster'], poster: { worstContrast: 4.5 } };
+  // 4K fully set here, black on black; HEVC takes both colours from the artwork.
+  const doc = { v: 2, preset: 'poster', labels: { 'quality:4K': { background: 'rgba(0, 0, 0, 1)', text: 'rgba(0, 0, 0, 1)' } } };
+  const h = await setup(t, JSON.stringify(doc), 'poster', { cat, poster: true });
+  const badge = () => h.$('.je-ts-contrast-badge');
+  assert.equal(badge().textContent, 'Low contrast · 1.0:1', 'the fully set label reads worst');
+  assert.equal(badge().dataset.poster, 'fixed');
+  assert.match(h.$('.je-ts-contrast-hint').textContent, /^Lowest in the group \(4K\).*tags without their own take them from the poster/);
+  // Each label alone: its own colours, or the worst case over any artwork.
+  h.click('.je-ts-target[data-label="4K"]');
+  assert.equal(badge().textContent, 'Low contrast · 1.0:1');
+  h.click('.je-ts-target[data-label="HEVC"]');
+  assert.equal(badge().textContent, 'AA · 4.5:1');
+  assert.equal(badge().dataset.poster, 'worst');
+  assert.match(h.$('.je-ts-contrast-hint').textContent, /^Worst case over any artwork/);
+  // HEVC partly set here (dark text over the artwork's background), 4K made readable: the sweep's worst case wins.
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#111111"]').click();
+  const partly = Number(/([\d.]+):1$/.exec(badge().textContent)[1]);
+  assert.ok(partly < 3, `dark text over some poster colours: ${partly}`);
+  h.click('.je-ts-target[data-label="4K"]');
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#ffffff"]').click();
+  h.click('.je-ts-target[data-label="*"]');
+  assert.equal(badge().textContent, `Low contrast · ${partly.toFixed(1)}:1`);
+  assert.equal(badge().dataset.poster, 'worst');
 });
 
 test('language edits only the border ring and reset all clears everything', async t => {

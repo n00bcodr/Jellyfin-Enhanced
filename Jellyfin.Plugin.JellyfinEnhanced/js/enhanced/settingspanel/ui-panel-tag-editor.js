@@ -525,7 +525,7 @@
 
     /**
      * Restore the administrator's layout defaults (layout, density, slot
-     * profiles, the corner positions, order and caps), as "apply defaults to
+     * profiles, the corner positions, order, caps and edge spacing), as "apply defaults to
      * all users" would. Enable toggles, include choices and personal rules
      * are kept; rules are not layout defaults.
      */
@@ -542,6 +542,7 @@
         JE.currentSettings.tagLayouts = copy(p.TagLayouts);
         JE.currentSettings.tagGroupOrder = Array.isArray(p.TagGroupOrder) ? p.TagGroupOrder.slice() : null;
         JE.currentSettings.tagGroupCaps = copy(p.TagGroupCaps);
+        JE.currentSettings.tagEdgeSpacing = L.readEdge?.(p.TagEdgeSpacing) || 'default';
         JE.currentSettings.tagLayoutSettingsVersion = 1;
         for (const pos of Object.values(L.POSITION_SETTINGS)) {
             JE.currentSettings[pos.userKey] = p[pos.pluginKey] || pos.fallback;

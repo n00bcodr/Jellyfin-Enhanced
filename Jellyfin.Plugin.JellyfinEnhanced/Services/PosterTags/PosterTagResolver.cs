@@ -136,7 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Sort((a, b) => IndexOf(order, a.Group).CompareTo(IndexOf(order, b.Group)));
             }
 
-            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles, settings.Bands) { TagScale = settings.TagScale, TagGap = settings.TagGap };
+            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles, settings.Bands) { TagScale = settings.TagScale, TagGap = settings.TagGap, EdgeInset = settings.Bands ? 6f : settings.EdgeInset };
         }
 
         /// <summary>

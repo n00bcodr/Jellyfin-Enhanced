@@ -180,6 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagLabelDensity = "full";
             TagScale = "default";
             TagGap = "default";
+            TagEdgeSpacing = "default";
             TagLookRules = null;
             TagShapeOverrides = null;
             ShowRatingInPlayer = true;
@@ -870,6 +871,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Poster tag spacing: tight, default or roomy; null inherits the administrator default.</summary>
         public string TagGap { get; set; } = "default";
+        /// <summary>Starting corners-layout edge spacing (default 6px, tight 3px, flush 0px).</summary>
+        [AnalyticsInclude]
+        public string TagEdgeSpacing { get; set; } = "default";
         /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
         public List<TagLookRule>? TagLookRules { get; set; }
         /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>

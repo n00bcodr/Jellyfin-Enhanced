@@ -273,6 +273,31 @@ synth('positions-centres-profile', {
         { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
     ] } },
 });
+// Edge spacing: every anchor at Tight and Flush (four corners, then the five centre
+// anchors), an administrator default a normalized user inherits, and a legacy
+// document that keeps the default inset whatever the administrator picks.
+const cornersProfile = { Groups: [
+    { Group: 'quality', Slot: 'tl' }, { Group: 'genre', Slot: 'tr' },
+    { Group: 'language', Slot: 'bl' }, { Group: 'rating', Slot: 'br' }, { Group: 'ageRating', Slot: 'tr' },
+] };
+const centresProfile = { Groups: [
+    { Group: 'quality', Slot: 'tc' }, { Group: 'genre', Slot: 'c' },
+    { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
+] };
+for (const edge of ['tight', 'flush']) {
+    synth(`edge-${edge}-corners`, { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: edge, TagLayouts: { Corners: cornersProfile } });
+    synth(`edge-${edge}-centres`, { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: edge, TagLayouts: { Corners: centresProfile } });
+}
+// Fixed edge insets coexist with scaled chip and gap metrics at every anchor.
+for (const edge of ['tight', 'flush']) for (const [scale, gap] of [['smaller', 'tight'], ['largest', 'roomy']]) {
+    for (const [name, profile] of [['corners', cornersProfile], ['centres', centresProfile]]) {
+        synth(`edge-${edge}-${scale}-${gap}-${name}`, { ...allOn, TagLayoutSettingsVersion: 1,
+            TagEdgeSpacing: edge, TagScale: scale, TagGap: gap, TagLayouts: { Corners: profile } });
+    }
+}
+synth('edge-admin-flush-inherited', { ...allOn, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: cornersProfile } }, { TagEdgeSpacing: 'flush' });
+synth('edge-admin-flush-user-default', { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: 'default' }, { TagEdgeSpacing: 'flush' });
+synth('edge-legacy-ignores-admin', { ...allOn, TagEdgeSpacing: 'flush' }, { TagEdgeSpacing: 'tight' });
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,

@@ -113,6 +113,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         private static readonly string[] Densities = { "full", "compact" };
 
+        /// <summary>Corners layout edge spacing ids, with the inset (CSS px) each puts between a chip and the card edge.</summary>
+        public static readonly IReadOnlyDictionary<string, float> EdgeSpacings = new Dictionary<string, float>(StringComparer.Ordinal)
+        {
+            ["default"] = 6f,
+            ["tight"] = 3f,
+            ["flush"] = 0f,
+        };
+
         /// <summary>
         /// Canonical group id for a case-insensitive name ("agerating" → "ageRating"), or null when unknown.
         /// </summary>
@@ -136,6 +144,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var value = (density ?? string.Empty).Trim().ToLowerInvariant();
             return Densities.Contains(value) ? value : "full";
         }
+
+        /// <summary>
+        /// Canonical edge spacing of the corners layout: null stays null (inherit the
+        /// administrator's), anything unknown is "default".
+        /// </summary>
+        public static string? NormalizeEdgeSpacing(string? edge)
+        {
+            if (edge == null) return null;
+            var value = edge.Trim().ToLowerInvariant();
+            return EdgeSpacings.ContainsKey(value) ? value : "default";
+        }
+
+        /// <summary>The inset (CSS px) of an edge spacing id; anything unknown is the default 6px.</summary>
+        public static float EdgeInset(string? edge) =>
+            EdgeSpacings.TryGetValue(NormalizeEdgeSpacing(edge) ?? "default", out var inset) ? inset : 6f;
 
         /// <summary>
         /// A profile with unknown groups, slots invalid for the layout and
@@ -225,6 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagLayouts = NormalizeProfiles(settings.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(settings.TagGroupOrder);
             settings.TagGroupCaps = NormalizeCaps(settings.TagGroupCaps);
+            settings.TagEdgeSpacing = NormalizeEdgeSpacing(settings.TagEdgeSpacing);
         }
 
         /// <summary>
@@ -243,6 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagLayouts = NormalizeProfiles(config.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(config.TagGroupOrder);
             settings.TagGroupCaps = NormalizeCaps(config.TagGroupCaps);
+            settings.TagEdgeSpacing = NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default";
             settings.TagLayoutSettingsVersion = CurrentVersion;
         }
     }

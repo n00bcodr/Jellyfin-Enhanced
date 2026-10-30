@@ -165,7 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var groups = new List<PlannedGroup>();
             foreach (var g in layout.Groups)
             {
-                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty);
+                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty, layout.EdgeInset);
                 if (planned is not null)
                 {
                     groups.Add(planned);
@@ -174,15 +174,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
             if (layout.Bands)
             {
-                var (bandGroups, bands) = PlaceBands(groups, css, cardHeight, layout.TopRightOffset);
+                var (bandGroups, bands) = PlaceBands(groups, css, cardHeight, layout.TopRightOffset, layout.EdgeInset);
                 return new PosterTagPlan(imageWidth, imageHeight, css, bandGroups, bands);
             }
-            Place(groups, css, cardHeight, layout.TopRightOffset);
-            PlaceCentres(groups, css, cardHeight);
+            Place(groups, css, cardHeight, layout.TopRightOffset, layout.EdgeInset);
+            PlaceCentres(groups, css, cardHeight, layout.EdgeInset);
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
-        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles)
+        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles, float inset)
         {
             var items = new List<PlannedItem>();
             // Right-corner chips are right-aligned, so an overflowing one shows the end of its text.
@@ -230,9 +230,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 contentHeight += items[i].Height + (i > 0 ? gap : 0f);
             }
 
-            // max-height: 90% (quality, genre, language); max-width: calc(100% - 12px) (quality, rating, age).
+            // max-height: 90% (quality, genre, language); max-width: the corner slot's width, calc(100% - 2 × inset)
+            // (quality, rating, age).
             float maxHeight = PosterTagCss.Lu(0.9f * cardHeight);
-            float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * PosterTagCss.CornerInset));
+            float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * inset));
             bool hasMaxHeight = group.Group is PosterTagGroup.Quality or PosterTagGroup.Genre or PosterTagGroup.Language;
             bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating or PosterTagGroup.Status;
             float width = hasMaxWidth ? Math.Min(contentWidth, maxWidth) : contentWidth;
@@ -275,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         }
 
         /// <summary>Fit whole bottom-band chips in two rows, retrying one row when height requires it.</summary>
-        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow)
+        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow, float inset = 6f)
         {
             for (int rows = 2; rows >= 1; rows--)
             {
@@ -290,7 +291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 foreach (var chip in shown)
                 {
                     if (x > 0 && x + chip.Width > width + 0.01f) { y += rowHeight + gap; x = rowHeight = 0; }
-                    chip.X = 6 + x;
+                    chip.X = inset + x;
                     chip.Y = y;
                     x += chip.Width + gap;
                     rowHeight = Math.Max(rowHeight, chip.Height);
@@ -301,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         }
 
         /// <summary>Static band rows keep priority order, reserve indicator room, and count every omitted chip as +N.</summary>
-        private (List<PlannedGroup> Groups, List<PlannedBand> Bands) PlaceBands(List<PlannedGroup> source, PosterTagCss css, float cardHeight, bool indicator)
+        private (List<PlannedGroup> Groups, List<PlannedBand> Bands) PlaceBands(List<PlannedGroup> source, PosterTagCss css, float cardHeight, bool indicator, float inset)
         {
             var groups = new List<PlannedGroup>();
             var bands = new List<PlannedBand>();
@@ -311,8 +312,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var members = source.Where(g => g.IsTop == top).ToList();
                 var items = members.SelectMany(g => g.Items).ToList();
                 if (items.Count == 0) continue;
-                var width = Math.Max(0, css.CardWidth - 12 - (top && indicator ? 4 + css.IndicatorOffset : 0));
-                var maxHeight = Math.Max(0, (cardHeight * 0.4f) - 6);
+                var width = Math.Max(0, css.CardWidth - 2 * inset - (top && indicator ? 4 + css.IndicatorOffset : 0));
+                var maxHeight = Math.Max(0, (cardHeight * 0.4f) - inset);
                 // Lay out a prefix, whole chips only, over at most two rows.
                 bool Fit(IReadOnlyList<PlannedItem> chips, out float height)
                 {
@@ -326,7 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                             y += rowHeight + gap; x = rowHeight = 0; row++;
                         }
                         if (row >= 2 || y + chip.Height > maxHeight) { height = 0; return false; }
-                        chip.X = 6 + x; chip.Y = y;
+                        chip.X = inset + x; chip.Y = y;
                         x += chip.Width + gap;
                         rowHeight = Math.Max(rowHeight, chip.Height);
                     }
@@ -337,7 +338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 List<PlannedItem> shown;
                 if (!top)
                 {
-                    shown = FitBandChips(items, width, maxHeight, gap, count => MeasureOverflow(count, css));
+                    shown = FitBandChips(items, width, maxHeight, gap, count => MeasureOverflow(count, css), inset);
                 }
                 else
                 {
@@ -369,16 +370,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     {
                         var trailing = row.Where(i => !first.Contains(i)).ToList();
                         if (trailing.Count == 0) continue;
-                        float shift = 6 + width - (trailing[^1].X + trailing[^1].Width);
+                        float shift = inset + width - (trailing[^1].X + trailing[^1].Width);
                         foreach (var item in trailing) item.X += shift;
                     }
                 }
-                float y = top ? 6 : cardHeight - 6 - height;
+                float y = top ? inset : cardHeight - inset - height;
                 foreach (var item in shown) item.Y += y;
                 var band = new PlannedGroup(members[0].Group, top ? PosterTagCorner.TopLeft : PosterTagCorner.BottomLeft,
-                    width, height, gap, false, shown) { X = 6, Y = y, NaturalY = y };
+                    width, height, gap, false, shown) { X = inset, Y = y, NaturalY = y };
                 groups.Add(band);
-                bands.Add(new PlannedBand(top, top ? 0 : Math.Max(0, y - 16), Math.Min(cardHeight, height + 22)));
+                bands.Add(new PlannedBand(top, top ? 0 : Math.Max(0, y - 16), Math.Min(cardHeight, height + 16 + inset)));
             }
             return (groups, bands);
         }
@@ -408,14 +409,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PlannedItem(PosterTagTileKind.Status, tag, text, tag.StyleKey + "\n" + colors.Encode(), width, height) { TextLayout = layout };
         }
 
-        private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset)
+        private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset, float inset)
         {
             var boundary = new Dictionary<PosterTagCorner, float>();
             foreach (var g in groups.Where(g => !IsCentre(g.Corner)))
             {
-                g.X = g.IsLeft ? PosterTagCss.CornerInset : css.CardWidth - PosterTagCss.CornerInset - g.Width;
-                float top = PosterTagCss.CornerInset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? css.IndicatorOffset : 0f);
-                g.Y = g.IsTop ? top : cardHeight - PosterTagCss.CornerInset - g.Height;
+                g.X = g.IsLeft ? inset : css.CardWidth - inset - g.Width;
+                float top = inset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? css.IndicatorOffset : 0f);
+                g.Y = g.IsTop ? top : cardHeight - inset - g.Height;
                 g.NaturalY = g.Y;
 
                 // applyCornerStacking (tag-renderer-base.js): each later container in a corner moves away from it just
@@ -452,10 +453,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// stack between the occupied corner stacks. All dimensions are CSS px.
         /// Static images omit whole chips that have no room (there is no hover tooltip).
         /// </summary>
-        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight)
+        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset)
         {
             float gap = css.StackGap;
-            float inset = PosterTagCss.CornerInset;
             foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
             {
                 var corner = anchor.Key;

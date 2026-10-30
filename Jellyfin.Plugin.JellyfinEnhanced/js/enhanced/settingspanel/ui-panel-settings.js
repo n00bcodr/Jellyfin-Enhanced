@@ -405,7 +405,7 @@
         if (document.getElementById('awardsTagsToggle')) addSettingToggleListener('awardsTagsToggle', 'awardsTagsEnabled', 'feature_awards_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
-        // --- Tag layout and label density ---
+        // --- Tag layout, label density and edge spacing ---
         // Either choice promotes a document saved before layouts existed to the
         // normalized version (its corners, positions, arrival order, full labels
         // and limits carry over, so only the chosen value changes), then every
@@ -424,6 +424,7 @@
         document.getElementById('jeTagDensityChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
         document.getElementById('jeTagScaleChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagScale', e.target.value));
         document.getElementById('jeTagGapChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagGap', e.target.value));
+        document.getElementById('jeTagEdgeChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagEdgeSpacing', e.target.value));
 
         // --- Tag Styles: user presets ---
         // The empty choice stores null (follow the admin's preset); the web

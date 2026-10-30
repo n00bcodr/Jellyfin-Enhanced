@@ -5,6 +5,7 @@
 //   dotnet run -- resolve <dataDir> [profile]
 //   dotnet run -- names   <dataDir>   LanguageNames.Of vs Intl.DisplayNames (data/names-expected.json)
 //   dotnet run -- casing  <dataDir>   JsText.ToLower/ToUpper vs String.prototype (data/casing-expected.json)
+//   dotnet run -- colours <dataDir>   PosterColour vs js/tags/tag-poster-colours.js (data/colours-expected.json)
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
@@ -71,6 +72,8 @@ switch (mode)
         return CheckNames();
     case "casing":
         return CheckCasing();
+    case "colours":
+        return CheckColours();
     default:
         Console.Error.WriteLine($"Unknown mode {mode}");
         return 2;
@@ -290,13 +293,16 @@ void ResolveAll()
             {
                 foreach (var group in layout.Groups)
                 {
-                    groups.Add(new
+                    var placed = new Dictionary<string, object>
                     {
-                        g = group.Group.ToString(),
-                        c = group.Corner.ToString(),
-                        o = !layout.Bands && layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
-                        t = group.Tags.Select(Describe).ToList(),
-                    });
+                        ["g"] = group.Group.ToString(),
+                        ["c"] = group.Corner.ToString(),
+                        ["o"] = !layout.Bands && layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
+                        ["t"] = group.Tags.Select(Describe).ToList(),
+                    };
+                    // Only a non-default edge spacing adds the inset (web-expected.mjs reads it from the layout CSS).
+                    if (!layout.Bands && settings.EdgeSpacing != "default") placed["e"] = layout.EdgeInset;
+                    groups.Add(placed);
                 }
             }
 
@@ -368,6 +374,7 @@ void ResolveAll()
             ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
             ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
             ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["edgeSpacing"] = settings.EdgeSpacing,
         };
 
         var document = new { settings = summary, items, digest = settings.Digest, preferredAudioLanguage = settings.PreferredAudioLanguage };
@@ -423,6 +430,50 @@ int CheckNames()
     Console.WriteLine($"names: {expected.Count} codes, {mismatches.Count} mismatches");
     foreach (var line in mismatches.Take(40)) Console.WriteLine("  " + line);
     return mismatches.Count == 0 ? 0 : 1;
+}
+
+// ── colours ─────────────────────────────────────────────────────────────────
+// The Poster preset: the web's colours for each synthetic poster against PosterColour.Sample on the same
+// pixels. Sample-size posters must match exactly; full-size ones within their tolerance (the two downscales).
+int CheckColours()
+{
+    var fixtures = JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "colours-expected.json")))!.AsArray();
+    var mismatches = new List<string>();
+    static int[]? Ints(JsonNode? node) => node?.AsArray().Select(v => v!.GetValue<int>()).ToArray();
+    static int[] Rgb(string? css) => css!.Replace("rgba(", string.Empty, StringComparison.Ordinal).TrimEnd(')').Split(',').Take(3).Select(v => int.Parse(v.Trim(), CultureInfo.InvariantCulture)).ToArray();
+    foreach (var fixture in fixtures)
+    {
+        var name = fixture!["name"]!.GetValue<string>();
+        int width = fixture["width"]!.GetValue<int>(), height = fixture["height"]!.GetValue<int>(), tolerance = fixture["tolerance"]!.GetValue<int>();
+        var rgba = Convert.FromBase64String(fixture["rgba"]!.GetValue<string>());
+        using var bitmap = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(width, height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Unpremul));
+        System.Runtime.InteropServices.Marshal.Copy(rgba, 0, bitmap.GetPixels(), rgba.Length);
+        var colours = PosterColour.Sample(bitmap);
+        if (tolerance == 0)
+        {
+            var dominant = PosterColour.Dominant(rgba, width, height);
+            var expected = Ints(fixture["dominant"]);
+            var actual = dominant is { } d ? new[] { d.R, d.G, d.B } : null;
+            if (!(expected is null ? actual is null : actual is not null && expected.SequenceEqual(actual)))
+                mismatches.Add($"{name} dominant: JS={Fmt(expected)} C#={Fmt(actual)}");
+        }
+
+        foreach (var (field, css) in new[] { ("background", colours.Background), ("border", colours.Border), ("text", colours.Text) })
+        {
+            var expected = Ints(fixture[field])!;
+            var actual = Rgb(css);
+            var allowed = field == "text" ? 0 : tolerance;
+            if (expected.Zip(actual).Any(p => Math.Abs(p.First - p.Second) > allowed))
+                mismatches.Add($"{name} {field}: JS={Fmt(expected)} C#={Fmt(actual)} (tolerance {allowed})");
+        }
+    }
+
+    File.WriteAllLines(Path.Combine(dataDir, "out", "colours-diff.txt"), mismatches);
+    Console.WriteLine($"colours: {fixtures.Count} posters, {mismatches.Count} mismatches");
+    foreach (var line in mismatches.Take(40)) Console.WriteLine("  " + line);
+    return mismatches.Count == 0 ? 0 : 1;
+
+    static string Fmt(int[]? v) => v is null ? "none" : string.Join(",", v);
 }
 
 // ── casing ──────────────────────────────────────────────────────────────────

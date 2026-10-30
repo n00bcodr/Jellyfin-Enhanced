@@ -100,6 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             try
             {
                 var engine = _engine.Value;
+                // Poster preset: the chips take this artwork's colours (the planner resolves them into every tile key).
+                if (layout.Styles is { IsPoster: true, Sampled: null } styles)
+                {
+                    layout = layout with { Styles = styles.WithSampled(PosterColour.Sample(source)) };
+                }
+
                 var plan = engine.Planner.Plan(source.Width, source.Height, layout);
                 if (plan.Groups.Count == 0)
                 {

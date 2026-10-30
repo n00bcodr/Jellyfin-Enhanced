@@ -528,6 +528,15 @@
                                             <option value="compact">Compact (DV, Atmos; no critic score next to a community score)</option>
                                         </select>
                                     </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagEdgeSpacing">Default Edge Spacing</label>
+                                        <select is="emby-select" id="tagEdgeSpacing" name="tagEdgeSpacing" class="emby-select">
+                                            <option value="default">Default (6px from the poster edge)</option>
+                                            <option value="tight">Tight (3px)</option>
+                                            <option value="flush">Flush (touching the edge, following the rounded corners)</option>
+                                        </select>
+                                        <div class="fieldDescription">Corners layout only, on the web and on Native Poster Tags. Users saved before layouts existed keep the default spacing until they change a layout setting.</div>
+                                    </div>
                                     <div class="fieldDescription je-field-desc-sm">Tag groups, highest priority first: groups higher in the list win when space is short and stack nearest the edge. Position and limit apply to the layout selected above; switch the layout to set another one's positions.</div>
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="tagScale">Default Tag size</label>
@@ -5996,6 +6005,9 @@
                     var control = document.getElementById('tag' + key);
                     if (control) control.value = config['Tag' + key] || 'default';
                 });
+                var edge = document.getElementById('tagEdgeSpacing');
+                var savedEdge = String(config.TagEdgeSpacing || '').toLowerCase();
+                if (edge) edge.value = savedEdge === 'tight' || savedEdge === 'flush' ? savedEdge : 'default';
                 state.order = null;
                 if (Array.isArray(config.TagGroupOrder)) {
                     var seen = [];
@@ -6029,6 +6041,8 @@
                 config.TagLabelDensity = (document.getElementById('tagLabelDensity') || {}).value === 'compact' ? 'compact' : 'full';
                 config.TagScale = (document.getElementById('tagScale') || {}).value || 'default';
                 config.TagGap = (document.getElementById('tagGap') || {}).value || 'default';
+                var edgeValue = (document.getElementById('tagEdgeSpacing') || {}).value;
+                config.TagEdgeSpacing = edgeValue === 'tight' || edgeValue === 'flush' ? edgeValue : 'default';
                 config.TagGroupOrder = state.order ? state.order.slice() : null;
                 var caps = {};
                 var anyCap = false;
@@ -6728,10 +6742,11 @@
                 { key: 'quality', title: 'Quality' }, { key: 'ageRating', title: 'Age' }, { key: 'rating', title: 'Rating' },
                 { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }, { key: 'awards', title: 'Awards' }
             ];
-            const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono' };
+            const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono', poster: 'Poster' };
             const FIELDS = [['background', 'Background'], ['border', 'Border'], ['text', 'Text']];
             const SWATCHES = ['#1e88e5', '#ef6c00', '#2e7d32', '#546e7a', '#8e24aa', '#ffd166', '#ff6b6b', '#111111', '#ffffff', '#e0e0e0'];
             const OPACITIES = [40, 60, 80, 100];
+            const POSTER_NOTE = 'Poster: each tag takes its background from the artwork it sits on (white or black text, whichever reads better). Colours set here stay on top; Default falls back to the artwork. The preview shows a red poster.';
             const NOTES = {
                 genre: 'Text colours the genre icon.',
                 status: 'Status tags are drawn on the web only: native posters do not show them.',
@@ -7149,32 +7164,78 @@
                 });
             }
 
+            /**
+             * Under the Poster preset, the contrast of a label whose text or background comes from
+             * the artwork: the worst case over the normalisation band (the server's figure when both
+             * come from it; with one field set here, the lowest over a sweep of the band's colours).
+             * @param {{key: string}} label
+             * @returns {number|null} Null when neither field comes from the artwork.
+             */
+            function posterContrast(label) {
+                if (state.preset !== 'poster' || current === 'language') return null;
+                const own = state.labels[labelKey(current, label.key)] || {};
+                const shared = state.groups[current] || {};
+                const text = own.text || shared.text;
+                const background = own.background || shared.background;
+                if (text && background) return null;
+                if (!text && !background) return (cat.poster && cat.poster.worstContrast) || 4.5;
+                const je = window.JellyfinEnhanced;
+                const normalise = je && je.tagPosterColours && je.tagPosterColours.normalise;
+                if (typeof normalise !== 'function') return 1;
+                let worst = 21;
+                // Dominant colours around the hue circle, dark to light: every band colour a poster can give.
+                for (let hue = 0; hue < 360; hue += 10) {
+                    for (const [s, l] of [[1, 0.15], [1, 0.3], [1, 0.5], [0.6, 0.7], [1, 0.85]]) {
+                        const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((hue / 60) % 2) - 1)), m = l - c / 2;
+                        const [r, g, b] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x] : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+                        const band = normalise([Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)]);
+                        const css = (v) => 'rgb(' + v.join(', ') + ')';
+                        const ratio = contrastRatio(text || css(band.text), background || css(band.background));
+                        if (ratio !== null) worst = Math.min(worst, ratio);
+                    }
+                }
+                return worst;
+            }
+
             /** @returns {void} */
             function renderContrast() {
                 const box = document.querySelector('#tagStyleContrast');
                 box.textContent = '';
                 if (current === 'language') return;
-                // One label: its own contrast. Whole group: the label that reads worst.
+                // One label: its own contrast. Whole group: the label that reads worst. Under Poster, a
+                // label whose text or background comes from the artwork counts with its worst case over
+                // any artwork, a label with both set here with its own colours.
                 let worst = null;
+                let sampled = false;
                 (target === ALL ? labelsOf(current) : [{ key: target }]).forEach((label) => {
-                    const c = effective(current, label.key);
-                    const ratio = contrastRatio(c.text, c.background);
-                    if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name };
+                    let ratio = posterContrast(label);
+                    const poster = ratio !== null;
+                    if (poster) sampled = true;
+                    else {
+                        const c = effective(current, label.key);
+                        ratio = contrastRatio(c.text, c.background);
+                    }
+                    if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name, poster };
                 });
                 if (!worst) return;
                 const grade = contrastLevel(worst.ratio);
                 const badge = el('span', 'je-ts-contrast-badge je-ts-contrast-' + grade.level, grade.label + ' · ' + worst.ratio.toFixed(1) + ':1');
                 badge.dataset.level = grade.level;
+                if (sampled) badge.dataset.poster = worst.poster ? 'worst' : 'fixed';
                 box.appendChild(badge);
-                box.appendChild(el('span', 'je-ts-contrast-hint', target === ALL
+                const hint = target === ALL
                     ? 'Lowest in the group (' + worst.name + '): text over background, on a dark poster'
-                    : 'Text over background, on a dark poster'));
+                    : 'Text over background, on a dark poster';
+                const artwork = 'Poster takes each tag\'s colours from the poster it sits on, so this is the lowest contrast the poster colours can give';
+                box.appendChild(el('span', 'je-ts-contrast-hint', !sampled ? hint
+                    : worst.poster ? 'Worst case over any artwork: ' + artwork
+                    : hint + '. Its colours are all set here; tags without their own take them from the poster they sit on'));
             }
 
             /** @returns {void} */
             function renderGroup() {
                 renderTargets();
-                document.querySelector('#tagStyleGroupNote').textContent = NOTES[current] || '';
+                document.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && current !== 'language' ? POSTER_NOTE : '', NOTES[current] || ''].filter(Boolean).join(' ');
                 renderRows();
                 renderContrast();
             }
@@ -9940,7 +10001,7 @@
             { parent: 'awardsTagsEnabled', label: 'Enable Awards Tags', children: ['awardsTagsPosition', 'awardsTagsImdb', 'awardsTagsCertifiedFresh', 'awardsTagsOscar', 'awardsTagsEmmy', 'awardsTagsLetterboxd', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'awardsTagsRefreshHours', 'tagGroupAdminRowAwards'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap', 'tagEdgeSpacing'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },

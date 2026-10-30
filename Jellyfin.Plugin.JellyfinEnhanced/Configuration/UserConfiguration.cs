@@ -133,6 +133,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Poster tag spacing: tight, default or roomy; null inherits the administrator default.</summary>
         public string? TagGap { get; set; }
+        // How close corners-layout chips sit to the card edge (default 6px, tight 3px,
+        // flush 0px); null follows the admin's default (normalized documents only).
+        public string? TagEdgeSpacing { get; set; }
         // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
         // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
         public string? TagStylePreset { get; set; }
